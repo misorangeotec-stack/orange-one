@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --orange: #ff6a1f;
+    --orange-2: #ff8a3d;
+    --orange-soft: #fff1e8;
+    --navy: #0b1b40;
+    --navy-2: #15294f;
+    --sidebar: #162542;
+    --ink: #0b1b40;
+    --grey: #64748b;
+    --grey-2: #8a99b0;
+    --line: #e9eef6;
+    --card: #ffffff;
+    --page: #f6f9fd;
+    --teal: #2ec4b6;
+    --blue: #3b82f6;
+    --yellow: #f8b62b;
+    --shadow-card: 0 18px 40px -22px rgba(15, 35, 75, 0.2);
+    --shadow-soft: 0 10px 30px -18px rgba(15, 35, 75, 0.18);
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: "Poppins", system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+  }
+}

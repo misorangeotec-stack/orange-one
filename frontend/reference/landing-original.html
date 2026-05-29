@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Orange One — One Platform. Every Workflow.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --orange:#FF6A1F;
+    --orange-2:#FF8A3D;
+    --orange-soft:#FFF1E8;
+    --navy:#0B1B40;
+    --navy-2:#15294F;
+    --sidebar:#162542;
+    --ink:#0B1B40;
+    --grey:#64748B;
+    --grey-2:#8A99B0;
+    --line:#E9EEF6;
+    --card:#FFFFFF;
+    --page:#F6F9FD;
+    --teal:#2EC4B6;
+    --blue:#3B82F6;
+    --yellow:#F8B62B;
+    --shadow-card:0 18px 40px -22px rgba(15,35,75,.20);
+    --shadow-soft:0 10px 30px -18px rgba(15,35,75,.18);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth;overflow-x:hidden}
+  body{
+    font-family:'Poppins',sans-serif;
+    color:var(--ink);
+    background:
+      radial-gradient(900px 520px at 92% -8%, #FFEDE1 0%, rgba(255,237,225,0) 60%),
+      radial-gradient(700px 480px at -6% 110%, #FFF2E9 0%, rgba(255,242,233,0) 55%),
+      linear-gradient(180deg,#FBFCFE 0%, #F4F7FC 100%);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  .wrap{max-width:1280px;margin:0 auto;padding:0 36px}
+
+  /* ===== NAV ===== */
+  header.nav{padding:22px 0 6px;position:relative;z-index:50}
+  .nav-inner{display:flex;align-items:center;gap:26px}
+  .brand{display:flex;align-items:center;flex:none;text-decoration:none}
+  .brand .logo-img{height:34px;width:auto;display:block}
+  .nav-collapse{display:flex;align-items:center;gap:26px;flex:1}
+  .nav-divider{width:1px;height:30px;background:var(--line);flex:none}
+  nav.menu{display:flex;align-items:center;gap:30px}
+  nav.menu a{
+    text-decoration:none;color:var(--navy);font-weight:600;font-size:15px;
+    display:flex;align-items:center;gap:6px;transition:color .2s;white-space:nowrap;
+  }
+  nav.menu a:hover{color:var(--orange)}
+  nav.menu a.active{color:var(--orange)}
+  nav.menu a .caret{font-size:10px;opacity:.7}
+  .btn-outline{
+    border:1.6px solid var(--orange);color:var(--orange);background:#fff;
+    padding:12px 22px;border-radius:12px;font-weight:600;font-size:14px;
+    display:inline-flex;align-items:center;gap:9px;cursor:pointer;transition:all .2s;
+    margin-left:auto;white-space:nowrap;
+  }
+  .btn-outline:hover{background:var(--orange);color:#fff;box-shadow:0 12px 24px -12px rgba(255,106,31,.6)}
+  /* hamburger */
+  .hamburger{display:none;flex-direction:column;justify-content:center;gap:5px;width:44px;height:44px;
+    border:1.5px solid var(--line);border-radius:11px;background:#fff;cursor:pointer;margin-left:auto;flex:none}
+  .hamburger span{display:block;width:20px;height:2px;background:var(--navy);margin:0 auto;border-radius:2px;transition:.25s}
+  .hamburger.active span:nth-child(1){transform:translateY(7px) rotate(45deg)}
+  .hamburger.active span:nth-child(2){opacity:0}
+  .hamburger.active span:nth-child(3){transform:translateY(-7px) rotate(-45deg)}
+
+  /* ===== HERO ===== */
+  .hero{display:grid;grid-template-columns:minmax(0,0.92fr) minmax(0,1.18fr);gap:56px;align-items:center;padding:46px 0 30px}
+  .hero-copy,.dash-wrap{min-width:0}
+  .badge{
+    display:inline-flex;align-items:center;background:var(--orange-soft);color:var(--orange);
+    font-weight:600;font-size:13px;padding:8px 16px;border-radius:999px;margin-bottom:26px;
+  }
+  h1.title{font-weight:700;font-size:clamp(38px,5.4vw,60px);line-height:1.06;letter-spacing:-1px;color:var(--navy)}
+  h1.title .o{color:var(--orange)}
+  p.lede{color:var(--grey);font-size:clamp(15px,1.6vw,17px);line-height:1.65;margin:24px 0 34px;max-width:430px;font-weight:400}
+  .cta-row{display:flex;gap:16px;flex-wrap:wrap}
+  .btn{display:inline-flex;align-items:center;gap:10px;font-weight:600;font-size:15px;padding:15px 26px;border-radius:13px;cursor:pointer;border:none;transition:transform .2s,box-shadow .2s}
+  .btn.primary{background:linear-gradient(135deg,var(--orange) 0%,var(--orange-2) 100%);color:#fff;box-shadow:0 16px 30px -12px rgba(255,106,31,.55)}
+  .btn.primary:hover{transform:translateY(-2px);box-shadow:0 22px 38px -14px rgba(255,106,31,.65)}
+  .btn.ghost{background:#fff;color:var(--navy);border:1.5px solid var(--line);box-shadow:var(--shadow-soft)}
+  .btn.ghost:hover{transform:translateY(-2px);border-color:#d9e2f0}
+  .btn svg{width:18px;height:18px}
+
+  /* ===== DASHBOARD MOCK ===== */
+  .dash-wrap{position:relative}
+  .dots{position:absolute;top:-34px;left:-34px;width:150px;height:112px;z-index:0;opacity:.6}
+  .ring{position:absolute;z-index:0;border-radius:50%;border:1.5px dashed #D8E2F0;pointer-events:none}
+  .ring.r1{width:340px;height:340px;top:-60px;right:-90px;opacity:.7}
+  .ring.r2{width:180px;height:180px;bottom:-40px;left:-50px;border-style:solid;border-color:#E7EDF6;opacity:.8}
+  .dash{
+    position:relative;z-index:1;display:flex;background:#fff;border-radius:20px;overflow:hidden;
+    box-shadow:0 40px 80px -36px rgba(13,30,70,.45), 0 4px 14px -8px rgba(13,30,70,.18);
+    border:1px solid #eef2f8;
+  }
+  .side{background:var(--sidebar);width:62px;flex:none;display:flex;flex-direction:column;align-items:center;gap:8px;padding:18px 0}
+  .side .s-logo{width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;margin-bottom:14px}
+  .side .s-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;color:#9fb0cf;transition:.2s}
+  .side .s-ic.active{background:var(--orange);color:#fff}
+  .side .s-ic svg{width:18px;height:18px}
+  .panel{flex:1;padding:18px 20px 20px;background:#FAFBFE;min-width:0}
+  .dash-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;gap:10px}
+  .dash-top h3{font-size:16px;font-weight:600;color:var(--navy)}
+  .dash-top .greet{display:flex;align-items:center;gap:12px;color:var(--grey-2);font-size:11px}
+  .bell{width:26px;height:26px;border-radius:8px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative;color:var(--grey);flex:none}
+  .bell::after{content:"";position:absolute;top:5px;right:6px;width:6px;height:6px;background:var(--orange);border-radius:50%}
+  .ava{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,#1b2a4a,#33456b);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex:none}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:13px}
+  .stat{background:#fff;border:1px solid #EEF2F8;border-radius:12px;padding:12px 13px}
+  .stat .lbl{font-size:10px;color:var(--grey);font-weight:500;margin-bottom:8px}
+  .stat .row{display:flex;align-items:flex-start;justify-content:space-between}
+  .stat .num{font-size:24px;font-weight:700;color:var(--navy);line-height:1}
+  .stat .pic{width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex:none}
+  .stat .pic svg{width:14px;height:14px}
+  .stat .delta{font-size:9.5px;color:#2EAE6B;margin-top:9px;font-weight:500}
+  .ic-o{background:#FFF0E7;color:var(--orange)}
+  .ic-b{background:#EAF1FE;color:var(--blue)}
+  .ic-g{background:#E8F8EF;color:#27AE60}
+  .ic-p{background:#F0ECFE;color:#7C5CFC}
+
+  .row2{display:grid;grid-template-columns:1fr 1.18fr;gap:11px;margin-bottom:13px}
+  .box{background:#fff;border:1px solid #EEF2F8;border-radius:12px;padding:14px}
+  .box h4{font-size:12px;font-weight:600;color:var(--navy);margin-bottom:10px}
+  .box .hh{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+  .pill-sel{font-size:9.5px;color:var(--grey);border:1px solid var(--line);border-radius:7px;padding:4px 8px;display:flex;gap:5px;align-items:center;white-space:nowrap}
+
+  .wf{display:flex;align-items:center;gap:14px}
+  .donut{position:relative;width:96px;height:96px;flex:none}
+  .donut .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .donut .center b{font-size:20px;font-weight:700;color:var(--navy);line-height:1}
+  .donut .center span{font-size:8px;color:var(--grey)}
+  .legend{flex:1;display:flex;flex-direction:column;gap:7px;min-width:0}
+  .legend .li{display:flex;align-items:center;font-size:10px;color:var(--grey)}
+  .legend .dot{width:8px;height:8px;border-radius:50%;margin-right:7px;flex:none}
+  .legend .li b{color:var(--navy);margin-left:auto;font-weight:600}
+  .legend .li .pc{color:var(--grey-2);margin-left:6px;width:34px;text-align:right}
+
+  .fin-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .fin{background:#FBFCFE;border:1px solid #EEF2F8;border-radius:10px;padding:10px 11px}
+  .fin .ft{font-size:9.5px;color:var(--grey);margin-bottom:5px}
+  .fin .fv{font-size:16px;font-weight:700;color:var(--navy)}
+  .fin .fd{font-size:8.5px;color:#2EAE6B;margin:4px 0 8px}
+  .fin svg{width:100%;height:30px;display:block}
+
+  .row3{display:grid;grid-template-columns:1.25fr 1fr;gap:11px}
+  .act .ai{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--navy);padding:6px 0;border-bottom:1px dashed #EEF2F8}
+  .act .ai:last-child{border-bottom:none}
+  .act .ai .t{margin-left:auto;color:var(--grey-2);font-size:9px;white-space:nowrap}
+  .act .ai .ck{width:15px;height:15px;color:var(--orange);flex:none}
+  .qa-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .qa{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px}
+  .qa .qi{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center}
+  .qa .qi svg{width:17px;height:17px}
+  .qa span{font-size:8.5px;color:var(--grey);line-height:1.25}
+
+  /* ===== STATS BAR ===== */
+  .stats-bar{
+    background:#fff;border-radius:20px;box-shadow:var(--shadow-card);border:1px solid #EFF3F9;
+    display:grid;grid-template-columns:repeat(4,1fr);padding:30px 24px;margin:34px 0 60px;position:relative;z-index:2;
+  }
+  .sb{display:flex;align-items:center;gap:18px;justify-content:center;position:relative}
+  .sb:not(:last-child)::after{content:"";position:absolute;right:0;top:8px;bottom:8px;width:1px;background:var(--line)}
+  .sb .sb-ic{width:46px;height:46px;color:var(--navy);flex:none}
+  .sb .sb-ic svg{width:46px;height:46px}
+  .sb .n{font-size:34px;font-weight:700;color:var(--orange);line-height:1}
+  .sb .l{font-size:13px;color:var(--grey);margin-top:4px;font-weight:500}
+  /* stat bar variant with icon chips (section 2) */
+  .stats-bar.compact{margin:54px 0 0}
+  .sb .chip{width:44px;height:44px;border-radius:12px;background:#EEF3FB;display:flex;align-items:center;justify-content:center;color:var(--navy);flex:none}
+  .sb .chip svg{width:20px;height:20px}
+
+  /* ===== SECTION 2 : OPERATIONAL APPS ===== */
+  .apps{position:relative;padding:56px 0 4px;overflow:hidden}
+  .apps .deco-dots{position:absolute;top:120px;left:-24px;width:90px;height:120px;opacity:.5;z-index:0}
+  .apps .deco-arc{position:absolute;top:-90px;right:-90px;width:300px;height:300px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, #FFE6D5 0%, rgba(255,230,213,0) 68%);z-index:0}
+  .apps-inner{position:relative;z-index:1}
+  .eyebrow{display:flex;align-items:center;justify-content:center;gap:11px;font-weight:600;font-size:13px;letter-spacing:2px;margin-bottom:16px;text-transform:uppercase}
+  .eyebrow .num{color:var(--orange);font-weight:700}
+  .eyebrow .sep{width:5px;height:5px;border-radius:50%;background:var(--orange)}
+  .eyebrow .lab{color:var(--orange)}
+  .apps h2{text-align:center;font-size:clamp(28px,4vw,42px);font-weight:700;color:var(--navy);letter-spacing:-.6px;line-height:1.12}
+  .apps h2 .o{color:var(--orange)}
+  .apps .sub{text-align:center;color:var(--grey);font-size:16px;margin:16px auto 0;max-width:420px;line-height:1.6}
+  .apps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-top:46px}
+  .app-card{position:relative;background:#fff;border:1px solid #EEF2F8;border-radius:16px;padding:24px 22px 18px;
+    box-shadow:0 14px 34px -26px rgba(15,35,75,.22);transition:transform .25s,box-shadow .25s,border-color .25s;overflow:hidden}
+  .app-card::before{content:"";position:absolute;top:0;left:22px;right:22px;height:3px;border-radius:0 0 3px 3px;
+    background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .3s}
+  .app-card.is-active::before,.app-card:hover::before{transform:scaleX(1)}
+  .app-card:hover{transform:translateY(-5px);box-shadow:0 28px 48px -26px rgba(15,35,75,.30);border-color:#E4EAF4}
+  .app-ic{width:54px;height:54px;border-radius:14px;background:var(--orange-soft);display:flex;align-items:center;justify-content:center;color:var(--navy);margin-bottom:20px}
+  .app-ic svg{width:26px;height:26px}
+  .app-card h3{font-size:17px;font-weight:600;color:var(--navy);margin-bottom:9px}
+  .app-card p{color:var(--grey);font-size:13.5px;line-height:1.6;min-height:42px}
+  .app-arrow{margin-top:14px;color:var(--orange);display:flex}
+  .app-arrow svg{width:20px;height:20px;transition:transform .25s}
+  .app-card:hover .app-arrow svg{transform:translateX(5px)}
+
+  /* ===== SECTION 3 : REAL-TIME VISIBILITY ===== */
+  .viz{position:relative;padding:64px 0 4px;overflow:hidden}
+  .viz .deco-arc{position:absolute;top:30px;right:-90px;width:300px;height:300px;border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, #FFE6D5 0%, rgba(255,230,213,0) 68%);z-index:0}
+  .viz-inner{position:relative;z-index:1}
+  .viz-top{display:grid;grid-template-columns:0.82fr 2.18fr;gap:48px;align-items:start}
+  .viz-head{position:relative}
+  .viz-head .deco-dots{position:absolute;top:-4px;left:-34px;width:78px;height:92px;opacity:.55;z-index:0}
+  .viz-head .eyebrow{justify-content:flex-start;margin-bottom:18px;position:relative;z-index:1}
+  .viz-head h2{font-size:clamp(30px,3.4vw,44px);font-weight:700;color:var(--navy);line-height:1.1;letter-spacing:-.6px;position:relative;z-index:1}
+  .viz-head h2 .o{color:var(--orange)}
+  .viz-head .sub{color:var(--grey);font-size:15.5px;line-height:1.65;margin:18px 0 0;max-width:320px}
+  .viz-head .uline{width:46px;height:3px;background:var(--orange);border-radius:3px;margin:22px 0 22px}
+  .viz-head .btn-outline{margin-left:0}
+
+  .viz-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .viz-card{background:#fff;border:1px solid #EEF2F8;border-radius:16px;padding:16px 16px 0;overflow:hidden;
+    box-shadow:0 14px 34px -26px rgba(15,35,75,.22)}
+  .viz-card .vtop{display:flex;gap:11px;align-items:flex-start;margin-bottom:14px}
+  .vic{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex:none}
+  .vic svg{width:20px;height:20px}
+  .vtitle{font-size:12.5px;font-weight:600;color:var(--navy);line-height:1.32}
+  .vval{font-size:22px;font-weight:700;color:var(--navy);line-height:1}
+  .vdelta{font-size:11px;font-weight:500;margin:7px 0 12px;color:#22B473}
+  .vdelta.down{color:#EF4444}
+  .vspark{height:62px;margin:0 -16px}
+  .vspark svg{width:100%;height:100%;display:block}
+
+  .t-orange{background:#FFF0E7;color:#FF6A1F}
+  .t-blue{background:#EAF1FE;color:#3B82F6}
+  .t-green{background:#E6F7EF;color:#22B473}
+  .t-purple{background:#F1ECFE;color:#9B6DFF}
+  .t-teal{background:#E2F6F3;color:#23B6AB}
+  .t-amber{background:#FEF3DF;color:#F2A516}
+
+  .viz-features{display:grid;grid-template-columns:repeat(4,1fr);gap:26px;background:#F3F6FB;border:1px solid #ECEFF5;
+    border-radius:18px;padding:26px 28px;margin-top:30px}
+  .vfeat{display:flex;gap:14px;align-items:flex-start}
+  .vfeat .circ{width:46px;height:46px;border-radius:50%;background:#fff;border:1px solid #E7ECF4;display:flex;align-items:center;justify-content:center;color:var(--orange);flex:none}
+  .vfeat .circ svg{width:20px;height:20px}
+  .vfeat h4{font-size:14px;font-weight:600;color:var(--navy);margin-bottom:5px}
+  .vfeat p{font-size:12.5px;color:var(--grey);line-height:1.55}
+
+  .viz-tag{display:flex;align-items:center;gap:18px;margin:44px 0 6px}
+  .viz-tag .tl{flex:1;height:1px;position:relative}
+  .viz-tag .tl.left{background:linear-gradient(90deg,rgba(255,106,31,0),rgba(255,106,31,.55))}
+  .viz-tag .tl.right{background:linear-gradient(90deg,rgba(255,106,31,.55),rgba(255,106,31,0))}
+  .viz-tag .tl.left::after,.viz-tag .tl.right::before{content:"";position:absolute;top:50%;transform:translateY(-50%);width:7px;height:7px;border-radius:50%;background:var(--orange)}
+  .viz-tag .tl.left::after{right:0}
+  .viz-tag .tl.right::before{left:0}
+  .viz-tag .tx{font-weight:600;font-size:clamp(15px,1.9vw,18px);color:var(--navy);white-space:nowrap}
+  .viz-tag .tx .o{color:var(--orange)}
+
+  /* ===== FOOTER ===== */
+  .footer{position:relative;margin-top:54px;padding:66px 0 0;color:#C2CEE3;overflow:hidden;
+    background:linear-gradient(180deg,#0E1E40 0%,#0A1730 100%)}
+  .footer::before{content:"";position:absolute;top:-120px;right:-80px;width:340px;height:340px;border-radius:50%;
+    background:radial-gradient(circle at 40% 40%, rgba(255,106,31,.20) 0%, rgba(255,106,31,0) 70%)}
+  .footer::after{content:"";position:absolute;bottom:60px;left:-60px;width:200px;height:200px;border-radius:50%;
+    background:radial-gradient(circle, rgba(46,196,182,.12) 0%, rgba(46,196,182,0) 70%)}
+  .foot-grid{position:relative;z-index:1;display:grid;grid-template-columns:1.7fr 1fr 1fr 1.25fr;gap:40px}
+  .brand-dark{display:flex;align-items:center;gap:11px;margin-bottom:18px}
+  .brand-dark svg{width:38px;height:38px;flex:none}
+  .brand-dark .w{font-weight:700;font-size:22px;letter-spacing:3px;color:#fff}
+  .foot-brand p{font-size:14px;line-height:1.75;color:#93A2BE;max-width:310px}
+  .socials{display:flex;gap:10px;margin-top:22px}
+  .socials a{width:38px;height:38px;border-radius:10px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;color:#C2CEE3;transition:.22s}
+  .socials a:hover{background:var(--orange);color:#fff;transform:translateY(-3px)}
+  .socials svg{width:17px;height:17px}
+  .foot-col h5{color:#fff;font-size:14px;font-weight:600;margin-bottom:16px;letter-spacing:.3px}
+  .foot-col a{display:block;color:#93A2BE;text-decoration:none;font-size:13.5px;padding:7px 0;transition:.2s;width:fit-content}
+  .foot-col a:hover{color:var(--orange);transform:translateX(3px)}
+  .ic-line{display:flex;align-items:flex-start;gap:10px;color:#93A2BE;font-size:13.5px;padding:7px 0;text-decoration:none}
+  .ic-line svg{width:16px;height:16px;color:var(--orange);flex:none;margin-top:2px}
+  a.ic-line:hover{color:var(--orange)}
+  .foot-cta{margin-top:18px;background:transparent;color:#fff;border-color:rgba(255,255,255,.25)}
+  .foot-cta:hover{background:var(--orange);border-color:var(--orange);box-shadow:0 14px 26px -12px rgba(255,106,31,.55)}
+  .foot-bottom{position:relative;z-index:1;border-top:1px solid rgba(255,255,255,.08);margin-top:52px}
+  .foot-bottom-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:22px 0;font-size:13px;color:#7E8DA8}
+  .foot-bottom .legal{display:flex;gap:26px;flex-wrap:wrap}
+  .foot-bottom a{color:#7E8DA8;text-decoration:none;transition:.2s}
+  .foot-bottom a:hover{color:var(--orange)}
+
+  /* ===== REVEAL (scroll-triggered) ===== */
+  .reveal{opacity:0;transform:translateY(26px);
+    transition:opacity .8s cubic-bezier(.16,.84,.32,1), transform .8s cubic-bezier(.16,.84,.32,1);
+    will-change:opacity,transform}
+  .reveal.in{opacity:1;transform:none}
+  .d1{transition-delay:.05s}.d2{transition-delay:.13s}.d3{transition-delay:.22s}.d4{transition-delay:.32s}.d5{transition-delay:.42s}
+  /* stagger children of a revealed grid via --i */
+  .stagger>*{opacity:0;transform:translateY(28px) scale(.985);
+    transition:opacity .7s cubic-bezier(.16,.84,.32,1), transform .7s cubic-bezier(.16,.84,.32,1);
+    transition-delay:calc(var(--i,0) * 70ms)}
+  .stagger.in>*{opacity:1;transform:none}
+
+  /* ===== KEYFRAMES ===== */
+  @keyframes auroraA{0%{transform:translate(0,0) scale(1)}50%{transform:translate(-26px,18px) scale(1.08)}100%{transform:translate(0,0) scale(1)}}
+  @keyframes auroraB{0%{transform:translate(0,0) scale(1)}50%{transform:translate(22px,-16px) scale(1.1)}100%{transform:translate(0,0) scale(1)}}
+  @keyframes floatY{0%{transform:translateY(0)}50%{transform:translateY(-10px)}100%{transform:translateY(0)}}
+  @keyframes badgeGlow{0%,100%{box-shadow:0 0 0 0 rgba(255,106,31,.0)}50%{box-shadow:0 0 0 6px rgba(255,106,31,.08)}}
+  @keyframes shimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
+  @keyframes dotPulse{0%,100%{opacity:.5}50%{opacity:.85}}
+  @keyframes spinSlow{to{transform:rotate(360deg)}}
+
+  /* animated background glows */
+  body::before,body::after{content:"";position:fixed;border-radius:50%;z-index:-1;pointer-events:none;filter:blur(8px)}
+  body::before{top:-160px;right:-120px;width:540px;height:540px;
+    background:radial-gradient(circle at 40% 40%, rgba(255,138,61,.22), rgba(255,138,61,0) 62%);animation:auroraB 16s ease-in-out infinite}
+  body::after{bottom:-180px;left:-140px;width:520px;height:520px;
+    background:radial-gradient(circle at 50% 50%, rgba(255,170,110,.16), rgba(255,170,110,0) 60%);animation:auroraA 19s ease-in-out infinite}
+
+  /* badge shine */
+  .badge{position:relative;overflow:hidden;animation:badgeGlow 3.6s ease-in-out infinite}
+  .badge::after{content:"";position:absolute;inset:0;
+    background:linear-gradient(110deg,transparent 30%,rgba(255,255,255,.55) 50%,transparent 70%);
+    background-size:200% 100%;animation:shimmer 4.5s ease-in-out infinite}
+
+  /* nav link underline */
+  nav.menu a{position:relative}
+  nav.menu a::after{content:"";position:absolute;left:0;bottom:-5px;height:2px;width:100%;
+    background:var(--orange);transform:scaleX(0);transform-origin:left;transition:transform .28s cubic-bezier(.16,.84,.32,1);border-radius:2px}
+  nav.menu a:hover::after,nav.menu a.active::after{transform:scaleX(1)}
+
+  /* button shine sweep + press */
+  .btn,.btn-outline{position:relative;overflow:hidden}
+  .btn::after,.btn-outline::after{content:"";position:absolute;top:0;left:-75%;width:50%;height:100%;
+    background:linear-gradient(120deg,transparent,rgba(255,255,255,.45),transparent);transform:skewX(-20deg);transition:left .6s ease}
+  .btn:hover::after,.btn-outline:hover::after{left:135%}
+  .btn:active,.btn-outline:active{transform:translateY(0) scale(.97)}
+
+  /* dashboard perspective + mouse tilt */
+  .dash-wrap{perspective:1400px}
+  .dash{transform-style:preserve-3d;transition:transform .25s cubic-bezier(.16,.84,.32,1),box-shadow .4s ease}
+  .dash .panel,.dash .side{backface-visibility:hidden}
+
+  /* dashboard stat card lift */
+  .stat{transition:transform .25s ease,box-shadow .25s ease,border-color .25s ease}
+  .stat:hover{transform:translateY(-3px);box-shadow:0 14px 26px -16px rgba(15,35,75,.3);border-color:#E2E9F4}
+
+  /* donut draw-in */
+  .donut .seg{stroke-dasharray:0 100;transition:stroke-dasharray 1.2s cubic-bezier(.34,.9,.3,1)}
+  .donut .seg.s2{transition-delay:.12s}.donut .seg.s3{transition-delay:.24s}.donut .seg.s4{transition-delay:.36s}
+  .dash.in .donut .seg{stroke-dasharray:var(--v)}
+  .donut .center b{opacity:0;transform:scale(.7);transition:opacity .5s ease .5s,transform .6s cubic-bezier(.2,1.3,.4,1) .5s}
+  .dash.in .donut .center b{opacity:1;transform:none}
+
+  /* sparkline draw-in */
+  .fin .line{stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 1.5s cubic-bezier(.16,.84,.32,1) .3s}
+  .dash.in .fin .line{stroke-dashoffset:0}
+  .fin .area{opacity:0;transition:opacity .8s ease .7s}
+  .dash.in .fin .area{opacity:1}
+
+  /* app-card icon hover fill + stats chip hover */
+  .app-ic{transition:background .3s ease,color .3s ease,transform .35s cubic-bezier(.2,1.2,.4,1)}
+  .app-card:hover .app-ic{background:var(--orange);color:#fff;transform:translateY(-2px) rotate(-4deg)}
+  .app-ic svg [stroke="#FF6A1F"]{transition:stroke .3s ease}
+  .app-card:hover .app-ic svg [stroke="#FF6A1F"]{stroke:#fff}
+  /* keep app-card hover snappy + working despite .reveal entrance transition */
+  .apps-grid .app-card{transition:transform .35s cubic-bezier(.2,1,.4,1),box-shadow .35s ease,border-color .35s ease,opacity .7s cubic-bezier(.16,.84,.32,1)}
+  .apps-grid .app-card:hover{transform:translateY(-6px)}
+  /* section 3 cards + sparkline draw + feature icons */
+  .viz-grid .viz-card{transition:transform .35s cubic-bezier(.2,1,.4,1),box-shadow .35s ease,border-color .35s ease,opacity .7s cubic-bezier(.16,.84,.32,1)}
+  .viz-grid .viz-card:hover{transform:translateY(-6px);box-shadow:0 26px 46px -26px rgba(15,35,75,.30);border-color:#E4EAF4}
+  .vic{transition:transform .35s cubic-bezier(.2,1.2,.4,1)}
+  .viz-card:hover .vic{transform:scale(1.08) rotate(-4deg)}
+  .vspark .vline{stroke-dasharray:100;stroke-dashoffset:100;transition:stroke-dashoffset 1.5s cubic-bezier(.16,.84,.32,1) .15s}
+  .viz-card.in .vline{stroke-dashoffset:0}
+  .vspark .varea{opacity:0;transition:opacity .9s ease .5s}
+  .viz-card.in .varea{opacity:1}
+  .vfeat .circ{transition:background .3s ease,color .3s ease,transform .35s cubic-bezier(.2,1.2,.4,1),box-shadow .3s ease}
+  .vfeat:hover .circ{background:var(--orange);color:#fff;transform:translateY(-3px);box-shadow:0 12px 22px -12px rgba(255,106,31,.6)}
+  .sb .chip{transition:transform .3s cubic-bezier(.2,1.2,.4,1),background .3s ease,color .3s ease}
+  .stats-bar:hover .sb .chip{transform:translateY(-2px)}
+
+  /* decorative parallax dots pulse */
+  .deco-dots circle{animation:dotPulse 4s ease-in-out infinite}
+
+  @media(prefers-reduced-motion:reduce){
+    .reveal,.stagger>*{opacity:1!important;transform:none!important;transition:none!important}
+    body::before,body::after,.badge,.badge::after,.deco-dots circle{animation:none!important}
+    .dash{transform:none!important}
+    .donut .seg{stroke-dasharray:var(--v)!important;transition:none!important}
+    .donut .center b{opacity:1!important;transform:none!important}
+    .fin .line{stroke-dashoffset:0!important}.fin .area{opacity:1!important}
+    .vspark .vline{stroke-dashoffset:0!important}.vspark .varea{opacity:1!important}
+    *{scroll-behavior:auto!important}
+  }
+
+  /* ======================================================
+     RESPONSIVE
+     ====================================================== */
+
+  /* ---- Tablet / small laptop: stack hero ---- */
+  @media(max-width:1024px){
+    .hero{grid-template-columns:minmax(0,1fr);gap:40px;padding:34px 0 20px}
+    .hero-copy{max-width:560px}
+    p.lede{max-width:560px}
+    .dash-wrap{max-width:720px;margin:0 auto;width:100%}
+  }
+
+  /* ---- Collapse nav into hamburger ---- */
+  @media(max-width:860px){
+    .hamburger{display:flex}
+    .nav-collapse{
+      position:absolute;top:calc(100% + 8px);left:36px;right:36px;
+      flex-direction:column;align-items:stretch;gap:0;
+      background:#fff;border:1px solid var(--line);border-radius:16px;
+      box-shadow:0 24px 50px -24px rgba(15,35,75,.30);
+      padding:8px;overflow:hidden;
+      max-height:0;opacity:0;pointer-events:none;transform:translateY(-8px);
+      transition:max-height .3s ease,opacity .25s ease,transform .25s ease;
+    }
+    .nav-collapse.open{max-height:420px;opacity:1;pointer-events:auto;transform:none}
+    .nav-divider{display:none}
+    nav.menu{flex-direction:column;align-items:stretch;gap:0;width:100%}
+    nav.menu a{padding:13px 14px;border-radius:10px;font-size:15px;justify-content:space-between}
+    nav.menu a:hover{background:var(--orange-soft)}
+    .btn-outline{margin:8px 6px 6px;justify-content:center}
+  }
+
+  /* ---- Phone: tighten spacing + reflow dashboard ---- */
+  @media(max-width:640px){
+    .wrap{padding:0 20px}
+    .nav-collapse{left:20px;right:20px}
+    header.nav{padding:18px 0 4px}
+    .brand .logo-img{height:30px}
+    .badge{margin-bottom:20px}
+    .cta-row .btn{flex:1;justify-content:center;padding:14px 18px}
+
+    /* dashboard internals reflow */
+    .side{width:50px;padding:14px 0}
+    .side .s-ic{width:34px;height:34px}
+    .panel{padding:14px 13px 15px}
+    .dash-top .greet{font-size:0}            /* hide "Good Morning, Admin" text, keep icons */
+    .dash-top .greet .bell,.dash-top .greet .ava{font-size:11px}
+    .stat-grid{grid-template-columns:repeat(2,1fr)}
+    .row2{grid-template-columns:1fr}
+    .row3{grid-template-columns:1fr}
+    .dots,.ring{display:none}
+
+    /* stats bar 2x2 */
+    .stats-bar{grid-template-columns:repeat(2,1fr);gap:26px 10px;padding:26px 18px;margin:28px 0 44px}
+    .sb{justify-content:flex-start;gap:14px}
+    .sb:not(:last-child)::after{display:none}
+    .sb .sb-ic,.sb .sb-ic svg{width:38px;height:38px}
+    .sb .n{font-size:28px}
+    .sb .l{font-size:12px}
+  }
+
+  /* ---- Very small phones ---- */
+  @media(max-width:380px){
+    h1.title{font-size:34px}
+    .fin-grid{grid-template-columns:1fr}
+    .stats-bar{grid-template-columns:1fr}
+  }
+
+  /* ---- apps + footer responsive ---- */
+  @media(max-width:980px){
+    .apps-grid{grid-template-columns:repeat(2,1fr);gap:18px}
+    .foot-grid{grid-template-columns:1fr 1fr;gap:34px 30px}
+    .foot-brand{grid-column:1 / -1}
+    .viz-top{grid-template-columns:1fr;gap:30px}
+    .viz-head .sub{max-width:none}
+    .viz-grid{grid-template-columns:repeat(2,1fr)}
+    .viz-features{grid-template-columns:repeat(2,1fr);gap:24px}
+  }
+  @media(max-width:560px){
+    .apps{padding:44px 0 0}
+    .apps-grid{grid-template-columns:1fr;gap:14px}
+    .app-card p{min-height:0}
+    .foot-grid{grid-template-columns:1fr;gap:30px}
+    .footer{padding-top:50px}
+    .foot-bottom-inner{flex-direction:column;align-items:flex-start;gap:14px}
+    .foot-bottom .legal{gap:18px}
+    .viz{padding:48px 0 0}
+    .viz-grid{grid-template-columns:1fr;gap:14px}
+    .viz-features{grid-template-columns:1fr;gap:18px;padding:24px 22px}
+    .viz-tag{flex-direction:column;gap:14px}
+    .viz-tag .tl{width:55%;flex:none}
+    .viz-tag .tx{white-space:normal;text-align:center}
+  }
+
+  @media(prefers-reduced-motion:reduce){
+    .reveal{animation:none;opacity:1;transform:none}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<header class="nav">
+  <div class="wrap nav-inner reveal d1">
+    <a class="brand" href="#" aria-label="Orange — Orang O Tec">
+      <img class="logo-img" src="assets/Orang_O_Tec_logo.jpg" alt="Orange — Orang O Tec" />
+    </a>
+    <button class="hamburger" id="hamb" aria-label="Toggle menu" aria-expanded="false" aria-controls="navc">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-collapse" id="navc">
+      <div class="nav-divider"></div>
+      <nav class="menu">
+        <a href="#" class="active">Orange One</a>
+        <a href="#">Applications <span class="caret">▼</span></a>
+        <a href="#">Dashboards</a>
+        <a href="#">Workflows</a>
+        <a href="#">Reports</a>
+      </nav>
+      <button class="btn-outline">Open Workspace
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="wrap hero">
+  <!-- LEFT -->
+  <div class="hero-copy">
+    <span class="badge reveal d1">Welcome to Orange One</span>
+    <h1 class="title reveal d2">One Platform.<br>Every <span class="o">Workflow.</span></h1>
+    <p class="lede reveal d3">Manage operations, approvals, tasks and business insights from a single unified platform built for Orange O Tec.</p>
+    <div class="cta-row reveal d4">
+      <button class="btn primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        Explore Applications
+      </button>
+      <button class="btn ghost">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="7" width="3" height="10"/><rect x="16" y="13" width="3" height="4"/></svg>
+        View Dashboards
+      </button>
+    </div>
+  </div>
+
+  <!-- RIGHT : DASHBOARD MOCK -->
+  <div class="dash-wrap reveal d3">
+    <div class="ring r1" data-parallax="0.06"></div>
+    <div class="ring r2" data-parallax="-0.04"></div>
+    <svg class="dots" viewBox="0 0 150 112" data-parallax="0.1"><defs><pattern id="dg" width="15" height="15" patternUnits="userSpaceOnUse"><circle cx="2.2" cy="2.2" r="2.2" fill="#C3D2E8"/></pattern></defs><rect width="150" height="112" fill="url(#dg)"/></svg>
+    <div class="dash">
+      <!-- sidebar -->
+      <div class="side">
+        <div class="s-logo">
+          <svg width="16" height="16" viewBox="0 0 64 64"><path d="M12 38a20 20 0 0 0 40 0Z" fill="none" stroke="#fff" stroke-width="3.4"/><path d="M18 33c5-9 15-13 24-8" stroke="#FF6A1F" stroke-width="4.5" stroke-linecap="round" fill="none"/></svg>
+        </div>
+        <div class="s-ic active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg></div>
+        <div class="s-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></div>
+        <div class="s-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.5a2 2 0 0 0 2 1.5h8.6a2 2 0 0 0 2-1.6L23 7H6"/></svg></div>
+        <div class="s-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16 14c3 0 5 2 5 5"/></svg></div>
+        <div class="s-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 13.4H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 5 6.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10.6 3H11a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8Z"/></svg></div>
+      </div>
+      <!-- panel -->
+      <div class="panel">
+        <div class="dash-top">
+          <h3>Dashboard Overview</h3>
+          <div class="greet">Good Morning, Admin
+            <span class="bell"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+            <span class="ava">A</span>
+          </div>
+        </div>
+
+        <!-- stat cards -->
+        <div class="stat-grid">
+          <div class="stat">
+            <div class="lbl">Tasks Due</div>
+            <div class="row"><div class="num">32</div><div class="pic ic-o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9"/></svg></div></div>
+            <div class="delta">↑ 12% vs last week</div>
+          </div>
+          <div class="stat">
+            <div class="lbl">Pending Approvals</div>
+            <div class="row"><div class="num">18</div><div class="pic ic-b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></div></div>
+            <div class="delta">↑ 7% vs last week</div>
+          </div>
+          <div class="stat">
+            <div class="lbl">Purchase Requests</div>
+            <div class="row"><div class="num">24</div><div class="pic ic-g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v4h8V3"/><path d="M9 13l2 2 4-4"/></svg></div></div>
+            <div class="delta">↑ 9% vs last week</div>
+          </div>
+          <div class="stat">
+            <div class="lbl">Open Workflows</div>
+            <div class="row"><div class="num">15</div><div class="pic ic-p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h6v6H4zM14 11h6v6h-6z"/><path d="M10 9h4"/></svg></div></div>
+            <div class="delta">↑ 5% vs last week</div>
+          </div>
+        </div>
+
+        <!-- workflow + financial -->
+        <div class="row2">
+          <div class="box">
+            <h4>Workflow Status</h4>
+            <div class="wf">
+              <div class="donut">
+                <svg width="96" height="96" viewBox="0 0 42 42">
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="#EEF2F8" stroke-width="6"/>
+                  <circle class="seg s1" style="--v:47 53" cx="21" cy="21" r="15.9" fill="none" stroke="#2EC4B6" stroke-width="6" stroke-linecap="round" stroke-dashoffset="25"/>
+                  <circle class="seg s2" style="--v:29 71" cx="21" cy="21" r="15.9" fill="none" stroke="#3B82F6" stroke-width="6" stroke-linecap="round" stroke-dashoffset="-22"/>
+                  <circle class="seg s3" style="--v:15 85" cx="21" cy="21" r="15.9" fill="none" stroke="#F8B62B" stroke-width="6" stroke-linecap="round" stroke-dashoffset="-51"/>
+                  <circle class="seg s4" style="--v:9 91" cx="21" cy="21" r="15.9" fill="none" stroke="#FF6A1F" stroke-width="6" stroke-linecap="round" stroke-dashoffset="-66"/>
+                </svg>
+                <div class="center"><b>68</b><span>Total</span></div>
+              </div>
+              <div class="legend">
+                <div class="li"><span class="dot" style="background:#2EC4B6"></span>Completed <b>32</b><span class="pc">(47%)</span></div>
+                <div class="li"><span class="dot" style="background:#3B82F6"></span>In Progress <b>20</b><span class="pc">(29%)</span></div>
+                <div class="li"><span class="dot" style="background:#F8B62B"></span>Pending <b>10</b><span class="pc">(15%)</span></div>
+                <div class="li"><span class="dot" style="background:#FF6A1F"></span>On Hold <b>6</b><span class="pc">(9%)</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="box">
+            <div class="hh"><h4 style="margin:0">Key Financial Overview</h4><span class="pill-sel">This Month ▾</span></div>
+            <div class="fin-grid">
+              <div class="fin">
+                <div class="ft">Receivables</div>
+                <div class="fv">₹ 2.45 Cr</div>
+                <div class="fd">↑ 6.6% vs last month</div>
+                <svg viewBox="0 0 120 30" preserveAspectRatio="none"><defs><linearGradient id="go" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF6A1F" stop-opacity=".28"/><stop offset="1" stop-color="#FF6A1F" stop-opacity="0"/></linearGradient></defs><path class="area" d="M0 24 L15 20 L30 22 L45 14 L60 17 L75 9 L90 12 L105 5 L120 8 L120 30 L0 30Z" fill="url(#go)"/><path class="line" pathLength="100" d="M0 24 L15 20 L30 22 L45 14 L60 17 L75 9 L90 12 L105 5 L120 8" fill="none" stroke="#FF6A1F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+              <div class="fin">
+                <div class="ft">Customer Outstanding</div>
+                <div class="fv">₹ 3.18 Cr</div>
+                <div class="fd">↑ 6.3% vs last month</div>
+                <svg viewBox="0 0 120 30" preserveAspectRatio="none"><defs><linearGradient id="gb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B82F6" stop-opacity=".26"/><stop offset="1" stop-color="#3B82F6" stop-opacity="0"/></linearGradient></defs><path class="area" d="M0 22 L15 24 L30 17 L45 19 L60 12 L75 15 L90 8 L105 11 L120 5 L120 30 L0 30Z" fill="url(#gb)"/><path class="line" pathLength="100" d="M0 22 L15 24 L30 17 L45 19 L60 12 L75 15 L90 8 L105 11 L120 5" fill="none" stroke="#3B82F6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- recent + quick -->
+        <div class="row3">
+          <div class="box act">
+            <h4>Recent Activities</h4>
+            <div class="ai"><svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>Purchase request PR-2024-089 has been approved<span class="t">2 mins ago</span></div>
+            <div class="ai"><svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Workflow WF-2024-156 moved to next stage<span class="t">15 mins ago</span></div>
+            <div class="ai"><svg class="ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>New task assigned: Vendor Evaluation<span class="t">1 hour ago</span></div>
+          </div>
+          <div class="box">
+            <h4>Quick Access</h4>
+            <div class="qa-grid">
+              <div class="qa"><div class="qi ic-b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M9 8h6M9 12h6"/></svg></div><span>Task<br>Management</span></div>
+              <div class="qa"><div class="qi ic-o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.4 12.5a2 2 0 0 0 2 1.5h8.6a2 2 0 0 0 2-1.6L23 7H6"/></svg></div><span>Purchase<br>Workflow</span></div>
+              <div class="qa"><div class="qi ic-p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-4 3.5-6 7-6s7 2 7 6"/></svg></div><span>Vendor<br>Management</span></div>
+              <div class="qa"><div class="qi ic-o"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v14H4z"/><path d="M8 10l3 3 5-6"/></svg></div><span>Approvals<br>Center</span></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ STATS BAR ============ -->
+<section class="wrap">
+  <div class="stats-bar reveal d4">
+    <div class="sb">
+      <span class="sb-ic"><svg viewBox="0 0 48 48" fill="none" stroke="#0B1B40" stroke-width="2"><circle cx="24" cy="15" r="7"/><path d="M11 40c0-7 6-12 13-12s13 5 13 12"/><path d="M17 39l3-3 4 3 4-3 3 3" stroke="#FF6A1F"/></svg></span>
+      <div><div class="n">15+</div><div class="l">Years of Experience</div></div>
+    </div>
+    <div class="sb">
+      <span class="sb-ic"><svg viewBox="0 0 48 48" fill="none" stroke="#0B1B40" stroke-width="2"><path d="M24 6l3 4 5-1 1 5 4 3-3 4 1 5-5 1-3 4-4-3-4 3-3-4-5-1 1-5-3-4 4-3 1-5 5 1z"/><path d="M19 24l4 4 7-8" stroke="#FF6A1F"/></svg></span>
+      <div><div class="n">600+</div><div class="l">Successful Installations</div></div>
+    </div>
+    <div class="sb">
+      <span class="sb-ic"><svg viewBox="0 0 48 48" fill="none" stroke="#0B1B40" stroke-width="2"><circle cx="24" cy="16" r="5"/><circle cx="12" cy="19" r="4"/><circle cx="36" cy="19" r="4"/><path d="M14 38c0-6 4-10 10-10s10 4 10 10"/><path d="M4 38c0-4 2-7 6-8M44 38c0-4-2-7-6-8" stroke="#FF6A1F"/></svg></span>
+      <div><div class="n">140+</div><div class="l">Team Strength</div></div>
+    </div>
+    <div class="sb">
+      <span class="sb-ic"><svg viewBox="0 0 48 48" fill="none" stroke="#0B1B40" stroke-width="2"><circle cx="24" cy="15" r="7"/><path d="M11 40c0-7 6-12 13-12s13 5 13 12"/><path d="M31 9a8 8 0 0 1 0 12" stroke="#FF6A1F"/><path d="M17 9a8 8 0 0 0 0 12" stroke="#FF6A1F"/></svg></span>
+      <div><div class="n">75+</div><div class="l">Service Engineers</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SECTION 2 : OPERATIONAL APPS ============ -->
+<section class="apps">
+  <div class="deco-arc"></div>
+  <svg class="deco-dots" viewBox="0 0 90 120"><defs><pattern id="dg2" width="15" height="15" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="2" fill="#CBD7EA"/></pattern></defs><rect width="90" height="120" fill="url(#dg2)"/></svg>
+  <div class="wrap apps-inner">
+    <div class="eyebrow reveal d1"><span class="num">02</span><span class="sep"></span><span class="lab">Applications</span></div>
+    <h2 class="reveal d2">Operational Apps Built for <span class="o">Orange</span></h2>
+    <p class="sub reveal d3">Digitized workflows that streamline daily operations across departments.</p>
+
+    <div class="apps-grid">
+      <!-- 1 -->
+      <article class="app-card is-active reveal d2">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5V3.5h6v1"/><path d="M8.5 12l2.1 2.1L15.5 9.5" stroke="#FF6A1F"/></svg></div>
+        <h3>Task Management</h3>
+        <p>Track assignments, priorities, and team progress.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 2 -->
+      <article class="app-card reveal d3">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.3"/><circle cx="18" cy="20" r="1.3"/><path d="M2 3h3l2.4 12.5a2 2 0 0 0 2 1.5h8.6a2 2 0 0 0 2-1.6L23 7H6"/></svg></div>
+        <h3>Purchase Requests</h3>
+        <p>Raise and manage procurement requests seamlessly.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 3 -->
+      <article class="app-card reveal d4">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h7l5 5v13H6z"/><path d="M13 3v5h5"/><circle cx="12" cy="14" r="3.1" stroke="#FF6A1F"/><path d="M10.7 14l1 1 1.7-1.9" stroke="#FF6A1F"/></svg></div>
+        <h3>Purchase Approvals</h3>
+        <p>Review, approve, and track purchasing decisions.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 4 -->
+      <article class="app-card reveal d5">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10" cy="8" r="3.1"/><path d="M4 19c0-3.3 2.7-5.4 6-5.4"/><circle cx="17.6" cy="15.6" r="2" stroke="#FF6A1F"/><path d="M17.6 12.9v-1.1M17.6 19.4v-1.1M20.2 15.6h1.1M13.9 15.6h1.1" stroke="#FF6A1F"/></svg></div>
+        <h3>Vendor Management</h3>
+        <p>Maintain supplier information and performance records.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 5 -->
+      <article class="app-card reveal d2">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg></div>
+        <h3>Inventory Workflow</h3>
+        <p>Monitor stock movement and inventory operations.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 6 -->
+      <article class="app-card reveal d3">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6.2a3.8 3.8 0 0 0-5 5L4.5 16.7 7.3 19.5 12.8 14a3.8 3.8 0 0 0 5-5l-2.3 2.3-2-.6-.6-2z" stroke="#FF6A1F"/><path d="M5 19l-1.2 1.2"/></svg></div>
+        <h3>Service Management</h3>
+        <p>Manage service requests and field operations.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 7 -->
+      <article class="app-card reveal d4">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 19c0-3.3 2.7-5 6-5s6 1.7 6 5"/><circle cx="17.6" cy="9" r="2.3" stroke="#FF6A1F"/><path d="M16 14c3.1 0 5 2 5 5" stroke="#FF6A1F"/></svg></div>
+        <h3>HR Requests</h3>
+        <p>Handle employee requests and internal approvals.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+      <!-- 8 -->
+      <article class="app-card reveal d5">
+        <div class="app-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h7l5 5v13H6z"/><path d="M13 3v5h5"/><path d="M9 12.5h6M9 15.5h6M9 9.5h3"/></svg></div>
+        <h3>Document Approvals</h3>
+        <p>Digitize review cycles and approval workflows.</p>
+        <div class="app-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg></div>
+      </article>
+    </div>
+
+    <!-- section 2 stats -->
+    <div class="stats-bar compact reveal d4">
+      <div class="sb">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span>
+        <div><div class="n">8</div><div class="l">Active Applications</div></div>
+      </div>
+      <div class="sb">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16 14c3 0 5 2 5 5"/></svg></span>
+        <div><div class="n">100+</div><div class="l">Daily Users</div></div>
+      </div>
+      <div class="sb">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="12" r="2.3"/><circle cx="18" cy="6" r="2.3"/><circle cx="18" cy="18" r="2.3"/><path d="M8 11l8-4M8 13l8 4"/></svg></span>
+        <div><div class="n">25+</div><div class="l">Automated Workflows</div></div>
+      </div>
+      <div class="sb">
+        <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 12h6M9 15.5h6"/></svg></span>
+        <div><div class="n">1000+</div><div class="l">Approval Requests Processed</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SECTION 3 : REAL-TIME VISIBILITY ============ -->
+<section class="viz">
+  <div class="deco-arc"></div>
+  <div class="wrap viz-inner">
+    <div class="viz-top">
+      <!-- left heading -->
+      <div class="viz-head">
+        <svg class="deco-dots" viewBox="0 0 78 92" data-parallax="0.08"><defs><pattern id="dg3" width="15" height="15" patternUnits="userSpaceOnUse"><circle cx="2.2" cy="2.2" r="2.2" fill="#C3D2E8"/></pattern></defs><rect width="78" height="92" fill="url(#dg3)"/></svg>
+        <div class="eyebrow reveal d1"><span class="num">03</span><span class="sep"></span><span class="lab">Dashboards</span></div>
+        <h2 class="reveal d2">Real-Time Business <span class="o">Visibility</span></h2>
+        <p class="sub reveal d3">Live dashboards powered by Tally and internal systems, providing accurate operational and financial insights.</p>
+        <div class="uline reveal d3"></div>
+        <button class="btn-outline reveal d4">View All Dashboards
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </div>
+
+      <!-- right card grid -->
+      <div class="viz-grid">
+        <!-- 1 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-orange"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.4"/><path d="M5 20c0-3.6 3-6 7-6s7 2.4 7 6"/></svg></div><div class="vtitle">Customer<br>Outstanding</div></div>
+          <div class="vval">₹ 3.18 Cr</div>
+          <div class="vdelta">↑ 6.8% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF6A1F" stop-opacity=".26"/><stop offset="1" stop-color="#FF6A1F" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 48 L25 44 L50 46 L75 38 L100 40 L125 30 L150 33 L175 22 L200 18 L200 64 L0 64Z" fill="url(#v1)"/><path class="vline" pathLength="100" d="M0 48 L25 44 L50 46 L75 38 L100 40 L125 30 L150 33 L175 22 L200 18" fill="none" stroke="#FF6A1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 2 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 14l3-3 2 2 4-4"/></svg></div><div class="vtitle">Receivables<br>Dashboard</div></div>
+          <div class="vval">₹ 2.45 Cr</div>
+          <div class="vdelta">↑ 8.6% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B82F6" stop-opacity=".24"/><stop offset="1" stop-color="#3B82F6" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 50 L25 46 L50 48 L75 40 L100 36 L125 38 L150 28 L175 24 L200 16 L200 64 L0 64Z" fill="url(#v2)"/><path class="vline" pathLength="100" d="M0 50 L25 46 L50 48 L75 40 L100 36 L125 38 L150 28 L175 24 L200 16" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 3 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><rect x="5" y="12" width="3" height="6"/><rect x="10.5" y="8" width="3" height="10"/><rect x="16" y="4" width="3" height="14"/></svg></div><div class="vtitle">Sales<br>Performance</div></div>
+          <div class="vval">₹ 18.75 Cr</div>
+          <div class="vdelta">↑ 12.4% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v3" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22B473" stop-opacity=".26"/><stop offset="1" stop-color="#22B473" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 52 L25 48 L50 44 L75 46 L100 36 L125 30 L150 26 L175 18 L200 10 L200 64 L0 64Z" fill="url(#v3)"/><path class="vline" pathLength="100" d="M0 52 L25 48 L50 44 L75 46 L100 36 L125 30 L150 26 L175 18 L200 10" fill="none" stroke="#22B473" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 4 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6.4 9.5h.01M17.6 14.5h.01"/></svg></div><div class="vtitle">Collections<br>Tracking</div></div>
+          <div class="vval">₹ 2.02 Cr</div>
+          <div class="vdelta">↑ 9.3% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v4" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9B6DFF" stop-opacity=".26"/><stop offset="1" stop-color="#9B6DFF" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 46 L25 44 L50 38 L75 42 L100 34 L125 36 L150 26 L175 28 L200 18 L200 64 L0 64Z" fill="url(#v4)"/><path class="vline" pathLength="100" d="M0 46 L25 44 L50 38 L75 42 L100 34 L125 36 L150 26 L175 28 L200 18" fill="none" stroke="#9B6DFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 5 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg></div><div class="vtitle">Inventory<br>Status</div></div>
+          <div class="vval">₹ 9.65 Cr</div>
+          <div class="vdelta">↑ 4.7% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v5" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B82F6" stop-opacity=".24"/><stop offset="1" stop-color="#3B82F6" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 44 L25 40 L50 46 L75 38 L100 42 L125 32 L150 36 L175 26 L200 22 L200 64 L0 64Z" fill="url(#v5)"/><path class="vline" pathLength="100" d="M0 44 L25 40 L50 46 L75 38 L100 42 L125 32 L150 36 L175 26 L200 22" fill="none" stroke="#3B82F6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 6 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-amber"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.6 5.4a3.6 3.6 0 0 0-4.9 4.9L4 16l4 4 5.7-5.7a3.6 3.6 0 0 0 4.9-4.9l-2.2 2.2-1.9-.5-.5-1.9z"/><path d="M6.5 17.5l-1 1"/></svg></div><div class="vtitle">Service<br>Performance</div></div>
+          <div class="vval">92.6%</div>
+          <div class="vdelta">↑ 5.2% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v6" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2A516" stop-opacity=".26"/><stop offset="1" stop-color="#F2A516" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 50 L25 44 L50 46 L75 36 L100 38 L125 28 L150 30 L175 20 L200 16 L200 64 L0 64Z" fill="url(#v6)"/><path class="vline" pathLength="100" d="M0 50 L25 44 L50 46 L75 36 L100 38 L125 28 L150 30 L175 20 L200 16" fill="none" stroke="#F2A516" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 7 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.5a2 2 0 0 0 2 1.5h8.6a2 2 0 0 0 2-1.6L23 7H6"/></svg></div><div class="vtitle">Purchase<br>Analytics</div></div>
+          <div class="vval">₹ 11.32 Cr</div>
+          <div class="vdelta down">↓ 3.6% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v7" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#23B6AB" stop-opacity=".26"/><stop offset="1" stop-color="#23B6AB" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 20 L25 24 L50 18 L75 26 L100 30 L125 28 L150 36 L175 34 L200 42 L200 64 L0 64Z" fill="url(#v7)"/><path class="vline" pathLength="100" d="M0 20 L25 24 L50 18 L75 26 L100 30 L125 28 L150 36 L175 34 L200 42" fill="none" stroke="#23B6AB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+        <!-- 8 -->
+        <article class="viz-card reveal">
+          <div class="vtop"><div class="vic t-purple"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 12V3M12 12l7.5 4.5"/></svg></div><div class="vtitle">Financial<br>Summary</div></div>
+          <div class="vval">₹ 25.41 Cr</div>
+          <div class="vdelta">↑ 7.9% vs last month</div>
+          <div class="vspark"><svg viewBox="0 0 200 64" preserveAspectRatio="none"><defs><linearGradient id="v8" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9B6DFF" stop-opacity=".26"/><stop offset="1" stop-color="#9B6DFF" stop-opacity="0"/></linearGradient></defs><path class="varea" d="M0 48 L25 42 L50 44 L75 34 L100 38 L125 28 L150 24 L175 18 L200 12 L200 64 L0 64Z" fill="url(#v8)"/><path class="vline" pathLength="100" d="M0 48 L25 42 L50 44 L75 34 L100 38 L125 28 L150 24 L175 18 L200 12" fill="none" stroke="#9B6DFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        </article>
+      </div>
+    </div>
+
+    <!-- feature strip -->
+    <div class="viz-features stagger">
+      <div class="vfeat" style="--i:0">
+        <div class="circ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 13V9.2M12 13l3 1.8M9 3h6"/></svg></div>
+        <div><h4>Real-Time Data</h4><p>Live updates from integrated systems and Tally.</p></div>
+      </div>
+      <div class="vfeat" style="--i:1">
+        <div class="circ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg></div>
+        <div><h4>Accurate &amp; Reliable</h4><p>Validated data for confident decision making.</p></div>
+      </div>
+      <div class="vfeat" style="--i:2">
+        <div class="circ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16"/><rect x="5" y="12" width="3" height="6"/><rect x="10.5" y="8" width="3" height="10"/><rect x="16" y="5" width="3" height="13"/></svg></div>
+        <div><h4>Actionable Insights</h4><p>Clear insights that help teams act faster.</p></div>
+      </div>
+      <div class="vfeat" style="--i:3">
+        <div class="circ"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3"/><path d="M3 19c0-3.3 2.7-5 6-5s6 1.7 6 5"/><circle cx="17.5" cy="10" r="2.4"/><path d="M16 15c3 0 5 2 5 4"/></svg></div>
+        <div><h4>Department-Wise View</h4><p>Role based dashboards for every business function.</p></div>
+      </div>
+    </div>
+
+    <!-- tagline -->
+    <div class="viz-tag reveal">
+      <span class="tl left"></span>
+      <span class="tx">One source of truth for <span class="o">every department.</span></span>
+      <span class="tl right"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer class="footer">
+  <div class="wrap foot-grid stagger">
+    <div class="foot-brand" style="--i:0">
+      <div class="brand-dark">
+        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M10 38a22 22 0 0 0 44 0Z" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linejoin="round"/>
+          <path d="M14 34c4-12 14-19 24-15" stroke="#9FB0CF" stroke-width="5" stroke-linecap="round"/>
+          <path d="M20 33c5-10 15-14 24-9" stroke="#FF6A1F" stroke-width="5" stroke-linecap="round"/>
+          <path d="M30 32c5-6 12-7 18-3" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+        </svg>
+        <span class="w">ORANGE</span>
+      </div>
+      <p>One unified platform to manage operations, approvals, tasks and business insights — built for Orange O Tec.</p>
+      <div class="socials">
+        <a href="#" aria-label="LinkedIn"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M4.98 3.5A2.5 2.5 0 1 1 0 3.5a2.5 2.5 0 0 1 4.98 0zM0 8h5v16H0zM7.5 8h4.8v2.2h.07c.67-1.2 2.3-2.5 4.73-2.5 5.06 0 6 3.3 6 7.6V24h-5v-7.1c0-1.7 0-3.9-2.37-3.9-2.38 0-2.74 1.85-2.74 3.77V24h-5z"/></svg></a>
+        <a href="#" aria-label="X"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M18.9 2H22l-7.3 8.3L23 22h-6.7l-5.2-6.8L5.1 22H2l7.8-8.9L1.4 2h6.8l4.7 6.2zM17.8 20h1.7L7.3 3.9H5.5z"/></svg></a>
+        <a href="#" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.6 4.5-4.6 1.3 0 2.7.23 2.7.23v2.9h-1.5c-1.5 0-2 .93-2 1.9V12h3.3l-.53 3.5h-2.8v8.4A12 12 0 0 0 24 12z"/></svg></a>
+        <a href="#" aria-label="YouTube"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M23.5 6.5a3 3 0 0 0-2.1-2.1C19.5 3.9 12 3.9 12 3.9s-7.5 0-9.4.5A3 3 0 0 0 .5 6.5 31 31 0 0 0 0 12a31 31 0 0 0 .5 5.5 3 3 0 0 0 2.1 2.1c1.9.5 9.4.5 9.4.5s7.5 0 9.4-.5a3 3 0 0 0 2.1-2.1A31 31 0 0 0 24 12a31 31 0 0 0-.5-5.5zM9.6 15.6V8.4l6.3 3.6z"/></svg></a>
+      </div>
+    </div>
+
+    <div class="foot-col" style="--i:1">
+      <h5>Platform</h5>
+      <a href="#">Orange One</a>
+      <a href="#">Applications</a>
+      <a href="#">Dashboards</a>
+      <a href="#">Workflows</a>
+      <a href="#">Reports</a>
+    </div>
+
+    <div class="foot-col" style="--i:2">
+      <h5>Modules</h5>
+      <a href="#">Task Management</a>
+      <a href="#">Purchase Workflow</a>
+      <a href="#">Vendor Management</a>
+      <a href="#">Approvals Center</a>
+      <a href="#">HR Requests</a>
+    </div>
+
+    <div class="foot-col" style="--i:3">
+      <h5>Get in touch</h5>
+      <a class="ic-line" href="mailto:hello@orangeotec.com"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>hello@orangeotec.com</a>
+      <a class="ic-line" href="tel:+912212345678"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.7a2 2 0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6 6l1.1-1.1a2 2 0 0 1 2.1-.5c.9.3 1.8.5 2.7.6a2 2 0 0 1 1.7 2z"/></svg>+91 22 1234 5678</a>
+      <div class="ic-line"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 6-9 12-9 12s-9-6-9-12a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Mumbai, Maharashtra, India</div>
+      <button class="btn-outline foot-cta">Open Workspace
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="foot-bottom">
+    <div class="wrap foot-bottom-inner">
+      <span>© 2026 Orange O Tec. All rights reserved.</span>
+      <div class="legal">
+        <a href="#">Privacy Policy</a>
+        <a href="#">Terms of Service</a>
+        <a href="#">Cookie Settings</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var hamb=document.getElementById('hamb');
+    var navc=document.getElementById('navc');
+    if(!hamb||!navc) return;
+    hamb.addEventListener('click',function(){
+      var open=navc.classList.toggle('open');
+      hamb.classList.toggle('active',open);
+      hamb.setAttribute('aria-expanded',open);
+    });
+    navc.querySelectorAll('a, .btn-outline').forEach(function(el){
+      el.addEventListener('click',function(){
+        navc.classList.remove('open');
+        hamb.classList.remove('active');
+        hamb.setAttribute('aria-expanded','false');
+      });
+    });
+  })();
+</script>
+
+<script>
+  /* ===== World-class motion engine ===== */
+  (function(){
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var hasIO  = 'IntersectionObserver' in window;
+    var revealEls = document.querySelectorAll('.reveal, .stagger');
+
+    var dash = document.querySelector('.dash');
+    var counters = document.querySelectorAll('.stat .num, .donut .center b, .fin .fv, .sb .n, .viz-card .vval');
+
+    function inView(el, frac){
+      var r = el.getBoundingClientRect();
+      if(r.width===0 && r.height===0) return false;
+      return r.top < window.innerHeight * (frac||0.92) && r.bottom > 0;
+    }
+
+    /* ---- Count-up numbers ---- */
+    function animateCount(el){
+      var raw = el.getAttribute('data-raw') || el.textContent;
+      el.setAttribute('data-raw', raw);
+      var m = raw.match(/^(\D*?)([\d.,]+)(.*)$/);
+      if(!m) return;
+      var prefix=m[1], numStr=m[2], suffix=m[3];
+      var decimals = (numStr.split('.')[1]||'').length;
+      var hasComma = /,/.test(numStr);
+      var target = parseFloat(numStr.replace(/,/g,''));
+      if(isNaN(target)) return;
+      var dur=1300, start=null;
+      function fmt(v){
+        var s = decimals ? v.toFixed(decimals) : Math.round(v).toString();
+        if(hasComma) s = Number(s).toLocaleString('en-IN');
+        return prefix + s + suffix;
+      }
+      function step(ts){
+        if(start===null) start=ts;
+        var p=Math.min((ts-start)/dur,1);
+        el.textContent = fmt(target*(1-Math.pow(1-p,3)));
+        if(p<1){ requestAnimationFrame(step); } else { el.textContent = fmt(target); }
+      }
+      el.textContent = fmt(0);
+      requestAnimationFrame(step);
+    }
+
+    if(reduce || !hasIO){
+      revealEls.forEach(function(el){ el.classList.add('in'); });
+      if(dash) dash.classList.add('in');
+      /* counters keep their static final values */
+    } else {
+      var io = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+      }, {threshold:0.14, rootMargin:'0px 0px -7% 0px'});
+      var dio = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add('in'); dio.unobserve(e.target); } });
+      }, {threshold:0.3});
+      var cio = new IntersectionObserver(function(entries){
+        entries.forEach(function(e){ if(e.isIntersecting){ animateCount(e.target); cio.unobserve(e.target); } });
+      }, {threshold:0.6});
+
+      revealEls.forEach(function(el){ io.observe(el); });
+      if(dash) dio.observe(dash);
+      counters.forEach(function(el){ cio.observe(el); });
+
+      /* Immediate sweep so already-visible content reveals at once (no wait for first IO tick) */
+      requestAnimationFrame(function(){
+        revealEls.forEach(function(el){ if(inView(el)){ el.classList.add('in'); io.unobserve(el); } });
+        if(dash && inView(dash, 0.7)){ dash.classList.add('in'); dio.unobserve(dash); }
+        counters.forEach(function(el){ if(inView(el, 0.6)){ animateCount(el); cio.unobserve(el); } });
+      });
+    }
+
+    /* ---- Dashboard mouse tilt (fine pointers only) ---- */
+    if(!reduce && window.matchMedia('(pointer:fine)').matches){
+      var wrap = document.querySelector('.dash-wrap');
+      var card = document.querySelector('.dash');
+      if(wrap && card){
+        var raf=null, tx=0, ty=0;
+        function apply(){ card.style.transform='rotateX('+tx.toFixed(2)+'deg) rotateY('+ty.toFixed(2)+'deg)'; raf=null; }
+        wrap.addEventListener('mousemove', function(ev){
+          var r=wrap.getBoundingClientRect();
+          tx=((ev.clientY-r.top)/r.height-0.5)*-4.5;
+          ty=((ev.clientX-r.left)/r.width-0.5)*6;
+          if(!raf) raf=requestAnimationFrame(apply);
+        });
+        wrap.addEventListener('mouseleave', function(){ tx=0; ty=0; if(!raf) raf=requestAnimationFrame(apply); });
+      }
+    }
+
+    /* ---- Scroll parallax for decorations ---- */
+    if(!reduce){
+      var plx = document.querySelectorAll('[data-parallax]');
+      if(plx.length){
+        var ticking=false;
+        function onScroll(){
+          if(ticking) return; ticking=true;
+          requestAnimationFrame(function(){
+            var vh=window.innerHeight;
+            plx.forEach(function(el){
+              var r=el.getBoundingClientRect();
+              var off=(r.top + r.height/2) - vh/2;
+              var sp=parseFloat(el.getAttribute('data-parallax'))||0;
+              el.style.transform='translate3d(0,'+(off*sp).toFixed(1)+'px,0)';
+            });
+            ticking=false;
+          });
+        }
+        window.addEventListener('scroll', onScroll, {passive:true});
+        onScroll();
+      }
+    }
+  })();
+</script>
+</body>
+</html>

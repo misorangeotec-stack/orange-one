@@ -9,6 +9,14 @@ token.json
 .tmp/
 *.log
 
+# Node / frontend (React + Vite)
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/*.local
+.vite/
+
 # Python
 __pycache__/
 *.py[cod]
