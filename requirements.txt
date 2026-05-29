@@ -1,0 +1,12 @@
+# Core dependencies for the WAT framework tools.
+# Pin versions as the project stabilizes. Install with:
+#   pip install -r requirements.txt
+
+python-dotenv>=1.0.0      # Load .env into tools/config.py
+
+# --- Uncomment as tools start using them ---
+# requests>=2.31.0          # HTTP calls
+# anthropic>=0.40.0         # Claude API
+# google-api-python-client>=2.0.0   # Google Sheets/Slides/Drive
+# google-auth-oauthlib>=1.2.0
+# firecrawl-py>=1.0.0       # Web scraping
