@@ -20,10 +20,12 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [ ] 🔍 **Audit Phase 1**  ← run `cd frontend && npm run dev` → http://localhost:5173
 - [x] _Committed + pushed to GitHub (backup)_
 
-### Phase 2 — App shell + dashboard
-- [ ] **5. App Shell** (sidebar + topbar + notifications bell + user menu), role-aware nav
-- [ ] **6. Dashboard** — employee / HOD / admin variants
-- [ ] 🔍 **Audit Phase 2**
+### Phase 2 — App shell + dashboard  ✅ built · 🔍 awaiting audit
+- [x] **5. App Shell** — dark sidebar (role-aware nav), sticky topbar (notifications bell + user menu + dev "View as" role switcher), mobile drawer
+- [x] **6. Dashboard** — employee / HOD / admin variants (stat cards, today/team/dept panels, RYG bar, status donut, activity feed)
+- [x] _Mock data shaped like Supabase (real users/depts) + session context + selectors mirroring RLS_
+- [ ] 🔍 **Audit Phase 2** — `cd frontend && npm run dev` → log in → Task Management. Use the **"View as"** switcher (top-right) or `?role=admin|hod|sub_hod|employee`
+- [x] _Committed + pushed to GitHub_
 
 ### Phase 3 — Core task screens
 - [ ] **7. Tasks list** — My Tasks / Today / Follow-Up / Pending (tabbed)
