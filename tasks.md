@@ -10,13 +10,15 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 
 ## STAGE A — Frontend (UI only, mock data, on-theme to index.html)
 
-### Phase 1 — Foundation + entry screens  ← current
-- [~] **0. Scaffold** Vite + React + TS + Tailwind at repo root; port landing palette into theme; global styles; router skeleton; mock data + dev role switcher
-- [ ] **1. Landing `/`** — faithful rebuild of index.html (palette, Poppins, animations); wire Login / Open Workspace / Task Management buttons
-- [ ] **2. Login** screen (+ link to Forgot Password)
-- [ ] **3. Forgot Password / Reset Password** screens
-- [ ] **4. Workspace Home** (app launcher with app cards)
-- [ ] 🔍 **Audit Phase 1**
+### Phase 1 — Foundation + entry screens  ✅ built · 🔍 awaiting audit
+- [x] **0. Scaffold** Vite + React + TS + Tailwind in `frontend/`; clean module structure (core/shared/apps); theme ported from landing; configs minimized to root essentials
+- [x] **1. Landing `/`** — faithful rebuild of index.html (palette, Poppins, animations); Login / Open Workspace / Task Management buttons wired
+- [x] **2. Login** screen (+ link to Forgot Password)
+- [x] ~~3. Forgot/Reset Password screens~~ — removed per user: password reset lives in-app (Profile, later) or via admin; no public reset/forgot on login
+- [x] **4. Workspace Home** (registry-driven app launcher cards)
+- [ ] ⏳ **Add dark-background logo file** → `frontend/public/assets/orange-one-logo-dark.png` (provided by user); wiring already done
+- [ ] 🔍 **Audit Phase 1**  ← run `cd frontend && npm run dev` → http://localhost:5173
+- [x] _Committed + pushed to GitHub (backup)_
 
 ### Phase 2 — App shell + dashboard
 - [ ] **5. App Shell** (sidebar + topbar + notifications bell + user menu), role-aware nav

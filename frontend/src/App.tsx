@@ -1,8 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import Landing from "@/core/landing/Landing";
 import Login from "@/core/auth/Login";
-import ForgotPassword from "@/core/auth/ForgotPassword";
-import ResetPassword from "@/core/auth/ResetPassword";
 import WorkspaceHome from "@/core/workspace/WorkspaceHome";
 import { liveApps } from "@/apps/registry";
 
@@ -12,8 +10,6 @@ export default function App() {
       {/* ---- Portal core (landing + auth + launcher) ---- */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/home" element={<WorkspaceHome />} />
 
       {/* ---- Registered apps, each owns everything under its basePath ---- */}

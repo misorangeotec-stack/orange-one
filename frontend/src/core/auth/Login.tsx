@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import AuthLayout, { Field } from "./AuthLayout";
 
@@ -16,27 +16,16 @@ export default function Login() {
     <AuthLayout
       title="Welcome back"
       subtitle="Log in to your Orange O Tec workspace to continue."
-      footer={
-        <>
-          Trouble signing in?{" "}
-          <Link to="/forgot-password" className="text-orange font-semibold hover:underline">
-            Reset password
-          </Link>
-        </>
-      }
     >
       <form onSubmit={onSubmit}>
         <Field label="Email" type="email" placeholder="you@orangeotec.com" autoComplete="email" />
         <Field label="Password" type="password" placeholder="••••••••" autoComplete="current-password" />
 
-        <div className="flex items-center justify-between mb-6 mt-1">
+        <div className="flex items-center mb-6 mt-1">
           <label className="flex items-center gap-2 text-[13px] text-grey cursor-pointer select-none">
             <input type="checkbox" className="accent-orange w-4 h-4 rounded" />
             Remember me
           </label>
-          <Link to="/forgot-password" className="text-[13px] text-orange font-medium hover:underline">
-            Forgot password?
-          </Link>
         </div>
 
         <Button type="submit" className="w-full" size="lg">
@@ -48,8 +37,9 @@ export default function Login() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-[13px] text-grey-2">
-        Accounts are created by your workspace admin.
+      <p className="mt-6 text-center text-[13px] text-grey-2 leading-relaxed">
+        Accounts are created by your workspace admin. Forgot your password? Contact your admin to
+        have it reset.
       </p>
     </AuthLayout>
   );

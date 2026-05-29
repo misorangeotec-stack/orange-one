@@ -266,13 +266,7 @@ export const LANDING_HTML = `
   <div class="wrap foot-grid stagger">
     <div class="foot-brand" style="--i:0">
       <div class="brand-dark">
-        <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M10 38a22 22 0 0 0 44 0Z" fill="none" stroke="#FFFFFF" stroke-width="3.4" stroke-linejoin="round"/>
-          <path d="M14 34c4-12 14-19 24-15" stroke="#9FB0CF" stroke-width="5" stroke-linecap="round"/>
-          <path d="M20 33c5-10 15-14 24-9" stroke="#FF6A1F" stroke-width="5" stroke-linecap="round"/>
-          <path d="M30 32c5-6 12-7 18-3" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
-        </svg>
-        <span class="w">ORANGE</span>
+        <img src="/assets/orange-one-logo-dark.png" alt="Orange One — Orange O Tec" style="height:42px;width:auto;display:block" />
       </div>
       <p>One unified platform to manage operations, approvals, tasks and business insights — built for Orange O Tec.</p>
       <div class="socials">

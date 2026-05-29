@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import Logo from "@/shared/components/ui/Logo";
 
 /**
  * Branded split-screen layout for auth pages, themed to the Orange One landing.
@@ -28,14 +28,9 @@ export default function AuthLayout({
           className="pointer-events-none absolute -bottom-32 -left-20 w-[360px] h-[360px] rounded-full"
           style={{ background: "radial-gradient(circle at 50% 50%, rgba(46,196,182,.16), rgba(46,196,182,0) 65%)" }}
         />
-        <Link to="/" className="relative z-10 flex items-center gap-3">
-          <svg viewBox="0 0 64 64" width="40" height="40" fill="none">
-            <path d="M10 38a22 22 0 0 0 44 0Z" fill="none" stroke="#FFFFFF" strokeWidth="3.4" strokeLinejoin="round" />
-            <path d="M20 33c5-10 15-14 24-9" stroke="#FF6A1F" strokeWidth="5" strokeLinecap="round" />
-            <path d="M30 32c5-6 12-7 18-3" stroke="#FFFFFF" strokeWidth="5" strokeLinecap="round" />
-          </svg>
-          <span className="text-xl font-bold tracking-[3px]">ORANGE ONE</span>
-        </Link>
+        <div className="relative z-10">
+          <Logo variant="dark" height={40} />
+        </div>
 
         <div className="relative z-10 max-w-md">
           <h2 className="text-[34px] leading-tight font-bold">
@@ -54,14 +49,10 @@ export default function AuthLayout({
       {/* Form side */}
       <main className="relative flex items-center justify-center bg-page-grad px-6 py-12">
         <div className="w-full max-w-[400px]">
-          {/* mobile brand */}
-          <Link to="/" className="lg:hidden mb-8 flex items-center justify-center gap-2.5 text-navy">
-            <svg viewBox="0 0 64 64" width="34" height="34" fill="none">
-              <path d="M10 38a22 22 0 0 0 44 0Z" fill="none" stroke="#0B1B40" strokeWidth="3.4" strokeLinejoin="round" />
-              <path d="M20 33c5-10 15-14 24-9" stroke="#FF6A1F" strokeWidth="5" strokeLinecap="round" />
-            </svg>
-            <span className="text-lg font-bold tracking-[2px]">ORANGE ONE</span>
-          </Link>
+          {/* mobile brand (light background → light-variant logo) */}
+          <div className="lg:hidden mb-8 flex justify-center">
+            <Logo variant="light" height={34} />
+          </div>
 
           <div className="bg-white rounded-card-lg shadow-card border border-line p-8 sm:p-10">
             <h1 className="text-[26px] font-bold text-navy">{title}</h1>

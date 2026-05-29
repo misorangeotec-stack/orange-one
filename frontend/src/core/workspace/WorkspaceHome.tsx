@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { apps } from "@/apps/registry";
 import type { AppManifest } from "@/apps/types";
+import Logo from "@/shared/components/ui/Logo";
 
 /**
  * Post-login app launcher ("Workspace Home"). Renders one card per registered app
@@ -15,13 +16,7 @@ export default function WorkspaceHome() {
       {/* top bar */}
       <header className="border-b border-line bg-white/70 backdrop-blur">
         <div className="max-w-6xl mx-auto px-6 h-[68px] flex items-center justify-between">
-          <div className="flex items-center gap-2.5 text-navy">
-            <svg viewBox="0 0 64 64" width="30" height="30" fill="none">
-              <path d="M10 38a22 22 0 0 0 44 0Z" fill="none" stroke="#0B1B40" strokeWidth="3.4" strokeLinejoin="round" />
-              <path d="M20 33c5-10 15-14 24-9" stroke="#FF6A1F" strokeWidth="5" strokeLinecap="round" />
-            </svg>
-            <span className="text-lg font-bold tracking-[2px]">ORANGE ONE</span>
-          </div>
+          <Logo variant="light" height={32} to="/home" />
           <div className="flex items-center gap-3">
             <span className="hidden sm:block text-sm text-grey">Orange O Tec Workspace</span>
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-navy to-navy-2 text-white flex items-center justify-center text-sm font-semibold">
