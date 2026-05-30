@@ -55,10 +55,11 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] Searchable dropdowns (Combobox) everywhere
 - [x] Task actions: distinct buttons (Mark in progress / Revise / Mark complete); reschedule moved to Due date in Details (future-week date auto-shifts)
 
-### Phase 6 — Reports (Red/Yellow/Green)
-- [ ] **14. Reports** — Weekly (RYG), Employee, HOD, Department
-- [ ] **15. Activity History**
-- [ ] 🔍 **Audit Phase 6**
+### Phase 6 — Reports (Red/Yellow/Green)  ✅ built · 🔍 awaiting audit
+- [x] **14. Reports** — role-gated tabs Weekly / Employee / Team / Department; planned-vs-actual tiles, per-person RYG, status donut, avg RYG; contextual selectors (person/HOD/department)
+- [x] **15. Activity History** — filterable audit trail (by action type + person), role-scoped, timeline with task links
+- [x] _Report stat helpers (reportFor) in selectors_
+- [ ] 🔍 **Audit Phase 6** — `?role=admin` → Reports (try tabs) + Activity
 
 ### Phase 7 — Admin setup
 - [ ] **16. Setup** — Onboarding checklist, Departments, Users, Add/Edit User, Hierarchy mapping

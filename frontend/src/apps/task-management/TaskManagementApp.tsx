@@ -10,6 +10,8 @@ import TeamTasks from "./pages/TeamTasks";
 import AllTasks from "./pages/AllTasks";
 import RecurringList from "./pages/RecurringList";
 import RecurringForm from "./pages/RecurringForm";
+import Reports from "./pages/Reports";
+import ActivityHistory from "./pages/ActivityHistory";
 import ComingSoon from "./pages/ComingSoon";
 
 /**
@@ -32,8 +34,8 @@ export default function TaskManagementApp() {
             <Route path="recurring" element={<RecurringList />} />
             <Route path="recurring/new" element={<RecurringForm />} />
             <Route path="recurring/:id/edit" element={<RecurringForm />} />
-            <Route path="reports" element={<ComingSoon name="Reports" phase="Phase 6" />} />
-            <Route path="history" element={<ComingSoon name="Activity History" phase="Phase 6" />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="history" element={<ActivityHistory />} />
             <Route path="setup" element={<ComingSoon name="Admin Setup" phase="Phase 7" />} />
             <Route path="settings" element={<ComingSoon name="Settings" phase="Phase 8" />} />
           </Route>

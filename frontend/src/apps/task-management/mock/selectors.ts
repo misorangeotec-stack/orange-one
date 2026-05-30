@@ -48,6 +48,29 @@ export interface DashboardStats {
   statusCounts: Record<Task["status"], number>;
 }
 
+export interface PersonReport {
+  planned: number;
+  completed: number;
+  pending: number; // pending + in_progress
+  revised: number;
+  shifted: number;
+  revisionTotal: number;
+}
+
+/** Planned-vs-actual style report numbers for one person, from a task list. */
+export function reportFor(all: Task[], personId: string): PersonReport {
+  const mine = all.filter((t) => t.assignedTo === personId);
+  const r: PersonReport = { planned: mine.length, completed: 0, pending: 0, revised: 0, shifted: 0, revisionTotal: 0 };
+  for (const t of mine) {
+    if (t.status === "completed") r.completed++;
+    else if (t.status === "pending" || t.status === "in_progress") r.pending++;
+    else if (t.status === "revised") r.revised++;
+    else if (t.status === "shifted") r.shifted++;
+    r.revisionTotal += t.revisionCount;
+  }
+  return r;
+}
+
 export function computeStats(list: Task[]): DashboardStats {
   const statusCounts: Record<Task["status"], number> = {
     pending: 0,
