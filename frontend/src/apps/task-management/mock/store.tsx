@@ -1,10 +1,11 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Notification, Task, TaskActivity } from "../types";
+import type { Notification, RecurringTask, Task, TaskActivity } from "../types";
 import {
   activity as seedActivity,
   notifications as seedNotifications,
   profileById,
+  recurringTasks as seedRecurring,
   tasks as seedTasks,
   WEEK_START,
   WEEK_END,
@@ -54,6 +55,14 @@ interface TaskStoreValue {
    */
   rescheduleTask: (id: string, newDueDate: string) => string | null;
   addRemark: (id: string, note: string, mentionedIds: string[]) => void;
+
+  // recurring task templates
+  recurringTasks: RecurringTask[];
+  getRecurring: (id: string) => RecurringTask | undefined;
+  createRecurring: (input: Omit<RecurringTask, "id">) => string;
+  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => void;
+  toggleRecurring: (id: string) => void;
+  deleteRecurring: (id: string) => void;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -66,6 +75,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>(() => seedTasks.map((t) => ({ ...t })));
   const [activity, setActivity] = useState<TaskActivity[]>(() => seedActivity.map((a) => ({ ...a })));
   const [notifications, setNotifications] = useState<Notification[]>(() => seedNotifications.map((n) => ({ ...n })));
+  const [recurringTasks, setRecurring] = useState<RecurringTask[]>(() => seedRecurring.map((r) => ({ ...r })));
   const seq = useRef(1000);
   const nextId = (p: string) => `${p}${++seq.current}`;
 
@@ -208,8 +218,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           ]);
         }
       },
+
+      recurringTasks,
+      getRecurring: (id) => recurringTasks.find((r) => r.id === id),
+      createRecurring: (input) => {
+        const id = nextId("r");
+        setRecurring((prev) => [{ ...input, id }, ...prev]);
+        return id;
+      },
+      updateRecurring: (id, patch) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r))),
+      toggleRecurring: (id) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r))),
+      deleteRecurring: (id) => setRecurring((prev) => prev.filter((r) => r.id !== id)),
     };
-  }, [tasks, activity, notifications]);
+  }, [tasks, activity, notifications, recurringTasks]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

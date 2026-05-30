@@ -44,9 +44,16 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [ ] 🔍 **Audit Phase 4** (review with Phase 3) — `?role=hod` → Team Tasks; `?role=admin` → All Tasks
 - [x] _Committed + pushed to GitHub_
 
-### Phase 5 — Recurring tasks
-- [ ] **13. Recurring list** + **Create/Edit recurring**
-- [ ] 🔍 **Audit Phase 5**
+### Phase 5 — Recurring tasks  ✅ built · 🔍 awaiting audit
+- [x] **13. Recurring list** — daily/weekly templates, frequency text, assignee, active/pause toggle, edit + delete (confirm)
+- [x] **Create/Edit Recurring** — title, description, assignee, Daily/Weekly toggle, weekday picker (weekly), active toggle
+- [x] _Store extended with recurring CRUD; HOD/admin scoped_
+- [ ] 🔍 **Audit Phase 5** — `?role=hod` or `admin` → Recurring
+- [x] _Committed + pushed to GitHub_
+
+### Refinements (post Phase 3/4, applied)
+- [x] Searchable dropdowns (Combobox) everywhere
+- [x] Task actions: distinct buttons (Mark in progress / Revise / Mark complete); reschedule moved to Due date in Details (future-week date auto-shifts)
 
 ### Phase 6 — Reports (Red/Yellow/Green)
 - [ ] **14. Reports** — Weekly (RYG), Employee, HOD, Department
