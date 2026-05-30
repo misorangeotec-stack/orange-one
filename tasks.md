@@ -37,10 +37,12 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [ ] 🔍 **Audit Phase 3** — log in → Task Management → My Tasks. Try: open a task → Start / Revise / Shift / Complete; post an @mention remark; create a task. (`?role=` to switch views)
 - [x] _Committed + pushed to GitHub_
 
-### Phase 4 — Manager & admin task views
-- [ ] **11. Team Tasks** (HOD / sub-HOD)
-- [ ] **12. All Tasks** (admin)
-- [ ] 🔍 **Audit Phase 4**
+### Phase 4 — Manager & admin task views  ✅ built · 🔍 awaiting audit
+- [x] **Reusable TaskBrowser** — stats strip + filters (search / person / department / status / week) + list with assignee avatars
+- [x] **11. Team Tasks** (HOD / sub-HOD) — direct reports' tasks, filter by team member
+- [x] **12. All Tasks** (admin) — org-wide, filter by department + person
+- [ ] 🔍 **Audit Phase 4** (review with Phase 3) — `?role=hod` → Team Tasks; `?role=admin` → All Tasks
+- [x] _Committed + pushed to GitHub_
 
 ### Phase 5 — Recurring tasks
 - [ ] **13. Recurring list** + **Create/Edit recurring**
