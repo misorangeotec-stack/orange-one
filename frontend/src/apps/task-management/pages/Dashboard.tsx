@@ -4,8 +4,8 @@ import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { departmentById, departments, profileById, profiles, weeklyPlans, workspaceSettings } from "../mock/data";
-import { computeStats, directReportIds, visibleTasks } from "../mock/selectors";
+import { weeklyPlans, workspaceSettings } from "../mock/data";
+import { computeStats } from "../mock/selectors";
 import type { ActivityType, Task } from "../types";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
@@ -32,8 +32,8 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { tasks } = useTaskStore();
-  const list = visibleTasks(role, user.id, tasks);
+  const { visibleTasks } = useTaskStore();
+  const list = visibleTasks(role, user.id);
   const stats = computeStats(list);
   const firstName = user.name.split(" ")[0];
 
@@ -119,6 +119,7 @@ function TodayPanel({ userId, list }: { userId: string; list: Task[] }) {
 
 /* ---------------- HOD/Admin: team or org performance ---------------- */
 function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string }) {
+  const { departments, profiles, directReportIds, profileById } = useTaskStore();
   if (isAdmin) {
     return (
       <SectionCard title="Department Performance" subtitle="Planned execution quality this week">
@@ -200,7 +201,7 @@ function StatusBreakdownCard({ stats }: { stats: ReturnType<typeof computeStats>
 
 /* ---------------- Recent activity ---------------- */
 function RecentActivityCard({ list }: { list: Task[] }) {
-  const { activity, getTask } = useTaskStore();
+  const { activity, getTask, profileById } = useTaskStore();
   const ids = new Set(list.map((t) => t.id));
   const items = activity.filter((a) => ids.has(a.taskId)).slice(0, 6);
   return (
@@ -231,6 +232,7 @@ function RecentActivityCard({ list }: { list: Task[] }) {
 
 /* ---------------- small shared bits ---------------- */
 function TaskRow({ task }: { task: Task }) {
+  const { profileById, departmentById } = useTaskStore();
   const assignee = profileById(task.assignedTo);
   const dept = departmentById(task.departmentId);
   return (

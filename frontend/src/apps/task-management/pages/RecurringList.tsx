@@ -8,8 +8,6 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { directReportIds } from "../mock/selectors";
-import { profileById } from "../mock/data";
 import type { RecurringTask } from "../types";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -23,7 +21,7 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, deleteRecurring } = useTaskStore();
+  const { recurringTasks, toggleRecurring, deleteRecurring, directReportIds, profileById } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
 

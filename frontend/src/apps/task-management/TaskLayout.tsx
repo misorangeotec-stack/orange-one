@@ -5,14 +5,13 @@ import { taskNav } from "./nav";
 import { useSession, ALL_ROLES } from "./mock/session";
 import { useTaskStore } from "./mock/store";
 import RoleSwitcher from "./components/RoleSwitcher";
-import { profileById } from "./mock/data";
 
 const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
 /** Wires the mock session + data into the generic AppShell, then renders routes. */
 export default function TaskLayout() {
   const { user, role } = useSession();
-  const { notifications, getTask } = useTaskStore();
+  const { notifications, getTask, profileById } = useTaskStore();
 
   const notifItems: NotificationItem[] = notifications
     .filter((n) => n.userId === user.id)

@@ -7,14 +7,12 @@ import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { departments, profileById } from "../mock/data";
-import { assignableUsers } from "../mock/selectors";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { createTask } = useTaskStore();
+  const { createTask, assignableUsers, departments, profileById } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
 
   const [title, setTitle] = useState("");

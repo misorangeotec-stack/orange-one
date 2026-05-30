@@ -12,6 +12,12 @@ import RecurringList from "./pages/RecurringList";
 import RecurringForm from "./pages/RecurringForm";
 import Reports from "./pages/Reports";
 import ActivityHistory from "./pages/ActivityHistory";
+import SetupLayout from "./pages/setup/SetupLayout";
+import Onboarding from "./pages/setup/Onboarding";
+import Departments from "./pages/setup/Departments";
+import Users from "./pages/setup/Users";
+import UserForm from "./pages/setup/UserForm";
+import Hierarchy from "./pages/setup/Hierarchy";
 import ComingSoon from "./pages/ComingSoon";
 
 /**
@@ -36,7 +42,14 @@ export default function TaskManagementApp() {
             <Route path="recurring/:id/edit" element={<RecurringForm />} />
             <Route path="reports" element={<Reports />} />
             <Route path="history" element={<ActivityHistory />} />
-            <Route path="setup" element={<ComingSoon name="Admin Setup" phase="Phase 7" />} />
+            <Route path="setup" element={<SetupLayout />}>
+              <Route index element={<Onboarding />} />
+              <Route path="departments" element={<Departments />} />
+              <Route path="users" element={<Users />} />
+              <Route path="users/new" element={<UserForm />} />
+              <Route path="users/:id/edit" element={<UserForm />} />
+              <Route path="hierarchy" element={<Hierarchy />} />
+            </Route>
             <Route path="settings" element={<ComingSoon name="Settings" phase="Phase 8" />} />
           </Route>
           <Route path="*" element={<Navigate to="/task-management" replace />} />

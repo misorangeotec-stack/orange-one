@@ -3,9 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import Tabs from "@/shared/components/ui/Tabs";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
-import { WEEK_START, WEEK_END, departments, profileById, profiles } from "../mock/data";
-import { directReportIds } from "../mock/selectors";
+import { WEEK_START, WEEK_END } from "../mock/data";
 import { useSession } from "../mock/session";
+import { useTaskStore } from "../mock/store";
 import GroupReport from "../components/GroupReport";
 import type { Profile } from "../types";
 
@@ -13,6 +13,7 @@ const fmt = (iso: string) => new Date(iso).toLocaleDateString("en-IN", { day: "n
 
 export default function Reports() {
   const { user, role, isAdmin, isHod } = useSession();
+  const { departments, profiles, profileById, directReportIds } = useTaskStore();
   const [params, setParams] = useSearchParams();
 
   const team = useMemo(() => [user.id, ...directReportIds(user.id)].map((id) => profileById(id)!).filter(Boolean), [user.id]);

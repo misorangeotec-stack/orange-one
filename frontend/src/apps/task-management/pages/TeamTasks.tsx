@@ -2,21 +2,20 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { profileById } from "../mock/data";
-import { directReportIds } from "../mock/selectors";
 import TaskBrowser from "../components/TaskBrowser";
 import EmptyState from "@/shared/components/ui/EmptyState";
 
 /** HOD / sub-HOD view: tasks of everyone reporting to the current user. */
 export default function TeamTasks() {
   const { user } = useSession();
-  const { tasks } = useTaskStore();
+  const { tasks, directReportIds, profileById } = useTaskStore();
 
-  const teamIds = useMemo(() => [user.id, ...directReportIds(user.id)], [user.id]);
-  const team = useMemo(() => teamIds.map((id) => profileById(id)!).filter(Boolean), [teamIds]);
+  const reportIds = directReportIds(user.id);
+  const teamIds = useMemo(() => [user.id, ...reportIds], [user.id, reportIds.join(",")]);
+  const team = useMemo(() => teamIds.map((id) => profileById(id)!).filter(Boolean), [teamIds.join(",")]);
   const teamTasks = useMemo(
     () => tasks.filter((t) => t.assignedTo && teamIds.includes(t.assignedTo)),
-    [tasks, teamIds]
+    [tasks, teamIds.join(",")]
   );
 
   return (

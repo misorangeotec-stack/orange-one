@@ -2,7 +2,6 @@ import { useMemo, useRef, useState } from "react";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import { useTaskStore } from "../mock/store";
-import { profiles } from "../mock/data";
 
 /**
  * Remark box with @mention autocomplete. Mentioned users are resolved by scanning
@@ -10,7 +9,7 @@ import { profiles } from "../mock/data";
  * notifications fan out (Stage B persists these to task_remark_mentions/notifications).
  */
 export default function RemarkComposer({ taskId }: { taskId: string }) {
-  const { addRemark } = useTaskStore();
+  const { addRemark, profiles } = useTaskStore();
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
 

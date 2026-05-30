@@ -8,8 +8,6 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { profileById } from "../mock/data";
-import { assignableUsers } from "../mock/selectors";
 import type { RecurrenceType } from "../types";
 
 // display order Mon→Sun, stored as 0=Sun..6=Sat
@@ -22,7 +20,7 @@ export default function RecurringForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { getRecurring, createRecurring, updateRecurring } = useTaskStore();
+  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById } = useTaskStore();
   const editing = getRecurring(id ?? "");
   const canAssign = assignableUsers(role, user.id);
 

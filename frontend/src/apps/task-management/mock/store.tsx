@@ -1,10 +1,11 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { Notification, RecurringTask, Task, TaskActivity } from "../types";
+import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity } from "../types";
 import {
   activity as seedActivity,
+  departments as seedDepartments,
   notifications as seedNotifications,
-  profileById,
+  profiles as seedProfiles,
   recurringTasks as seedRecurring,
   tasks as seedTasks,
   WEEK_START,
@@ -14,21 +15,21 @@ import {
 import { useSession } from "./session";
 
 /**
- * In-memory task store for the frontend phase. Implements the same mutations the
- * backend will (create / start / revise / shift / complete / remark) so the UI is
- * fully interactive during the audit. Business rules that the DB does NOT enforce
- * (revision limit, shift linkage, mention fan-out) live here and will move to the
- * data layer / RPCs in Stage B.
+ * In-memory app store for the frontend phase. Owns tasks, activity, notifications,
+ * recurring templates AND the directory (people + departments). Implements the same
+ * mutations the backend will, so the UI is fully interactive during the audit.
+ * Business rules the DB does NOT enforce (revision limit, shift linkage, mention
+ * fan-out) live here and move to the data layer / RPCs in Stage B.
  */
 
 const nowIso = () => new Date().toISOString();
-/** Monday (week start) of the week containing the given ISO date. */
 const mondayOf = (iso: string) => {
   const d = new Date(iso);
   const dow = (d.getDay() + 6) % 7;
   d.setDate(d.getDate() - dow);
   return d.toISOString().slice(0, 10);
 };
+const AVATAR_COLORS: AvatarColor[] = ["blue", "orange", "teal", "violet", "rose", "green", "navy"];
 
 export interface RevisionInfo {
   usedThisWeek: number;
@@ -48,11 +49,6 @@ interface TaskStoreValue {
   startTask: (id: string) => void;
   completeTask: (id: string, note?: string) => void;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => void;
-  /**
-   * Reschedule a task's due date. If the new date falls in a FUTURE week, the task
-   * is automatically shifted: a linked task is created for that week and the
-   * current one is marked "shifted". Returns the new task id when a shift happened.
-   */
   rescheduleTask: (id: string, newDueDate: string) => string | null;
   addRemark: (id: string, note: string, mentionedIds: string[]) => void;
 
@@ -63,6 +59,21 @@ interface TaskStoreValue {
   updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => void;
   toggleRecurring: (id: string) => void;
   deleteRecurring: (id: string) => void;
+
+  // directory (people + departments)
+  profiles: Profile[];
+  departments: Department[];
+  profileById: (id: string | null) => Profile | undefined;
+  departmentById: (id: string | null) => Department | undefined;
+  directReportIds: (hodId: string) => string[];
+  assignableUsers: (role: AppRole, userId: string) => Profile[];
+  visibleTasks: (role: AppRole, userId: string) => Task[];
+  addDepartment: (input: { name: string; description?: string }) => string;
+  updateDepartment: (id: string, patch: { name?: string; description?: string }) => void;
+  deleteDepartment: (id: string) => void;
+  addUser: (input: { name: string; email?: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[] }) => string;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor">>) => void;
+  deleteUser: (id: string) => void;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -76,18 +87,38 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<TaskActivity[]>(() => seedActivity.map((a) => ({ ...a })));
   const [notifications, setNotifications] = useState<Notification[]>(() => seedNotifications.map((n) => ({ ...n })));
   const [recurringTasks, setRecurring] = useState<RecurringTask[]>(() => seedRecurring.map((r) => ({ ...r })));
+  const [profiles, setProfiles] = useState<Profile[]>(() => seedProfiles.map((p) => ({ ...p, hodIds: [...p.hodIds] })));
+  const [departments, setDepartments] = useState<Department[]>(() => seedDepartments.map((d) => ({ ...d })));
   const seq = useRef(1000);
   const nextId = (p: string) => `${p}${++seq.current}`;
 
   const value = useMemo<TaskStoreValue>(() => {
     const logActivity = (taskId: string, type: TaskActivity["type"], note: string | null = null) =>
-      setActivity((prev) => [
-        { id: nextId("a"), taskId, type, actorId: actorRef.current, note, createdAt: nowIso() },
-        ...prev,
-      ]);
+      setActivity((prev) => [{ id: nextId("a"), taskId, type, actorId: actorRef.current, note, createdAt: nowIso() }, ...prev]);
 
-    const patch = (id: string, fn: (t: Task) => Task) =>
-      setTasks((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+    const patch = (id: string, fn: (t: Task) => Task) => setTasks((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+
+    const profileById = (id: string | null) => profiles.find((p) => p.id === id);
+    const departmentById = (id: string | null) => departments.find((d) => d.id === id);
+    const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
+
+    const assignableUsers = (role: AppRole, userId: string): Profile[] => {
+      if (role === "admin") return profiles;
+      if (role === "hod" || role === "sub_hod") {
+        const ids = new Set([userId, ...directReportIds(userId)]);
+        return profiles.filter((p) => ids.has(p.id));
+      }
+      return profiles.filter((p) => p.id === userId);
+    };
+
+    const visibleTasks = (role: AppRole, userId: string): Task[] => {
+      if (role === "admin") return tasks;
+      if (role === "hod" || role === "sub_hod") {
+        const team = new Set([userId, ...directReportIds(userId)]);
+        return tasks.filter((t) => t.assignedTo === userId || t.createdBy === userId || (t.assignedTo && team.has(t.assignedTo)));
+      }
+      return tasks.filter((t) => t.assignedTo === userId || t.createdBy === userId);
+    };
 
     const revisionInfo = (task: Task): RevisionInfo => {
       const max = workspaceSettings.maxRevisionsPerWeek;
@@ -104,32 +135,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       activity,
       notifications,
       getTask: (id) => tasks.find((t) => t.id === id),
-      activityFor: (taskId) =>
-        activity.filter((a) => a.taskId === taskId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      activityFor: (taskId) => activity.filter((a) => a.taskId === taskId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       revisionInfo,
 
       createTask: ({ title, description, assignedTo, departmentId, dueDate }) => {
         const id = nextId("t");
         const creator = actorRef.current;
         const task: Task = {
-          id,
-          title,
-          description: description ?? null,
-          status: "pending",
-          dueDate,
+          id, title, description: description ?? null, status: "pending", dueDate,
           weekStart: dueDate ? mondayOf(dueDate) : WEEK_START,
-          createdBy: creator,
-          assignedTo,
-          departmentId,
-          revisionCount: 0,
-          lastRevisedAt: null,
-          followUpDate: null,
-          shiftedFromTaskId: null,
-          shiftedToTaskId: null,
-          recurringTaskId: null,
-          completedAt: null,
-          createdAt: nowIso(),
-          lastRemarkAt: null,
+          createdBy: creator, assignedTo, departmentId,
+          revisionCount: 0, lastRevisedAt: null, followUpDate: null,
+          shiftedFromTaskId: null, shiftedToTaskId: null, recurringTaskId: null,
+          completedAt: null, createdAt: nowIso(), lastRemarkAt: null,
         };
         setTasks((prev) => [task, ...prev]);
         logActivity(id, "created");
@@ -150,13 +168,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       reviseTask: (id, { followUpDate, note }) => {
         const task = tasks.find((t) => t.id === id);
         if (!task || !revisionInfo(task).allowed) return;
-        patch(id, (t) => ({
-          ...t,
-          status: "revised",
-          revisionCount: t.revisionCount + 1,
-          lastRevisedAt: nowIso(),
-          followUpDate,
-        }));
+        patch(id, (t) => ({ ...t, status: "revised", revisionCount: t.revisionCount + 1, lastRevisedAt: nowIso(), followUpDate }));
         logActivity(id, "revised", note || null);
         logActivity(id, "followup", `Follow-up set to ${followUpDate}`);
       },
@@ -165,28 +177,15 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
         const targetWeek = mondayOf(newDueDate);
-
-        // Same/earlier week → just move the due date, no shift.
         if (targetWeek <= (task.weekStart ?? WEEK_START)) {
           patch(id, (t) => ({ ...t, dueDate: newDueDate }));
           return null;
         }
-
-        // Future week → shift: create a linked task in that week, mark this one shifted.
         const newId = nextId("t");
         const newTask: Task = {
-          ...task,
-          id: newId,
-          status: "pending",
-          weekStart: targetWeek,
-          dueDate: newDueDate,
-          revisionCount: 0,
-          lastRevisedAt: null,
-          followUpDate: null,
-          shiftedFromTaskId: id,
-          shiftedToTaskId: null,
-          completedAt: null,
-          createdAt: nowIso(),
+          ...task, id: newId, status: "pending", weekStart: targetWeek, dueDate: newDueDate,
+          revisionCount: 0, lastRevisedAt: null, followUpDate: null,
+          shiftedFromTaskId: id, shiftedToTaskId: null, completedAt: null, createdAt: nowIso(),
         };
         setTasks((prev) => [newTask, ...prev.map((t) => (t.id === id ? { ...t, status: "shifted" as const, shiftedToTaskId: newId } : t))]);
         logActivity(id, "shifted");
@@ -195,25 +194,13 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       },
 
       addRemark: (id, note, mentionedIds) => {
-        const activityId = nextId("a");
-        setActivity((prev) => [
-          { id: activityId, taskId: id, type: "remark", actorId: actorRef.current, note, createdAt: nowIso() },
-          ...prev,
-        ]);
+        setActivity((prev) => [{ id: nextId("a"), taskId: id, type: "remark", actorId: actorRef.current, note, createdAt: nowIso() }, ...prev]);
         patch(id, (t) => ({ ...t, lastRemarkAt: nowIso() }));
         if (mentionedIds.length) {
           setNotifications((prev) => [
             ...mentionedIds
-              .filter((uid) => profileById(uid))
-              .map((uid) => ({
-                id: nextId("n"),
-                userId: uid,
-                type: "mention" as const,
-                taskId: id,
-                actorId: actorRef.current,
-                readAt: null,
-                createdAt: nowIso(),
-              })),
+              .filter((uid) => profiles.some((p) => p.id === uid))
+              .map((uid) => ({ id: nextId("n"), userId: uid, type: "mention" as const, taskId: id, actorId: actorRef.current, readAt: null, createdAt: nowIso() })),
             ...prev,
           ]);
         }
@@ -226,11 +213,47 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         setRecurring((prev) => [{ ...input, id }, ...prev]);
         return id;
       },
-      updateRecurring: (id, patch) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r))),
+      updateRecurring: (id, p) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, ...p } : r))),
       toggleRecurring: (id) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r))),
       deleteRecurring: (id) => setRecurring((prev) => prev.filter((r) => r.id !== id)),
+
+      // ---- directory ----
+      profiles,
+      departments,
+      profileById,
+      departmentById,
+      directReportIds,
+      assignableUsers,
+      visibleTasks,
+
+      addDepartment: ({ name, description }) => {
+        const id = nextId("d");
+        setDepartments((prev) => [...prev, { id, name, description: description ?? null }]);
+        return id;
+      },
+      updateDepartment: (id, p) => setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, ...p } : d))),
+      deleteDepartment: (id) => {
+        setDepartments((prev) => prev.filter((d) => d.id !== id));
+        setProfiles((prev) => prev.map((p) => (p.departmentId === id ? { ...p, departmentId: null } : p)));
+      },
+
+      addUser: ({ name, email, designation, role, departmentId, hodIds }) => {
+        const id = nextId("u");
+        setProfiles((prev) => [
+          ...prev,
+          {
+            id, name, email: email ?? null, designation: designation ?? null,
+            avatarColor: AVATAR_COLORS[prev.length % AVATAR_COLORS.length],
+            departmentId, role, hodIds: hodIds ?? [],
+          },
+        ]);
+        return id;
+      },
+      updateUser: (id, p) => setProfiles((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u))),
+      deleteUser: (id) =>
+        setProfiles((prev) => prev.filter((u) => u.id !== id).map((u) => ({ ...u, hodIds: u.hodIds.filter((h) => h !== id) }))),
     };
-  }, [tasks, activity, notifications, recurringTasks]);
+  }, [tasks, activity, notifications, recurringTasks, profiles, departments]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

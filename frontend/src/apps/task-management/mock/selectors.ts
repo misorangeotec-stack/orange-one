@@ -3,37 +3,11 @@
  * visibility rules so the UI shows what each role would actually see — and so
  * Stage B can replace them with equivalent queries without UI changes.
  */
-import type { AppRole, Task } from "../types";
-import { profiles } from "./data";
+import type { Task } from "../types";
 import { isToday, isOverdue } from "@/shared/lib/time";
 
-/** Direct reports of an HOD/sub-HOD (employee.hodIds includes hodId). */
-export function directReportIds(hodId: string): string[] {
-  return profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
-}
-
-/** Users the current user may assign a task to (self + reports for HOD, everyone for admin). */
-export function assignableUsers(role: AppRole, userId: string) {
-  if (role === "admin") return profiles;
-  if (role === "hod" || role === "sub_hod") {
-    const ids = new Set([userId, ...directReportIds(userId)]);
-    return profiles.filter((p) => ids.has(p.id));
-  }
-  return profiles.filter((p) => p.id === userId);
-}
-
-/** Tasks visible to a user given their role (RLS-equivalent). Pass the live task list. */
-export function visibleTasks(role: AppRole, userId: string, all: Task[]): Task[] {
-  if (role === "admin") return all;
-  if (role === "hod" || role === "sub_hod") {
-    const team = new Set([userId, ...directReportIds(userId)]);
-    return all.filter(
-      (t) => t.assignedTo === userId || t.createdBy === userId || (t.assignedTo && team.has(t.assignedTo))
-    );
-  }
-  // employee
-  return all.filter((t) => t.assignedTo === userId || t.createdBy === userId);
-}
+// Directory-dependent selectors (directReportIds / assignableUsers / visibleTasks)
+// now live on the task store, since they read the live people + task lists.
 
 export interface DashboardStats {
   dueToday: number;

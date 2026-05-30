@@ -2,12 +2,13 @@ import { Link } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, isOverdue } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
-import { departmentById, profileById } from "../mock/data";
+import { useTaskStore } from "../mock/store";
 import type { Task } from "../types";
 import StatusChip from "./StatusChip";
 
 /** A single task row used in list views. Links to the task detail screen. */
 export default function TaskListItem({ task, showAssignee = false }: { task: Task; showAssignee?: boolean }) {
+  const { profileById, departmentById } = useTaskStore();
   const assignee = profileById(task.assignedTo);
   const dept = departmentById(task.departmentId);
   const overdue = isOverdue(task.dueDate) && task.status !== "completed" && task.status !== "shifted";

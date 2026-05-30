@@ -61,9 +61,11 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] _Report stat helpers (reportFor) in selectors_
 - [ ] 🔍 **Audit Phase 6** — `?role=admin` → Reports (try tabs) + Activity
 
-### Phase 7 — Admin setup
-- [ ] **16. Setup** — Onboarding checklist, Departments, Users, Add/Edit User, Hierarchy mapping
-- [ ] 🔍 **Audit Phase 7**
+### Phase 7 — Admin setup  ✅ built · 🔍 awaiting audit
+- [x] **Directory promoted into store** — profiles + departments are now live/editable; admin mutators (add/edit/delete dept + user); directory helpers (profileById/directReportIds/assignableUsers/visibleTasks) moved to store; all consumers refactored
+- [x] **16. Setup** — sub-nav shell + Onboarding checklist (live progress), Department Management (add/edit/delete), User Management (filters + role badges), Add/Edit User (role picker, department, multi-HOD reporting), Hierarchy mapping (teams + unmapped)
+- [ ] 🔍 **Audit Phase 7** — `?role=admin` → Setup
+- [x] _Committed + pushed to GitHub_
 
 ### Phase 8 — Settings + utility
 - [ ] **17. Settings** — Profile, Organization, Permissions (read-only)

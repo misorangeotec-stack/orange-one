@@ -7,8 +7,6 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { profileById, profiles } from "../mock/data";
-import { visibleTasks } from "../mock/selectors";
 import type { ActivityType } from "../types";
 
 const TYPE_LABELS: Record<ActivityType, string> = {
@@ -23,11 +21,11 @@ const VERB: Record<ActivityType, string> = {
 /** Filterable, workspace/team activity audit trail. */
 export default function ActivityHistory() {
   const { user, role } = useSession();
-  const { activity, getTask, tasks } = useTaskStore();
+  const { activity, getTask, tasks, profiles, profileById, visibleTasks } = useTaskStore();
   const [type, setType] = useState<ActivityType | "all">("all");
   const [actor, setActor] = useState("all");
 
-  const ids = useMemo(() => new Set(visibleTasks(role, user.id, tasks).map((t) => t.id)), [role, user.id, tasks]);
+  const ids = useMemo(() => new Set(visibleTasks(role, user.id).map((t) => t.id)), [role, user.id, tasks]);
 
   const items = useMemo(
     () =>

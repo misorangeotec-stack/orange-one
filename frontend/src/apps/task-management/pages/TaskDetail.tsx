@@ -6,7 +6,6 @@ import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { dateLabel, timeAgo } from "@/shared/lib/time";
 import { useTaskStore } from "../mock/store";
-import { departmentById, profileById } from "../mock/data";
 import type { ActivityType } from "../types";
 import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
@@ -18,7 +17,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask } = useTaskStore();
+  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
 
   const task = getTask(id);

@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom";
 import { useTaskStore } from "../mock/store";
-import { departments, profiles } from "../mock/data";
 import TaskBrowser from "../components/TaskBrowser";
 
 /** Admin view: every task across the organization, filterable by department/person. */
 export default function AllTasks() {
-  const { tasks } = useTaskStore();
+  const { tasks, profiles, departments } = useTaskStore();
 
   return (
     <div className="space-y-5">
