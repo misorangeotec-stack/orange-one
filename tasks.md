@@ -67,10 +67,14 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [ ] 🔍 **Audit Phase 7** — `?role=admin` → Setup
 - [x] _Committed + pushed to GitHub_
 
-### Phase 8 — Settings + utility
-- [ ] **17. Settings** — Profile, Organization, Permissions (read-only)
-- [ ] **18. Utility** — reusable Empty states, Access Denied, 404
-- [ ] 🔍 **Audit Phase 8 (full frontend review)**
+### Phase 8 — Settings + utility  ✅ built · 🔍 awaiting audit
+- [x] **17. Settings** — Profile (edit own details + in-app change password), Organization (workspace name / week-start / max-revisions, admin), Permissions (read-only role matrix, admin)
+- [x] **18. Utility** — Empty states (reused), Access Denied (+ RequireRole guards on manager/admin routes), in-app 404
+- [x] _Workspace settings promoted into store (live max-revisions feeds the revision rule)_
+- [ ] 🔍 **Audit Phase 8 / full frontend review**
+- [x] _Committed + pushed to GitHub_
+
+> 🎉 **STAGE A (frontend) COMPLETE** — all 34 screens built, on-theme, interactive with mock data. Next: Stage B (Supabase wiring).
 
 ---
 

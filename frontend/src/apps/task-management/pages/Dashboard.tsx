@@ -4,7 +4,7 @@ import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { weeklyPlans, workspaceSettings } from "../mock/data";
+import { weeklyPlans } from "../mock/data";
 import { computeStats } from "../mock/selectors";
 import type { ActivityType, Task } from "../types";
 import StatCard from "../components/StatCard";
@@ -32,7 +32,7 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { visibleTasks } = useTaskStore();
+  const { visibleTasks, workspace } = useTaskStore();
   const list = visibleTasks(role, user.id);
   const stats = computeStats(list);
   const firstName = user.name.split(" ")[0];
@@ -50,7 +50,7 @@ export default function Dashboard() {
           </h2>
           <p className="text-grey text-[13px] mt-1">
             {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-            {" · "}revision limit {workspaceSettings.maxRevisionsPerWeek}/week
+            {" · "}revision limit {workspace.maxRevisionsPerWeek}/week
           </p>
         </div>
         <Link

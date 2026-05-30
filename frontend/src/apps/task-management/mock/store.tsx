@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity } from "../types";
+import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WorkspaceSettings } from "../types";
 import {
   activity as seedActivity,
   departments as seedDepartments,
@@ -10,7 +10,7 @@ import {
   tasks as seedTasks,
   WEEK_START,
   WEEK_END,
-  workspaceSettings,
+  workspaceSettings as seedWorkspace,
 } from "./data";
 import { useSession } from "./session";
 
@@ -74,6 +74,10 @@ interface TaskStoreValue {
   addUser: (input: { name: string; email?: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[] }) => string;
   updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor">>) => void;
   deleteUser: (id: string) => void;
+
+  // workspace settings (singleton)
+  workspace: WorkspaceSettings;
+  updateWorkspace: (patch: Partial<WorkspaceSettings>) => void;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -89,6 +93,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [recurringTasks, setRecurring] = useState<RecurringTask[]>(() => seedRecurring.map((r) => ({ ...r })));
   const [profiles, setProfiles] = useState<Profile[]>(() => seedProfiles.map((p) => ({ ...p, hodIds: [...p.hodIds] })));
   const [departments, setDepartments] = useState<Department[]>(() => seedDepartments.map((d) => ({ ...d })));
+  const [workspace, setWorkspace] = useState<WorkspaceSettings>(() => ({ ...seedWorkspace }));
   const seq = useRef(1000);
   const nextId = (p: string) => `${p}${++seq.current}`;
 
@@ -121,7 +126,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     };
 
     const revisionInfo = (task: Task): RevisionInfo => {
-      const max = workspaceSettings.maxRevisionsPerWeek;
+      const max = workspace.maxRevisionsPerWeek;
       const revisedThisWeek =
         task.lastRevisedAt && task.lastRevisedAt.slice(0, 10) >= WEEK_START && task.lastRevisedAt.slice(0, 10) <= WEEK_END;
       const usedThisWeek = revisedThisWeek ? task.revisionCount : 0;
@@ -252,8 +257,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       updateUser: (id, p) => setProfiles((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u))),
       deleteUser: (id) =>
         setProfiles((prev) => prev.filter((u) => u.id !== id).map((u) => ({ ...u, hodIds: u.hodIds.filter((h) => h !== id) }))),
+
+      workspace,
+      updateWorkspace: (patch) => setWorkspace((prev) => ({ ...prev, ...patch })),
     };
-  }, [tasks, activity, notifications, recurringTasks, profiles, departments]);
+  }, [tasks, activity, notifications, recurringTasks, profiles, departments, workspace]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
