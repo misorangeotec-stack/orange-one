@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
-import { Select, TextInput } from "@/shared/components/ui/Form";
+import { TextInput } from "@/shared/components/ui/Form";
+import Combobox from "@/shared/components/ui/Combobox";
+import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { WEEK_START } from "../mock/data";
 import type { Department, Profile, Task, TaskStatus } from "../types";
@@ -82,29 +84,43 @@ export default function TaskBrowser({
             <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks…" className="pl-9 py-2 text-[13px]" />
           </div>
           {departments && (
-            <Select value={dept} onChange={(e) => setDept(e.target.value)} className="py-2 text-[13px] w-auto min-w-[150px]">
-              <option value="all">All departments</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </Select>
+            <Combobox
+              value={dept}
+              onChange={setDept}
+              className="w-auto min-w-[160px]"
+              options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+            />
           )}
-          <Select value={person} onChange={(e) => setPerson(e.target.value)} className="py-2 text-[13px] w-auto min-w-[150px]">
-            <option value="all">{departments ? "All people" : "All team members"}</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </Select>
-          <Select value={status} onChange={(e) => setStatus(e.target.value as TaskStatus | "all")} className="py-2 text-[13px] w-auto min-w-[140px]">
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </Select>
-          <Select value={week} onChange={(e) => setWeek(e.target.value as "all" | "this" | "next")} className="py-2 text-[13px] w-auto min-w-[120px]">
-            <option value="all">Any week</option>
-            <option value="this">This week</option>
-            <option value="next">Next week</option>
-          </Select>
+          <Combobox
+            value={person}
+            onChange={setPerson}
+            className="w-auto min-w-[170px]"
+            options={[
+              { value: "all", label: departments ? "All people" : "All team members" },
+              ...people.map((p) => ({
+                value: p.id,
+                label: p.name,
+                sublabel: p.designation ?? undefined,
+                icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+              })),
+            ]}
+          />
+          <Combobox
+            value={status}
+            onChange={(v) => setStatus(v as TaskStatus | "all")}
+            className="w-auto min-w-[150px]"
+            options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+          />
+          <Combobox
+            value={week}
+            onChange={(v) => setWeek(v as "all" | "this" | "next")}
+            className="w-auto min-w-[130px]"
+            options={[
+              { value: "all", label: "Any week" },
+              { value: "this", label: "This week" },
+              { value: "next", label: "Next week" },
+            ]}
+          />
         </div>
 
         {/* list */}

@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
-import { FieldLabel, TextInput, TextArea, Select } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import Combobox from "@/shared/components/ui/Combobox";
+import Avatar from "@/shared/components/ui/Avatar";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { departments, profileById } from "../mock/data";
@@ -69,25 +71,26 @@ export default function CreateTask() {
 
           <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Assign to">
-              <Select value={assignedTo} onChange={(e) => onAssigneeChange(e.target.value)} disabled={canAssign.length <= 1}>
-                {canAssign.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {p.id === user.id ? " (me)" : ""}
-                  </option>
-                ))}
-              </Select>
+              <Combobox
+                value={assignedTo}
+                onChange={onAssigneeChange}
+                disabled={canAssign.length <= 1}
+                options={canAssign.map((p) => ({
+                  value: p.id,
+                  label: p.id === user.id ? `${p.name} (me)` : p.name,
+                  sublabel: p.designation ?? undefined,
+                  icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                }))}
+              />
             </FieldLabel>
 
             <FieldLabel label="Department">
-              <Select value={departmentId} onChange={(e) => setDepartmentId(e.target.value)}>
-                <option value="">— None —</option>
-                {departments.map((dp) => (
-                  <option key={dp.id} value={dp.id}>
-                    {dp.name}
-                  </option>
-                ))}
-              </Select>
+              <Combobox
+                value={departmentId}
+                onChange={setDepartmentId}
+                placeholder="— None —"
+                options={[{ value: "", label: "— None —" }, ...departments.map((dp) => ({ value: dp.id, label: dp.name }))]}
+              />
             </FieldLabel>
           </div>
 

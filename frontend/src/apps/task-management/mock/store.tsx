@@ -21,9 +21,11 @@ import { useSession } from "./session";
  */
 
 const nowIso = () => new Date().toISOString();
-const addDaysIso = (iso: string, n: number) => {
+/** Monday (week start) of the week containing the given ISO date. */
+const mondayOf = (iso: string) => {
   const d = new Date(iso);
-  d.setDate(d.getDate() + n);
+  const dow = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dow);
   return d.toISOString().slice(0, 10);
 };
 
@@ -45,7 +47,12 @@ interface TaskStoreValue {
   startTask: (id: string) => void;
   completeTask: (id: string, note?: string) => void;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => void;
-  shiftTask: (id: string) => string;
+  /**
+   * Reschedule a task's due date. If the new date falls in a FUTURE week, the task
+   * is automatically shifted: a linked task is created for that week and the
+   * current one is marked "shifted". Returns the new task id when a shift happened.
+   */
+  rescheduleTask: (id: string, newDueDate: string) => string | null;
   addRemark: (id: string, note: string, mentionedIds: string[]) => void;
 }
 
@@ -100,7 +107,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           description: description ?? null,
           status: "pending",
           dueDate,
-          weekStart: WEEK_START,
+          weekStart: dueDate ? mondayOf(dueDate) : WEEK_START,
           createdBy: creator,
           assignedTo,
           departmentId,
@@ -144,17 +151,25 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         logActivity(id, "followup", `Follow-up set to ${followUpDate}`);
       },
 
-      shiftTask: (id) => {
+      rescheduleTask: (id, newDueDate) => {
         const task = tasks.find((t) => t.id === id);
-        if (!task) return "";
+        if (!task || !newDueDate) return null;
+        const targetWeek = mondayOf(newDueDate);
+
+        // Same/earlier week → just move the due date, no shift.
+        if (targetWeek <= (task.weekStart ?? WEEK_START)) {
+          patch(id, (t) => ({ ...t, dueDate: newDueDate }));
+          return null;
+        }
+
+        // Future week → shift: create a linked task in that week, mark this one shifted.
         const newId = nextId("t");
-        const nextWeekStart = addDaysIso(WEEK_START, 7);
         const newTask: Task = {
           ...task,
           id: newId,
           status: "pending",
-          weekStart: nextWeekStart,
-          dueDate: task.dueDate ? addDaysIso(task.dueDate, 7) : null,
+          weekStart: targetWeek,
+          dueDate: newDueDate,
           revisionCount: 0,
           lastRevisedAt: null,
           followUpDate: null,
