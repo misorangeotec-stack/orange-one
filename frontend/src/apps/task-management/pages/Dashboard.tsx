@@ -3,16 +3,8 @@ import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
-import {
-  activity,
-  departmentById,
-  departments,
-  profileById,
-  profiles,
-  tasks,
-  weeklyPlans,
-  workspaceSettings,
-} from "../mock/data";
+import { useTaskStore } from "../mock/store";
+import { departmentById, departments, profileById, profiles, weeklyPlans, workspaceSettings } from "../mock/data";
 import { computeStats, directReportIds, visibleTasks } from "../mock/selectors";
 import type { ActivityType, Task } from "../types";
 import StatCard from "../components/StatCard";
@@ -40,7 +32,8 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const list = visibleTasks(role, user.id);
+  const { tasks } = useTaskStore();
+  const list = visibleTasks(role, user.id, tasks);
   const stats = computeStats(list);
   const firstName = user.name.split(" ")[0];
 
@@ -207,6 +200,7 @@ function StatusBreakdownCard({ stats }: { stats: ReturnType<typeof computeStats>
 
 /* ---------------- Recent activity ---------------- */
 function RecentActivityCard({ list }: { list: Task[] }) {
+  const { activity, getTask } = useTaskStore();
   const ids = new Set(list.map((t) => t.id));
   const items = activity.filter((a) => ids.has(a.taskId)).slice(0, 6);
   return (
@@ -217,7 +211,7 @@ function RecentActivityCard({ list }: { list: Task[] }) {
         <ul className="space-y-3">
           {items.map((a) => {
             const actor = profileById(a.actorId);
-            const task = tasks.find((t) => t.id === a.taskId);
+            const task = getTask(a.taskId);
             return (
               <li key={a.id} className="flex gap-2.5 text-[12.5px]">
                 <span className="mt-0.5 text-orange [&>svg]:w-4 [&>svg]:h-4 shrink-0">{actIcon(a.type)}</span>

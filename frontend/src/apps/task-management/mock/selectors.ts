@@ -4,7 +4,7 @@
  * Stage B can replace them with equivalent queries without UI changes.
  */
 import type { AppRole, Task } from "../types";
-import { profiles, tasks } from "./data";
+import { profiles } from "./data";
 import { isToday, isOverdue } from "@/shared/lib/time";
 
 /** Direct reports of an HOD/sub-HOD (employee.hodIds includes hodId). */
@@ -12,17 +12,27 @@ export function directReportIds(hodId: string): string[] {
   return profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
 }
 
-/** Tasks visible to a user given their role (RLS-equivalent). */
-export function visibleTasks(role: AppRole, userId: string): Task[] {
-  if (role === "admin") return tasks;
+/** Users the current user may assign a task to (self + reports for HOD, everyone for admin). */
+export function assignableUsers(role: AppRole, userId: string) {
+  if (role === "admin") return profiles;
+  if (role === "hod" || role === "sub_hod") {
+    const ids = new Set([userId, ...directReportIds(userId)]);
+    return profiles.filter((p) => ids.has(p.id));
+  }
+  return profiles.filter((p) => p.id === userId);
+}
+
+/** Tasks visible to a user given their role (RLS-equivalent). Pass the live task list. */
+export function visibleTasks(role: AppRole, userId: string, all: Task[]): Task[] {
+  if (role === "admin") return all;
   if (role === "hod" || role === "sub_hod") {
     const team = new Set([userId, ...directReportIds(userId)]);
-    return tasks.filter(
+    return all.filter(
       (t) => t.assignedTo === userId || t.createdBy === userId || (t.assignedTo && team.has(t.assignedTo))
     );
   }
   // employee
-  return tasks.filter((t) => t.assignedTo === userId || t.createdBy === userId);
+  return all.filter((t) => t.assignedTo === userId || t.createdBy === userId);
 }
 
 export interface DashboardStats {

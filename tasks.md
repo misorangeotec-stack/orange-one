@@ -17,22 +17,25 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] ~~3. Forgot/Reset Password screens~~ — removed per user: password reset lives in-app (Profile, later) or via admin; no public reset/forgot on login
 - [x] **4. Workspace Home** (registry-driven app launcher cards)
 - [ ] ⏳ **Add dark-background logo file** → `frontend/public/assets/orange-one-logo-dark.png` (provided by user); wiring already done
-- [ ] 🔍 **Audit Phase 1**  ← run `cd frontend && npm run dev` → http://localhost:5173
+- [x] 🔍 **Audit Phase 1** — approved by user ✅
 - [x] _Committed + pushed to GitHub (backup)_
 
 ### Phase 2 — App shell + dashboard  ✅ built · 🔍 awaiting audit
 - [x] **5. App Shell** — dark sidebar (role-aware nav), sticky topbar (notifications bell + user menu + dev "View as" role switcher), mobile drawer
 - [x] **6. Dashboard** — employee / HOD / admin variants (stat cards, today/team/dept panels, RYG bar, status donut, activity feed)
 - [x] _Mock data shaped like Supabase (real users/depts) + session context + selectors mirroring RLS_
-- [ ] 🔍 **Audit Phase 2** — `cd frontend && npm run dev` → log in → Task Management. Use the **"View as"** switcher (top-right) or `?role=admin|hod|sub_hod|employee`
+- [x] 🔍 **Audit Phase 2** — approved by user ✅
 - [x] _Committed + pushed to GitHub_
 
-### Phase 3 — Core task screens
-- [ ] **7. Tasks list** — My Tasks / Today / Follow-Up / Pending (tabbed)
-- [ ] **8. Create Task**
-- [ ] **9. Task Detail** (+ activity feed + remarks/@mention composer)
-- [ ] **10. Action modals** — Revise / Shift to next week / Mark Complete (incl. revision-limit disabled state)
-- [ ] 🔍 **Audit Phase 3**
+### Phase 3 — Core task screens  ✅ built · 🔍 awaiting audit
+- [x] **Mock task store** — live mutations (create/start/revise/shift/complete/remark) + weekly revision-limit rule + mention fan-out
+- [x] **7. Tasks list** — My Tasks with All/Today/Follow-ups/Pending tabs (counts) + search
+- [x] **8. Create Task** — role-aware assignee options, dept auto-fill, due date
+- [x] **9. Task Detail** — description, details sidebar (revisions left, follow-up, shift links), activity timeline + @mention remark composer
+- [x] **10. Action modals** — Revise (follow-up + note, disabled at limit), Shift to next week (linked task), Mark Complete (note)
+- [x] _Shared UI: Modal, Tabs, Form controls, EmptyState_
+- [ ] 🔍 **Audit Phase 3** — log in → Task Management → My Tasks. Try: open a task → Start / Revise / Shift / Complete; post an @mention remark; create a task. (`?role=` to switch views)
+- [x] _Committed + pushed to GitHub_
 
 ### Phase 4 — Manager & admin task views
 - [ ] **11. Team Tasks** (HOD / sub-HOD)
