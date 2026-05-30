@@ -62,29 +62,21 @@ export default function TaskDetail() {
         {!closed && (
           <div className="flex flex-wrap items-center gap-2">
             {task.status !== "in_progress" && (
-              <Button variant="ghost" size="sm" onClick={() => startTask(task.id)}>Mark in progress</Button>
+              <Button variant="progress" size="sm" onClick={() => startTask(task.id)}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+                Mark in progress
+              </Button>
             )}
             <span title={info.allowed ? "" : `Revision limit reached (${info.max}/week)`}>
               <Button variant="ghost" size="sm" onClick={() => setModal("revise")} disabled={!info.allowed}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" /></svg>
                 Revise{!info.allowed ? ` (${info.usedThisWeek}/${info.max})` : ""}
               </Button>
             </span>
-            {/* Reschedule — picking a date in a future week auto-shifts the task */}
-            <label
-              title="Change the due date. Pick a date in a future week to shift this task to that week (history preserved)."
-              className="inline-flex items-center gap-1.5 rounded-xl border border-line bg-white px-3 py-2 hover:border-[#d9e2f0] transition cursor-pointer"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-grey-2">
-                <rect x="3" y="4" width="18" height="17" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="16" y1="2" x2="16" y2="6" />
-              </svg>
-              <input
-                type="date"
-                value={task.dueDate ?? ""}
-                onChange={(e) => onReschedule(e.target.value)}
-                className="text-[13px] font-medium text-navy bg-transparent outline-none cursor-pointer"
-              />
-            </label>
-            <Button size="sm" onClick={() => setModal("complete")}>Mark complete</Button>
+            <Button size="sm" onClick={() => setModal("complete")}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              Mark complete
+            </Button>
           </div>
         )}
       </div>
@@ -150,7 +142,9 @@ export default function TaskDetail() {
                 ) : "—"}
               </Row>
               <Row label="Created by">{creator?.name ?? "—"}</Row>
-              <Row label="Due date">{dateLabel(task.dueDate)}</Row>
+              <Row label="Due date">
+                <DueDateEditor value={task.dueDate} closed={closed} onChange={onReschedule} />
+              </Row>
               <Row label="Follow-up">{task.followUpDate ? dateLabel(task.followUpDate) : "—"}</Row>
               <Row label="Revisions">
                 <span className={info.remaining === 0 ? "text-[#d4493f] font-medium" : ""}>
@@ -186,6 +180,41 @@ export default function TaskDetail() {
       <ReviseModal task={task} open={modal === "revise"} onClose={() => setModal(null)} />
       <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} />
     </div>
+  );
+}
+
+/** Inline-editable due date. Picking a future-week date auto-shifts the task. */
+function DueDateEditor({ value, closed, onChange }: { value: string | null; closed: boolean; onChange: (d: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  if (closed) return <>{dateLabel(value)}</>;
+  if (editing) {
+    return (
+      <input
+        type="date"
+        autoFocus
+        defaultValue={value ?? ""}
+        onChange={(e) => {
+          if (e.target.value) {
+            onChange(e.target.value);
+            setEditing(false);
+          }
+        }}
+        onBlur={() => setEditing(false)}
+        className="rounded-lg border border-orange bg-white px-2 py-1 text-[12.5px] text-navy outline-none ring-4 ring-orange/10"
+      />
+    );
+  }
+  return (
+    <button
+      onClick={() => setEditing(true)}
+      title="Change due date — pick a date in a future week to shift the task to that week"
+      className="inline-flex items-center gap-1.5 text-navy hover:text-orange transition group"
+    >
+      {dateLabel(value)}
+      <svg className="text-grey-2 group-hover:text-orange transition" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+      </svg>
+    </button>
   );
 }
 

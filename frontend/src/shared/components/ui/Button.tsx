@@ -2,7 +2,7 @@ import { forwardRef } from "react";
 import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/shared/lib/cn";
 
-type Variant = "primary" | "ghost" | "outline";
+type Variant = "primary" | "ghost" | "outline" | "progress";
 type Size = "sm" | "md" | "lg";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -22,6 +22,8 @@ const variants: Record<Variant, string> = {
     "bg-white text-navy border border-line shadow-soft hover:-translate-y-0.5 hover:border-[#d9e2f0]",
   outline:
     "bg-white text-orange border-[1.6px] border-orange hover:bg-orange hover:text-white hover:shadow-cta",
+  progress:
+    "bg-[#EAF1FE] text-blue border border-[#d6e4fd] hover:bg-[#dceafe] hover:-translate-y-0.5",
 };
 
 const sizes: Record<Size, string> = {
