@@ -20,7 +20,7 @@ export default function RecurringForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById } = useTaskStore();
+  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById, departmentById } = useTaskStore();
   const editing = getRecurring(id ?? "");
   const canAssign = assignableUsers(role, user.id);
 
@@ -31,6 +31,9 @@ export default function RecurringForm() {
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [active, setActive] = useState(editing?.active ?? true);
   const [error, setError] = useState("");
+
+  // Department is derived from the assignee — never selected manually.
+  const departmentName = departmentById(profileById(assignedTo)?.departmentId ?? null)?.name;
 
   const toggleDay = (v: number) =>
     setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort()));
@@ -75,7 +78,7 @@ export default function RecurringForm() {
             <TextArea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Details for each generated task…" />
           </FieldLabel>
 
-          <FieldLabel label="Assign to">
+          <FieldLabel label="Assign to" hint={departmentName ? `Dept: ${departmentName}` : undefined}>
             <Combobox
               value={assignedTo}
               onChange={setAssignedTo}

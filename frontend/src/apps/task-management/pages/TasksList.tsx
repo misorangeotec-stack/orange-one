@@ -2,15 +2,25 @@ import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
+import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { isOverdue, isToday } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import type { Task } from "../types";
+import type { Task, TaskStatus } from "../types";
 import TaskListItem from "../components/TaskListItem";
 
 type View = "all" | "today" | "followup" | "pending";
+
+const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
+  { value: "all", label: "Any status" },
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "revised", label: "Revised" },
+  { value: "completed", label: "Completed" },
+  { value: "shifted", label: "Shifted" },
+];
 
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
@@ -19,6 +29,7 @@ export default function TasksList() {
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as View) || "all";
   const [q, setQ] = useState("");
+  const [status, setStatus] = useState<TaskStatus | "all">("all");
 
   const mine = useMemo(
     () =>
@@ -44,9 +55,10 @@ export default function TasksList() {
     else if (view === "followup")
       list = list.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed");
     else if (view === "pending") list = list.filter((t) => t.status === "pending" || t.status === "in_progress");
+    if (status !== "all") list = list.filter((t) => t.status === status);
     if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
     return list;
-  }, [mine, view, q]);
+  }, [mine, view, status, q]);
 
   return (
     <div className="space-y-5">
@@ -76,14 +88,23 @@ export default function TasksList() {
             active={view}
             onChange={(k) => setParams(k === "all" ? {} : { view: k }, { replace: true })}
           />
-          <div className="relative pb-2">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <TextInput
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search tasks…"
-              className="pl-9 py-2 w-full sm:w-56 text-[13px]"
+          <div className="flex items-center gap-2.5 pb-2">
+            <Combobox
+              value={status}
+              onChange={(v) => setStatus(v as TaskStatus | "all")}
+              className="w-auto min-w-[150px]"
+              align="right"
+              options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
             />
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <TextInput
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search tasks…"
+                className="pl-9 py-2 w-full sm:w-56 text-[13px]"
+              />
+            </div>
           </div>
         </div>
 

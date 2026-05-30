@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 
 export interface ComboOption {
@@ -36,16 +37,42 @@ export default function Combobox({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [pos, setPos] = useState<{ top: number; left?: number; right?: number; minWidth: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const showSearch = searchable ?? options.length > 6;
   const selected = options.find((o) => o.value === value);
 
+  // Position the portalled menu under the trigger using fixed coords so it
+  // escapes any `overflow-hidden` ancestor (e.g. a Card) that would clip it.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = ref.current?.getBoundingClientRect();
+      if (!r) return;
+      setPos({
+        top: r.bottom + 4,
+        minWidth: r.width,
+        ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }),
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+    };
+  }, [open, align]);
+
   useEffect(() => {
     if (!open) return;
     const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
     document.addEventListener("mousedown", onDoc);
@@ -83,12 +110,11 @@ export default function Combobox({
         </svg>
       </button>
 
-      {open && (
+      {open && pos && createPortal(
         <div
-          className={cn(
-            "absolute z-50 mt-1 min-w-full w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden",
-            align === "right" ? "right-0" : "left-0"
-          )}
+          ref={menuRef}
+          style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: pos.minWidth }}
+          className="z-50 w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden"
         >
           {showSearch && (
             <div className="p-2 border-b border-line">
@@ -138,7 +164,8 @@ export default function Combobox({
               })
             )}
           </ul>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

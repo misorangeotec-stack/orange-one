@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WorkspaceSettings } from "../types";
+import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import {
   activity as seedActivity,
   departments as seedDepartments,
@@ -8,11 +8,13 @@ import {
   profiles as seedProfiles,
   recurringTasks as seedRecurring,
   tasks as seedTasks,
+  weeklyPlans as seedWeeklyPlans,
   WEEK_START,
   WEEK_END,
   workspaceSettings as seedWorkspace,
 } from "./data";
 import { useSession } from "./session";
+import { formatDate, isoWeekOf, weekEndOf } from "@/shared/lib/time";
 
 /**
  * In-memory app store for the frontend phase. Owns tasks, activity, notifications,
@@ -75,6 +77,11 @@ interface TaskStoreValue {
   updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor">>) => void;
   deleteUser: (id: string) => void;
 
+  // weekly plans (Red/Yellow/Green targets per doer per ISO week)
+  weeklyPlans: WeeklyPlan[];
+  weeklyPlanFor: (doerId: string, weekStart: string) => WeeklyPlan | undefined;
+  setWeeklyPlan: (input: { doerId: string; weekStart: string; redPct: number; yellowPct: number; greenPct: number }) => void;
+
   // workspace settings (singleton)
   workspace: WorkspaceSettings;
   updateWorkspace: (patch: Partial<WorkspaceSettings>) => void;
@@ -94,6 +101,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>(() => seedProfiles.map((p) => ({ ...p, hodIds: [...p.hodIds] })));
   const [departments, setDepartments] = useState<Department[]>(() => seedDepartments.map((d) => ({ ...d })));
   const [workspace, setWorkspace] = useState<WorkspaceSettings>(() => ({ ...seedWorkspace }));
+  const [weeklyPlans, setWeeklyPlans] = useState<WeeklyPlan[]>(() => seedWeeklyPlans.map((p) => ({ ...p })));
   const seq = useRef(1000);
   const nextId = (p: string) => `${p}${++seq.current}`;
 
@@ -101,7 +109,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     const logActivity = (taskId: string, type: TaskActivity["type"], note: string | null = null) =>
       setActivity((prev) => [{ id: nextId("a"), taskId, type, actorId: actorRef.current, note, createdAt: nowIso() }, ...prev]);
 
-    const patch = (id: string, fn: (t: Task) => Task) => setTasks((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+    // Every task mutation flows through patch, so stamp updatedAt here once.
+    const patch = (id: string, fn: (t: Task) => Task) =>
+      setTasks((prev) => prev.map((t) => (t.id === id ? { ...fn(t), updatedAt: nowIso() } : t)));
 
     const profileById = (id: string | null) => profiles.find((p) => p.id === id);
     const departmentById = (id: string | null) => departments.find((d) => d.id === id);
@@ -152,7 +162,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           createdBy: creator, assignedTo, departmentId,
           revisionCount: 0, lastRevisedAt: null, followUpDate: null,
           shiftedFromTaskId: null, shiftedToTaskId: null, recurringTaskId: null,
-          completedAt: null, createdAt: nowIso(), lastRemarkAt: null,
+          completedAt: null, createdAt: nowIso(), updatedAt: nowIso(), lastRemarkAt: null,
         };
         setTasks((prev) => [task, ...prev]);
         logActivity(id, "created");
@@ -175,7 +185,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         if (!task || !revisionInfo(task).allowed) return;
         patch(id, (t) => ({ ...t, status: "revised", revisionCount: t.revisionCount + 1, lastRevisedAt: nowIso(), followUpDate }));
         logActivity(id, "revised", note || null);
-        logActivity(id, "followup", `Follow-up set to ${followUpDate}`);
+        logActivity(id, "followup", `Follow-up set to ${formatDate(followUpDate)}`);
       },
 
       rescheduleTask: (id, newDueDate) => {
@@ -190,9 +200,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         const newTask: Task = {
           ...task, id: newId, status: "pending", weekStart: targetWeek, dueDate: newDueDate,
           revisionCount: 0, lastRevisedAt: null, followUpDate: null,
-          shiftedFromTaskId: id, shiftedToTaskId: null, completedAt: null, createdAt: nowIso(),
+          shiftedFromTaskId: id, shiftedToTaskId: null, completedAt: null, createdAt: nowIso(), updatedAt: nowIso(),
         };
-        setTasks((prev) => [newTask, ...prev.map((t) => (t.id === id ? { ...t, status: "shifted" as const, shiftedToTaskId: newId } : t))]);
+        setTasks((prev) => [newTask, ...prev.map((t) => (t.id === id ? { ...t, status: "shifted" as const, shiftedToTaskId: newId, updatedAt: nowIso() } : t))]);
         logActivity(id, "shifted");
         logActivity(newId, "created");
         return newId;
@@ -258,10 +268,30 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       deleteUser: (id) =>
         setProfiles((prev) => prev.filter((u) => u.id !== id).map((u) => ({ ...u, hodIds: u.hodIds.filter((h) => h !== id) }))),
 
+      // ---- weekly plans ----
+      weeklyPlans,
+      weeklyPlanFor: (doerId, weekStart) => {
+        const { isoYear, isoWeek } = isoWeekOf(weekStart);
+        return weeklyPlans.find((p) => p.doerId === doerId && p.isoYear === isoYear && p.isoWeek === isoWeek);
+      },
+      setWeeklyPlan: ({ doerId, weekStart, redPct, yellowPct, greenPct }) => {
+        const { isoYear, isoWeek } = isoWeekOf(weekStart);
+        const weekEnd = weekEndOf(weekStart);
+        setWeeklyPlans((prev) => {
+          const idx = prev.findIndex((p) => p.doerId === doerId && p.isoYear === isoYear && p.isoWeek === isoWeek);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], weekStart, weekEnd, redPct, yellowPct, greenPct };
+            return next;
+          }
+          return [{ id: nextId("w"), doerId, isoYear, isoWeek, weekStart, weekEnd, redPct, yellowPct, greenPct }, ...prev];
+        });
+      },
+
       workspace,
       updateWorkspace: (patch) => setWorkspace((prev) => ({ ...prev, ...patch })),
     };
-  }, [tasks, activity, notifications, recurringTasks, profiles, departments, workspace]);
+  }, [tasks, activity, notifications, recurringTasks, profiles, departments, workspace, weeklyPlans]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

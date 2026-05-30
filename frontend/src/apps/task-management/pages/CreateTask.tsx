@@ -12,21 +12,18 @@ import { useTaskStore } from "../mock/store";
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { createTask, assignableUsers, departments, profileById } = useTaskStore();
+  const { createTask, assignableUsers, departmentById, profileById } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState(user.id);
-  const [departmentId, setDepartmentId] = useState(user.departmentId ?? "");
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
 
-  const onAssigneeChange = (id: string) => {
-    setAssignedTo(id);
-    const dept = profileById(id)?.departmentId;
-    if (dept) setDepartmentId(dept);
-  };
+  // Department is derived from the assignee — never selected manually.
+  const departmentId = profileById(assignedTo)?.departmentId ?? null;
+  const departmentName = departmentById(departmentId)?.name;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,7 +35,7 @@ export default function CreateTask() {
       title: title.trim(),
       description: description.trim() || undefined,
       assignedTo,
-      departmentId: departmentId || null,
+      departmentId,
       dueDate: dueDate || null,
     });
     navigate(`/task-management/tasks/${id}`);
@@ -68,10 +65,10 @@ export default function CreateTask() {
           </FieldLabel>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <FieldLabel label="Assign to">
+            <FieldLabel label="Assign to" hint={departmentName ? `Dept: ${departmentName}` : undefined}>
               <Combobox
                 value={assignedTo}
-                onChange={onAssigneeChange}
+                onChange={setAssignedTo}
                 disabled={canAssign.length <= 1}
                 options={canAssign.map((p) => ({
                   value: p.id,
@@ -82,17 +79,6 @@ export default function CreateTask() {
               />
             </FieldLabel>
 
-            <FieldLabel label="Department">
-              <Combobox
-                value={departmentId}
-                onChange={setDepartmentId}
-                placeholder="— None —"
-                options={[{ value: "", label: "— None —" }, ...departments.map((dp) => ({ value: dp.id, label: dp.name }))]}
-              />
-            </FieldLabel>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Due date" hint="optional">
               <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </FieldLabel>

@@ -151,6 +151,7 @@ export default function TaskDetail() {
                 </span>
               </Row>
               {task.completedAt && <Row label="Completed">{timeAgo(task.completedAt)}</Row>}
+              <Row label="Last updated">{timeAgo(task.updatedAt)}</Row>
             </dl>
 
             {(task.shiftedFromTaskId || task.shiftedToTaskId) && (

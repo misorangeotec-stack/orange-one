@@ -60,6 +60,7 @@ export interface Task {
   recurringTaskId: string | null;
   completedAt: string | null; // ISO datetime
   createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;
 }
 
