@@ -42,8 +42,12 @@ export default function UserForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setError("Please enter a name.");
-    if (!mobile.trim()) return setError("Please enter a mobile number — it's the user's initial password.");
-    if (mobile.trim().length < 6) return setError("Mobile number must be at least 6 characters (it's used as the password).");
+    // Normalise the mobile: strip all whitespace so the value used as the password
+    // is predictable (a number entered as "90333 01207" must log in as "9033301207",
+    // not with the literal space).
+    const mobileNorm = mobile.replace(/\s+/g, "");
+    if (!mobileNorm) return setError("Please enter a mobile number — it's the user's initial password.");
+    if (mobileNorm.length < 6) return setError("Mobile number must be at least 6 digits (it's used as the password).");
     if (busy) return;
     const base = {
       name: name.trim(),
@@ -58,8 +62,8 @@ export default function UserForm() {
     setError("");
     try {
       // Saving always re-pins the password to the mobile number (workspace policy).
-      if (editing) await updateUser(editing.id, { ...base, phone: mobile.trim() });
-      else await addUser({ ...base, mobile: mobile.trim() });
+      if (editing) await updateUser(editing.id, { ...base, phone: mobileNorm });
+      else await addUser({ ...base, mobile: mobileNorm });
       navigate("/admin/users");
     } catch (err) {
       setError((err as Error).message);
