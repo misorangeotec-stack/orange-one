@@ -1,0 +1,7 @@
+# Minimal Supabase CLI config so `supabase functions deploy` can resolve the
+# function under supabase/functions/. The remote project is targeted with
+# `--project-ref <SUPABASE_PROJECT_REF>` (see supabase/functions/README.md).
+project_id = "orange-one"
+
+[functions.admin-users]
+verify_jwt = true

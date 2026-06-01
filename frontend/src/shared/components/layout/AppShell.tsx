@@ -17,14 +17,20 @@ export default function AppShell({
   role,
   user,
   notifications,
+  onMarkRead,
   roleSwitcher,
+  banner,
   logoTo = "/home",
 }: {
   nav: NavItem[];
   role: string;
   user: ShellUser;
   notifications: NotificationItem[];
+  /** Mark the given notification ids read (omit if the shell has no live notifications). */
+  onMarkRead?: (ids: string[]) => void;
   roleSwitcher?: ReactNode;
+  /** Optional banner rendered above the page content (e.g. a read-only notice). */
+  banner?: ReactNode;
   logoTo?: string;
 }) {
   const [drawer, setDrawer] = useState(false);
@@ -65,11 +71,13 @@ export default function AppShell({
           title={title}
           user={user}
           notifications={notifications}
+          onMarkRead={onMarkRead}
           roleSwitcher={roleSwitcher}
           onMenu={() => setDrawer(true)}
         />
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-[1180px] mx-auto px-4 sm:px-6 py-6">
+            {banner}
             <Outlet />
           </div>
         </main>

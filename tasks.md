@@ -34,21 +34,21 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] **9. Task Detail** — description, details sidebar (revisions left, follow-up, shift links), activity timeline + @mention remark composer
 - [x] **10. Action modals** — Revise (follow-up + note, disabled at limit), Shift to next week (linked task), Mark Complete (note)
 - [x] _Shared UI: Modal, Tabs, Form controls, EmptyState_
-- [ ] 🔍 **Audit Phase 3** — log in → Task Management → My Tasks. Try: open a task → Start / Revise / Shift / Complete; post an @mention remark; create a task. (`?role=` to switch views)
+- [x] 🔍 **Audit Phase 3** — log in → Task Management → My Tasks. Try: open a task → Start / Revise / Shift / Complete; post an @mention remark; create a task. (`?role=` to switch views)
 - [x] _Committed + pushed to GitHub_
 
 ### Phase 4 — Manager & admin task views  ✅ built · 🔍 awaiting audit
 - [x] **Reusable TaskBrowser** — stats strip + filters (search / person / department / status / week) + list with assignee avatars
 - [x] **11. Team Tasks** (HOD / sub-HOD) — direct reports' tasks, filter by team member
 - [x] **12. All Tasks** (admin) — org-wide, filter by department + person
-- [ ] 🔍 **Audit Phase 4** (review with Phase 3) — `?role=hod` → Team Tasks; `?role=admin` → All Tasks
+- [x] 🔍 **Audit Phase 4** (review with Phase 3) — `?role=hod` → Team Tasks; `?role=admin` → All Tasks
 - [x] _Committed + pushed to GitHub_
 
 ### Phase 5 — Recurring tasks  ✅ built · 🔍 awaiting audit
 - [x] **13. Recurring list** — daily/weekly templates, frequency text, assignee, active/pause toggle, edit + delete (confirm)
 - [x] **Create/Edit Recurring** — title, description, assignee, Daily/Weekly toggle, weekday picker (weekly), active toggle
 - [x] _Store extended with recurring CRUD; HOD/admin scoped_
-- [ ] 🔍 **Audit Phase 5** — `?role=hod` or `admin` → Recurring
+- [x] 🔍 **Audit Phase 5** — `?role=hod` or `admin` → Recurring
 - [x] _Committed + pushed to GitHub_
 
 ### Refinements (post Phase 3/4, applied)
@@ -59,35 +59,86 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] **14. Reports** — role-gated tabs Weekly / Employee / Team / Department; planned-vs-actual tiles, per-person RYG, status donut, avg RYG; contextual selectors (person/HOD/department)
 - [x] **15. Activity History** — filterable audit trail (by action type + person), role-scoped, timeline with task links
 - [x] _Report stat helpers (reportFor) in selectors_
-- [ ] 🔍 **Audit Phase 6** — `?role=admin` → Reports (try tabs) + Activity
+- [x] 🔍 **Audit Phase 6** — `?role=admin` → Reports (try tabs) + Activity
 
 ### Phase 7 — Admin setup  ✅ built · 🔍 awaiting audit
 - [x] **Directory promoted into store** — profiles + departments are now live/editable; admin mutators (add/edit/delete dept + user); directory helpers (profileById/directReportIds/assignableUsers/visibleTasks) moved to store; all consumers refactored
 - [x] **16. Setup** — sub-nav shell + Onboarding checklist (live progress), Department Management (add/edit/delete), User Management (filters + role badges), Add/Edit User (role picker, department, multi-HOD reporting), Hierarchy mapping (teams + unmapped)
-- [ ] 🔍 **Audit Phase 7** — `?role=admin` → Setup
+- [x] 🔍 **Audit Phase 7** — `?role=admin` → Setup
 - [x] _Committed + pushed to GitHub_
 
 ### Phase 8 — Settings + utility  ✅ built · 🔍 awaiting audit
 - [x] **17. Settings** — Profile (edit own details + in-app change password), Organization (workspace name / week-start / max-revisions, admin), Permissions (read-only role matrix, admin)
 - [x] **18. Utility** — Empty states (reused), Access Denied (+ RequireRole guards on manager/admin routes), in-app 404
 - [x] _Workspace settings promoted into store (live max-revisions feeds the revision rule)_
-- [ ] 🔍 **Audit Phase 8 / full frontend review**
+- [x] 🔍 **Audit Phase 8 / full frontend review**
 - [x] _Committed + pushed to GitHub_
 
 > 🎉 **STAGE A (frontend) COMPLETE** — all 34 screens built, on-theme, interactive with mock data. Next: Stage B (Supabase wiring).
 
 ---
 
-## STAGE B — Backend wiring (after frontend approved)
-- [ ] Add supabase-js (anon key + RLS) + TanStack Query; generate TS types from schema
-- [ ] AuthProvider / useAuth + route guards (RequireAuth / RequireRole)
-- [ ] Per-entity data modules + query/mutation hooks; replace mock data with live queries
-- [ ] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out
-- [ ] Recurring-instance generation strategy (confirm approach)
-- [ ] RYG weekly plans + notifications (realtime bell)
-- [ ] Decide + (with approval) add Postgres RPCs for atomic shift / mention writes
-- [ ] Env wiring (`.env.local` VITE_ vars); end-to-end verification per screen
+## STAGE A.5 — Portal platform layer + per-user module access  ✅ built · 🔍 awaiting audit
+Pulls identity/admin out of Task Management into the portal core so module access can be granted per user.
+- [x] **Launcher trimmed** — workspace shows Task Management (live) + Outstanding Dashboard ("Coming soon", named) + one generic "More apps coming soon" tile; other named placeholders removed
+- [x] **Identity lifted to `core/platform/`** — types, seed data, session, and a directory store (`useDirectory`) moved out of task-management; Task store now re-exposes the directory via pass-through so its existing consumers are unchanged; providers wrap the whole app in `main.tsx`
+- [x] **`moduleAccess: string[]` on Profile** — denormalised read-model (like role/hodIds); `session.hasModule(appId)` (admins bypass)
+- [x] **Core Admin area `/admin`** (admin-only) — Onboarding, Departments, Users + Add/Edit User (with module-access selector), Hierarchy, **Module Access matrix** (users × apps); reached via an Admin gear on the launcher
+- [x] **Core account `/account`** — personal profile + password, for all users
+- [x] **Access enforced** — launcher only shows apps the user can open; each live-app route is guarded (`RequireModule` → /home); admins see everything
+- [x] _Task Management keeps only task-specific settings (Organization rules + Permissions matrix); its Setup screens were removed (moved to /admin)_
+- [x] 🔍 **Audit Stage A.5** — log in → workspace (3 tiles) → Admin gear → manage users + module access; `?role=employee` to verify gating
 
 ---
 
-_Last updated: Phase 1 in progress._
+## STAGE B — Backend wiring (in progress)
+**Safety rule (user-critical): the live data is production. Only additive/read operations; never drop/alter/delete/truncate existing tables or rows without explicit per-action approval. Strategy: READ-ONLY first — migrate views to live data; defer all writes.**
+
+### Phase B1 — Foundation ✅ done
+- [x] `@supabase/supabase-js` + `@tanstack/react-query` installed
+- [x] Env wiring — `frontend/.env.local` (gitignored) with `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
+- [x] Single anon-key browser client `core/platform/supabase.ts` (RLS-gated; service-role key never in bundle)
+- [x] **NEW table `app_access` created** `(id, user_id → profiles.id, app_id text, created_at, unique(user_id,app_id))` + RLS mirroring `user_roles`/`user_hods` (`app_access_select`: own rows OR `is_admin`; `app_access_admin_write`: admin-only ALL). Purely additive — no existing table/data touched.
+- [x] Generated TS DB types (`supabase gen types` → `core/platform/database.types.ts`); the browser client is now `createClient<Database>` (typed reads/writes/RPCs).
+
+### Phase B2 — Auth gate ✅ built · 🔍 awaiting full verify
+- [x] `AuthProvider`/`useAuth` (real Supabase session) + `RequireAuth` guard on /home, /account, /admin, app routes
+- [x] Login wired to `signInWithPassword` (real); Sign out wired everywhere; verified: bad creds → real "Invalid login credentials"; protected routes redirect to /login
+- [x] 🔍 Successful login verified (yash@orangeotec.com) — lands on the workspace.
+
+### Phase B3a — Live identity + directory (read-only) ✅ built · 🔍 awaiting audit
+- [x] React Query wired; `core/platform/liveDirectory.ts` loads profiles + departments + roles + hierarchy + app_access from Supabase (RLS-gated) and maps to the `Profile`/`Department` read-model (role precedence, hex avatar colors, hodIds, moduleAccess)
+- [x] Directory provider now loads LIVE and is READ-ONLY (`canWrite=false`; mutations are inert no-ops); session derives the current user from the auth session + live directory
+- [x] Dev "View as" role switcher removed; you are who you log in as
+- [x] Admin (Users/Departments/Hierarchy/Module Access) shows real data with a read-only banner + disabled write controls; Account page save disabled too
+- [x] Task Management held behind a "connecting to live data" notice (its tasks are still mock; restored in B3b)
+- [x] Verified live: logged in as Yash → /admin shows the real 13 users (roles, departments, reporting), avatars render, writes disabled, zero console errors, **no data written**
+
+### Phase B3b — Live tasks/reports (read-only) ✅ built · 🔍 awaiting audit
+- [x] `apps/task-management/data/fetchTaskData.ts` loads tasks / task_activity / notifications / recurring_tasks / weekly_plans / workspace_settings live (RLS-gated) and maps to the frontend types
+- [x] Task store now loads LIVE via React Query and is READ-ONLY (`canWrite=false`; all task mutations inert no-ops); selectors (visibleTasks, revisionInfo, weeklyPlanFor) unchanged
+- [x] Task Management module re-enabled (migration gate removed); module access already backed by live `app_access` (loaded into `moduleAccess` in B3a)
+- [x] Read-only enforced across the app: banner in the task shell + hidden/disabled write controls (New Task, task actions, remark composer, reschedule, recurring CRUD, weekly-plan, organization save)
+- [x] Verified live as Yash: dashboard shows the real 69 tasks (stats, dept performance, status donut); My Tasks + Task Detail show real tasks, activity and @mention remarks; writes disabled; no console errors; **nothing written to the DB**
+
+### Phase B4 — Live mutations (option B: careful live writes) — IN PROGRESS
+Backup taken before writes (`backups/`, gitignored; restore via RESTORE.md). Each flow: wire → test with a throwaway record I create + delete → verify row counts unchanged.
+- [x] **Create task — LIVE & verified.** `data/taskWrites.ts insertTask` (RLS: created_by = auth.uid()); store `createTask` async + React-Query invalidation; per-flow flag `canCreateTask` (other task writes still read-only no-ops). Verified create→delete as Yash: 69→70→69, activity 264 (cascade clean), no real data touched. Found: a DB trigger auto-logs the `created` activity on insert.
+- [x] **Task status actions: Start / Complete / Revise — LIVE & verified (+ 2/week revision limit).** `taskWrites.ts` adds `startTask`/`completeTask`/`reviseTask` (RLS update as signed-in user); store wires all three async + invalidation; per-flow flag `canStatusActions` (shift/remarks/recurring/etc. still read-only no-ops). Trigger-aware: the `log_task_activity` trigger auto-logs `completed`/`revised`/`shifted`/`followup`/`assigned` but NOT `started`, so the app logs `started` itself and skips manual logging for the others (no double-log); optional complete/revise notes are stored as a `remark`. Verified end-to-end as Yash on a throwaway: pending→in_progress (`started` row)→revise×2 (count 1→2, follow-up + trigger `followup`/`revised`, note→`remark`)→3rd revise blocked at 2/2→completed (`completed_at` + trigger `completed`); delete cascade-clean, counts 69/264/31 both before & after. **Bug found + fixed:** Revise/Complete modals stay mounted (`open=false`) so their note/date state persisted between opens and silently re-posted the prior note — added a reset-on-open `useEffect` to both; re-verified a 2nd note-less revise adds no stray `remark`.
+- [x] **Reschedule / shift-to-next-week — LIVE & verified.** `taskWrites.ts rescheduleTask(task, newDueDate, actorId)`: same/earlier week → moves `due_date` (returns null); future week → inserts a *continuation* task (pending, fresh, `shifted_from_task_id`=original, `created_by`=shifter per RLS `with_check`, assignee/dept copied) and marks the original `shifted` with `shifted_to_task_id` (returns new id → UI navigates to it). Trigger auto-logs `shifted` (original) + `created` (continuation); no manual logging. Store `rescheduleTask` async + invalidation behind new `canReschedule` flag (gates the Due-date editor). Verified as Yash on a throwaway (due 06-03, week 06-01): same-week move → due 06-05, no new row, activity unchanged; next-week shift → continuation (due 06-12, week 06-08), original `shifted` + linked both ways, UI shows "Shifted from" link; counts 69→70→71→69 after deleting both (self-ref FKs are ON DELETE SET NULL, so delete continuation + original). Caveat noted in code: 2 writes, no transaction — atomic RPC is a candidate follow-up.
+- [x] **@mention remarks + notification fan-out — LIVE & verified.** `notifications` has RLS on with no client INSERT policy, so a new **SECURITY DEFINER RPC** `add_task_remark(p_task_id, p_note, p_mentioned[])` (`db/migrations/0001_add_task_remark_rpc.sql`, applied via psql; user-approved DB change) does it atomically: inserts the `remark` activity (actor = auth.uid()), bumps `tasks.last_remark_at`, and inserts one `notifications` row per mentioned user (linked via `activity_id`) — guarded by a server-side visibility check mirroring the tasks SELECT policy; skips self-mentions; de-dups. Execute granted to `authenticated` only (revoked from public/anon). `taskWrites.addRemark` calls `supabase.rpc(...)`; store `addRemark` async + invalidation behind new `canRemark` flag; RemarkComposer gated + async with busy/error. Verified as Yash on a throwaway: @Aayush mention → 1 remark + 1 notification (unread, activity-linked); @self mention → remark only, no notification; delete task → notification cascades (`notifications.task_id` ON DELETE CASCADE); counts 69/264/31 before & after. NOTE: marking notifications read (bell) is a separate UPDATE flow, not yet wired.
+- [x] **Recurring CRUD — LIVE & verified.** `taskWrites.ts`: `insertRecurring`/`updateRecurring`/`setRecurringActive`/`deleteRecurring` (RLS: insert created_by=auth.uid(); update created_by/admin/hod-of-assignee; delete created_by/admin). Store wires create/update/toggle/delete async + invalidation behind new `canRecurring` flag; RecurringList + RecurringForm gated on it with busy states. The live `recurrence_type` enum is **daily/weekly only** — removed the unsupported "monthly" option from the form + tidied copy (monthly collapses to daily defensively in the store). Verified as Yash on a throwaway (recurring_tasks started at 0): create weekly Mon/Wed → row with weekly_days [1,3]; edit title + switch to daily → weekly_days cleared to []; toggle → active false; delete → row gone. recurring_tasks back to 0; tasks/activity/notifs untouched (69/264/31).
+- [x] **Weekly-plan upsert — LIVE & verified.** `taskWrites.ts upsertWeeklyPlan` branches update-vs-insert (keyed by the existing plan id) so an edit doesn't overwrite `created_by`; insert sets created_by=auth.uid(). Store `setWeeklyPlan` async (computes iso year/week + week_end via shared time helpers) + invalidation behind new `canWeeklyPlan` flag; WeeklyPlanModal async with busy/error; Reports "Set weekly plan" button gated on the flag. Constraints respected: UNIQUE(doer_id, iso_year, iso_week), CHECK red+yellow+green=100 (UI enforces before submit), RLS insert/update = admin OR hod-of-doer. Verified as Yash on a throwaway plan for **doer=Yash** (no existing plan → zero collision with the 3 real rows): insert wk24 R15/Y25/G60 → update same row to R20/Y30/G50 (same id, created_by preserved, count stayed 4) → delete (admin). weekly_plans back to 3 real rows unchanged; tasks/activity/notifs untouched.
+- [x] **Department CRUD (admin) — LIVE & verified.** New `core/platform/directoryWrites.ts` (admin RLS `is_admin`); directory store wired async + invalidation with granular flags (`canManageDepartments` etc.); Departments.tsx async with busy/error. Verified as Yash on a throwaway dept: add (created_by=Yash) → edit (name+desc) → delete; back to the 5 real departments unchanged. **Architecture note:** `profiles.id → auth.users.id` with an `on_auth_user_created` trigger, so creating a brand-new user (and hard-deleting one) needs the auth admin API / a service-role Edge Function — not client-wireable. Add User / Delete User are therefore disabled with an explanatory tooltip (`canAddUser`/`canDeleteUser`=false).
+- [x] **User edit + module access (admin) — LIVE & verified.** Flipped `canEditUser`/`canManageModules`/`canEditOwnProfile` on. `updateUser` does profile update + (when changed) role replace (`user_roles`), reporting replace (`user_hods`), and module replace (`app_access`) — each under admin RLS, using the UNIQUE constraints. Verified against a **throwaway auth user** (minted via `tools/throwaway_user.py` using the service-role admin API → `on_auth_user_created` trigger makes the profile; **never touched the 13 real users**): edited designation + department + role (employee→sub_hod) + reporting HOD + module → all four tables updated correctly; the Module Access matrix toggle added task-management while preserving the existing grant; deleting the throwaway auth user cascade-cleaned profile/roles/hods/access (13 users intact). Add User / Delete User remain disabled (need a service-role onboarding Edge Function — proposed follow-up).
+- [x] **Mark-notifications-read (bell) — LIVE & verified.** `taskWrites.markNotificationsRead(ids)` (RLS scopes to own rows); store `markNotificationsRead` async + invalidation; threaded `onMarkRead` through AppShell → Topbar → NotificationsBell (mark-on-click per item + a "Mark all read" header action). Verified as Yash on an isolated throwaway (throwaway task + a service-role-inserted notification for Yash): clicking that one item set its read_at while leaving the real unread untouched; deleting the throwaway task cascade-cleaned the notification (back to 69/264/31).
+- [x] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out — all implemented + verified within the flows above
+- [x] **Add User / Delete User — DEPLOYED, LIVE & verified.** `supabase/functions/admin-users/` Edge Function deployed (ACTIVE v1); admin-only (re-checks the caller's role with the service role). Flipped `canAddUser`/`canDeleteUser` on. Verified end-to-end via the UI on a throwaway: **Create** → auth user + profile + role + reporting HOD + modules (task-management default + outstanding-dashboard), users 13→14; **Delete** → cascade-cleaned profile/roles/hods/access, back to 13.
+- [x] **Recurring-instance generation — LIVE & verified (daily pg_cron).** `generate_recurring_tasks(p_date)` SECURITY DEFINER (`db/migrations/0003`) materializes tasks from active templates: daily → weekdays, weekly → weekly_days (0=Sun..6=Sat); dedups on recurring_task_id+due_date (re-runs safe); generated task gets owner's created_by, Monday week_start, recurring_task_id link. Scheduled via **pg_cron** `generate-recurring-daily` at 00:30 UTC / 06:00 IST (`db/migrations/0004`; pg_cron extension enabled). Verified with throwaway daily+weekly templates: Tue→2, re-run→0 (dedup), Wed→1 (daily only), Sat→0 (weekend); generated tasks correct + `created` activity logged; cleaned up to 69/264/31, recurring 0. (No templates exist yet, so nothing generates until admins add them.)
+- [x] RYG weekly plans done. **Realtime bell push — LIVE & verified.** Added `notifications` to the `supabase_realtime` publication (`db/migrations/0005`); the task store subscribes to `postgres_changes` on notifications filtered to the current user (RLS-scoped) and invalidates `["taskData"]` on any event. Verified: inserting a notification for Yash via service-role pushed the bell from 3→4 items with **no reload**; cleaned up to 69/264/31.
+- [x] Atomic writes done: mention (`add_task_remark`) **and** shift (`shift_task_to_week`, `db/migrations/0002`) — shift now runs insert+update in one transaction (SECURITY INVOKER, RLS still applies); verified via throwaway (orig shifted + linked continuation; trigger logged created+shifted; back to 69/264/31).
+- [x] End-to-end verification — done per flow via throwaway records (counts return to baseline each time).
+
+---
+
+_Last updated: Stage B — B1/B2/B3a/B3b done (whole app reads live data). B4 in progress (option B, careful live writes): create-task, Start/Complete/Revise (2/week limit), reschedule/shift-to-next-week, and @mention remarks + notification fan-out (via the new add_task_remark SECURITY DEFINER RPC) all live & verified end-to-end via throwaway records (counts return to 69/264/31 each time; no real data touched). First production DB change made (additive RPC, user-approved, in db/migrations/). Recurring CRUD, weekly-plan upsert, and the admin writes (department CRUD + user edit/role/reporting/module-access, all verified via throwaway records incl. a throwaway auth user) now live & verified too. Add/Delete user now deployed (admin-users Edge Function) & verified. Atomic shift RPC, daily recurring-instance generation (pg_cron), realtime notification bell, and generated TS types all done & verified too. **Stage B write rollout complete** — only the user-provided dark logo PNG remains._

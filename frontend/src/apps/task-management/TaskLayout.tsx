@@ -4,14 +4,13 @@ import { timeAgo } from "@/shared/lib/time";
 import { taskNav } from "./nav";
 import { useSession, ALL_ROLES } from "./mock/session";
 import { useTaskStore } from "./mock/store";
-import RoleSwitcher from "./components/RoleSwitcher";
 
 const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
-/** Wires the mock session + data into the generic AppShell, then renders routes. */
+/** Wires the session + live task data into the generic AppShell, then renders routes. */
 export default function TaskLayout() {
   const { user, role } = useSession();
-  const { notifications, getTask, profileById } = useTaskStore();
+  const { notifications, getTask, profileById, markNotificationsRead } = useTaskStore();
 
   const notifItems: NotificationItem[] = notifications
     .filter((n) => n.userId === user.id)
@@ -38,7 +37,7 @@ export default function TaskLayout() {
       role={role}
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
-      roleSwitcher={<RoleSwitcher />}
+      onMarkRead={(ids) => { void markNotificationsRead(ids); }}
     />
   );
 }

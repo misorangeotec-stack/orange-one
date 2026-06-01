@@ -12,36 +12,41 @@ import { useTaskStore } from "../mock/store";
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { createTask, assignableUsers, departments, profileById } = useTaskStore();
+  const { createTask, assignableUsers, departmentById, profileById, canCreateTask } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState(user.id);
-  const [departmentId, setDepartmentId] = useState(user.departmentId ?? "");
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const onAssigneeChange = (id: string) => {
-    setAssignedTo(id);
-    const dept = profileById(id)?.departmentId;
-    if (dept) setDepartmentId(dept);
-  };
+  // Department is derived from the assignee — never selected manually.
+  const departmentId = profileById(assignedTo)?.departmentId ?? null;
+  const departmentName = departmentById(departmentId)?.name;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       setError("Please enter a task title.");
       return;
     }
-    const id = createTask({
-      title: title.trim(),
-      description: description.trim() || undefined,
-      assignedTo,
-      departmentId: departmentId || null,
-      dueDate: dueDate || null,
-    });
-    navigate(`/task-management/tasks/${id}`);
+    setBusy(true);
+    setError("");
+    try {
+      const id = await createTask({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        assignedTo,
+        departmentId,
+        dueDate: dueDate || null,
+      });
+      navigate(`/task-management/tasks/${id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't create the task.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -68,31 +73,24 @@ export default function CreateTask() {
           </FieldLabel>
 
           <div className="grid sm:grid-cols-2 gap-4">
-            <FieldLabel label="Assign to">
+            <FieldLabel label="Assign to" hint={departmentName ? `Dept: ${departmentName}` : undefined}>
               <Combobox
                 value={assignedTo}
-                onChange={onAssigneeChange}
+                onChange={setAssignedTo}
                 disabled={canAssign.length <= 1}
-                options={canAssign.map((p) => ({
-                  value: p.id,
-                  label: p.id === user.id ? `${p.name} (me)` : p.name,
-                  sublabel: p.designation ?? undefined,
-                  icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-                }))}
+                options={canAssign.map((p) => {
+                  const dept = departmentById(p.departmentId)?.name;
+                  const sub = [p.designation, dept].filter(Boolean).join(" · ");
+                  return {
+                    value: p.id,
+                    label: p.id === user.id ? `${p.name} (me)` : p.name,
+                    sublabel: sub || undefined,
+                    icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                  };
+                })}
               />
             </FieldLabel>
 
-            <FieldLabel label="Department">
-              <Combobox
-                value={departmentId}
-                onChange={setDepartmentId}
-                placeholder="— None —"
-                options={[{ value: "", label: "— None —" }, ...departments.map((dp) => ({ value: dp.id, label: dp.name }))]}
-              />
-            </FieldLabel>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Due date" hint="optional">
               <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </FieldLabel>
@@ -101,8 +99,9 @@ export default function CreateTask() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            <Button variant="ghost" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button type="submit">Create Task</Button>
+            {!canCreateTask && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate(-1)} disabled={busy}>{canCreateTask ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canCreateTask || busy}>{busy ? "Creating…" : "Create Task"}</Button>
           </div>
         </form>
       </Card>

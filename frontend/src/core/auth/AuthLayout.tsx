@@ -74,12 +74,22 @@ export function Field({
   placeholder,
   autoComplete,
   defaultValue,
+  value,
+  onChange,
+  required,
+  disabled,
+  autoFocus,
 }: {
   label: string;
   type?: string;
   placeholder?: string;
   autoComplete?: string;
   defaultValue?: string;
+  value?: string;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  required?: boolean;
+  disabled?: boolean;
+  autoFocus?: boolean;
 }) {
   return (
     <label className="block mb-4">
@@ -89,7 +99,12 @@ export function Field({
         placeholder={placeholder}
         autoComplete={autoComplete}
         defaultValue={defaultValue}
-        className="w-full rounded-xl border border-line bg-white px-4 py-3 text-[15px] text-ink placeholder:text-grey-2 outline-none transition focus:border-orange focus:ring-4 focus:ring-orange/10"
+        value={value}
+        onChange={onChange}
+        required={required}
+        disabled={disabled}
+        autoFocus={autoFocus}
+        className="w-full rounded-xl border border-line bg-white px-4 py-3 text-[15px] text-ink placeholder:text-grey-2 outline-none transition focus:border-orange focus:ring-4 focus:ring-orange/10 disabled:opacity-60"
       />
     </label>
   );

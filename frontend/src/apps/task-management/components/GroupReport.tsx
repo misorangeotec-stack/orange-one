@@ -3,27 +3,26 @@ import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { useTaskStore } from "../mock/store";
-import { weeklyPlans } from "../mock/data";
+import { WEEK_START } from "../mock/data";
 import { reportFor } from "../mock/selectors";
-import type { Profile } from "../types";
+import type { Profile, WeeklyPlan } from "../types";
 import RygBar from "./RygBar";
 import DonutChart from "./DonutChart";
 
 const STATUS_COLORS = { completed: "#27AE60", pending: "#3B82F6", revised: "#F8B62B", shifted: "#FF6A1F" };
 
-function avgRyg(ids: string[]) {
-  const plans = weeklyPlans.filter((w) => ids.includes(w.doerId));
+function avgRyg(plans: { redPct: number; yellowPct: number; greenPct: number }[]) {
   if (!plans.length) return { red: 0, yellow: 0, green: 0 };
   const s = plans.reduce((a, p) => ({ red: a.red + p.redPct, yellow: a.yellow + p.yellowPct, green: a.green + p.greenPct }), { red: 0, yellow: 0, green: 0 });
   return { red: Math.round(s.red / plans.length), yellow: Math.round(s.yellow / plans.length), green: Math.round(s.green / plans.length) };
 }
 
-/** Planned-vs-actual report for a set of people (used by every Reports tab). */
-export default function GroupReport({ people }: { people: Profile[] }) {
-  const { tasks } = useTaskStore();
-  const ids = useMemo(() => people.map((p) => p.id), [people]);
+/** Planned-vs-actual report for a set of people for a given week (used by every Reports tab). */
+export default function GroupReport({ people, weekStart = WEEK_START }: { people: Profile[]; weekStart?: string }) {
+  const { tasks, departmentById, weeklyPlanFor } = useTaskStore();
+  const weekTasks = useMemo(() => tasks.filter((t) => t.weekStart === weekStart), [tasks, weekStart]);
 
-  const rows = useMemo(() => people.map((p) => ({ p, r: reportFor(tasks, p.id) })), [people, tasks]);
+  const rows = useMemo(() => people.map((p) => ({ p, r: reportFor(weekTasks, p.id) })), [people, weekTasks]);
   const agg = useMemo(
     () =>
       rows.reduce(
@@ -38,7 +37,8 @@ export default function GroupReport({ people }: { people: Profile[] }) {
       ),
     [rows]
   );
-  const ryg = avgRyg(ids);
+  const plans = useMemo(() => people.map((p) => weeklyPlanFor(p.id, weekStart)).filter((p): p is WeeklyPlan => !!p), [people, weeklyPlanFor, weekStart]);
+  const ryg = avgRyg(plans);
   const completion = agg.planned ? Math.round((agg.completed / agg.planned) * 100) : 0;
 
   const donut = [
@@ -68,14 +68,21 @@ export default function GroupReport({ people }: { people: Profile[] }) {
           <h3 className="text-[14px] font-semibold text-navy mb-3">Per-person performance</h3>
           <div className="space-y-3.5">
             {rows.map(({ p, r }) => {
-              const plan = weeklyPlans.find((w) => w.doerId === p.id);
+              const plan = weeklyPlanFor(p.id, weekStart);
               const rg = plan ? { red: plan.redPct, yellow: plan.yellowPct, green: plan.greenPct } : { red: 0, yellow: 0, green: 0 };
               return (
                 <div key={p.id} className="flex items-center gap-3">
                   <Avatar name={p.name} color={p.avatarColor} size={34} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[13px] font-semibold text-navy truncate">{p.name}</span>
+                      <div className="min-w-0">
+                        <span className="block text-[13px] font-semibold text-navy truncate">{p.name}</span>
+                        {(p.designation || p.departmentId) && (
+                          <span className="block text-[11px] text-grey-2 truncate">
+                            {[p.designation, departmentById(p.departmentId)?.name].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[11.5px] text-grey-2 whitespace-nowrap">
                         {r.completed}/{r.planned} done · {r.revisionTotal} rev
                       </span>

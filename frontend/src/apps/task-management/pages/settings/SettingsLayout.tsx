@@ -1,24 +1,18 @@
 import { NavLink, Outlet } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
-import { useSession } from "../../mock/session";
 
+/** Task Management settings (admin): workspace task rules + role permissions. */
 export default function SettingsLayout() {
-  const { isAdmin } = useSession();
   const tabs = [
-    { to: "/task-management/settings", label: "Profile", end: true },
-    ...(isAdmin
-      ? [
-          { to: "/task-management/settings/organization", label: "Organization" },
-          { to: "/task-management/settings/permissions", label: "Permissions" },
-        ]
-      : []),
+    { to: "/task-management/settings", label: "Organization", end: true },
+    { to: "/task-management/settings/permissions", label: "Permissions" },
   ];
 
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-[22px] font-bold text-navy">Settings</h2>
-        <p className="text-grey text-[13px] mt-1">Manage your account and workspace preferences.</p>
+        <p className="text-grey text-[13px] mt-1">Manage workspace task rules and role permissions.</p>
       </div>
 
       <div className="flex items-center gap-1 border-b border-line overflow-x-auto">

@@ -17,17 +17,18 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById } = useTaskStore();
+  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
+  const [starting, setStarting] = useState(false);
 
   const task = getTask(id);
   if (!task) {
     return <EmptyState title="Task not found" message="It may have been removed." actionLabel="Back to My Tasks" actionTo="/task-management/tasks" />;
   }
 
-  const onReschedule = (date: string) => {
+  const onReschedule = async (date: string) => {
     if (!date) return;
-    const newId = rescheduleTask(task.id, date);
+    const newId = await rescheduleTask(task.id, date);
     if (newId) navigate(`/task-management/tasks/${newId}`); // shifted to a future week
   };
 
@@ -58,12 +59,24 @@ export default function TaskDetail() {
           </p>
         </div>
 
-        {!closed && (
+        {!closed && canStatusActions && (
           <div className="flex flex-wrap items-center gap-2">
             {task.status !== "in_progress" && (
-              <Button variant="progress" size="sm" onClick={() => startTask(task.id)}>
+              <Button
+                variant="progress"
+                size="sm"
+                disabled={starting}
+                onClick={async () => {
+                  setStarting(true);
+                  try {
+                    await startTask(task.id);
+                  } finally {
+                    setStarting(false);
+                  }
+                }}
+              >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4" /></svg>
-                Mark in progress
+                {starting ? "Starting…" : "Mark in progress"}
               </Button>
             )}
             <span title={info.allowed ? "" : `Revision limit reached (${info.max}/week)`}>
@@ -142,7 +155,7 @@ export default function TaskDetail() {
               </Row>
               <Row label="Created by">{creator?.name ?? "—"}</Row>
               <Row label="Due date">
-                <DueDateEditor value={task.dueDate} closed={closed} onChange={onReschedule} />
+                <DueDateEditor value={task.dueDate} closed={closed || !canReschedule} onChange={onReschedule} />
               </Row>
               <Row label="Follow-up">{task.followUpDate ? dateLabel(task.followUpDate) : "—"}</Row>
               <Row label="Revisions">
@@ -151,6 +164,7 @@ export default function TaskDetail() {
                 </span>
               </Row>
               {task.completedAt && <Row label="Completed">{timeAgo(task.completedAt)}</Row>}
+              <Row label="Last updated">{timeAgo(task.updatedAt)}</Row>
             </dl>
 
             {(task.shiftedFromTaskId || task.shiftedToTaskId) && (

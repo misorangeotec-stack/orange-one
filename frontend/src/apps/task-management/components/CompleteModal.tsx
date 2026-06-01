@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
@@ -9,10 +9,29 @@ import type { Task } from "../types";
 export default function CompleteModal({ task, open, onClose }: { task: Task; open: boolean; onClose: () => void }) {
   const { completeTask } = useTaskStore();
   const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  const submit = () => {
-    completeTask(task.id, note.trim() || undefined);
-    onClose();
+  // Reset on open — the modal stays mounted, so clear any stale note/state.
+  useEffect(() => {
+    if (open) {
+      setNote("");
+      setBusy(false);
+      setError("");
+    }
+  }, [open]);
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await completeTask(task.id, note.trim() || undefined);
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -23,8 +42,8 @@ export default function CompleteModal({ task, open, onClose }: { task: Task; ope
       subtitle={task.title}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit}>Mark complete</Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={busy}>{busy ? "Saving…" : "Mark complete"}</Button>
         </>
       }
     >
@@ -34,8 +53,9 @@ export default function CompleteModal({ task, open, onClose }: { task: Task; ope
           Nice work! This will be marked completed and timestamped.
         </div>
         <FieldLabel label="Completion note" hint="optional">
-          <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to record about how it was done?" />
+          <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} disabled={busy} placeholder="Anything to record about how it was done?" />
         </FieldLabel>
+        {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
       </div>
     </Modal>
   );

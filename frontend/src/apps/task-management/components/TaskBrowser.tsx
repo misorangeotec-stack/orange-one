@@ -4,6 +4,9 @@ import { TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
+import { usePagination } from "@/shared/lib/usePagination";
 import { WEEK_START } from "../mock/data";
 import type { Department, Profile, Task, TaskStatus } from "../types";
 import TaskListItem from "./TaskListItem";
@@ -41,16 +44,40 @@ export default function TaskBrowser({
   const [status, setStatus] = useState<TaskStatus | "all">("all");
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
 
-  const counts = useMemo(() => {
-    const c = { total: tasks.length, open: 0, completed: 0, revised: 0, shifted: 0 };
-    for (const t of tasks) {
-      if (t.status === "pending" || t.status === "in_progress") c.open++;
-      else if (t.status === "completed") c.completed++;
-      else if (t.status === "revised") c.revised++;
-      else if (t.status === "shifted") c.shifted++;
+  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+
+  // The assignee dropdown is scoped to the selected department, so picking a
+  // department surfaces exactly that team's members.
+  const visiblePeople = useMemo(
+    () => (dept === "all" ? people : people.filter((p) => p.departmentId === dept)),
+    [people, dept],
+  );
+
+  // Linked filters. Choosing a person pins the department to that person's dept;
+  // choosing a department drops any selected person who no longer belongs to it,
+  // so the whole department's tasks show.
+  const handlePersonChange = (next: string) => {
+    setPerson(next);
+    // Pin the department to the chosen person's dept; if they have none, drop the
+    // department filter so their tasks aren't hidden by a stale selection.
+    if (departments && next !== "all") {
+      setDept(peopleById.get(next)?.departmentId ?? "all");
     }
-    return c;
-  }, [tasks]);
+  };
+  const handleDeptChange = (next: string) => {
+    setDept(next);
+    if (next !== "all" && person !== "all" && peopleById.get(person)?.departmentId !== next) {
+      setPerson("all");
+    }
+  };
+
+  const clearAll = () => {
+    setQ("");
+    setPerson("all");
+    setDept("all");
+    setStatus("all");
+    setWeek("all");
+  };
 
   const filtered = useMemo(() => {
     const nw = nextWeekStart();
@@ -64,6 +91,48 @@ export default function TaskBrowser({
       return true;
     });
   }, [tasks, person, dept, status, week, q]);
+
+  // KPI cards reflect the active filters (not the full list).
+  const counts = useMemo(() => {
+    const c = { total: filtered.length, open: 0, completed: 0, revised: 0, shifted: 0 };
+    for (const t of filtered) {
+      if (t.status === "pending" || t.status === "in_progress") c.open++;
+      else if (t.status === "completed") c.completed++;
+      else if (t.status === "revised") c.revised++;
+      else if (t.status === "shifted") c.shifted++;
+    }
+    return c;
+  }, [filtered]);
+
+  const pg = usePagination(filtered, { resetKey: `${q}|${person}|${dept}|${status}|${week}` });
+
+  // Active-filter chips, so it's always visible what's narrowing the list.
+  const activeFilters: ActiveFilter[] = [];
+  if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
+  if (departments && dept !== "all")
+    activeFilters.push({
+      key: "dept",
+      label: `Department: ${departments.find((d) => d.id === dept)?.name ?? dept}`,
+      onClear: () => handleDeptChange("all"),
+    });
+  if (person !== "all")
+    activeFilters.push({
+      key: "person",
+      label: `Person: ${peopleById.get(person)?.name ?? person}`,
+      onClear: () => handlePersonChange("all"),
+    });
+  if (status !== "all")
+    activeFilters.push({
+      key: "status",
+      label: `Status: ${STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}`,
+      onClear: () => setStatus("all"),
+    });
+  if (week !== "all")
+    activeFilters.push({
+      key: "week",
+      label: week === "this" ? "This week" : "Next week",
+      onClear: () => setWeek("all"),
+    });
 
   return (
     <div className="space-y-4">
@@ -86,18 +155,18 @@ export default function TaskBrowser({
           {departments && (
             <Combobox
               value={dept}
-              onChange={setDept}
-              className="w-auto min-w-[160px]"
+              onChange={handleDeptChange}
+              className="w-full sm:w-auto sm:min-w-[160px]"
               options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
             />
           )}
           <Combobox
             value={person}
-            onChange={setPerson}
-            className="w-auto min-w-[170px]"
+            onChange={handlePersonChange}
+            className="w-full sm:w-auto sm:min-w-[170px]"
             options={[
               { value: "all", label: departments ? "All people" : "All team members" },
-              ...people.map((p) => ({
+              ...visiblePeople.map((p) => ({
                 value: p.id,
                 label: p.name,
                 sublabel: p.designation ?? undefined,
@@ -108,13 +177,13 @@ export default function TaskBrowser({
           <Combobox
             value={status}
             onChange={(v) => setStatus(v as TaskStatus | "all")}
-            className="w-auto min-w-[150px]"
+            className="w-full sm:w-auto sm:min-w-[150px]"
             options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
           />
           <Combobox
             value={week}
             onChange={(v) => setWeek(v as "all" | "this" | "next")}
-            className="w-auto min-w-[130px]"
+            className="w-full sm:w-auto sm:min-w-[130px]"
             options={[
               { value: "all", label: "Any week" },
               { value: "this", label: "This week" },
@@ -123,14 +192,26 @@ export default function TaskBrowser({
           />
         </div>
 
+        {/* active filters */}
+        {activeFilters.length > 0 && (
+          <ActiveFilters
+            filters={activeFilters}
+            onClearAll={clearAll}
+            className="px-3 py-2.5 border-b border-line bg-page/60"
+          />
+        )}
+
         {/* list */}
-        <div className="divide-y divide-line">
-          {filtered.length === 0 ? (
-            <EmptyState title="Nothing here" message={emptyMessage} />
-          ) : (
-            filtered.map((t) => <TaskListItem key={t.id} task={t} showAssignee />)
-          )}
-        </div>
+        {filtered.length === 0 ? (
+          <EmptyState title="Nothing here" message={emptyMessage} />
+        ) : (
+          <>
+            <div className="divide-y divide-line">
+              {pg.pageItems.map((t) => <TaskListItem key={t.id} task={t} showAssignee />)}
+            </div>
+            <Pagination state={pg} rowsLabel="tasks" />
+          </>
+        )}
       </Card>
     </div>
   );

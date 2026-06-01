@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
-import { useTaskStore } from "../../mock/store";
-import type { Profile } from "../../types";
+import { useDirectory } from "@/core/platform/store";
+import type { Profile } from "@/core/platform/types";
 
 /** Read-only view of the reporting structure (edit a person to change their HODs). */
 export default function Hierarchy() {
-  const { profiles, profileById, directReportIds, departmentById } = useTaskStore();
+  const { profiles, profileById, directReportIds, departmentById } = useDirectory();
 
   const admins = profiles.filter((p) => p.role === "admin");
   const managers = profiles.filter((p) => p.role === "hod" || p.role === "sub_hod");
@@ -73,7 +73,7 @@ export default function Hierarchy() {
           <p className="text-[12px] text-[#9a6e0c] mb-3">These employees don't report to anyone yet. Edit them to assign a HOD.</p>
           <div className="flex flex-wrap gap-2">
             {unmapped.map((u) => (
-              <Link key={u.id} to={`/task-management/setup/users/${u.id}/edit`}>
+              <Link key={u.id} to={`/admin/users/${u.id}/edit`}>
                 <Chip p={u} sub={departmentById(u.departmentId)?.name} />
               </Link>
             ))}

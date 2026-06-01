@@ -45,6 +45,67 @@ export function reportFor(all: Task[], personId: string): PersonReport {
   return r;
 }
 
+// ---- Planned-vs-actual RYG ----
+
+export interface RygPct {
+  red: number;
+  yellow: number;
+  green: number;
+  total: number; // task count (actual) or plan count (planned); 0 = nothing to show
+}
+
+const EMPTY_RYG: RygPct = { red: 0, yellow: 0, green: 0, total: 0 };
+
+/**
+ * Actual achieved RYG (%) for one person in one week, from their tasks:
+ * Green = completed, Yellow = revised, Red = everything else (pending / in-progress / overdue / shifted).
+ */
+export function actualRygFor(all: Task[], personId: string, weekStart: string): RygPct {
+  const mine = all.filter((t) => t.assignedTo === personId && t.weekStart === weekStart);
+  const total = mine.length;
+  if (!total) return EMPTY_RYG;
+  let g = 0, y = 0;
+  for (const t of mine) {
+    if (t.status === "completed") g++;
+    else if (t.status === "revised") y++;
+  }
+  const green = Math.round((g / total) * 100);
+  const yellow = Math.round((y / total) * 100);
+  return { green, yellow, red: 100 - green - yellow, total }; // red absorbs rounding so sum = 100
+}
+
+type PlanLookup = (doerId: string, weekStart: string) => { redPct: number; yellowPct: number; greenPct: number } | undefined;
+
+/**
+ * Planned (average of available plan %s) vs actual (pooled task buckets) across a set of
+ * people over one or more weeks. Used for both per-week rows and the month rollup.
+ */
+export function aggregateRyg(people: string[], weeks: string[], all: Task[], planFor: PlanLookup): { planned: RygPct; actual: RygPct } {
+  let pr = 0, py = 0, pg = 0, plans = 0;
+  let g = 0, y = 0, tasks = 0;
+  for (const pid of people) {
+    for (const w of weeks) {
+      const plan = planFor(pid, w);
+      if (plan) { pr += plan.redPct; py += plan.yellowPct; pg += plan.greenPct; plans++; }
+      for (const t of all) {
+        if (t.assignedTo !== pid || t.weekStart !== w) continue;
+        tasks++;
+        if (t.status === "completed") g++;
+        else if (t.status === "revised") y++;
+      }
+    }
+  }
+  const planned: RygPct = plans
+    ? { yellow: Math.round(py / plans), green: Math.round(pg / plans), red: 0, total: plans }
+    : { ...EMPTY_RYG };
+  if (plans) planned.red = 100 - planned.yellow - planned.green;
+  const actual: RygPct = tasks
+    ? { yellow: Math.round((y / tasks) * 100), green: Math.round((g / tasks) * 100), red: 0, total: tasks }
+    : { ...EMPTY_RYG };
+  if (tasks) actual.red = 100 - actual.yellow - actual.green;
+  return { planned, actual };
+}
+
 export function computeStats(list: Task[]): DashboardStats {
   const statusCounts: Record<Task["status"], number> = {
     pending: 0,

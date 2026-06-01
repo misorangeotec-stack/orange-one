@@ -7,17 +7,28 @@ import { useTaskStore } from "../../mock/store";
 
 /** Admin: workspace-level settings. */
 export default function Organization() {
-  const { workspace, updateWorkspace, profiles, departments } = useTaskStore();
+  const { workspace, updateWorkspace, profiles, departments, canManageWorkspace } = useTaskStore();
   const [name, setName] = useState(workspace.workspaceName);
   const [weekStart, setWeekStart] = useState(workspace.weekStart);
   const [maxRev, setMaxRev] = useState(workspace.maxRevisionsPerWeek);
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
-  const save = (e: React.FormEvent) => {
+  const save = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateWorkspace({ workspaceName: name.trim() || "Workspace", weekStart, maxRevisionsPerWeek: Math.max(1, maxRev) });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await updateWorkspace({ workspaceName: name.trim() || "Workspace", weekStart, maxRevisionsPerWeek: Math.max(1, maxRev) });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -44,14 +55,16 @@ export default function Organization() {
 
           <FieldLabel label="Max revisions per week" hint="the core accountability rule">
             <div className="flex items-center gap-3">
-              <input type="range" min={1} max={5} value={maxRev} onChange={(e) => setMaxRev(Number(e.target.value))} className="accent-orange w-48" />
+              <input type="range" min={1} max={5} value={maxRev} onChange={(e) => setMaxRev(Number(e.target.value))} className="accent-orange w-full max-w-[12rem]" />
               <span className="text-[15px] font-bold text-navy w-6 text-center">{maxRev}</span>
             </div>
           </FieldLabel>
 
           <div className="flex items-center justify-end gap-3 pt-1">
+            {!canManageWorkspace && <span className="mr-auto text-[12.5px] text-grey-2">Only admins can change workspace settings.</span>}
+            {error && <span className="mr-auto text-[12.5px] text-[#d4493f]">{error}</span>}
             {saved && <span className="text-[12.5px] text-[#27AE60] font-medium">✓ Saved</span>}
-            <Button type="submit">Save settings</Button>
+            <Button type="submit" disabled={!canManageWorkspace || busy}>{busy ? "Saving…" : "Save settings"}</Button>
           </div>
         </form>
       </Card>

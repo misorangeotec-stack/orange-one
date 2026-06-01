@@ -1,35 +1,50 @@
-import { createContext, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
-import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WorkspaceSettings } from "../types";
-import {
-  activity as seedActivity,
-  departments as seedDepartments,
-  notifications as seedNotifications,
-  profiles as seedProfiles,
-  recurringTasks as seedRecurring,
-  tasks as seedTasks,
-  WEEK_START,
-  WEEK_END,
-  workspaceSettings as seedWorkspace,
-} from "./data";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
+import { useDirectory } from "@/core/platform/store";
+import { supabase } from "@/core/platform/supabase";
+import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
+import { fetchTaskData } from "../data/fetchTaskData";
+import {
+  insertTask,
+  startTask as startTaskWrite,
+  completeTask as completeTaskWrite,
+  reviseTask as reviseTaskWrite,
+  rescheduleTask as rescheduleTaskWrite,
+  addRemark as addRemarkWrite,
+  markNotificationsRead as markNotificationsReadWrite,
+  insertRecurring as insertRecurringWrite,
+  updateRecurring as updateRecurringWrite,
+  setRecurringActive as setRecurringActiveWrite,
+  deleteRecurring as deleteRecurringWrite,
+  upsertWeeklyPlan as upsertWeeklyPlanWrite,
+  updateWorkspaceSettings as updateWorkspaceSettingsWrite,
+} from "../data/taskWrites";
 
 /**
- * In-memory app store for the frontend phase. Owns tasks, activity, notifications,
- * recurring templates AND the directory (people + departments). Implements the same
- * mutations the backend will, so the UI is fully interactive during the audit.
- * Business rules the DB does NOT enforce (revision limit, shift linkage, mention
- * fan-out) live here and move to the data layer / RPCs in Stage B.
+ * Task-domain store (Stage B B3b, READ-ONLY). Loads the live task tables for the
+ * signed-in user (RLS-gated) via React Query and exposes the same interface the
+ * screens already consume — read selectors are real; the directory (people +
+ * departments) is re-exposed from the portal core. Writes are disabled this phase
+ * (`canWrite` is false; mutations are inert no-ops) until a safe write path is
+ * agreed, so nothing here can change production data.
  */
 
-const nowIso = () => new Date().toISOString();
 const mondayOf = (iso: string) => {
   const d = new Date(iso);
   const dow = (d.getDay() + 6) % 7;
   d.setDate(d.getDate() - dow);
   return d.toISOString().slice(0, 10);
 };
-const AVATAR_COLORS: AvatarColor[] = ["blue", "orange", "teal", "violet", "rose", "green", "navy"];
+const today = new Date();
+const WEEK_START = mondayOf(today.toISOString());
+const WEEK_END = (() => {
+  const d = new Date(WEEK_START);
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().slice(0, 10);
+})();
 
 export interface RevisionInfo {
   usedThisWeek: number;
@@ -45,22 +60,22 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => string;
-  startTask: (id: string) => void;
-  completeTask: (id: string, note?: string) => void;
-  reviseTask: (id: string, args: { followUpDate: string; note?: string }) => void;
-  rescheduleTask: (id: string, newDueDate: string) => string | null;
-  addRemark: (id: string, note: string, mentionedIds: string[]) => void;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => Promise<string>;
+  startTask: (id: string) => Promise<void>;
+  completeTask: (id: string, note?: string) => Promise<void>;
+  reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
+  rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
+  addRemark: (id: string, note: string, mentionedIds: string[]) => Promise<void>;
+  markNotificationsRead: (ids: string[]) => Promise<void>;
 
-  // recurring task templates
   recurringTasks: RecurringTask[];
   getRecurring: (id: string) => RecurringTask | undefined;
-  createRecurring: (input: Omit<RecurringTask, "id">) => string;
-  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => void;
-  toggleRecurring: (id: string) => void;
-  deleteRecurring: (id: string) => void;
+  createRecurring: (input: Omit<RecurringTask, "id">) => Promise<string>;
+  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => Promise<void>;
+  toggleRecurring: (id: string) => Promise<void>;
+  deleteRecurring: (id: string) => Promise<void>;
 
-  // directory (people + departments)
+  // directory (people + departments) — re-exposed from the portal core
   profiles: Profile[];
   departments: Department[];
   profileById: (id: string | null) => Profile | undefined;
@@ -75,46 +90,62 @@ interface TaskStoreValue {
   updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor">>) => void;
   deleteUser: (id: string) => void;
 
-  // workspace settings (singleton)
+  weeklyPlans: WeeklyPlan[];
+  weeklyPlanFor: (doerId: string, weekStart: string) => WeeklyPlan | undefined;
+  setWeeklyPlan: (input: { doerId: string; weekStart: string; redPct: number; yellowPct: number; greenPct: number }) => Promise<void>;
+
   workspace: WorkspaceSettings;
-  updateWorkspace: (patch: Partial<WorkspaceSettings>) => void;
+  updateWorkspace: (patch: Partial<WorkspaceSettings>) => Promise<void>;
+  /** True for admins — workspace settings save live (admin-only under RLS). */
+  canManageWorkspace: boolean;
+
+  /** False during the read-only phase — UIs disable write controls. */
+  canWrite: boolean;
+  /** B4 rollout: the create-task write path is live (other flows still read-only). */
+  canCreateTask: boolean;
+  /** B4 rollout: the Start / Complete / Revise status actions are live. */
+  canStatusActions: boolean;
+  /** B4 rollout: due-date reschedule + shift-to-next-week is live. */
+  canReschedule: boolean;
+  /** B4 rollout: posting @mention remarks (+ notification fan-out) is live. */
+  canRemark: boolean;
+  /** B4 rollout: recurring-task CRUD (create/edit/toggle/delete) is live. */
+  canRecurring: boolean;
+  /** B4 rollout: setting a doer's weekly RYG plan is live. */
+  canWeeklyPlan: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
 
-export function TaskStoreProvider({ children }: { children: ReactNode }) {
-  const { user } = useSession();
-  const actorRef = useRef(user.id);
-  actorRef.current = user.id;
+const DEFAULT_WORKSPACE: WorkspaceSettings = { workspaceName: "Orange O Tec", weekStart: "mon", maxRevisionsPerWeek: 2 };
 
-  const [tasks, setTasks] = useState<Task[]>(() => seedTasks.map((t) => ({ ...t })));
-  const [activity, setActivity] = useState<TaskActivity[]>(() => seedActivity.map((a) => ({ ...a })));
-  const [notifications, setNotifications] = useState<Notification[]>(() => seedNotifications.map((n) => ({ ...n })));
-  const [recurringTasks, setRecurring] = useState<RecurringTask[]>(() => seedRecurring.map((r) => ({ ...r })));
-  const [profiles, setProfiles] = useState<Profile[]>(() => seedProfiles.map((p) => ({ ...p, hodIds: [...p.hodIds] })));
-  const [departments, setDepartments] = useState<Department[]>(() => seedDepartments.map((d) => ({ ...d })));
-  const [workspace, setWorkspace] = useState<WorkspaceSettings>(() => ({ ...seedWorkspace }));
-  const seq = useRef(1000);
-  const nextId = (p: string) => `${p}${++seq.current}`;
+const readOnly = () => {
+  if (import.meta.env.DEV) console.warn("Task store is read-only in this phase — write ignored.");
+};
+const readOnlyId = () => {
+  readOnly();
+  return "";
+};
+
+export function TaskStoreProvider({ children }: { children: ReactNode }) {
+  const { user, role } = useSession();
+  const dir = useDirectory();
+  const queryClient = useQueryClient();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["taskData", user?.id ?? null],
+    queryFn: fetchTaskData,
+    enabled: !!user,
+  });
+
+  const tasks = data?.tasks ?? [];
+  const activity = data?.activity ?? [];
+  const notifications = data?.notifications ?? [];
+  const recurringTasks = data?.recurringTasks ?? [];
+  const weeklyPlans = data?.weeklyPlans ?? [];
+  const workspace = data?.workspace ?? DEFAULT_WORKSPACE;
 
   const value = useMemo<TaskStoreValue>(() => {
-    const logActivity = (taskId: string, type: TaskActivity["type"], note: string | null = null) =>
-      setActivity((prev) => [{ id: nextId("a"), taskId, type, actorId: actorRef.current, note, createdAt: nowIso() }, ...prev]);
-
-    const patch = (id: string, fn: (t: Task) => Task) => setTasks((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
-
-    const profileById = (id: string | null) => profiles.find((p) => p.id === id);
-    const departmentById = (id: string | null) => departments.find((d) => d.id === id);
-    const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
-
-    const assignableUsers = (role: AppRole, userId: string): Profile[] => {
-      if (role === "admin") return profiles;
-      if (role === "hod" || role === "sub_hod") {
-        const ids = new Set([userId, ...directReportIds(userId)]);
-        return profiles.filter((p) => ids.has(p.id));
-      }
-      return profiles.filter((p) => p.id === userId);
-    };
+    const { directReportIds } = dir;
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
@@ -143,125 +174,187 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       activityFor: (taskId) => activity.filter((a) => a.taskId === taskId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       revisionInfo,
 
-      createTask: ({ title, description, assignedTo, departmentId, dueDate }) => {
-        const id = nextId("t");
-        const creator = actorRef.current;
-        const task: Task = {
-          id, title, description: description ?? null, status: "pending", dueDate,
-          weekStart: dueDate ? mondayOf(dueDate) : WEEK_START,
-          createdBy: creator, assignedTo, departmentId,
-          revisionCount: 0, lastRevisedAt: null, followUpDate: null,
-          shiftedFromTaskId: null, shiftedToTaskId: null, recurringTaskId: null,
-          completedAt: null, createdAt: nowIso(), lastRemarkAt: null,
-        };
-        setTasks((prev) => [task, ...prev]);
-        logActivity(id, "created");
-        if (assignedTo && assignedTo !== creator) logActivity(id, "assigned");
+      // ---- mutations ----
+      // createTask: LIVE (B4 first flow). Inserts under RLS (created_by = auth uid)
+      // then refetches. Other task mutations stay inert no-ops until wired.
+      createTask: async (input) => {
+        const id = await insertTask({ ...input, createdBy: user.id });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
-
-      startTask: (id) => {
-        patch(id, (t) => ({ ...t, status: "in_progress" }));
-        logActivity(id, "started");
+      // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the
+      // status-change activity (started is logged by the write itself); refetch after.
+      startTask: async (id) => {
+        await startTaskWrite(id, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
-
-      completeTask: (id, note) => {
-        patch(id, (t) => ({ ...t, status: "completed", completedAt: nowIso() }));
-        logActivity(id, "completed", note || null);
+      completeTask: async (id, note) => {
+        await completeTaskWrite(id, user.id, note);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
-
-      reviseTask: (id, { followUpDate, note }) => {
+      reviseTask: async (id, args) => {
         const task = tasks.find((t) => t.id === id);
-        if (!task || !revisionInfo(task).allowed) return;
-        patch(id, (t) => ({ ...t, status: "revised", revisionCount: t.revisionCount + 1, lastRevisedAt: nowIso(), followUpDate }));
-        logActivity(id, "revised", note || null);
-        logActivity(id, "followup", `Follow-up set to ${followUpDate}`);
+        if (!task || !revisionInfo(task).allowed) return; // weekly limit / closed guard
+        await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
-
-      rescheduleTask: (id, newDueDate) => {
+      // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
+      // create a linked continuation task + mark the original shifted. Trigger logs
+      // the shifted/created activity; refetch and return the new id (if any).
+      rescheduleTask: async (id, newDueDate) => {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
-        const targetWeek = mondayOf(newDueDate);
-        if (targetWeek <= (task.weekStart ?? WEEK_START)) {
-          patch(id, (t) => ({ ...t, dueDate: newDueDate }));
-          return null;
-        }
-        const newId = nextId("t");
-        const newTask: Task = {
-          ...task, id: newId, status: "pending", weekStart: targetWeek, dueDate: newDueDate,
-          revisionCount: 0, lastRevisedAt: null, followUpDate: null,
-          shiftedFromTaskId: id, shiftedToTaskId: null, completedAt: null, createdAt: nowIso(),
-        };
-        setTasks((prev) => [newTask, ...prev.map((t) => (t.id === id ? { ...t, status: "shifted" as const, shiftedToTaskId: newId } : t))]);
-        logActivity(id, "shifted");
-        logActivity(newId, "created");
+        const newId = await rescheduleTaskWrite(task, newDueDate);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return newId;
       },
-
-      addRemark: (id, note, mentionedIds) => {
-        setActivity((prev) => [{ id: nextId("a"), taskId: id, type: "remark", actorId: actorRef.current, note, createdAt: nowIso() }, ...prev]);
-        patch(id, (t) => ({ ...t, lastRemarkAt: nowIso() }));
-        if (mentionedIds.length) {
-          setNotifications((prev) => [
-            ...mentionedIds
-              .filter((uid) => profiles.some((p) => p.id === uid))
-              .map((uid) => ({ id: nextId("n"), userId: uid, type: "mention" as const, taskId: id, actorId: actorRef.current, readAt: null, createdAt: nowIso() })),
-            ...prev,
-          ]);
-        }
+      // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
+      // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
+      addRemark: async (id, note, mentionedIds) => {
+        await addRemarkWrite(id, note, mentionedIds);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      // Mark own notifications read (always allowed — RLS scopes to the caller).
+      markNotificationsRead: async (ids) => {
+        await markNotificationsReadWrite(ids);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
 
       recurringTasks,
       getRecurring: (id) => recurringTasks.find((r) => r.id === id),
-      createRecurring: (input) => {
-        const id = nextId("r");
-        setRecurring((prev) => [{ ...input, id }, ...prev]);
+      // Recurring CRUD: LIVE (B4). recurrence_type is daily/weekly only; monthly
+      // (frontend-only) collapses to daily defensively. RLS scopes the writes.
+      createRecurring: async (input) => {
+        const id = await insertRecurringWrite({
+          title: input.title,
+          description: input.description ?? null,
+          recurrenceType: input.recurrenceType === "weekly" ? "weekly" : "daily",
+          weeklyDays: input.weeklyDays ?? [],
+          assignedTo: input.assignedTo,
+          departmentId: input.departmentId,
+          active: input.active,
+          createdBy: user.id,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
-      updateRecurring: (id, p) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, ...p } : r))),
-      toggleRecurring: (id) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r))),
-      deleteRecurring: (id) => setRecurring((prev) => prev.filter((r) => r.id !== id)),
+      updateRecurring: async (id, patch) => {
+        const cur = recurringTasks.find((r) => r.id === id);
+        if (!cur) return;
+        const m = { ...cur, ...patch };
+        await updateRecurringWrite(id, {
+          title: m.title,
+          description: m.description ?? null,
+          recurrenceType: m.recurrenceType === "weekly" ? "weekly" : "daily",
+          weeklyDays: m.weeklyDays ?? [],
+          assignedTo: m.assignedTo,
+          departmentId: m.departmentId,
+          active: m.active,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      toggleRecurring: async (id) => {
+        const cur = recurringTasks.find((r) => r.id === id);
+        if (!cur) return;
+        await setRecurringActiveWrite(id, !cur.active);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      deleteRecurring: async (id) => {
+        await deleteRecurringWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
 
-      // ---- directory ----
-      profiles,
-      departments,
-      profileById,
-      departmentById,
-      directReportIds,
-      assignableUsers,
+      // ---- directory (delegated to the portal core) ----
+      profiles: dir.profiles,
+      departments: dir.departments,
+      profileById: dir.profileById,
+      departmentById: dir.departmentById,
+      directReportIds: dir.directReportIds,
+      assignableUsers: dir.assignableUsers,
       visibleTasks,
+      addDepartment: readOnlyId,
+      updateDepartment: readOnly,
+      deleteDepartment: readOnly,
+      addUser: readOnlyId,
+      updateUser: readOnly,
+      deleteUser: readOnly,
 
-      addDepartment: ({ name, description }) => {
-        const id = nextId("d");
-        setDepartments((prev) => [...prev, { id, name, description: description ?? null }]);
-        return id;
+      weeklyPlans,
+      weeklyPlanFor: (doerId, weekStart) => {
+        const { isoYear, isoWeek } = isoWeekOf(weekStart);
+        return weeklyPlans.find((p) => p.doerId === doerId && p.isoYear === isoYear && p.isoWeek === isoWeek);
       },
-      updateDepartment: (id, p) => setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, ...p } : d))),
-      deleteDepartment: (id) => {
-        setDepartments((prev) => prev.filter((d) => d.id !== id));
-        setProfiles((prev) => prev.map((p) => (p.departmentId === id ? { ...p, departmentId: null } : p)));
+      // setWeeklyPlan: LIVE (B4). Upsert keyed by (doer, iso year+week); branches
+      // update vs insert to preserve created_by. RLS allows admin / hod-of-doer.
+      setWeeklyPlan: async ({ doerId, weekStart, redPct, yellowPct, greenPct }) => {
+        const { isoYear, isoWeek } = isoWeekOf(weekStart);
+        const existing = weeklyPlans.find((p) => p.doerId === doerId && p.isoYear === isoYear && p.isoWeek === isoWeek);
+        await upsertWeeklyPlanWrite({
+          existingId: existing?.id ?? null,
+          doerId,
+          isoYear,
+          isoWeek,
+          weekStart,
+          weekEnd: weekEndOf(weekStart),
+          redPct,
+          yellowPct,
+          greenPct,
+          createdBy: user.id,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
-
-      addUser: ({ name, email, designation, role, departmentId, hodIds }) => {
-        const id = nextId("u");
-        setProfiles((prev) => [
-          ...prev,
-          {
-            id, name, email: email ?? null, designation: designation ?? null,
-            avatarColor: AVATAR_COLORS[prev.length % AVATAR_COLORS.length],
-            departmentId, role, hodIds: hodIds ?? [],
-          },
-        ]);
-        return id;
-      },
-      updateUser: (id, p) => setProfiles((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u))),
-      deleteUser: (id) =>
-        setProfiles((prev) => prev.filter((u) => u.id !== id).map((u) => ({ ...u, hodIds: u.hodIds.filter((h) => h !== id) }))),
 
       workspace,
-      updateWorkspace: (patch) => setWorkspace((prev) => ({ ...prev, ...patch })),
+      updateWorkspace: async (patch) => {
+        await updateWorkspaceSettingsWrite(patch);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      canManageWorkspace: role === "admin",
+
+      canWrite: false,
+      canCreateTask: true,
+      canStatusActions: true,
+      canReschedule: true,
+      canRemark: true,
+      canRecurring: true,
+      canWeeklyPlan: true,
     };
-  }, [tasks, activity, notifications, recurringTasks, profiles, departments, workspace]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, role, queryClient]);
+
+  // Realtime: push the bell + task data when one of my notifications changes
+  // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also
+  // filter server-side by user_id. Any event just refetches the task query.
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+        () => { void queryClient.invalidateQueries({ queryKey: ["taskData"] }); }
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [userId, queryClient]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page-grad text-grey text-sm">
+        Loading tasks…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page-grad px-6 text-center">
+        <div className="max-w-sm">
+          <p className="text-[15px] font-semibold text-navy">Couldn't load tasks</p>
+          <p className="text-[13px] text-grey mt-1">{(error as Error).message}</p>
+        </div>
+      </div>
+    );
+  }
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

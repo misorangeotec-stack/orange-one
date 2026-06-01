@@ -30,6 +30,9 @@ const ic = {
   settings: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 6.6 19l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 13.4H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 5 6.6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 10.6 3H11a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8Z" /></svg>
   ),
+  account: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
+  ),
 };
 
 /** Task Management sidebar nav. `roles` controls visibility; omitted = all roles. */
@@ -41,6 +44,6 @@ export const taskNav: NavItem[] = [
   { label: "Recurring", to: `${B}/recurring`, icon: ic.recurring, roles: ["admin", "hod", "sub_hod"], section: "Manage" },
   { label: "Reports", to: `${B}/reports`, icon: ic.reports },
   { label: "Activity", to: `${B}/history`, icon: ic.activity, roles: ["admin", "hod", "sub_hod"] },
-  { label: "Setup", to: `${B}/setup`, icon: ic.setup, roles: ["admin"], section: "Administration" },
-  { label: "Settings", to: `${B}/settings`, icon: ic.settings },
+  { label: "Settings", to: `${B}/settings`, icon: ic.settings, roles: ["admin"], section: "Administration" },
+  { label: "My Account", to: "/account", icon: ic.account },
 ];

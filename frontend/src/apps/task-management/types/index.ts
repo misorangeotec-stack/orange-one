@@ -2,13 +2,18 @@
  * Domain types for the Task Management app — mirror the Supabase schema so that
  * when the backend is wired (Stage B), mock data swaps to live queries with no
  * shape changes. Enum string values match the DB enums exactly.
+ *
+ * Identity types (AppRole, AvatarColor, Department, Profile) are now portal-wide
+ * and live in core/platform; re-exported here so existing imports keep resolving.
  */
-
-export type AppRole = "admin" | "hod" | "sub_hod" | "employee";
+export type { AppRole, AvatarColor, Department, Profile } from "@/core/platform/types";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "shifted";
 
-export type RecurrenceType = "daily" | "weekly";
+export type RecurrenceType = "daily" | "weekly" | "monthly";
+
+/** Sentinel day-of-month value meaning "last day of the month" (> any real day). */
+export const MONTH_LAST_DAY = 32;
 
 export type ActivityType =
   | "created"
@@ -19,28 +24,6 @@ export type ActivityType =
   | "shifted"
   | "started"
   | "remark";
-
-/** Named avatar colors stored on profiles.avatar_color → hex used by the UI. */
-export type AvatarColor = "blue" | "orange" | "teal" | "violet" | "rose" | "green" | "navy";
-
-export interface Department {
-  id: string;
-  name: string;
-  description?: string | null;
-}
-
-export interface Profile {
-  id: string;
-  name: string;
-  email: string | null;
-  designation: string | null;
-  avatarColor: AvatarColor;
-  departmentId: string | null;
-  /** Effective role (from user_roles). */
-  role: AppRole;
-  /** employee_id → hod_id links (user_hods); an employee may report to many HODs. */
-  hodIds: string[];
-}
 
 export interface Task {
   id: string;
@@ -60,6 +43,7 @@ export interface Task {
   recurringTaskId: string | null;
   completedAt: string | null; // ISO datetime
   createdAt: string; // ISO datetime
+  updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;
 }
 
@@ -68,7 +52,8 @@ export interface RecurringTask {
   title: string;
   description: string | null;
   recurrenceType: RecurrenceType;
-  weeklyDays: number[]; // 0=Sun..6=Sat
+  weeklyDays: number[]; // 0=Sun..6=Sat (used when weekly)
+  monthlyDays: number[]; // 1..31 (used when monthly); MONTH_LAST_DAY = last day of month
   assignedTo: string | null;
   createdBy: string;
   departmentId: string | null;

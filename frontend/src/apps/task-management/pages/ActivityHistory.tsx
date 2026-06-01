@@ -4,6 +4,9 @@ import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import Combobox from "@/shared/components/ui/Combobox";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
+import { usePagination } from "@/shared/lib/usePagination";
 import { timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -43,6 +46,22 @@ export default function ActivityHistory() {
     return profiles.filter((p) => set.has(p.id));
   }, [activity, ids]);
 
+  const pg = usePagination(items, { resetKey: `${type}|${actor}` });
+
+  const activeFilters: ActiveFilter[] = [];
+  if (type !== "all")
+    activeFilters.push({ key: "type", label: `Action: ${TYPE_LABELS[type]}`, onClear: () => setType("all") });
+  if (actor !== "all")
+    activeFilters.push({
+      key: "actor",
+      label: `Person: ${profileById(actor)?.name ?? actor}`,
+      onClear: () => setActor("all"),
+    });
+  const clearAll = () => {
+    setType("all");
+    setActor("all");
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -54,23 +73,26 @@ export default function ActivityHistory() {
         <Combobox
           value={type}
           onChange={(v) => setType(v as ActivityType | "all")}
-          className="w-auto min-w-[160px]"
+          className="w-full sm:w-auto sm:min-w-[160px]"
           options={[{ value: "all", label: "All actions" }, ...(Object.keys(TYPE_LABELS) as ActivityType[]).map((t) => ({ value: t, label: TYPE_LABELS[t] }))]}
         />
         <Combobox
           value={actor}
           onChange={setActor}
-          className="w-auto min-w-[180px]"
+          className="w-full sm:w-auto sm:min-w-[180px]"
           options={[{ value: "all", label: "Everyone" }, ...actors.map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined, icon: <Avatar name={p.name} color={p.avatarColor} size={22} /> }))]}
         />
       </div>
 
-      <Card className="p-5">
+      <ActiveFilters filters={activeFilters} onClearAll={clearAll} />
+
+      <Card className="overflow-hidden">
         {items.length === 0 ? (
-          <EmptyState title="No activity" message="Nothing matches these filters yet." />
+          <div className="p-5"><EmptyState title="No activity" message="Nothing matches these filters yet." /></div>
         ) : (
-          <ol className="space-y-4 relative before:absolute before:left-[15px] before:top-1 before:bottom-1 before:w-px before:bg-line">
-            {items.map((a) => {
+          <>
+          <ol className="space-y-4 relative p-5 before:absolute before:left-[35px] before:top-6 before:bottom-6 before:w-px before:bg-line">
+            {pg.pageItems.map((a) => {
               const actorP = profileById(a.actorId);
               const task = getTask(a.taskId);
               return (
@@ -95,6 +117,8 @@ export default function ActivityHistory() {
               );
             })}
           </ol>
+          <Pagination state={pg} rowsLabel="entries" />
+          </>
         )}
       </Card>
     </div>

@@ -27,7 +27,8 @@ export default function Avatar({
   size?: number;
   className?: string;
 }) {
-  const bg = COLORS[color] ?? COLORS.navy;
+  // Accept either a named palette color (mock) or a raw hex value (live DB).
+  const bg = color.startsWith("#") ? color : COLORS[color] ?? COLORS.navy;
   return (
     <span
       className={cn("inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0", className)}

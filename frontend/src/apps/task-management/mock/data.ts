@@ -5,15 +5,14 @@
  * Stage B replaces these arrays with live Supabase queries (same shapes).
  */
 import type {
-  Department,
   Notification,
-  Profile,
   RecurringTask,
   Task,
   TaskActivity,
   WeeklyPlan,
   WorkspaceSettings,
 } from "../types";
+import { formatDate, addWeeks, weekEndOf, isoWeekOf } from "@/shared/lib/time";
 
 // ---- date helpers (relative to real today, week starts Monday) ----
 const d = new Date();
@@ -35,29 +34,19 @@ const dt = (days: number, h = 10) => {
   return x.toISOString();
 };
 
-// ---- departments (real) ----
-export const departments: Department[] = [
-  { id: "d1", name: "Management" },
-  { id: "d2", name: "Accounting & Finance" },
-  { id: "d3", name: "Administration" },
-  { id: "d4", name: "AI & tech" },
-  { id: "d5", name: "Research & Development" },
-];
+// ---- directory (people + departments) — now portal-wide, sourced from core/platform ----
+// Re-exported so existing task-management imports (e.g. `from "./data"`) keep working.
+export { departments, profiles, profileById, departmentById } from "@/core/platform/data";
+import { profileById } from "@/core/platform/data";
 
-// ---- profiles (real users; roles assigned for a representative demo) ----
-export const profiles: Profile[] = [
-  { id: "u1", name: "Yash Agarwal", email: "yash@orangeotec.com", designation: "CAIO", avatarColor: "orange", departmentId: "d4", role: "admin", hodIds: [] },
-  { id: "u2", name: "Aayush Rathi", email: "aayush@orangeotec.com", designation: "Director", avatarColor: "navy", departmentId: "d1", role: "admin", hodIds: [] },
-  { id: "u3", name: "Karan Toshniwal", email: "karan@orangeotec.com", designation: "Director", avatarColor: "blue", departmentId: "d1", role: "hod", hodIds: [] },
-  { id: "u4", name: "Ritesh Tulsyan", email: "ritesh@orangeotec.com", designation: "CFA", avatarColor: "teal", departmentId: "d2", role: "hod", hodIds: [] },
-  { id: "u5", name: "Dimple", email: "dimple@orangeotec.com", designation: "Senior Manager", avatarColor: "violet", departmentId: "d3", role: "sub_hod", hodIds: ["u3"] },
-  { id: "u6", name: "Aayushi Shah", email: "ea1@orangeotec.com", designation: "Executive Assistant", avatarColor: "rose", departmentId: "d3", role: "employee", hodIds: ["u3", "u5"] },
-  { id: "u7", name: "Vivek Boid", email: "vivek.boid@orangeotec.com", designation: "Head - Plant", avatarColor: "green", departmentId: "d5", role: "employee", hodIds: ["u2"] },
-  { id: "u8", name: "Master Admin", email: "master@taskflow.app", designation: "Master Admin", avatarColor: "navy", departmentId: "d1", role: "admin", hodIds: [] },
+// Historical tasks for prior weeks — realistic titles, only status + weekStart matter for RYG.
+// Declared before `tasks` because the array below calls weekTasks()/mkWeekTask() during
+// module init, which read these — keeping them here avoids a temporal-dead-zone crash.
+const HIST_TITLES = [
+  "Daily sales report", "Bank reconciliation", "Vendor follow-up", "Stock movement update",
+  "Petty cash audit", "CRM record cleanup", "Invoice filing", "Cash position report",
 ];
-
-export const profileById = (id: string | null) => profiles.find((p) => p.id === id) ?? null;
-export const departmentById = (id: string | null) => departments.find((dep) => dep.id === id) ?? null;
+let histSeq = 100;
 
 // ---- tasks ----
 export const tasks: Task[] = [
@@ -73,7 +62,48 @@ export const tasks: Task[] = [
   mkTask("t10", "Audit petty cash register", "Verify entries vs receipts.", "completed", { due: addDaysIso(-2), by: "u4", to: "u6", dept: "d2", completed: dt(-2, 16) }),
   mkTask("t11", "Shift: Website copy review", "Carried to next week.", "shifted", { due: YESTERDAY, by: "u3", to: "u6", dept: "d3" }),
   mkTask("t12", "Prepare investor deck v3", "Incorporate Q1 numbers.", "in_progress", { due: addDaysIso(2), by: "u2", to: "u7", dept: "d1" }),
+  // ---- prior-week history (powers the monthly Plan-vs-Actual view) ----
+  ...weekTasks("u6", addWeeks(WEEK_START, -1), { completed: 4, revised: 1, red: 1 }),
+  ...weekTasks("u7", addWeeks(WEEK_START, -1), { completed: 4, revised: 1, red: 1 }),
+  ...weekTasks("u5", addWeeks(WEEK_START, -1), { completed: 3, revised: 1, red: 2 }),
+  ...weekTasks("u6", addWeeks(WEEK_START, -2), { completed: 3, revised: 1, red: 2 }),
+  ...weekTasks("u7", addWeeks(WEEK_START, -2), { completed: 5, revised: 1, red: 0 }),
+  ...weekTasks("u6", addWeeks(WEEK_START, -3), { completed: 4, revised: 2, red: 1 }),
 ];
+
+function mkWeekTask(to: string, week: string, status: Task["status"]): Task {
+  const id = `t${++histSeq}`;
+  const at = (h: number) => week + `T${String(h).padStart(2, "0")}:00:00Z`;
+  return {
+    id,
+    title: HIST_TITLES[histSeq % HIST_TITLES.length],
+    description: "Weekly task.",
+    status,
+    dueDate: week,
+    weekStart: week,
+    createdBy: "u3",
+    assignedTo: to,
+    departmentId: profileById(to)?.departmentId ?? null,
+    revisionCount: status === "revised" ? 1 : 0,
+    lastRevisedAt: status === "revised" ? at(14) : null,
+    followUpDate: null,
+    shiftedFromTaskId: null,
+    shiftedToTaskId: null,
+    recurringTaskId: null,
+    completedAt: status === "completed" ? at(16) : null,
+    createdAt: at(9),
+    updatedAt: at(16),
+    lastRemarkAt: null,
+  };
+}
+/** Build a week's worth of resolved tasks with a given RYG mix (red modelled as shifted). */
+function weekTasks(to: string, week: string, mix: { completed: number; revised: number; red: number }): Task[] {
+  const out: Task[] = [];
+  for (let i = 0; i < mix.completed; i++) out.push(mkWeekTask(to, week, "completed"));
+  for (let i = 0; i < mix.revised; i++) out.push(mkWeekTask(to, week, "revised"));
+  for (let i = 0; i < mix.red; i++) out.push(mkWeekTask(to, week, "shifted"));
+  return out;
+}
 
 function mkTask(
   id: string,
@@ -100,6 +130,7 @@ function mkTask(
     recurringTaskId: null,
     completedAt: o.completed ?? null,
     createdAt: dt(-5),
+    updatedAt: o.lastRev ?? o.completed ?? dt(-5),
     lastRemarkAt: null,
   };
 }
@@ -109,16 +140,30 @@ function addDaysIso(n: number) {
 
 // ---- recurring tasks ----
 export const recurringTasks: RecurringTask[] = [
-  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
-  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
-  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false },
+  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
+  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
+  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], monthlyDays: [], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false },
+  { id: "r4", title: "Monthly expense report", description: "Due on the 1st of each month.", recurrenceType: "monthly", weeklyDays: [], monthlyDays: [1], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: true },
 ];
 
-// ---- weekly plans (Red/Yellow/Green per doer, current ISO week) ----
+// ---- weekly plans (Red/Yellow/Green target per doer per ISO week) ----
+let planSeq = 0;
+function mkPlan(doerId: string, weekStart: string, red: number, yellow: number, green: number): WeeklyPlan {
+  const { isoYear, isoWeek } = isoWeekOf(weekStart);
+  return { id: `w${++planSeq}`, doerId, isoYear, isoWeek, weekStart, weekEnd: weekEndOf(weekStart), redPct: red, yellowPct: yellow, greenPct: green };
+}
 export const weeklyPlans: WeeklyPlan[] = [
-  { id: "w1", doerId: "u6", isoYear: 2026, isoWeek: 22, weekStart: WEEK_START, weekEnd: WEEK_END, redPct: 10, yellowPct: 25, greenPct: 65 },
-  { id: "w2", doerId: "u7", isoYear: 2026, isoWeek: 22, weekStart: WEEK_START, weekEnd: WEEK_END, redPct: 5, yellowPct: 20, greenPct: 75 },
-  { id: "w3", doerId: "u5", isoYear: 2026, isoWeek: 22, weekStart: WEEK_START, weekEnd: WEEK_END, redPct: 15, yellowPct: 30, greenPct: 55 },
+  // current week
+  mkPlan("u6", WEEK_START, 10, 25, 65),
+  mkPlan("u7", WEEK_START, 5, 20, 75),
+  mkPlan("u5", WEEK_START, 15, 30, 55),
+  // prior weeks of the month (for Plan-vs-Actual history)
+  mkPlan("u6", addWeeks(WEEK_START, -1), 10, 20, 70),
+  mkPlan("u7", addWeeks(WEEK_START, -1), 10, 20, 70),
+  mkPlan("u5", addWeeks(WEEK_START, -1), 20, 30, 50),
+  mkPlan("u6", addWeeks(WEEK_START, -2), 15, 25, 60),
+  mkPlan("u7", addWeeks(WEEK_START, -2), 5, 15, 80),
+  mkPlan("u6", addWeeks(WEEK_START, -3), 10, 30, 60),
 ];
 
 // ---- task activity (audit trail) ----
@@ -127,7 +172,7 @@ export const activity: TaskActivity[] = [
   { id: "a2", taskId: "t5", type: "completed", actorId: "u6", note: null, createdAt: dt(-1, 17) },
   { id: "a3", taskId: "t1", type: "started", actorId: "u6", note: null, createdAt: dt(0, 9) },
   { id: "a4", taskId: "t6", type: "assigned", actorId: "u3", note: null, createdAt: dt(0, 8) },
-  { id: "a5", taskId: "t4", type: "followup", actorId: "u6", note: "Follow-up set to " + TOMORROW, createdAt: dt(-1, 15) },
+  { id: "a5", taskId: "t4", type: "followup", actorId: "u6", note: "Follow-up set to " + formatDate(TOMORROW), createdAt: dt(-1, 15) },
   { id: "a6", taskId: "t3", type: "created", actorId: "u3", note: null, createdAt: dt(-1, 10) },
 ];
 

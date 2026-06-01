@@ -1,12 +1,12 @@
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
-import { dateLabel, timeAgo } from "@/shared/lib/time";
+import { dateLabel, timeAgo, formatDate } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { weeklyPlans } from "../mock/data";
+import { WEEK_START } from "../mock/data";
 import { computeStats } from "../mock/selectors";
-import type { ActivityType, Task } from "../types";
+import type { ActivityType, Task, WeeklyPlan } from "../types";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
@@ -32,7 +32,7 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { visibleTasks, workspace } = useTaskStore();
+  const { visibleTasks, workspace, canCreateTask } = useTaskStore();
   const list = visibleTasks(role, user.id);
   const stats = computeStats(list);
   const firstName = user.name.split(" ")[0];
@@ -49,17 +49,19 @@ export default function Dashboard() {
             {isAdmin ? "Organization Overview" : isHod ? "Team Overview" : "Your Day at a Glance"}
           </h2>
           <p className="text-grey text-[13px] mt-1">
-            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+            {new Date().toLocaleDateString("en-IN", { weekday: "long" })}, {formatDate(new Date().toISOString().slice(0, 10))}
             {" · "}revision limit {workspace.maxRevisionsPerWeek}/week
           </p>
         </div>
-        <Link
-          to="/task-management/tasks/new"
-          className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          New Task
-        </Link>
+        {canCreateTask && (
+          <Link
+            to="/task-management/tasks/new"
+            className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New Task
+          </Link>
+        )}
       </div>
 
       {/* stat cards (role-aware) */}
@@ -119,14 +121,14 @@ function TodayPanel({ userId, list }: { userId: string; list: Task[] }) {
 
 /* ---------------- HOD/Admin: team or org performance ---------------- */
 function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string }) {
-  const { departments, profiles, directReportIds, profileById } = useTaskStore();
+  const { departments, profiles, directReportIds, profileById, weeklyPlanFor } = useTaskStore();
   if (isAdmin) {
     return (
       <SectionCard title="Department Performance" subtitle="Planned execution quality this week">
         <ul className="space-y-4">
           {departments.map((dep) => {
             const members = profiles.filter((p) => p.departmentId === dep.id);
-            const plans = weeklyPlans.filter((w) => members.some((m) => m.id === w.doerId));
+            const plans = members.map((m) => weeklyPlanFor(m.id, WEEK_START)).filter((p): p is WeeklyPlan => !!p);
             const avg = avgRyg(plans);
             return (
               <li key={dep.id}>
@@ -150,7 +152,7 @@ function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string })
       ) : (
         <ul className="space-y-4">
           {team.map((m) => {
-            const plan = weeklyPlans.find((w) => w.doerId === m.id);
+            const plan = weeklyPlanFor(m.id, WEEK_START);
             const ryg = plan ? { red: plan.redPct, yellow: plan.yellowPct, green: plan.greenPct } : { red: 0, yellow: 0, green: 0 };
             return (
               <li key={m.id} className="flex items-center gap-3">
@@ -175,7 +177,8 @@ function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string })
 
 /* ---------------- Weekly RYG (employee) ---------------- */
 function WeeklyRygCard({ doerId }: { doerId: string }) {
-  const plan = weeklyPlans.find((w) => w.doerId === doerId);
+  const { weeklyPlanFor } = useTaskStore();
+  const plan = weeklyPlanFor(doerId, WEEK_START);
   return (
     <SectionCard title="This Week (RYG)">
       {plan ? (

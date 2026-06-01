@@ -20,7 +20,7 @@ export default function RecurringForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById } = useTaskStore();
+  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById, departmentById, canRecurring } = useTaskStore();
   const editing = getRecurring(id ?? "");
   const canAssign = assignableUsers(role, user.id);
 
@@ -31,11 +31,15 @@ export default function RecurringForm() {
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [active, setActive] = useState(editing?.active ?? true);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Department is derived from the assignee — never selected manually.
+  const departmentName = departmentById(profileById(assignedTo)?.departmentId ?? null)?.name;
 
   const toggleDay = (v: number) =>
     setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort()));
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return setError("Please enter a title.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
@@ -44,14 +48,22 @@ export default function RecurringForm() {
       description: description.trim() || null,
       recurrenceType,
       weeklyDays: recurrenceType === "weekly" ? weeklyDays : [],
+      monthlyDays: [],
       assignedTo,
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
       active,
     };
-    if (editing) updateRecurring(editing.id, payload);
-    else createRecurring(payload);
-    navigate("/task-management/recurring");
+    setBusy(true);
+    setError("");
+    try {
+      if (editing) await updateRecurring(editing.id, payload);
+      else await createRecurring(payload);
+      navigate("/task-management/recurring");
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
   };
 
   return (
@@ -75,17 +87,21 @@ export default function RecurringForm() {
             <TextArea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Details for each generated task…" />
           </FieldLabel>
 
-          <FieldLabel label="Assign to">
+          <FieldLabel label="Assign to" hint={departmentName ? `Dept: ${departmentName}` : undefined}>
             <Combobox
               value={assignedTo}
               onChange={setAssignedTo}
               disabled={canAssign.length <= 1}
-              options={canAssign.map((p) => ({
-                value: p.id,
-                label: p.id === user.id ? `${p.name} (me)` : p.name,
-                sublabel: p.designation ?? undefined,
-                icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-              }))}
+              options={canAssign.map((p) => {
+                const dept = departmentById(p.departmentId)?.name;
+                const sub = [p.designation, dept].filter(Boolean).join(" · ");
+                return {
+                  value: p.id,
+                  label: p.id === user.id ? `${p.name} (me)` : p.name,
+                  sublabel: sub || undefined,
+                  icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                };
+              })}
             />
           </FieldLabel>
 
@@ -119,7 +135,7 @@ export default function RecurringForm() {
                       type="button"
                       onClick={() => toggleDay(d.v)}
                       className={cn(
-                        "w-12 py-2 rounded-lg text-[12.5px] font-semibold border transition",
+                        "flex-1 min-w-[2.5rem] sm:flex-none sm:w-12 py-2 rounded-lg text-[12.5px] font-semibold border transition",
                         on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
                       )}
                     >
@@ -145,8 +161,9 @@ export default function RecurringForm() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            <Button variant="ghost" onClick={() => navigate("/task-management/recurring")}>Cancel</Button>
-            <Button type="submit">{editing ? "Save changes" : "Create"}</Button>
+            {!canRecurring && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate("/task-management/recurring")} disabled={busy}>{canRecurring ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canRecurring || busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create"}</Button>
           </div>
         </form>
       </Card>
