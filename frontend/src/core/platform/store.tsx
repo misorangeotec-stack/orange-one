@@ -96,9 +96,9 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
       canEditUser: true,
       canManageModules: true,
       canEditOwnProfile: true,
-      // Creating / hard-deleting a user needs the auth admin API (service role).
-      canAddUser: false,
-      canDeleteUser: false,
+      // Create / hard-delete go through the deployed admin-users Edge Function.
+      canAddUser: true,
+      canDeleteUser: true,
 
       addDepartment: async (input) => {
         const id = await insertDepartmentWrite({ name: input.name, description: input.description ?? null, createdBy: uid });

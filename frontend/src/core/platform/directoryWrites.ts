@@ -1,5 +1,9 @@
 import { supabase } from "./supabase";
 import type { AppRole } from "./types";
+import type { Database } from "./database.types";
+
+type DeptUpdate = Database["public"]["Tables"]["departments"]["Update"];
+type ProfileUpdate = Database["public"]["Tables"]["profiles"]["Update"];
 
 /**
  * Portal directory writes (Stage B B4, option B = careful live writes). Admin-only
@@ -25,7 +29,7 @@ export async function insertDepartment(input: { name: string; description?: stri
 }
 
 export async function updateDepartment(id: string, patch: { name?: string; description?: string | null }): Promise<void> {
-  const fields: Record<string, unknown> = {};
+  const fields: DeptUpdate = {};
   if (patch.name !== undefined) fields.name = patch.name;
   if (patch.description !== undefined) fields.description = patch.description;
   const { error } = await supabase.from("departments").update(fields).eq("id", id);
@@ -44,7 +48,7 @@ export async function updateUserProfile(
   id: string,
   patch: { name?: string; email?: string | null; designation?: string | null; departmentId?: string | null; avatarColor?: string }
 ): Promise<void> {
-  const fields: Record<string, unknown> = {};
+  const fields: ProfileUpdate = {};
   if (patch.name !== undefined) fields.name = patch.name;
   if (patch.email !== undefined) fields.email = patch.email;
   if (patch.designation !== undefined) fields.designation = patch.designation;
