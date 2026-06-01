@@ -20,6 +20,7 @@ import {
   setRecurringActive as setRecurringActiveWrite,
   deleteRecurring as deleteRecurringWrite,
   upsertWeeklyPlan as upsertWeeklyPlanWrite,
+  updateWorkspaceSettings as updateWorkspaceSettingsWrite,
 } from "../data/taskWrites";
 
 /**
@@ -94,7 +95,9 @@ interface TaskStoreValue {
   setWeeklyPlan: (input: { doerId: string; weekStart: string; redPct: number; yellowPct: number; greenPct: number }) => Promise<void>;
 
   workspace: WorkspaceSettings;
-  updateWorkspace: (patch: Partial<WorkspaceSettings>) => void;
+  updateWorkspace: (patch: Partial<WorkspaceSettings>) => Promise<void>;
+  /** True for admins — workspace settings save live (admin-only under RLS). */
+  canManageWorkspace: boolean;
 
   /** False during the read-only phase — UIs disable write controls. */
   canWrite: boolean;
@@ -125,7 +128,7 @@ const readOnlyId = () => {
 };
 
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
-  const { user } = useSession();
+  const { user, role } = useSession();
   const dir = useDirectory();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
@@ -302,7 +305,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       },
 
       workspace,
-      updateWorkspace: readOnly,
+      updateWorkspace: async (patch) => {
+        await updateWorkspaceSettingsWrite(patch);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      canManageWorkspace: role === "admin",
 
       canWrite: false,
       canCreateTask: true,
@@ -312,7 +319,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canRecurring: true,
       canWeeklyPlan: true,
     };
-  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, role, queryClient]);
 
   // Realtime: push the bell + task data when one of my notifications changes
   // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also

@@ -1,10 +1,29 @@
 import { supabase } from "@/core/platform/supabase";
+import type { WorkspaceSettings } from "../types";
+import type { Database } from "@/core/platform/database.types";
+
+type WorkspaceSettingsUpdate = Database["public"]["Tables"]["workspace_settings"]["Update"];
 
 /**
  * Task-domain writes (Stage B B4, option B = careful live writes). Each function
  * performs one mutation under RLS as the signed-in user. Rolled out one flow at a
  * time; until a flow is wired + verified its store method stays an inert no-op.
  */
+
+/**
+ * Update the singleton workspace settings row (admin-only under the
+ * `workspace_update_admin` RLS policy). The row always exists (id = true), so an
+ * UPDATE is all that's needed.
+ */
+export async function updateWorkspaceSettings(patch: Partial<WorkspaceSettings>): Promise<void> {
+  const fields: WorkspaceSettingsUpdate = {};
+  if (patch.workspaceName !== undefined) fields.workspace_name = patch.workspaceName;
+  if (patch.weekStart !== undefined) fields.week_start = patch.weekStart;
+  if (patch.maxRevisionsPerWeek !== undefined) fields.max_revisions_per_week = patch.maxRevisionsPerWeek;
+  if (Object.keys(fields).length === 0) return;
+  const { error } = await supabase.from("workspace_settings").update(fields).eq("id", true);
+  if (error) throw new Error(error.message);
+}
 
 const mondayOf = (iso: string) => {
   const d = new Date(iso);

@@ -10,7 +10,7 @@ const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.lab
 /** Wires the session + live task data into the generic AppShell, then renders routes. */
 export default function TaskLayout() {
   const { user, role } = useSession();
-  const { notifications, getTask, profileById, canWrite, markNotificationsRead } = useTaskStore();
+  const { notifications, getTask, profileById, markNotificationsRead } = useTaskStore();
 
   const notifItems: NotificationItem[] = notifications
     .filter((n) => n.userId === user.id)
@@ -38,19 +38,6 @@ export default function TaskLayout() {
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
       onMarkRead={(ids) => { void markNotificationsRead(ids); }}
-      banner={
-        canWrite ? undefined : (
-          <div className="mb-5 flex items-start gap-3 rounded-card border border-[#F8B62B]/50 bg-[#FEF9EE] px-4 py-3">
-            <svg className="mt-0.5 shrink-0 text-[#B7820E]" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /></svg>
-            <p className="text-[12.5px] text-[#9a6e0c] leading-relaxed">
-              <b className="font-semibold">Live writes rolling out.</b> Task actions (create, start, revise,
-              complete, reschedule / shift), @mention remarks, recurring-task setup, and weekly RYG plans
-              now save to the live backend. Admin user / department / access changes are being wired next
-              and won't save yet.
-            </p>
-          </div>
-        )
-      }
     />
   );
 }
