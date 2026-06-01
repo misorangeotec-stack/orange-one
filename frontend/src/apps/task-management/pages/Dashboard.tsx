@@ -32,7 +32,7 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { visibleTasks, workspace } = useTaskStore();
+  const { visibleTasks, workspace, canWrite } = useTaskStore();
   const list = visibleTasks(role, user.id);
   const stats = computeStats(list);
   const firstName = user.name.split(" ")[0];
@@ -53,13 +53,15 @@ export default function Dashboard() {
             {" · "}revision limit {workspace.maxRevisionsPerWeek}/week
           </p>
         </div>
-        <Link
-          to="/task-management/tasks/new"
-          className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          New Task
-        </Link>
+        {canWrite && (
+          <Link
+            to="/task-management/tasks/new"
+            className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New Task
+          </Link>
+        )}
       </div>
 
       {/* stat cards (role-aware) */}

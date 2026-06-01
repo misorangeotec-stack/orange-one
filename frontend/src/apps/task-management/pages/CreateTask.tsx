@@ -12,7 +12,7 @@ import { useTaskStore } from "../mock/store";
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { createTask, assignableUsers, departmentById, profileById } = useTaskStore();
+  const { createTask, assignableUsers, departmentById, profileById, canWrite } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
 
   const [title, setTitle] = useState("");
@@ -91,8 +91,9 @@ export default function CreateTask() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            <Button variant="ghost" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button type="submit">Create Task</Button>
+            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate(-1)}>{canWrite ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canWrite}>Create Task</Button>
           </div>
         </form>
       </Card>

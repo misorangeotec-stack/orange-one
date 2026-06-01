@@ -17,7 +17,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById } = useTaskStore();
+  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
 
   const task = getTask(id);
@@ -58,7 +58,7 @@ export default function TaskDetail() {
           </p>
         </div>
 
-        {!closed && (
+        {!closed && canWrite && (
           <div className="flex flex-wrap items-center gap-2">
             {task.status !== "in_progress" && (
               <Button variant="progress" size="sm" onClick={() => startTask(task.id)}>
@@ -142,7 +142,7 @@ export default function TaskDetail() {
               </Row>
               <Row label="Created by">{creator?.name ?? "—"}</Row>
               <Row label="Due date">
-                <DueDateEditor value={task.dueDate} closed={closed} onChange={onReschedule} />
+                <DueDateEditor value={task.dueDate} closed={closed || !canWrite} onChange={onReschedule} />
               </Row>
               <Row label="Follow-up">{task.followUpDate ? dateLabel(task.followUpDate) : "—"}</Row>
               <Row label="Revisions">

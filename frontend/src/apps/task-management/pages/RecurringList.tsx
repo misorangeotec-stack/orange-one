@@ -32,7 +32,7 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, deleteRecurring, directReportIds, profileById } = useTaskStore();
+  const { recurringTasks, toggleRecurring, deleteRecurring, directReportIds, profileById, canWrite } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
@@ -51,13 +51,15 @@ export default function RecurringList() {
           <h2 className="text-[22px] font-bold text-navy">Recurring Tasks</h2>
           <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily, weekly, and monthly templates.</p>
         </div>
-        <Link
-          to="/task-management/recurring/new"
-          className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          New Recurring Task
-        </Link>
+        {canWrite && (
+          <Link
+            to="/task-management/recurring/new"
+            className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New Recurring Task
+          </Link>
+        )}
       </div>
 
       <Card className="overflow-hidden">
@@ -65,8 +67,8 @@ export default function RecurringList() {
           <EmptyState
             title="No recurring tasks yet"
             message="Set up a daily, weekly, or monthly template and it will generate tasks automatically."
-            actionLabel="New Recurring Task"
-            actionTo="/task-management/recurring/new"
+            actionLabel={canWrite ? "New Recurring Task" : undefined}
+            actionTo={canWrite ? "/task-management/recurring/new" : undefined}
           />
         ) : (
           <ul className="divide-y divide-line">
@@ -97,16 +99,17 @@ export default function RecurringList() {
 
                   <button
                     onClick={() => toggleRecurring(r.id)}
-                    title={r.active ? "Active — click to pause" : "Paused — click to resume"}
-                    className={cn("relative w-10 h-[22px] rounded-full transition shrink-0", r.active ? "bg-[#27AE60]" : "bg-line")}
+                    disabled={!canWrite}
+                    title={!canWrite ? "Read-only preview" : r.active ? "Active — click to pause" : "Paused — click to resume"}
+                    className={cn("relative w-10 h-[22px] rounded-full transition shrink-0 disabled:opacity-50", r.active ? "bg-[#27AE60]" : "bg-line")}
                   >
                     <span className={cn("absolute top-0.5 w-[18px] h-[18px] rounded-full bg-white shadow transition-all", r.active ? "left-[20px]" : "left-0.5")} />
                   </button>
 
-                  <button onClick={() => navigate(`/task-management/recurring/${r.id}/edit`)} className="text-grey-2 hover:text-orange transition p-1 shrink-0" title="Edit">
+                  <button onClick={() => navigate(`/task-management/recurring/${r.id}/edit`)} disabled={!canWrite} className="text-grey-2 hover:text-orange transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2" title={canWrite ? "Edit" : "Read-only preview"}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                   </button>
-                  <button onClick={() => setConfirmId(r.id)} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0" title="Delete">
+                  <button onClick={() => setConfirmId(r.id)} disabled={!canWrite} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2" title={canWrite ? "Delete" : "Read-only preview"}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
                   </button>
                 </li>

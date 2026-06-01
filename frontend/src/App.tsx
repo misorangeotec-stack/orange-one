@@ -8,13 +8,7 @@ import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
-import ModuleMigrationNotice from "@/core/platform/ModuleMigrationNotice";
 import { liveApps } from "@/apps/registry";
-
-// Stage B B3a: Task Management's tasks are still on mock data while the live
-// directory rolls out. Hold it behind a migration notice until B3b wires its
-// tasks to Supabase, then remove this set.
-const MIGRATING_APP_IDS = new Set(["task-management"]);
 
 /** Gate a live app behind the current user's module access (admins bypass). */
 function RequireModule({ appId, children }: { appId: string; children: ReactNode }) {
@@ -38,12 +32,11 @@ export default function App() {
       {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
       {liveApps.map((app) => {
         const Component = app.Component!;
-        const element = MIGRATING_APP_IDS.has(app.id) ? <ModuleMigrationNotice name={app.name} /> : <Component />;
         return (
           <Route
             key={app.id}
             path={`${app.basePath}/*`}
-            element={<RequireAuth><RequireModule appId={app.id}>{element}</RequireModule></RequireAuth>}
+            element={<RequireAuth><RequireModule appId={app.id}><Component /></RequireModule></RequireAuth>}
           />
         );
       })}

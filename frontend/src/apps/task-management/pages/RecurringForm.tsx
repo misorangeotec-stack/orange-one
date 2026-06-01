@@ -23,7 +23,7 @@ export default function RecurringForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById, departmentById } = useTaskStore();
+  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById, departmentById, canWrite } = useTaskStore();
   const editing = getRecurring(id ?? "");
   const canAssign = assignableUsers(role, user.id);
 
@@ -194,8 +194,9 @@ export default function RecurringForm() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            <Button variant="ghost" onClick={() => navigate("/task-management/recurring")}>Cancel</Button>
-            <Button type="submit">{editing ? "Save changes" : "Create"}</Button>
+            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate("/task-management/recurring")}>{canWrite ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canWrite}>{editing ? "Save changes" : "Create"}</Button>
           </div>
         </form>
       </Card>

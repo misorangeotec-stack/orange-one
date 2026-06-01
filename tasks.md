@@ -114,9 +114,12 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 - [x] Task Management held behind a "connecting to live data" notice (its tasks are still mock; restored in B3b)
 - [x] Verified live: logged in as Yash → /admin shows the real 13 users (roles, departments, reporting), avatars render, writes disabled, zero console errors, **no data written**
 
-### Phase B3b — Live tasks/reports (next)
-- [ ] Map tasks / recurring / activity / notifications / weekly_plans to live queries; re-enable the Task Management module (remove the migration gate in App.tsx)
-- [ ] Back the launcher filter / `RequireModule` with live `app_access` grants (already loaded into `moduleAccess`)
+### Phase B3b — Live tasks/reports (read-only) ✅ built · 🔍 awaiting audit
+- [x] `apps/task-management/data/fetchTaskData.ts` loads tasks / task_activity / notifications / recurring_tasks / weekly_plans / workspace_settings live (RLS-gated) and maps to the frontend types
+- [x] Task store now loads LIVE via React Query and is READ-ONLY (`canWrite=false`; all task mutations inert no-ops); selectors (visibleTasks, revisionInfo, weeklyPlanFor) unchanged
+- [x] Task Management module re-enabled (migration gate removed); module access already backed by live `app_access` (loaded into `moduleAccess` in B3a)
+- [x] Read-only enforced across the app: banner in the task shell + hidden/disabled write controls (New Task, task actions, remark composer, reschedule, recurring CRUD, weekly-plan, organization save)
+- [x] Verified live as Yash: dashboard shows the real 69 tasks (stats, dept performance, status donut); My Tasks + Task Detail show real tasks, activity and @mention remarks; writes disabled; no console errors; **nothing written to the DB**
 
 ### Phase B4+ — Mutations + business rules (later, after safe write-test path agreed)
 - [ ] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out
@@ -127,4 +130,4 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 
 ---
 
-_Last updated: Stage B in progress — B1 (foundation), B2 (auth gate), B3a (live identity + directory, read-only) all built & verified. Next: B3b (live tasks/reports). Read-only-first; live data untouched._
+_Last updated: Stage B in progress — B1 (foundation), B2 (auth gate), B3a (live identity + directory), B3b (live tasks/reports) all built & verified, read-only. The whole app now reads live Supabase data. Next: B4 (mutations) — only after a safe write-test path is agreed. Live data untouched._

@@ -7,7 +7,7 @@ import { useTaskStore } from "../../mock/store";
 
 /** Admin: workspace-level settings. */
 export default function Organization() {
-  const { workspace, updateWorkspace, profiles, departments } = useTaskStore();
+  const { workspace, updateWorkspace, profiles, departments, canWrite } = useTaskStore();
   const [name, setName] = useState(workspace.workspaceName);
   const [weekStart, setWeekStart] = useState(workspace.weekStart);
   const [maxRev, setMaxRev] = useState(workspace.maxRevisionsPerWeek);
@@ -50,8 +50,9 @@ export default function Organization() {
           </FieldLabel>
 
           <div className="flex items-center justify-end gap-3 pt-1">
+            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
             {saved && <span className="text-[12.5px] text-[#27AE60] font-medium">✓ Saved</span>}
-            <Button type="submit">Save settings</Button>
+            <Button type="submit" disabled={!canWrite}>Save settings</Button>
           </div>
         </form>
       </Card>

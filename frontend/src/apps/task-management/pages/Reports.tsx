@@ -11,7 +11,7 @@ const fmt = (iso: string) => formatDate(iso);
 
 export default function Reports() {
   const { user, isAdmin, isHod } = useSession();
-  const { profileById, directReportIds } = useTaskStore();
+  const { profileById, directReportIds, canWrite } = useTaskStore();
   const [planOpen, setPlanOpen] = useState(false);
   const [weekStart, setWeekStart] = useState(WEEK_START);
   const isManager = isAdmin || isHod;
@@ -26,7 +26,7 @@ export default function Reports() {
           <h2 className="text-[22px] font-bold text-navy">Reports</h2>
           <WeekNav weekStart={weekStart} onChange={setWeekStart} />
         </div>
-        {isManager && (
+        {isManager && canWrite && (
           <button
             onClick={() => setPlanOpen(true)}
             className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"

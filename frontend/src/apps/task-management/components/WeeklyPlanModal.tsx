@@ -13,7 +13,7 @@ import RygBar from "./RygBar";
 /** HOD/admin sets the Red/Yellow/Green completion target for a doer's upcoming week. */
 export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open: boolean; onClose: () => void; defaultDoerId?: string }) {
   const { user, role } = useSession();
-  const { assignableUsers, weeklyPlanFor, setWeeklyPlan } = useTaskStore();
+  const { assignableUsers, weeklyPlanFor, setWeeklyPlan, canWrite } = useTaskStore();
   const pool = useMemo(() => assignableUsers(role, user.id), [role, user.id, assignableUsers]);
 
   // week options: next week (default), week after next, this week
@@ -66,8 +66,8 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
       subtitle="Red / Yellow / Green completion target for the week"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={!valid}>{editing ? "Update plan" : "Save plan"}</Button>
+          <Button variant="ghost" onClick={onClose}>{canWrite ? "Cancel" : "Close"}</Button>
+          <Button onClick={submit} disabled={!valid || !canWrite}>{editing ? "Update plan" : "Save plan"}</Button>
         </>
       }
     >

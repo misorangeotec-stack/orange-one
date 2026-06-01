@@ -9,7 +9,7 @@ import { useTaskStore } from "../mock/store";
  * notifications fan out (Stage B persists these to task_remark_mentions/notifications).
  */
 export default function RemarkComposer({ taskId }: { taskId: string }) {
-  const { addRemark, profiles } = useTaskStore();
+  const { addRemark, profiles, canWrite } = useTaskStore();
   const [text, setText] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -36,6 +36,14 @@ export default function RemarkComposer({ taskId }: { taskId: string }) {
     addRemark(taskId, body, mentioned);
     setText("");
   };
+
+  if (!canWrite) {
+    return (
+      <p className="rounded-xl border border-dashed border-line bg-page px-3.5 py-2.5 text-[12.5px] text-grey-2">
+        Posting remarks is read-only in this preview.
+      </p>
+    );
+  }
 
   return (
     <div className="relative">

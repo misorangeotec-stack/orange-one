@@ -25,7 +25,7 @@ const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
   const { user } = useSession();
-  const { tasks } = useTaskStore();
+  const { tasks, canWrite } = useTaskStore();
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as View) || "all";
   const [q, setQ] = useState("");
@@ -67,13 +67,15 @@ export default function TasksList() {
           <h2 className="text-[22px] font-bold text-navy">My Tasks</h2>
           <p className="text-grey text-[13px] mt-1">Everything assigned to you or created by you.</p>
         </div>
-        <Link
-          to="/task-management/tasks/new"
-          className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          New Task
-        </Link>
+        {canWrite && (
+          <Link
+            to="/task-management/tasks/new"
+            className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            New Task
+          </Link>
+        )}
       </div>
 
       <Card className="overflow-hidden">
@@ -112,9 +114,9 @@ export default function TasksList() {
           {filtered.length === 0 ? (
             <EmptyState
               title="No tasks here"
-              message={view === "all" ? "Create your first task to get started." : "Nothing in this view right now."}
-              actionLabel="New Task"
-              actionTo="/task-management/tasks/new"
+              message={view === "all" ? "Tasks assigned to you will appear here." : "Nothing in this view right now."}
+              actionLabel={canWrite ? "New Task" : undefined}
+              actionTo={canWrite ? "/task-management/tasks/new" : undefined}
             />
           ) : (
             filtered.map((t: Task) => <TaskListItem key={t.id} task={t} />)
