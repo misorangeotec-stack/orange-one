@@ -1,11 +1,12 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { isoWeekOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
+import { insertTask } from "../data/taskWrites";
 
 /**
  * Task-domain store (Stage B B3b, READ-ONLY). Loads the live task tables for the
@@ -44,7 +45,7 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => string;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => Promise<string>;
   startTask: (id: string) => void;
   completeTask: (id: string, note?: string) => void;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => void;
@@ -82,6 +83,8 @@ interface TaskStoreValue {
 
   /** False during the read-only phase — UIs disable write controls. */
   canWrite: boolean;
+  /** B4 rollout: the create-task write path is live (other flows still read-only). */
+  canCreateTask: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -103,6 +106,7 @@ const readOnlyNull = () => {
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const { user } = useSession();
   const dir = useDirectory();
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: ["taskData", user?.id ?? null],
     queryFn: fetchTaskData,
@@ -146,8 +150,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       activityFor: (taskId) => activity.filter((a) => a.taskId === taskId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       revisionInfo,
 
-      // ---- mutations: inert while read-only ----
-      createTask: readOnlyId,
+      // ---- mutations ----
+      // createTask: LIVE (B4 first flow). Inserts under RLS (created_by = auth uid)
+      // then refetches. Other task mutations stay inert no-ops until wired.
+      createTask: async (input) => {
+        const id = await insertTask({ ...input, createdBy: user.id });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return id;
+      },
       startTask: readOnly,
       completeTask: readOnly,
       reviseTask: readOnly,
@@ -187,8 +197,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       updateWorkspace: readOnly,
 
       canWrite: false,
+      canCreateTask: true,
     };
-  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
 
   if (isLoading) {
     return (

@@ -12,7 +12,7 @@ import { useTaskStore } from "../mock/store";
 export default function CreateTask() {
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { createTask, assignableUsers, departmentById, profileById, canWrite } = useTaskStore();
+  const { createTask, assignableUsers, departmentById, profileById, canCreateTask } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
 
   const [title, setTitle] = useState("");
@@ -20,25 +20,33 @@ export default function CreateTask() {
   const [assignedTo, setAssignedTo] = useState(user.id);
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   // Department is derived from the assignee — never selected manually.
   const departmentId = profileById(assignedTo)?.departmentId ?? null;
   const departmentName = departmentById(departmentId)?.name;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
       setError("Please enter a task title.");
       return;
     }
-    const id = createTask({
-      title: title.trim(),
-      description: description.trim() || undefined,
-      assignedTo,
-      departmentId,
-      dueDate: dueDate || null,
-    });
-    navigate(`/task-management/tasks/${id}`);
+    setBusy(true);
+    setError("");
+    try {
+      const id = await createTask({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        assignedTo,
+        departmentId,
+        dueDate: dueDate || null,
+      });
+      navigate(`/task-management/tasks/${id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't create the task.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -91,9 +99,9 @@ export default function CreateTask() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
-            <Button variant="ghost" onClick={() => navigate(-1)}>{canWrite ? "Cancel" : "Back"}</Button>
-            <Button type="submit" disabled={!canWrite}>Create Task</Button>
+            {!canCreateTask && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate(-1)} disabled={busy}>{canCreateTask ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canCreateTask || busy}>{busy ? "Creating…" : "Create Task"}</Button>
           </div>
         </form>
       </Card>

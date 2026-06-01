@@ -121,7 +121,12 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 - [x] Read-only enforced across the app: banner in the task shell + hidden/disabled write controls (New Task, task actions, remark composer, reschedule, recurring CRUD, weekly-plan, organization save)
 - [x] Verified live as Yash: dashboard shows the real 69 tasks (stats, dept performance, status donut); My Tasks + Task Detail show real tasks, activity and @mention remarks; writes disabled; no console errors; **nothing written to the DB**
 
-### Phase B4+ — Mutations + business rules (later, after safe write-test path agreed)
+### Phase B4 — Live mutations (option B: careful live writes) — IN PROGRESS
+Backup taken before writes (`backups/`, gitignored; restore via RESTORE.md). Each flow: wire → test with a throwaway record I create + delete → verify row counts unchanged.
+- [x] **Create task — LIVE & verified.** `data/taskWrites.ts insertTask` (RLS: created_by = auth.uid()); store `createTask` async + React-Query invalidation; per-flow flag `canCreateTask` (other task writes still read-only no-ops). Verified create→delete as Yash: 69→70→69, activity 264 (cascade clean), no real data touched. Found: a DB trigger auto-logs the `created` activity on insert.
+- [ ] Task status actions: Start / Complete / Revise (+ 2/week revision limit) — next
+- [ ] Shift-to-next-week linkage, @mention remarks (+ notification fan-out)
+- [ ] Recurring CRUD; weekly-plan upsert; user/department/access writes (admin)
 - [ ] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out
 - [ ] Recurring-instance generation strategy (confirm approach)
 - [ ] RYG weekly plans + notifications (realtime bell)
@@ -130,4 +135,4 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 
 ---
 
-_Last updated: Stage B in progress — B1 (foundation), B2 (auth gate), B3a (live identity + directory), B3b (live tasks/reports) all built & verified, read-only. The whole app now reads live Supabase data. Next: B4 (mutations) — only after a safe write-test path is agreed. Live data untouched._
+_Last updated: Stage B — B1/B2/B3a/B3b done (whole app reads live data). B4 started (option B, careful live writes): full Supabase backup taken; first write flow (create task) live & verified end-to-end via throwaway record (69→70→69). Other writes still read-only no-ops, rolling out next._

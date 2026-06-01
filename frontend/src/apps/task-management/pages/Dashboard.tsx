@@ -32,7 +32,7 @@ const ICONS = {
 
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { visibleTasks, workspace, canWrite } = useTaskStore();
+  const { visibleTasks, workspace, canCreateTask } = useTaskStore();
   const list = visibleTasks(role, user.id);
   const stats = computeStats(list);
   const firstName = user.name.split(" ")[0];
@@ -53,7 +53,7 @@ export default function Dashboard() {
             {" · "}revision limit {workspace.maxRevisionsPerWeek}/week
           </p>
         </div>
-        {canWrite && (
+        {canCreateTask && (
           <Link
             to="/task-management/tasks/new"
             className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"

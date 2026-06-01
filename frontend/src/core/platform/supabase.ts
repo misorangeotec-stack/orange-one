@@ -25,3 +25,9 @@ export const supabase = createClient(url, anonKey, {
     detectSessionInUrl: true,
   },
 });
+
+// Dev-only: expose the client for manual verification/cleanup during the B4
+// write rollout (runs under the signed-in user + RLS). Never present in prod builds.
+if (import.meta.env.DEV) {
+  (window as unknown as { sb: typeof supabase }).sb = supabase;
+}
