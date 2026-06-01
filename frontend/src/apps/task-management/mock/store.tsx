@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
-import { isoWeekOf } from "@/shared/lib/time";
+import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
 import {
   insertTask,
@@ -17,6 +17,7 @@ import {
   updateRecurring as updateRecurringWrite,
   setRecurringActive as setRecurringActiveWrite,
   deleteRecurring as deleteRecurringWrite,
+  upsertWeeklyPlan as upsertWeeklyPlanWrite,
 } from "../data/taskWrites";
 
 /**
@@ -87,7 +88,7 @@ interface TaskStoreValue {
 
   weeklyPlans: WeeklyPlan[];
   weeklyPlanFor: (doerId: string, weekStart: string) => WeeklyPlan | undefined;
-  setWeeklyPlan: (input: { doerId: string; weekStart: string; redPct: number; yellowPct: number; greenPct: number }) => void;
+  setWeeklyPlan: (input: { doerId: string; weekStart: string; redPct: number; yellowPct: number; greenPct: number }) => Promise<void>;
 
   workspace: WorkspaceSettings;
   updateWorkspace: (patch: Partial<WorkspaceSettings>) => void;
@@ -104,6 +105,8 @@ interface TaskStoreValue {
   canRemark: boolean;
   /** B4 rollout: recurring-task CRUD (create/edit/toggle/delete) is live. */
   canRecurring: boolean;
+  /** B4 rollout: setting a doer's weekly RYG plan is live. */
+  canWeeklyPlan: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -270,7 +273,25 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         const { isoYear, isoWeek } = isoWeekOf(weekStart);
         return weeklyPlans.find((p) => p.doerId === doerId && p.isoYear === isoYear && p.isoWeek === isoWeek);
       },
-      setWeeklyPlan: readOnly,
+      // setWeeklyPlan: LIVE (B4). Upsert keyed by (doer, iso year+week); branches
+      // update vs insert to preserve created_by. RLS allows admin / hod-of-doer.
+      setWeeklyPlan: async ({ doerId, weekStart, redPct, yellowPct, greenPct }) => {
+        const { isoYear, isoWeek } = isoWeekOf(weekStart);
+        const existing = weeklyPlans.find((p) => p.doerId === doerId && p.isoYear === isoYear && p.isoWeek === isoWeek);
+        await upsertWeeklyPlanWrite({
+          existingId: existing?.id ?? null,
+          doerId,
+          isoYear,
+          isoWeek,
+          weekStart,
+          weekEnd: weekEndOf(weekStart),
+          redPct,
+          yellowPct,
+          greenPct,
+          createdBy: user.id,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
 
       workspace,
       updateWorkspace: readOnly,
@@ -281,6 +302,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canReschedule: true,
       canRemark: true,
       canRecurring: true,
+      canWeeklyPlan: true,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
 

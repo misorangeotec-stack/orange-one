@@ -13,7 +13,7 @@ import RygBar from "./RygBar";
 /** HOD/admin sets the Red/Yellow/Green completion target for a doer's upcoming week. */
 export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open: boolean; onClose: () => void; defaultDoerId?: string }) {
   const { user, role } = useSession();
-  const { assignableUsers, weeklyPlanFor, setWeeklyPlan, canWrite } = useTaskStore();
+  const { assignableUsers, weeklyPlanFor, setWeeklyPlan, canWeeklyPlan } = useTaskStore();
   const pool = useMemo(() => assignableUsers(role, user.id), [role, user.id, assignableUsers]);
 
   // week options: next week (default), week after next, this week
@@ -32,6 +32,8 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
   const [green, setGreen] = useState(70);
   const [yellow, setYellow] = useState(20);
   const [red, setRed] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
 
   // prefill from an existing plan whenever doer or week changes (and on open)
   useEffect(() => {
@@ -52,10 +54,18 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
   const valid = sum === 100 && green >= 0 && yellow >= 0 && red >= 0;
   const editing = !!weeklyPlanFor(doerId, weekStart);
 
-  const submit = () => {
-    if (!valid) return;
-    setWeeklyPlan({ doerId, weekStart, redPct: red, yellowPct: yellow, greenPct: green });
-    onClose();
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await setWeeklyPlan({ doerId, weekStart, redPct: red, yellowPct: yellow, greenPct: green });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -66,8 +76,8 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
       subtitle="Red / Yellow / Green completion target for the week"
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>{canWrite ? "Cancel" : "Close"}</Button>
-          <Button onClick={submit} disabled={!valid || !canWrite}>{editing ? "Update plan" : "Save plan"}</Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>{canWeeklyPlan ? "Cancel" : "Close"}</Button>
+          <Button onClick={submit} disabled={!valid || !canWeeklyPlan || busy}>{busy ? "Saving…" : editing ? "Update plan" : "Save plan"}</Button>
         </>
       }
     >
@@ -104,6 +114,8 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
         <div className={"text-[12.5px] font-medium " + (sum === 100 ? "text-grey-2" : "text-[#d4493f]")}>
           {sum === 100 ? "Totals 100% ✓" : `Must total 100% — currently ${sum}%`}
         </div>
+
+        {error && <p className="text-[12.5px] text-[#d4493f]">{error}</p>}
       </div>
     </Modal>
   );

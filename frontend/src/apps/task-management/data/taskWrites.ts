@@ -249,3 +249,50 @@ export async function deleteRecurring(id: string): Promise<void> {
   const { error } = await supabase.from("recurring_tasks").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
+
+/* ------------------------------ weekly plans ------------------------------ */
+// One RYG plan per (doer_id, iso_year, iso_week) — UNIQUE constraint; red+yellow+
+// green must sum to 100 (CHECK, enforced in the UI before submit). RLS: insert/
+// update for admin OR hod-of-doer. We branch update-vs-insert (rather than upsert)
+// so an edit by a different manager doesn't overwrite the original created_by.
+
+/** Insert or update a doer's weekly RYG plan. Pass existingId when one already exists. */
+export async function upsertWeeklyPlan(input: {
+  existingId: string | null;
+  doerId: string;
+  isoYear: number;
+  isoWeek: number;
+  weekStart: string;
+  weekEnd: string;
+  redPct: number;
+  yellowPct: number;
+  greenPct: number;
+  createdBy: string;
+}): Promise<void> {
+  if (input.existingId) {
+    const { error } = await supabase
+      .from("weekly_plans")
+      .update({
+        week_start: input.weekStart,
+        week_end: input.weekEnd,
+        red_pct: input.redPct,
+        yellow_pct: input.yellowPct,
+        green_pct: input.greenPct,
+      })
+      .eq("id", input.existingId);
+    if (error) throw new Error(error.message);
+  } else {
+    const { error } = await supabase.from("weekly_plans").insert({
+      doer_id: input.doerId,
+      iso_year: input.isoYear,
+      iso_week: input.isoWeek,
+      week_start: input.weekStart,
+      week_end: input.weekEnd,
+      red_pct: input.redPct,
+      yellow_pct: input.yellowPct,
+      green_pct: input.greenPct,
+      created_by: input.createdBy,
+    });
+    if (error) throw new Error(error.message);
+  }
+}
