@@ -43,3 +43,65 @@ export async function insertTask(input: {
   if (error) throw new Error(error.message);
   return data.id as string;
 }
+
+/**
+ * Mark a task in progress. The DB trigger `log_task_activity` only auto-logs
+ * status changes for completed/revised/shifted (NOT started), so we insert the
+ * 'started' activity row ourselves (RLS: actor_id = auth.uid()).
+ */
+export async function startTask(taskId: string, actorId: string): Promise<void> {
+  const { error } = await supabase.from("tasks").update({ status: "in_progress" }).eq("id", taskId);
+  if (error) throw new Error(error.message);
+  const { error: actErr } = await supabase
+    .from("task_activity")
+    .insert({ task_id: taskId, type: "started", actor_id: actorId });
+  if (actErr) throw new Error(actErr.message);
+}
+
+/**
+ * Mark a task complete (timestamped). The trigger auto-logs the 'completed'
+ * activity, so we do NOT insert one (avoids double-logging). Any optional note is
+ * recorded as a 'remark' so it shows on the timeline.
+ */
+export async function completeTask(taskId: string, actorId: string, note?: string): Promise<void> {
+  const { error } = await supabase
+    .from("tasks")
+    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+  if (note) {
+    const { error: actErr } = await supabase
+      .from("task_activity")
+      .insert({ task_id: taskId, type: "remark", actor_id: actorId, note });
+    if (actErr) throw new Error(actErr.message);
+  }
+}
+
+/**
+ * Revise a task: bump the revision count, stamp last_revised_at, and set the
+ * follow-up date. The trigger auto-logs both 'revised' and 'followup', so we only
+ * add the optional reason as a 'remark'. The 2-per-week limit is enforced in the
+ * store before this is called (and the UI disables the control at the limit).
+ */
+export async function reviseTask(
+  taskId: string,
+  actorId: string,
+  args: { followUpDate: string; note?: string; currentRevisionCount: number }
+): Promise<void> {
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status: "revised",
+      revision_count: args.currentRevisionCount + 1,
+      last_revised_at: new Date().toISOString(),
+      follow_up_date: args.followUpDate,
+    })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+  if (args.note) {
+    const { error: actErr } = await supabase
+      .from("task_activity")
+      .insert({ task_id: taskId, type: "remark", actor_id: actorId, note: args.note });
+    if (actErr) throw new Error(actErr.message);
+  }
+}

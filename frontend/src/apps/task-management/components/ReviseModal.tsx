@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
@@ -12,14 +12,34 @@ export default function ReviseModal({ task, open, onClose }: { task: Task; open:
   const [followUpDate, setFollowUpDate] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const submit = () => {
+  // The modal stays mounted (rendered with open=false), so reset its fields each
+  // time it opens — otherwise a prior revision's note/date would silently re-post.
+  useEffect(() => {
+    if (open) {
+      setFollowUpDate("");
+      setNote("");
+      setError("");
+      setBusy(false);
+    }
+  }, [open]);
+
+  const submit = async () => {
     if (!followUpDate) {
       setError("A follow-up date is required when revising.");
       return;
     }
-    reviseTask(task.id, { followUpDate, note: note.trim() || undefined });
-    onClose();
+    setBusy(true);
+    setError("");
+    try {
+      await reviseTask(task.id, { followUpDate, note: note.trim() || undefined });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -30,8 +50,8 @@ export default function ReviseModal({ task, open, onClose }: { task: Task; open:
       subtitle={task.title}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={!info.allowed}>Submit revision</Button>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={submit} disabled={!info.allowed || busy}>{busy ? "Saving…" : "Submit revision"}</Button>
         </>
       }
     >

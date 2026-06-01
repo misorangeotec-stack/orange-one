@@ -6,7 +6,7 @@ import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { isoWeekOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
-import { insertTask } from "../data/taskWrites";
+import { insertTask, startTask as startTaskWrite, completeTask as completeTaskWrite, reviseTask as reviseTaskWrite } from "../data/taskWrites";
 
 /**
  * Task-domain store (Stage B B3b, READ-ONLY). Loads the live task tables for the
@@ -46,9 +46,9 @@ interface TaskStoreValue {
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
   createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => Promise<string>;
-  startTask: (id: string) => void;
-  completeTask: (id: string, note?: string) => void;
-  reviseTask: (id: string, args: { followUpDate: string; note?: string }) => void;
+  startTask: (id: string) => Promise<void>;
+  completeTask: (id: string, note?: string) => Promise<void>;
+  reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
   rescheduleTask: (id: string, newDueDate: string) => string | null;
   addRemark: (id: string, note: string, mentionedIds: string[]) => void;
 
@@ -85,6 +85,8 @@ interface TaskStoreValue {
   canWrite: boolean;
   /** B4 rollout: the create-task write path is live (other flows still read-only). */
   canCreateTask: boolean;
+  /** B4 rollout: the Start / Complete / Revise status actions are live. */
+  canStatusActions: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -158,9 +160,22 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
-      startTask: readOnly,
-      completeTask: readOnly,
-      reviseTask: readOnly,
+      // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the
+      // status-change activity (started is logged by the write itself); refetch after.
+      startTask: async (id) => {
+        await startTaskWrite(id, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      completeTask: async (id, note) => {
+        await completeTaskWrite(id, user.id, note);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      reviseTask: async (id, args) => {
+        const task = tasks.find((t) => t.id === id);
+        if (!task || !revisionInfo(task).allowed) return; // weekly limit / closed guard
+        await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
       rescheduleTask: readOnlyNull,
       addRemark: readOnly,
 
@@ -198,6 +213,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
       canWrite: false,
       canCreateTask: true,
+      canStatusActions: true,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
 
