@@ -73,13 +73,13 @@ export default function ActivityHistory() {
         <Combobox
           value={type}
           onChange={(v) => setType(v as ActivityType | "all")}
-          className="w-auto min-w-[160px]"
+          className="w-full sm:w-auto sm:min-w-[160px]"
           options={[{ value: "all", label: "All actions" }, ...(Object.keys(TYPE_LABELS) as ActivityType[]).map((t) => ({ value: t, label: TYPE_LABELS[t] }))]}
         />
         <Combobox
           value={actor}
           onChange={setActor}
-          className="w-auto min-w-[180px]"
+          className="w-full sm:w-auto sm:min-w-[180px]"
           options={[{ value: "all", label: "Everyone" }, ...actors.map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined, icon: <Avatar name={p.name} color={p.avatarColor} size={22} /> }))]}
         />
       </div>

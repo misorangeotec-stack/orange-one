@@ -77,8 +77,8 @@ export default function Users() {
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search users…" className="pl-9 py-2 text-[13px]" />
           </div>
-          <Combobox value={role} onChange={(v) => setRole(v as AppRole | "all")} className="w-auto min-w-[150px]" options={[{ value: "all", label: "All roles" }, ...(Object.keys(ROLE_LABEL) as AppRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} />
-          <Combobox value={dept} onChange={setDept} className="w-auto min-w-[160px]" options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
+          <Combobox value={role} onChange={(v) => setRole(v as AppRole | "all")} className="w-full sm:w-auto sm:min-w-[150px]" options={[{ value: "all", label: "All roles" }, ...(Object.keys(ROLE_LABEL) as AppRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} />
+          <Combobox value={dept} onChange={setDept} className="w-full sm:w-auto sm:min-w-[160px]" options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
         </div>
 
         {activeFilters.length > 0 && (

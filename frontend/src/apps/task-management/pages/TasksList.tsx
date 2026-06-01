@@ -108,15 +108,15 @@ export default function TasksList() {
             active={view}
             onChange={(k) => setParams(k === "all" ? {} : { view: k }, { replace: true })}
           />
-          <div className="flex items-center gap-2.5 pb-2">
+          <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
             <Combobox
               value={status}
               onChange={(v) => setStatus(v as TaskStatus | "all")}
-              className="w-auto min-w-[150px]"
+              className="w-full sm:w-auto sm:min-w-[150px]"
               align="right"
               options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
             />
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <TextInput
                 value={q}

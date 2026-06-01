@@ -55,7 +55,7 @@ export default function Organization() {
 
           <FieldLabel label="Max revisions per week" hint="the core accountability rule">
             <div className="flex items-center gap-3">
-              <input type="range" min={1} max={5} value={maxRev} onChange={(e) => setMaxRev(Number(e.target.value))} className="accent-orange w-48" />
+              <input type="range" min={1} max={5} value={maxRev} onChange={(e) => setMaxRev(Number(e.target.value))} className="accent-orange w-full max-w-[12rem]" />
               <span className="text-[15px] font-bold text-navy w-6 text-center">{maxRev}</span>
             </div>
           </FieldLabel>

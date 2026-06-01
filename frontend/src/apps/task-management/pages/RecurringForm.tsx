@@ -135,7 +135,7 @@ export default function RecurringForm() {
                       type="button"
                       onClick={() => toggleDay(d.v)}
                       className={cn(
-                        "w-12 py-2 rounded-lg text-[12.5px] font-semibold border transition",
+                        "flex-1 min-w-[2.5rem] sm:flex-none sm:w-12 py-2 rounded-lg text-[12.5px] font-semibold border transition",
                         on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
                       )}
                     >

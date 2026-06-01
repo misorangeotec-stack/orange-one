@@ -156,14 +156,14 @@ export default function TaskBrowser({
             <Combobox
               value={dept}
               onChange={handleDeptChange}
-              className="w-auto min-w-[160px]"
+              className="w-full sm:w-auto sm:min-w-[160px]"
               options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
             />
           )}
           <Combobox
             value={person}
             onChange={handlePersonChange}
-            className="w-auto min-w-[170px]"
+            className="w-full sm:w-auto sm:min-w-[170px]"
             options={[
               { value: "all", label: departments ? "All people" : "All team members" },
               ...visiblePeople.map((p) => ({
@@ -177,13 +177,13 @@ export default function TaskBrowser({
           <Combobox
             value={status}
             onChange={(v) => setStatus(v as TaskStatus | "all")}
-            className="w-auto min-w-[150px]"
+            className="w-full sm:w-auto sm:min-w-[150px]"
             options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
           />
           <Combobox
             value={week}
             onChange={(v) => setWeek(v as "all" | "this" | "next")}
-            className="w-auto min-w-[130px]"
+            className="w-full sm:w-auto sm:min-w-[130px]"
             options={[
               { value: "all", label: "Any week" },
               { value: "this", label: "This week" },
