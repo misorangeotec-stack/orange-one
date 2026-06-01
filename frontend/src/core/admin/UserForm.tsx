@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -9,6 +9,9 @@ import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
 import { apps } from "@/apps/registry";
 import type { AppRole } from "@/core/platform/types";
+import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
+
+const RECEIVABLES_APP_ID = "outstanding-dashboard";
 
 const ROLES: { value: AppRole; label: string; hint: string }[] = [
   { value: "employee", label: "Employee", hint: "Own tasks only" },
@@ -33,11 +36,33 @@ export default function UserForm() {
   const [departmentId, setDepartmentId] = useState(editing?.departmentId ?? "");
   const [hodIds, setHodIds] = useState<string[]>(editing?.hodIds ?? []);
   const [moduleAccess, setModuleAccess] = useState<string[]>(editing?.moduleAccess ?? ["task-management"]);
+  const [receivablesSalespersons, setReceivablesSalespersons] = useState<string[]>(editing?.receivablesSalespersons ?? []);
+  const [spNames, setSpNames] = useState<string[]>([]);
+  const [spLoading, setSpLoading] = useState(false);
+  const [spError, setSpError] = useState("");
   const [error, setError] = useState("");
 
   const candidateHods = profiles.filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== id);
   const toggleHod = (hid: string) => setHodIds((prev) => (prev.includes(hid) ? prev.filter((h) => h !== hid) : [...prev, hid]));
   const toggleModule = (mid: string) => setModuleAccess((prev) => (prev.includes(mid) ? prev.filter((m) => m !== mid) : [...prev, mid]));
+  const toggleSalesperson = (n: string) =>
+    setReceivablesSalespersons((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+
+  // The salesperson-scope picker is only relevant to non-admins who can open the
+  // Outstanding Dashboard (admins always see all of it).
+  const showSalespersonScope = role !== "admin" && moduleAccess.includes(RECEIVABLES_APP_ID);
+
+  // Lazy-load the live salesperson names (from the receivables data) the first
+  // time the scope picker is shown, so the admin tags exact-matching values.
+  useEffect(() => {
+    if (!showSalespersonScope || spNames.length || spLoading) return;
+    setSpLoading(true);
+    setSpError("");
+    fetchSalespersonNames()
+      .then(setSpNames)
+      .catch((e) => setSpError((e as Error).message))
+      .finally(() => setSpLoading(false));
+  }, [showSalespersonScope, spNames.length, spLoading]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,6 +82,8 @@ export default function UserForm() {
       departmentId: departmentId || null,
       hodIds,
       moduleAccess,
+      // Only meaningful for a non-admin with the dashboard module; otherwise clear.
+      receivablesSalespersons: showSalespersonScope ? receivablesSalespersons : [],
     };
     setBusy(true);
     setError("");
@@ -184,6 +211,48 @@ export default function UserForm() {
               </div>
             )}
           </FieldLabel>
+
+          {showSalespersonScope && (
+            <FieldLabel
+              label="Outstanding Dashboard — salesperson access"
+              hint="which salesperson's data this user sees; leave empty = sees nothing"
+            >
+              {spLoading ? (
+                <p className="text-[12.5px] text-grey-2">Loading salespersons…</p>
+              ) : spError ? (
+                <p className="text-[12.5px] text-[#d4493f]">Couldn't load salespersons: {spError}</p>
+              ) : spNames.length === 0 ? (
+                <p className="text-[12.5px] text-grey-2">No salespersons found in the receivables data.</p>
+              ) : (
+                <>
+                  {receivablesSalespersons.length === 0 && (
+                    <p className="text-[12px] text-[#d4493f] mb-2">
+                      No salesperson selected — this user will see an empty dashboard until you tag at least one.
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2 max-h-48 overflow-auto p-0.5">
+                    {spNames.map((n) => {
+                      const on = receivablesSalespersons.includes(n);
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => toggleSalesperson(n)}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-pill border px-3 py-1.5 text-[12.5px] transition",
+                            on ? "border-orange bg-orange-soft text-orange font-semibold" : "border-line text-navy hover:border-orange/40"
+                          )}
+                        >
+                          {n}
+                          {on && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </FieldLabel>
+          )}
 
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 

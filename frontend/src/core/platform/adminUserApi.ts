@@ -18,6 +18,8 @@ export interface CreateUserInput {
   departmentId?: string | null;
   hodIds?: string[];
   moduleAccess?: string[];
+  /** Outstanding Dashboard scope — salesperson names this user may see. */
+  receivablesSalespersons?: string[];
 }
 
 export async function createUserViaFunction(input: CreateUserInput): Promise<string> {

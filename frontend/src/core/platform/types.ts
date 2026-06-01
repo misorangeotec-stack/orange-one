@@ -40,4 +40,10 @@ export interface Profile {
   hodIds: string[];
   /** Granted portal app ids (app_access). Admins bypass this and see everything. */
   moduleAccess: string[];
+  /**
+   * Outstanding Dashboard scope (profiles.receivables_salespersons): salesperson
+   * name(s) this user may see in the receivables app. Admins ignore this (see all);
+   * a non-admin sees only these names, and an empty list means they see nothing.
+   */
+  receivablesSalespersons: string[];
 }
