@@ -1,4 +1,6 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
+import { Eye, EyeOff } from "lucide-react";
 import Logo from "@/shared/components/ui/Logo";
 
 /**
@@ -91,21 +93,39 @@ export function Field({
   disabled?: boolean;
   autoFocus?: boolean;
 }) {
+  const [show, setShow] = useState(false);
+  const isPassword = type === "password";
+  const inputType = isPassword ? (show ? "text" : "password") : type;
   return (
     <label className="block mb-4">
       <span className="block text-[13px] font-medium text-navy mb-1.5">{label}</span>
-      <input
-        type={type}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        defaultValue={defaultValue}
-        value={value}
-        onChange={onChange}
-        required={required}
-        disabled={disabled}
-        autoFocus={autoFocus}
-        className="w-full rounded-xl border border-line bg-white px-4 py-3 text-[15px] text-ink placeholder:text-grey-2 outline-none transition focus:border-orange focus:ring-4 focus:ring-orange/10 disabled:opacity-60"
-      />
+      <div className="relative">
+        <input
+          type={inputType}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          defaultValue={defaultValue}
+          value={value}
+          onChange={onChange}
+          required={required}
+          disabled={disabled}
+          autoFocus={autoFocus}
+          className={`w-full rounded-xl border border-line bg-white px-4 py-3 text-[15px] text-ink placeholder:text-grey-2 outline-none transition focus:border-orange focus:ring-4 focus:ring-orange/10 disabled:opacity-60${isPassword ? " pr-12" : ""}`}
+        />
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShow((s) => !s)}
+            aria-label={show ? "Hide password" : "Show password"}
+            title={show ? "Hide password" : "Show password"}
+            className="absolute inset-y-0 right-0 flex items-center pr-3.5 text-grey-2 hover:text-orange transition disabled:opacity-60"
+            disabled={disabled}
+            tabIndex={-1}
+          >
+            {show ? <EyeOff className="h-[18px] w-[18px]" /> : <Eye className="h-[18px] w-[18px]" />}
+          </button>
+        )}
+      </div>
     </label>
   );
 }

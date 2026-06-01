@@ -4,7 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import Logo from "@/shared/components/ui/Logo";
-import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput, PasswordInput } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { supabase } from "@/core/platform/supabase";
@@ -116,8 +116,8 @@ export default function Account() {
             <p className="text-[12.5px] text-grey-2 mt-1 mb-4">Update your password. Forgot it? Ask your admin to reset it.</p>
             <form onSubmit={changePassword} className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
-                <FieldLabel label="New password"><TextInput type="password" value={pw} onChange={(e) => { setPw(e.target.value); setPwMsg(null); }} placeholder="••••••••" /></FieldLabel>
-                <FieldLabel label="Confirm new password"><TextInput type="password" value={pw2} onChange={(e) => { setPw2(e.target.value); setPwMsg(null); }} placeholder="••••••••" /></FieldLabel>
+                <FieldLabel label="New password"><PasswordInput value={pw} onChange={(e) => { setPw(e.target.value); setPwMsg(null); }} placeholder="••••••••" autoComplete="new-password" /></FieldLabel>
+                <FieldLabel label="Confirm new password"><PasswordInput value={pw2} onChange={(e) => { setPw2(e.target.value); setPwMsg(null); }} placeholder="••••••••" autoComplete="new-password" /></FieldLabel>
               </div>
               <div className="flex items-center justify-end gap-3">
                 {pwMsg && <span className={`text-[12.5px] font-medium ${pwMsg.ok ? "text-[#27AE60]" : "text-[#d4493f]"}`}>{pwMsg.ok ? "✓ " : ""}{pwMsg.text}</span>}

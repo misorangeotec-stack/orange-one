@@ -4,6 +4,11 @@ import { UserSidebar } from "@hub/components/UserSidebar";
 import { useAppData } from "@hub/lib/useAppData";
 import { FYMultiSelect } from "@hub/components/FYMultiSelect";
 import { useFY } from "@hub/lib/fyContext";
+import UserMenu from "@/shared/components/layout/UserMenu";
+import { useSession } from "@/core/platform/session";
+import type { AppRole } from "@/core/platform/types";
+
+const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" };
 
 /** Format an ISO date ("2026-05-28") as "28 May 2026" without timezone drift. */
 function formatAsOf(iso: string): string {
@@ -16,6 +21,7 @@ function formatAsOf(iso: string): string {
 export default function UserLayout() {
   const { dashboard } = useAppData({});
   const { label: fyLabel } = useFY();
+  const { user, role } = useSession();
 
   return (
     <SidebarProvider>
@@ -34,6 +40,10 @@ export default function UserLayout() {
                 </span>
               )}
               <FYMultiSelect />
+              <div className="h-6 w-px bg-border hidden sm:block" />
+              <UserMenu
+                user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: ROLE_LABEL[role] ?? role }}
+              />
             </div>
           </header>
           <main className="flex-1 overflow-auto">
