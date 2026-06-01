@@ -18,6 +18,7 @@ export default function AppShell({
   user,
   notifications,
   roleSwitcher,
+  banner,
   logoTo = "/home",
 }: {
   nav: NavItem[];
@@ -25,6 +26,8 @@ export default function AppShell({
   user: ShellUser;
   notifications: NotificationItem[];
   roleSwitcher?: ReactNode;
+  /** Optional banner rendered above the page content (e.g. a read-only notice). */
+  banner?: ReactNode;
   logoTo?: string;
 }) {
   const [drawer, setDrawer] = useState(false);
@@ -70,6 +73,7 @@ export default function AppShell({
         />
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-[1180px] mx-auto px-4 sm:px-6 py-6">
+            {banner}
             <Outlet />
           </div>
         </main>

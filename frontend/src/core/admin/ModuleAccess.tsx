@@ -10,7 +10,7 @@ import { apps } from "@/apps/registry";
  * their cells are shown as always-on and locked.
  */
 export default function ModuleAccess() {
-  const { profiles, departmentById, setUserModules } = useDirectory();
+  const { profiles, departmentById, setUserModules, canWrite } = useDirectory();
 
   const toggle = (userId: string, current: string[], appId: string) =>
     setUserModules(userId, current.includes(appId) ? current.filter((a) => a !== appId) : [...current, appId]);
@@ -48,18 +48,19 @@ export default function ModuleAccess() {
                   </td>
                   {apps.map((a) => {
                     const on = isAdmin || u.moduleAccess.includes(a.id);
+                    const locked = isAdmin || !canWrite;
                     return (
                       <td key={a.id} className="text-center px-4 py-3">
                         <button
                           type="button"
-                          disabled={isAdmin}
+                          disabled={locked}
                           onClick={() => toggle(u.id, u.moduleAccess, a.id)}
                           aria-pressed={on}
-                          title={isAdmin ? "Admins always have access" : on ? "Granted — click to revoke" : "Not granted — click to grant"}
+                          title={isAdmin ? "Admins always have access" : !canWrite ? "Read-only preview" : on ? "Granted — click to revoke" : "Not granted — click to grant"}
                           className={cn(
                             "w-5 h-5 rounded-[6px] border inline-flex items-center justify-center transition",
                             on ? "bg-orange border-orange text-white" : "border-grey-2 hover:border-orange",
-                            isAdmin ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+                            locked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
                           )}
                         >
                           {on && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}

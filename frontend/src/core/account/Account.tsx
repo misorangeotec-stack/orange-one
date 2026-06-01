@@ -15,7 +15,7 @@ import { useDirectory } from "@/core/platform/store";
 export default function Account() {
   const navigate = useNavigate();
   const { user } = useSession();
-  const { profileById, departmentById, updateUser } = useDirectory();
+  const { profileById, departmentById, updateUser, canWrite } = useDirectory();
   const me = profileById(user.id) ?? user;
 
   const [name, setName] = useState(me.name);
@@ -83,8 +83,9 @@ export default function Account() {
                 <FieldLabel label="Role" hint="set by admin"><TextInput value={roleLabel} disabled /></FieldLabel>
               </div>
               <div className="flex items-center justify-end gap-3 pt-1">
+                {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
                 {savedProfile && <span className="text-[12.5px] text-[#27AE60] font-medium">✓ Saved</span>}
-                <Button type="submit">Save profile</Button>
+                <Button type="submit" disabled={!canWrite}>Save profile</Button>
               </div>
             </form>
           </Card>

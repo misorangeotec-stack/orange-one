@@ -4,7 +4,6 @@ import { timeAgo } from "@/shared/lib/time";
 import { taskNav } from "./nav";
 import { useSession, ALL_ROLES } from "./mock/session";
 import { useTaskStore } from "./mock/store";
-import RoleSwitcher from "./components/RoleSwitcher";
 
 const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
@@ -38,7 +37,6 @@ export default function TaskLayout() {
       role={role}
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
-      roleSwitcher={<RoleSwitcher />}
     />
   );
 }

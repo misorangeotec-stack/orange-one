@@ -20,7 +20,7 @@ const ROLE_BADGE: Record<AppRole, string> = {
 const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" };
 
 export default function Users() {
-  const { profiles, departments, departmentById, profileById, deleteUser } = useDirectory();
+  const { profiles, departments, departmentById, profileById, deleteUser, canWrite } = useDirectory();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [role, setRole] = useState<AppRole | "all">("all");
@@ -42,7 +42,7 @@ export default function Users() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[13px] text-grey">{profiles.length} users</p>
-        <Button size="sm" onClick={() => navigate("/admin/users/new")}>
+        <Button size="sm" onClick={() => navigate("/admin/users/new")} disabled={!canWrite} title={canWrite ? undefined : "Read-only preview"}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Add User
         </Button>
@@ -75,10 +75,10 @@ export default function Users() {
                     {u.hodIds.length > 0 && ` · reports to ${u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", ")}`}
                   </div>
                 </div>
-                <Link to={`/admin/users/${u.id}/edit`} className="text-grey-2 hover:text-orange transition p-1 shrink-0" title="Edit">
+                <Link to={`/admin/users/${u.id}/edit`} className="text-grey-2 hover:text-orange transition p-1 shrink-0" title="View / edit">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                 </Link>
-                <button onClick={() => setConfirmDel(u)} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0" title="Delete">
+                <button onClick={() => setConfirmDel(u)} disabled={!canWrite} title={canWrite ? "Delete" : "Read-only preview"} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
                 </button>
               </li>

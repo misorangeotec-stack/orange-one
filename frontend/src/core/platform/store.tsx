@@ -1,19 +1,17 @@
-import { createContext, useContext, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
-import type { AppRole, AvatarColor, Department, Profile } from "./types";
-import { departments as seedDepartments, profiles as seedProfiles } from "./data";
+import { useQuery } from "@tanstack/react-query";
+import type { AppRole, Department, Profile } from "./types";
+import { useAuth } from "./auth";
+import { fetchDirectory } from "./liveDirectory";
 
 /**
- * In-memory portal directory for the frontend phase — owns people + departments
- * for the WHOLE workspace (mirrors the Supabase `profiles` / `user_roles` /
- * `user_hods` / `departments` / `app_access` tables). Mutations match the shape
- * the backend will use, so Stage B swaps this for live queries / RPCs with the
- * same interface. Both the Admin area and every business app read from here via
- * useDirectory(); the Task store re-exposes these fields so its many existing
- * consumers stay unchanged.
+ * Portal directory (Stage B, READ-ONLY). Loads the workspace people + departments
+ * live from Supabase (RLS-gated) for the signed-in user, and exposes the same
+ * interface the app already consumes. Writes are disabled this phase (`canWrite`
+ * is false; mutations are inert no-ops) until a safe write path is agreed — so
+ * nothing here can change production data.
  */
-
-const AVATAR_COLORS: AvatarColor[] = ["blue", "orange", "teal", "violet", "rose", "green", "navy"];
 
 export interface DirectoryValue {
   profiles: Profile[];
@@ -22,31 +20,43 @@ export interface DirectoryValue {
   departmentById: (id: string | null) => Department | undefined;
   directReportIds: (hodId: string) => string[];
   assignableUsers: (role: AppRole, userId: string) => Profile[];
+  /** False during the read-only phase — UIs disable write controls. */
+  canWrite: boolean;
+  // Kept for interface compatibility; inert while read-only.
   addDepartment: (input: { name: string; description?: string }) => string;
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => void;
   deleteDepartment: (id: string) => void;
   addUser: (input: { name: string; email?: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[] }) => string;
   updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess">>) => void;
   deleteUser: (id: string) => void;
-  /** Replace a user's granted portal app ids (→ app_access delete+insert in Stage B). */
   setUserModules: (id: string, appIds: string[]) => void;
 }
 
 const DirectoryContext = createContext<DirectoryValue | null>(null);
 
+const readOnly = () => {
+  if (import.meta.env.DEV) console.warn("Directory is read-only in this phase — write ignored.");
+};
+const readOnlyId = () => {
+  readOnly();
+  return "";
+};
+
 export function PlatformDirectoryProvider({ children }: { children: ReactNode }) {
-  const [profiles, setProfiles] = useState<Profile[]>(() =>
-    seedProfiles.map((p) => ({ ...p, hodIds: [...p.hodIds], moduleAccess: [...p.moduleAccess] }))
-  );
-  const [departments, setDepartments] = useState<Department[]>(() => seedDepartments.map((d) => ({ ...d })));
-  const seq = useRef(2000);
-  const nextId = (p: string) => `${p}${++seq.current}`;
+  const { session } = useAuth();
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["directory", session?.user.id ?? null],
+    queryFn: fetchDirectory,
+    enabled: !!session,
+  });
+
+  const profiles = data?.profiles ?? [];
+  const departments = data?.departments ?? [];
 
   const value = useMemo<DirectoryValue>(() => {
     const profileById = (id: string | null) => profiles.find((p) => p.id === id);
     const departmentById = (id: string | null) => departments.find((d) => d.id === id);
     const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
-
     const assignableUsers = (role: AppRole, userId: string): Profile[] => {
       if (role === "admin") return profiles;
       if (role === "hod" || role === "sub_hod") {
@@ -55,7 +65,6 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
       }
       return profiles.filter((p) => p.id === userId);
     };
-
     return {
       profiles,
       departments,
@@ -63,37 +72,37 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
       departmentById,
       directReportIds,
       assignableUsers,
-
-      addDepartment: ({ name, description }) => {
-        const id = nextId("d");
-        setDepartments((prev) => [...prev, { id, name, description: description ?? null }]);
-        return id;
-      },
-      updateDepartment: (id, p) => setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, ...p } : d))),
-      deleteDepartment: (id) => {
-        setDepartments((prev) => prev.filter((d) => d.id !== id));
-        setProfiles((prev) => prev.map((p) => (p.departmentId === id ? { ...p, departmentId: null } : p)));
-      },
-
-      addUser: ({ name, email, designation, role, departmentId, hodIds, moduleAccess }) => {
-        const id = nextId("u");
-        setProfiles((prev) => [
-          ...prev,
-          {
-            id, name, email: email ?? null, designation: designation ?? null,
-            avatarColor: AVATAR_COLORS[prev.length % AVATAR_COLORS.length],
-            departmentId, role, hodIds: hodIds ?? [], moduleAccess: moduleAccess ?? ["task-management"],
-          },
-        ]);
-        return id;
-      },
-      updateUser: (id, p) => setProfiles((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u))),
-      deleteUser: (id) =>
-        setProfiles((prev) => prev.filter((u) => u.id !== id).map((u) => ({ ...u, hodIds: u.hodIds.filter((h) => h !== id) }))),
-      setUserModules: (id, appIds) =>
-        setProfiles((prev) => prev.map((u) => (u.id === id ? { ...u, moduleAccess: [...appIds] } : u))),
+      canWrite: false,
+      addDepartment: readOnlyId,
+      updateDepartment: readOnly,
+      deleteDepartment: readOnly,
+      addUser: readOnlyId,
+      updateUser: readOnly,
+      deleteUser: readOnly,
+      setUserModules: readOnly,
     };
   }, [profiles, departments]);
+
+  // Hold render until the directory is loaded for an authed user, so the session
+  // and admin screens never see a half-empty directory. Unauthed (Landing/Login)
+  // renders immediately with an empty directory it doesn't use.
+  if (session && isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page-grad text-grey text-sm">
+        Loading your workspace…
+      </div>
+    );
+  }
+  if (session && error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page-grad px-6 text-center">
+        <div className="max-w-sm">
+          <p className="text-[15px] font-semibold text-navy">Couldn't load your workspace</p>
+          <p className="text-[13px] text-grey mt-1">{(error as Error).message}</p>
+        </div>
+      </div>
+    );
+  }
 
   return <DirectoryContext.Provider value={value}>{children}</DirectoryContext.Provider>;
 }

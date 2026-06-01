@@ -8,7 +8,7 @@ import { useDirectory } from "@/core/platform/store";
 import type { Department } from "@/core/platform/types";
 
 export default function Departments() {
-  const { departments, profiles, addDepartment, updateDepartment, deleteDepartment } = useDirectory();
+  const { departments, profiles, addDepartment, updateDepartment, deleteDepartment, canWrite } = useDirectory();
   const [edit, setEdit] = useState<Department | "new" | null>(null);
   const [confirmDel, setConfirmDel] = useState<Department | null>(null);
   const [name, setName] = useState("");
@@ -31,7 +31,7 @@ export default function Departments() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-grey">{departments.length} department{departments.length !== 1 ? "s" : ""}</p>
-        <Button size="sm" onClick={() => open("new")}>
+        <Button size="sm" onClick={() => open("new")} disabled={!canWrite} title={canWrite ? undefined : "Read-only preview"}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Add Department
         </Button>
@@ -52,10 +52,10 @@ export default function Departments() {
                   <div className="text-[11.5px] text-grey-2 truncate">{d.description || "No description"}</div>
                 </div>
                 <span className="text-[12px] text-grey-2 whitespace-nowrap shrink-0">{memberCount(d.id)} member{memberCount(d.id) !== 1 ? "s" : ""}</span>
-                <button onClick={() => open(d)} className="text-grey-2 hover:text-orange transition p-1 shrink-0" title="Edit">
+                <button onClick={() => open(d)} disabled={!canWrite} title={canWrite ? "Edit" : "Read-only preview"} className="text-grey-2 hover:text-orange transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                 </button>
-                <button onClick={() => setConfirmDel(d)} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0" title="Delete">
+                <button onClick={() => setConfirmDel(d)} disabled={!canWrite} title={canWrite ? "Delete" : "Read-only preview"} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
                 </button>
               </li>

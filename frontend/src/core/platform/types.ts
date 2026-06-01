@@ -11,7 +11,11 @@
 
 export type AppRole = "admin" | "hod" | "sub_hod" | "employee";
 
-/** Named avatar colors stored on profiles.avatar_color → hex used by the UI. */
+/**
+ * Avatar color. Mock data uses named palette keys; the live `profiles.avatar_color`
+ * column stores raw hex (e.g. "#2563eb"). The Avatar component accepts either, so
+ * the stored value is just a string.
+ */
 export type AvatarColor = "blue" | "orange" | "teal" | "violet" | "rose" | "green" | "navy";
 
 export interface Department {
@@ -25,7 +29,8 @@ export interface Profile {
   name: string;
   email: string | null;
   designation: string | null;
-  avatarColor: AvatarColor;
+  /** Named palette key (mock) or raw hex (live DB). */
+  avatarColor: AvatarColor | string;
   departmentId: string | null;
   /** Effective role (from user_roles). */
   role: AppRole;

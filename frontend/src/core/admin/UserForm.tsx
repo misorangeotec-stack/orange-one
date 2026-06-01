@@ -20,7 +20,7 @@ const ROLES: { value: AppRole; label: string; hint: string }[] = [
 export default function UserForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { profiles, departments, profileById, addUser, updateUser, addDepartment } = useDirectory();
+  const { profiles, departments, profileById, addUser, updateUser, addDepartment, canWrite } = useDirectory();
   const editing = id ? profileById(id) : undefined;
 
   const [name, setName] = useState(editing?.name ?? "");
@@ -165,8 +165,9 @@ export default function UserForm() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            <Button variant="ghost" onClick={() => navigate("/admin/users")}>Cancel</Button>
-            <Button type="submit">{editing ? "Save changes" : "Create user"}</Button>
+            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate("/admin/users")}>{canWrite ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canWrite}>{editing ? "Save changes" : "Create user"}</Button>
           </div>
         </form>
       </Card>

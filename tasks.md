@@ -104,11 +104,20 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 ### Phase B2 — Auth gate ✅ built · 🔍 awaiting full verify
 - [x] `AuthProvider`/`useAuth` (real Supabase session) + `RequireAuth` guard on /home, /account, /admin, app routes
 - [x] Login wired to `signInWithPassword` (real); Sign out wired everywhere; verified: bad creds → real "Invalid login credentials"; protected routes redirect to /login
-- [ ] 🔍 Verify a SUCCESSFUL login (needs a test account password from the user). NOTE: app identity/data are still MOCK in this phase — real login lands on the existing mock workspace; live-data swap is Phase B3.
+- [x] 🔍 Successful login verified (yash@orangeotec.com) — lands on the workspace.
 
-### Phase B3+ — Live data (next)
-- [ ] Replace mock identity/directory + tasks reads with live queries keyed off the auth user (read-only); back `Profile.moduleAccess` with `app_access`; wire launcher filter / `RequireModule` to live grants
-- [ ] (later) Per-entity mutation hooks + business rules — only after a safe write-test path is agreed
+### Phase B3a — Live identity + directory (read-only) ✅ built · 🔍 awaiting audit
+- [x] React Query wired; `core/platform/liveDirectory.ts` loads profiles + departments + roles + hierarchy + app_access from Supabase (RLS-gated) and maps to the `Profile`/`Department` read-model (role precedence, hex avatar colors, hodIds, moduleAccess)
+- [x] Directory provider now loads LIVE and is READ-ONLY (`canWrite=false`; mutations are inert no-ops); session derives the current user from the auth session + live directory
+- [x] Dev "View as" role switcher removed; you are who you log in as
+- [x] Admin (Users/Departments/Hierarchy/Module Access) shows real data with a read-only banner + disabled write controls; Account page save disabled too
+- [x] Task Management held behind a "connecting to live data" notice (its tasks are still mock; restored in B3b)
+- [x] Verified live: logged in as Yash → /admin shows the real 13 users (roles, departments, reporting), avatars render, writes disabled, zero console errors, **no data written**
+
+### Phase B3b — Live tasks/reports (next)
+- [ ] Map tasks / recurring / activity / notifications / weekly_plans to live queries; re-enable the Task Management module (remove the migration gate in App.tsx)
+- [ ] Back the launcher filter / `RequireModule` with live `app_access` grants (already loaded into `moduleAccess`)
+
 ### Phase B4+ — Mutations + business rules (later, after safe write-test path agreed)
 - [ ] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out
 - [ ] Recurring-instance generation strategy (confirm approach)
@@ -118,4 +127,4 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 
 ---
 
-_Last updated: Stage B in progress — Phase B1 (foundation) + B2 (auth gate) built; successful-login verify pending a test account. Read-only-first strategy; live data untouched._
+_Last updated: Stage B in progress — B1 (foundation), B2 (auth gate), B3a (live identity + directory, read-only) all built & verified. Next: B3b (live tasks/reports). Read-only-first; live data untouched._
