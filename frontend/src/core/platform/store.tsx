@@ -13,6 +13,7 @@ import {
   setUserHods as setUserHodsWrite,
   setUserModules as setUserModulesWrite,
 } from "./directoryWrites";
+import { createUserViaFunction, deleteUserViaFunction } from "./adminUserApi";
 
 /**
  * Portal directory (Stage B). Loads the workspace people + departments live from
@@ -48,21 +49,13 @@ export interface DirectoryValue {
   addDepartment: (input: { name: string; description?: string }) => Promise<string>;
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
-  addUser: (input: { name: string; email?: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[] }) => string;
+  addUser: (input: { name: string; email?: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[] }) => Promise<string>;
   updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess">>) => Promise<void>;
-  deleteUser: (id: string) => void;
+  deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, appIds: string[]) => Promise<void>;
 }
 
 const DirectoryContext = createContext<DirectoryValue | null>(null);
-
-const readOnly = () => {
-  if (import.meta.env.DEV) console.warn("Directory is read-only in this phase — write ignored.");
-};
-const readOnlyId = () => {
-  readOnly();
-  return "";
-};
 
 export function PlatformDirectoryProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
@@ -122,9 +115,22 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
       },
 
       // Editing an existing user = profile fields + (optionally) role / reporting /
-      // module access, each under its admin RLS. Creating/deleting a user is not
-      // client-wireable (needs the auth admin API), so those stay no-ops.
-      addUser: readOnlyId,
+      // module access, each under its admin RLS. Creating/deleting a user goes
+      // through the admin-users Edge Function (auth admin API); gated by
+      // canAddUser / canDeleteUser, off until the function is deployed.
+      addUser: async (input) => {
+        const id = await createUserViaFunction({
+          name: input.name,
+          email: input.email ?? "",
+          designation: input.designation ?? null,
+          role: input.role,
+          departmentId: input.departmentId,
+          hodIds: input.hodIds ?? [],
+          moduleAccess: input.moduleAccess ?? [],
+        });
+        await refresh();
+        return id;
+      },
       updateUser: async (id, patch) => {
         await updateUserProfileWrite(id, {
           name: patch.name,
@@ -138,7 +144,10 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         if (patch.moduleAccess !== undefined) await setUserModulesWrite(id, patch.moduleAccess);
         await refresh();
       },
-      deleteUser: readOnly,
+      deleteUser: async (id) => {
+        await deleteUserViaFunction(id);
+        await refresh();
+      },
       setUserModules: async (id, appIds) => {
         await setUserModulesWrite(id, appIds);
         await refresh();

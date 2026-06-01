@@ -55,7 +55,7 @@ export default function UserForm() {
     setError("");
     try {
       if (editing) await updateUser(editing.id, payload);
-      else addUser(payload);
+      else await addUser(payload);
       navigate("/admin/users");
     } catch (err) {
       setError((err as Error).message);

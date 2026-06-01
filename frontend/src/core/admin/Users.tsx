@@ -28,6 +28,8 @@ export default function Users() {
   const [role, setRole] = useState<AppRole | "all">("all");
   const [dept, setDept] = useState("all");
   const [confirmDel, setConfirmDel] = useState<Profile | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [delErr, setDelErr] = useState("");
 
   const filtered = useMemo(
     () =>
@@ -94,16 +96,35 @@ export default function Users() {
 
       <Modal
         open={!!confirmDel}
-        onClose={() => setConfirmDel(null)}
+        onClose={() => { setConfirmDel(null); setDelErr(""); }}
         title="Remove user?"
         subtitle={confirmDel?.name}
         size="sm"
         footer={<>
-          <Button variant="ghost" onClick={() => setConfirmDel(null)}>Cancel</Button>
-          <Button className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]" onClick={() => { if (confirmDel) deleteUser(confirmDel.id); setConfirmDel(null); }}>Remove</Button>
+          <Button variant="ghost" onClick={() => { setConfirmDel(null); setDelErr(""); }} disabled={deleting}>Cancel</Button>
+          <Button
+            className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+            disabled={deleting}
+            onClick={async () => {
+              if (!confirmDel) return;
+              setDeleting(true);
+              setDelErr("");
+              try {
+                await deleteUser(confirmDel.id);
+                setConfirmDel(null);
+              } catch (e) {
+                setDelErr((e as Error).message);
+              } finally {
+                setDeleting(false);
+              }
+            }}
+          >
+            {deleting ? "Removing…" : "Remove"}
+          </Button>
         </>}
       >
         <p className="text-[14px] text-grey leading-relaxed">They'll be removed from the workspace and any reporting links. Existing tasks remain for history.</p>
+        {delErr && <p className="mt-2 text-[13px] text-[#d4493f]">{delErr}</p>}
       </Modal>
     </div>
   );
