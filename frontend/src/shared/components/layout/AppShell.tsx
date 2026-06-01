@@ -17,6 +17,7 @@ export default function AppShell({
   role,
   user,
   notifications,
+  onMarkRead,
   roleSwitcher,
   banner,
   logoTo = "/home",
@@ -25,6 +26,8 @@ export default function AppShell({
   role: string;
   user: ShellUser;
   notifications: NotificationItem[];
+  /** Mark the given notification ids read (omit if the shell has no live notifications). */
+  onMarkRead?: (ids: string[]) => void;
   roleSwitcher?: ReactNode;
   /** Optional banner rendered above the page content (e.g. a read-only notice). */
   banner?: ReactNode;
@@ -68,6 +71,7 @@ export default function AppShell({
           title={title}
           user={user}
           notifications={notifications}
+          onMarkRead={onMarkRead}
           roleSwitcher={roleSwitcher}
           onMenu={() => setDrawer(true)}
         />

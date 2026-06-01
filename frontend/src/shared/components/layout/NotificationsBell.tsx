@@ -4,11 +4,18 @@ import { cn } from "@/shared/lib/cn";
 import type { NotificationItem } from "./types";
 
 /** Topbar bell with unread dot + dropdown list of notifications. */
-export default function NotificationsBell({ items }: { items: NotificationItem[] }) {
+export default function NotificationsBell({
+  items,
+  onMarkRead,
+}: {
+  items: NotificationItem[];
+  onMarkRead?: (ids: string[]) => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const unread = items.filter((i) => i.unread).length;
+  const unreadIds = items.filter((i) => i.unread).map((i) => i.id);
+  const unread = unreadIds.length;
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -38,7 +45,18 @@ export default function NotificationsBell({ items }: { items: NotificationItem[]
         <div className="absolute right-0 mt-2 w-80 bg-white border border-line rounded-card shadow-card overflow-hidden z-50">
           <div className="px-4 py-3 border-b border-line flex items-center justify-between">
             <span className="text-sm font-semibold text-navy">Notifications</span>
-            {unread > 0 && <span className="text-[11px] text-orange font-medium">{unread} new</span>}
+            {unread > 0 && (
+              onMarkRead ? (
+                <button
+                  onClick={() => onMarkRead(unreadIds)}
+                  className="text-[11px] text-orange font-medium hover:underline"
+                >
+                  Mark all read
+                </button>
+              ) : (
+                <span className="text-[11px] text-orange font-medium">{unread} new</span>
+              )
+            )}
           </div>
           <div className="max-h-80 overflow-y-auto">
             {items.length === 0 ? (
@@ -48,6 +66,7 @@ export default function NotificationsBell({ items }: { items: NotificationItem[]
                 <button
                   key={n.id}
                   onClick={() => {
+                    if (n.unread) onMarkRead?.([n.id]);
                     if (n.to) navigate(n.to);
                     setOpen(false);
                   }}

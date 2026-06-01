@@ -176,6 +176,19 @@ export async function rescheduleTask(
  * notifications has RLS with no INSERT policy for the client.) Returns the new
  * remark activity id.
  */
+/**
+ * Mark the given notifications read (read_at = now). RLS limits the update to the
+ * caller's own rows (user_id = auth.uid()), so passing ids is safe.
+ */
+export async function markNotificationsRead(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
 export async function addRemark(taskId: string, note: string, mentionedIds: string[]): Promise<string> {
   const { data, error } = await supabase.rpc("add_task_remark", {
     p_task_id: taskId,

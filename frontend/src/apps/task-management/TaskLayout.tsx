@@ -10,7 +10,7 @@ const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.lab
 /** Wires the session + live task data into the generic AppShell, then renders routes. */
 export default function TaskLayout() {
   const { user, role } = useSession();
-  const { notifications, getTask, profileById, canWrite } = useTaskStore();
+  const { notifications, getTask, profileById, canWrite, markNotificationsRead } = useTaskStore();
 
   const notifItems: NotificationItem[] = notifications
     .filter((n) => n.userId === user.id)
@@ -37,6 +37,7 @@ export default function TaskLayout() {
       role={role}
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
+      onMarkRead={(ids) => { void markNotificationsRead(ids); }}
       banner={
         canWrite ? undefined : (
           <div className="mb-5 flex items-start gap-3 rounded-card border border-[#F8B62B]/50 bg-[#FEF9EE] px-4 py-3">

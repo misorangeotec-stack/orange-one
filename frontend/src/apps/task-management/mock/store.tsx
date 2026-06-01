@@ -13,6 +13,7 @@ import {
   reviseTask as reviseTaskWrite,
   rescheduleTask as rescheduleTaskWrite,
   addRemark as addRemarkWrite,
+  markNotificationsRead as markNotificationsReadWrite,
   insertRecurring as insertRecurringWrite,
   updateRecurring as updateRecurringWrite,
   setRecurringActive as setRecurringActiveWrite,
@@ -63,6 +64,7 @@ interface TaskStoreValue {
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
   addRemark: (id: string, note: string, mentionedIds: string[]) => Promise<void>;
+  markNotificationsRead: (ids: string[]) => Promise<void>;
 
   recurringTasks: RecurringTask[];
   getRecurring: (id: string) => RecurringTask | undefined;
@@ -206,6 +208,11 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
       addRemark: async (id, note, mentionedIds) => {
         await addRemarkWrite(id, note, mentionedIds);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      // Mark own notifications read (always allowed — RLS scopes to the caller).
+      markNotificationsRead: async (ids) => {
+        await markNotificationsReadWrite(ids);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
 
