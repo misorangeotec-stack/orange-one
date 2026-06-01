@@ -4,6 +4,7 @@ import type { AppManifest } from "@/apps/types";
 import Logo from "@/shared/components/ui/Logo";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useSession } from "@/core/platform/session";
+import { useAuth } from "@/core/platform/auth";
 
 /**
  * Post-login app launcher ("Workspace Home"). Renders one card per app the current
@@ -13,7 +14,13 @@ import { useSession } from "@/core/platform/session";
 export default function WorkspaceHome() {
   const navigate = useNavigate();
   const { user, isAdmin, hasModule } = useSession();
+  const { signOut } = useAuth();
   const firstName = user.name.split(" ")[0];
+
+  const onSignOut = async () => {
+    await signOut();
+    navigate("/login", { replace: true });
+  };
 
   // Live apps are gated by module access; coming-soon cards are always shown as teasers.
   const visibleApps = apps.filter((app) => app.status !== "live" || hasModule(app.id));
@@ -40,7 +47,7 @@ export default function WorkspaceHome() {
               <Avatar name={user.name} color={user.avatarColor} size={36} />
             </button>
             <button
-              onClick={() => navigate("/")}
+              onClick={onSignOut}
               className="text-sm text-grey hover:text-orange font-medium transition"
             >
               Sign out

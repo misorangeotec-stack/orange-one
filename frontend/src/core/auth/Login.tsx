@@ -1,15 +1,32 @@
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import AuthLayout, { Field } from "./AuthLayout";
+import { useAuth } from "@/core/platform/auth";
 
-/** Login screen (UI only for now — submit navigates to the workspace launcher). */
+/** Login screen — real Supabase email/password auth. */
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { signIn } = useAuth();
+  const from = (location.state as { from?: string } | null)?.from ?? "/home";
 
-  const onSubmit = (e: React.FormEvent) => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Stage B: real Supabase email/password auth. For now, go to the launcher.
-    navigate("/home");
+    setBusy(true);
+    setError(null);
+    const err = await signIn(email, password);
+    setBusy(false);
+    if (err) {
+      setError(err);
+      return;
+    }
+    navigate(from, { replace: true });
   };
 
   return (
@@ -18,22 +35,40 @@ export default function Login() {
       subtitle="Log in to your Orange O Tec workspace to continue."
     >
       <form onSubmit={onSubmit}>
-        <Field label="Email" type="email" placeholder="you@orangeotec.com" autoComplete="email" />
-        <Field label="Password" type="password" placeholder="••••••••" autoComplete="current-password" />
+        <Field
+          label="Email"
+          type="email"
+          placeholder="you@orangeotec.com"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setError(null); }}
+          required
+          autoFocus
+          disabled={busy}
+        />
+        <Field
+          label="Password"
+          type="password"
+          placeholder="••••••••"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => { setPassword(e.target.value); setError(null); }}
+          required
+          disabled={busy}
+        />
 
-        <div className="flex items-center mb-6 mt-1">
-          <label className="flex items-center gap-2 text-[13px] text-grey cursor-pointer select-none">
-            <input type="checkbox" className="accent-orange w-4 h-4 rounded" />
-            Remember me
-          </label>
-        </div>
+        {error && (
+          <p className="mb-4 -mt-1 text-[13px] text-[#d4493f]">{error}</p>
+        )}
 
-        <Button type="submit" className="w-full" size="lg">
-          Log in
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="5" y1="12" x2="19" y2="12" />
-            <polyline points="12 5 19 12 12 19" />
-          </svg>
+        <Button type="submit" className="w-full" size="lg" disabled={busy}>
+          {busy ? "Signing in…" : "Log in"}
+          {!busy && (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12" />
+              <polyline points="12 5 19 12 12 19" />
+            </svg>
+          )}
         </Button>
       </form>
 

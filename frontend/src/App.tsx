@@ -6,6 +6,7 @@ import WorkspaceHome from "@/core/workspace/WorkspaceHome";
 import Account from "@/core/account/Account";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
+import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
 
@@ -19,21 +20,23 @@ function RequireModule({ appId, children }: { appId: string; children: ReactNode
 export default function App() {
   return (
     <Routes>
-      {/* ---- Portal core (landing + auth + launcher + account + admin) ---- */}
+      {/* ---- Public (landing + auth) ---- */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
-      <Route path="/home" element={<WorkspaceHome />} />
-      <Route path="/account" element={<Account />} />
-      <Route path="/admin/*" element={<RequireRole roles={["admin"]}><AdminApp /></RequireRole>} />
 
-      {/* ---- Registered apps, each owns everything under its basePath, gated by access ---- */}
+      {/* ---- Signed-in portal (launcher + account + admin) ---- */}
+      <Route path="/home" element={<RequireAuth><WorkspaceHome /></RequireAuth>} />
+      <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
+      <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
+
+      {/* ---- Registered apps, each owns everything under its basePath, gated by auth + access ---- */}
       {liveApps.map((app) => {
         const Component = app.Component!;
         return (
           <Route
             key={app.id}
             path={`${app.basePath}/*`}
-            element={<RequireModule appId={app.id}><Component /></RequireModule>}
+            element={<RequireAuth><RequireModule appId={app.id}><Component /></RequireModule></RequireAuth>}
           />
         );
       })}

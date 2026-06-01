@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
+import { useAuth } from "@/core/platform/auth";
 import type { ShellUser } from "./types";
 
 /** Topbar avatar + dropdown (profile / switch app / sign out). */
@@ -8,6 +9,12 @@ export default function UserMenu({ user }: { user: ShellUser }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { signOut } = useAuth();
+
+  const onSignOut = async () => {
+    await signOut();
+    navigate("/login", { replace: true });
+  };
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -37,11 +44,11 @@ export default function UserMenu({ user }: { user: ShellUser }) {
             <p className="text-[12px] text-grey-2 truncate">{user.designation}</p>
           </div>
           <div className="py-1">
-            <MenuRow label="Profile settings" onClick={() => navigate("/task-management/settings")} />
+            <MenuRow label="My account" onClick={() => navigate("/account")} />
             <MenuRow label="Switch app" onClick={() => navigate("/home")} />
           </div>
           <div className="py-1 border-t border-line">
-            <MenuRow label="Sign out" danger onClick={() => navigate("/")} />
+            <MenuRow label="Sign out" danger onClick={onSignOut} />
           </div>
         </div>
       )}

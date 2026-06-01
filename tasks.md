@@ -91,17 +91,31 @@ Pulls identity/admin out of Task Management into the portal core so module acces
 
 ---
 
-## STAGE B — Backend wiring (after frontend approved)
-- [ ] Add supabase-js (anon key + RLS) + TanStack Query; generate TS types from schema
-- [x] **NEW table `app_access` created** `(id, user_id → profiles.id, app_id text, created_at, unique(user_id,app_id))` + RLS mirroring `user_roles`/`user_hods` (`app_access_select`: own rows OR `is_admin`; `app_access_admin_write`: admin-only ALL). Purely additive — no existing table/data touched. _Still pending: back `Profile.moduleAccess` with it + wire the launcher filter / `RequireModule` guard to live grants._
-- [ ] AuthProvider / useAuth + route guards (RequireAuth / RequireRole)
-- [ ] Per-entity data modules + query/mutation hooks; replace mock data with live queries
+## STAGE B — Backend wiring (in progress)
+**Safety rule (user-critical): the live data is production. Only additive/read operations; never drop/alter/delete/truncate existing tables or rows without explicit per-action approval. Strategy: READ-ONLY first — migrate views to live data; defer all writes.**
+
+### Phase B1 — Foundation ✅ done
+- [x] `@supabase/supabase-js` + `@tanstack/react-query` installed
+- [x] Env wiring — `frontend/.env.local` (gitignored) with `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY`
+- [x] Single anon-key browser client `core/platform/supabase.ts` (RLS-gated; service-role key never in bundle)
+- [x] **NEW table `app_access` created** `(id, user_id → profiles.id, app_id text, created_at, unique(user_id,app_id))` + RLS mirroring `user_roles`/`user_hods` (`app_access_select`: own rows OR `is_admin`; `app_access_admin_write`: admin-only ALL). Purely additive — no existing table/data touched.
+- [ ] Generate TS DB types from schema (deferred — wiring per-entity types as we migrate)
+
+### Phase B2 — Auth gate ✅ built · 🔍 awaiting full verify
+- [x] `AuthProvider`/`useAuth` (real Supabase session) + `RequireAuth` guard on /home, /account, /admin, app routes
+- [x] Login wired to `signInWithPassword` (real); Sign out wired everywhere; verified: bad creds → real "Invalid login credentials"; protected routes redirect to /login
+- [ ] 🔍 Verify a SUCCESSFUL login (needs a test account password from the user). NOTE: app identity/data are still MOCK in this phase — real login lands on the existing mock workspace; live-data swap is Phase B3.
+
+### Phase B3+ — Live data (next)
+- [ ] Replace mock identity/directory + tasks reads with live queries keyed off the auth user (read-only); back `Profile.moduleAccess` with `app_access`; wire launcher filter / `RequireModule` to live grants
+- [ ] (later) Per-entity mutation hooks + business rules — only after a safe write-test path is agreed
+### Phase B4+ — Mutations + business rules (later, after safe write-test path agreed)
 - [ ] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out
 - [ ] Recurring-instance generation strategy (confirm approach)
 - [ ] RYG weekly plans + notifications (realtime bell)
 - [ ] Decide + (with approval) add Postgres RPCs for atomic shift / mention writes
-- [ ] Env wiring (`.env.local` VITE_ vars); end-to-end verification per screen
+- [ ] End-to-end verification per screen
 
 ---
 
-_Last updated: Stage A.5 complete (portal platform + per-user module access); `app_access` table created in Supabase. Next: Stage B (Supabase wiring)._
+_Last updated: Stage B in progress — Phase B1 (foundation) + B2 (auth gate) built; successful-login verify pending a test account. Read-only-first strategy; live data untouched._
