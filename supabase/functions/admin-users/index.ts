@@ -5,9 +5,11 @@
 // function instead. The function verifies the CALLER is an admin before doing
 // anything with the service-role key.
 //
-//   POST  body { action: "create", name, email, designation?, role, departmentId?,
-//                hodIds?: string[], moduleAccess?: string[] }   -> { id }
-//   POST  body { action: "delete", userId }                      -> { ok: true }
+//   POST  body { action: "create", name, email, phone, designation?, role,
+//                departmentId?, hodIds?: string[], moduleAccess?: string[] }  -> { id }
+//                  (phone = mobile number; used as the initial login password)
+//   POST  body { action: "set-password", userId, password }       -> { ok: true }
+//   POST  body { action: "delete", userId }                       -> { ok: true }
 //
 // Deploy:  supabase functions deploy admin-users --project-ref <ref>
 // (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are injected by
@@ -65,26 +67,48 @@ Deno.serve(async (req) => {
     return json(200, { ok: true });
   }
 
+  // ---- set-password ----
+  // Re-pin a user's login password (the admin user form calls this on save to
+  // keep the password equal to the current mobile number).
+  if (body.action === "set-password") {
+    const userId = String(body.userId ?? "");
+    const password = String(body.password ?? "").trim();
+    if (!userId) return json(400, { error: "userId required" });
+    if (password.length < 6) return json(400, { error: "password must be at least 6 characters" });
+    const { error } = await admin.auth.admin.updateUserById(userId, {
+      password,
+      user_metadata: { phone: password },
+    });
+    if (error) return json(400, { error: error.message });
+    // Keep the profiles read-model in sync so the Users screen shows the number.
+    await admin.from("profiles").update({ phone: password }).eq("id", userId);
+    return json(200, { ok: true });
+  }
+
   // ---- create ----
   if (body.action === "create") {
     const name = String(body.name ?? "").trim();
     const email = String(body.email ?? "").trim();
+    const phone = String(body.phone ?? "").trim();
     if (!name) return json(400, { error: "name required" });
     if (!email) return json(400, { error: "email required" });
+    // The mobile number is the user's initial password, so it must satisfy the
+    // auth minimum length.
+    if (phone.length < 6) return json(400, { error: "phone (mobile) required, min 6 characters — it is the initial password" });
     const role = (body.role as AppRole) ?? "employee";
     const departmentId = (body.departmentId as string | null) ?? null;
     const designation = (body.designation as string | null) ?? null;
     const hodIds = Array.isArray(body.hodIds) ? (body.hodIds as string[]) : [];
     const moduleAccess = Array.isArray(body.moduleAccess) ? (body.moduleAccess as string[]) : [];
 
-    // Create the auth user (random initial password; email pre-confirmed). The
-    // on_auth_user_created trigger inserts the profile + an 'employee' role row.
-    const tempPassword = crypto.randomUUID() + "Aa1!";
+    // Create the auth user with the mobile number as the initial password (email
+    // pre-confirmed). The on_auth_user_created trigger inserts the profile + an
+    // 'employee' role row. The user can change their password after first login.
     const { data: created, error: createErr } = await admin.auth.admin.createUser({
       email,
-      password: tempPassword,
+      password: phone,
       email_confirm: true,
-      user_metadata: { name },
+      user_metadata: { name, phone },
     });
     if (createErr || !created.user) return json(400, { error: createErr?.message ?? "could not create user" });
     const id = created.user.id;
@@ -92,7 +116,7 @@ Deno.serve(async (req) => {
     // Patch the auto-created profile + identity rows.
     const { error: profErr } = await admin
       .from("profiles")
-      .update({ name, designation, department_id: departmentId })
+      .update({ name, designation, department_id: departmentId, phone })
       .eq("id", id);
     if (profErr) return json(400, { error: profErr.message });
 

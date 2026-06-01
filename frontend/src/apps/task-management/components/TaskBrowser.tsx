@@ -5,6 +5,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { WEEK_START } from "../mock/data";
 import type { Department, Profile, Task, TaskStatus } from "../types";
@@ -43,6 +44,41 @@ export default function TaskBrowser({
   const [status, setStatus] = useState<TaskStatus | "all">("all");
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
 
+  const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+
+  // The assignee dropdown is scoped to the selected department, so picking a
+  // department surfaces exactly that team's members.
+  const visiblePeople = useMemo(
+    () => (dept === "all" ? people : people.filter((p) => p.departmentId === dept)),
+    [people, dept],
+  );
+
+  // Linked filters. Choosing a person pins the department to that person's dept;
+  // choosing a department drops any selected person who no longer belongs to it,
+  // so the whole department's tasks show.
+  const handlePersonChange = (next: string) => {
+    setPerson(next);
+    // Pin the department to the chosen person's dept; if they have none, drop the
+    // department filter so their tasks aren't hidden by a stale selection.
+    if (departments && next !== "all") {
+      setDept(peopleById.get(next)?.departmentId ?? "all");
+    }
+  };
+  const handleDeptChange = (next: string) => {
+    setDept(next);
+    if (next !== "all" && person !== "all" && peopleById.get(person)?.departmentId !== next) {
+      setPerson("all");
+    }
+  };
+
+  const clearAll = () => {
+    setQ("");
+    setPerson("all");
+    setDept("all");
+    setStatus("all");
+    setWeek("all");
+  };
+
   const filtered = useMemo(() => {
     const nw = nextWeekStart();
     return tasks.filter((t) => {
@@ -70,6 +106,34 @@ export default function TaskBrowser({
 
   const pg = usePagination(filtered, { resetKey: `${q}|${person}|${dept}|${status}|${week}` });
 
+  // Active-filter chips, so it's always visible what's narrowing the list.
+  const activeFilters: ActiveFilter[] = [];
+  if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
+  if (departments && dept !== "all")
+    activeFilters.push({
+      key: "dept",
+      label: `Department: ${departments.find((d) => d.id === dept)?.name ?? dept}`,
+      onClear: () => handleDeptChange("all"),
+    });
+  if (person !== "all")
+    activeFilters.push({
+      key: "person",
+      label: `Person: ${peopleById.get(person)?.name ?? person}`,
+      onClear: () => handlePersonChange("all"),
+    });
+  if (status !== "all")
+    activeFilters.push({
+      key: "status",
+      label: `Status: ${STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}`,
+      onClear: () => setStatus("all"),
+    });
+  if (week !== "all")
+    activeFilters.push({
+      key: "week",
+      label: week === "this" ? "This week" : "Next week",
+      onClear: () => setWeek("all"),
+    });
+
   return (
     <div className="space-y-4">
       {/* stats strip */}
@@ -91,18 +155,18 @@ export default function TaskBrowser({
           {departments && (
             <Combobox
               value={dept}
-              onChange={setDept}
+              onChange={handleDeptChange}
               className="w-auto min-w-[160px]"
               options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
             />
           )}
           <Combobox
             value={person}
-            onChange={setPerson}
+            onChange={handlePersonChange}
             className="w-auto min-w-[170px]"
             options={[
               { value: "all", label: departments ? "All people" : "All team members" },
-              ...people.map((p) => ({
+              ...visiblePeople.map((p) => ({
                 value: p.id,
                 label: p.name,
                 sublabel: p.designation ?? undefined,
@@ -127,6 +191,15 @@ export default function TaskBrowser({
             ]}
           />
         </div>
+
+        {/* active filters */}
+        {activeFilters.length > 0 && (
+          <ActiveFilters
+            filters={activeFilters}
+            onClearAll={clearAll}
+            className="px-3 py-2.5 border-b border-line bg-page/60"
+          />
+        )}
 
         {/* list */}
         {filtered.length === 0 ? (

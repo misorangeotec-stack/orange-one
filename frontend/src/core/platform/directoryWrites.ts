@@ -46,11 +46,12 @@ export async function deleteDepartment(id: string): Promise<void> {
 /** Update an existing user's profile fields (admin-only under RLS). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; email?: string | null; designation?: string | null; departmentId?: string | null; avatarColor?: string }
+  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; departmentId?: string | null; avatarColor?: string }
 ): Promise<void> {
   const fields: ProfileUpdate = {};
   if (patch.name !== undefined) fields.name = patch.name;
   if (patch.email !== undefined) fields.email = patch.email;
+  if (patch.phone !== undefined) fields.phone = patch.phone;
   if (patch.designation !== undefined) fields.designation = patch.designation;
   if (patch.departmentId !== undefined) fields.department_id = patch.departmentId;
   if (patch.avatarColor !== undefined) fields.avatar_color = patch.avatarColor;

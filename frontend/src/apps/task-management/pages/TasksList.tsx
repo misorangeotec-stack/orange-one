@@ -6,6 +6,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { isOverdue, isToday } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
@@ -64,6 +65,19 @@ export default function TasksList() {
 
   const pg = usePagination(filtered, { resetKey: `${view}|${status}|${q}` });
 
+  const activeFilters: ActiveFilter[] = [];
+  if (status !== "all")
+    activeFilters.push({
+      key: "status",
+      label: `Status: ${STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}`,
+      onClear: () => setStatus("all"),
+    });
+  if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
+  const clearAll = () => {
+    setStatus("all");
+    setQ("");
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -113,6 +127,14 @@ export default function TasksList() {
             </div>
           </div>
         </div>
+
+        {activeFilters.length > 0 && (
+          <ActiveFilters
+            filters={activeFilters}
+            onClearAll={clearAll}
+            className="px-4 py-2.5 mt-1 border-t border-line bg-page/60"
+          />
+        )}
 
         {filtered.length === 0 ? (
           <div className="border-t border-line">

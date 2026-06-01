@@ -13,7 +13,7 @@ import {
   setUserHods as setUserHodsWrite,
   setUserModules as setUserModulesWrite,
 } from "./directoryWrites";
-import { createUserViaFunction, deleteUserViaFunction } from "./adminUserApi";
+import { createUserViaFunction, deleteUserViaFunction, setUserPasswordViaFunction } from "./adminUserApi";
 
 /**
  * Portal directory (Stage B). Loads the workspace people + departments live from
@@ -49,8 +49,8 @@ export interface DirectoryValue {
   addDepartment: (input: { name: string; description?: string }) => Promise<string>;
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
-  addUser: (input: { name: string; email?: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[] }) => Promise<string>;
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess">>) => Promise<void>;
+  addUser: (input: { name: string; email?: string; mobile: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[] }) => Promise<string>;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, appIds: string[]) => Promise<void>;
 }
@@ -122,6 +122,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         const id = await createUserViaFunction({
           name: input.name,
           email: input.email ?? "",
+          phone: input.mobile,
           designation: input.designation ?? null,
           role: input.role,
           departmentId: input.departmentId,
@@ -135,6 +136,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         await updateUserProfileWrite(id, {
           name: patch.name,
           email: patch.email,
+          phone: patch.phone,
           designation: patch.designation,
           departmentId: patch.departmentId,
           avatarColor: patch.avatarColor,
@@ -142,6 +144,10 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         if (patch.role !== undefined) await setUserRoleWrite(id, patch.role);
         if (patch.hodIds !== undefined) await setUserHodsWrite(id, patch.hodIds);
         if (patch.moduleAccess !== undefined) await setUserModulesWrite(id, patch.moduleAccess);
+        // Per workspace policy, saving the user form re-pins the login password to
+        // the current mobile number. Only fires when a phone is supplied (the admin
+        // user form always does; self-profile saves don't, so they never reset it).
+        if (patch.phone) await setUserPasswordViaFunction(id, patch.phone);
         await refresh();
       },
       deleteUser: async (id) => {

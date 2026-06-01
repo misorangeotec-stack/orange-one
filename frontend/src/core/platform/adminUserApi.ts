@@ -11,6 +11,8 @@ import type { AppRole } from "./types";
 export interface CreateUserInput {
   name: string;
   email: string;
+  /** Mobile number — becomes the user's initial login password. */
+  phone: string;
   designation?: string | null;
   role: AppRole;
   departmentId?: string | null;
@@ -30,6 +32,19 @@ export async function createUserViaFunction(input: CreateUserInput): Promise<str
 export async function deleteUserViaFunction(userId: string): Promise<void> {
   const { data, error } = await supabase.functions.invoke("admin-users", {
     body: { action: "delete", userId },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) throw new Error(data.error as string);
+}
+
+/**
+ * Reset a user's login password (admin only) — used when an admin saves the user
+ * form, which re-pins the password to the current mobile number. Setting a
+ * password needs the auth admin API (service role), hence the Edge Function.
+ */
+export async function setUserPasswordViaFunction(userId: string, password: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("admin-users", {
+    body: { action: "set-password", userId, password },
   });
   if (error) throw new Error(error.message);
   if (data?.error) throw new Error(data.error as string);

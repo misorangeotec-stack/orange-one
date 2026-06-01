@@ -28,6 +28,8 @@ export interface Profile {
   id: string;
   name: string;
   email: string | null;
+  /** Mobile number. Doubles as the user's initial login password (set at create / on save). */
+  phone: string | null;
   designation: string | null;
   /** Named palette key (mock) or raw hex (live DB). */
   avatarColor: AvatarColor | string;

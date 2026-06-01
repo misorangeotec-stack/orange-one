@@ -7,6 +7,7 @@ import Logo from "@/shared/components/ui/Logo";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
+import { supabase } from "@/core/platform/supabase";
 
 /**
  * Personal account page — any signed-in user edits their own profile + password.
@@ -28,6 +29,7 @@ export default function Account() {
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [savingPw, setSavingPw] = useState(false);
 
   const roleLabel = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" }[me.role];
 
@@ -47,10 +49,17 @@ export default function Account() {
     }
   };
 
-  const changePassword = (e: React.FormEvent) => {
+  const changePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (pw.length < 6) return setPwMsg({ ok: false, text: "Password must be at least 6 characters." });
     if (pw !== pw2) return setPwMsg({ ok: false, text: "Passwords don't match." });
+    if (savingPw) return;
+    setSavingPw(true);
+    setPwMsg(null);
+    // Updates the signed-in user's own auth password (no admin rights needed).
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    setSavingPw(false);
+    if (error) return setPwMsg({ ok: false, text: error.message });
     setPw("");
     setPw2("");
     setPwMsg({ ok: true, text: "Password updated." });
@@ -112,7 +121,7 @@ export default function Account() {
               </div>
               <div className="flex items-center justify-end gap-3">
                 {pwMsg && <span className={`text-[12.5px] font-medium ${pwMsg.ok ? "text-[#27AE60]" : "text-[#d4493f]"}`}>{pwMsg.ok ? "✓ " : ""}{pwMsg.text}</span>}
-                <Button type="submit" variant="outline">Update password</Button>
+                <Button type="submit" variant="outline" disabled={savingPw}>{savingPw ? "Updating…" : "Update password"}</Button>
               </div>
             </form>
           </Card>

@@ -27,6 +27,7 @@ export default function UserForm() {
 
   const [name, setName] = useState(editing?.name ?? "");
   const [email, setEmail] = useState(editing?.email ?? "");
+  const [mobile, setMobile] = useState(editing?.phone ?? "");
   const [designation, setDesignation] = useState(editing?.designation ?? "");
   const [role, setRole] = useState<AppRole>(editing?.role ?? "employee");
   const [departmentId, setDepartmentId] = useState(editing?.departmentId ?? "");
@@ -41,8 +42,10 @@ export default function UserForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setError("Please enter a name.");
+    if (!mobile.trim()) return setError("Please enter a mobile number — it's the user's initial password.");
+    if (mobile.trim().length < 6) return setError("Mobile number must be at least 6 characters (it's used as the password).");
     if (busy) return;
-    const payload = {
+    const base = {
       name: name.trim(),
       email: email.trim() || undefined,
       designation: designation.trim() || undefined,
@@ -54,8 +57,9 @@ export default function UserForm() {
     setBusy(true);
     setError("");
     try {
-      if (editing) await updateUser(editing.id, payload);
-      else await addUser(payload);
+      // Saving always re-pins the password to the mobile number (workspace policy).
+      if (editing) await updateUser(editing.id, { ...base, phone: mobile.trim() });
+      else await addUser({ ...base, mobile: mobile.trim() });
       navigate("/admin/users");
     } catch (err) {
       setError((err as Error).message);
@@ -78,7 +82,12 @@ export default function UserForm() {
             <FieldLabel label="Email / username"><TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@orangeotec.com" /></FieldLabel>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
+            <FieldLabel label="Mobile number" required hint={editing ? "saving resets the login password to this" : "the user's initial password"}>
+              <TextInput value={mobile} onChange={(e) => { setMobile(e.target.value); setError(""); }} placeholder="e.g. 9876543210" inputMode="tel" />
+            </FieldLabel>
             <FieldLabel label="Designation"><TextInput value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Manager" /></FieldLabel>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Department">
               <Combobox
                 value={departmentId}

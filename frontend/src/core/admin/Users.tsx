@@ -8,6 +8,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
@@ -44,6 +45,22 @@ export default function Users() {
 
   const pg = usePagination(filtered, { resetKey: `${q}|${role}|${dept}` });
 
+  const activeFilters: ActiveFilter[] = [];
+  if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
+  if (role !== "all")
+    activeFilters.push({ key: "role", label: `Role: ${ROLE_LABEL[role]}`, onClear: () => setRole("all") });
+  if (dept !== "all")
+    activeFilters.push({
+      key: "dept",
+      label: `Department: ${departmentById(dept)?.name ?? dept}`,
+      onClear: () => setDept("all"),
+    });
+  const clearAll = () => {
+    setQ("");
+    setRole("all");
+    setDept("all");
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -64,6 +81,14 @@ export default function Users() {
           <Combobox value={dept} onChange={setDept} className="w-auto min-w-[160px]" options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
         </div>
 
+        {activeFilters.length > 0 && (
+          <ActiveFilters
+            filters={activeFilters}
+            onClearAll={clearAll}
+            className="px-3 py-2.5 border-b border-line bg-page/60"
+          />
+        )}
+
         {filtered.length === 0 ? (
           <EmptyState title="No users found" message="Try different filters, or add a user." actionLabel="Add User" actionTo="/admin/users/new" />
         ) : (
@@ -78,6 +103,7 @@ export default function Users() {
                   </div>
                   <div className="text-[11.5px] text-grey-2 truncate">
                     {u.designation || "—"} · {departmentById(u.departmentId)?.name ?? "No dept"}
+                    {u.phone && ` · 📱 ${u.phone}`}
                     {u.hodIds.length > 0 && ` · reports to ${u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", ")}`}
                   </div>
                 </div>

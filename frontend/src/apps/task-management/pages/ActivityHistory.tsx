@@ -5,6 +5,7 @@ import Avatar from "@/shared/components/ui/Avatar";
 import Combobox from "@/shared/components/ui/Combobox";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
+import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
@@ -47,6 +48,20 @@ export default function ActivityHistory() {
 
   const pg = usePagination(items, { resetKey: `${type}|${actor}` });
 
+  const activeFilters: ActiveFilter[] = [];
+  if (type !== "all")
+    activeFilters.push({ key: "type", label: `Action: ${TYPE_LABELS[type]}`, onClear: () => setType("all") });
+  if (actor !== "all")
+    activeFilters.push({
+      key: "actor",
+      label: `Person: ${profileById(actor)?.name ?? actor}`,
+      onClear: () => setActor("all"),
+    });
+  const clearAll = () => {
+    setType("all");
+    setActor("all");
+  };
+
   return (
     <div className="space-y-5">
       <div>
@@ -68,6 +83,8 @@ export default function ActivityHistory() {
           options={[{ value: "all", label: "Everyone" }, ...actors.map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined, icon: <Avatar name={p.name} color={p.avatarColor} size={22} /> }))]}
         />
       </div>
+
+      <ActiveFilters filters={activeFilters} onClearAll={clearAll} />
 
       <Card className="overflow-hidden">
         {items.length === 0 ? (
