@@ -105,3 +105,65 @@ export async function reviseTask(
     if (actErr) throw new Error(actErr.message);
   }
 }
+
+/**
+ * Reschedule a task by its due date.
+ *  - Same week or earlier  → just move the due date (returns null).
+ *  - A future week         → create a *continuation* task in that week and mark
+ *                            the original `shifted`, linked both ways. Returns the
+ *                            new task's id so the caller can navigate to it.
+ *
+ * The trigger auto-logs `shifted` (on the original's status update) and `created`
+ * (on the continuation insert), so we don't log either here. RLS requires the
+ * continuation's created_by = auth.uid() (no admin bypass on insert), so the
+ * shifter owns the new row while the original assignee/department carry over.
+ *
+ * NOTE: this is two writes (insert + update) without a transaction. If the second
+ * write fails the continuation is left pending and the original un-shifted — both
+ * rows are still valid/recoverable. An atomic RPC is a candidate follow-up.
+ */
+export async function rescheduleTask(
+  task: {
+    id: string;
+    title: string;
+    description: string | null;
+    assignedTo: string | null;
+    departmentId: string | null;
+    weekStart: string | null;
+  },
+  newDueDate: string,
+  actorId: string
+): Promise<string | null> {
+  const targetWeek = mondayOf(newDueDate);
+  const currentWeek = task.weekStart ?? mondayOf(new Date().toISOString());
+  if (targetWeek <= currentWeek) {
+    const { error } = await supabase.from("tasks").update({ due_date: newDueDate }).eq("id", task.id);
+    if (error) throw new Error(error.message);
+    return null;
+  }
+
+  const { data, error } = await supabase
+    .from("tasks")
+    .insert({
+      title: task.title,
+      description: task.description ?? null,
+      assigned_to: task.assignedTo,
+      department_id: task.departmentId,
+      due_date: newDueDate,
+      week_start: targetWeek,
+      created_by: actorId,
+      status: "pending",
+      shifted_from_task_id: task.id,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  const newId = data.id as string;
+
+  const { error: updErr } = await supabase
+    .from("tasks")
+    .update({ status: "shifted", shifted_to_task_id: newId })
+    .eq("id", task.id);
+  if (updErr) throw new Error(updErr.message);
+  return newId;
+}

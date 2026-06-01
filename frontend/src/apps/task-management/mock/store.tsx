@@ -6,7 +6,7 @@ import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { isoWeekOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
-import { insertTask, startTask as startTaskWrite, completeTask as completeTaskWrite, reviseTask as reviseTaskWrite } from "../data/taskWrites";
+import { insertTask, startTask as startTaskWrite, completeTask as completeTaskWrite, reviseTask as reviseTaskWrite, rescheduleTask as rescheduleTaskWrite } from "../data/taskWrites";
 
 /**
  * Task-domain store (Stage B B3b, READ-ONLY). Loads the live task tables for the
@@ -49,7 +49,7 @@ interface TaskStoreValue {
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
-  rescheduleTask: (id: string, newDueDate: string) => string | null;
+  rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
   addRemark: (id: string, note: string, mentionedIds: string[]) => void;
 
   recurringTasks: RecurringTask[];
@@ -87,6 +87,8 @@ interface TaskStoreValue {
   canCreateTask: boolean;
   /** B4 rollout: the Start / Complete / Revise status actions are live. */
   canStatusActions: boolean;
+  /** B4 rollout: due-date reschedule + shift-to-next-week is live. */
+  canReschedule: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -99,10 +101,6 @@ const readOnly = () => {
 const readOnlyId = () => {
   readOnly();
   return "";
-};
-const readOnlyNull = () => {
-  readOnly();
-  return null;
 };
 
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
@@ -176,7 +174,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
-      rescheduleTask: readOnlyNull,
+      // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
+      // create a linked continuation task + mark the original shifted. Trigger logs
+      // the shifted/created activity; refetch and return the new id (if any).
+      rescheduleTask: async (id, newDueDate) => {
+        const task = tasks.find((t) => t.id === id);
+        if (!task || !newDueDate) return null;
+        const newId = await rescheduleTaskWrite(task, newDueDate, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return newId;
+      },
       addRemark: readOnly,
 
       recurringTasks,
@@ -214,6 +221,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canWrite: false,
       canCreateTask: true,
       canStatusActions: true,
+      canReschedule: true,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
 

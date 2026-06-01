@@ -17,7 +17,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions } = useTaskStore();
+  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
 
@@ -26,9 +26,9 @@ export default function TaskDetail() {
     return <EmptyState title="Task not found" message="It may have been removed." actionLabel="Back to My Tasks" actionTo="/task-management/tasks" />;
   }
 
-  const onReschedule = (date: string) => {
+  const onReschedule = async (date: string) => {
     if (!date) return;
-    const newId = rescheduleTask(task.id, date);
+    const newId = await rescheduleTask(task.id, date);
     if (newId) navigate(`/task-management/tasks/${newId}`); // shifted to a future week
   };
 
@@ -155,7 +155,7 @@ export default function TaskDetail() {
               </Row>
               <Row label="Created by">{creator?.name ?? "—"}</Row>
               <Row label="Due date">
-                <DueDateEditor value={task.dueDate} closed={closed || !canWrite} onChange={onReschedule} />
+                <DueDateEditor value={task.dueDate} closed={closed || !canReschedule} onChange={onReschedule} />
               </Row>
               <Row label="Follow-up">{task.followUpDate ? dateLabel(task.followUpDate) : "—"}</Row>
               <Row label="Revisions">
