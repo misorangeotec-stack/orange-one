@@ -4,11 +4,11 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
-import { useTaskStore } from "../../mock/store";
-import type { Department } from "../../types";
+import { useDirectory } from "@/core/platform/store";
+import type { Department } from "@/core/platform/types";
 
 export default function Departments() {
-  const { departments, profiles, addDepartment, updateDepartment, deleteDepartment } = useTaskStore();
+  const { departments, profiles, addDepartment, updateDepartment, deleteDepartment } = useDirectory();
   const [edit, setEdit] = useState<Department | "new" | null>(null);
   const [confirmDel, setConfirmDel] = useState<Department | null>(null);
   const [name, setName] = useState("");

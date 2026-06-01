@@ -17,10 +17,10 @@ function avgRyg(plans: { redPct: number; yellowPct: number; greenPct: number }[]
   return { red: Math.round(s.red / plans.length), yellow: Math.round(s.yellow / plans.length), green: Math.round(s.green / plans.length) };
 }
 
-/** Planned-vs-actual report for a set of people this week (used by every Reports tab). */
-export default function GroupReport({ people }: { people: Profile[] }) {
+/** Planned-vs-actual report for a set of people for a given week (used by every Reports tab). */
+export default function GroupReport({ people, weekStart = WEEK_START }: { people: Profile[]; weekStart?: string }) {
   const { tasks, departmentById, weeklyPlanFor } = useTaskStore();
-  const weekTasks = useMemo(() => tasks.filter((t) => t.weekStart === WEEK_START), [tasks]);
+  const weekTasks = useMemo(() => tasks.filter((t) => t.weekStart === weekStart), [tasks, weekStart]);
 
   const rows = useMemo(() => people.map((p) => ({ p, r: reportFor(weekTasks, p.id) })), [people, weekTasks]);
   const agg = useMemo(
@@ -37,7 +37,7 @@ export default function GroupReport({ people }: { people: Profile[] }) {
       ),
     [rows]
   );
-  const plans = useMemo(() => people.map((p) => weeklyPlanFor(p.id, WEEK_START)).filter((p): p is WeeklyPlan => !!p), [people, weeklyPlanFor]);
+  const plans = useMemo(() => people.map((p) => weeklyPlanFor(p.id, weekStart)).filter((p): p is WeeklyPlan => !!p), [people, weeklyPlanFor, weekStart]);
   const ryg = avgRyg(plans);
   const completion = agg.planned ? Math.round((agg.completed / agg.planned) * 100) : 0;
 
@@ -68,7 +68,7 @@ export default function GroupReport({ people }: { people: Profile[] }) {
           <h3 className="text-[14px] font-semibold text-navy mb-3">Per-person performance</h3>
           <div className="space-y-3.5">
             {rows.map(({ p, r }) => {
-              const plan = weeklyPlanFor(p.id, WEEK_START);
+              const plan = weeklyPlanFor(p.id, weekStart);
               const rg = plan ? { red: plan.redPct, yellow: plan.yellowPct, green: plan.greenPct } : { red: 0, yellow: 0, green: 0 };
               return (
                 <div key={p.id} className="flex items-center gap-3">

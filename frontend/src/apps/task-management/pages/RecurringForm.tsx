@@ -8,13 +8,16 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import type { RecurrenceType } from "../types";
+import { MONTH_LAST_DAY, type RecurrenceType } from "../types";
 
 // display order Mon→Sun, stored as 0=Sun..6=Sat
 const WEEKDAYS = [
   { v: 1, l: "Mon" }, { v: 2, l: "Tue" }, { v: 3, l: "Wed" }, { v: 4, l: "Thu" },
   { v: 5, l: "Fri" }, { v: 6, l: "Sat" }, { v: 0, l: "Sun" },
 ];
+
+// days 1..31 for the monthly picker
+const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
 export default function RecurringForm() {
   const { id } = useParams();
@@ -29,6 +32,7 @@ export default function RecurringForm() {
   const [assignedTo, setAssignedTo] = useState(editing?.assignedTo ?? user.id);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
   const [active, setActive] = useState(editing?.active ?? true);
   const [error, setError] = useState("");
 
@@ -38,15 +42,20 @@ export default function RecurringForm() {
   const toggleDay = (v: number) =>
     setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort()));
 
+  const toggleMonthDay = (v: number) =>
+    setMonthlyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort((a, b) => a - b)));
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return setError("Please enter a title.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
+    if (recurrenceType === "monthly" && monthlyDays.length === 0) return setError("Pick at least one day of the month.");
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
       recurrenceType,
       weeklyDays: recurrenceType === "weekly" ? weeklyDays : [],
+      monthlyDays: recurrenceType === "monthly" ? monthlyDays : [],
       assignedTo,
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
@@ -83,19 +92,23 @@ export default function RecurringForm() {
               value={assignedTo}
               onChange={setAssignedTo}
               disabled={canAssign.length <= 1}
-              options={canAssign.map((p) => ({
-                value: p.id,
-                label: p.id === user.id ? `${p.name} (me)` : p.name,
-                sublabel: p.designation ?? undefined,
-                icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-              }))}
+              options={canAssign.map((p) => {
+                const dept = departmentById(p.departmentId)?.name;
+                const sub = [p.designation, dept].filter(Boolean).join(" · ");
+                return {
+                  value: p.id,
+                  label: p.id === user.id ? `${p.name} (me)` : p.name,
+                  sublabel: sub || undefined,
+                  icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                };
+              })}
             />
           </FieldLabel>
 
           {/* frequency segmented */}
           <FieldLabel label="Frequency">
             <div className="inline-flex rounded-xl border border-line p-1 bg-page">
-              {(["daily", "weekly"] as RecurrenceType[]).map((f) => (
+              {(["daily", "weekly", "monthly"] as RecurrenceType[]).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -130,6 +143,39 @@ export default function RecurringForm() {
                     </button>
                   );
                 })}
+              </div>
+            </FieldLabel>
+          )}
+
+          {recurrenceType === "monthly" && (
+            <FieldLabel label="Repeat on" hint="day(s) of the month">
+              <div className="flex flex-wrap gap-2">
+                {MONTH_DAYS.map((v) => {
+                  const on = monthlyDays.includes(v);
+                  return (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => toggleMonthDay(v)}
+                      className={cn(
+                        "w-10 py-2 rounded-lg text-[12.5px] font-semibold border transition",
+                        on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
+                      )}
+                    >
+                      {v}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => toggleMonthDay(MONTH_LAST_DAY)}
+                  className={cn(
+                    "px-3 py-2 rounded-lg text-[12.5px] font-semibold border transition",
+                    monthlyDays.includes(MONTH_LAST_DAY) ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
+                  )}
+                >
+                  Last day
+                </button>
               </div>
             </FieldLabel>
           )}

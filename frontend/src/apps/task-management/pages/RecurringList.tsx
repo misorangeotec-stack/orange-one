@@ -8,17 +8,28 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import type { RecurringTask } from "../types";
+import { MONTH_LAST_DAY, type RecurringTask } from "../types";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
+function ordinal(n: number) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 export function frequencyText(r: RecurringTask) {
   if (r.recurrenceType === "daily") return "Every working day";
+  if (r.recurrenceType === "monthly") {
+    if (!r.monthlyDays.length) return "Monthly";
+    const parts = r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d)));
+    return "Every month on the " + parts.join(", ");
+  }
   if (!r.weeklyDays.length) return "Weekly";
   return "Every " + r.weeklyDays.map((d) => DOW[d]).join(", ");
 }
 
-/** Manage recurring task templates (daily / weekly). HOD + admin. */
+/** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
   const { recurringTasks, toggleRecurring, deleteRecurring, directReportIds, profileById } = useTaskStore();
@@ -38,7 +49,7 @@ export default function RecurringList() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-[22px] font-bold text-navy">Recurring Tasks</h2>
-          <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily and weekly templates.</p>
+          <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily, weekly, and monthly templates.</p>
         </div>
         <Link
           to="/task-management/recurring/new"
@@ -53,7 +64,7 @@ export default function RecurringList() {
         {visible.length === 0 ? (
           <EmptyState
             title="No recurring tasks yet"
-            message="Set up a daily or weekly template and it will generate tasks automatically."
+            message="Set up a daily, weekly, or monthly template and it will generate tasks automatically."
             actionLabel="New Recurring Task"
             actionTo="/task-management/recurring/new"
           />

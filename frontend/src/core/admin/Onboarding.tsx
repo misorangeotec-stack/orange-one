@@ -1,22 +1,23 @@
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import { cn } from "@/shared/lib/cn";
-import { useTaskStore } from "../../mock/store";
+import { useDirectory } from "@/core/platform/store";
 
-/** Admin onboarding checklist — progress derived from current workspace state. */
+/** Admin onboarding checklist — progress derived from current directory state. */
 export default function Onboarding() {
-  const { departments, profiles, tasks } = useTaskStore();
+  const { departments, profiles } = useDirectory();
 
   const hasHod = profiles.some((p) => p.role === "hod" || p.role === "sub_hod");
   const hasEmployee = profiles.some((p) => p.role === "employee");
   const hasMapping = profiles.some((p) => p.hodIds.length > 0);
+  const hasGrant = profiles.some((p) => p.role !== "admin" && p.moduleAccess.length > 0);
 
   const steps = [
-    { label: "Create departments", done: departments.length > 0, hint: `${departments.length} created`, to: "/task-management/setup/departments", cta: "Manage departments" },
-    { label: "Add HODs / managers", done: hasHod, hint: hasHod ? "Added" : "None yet", to: "/task-management/setup/users/new", cta: "Add a HOD" },
-    { label: "Add employees", done: hasEmployee, hint: hasEmployee ? "Added" : "None yet", to: "/task-management/setup/users/new", cta: "Add an employee" },
-    { label: "Map reporting structure", done: hasMapping, hint: hasMapping ? "Mapped" : "Not mapped", to: "/task-management/setup/hierarchy", cta: "Review hierarchy" },
-    { label: "Create first tasks", done: tasks.length > 0, hint: `${tasks.length} tasks`, to: "/task-management/tasks/new", cta: "Create a task" },
+    { label: "Create departments", done: departments.length > 0, hint: `${departments.length} created`, to: "/admin/departments", cta: "Manage departments" },
+    { label: "Add HODs / managers", done: hasHod, hint: hasHod ? "Added" : "None yet", to: "/admin/users/new", cta: "Add a HOD" },
+    { label: "Add employees", done: hasEmployee, hint: hasEmployee ? "Added" : "None yet", to: "/admin/users/new", cta: "Add an employee" },
+    { label: "Map reporting structure", done: hasMapping, hint: hasMapping ? "Mapped" : "Not mapped", to: "/admin/hierarchy", cta: "Review hierarchy" },
+    { label: "Grant module access", done: hasGrant, hint: hasGrant ? "Granted" : "Not granted", to: "/admin/access", cta: "Manage access" },
   ];
 
   const done = steps.filter((s) => s.done).length;

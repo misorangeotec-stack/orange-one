@@ -1,74 +1,32 @@
 import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import Tabs from "@/shared/components/ui/Tabs";
-import Combobox from "@/shared/components/ui/Combobox";
-import Avatar from "@/shared/components/ui/Avatar";
-import { WEEK_START, WEEK_END } from "../mock/data";
+import { WEEK_START } from "../mock/data";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import GroupReport from "../components/GroupReport";
-import PlanVsActual from "../components/PlanVsActual";
+import DepartmentReport from "../components/DepartmentReport";
+import EmployeeReport from "../components/EmployeeReport";
 import WeeklyPlanModal from "../components/WeeklyPlanModal";
-import { formatDate, addWeeks, monthKey, monthLabel } from "@/shared/lib/time";
-import type { Department, Profile } from "../types";
+import { formatDate, addWeeks, weekStartOf, weekEndOf } from "@/shared/lib/time";
 
 const fmt = (iso: string) => formatDate(iso);
 
-/** Build "Designation · Department" sublabel for a person. */
-function personMeta(p: Profile, deptById: (id: string | null) => Department | undefined): string | undefined {
-  const parts = [p.designation, deptById(p.departmentId)?.name].filter(Boolean);
-  return parts.length ? parts.join(" · ") : undefined;
-}
-
 export default function Reports() {
-  const { user, role, isAdmin, isHod } = useSession();
-  const { departments, profiles, profileById, departmentById, directReportIds } = useTaskStore();
-  const [params, setParams] = useSearchParams();
+  const { user, isAdmin, isHod } = useSession();
+  const { profileById, directReportIds } = useTaskStore();
   const [planOpen, setPlanOpen] = useState(false);
+  const [weekStart, setWeekStart] = useState(WEEK_START);
+  const isManager = isAdmin || isHod;
 
+  // A HOD/sub-HOD's team = themselves + their direct reports; used to scope their department view.
   const team = useMemo(() => [user.id, ...directReportIds(user.id)].map((id) => profileById(id)!).filter(Boolean), [user.id]);
-  const hods = useMemo(() => profiles.filter((p) => p.role === "hod" || p.role === "sub_hod"), []);
-
-  const tabs = [
-    { key: "weekly", label: "Weekly" },
-    { key: "planvsactual", label: "Plan vs Actual" },
-    ...(isAdmin || isHod ? [{ key: "employee", label: "Employee" }, { key: "team", label: "Team" }] : []),
-    ...(isAdmin ? [{ key: "department", label: "Department" }] : []),
-  ];
-  const tab = tabs.some((t) => t.key === params.get("tab")) ? params.get("tab")! : "weekly";
-
-  // selectors
-  const personPool = isAdmin ? profiles : team;
-  const [selPerson, setSelPerson] = useState(personPool[0]?.id ?? user.id);
-  const [selHod, setSelHod] = useState(hods[0]?.id ?? "");
-  const [selDept, setSelDept] = useState(departments[0]?.id ?? "");
-
-  // month options for Plan vs Actual (recent months that may hold data)
-  const monthOpts = useMemo(() => {
-    const keys = new Set<string>();
-    for (let n = -6; n <= 2; n++) keys.add(monthKey(addWeeks(WEEK_START, n)));
-    return [...keys].sort().reverse().map((k) => ({ value: k, label: monthLabel(`${k}-01`) }));
-  }, []);
-  const [selMonth, setSelMonth] = useState(monthKey(WEEK_START));
-
-  let people: Profile[] = [];
-  if (tab === "weekly" || tab === "planvsactual") people = isAdmin ? profiles : isHod ? team : [user];
-  else if (tab === "employee") people = [profileById(selPerson)].filter(Boolean) as Profile[];
-  else if (tab === "team") {
-    const root = isAdmin ? selHod : user.id;
-    people = [root, ...directReportIds(root)].map((id) => profileById(id)!).filter(Boolean);
-  } else if (tab === "department") people = profiles.filter((p) => p.departmentId === selDept);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-[22px] font-bold text-navy">Reports</h2>
-          <p className="text-grey text-[13px] mt-1">
-            Planned vs actual execution · week of {fmt(WEEK_START)} – {fmt(WEEK_END)}
-          </p>
+          <WeekNav weekStart={weekStart} onChange={setWeekStart} />
         </div>
-        {(isAdmin || isHod) && (
+        {isManager && (
           <button
             onClick={() => setPlanOpen(true)}
             className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
@@ -79,47 +37,80 @@ export default function Reports() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs tabs={tabs} active={tab} onChange={(k) => setParams(k === "weekly" ? {} : { tab: k }, { replace: true })} />
+      <RygLegend />
 
-        {/* contextual selector */}
-        {tab === "planvsactual" && (
-          <Combobox
-            value={selMonth}
-            onChange={setSelMonth}
-            className="w-auto min-w-[170px]"
-            options={monthOpts}
-          />
-        )}
-        {tab === "employee" && (
-          <Combobox
-            value={selPerson}
-            onChange={setSelPerson}
-            className="w-auto min-w-[200px]"
-            options={personPool.map((p) => ({ value: p.id, label: p.name, sublabel: personMeta(p, departmentById), icon: <Avatar name={p.name} color={p.avatarColor} size={22} /> }))}
-          />
-        )}
-        {tab === "team" && isAdmin && (
-          <Combobox
-            value={selHod}
-            onChange={setSelHod}
-            className="w-auto min-w-[200px]"
-            options={hods.map((p) => ({ value: p.id, label: p.name, sublabel: personMeta(p, departmentById) ?? "HOD", icon: <Avatar name={p.name} color={p.avatarColor} size={22} /> }))}
-          />
-        )}
-        {tab === "department" && (
-          <Combobox
-            value={selDept}
-            onChange={setSelDept}
-            className="w-auto min-w-[200px]"
-            options={departments.map((d) => ({ value: d.id, label: d.name }))}
-          />
-        )}
-      </div>
+      {isManager ? (
+        <DepartmentReport
+          weekStart={weekStart}
+          scope={isAdmin ? undefined : { deptId: user.departmentId, memberIds: team.map((p) => p.id), selfId: user.id }}
+        />
+      ) : (
+        <EmployeeReport user={user} weekStart={weekStart} />
+      )}
 
-      {tab === "planvsactual" ? <PlanVsActual people={people} month={selMonth} /> : <GroupReport people={people} />}
+      {isManager && <WeeklyPlanModal open={planOpen} onClose={() => setPlanOpen(false)} />}
+    </div>
+  );
+}
 
-      <WeeklyPlanModal open={planOpen} onClose={() => setPlanOpen(false)} />
+/** Explains what the Red/Yellow/Green bars mean, shown at the top of every report. */
+function RygLegend() {
+  const items = [
+    { dot: "bg-ryg-green", label: "Green", desc: "Completed on time" },
+    { dot: "bg-ryg-yellow", label: "Yellow", desc: "Revised — needed rework" },
+    { dot: "bg-ryg-red", label: "Red", desc: "Missed, shifted, in progress or still pending" },
+  ];
+  return (
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-white px-4 py-2.5">
+      <span className="text-[10.5px] font-semibold uppercase tracking-wide text-grey-2">RYG key</span>
+      {items.map((it) => (
+        <span key={it.label} className="inline-flex items-center gap-2 text-[12.5px]">
+          <span className={`w-2.5 h-2.5 rounded-full ${it.dot}`} />
+          <span className="font-semibold text-navy">{it.label}</span>
+          <span className="text-grey-2">— {it.desc}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Previous / next / custom-week picker for the week-based reports. */
+function WeekNav({ weekStart, onChange }: { weekStart: string; onChange: (ws: string) => void }) {
+  const weekEnd = weekEndOf(weekStart);
+  const isCurrent = weekStart === WEEK_START;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <button
+        type="button"
+        onClick={() => onChange(addWeeks(weekStart, -1))}
+        aria-label="Previous week"
+        className="w-7 h-7 grid place-items-center rounded-lg border border-line text-grey hover:text-orange hover:border-orange/40 transition"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+      </button>
+      <span className="text-[13px] text-grey font-medium px-1 text-center tabular-nums">
+        week of {fmt(weekStart)} – {fmt(weekEnd)}
+      </span>
+      <button
+        type="button"
+        onClick={() => onChange(addWeeks(weekStart, 1))}
+        aria-label="Next week"
+        className="w-7 h-7 grid place-items-center rounded-lg border border-line text-grey hover:text-orange hover:border-orange/40 transition"
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+      </button>
+      <input
+        type="date"
+        value={weekStart}
+        onChange={(e) => e.target.value && onChange(weekStartOf(e.target.value))}
+        title="Pick any day to jump to that week"
+        className="ml-1 rounded-lg border border-line bg-white px-2 py-1 text-[12.5px] text-ink outline-none focus:border-orange cursor-pointer"
+      />
+      {!isCurrent && (
+        <button type="button" onClick={() => onChange(WEEK_START)} className="ml-1 text-[12.5px] font-semibold text-orange hover:underline">
+          This week
+        </button>
+      )}
     </div>
   );
 }

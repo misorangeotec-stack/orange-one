@@ -24,6 +24,8 @@ export default function Combobox({
   searchable,
   className,
   align = "left",
+  onCreate,
+  createLabel = (q) => `Add “${q}”`,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -34,6 +36,14 @@ export default function Combobox({
   searchable?: boolean;
   className?: string;
   align?: "left" | "right";
+  /**
+   * When provided, an "Add …" row appears for a search term that doesn't exactly
+   * match an existing option. Should create the option and return its value so it
+   * can be selected immediately.
+   */
+  onCreate?: (label: string) => string | void;
+  /** Render text for the create row; defaults to `Add “<query>”`. */
+  createLabel?: (q: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -42,7 +52,7 @@ export default function Combobox({
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const showSearch = searchable ?? options.length > 6;
+  const showSearch = searchable ?? (!!onCreate || options.length > 6);
   const selected = options.find((o) => o.value === value);
 
   // Position the portalled menu under the trigger using fixed coords so it
@@ -90,6 +100,19 @@ export default function Combobox({
     return options.filter((o) => o.label.toLowerCase().includes(s) || o.sublabel?.toLowerCase().includes(s));
   }, [q, options]);
 
+  // Offer creation only when the term doesn't already exactly match an option.
+  const trimmed = q.trim();
+  const canCreate =
+    !!onCreate && trimmed.length > 0 && !options.some((o) => o.label.toLowerCase() === trimmed.toLowerCase());
+
+  const create = () => {
+    if (!onCreate) return;
+    const created = onCreate(trimmed);
+    if (typeof created === "string") onChange(created);
+    setOpen(false);
+    setQ("");
+  };
+
   return (
     <div className={cn("relative", className)} ref={ref}>
       <button
@@ -114,7 +137,7 @@ export default function Combobox({
         <div
           ref={menuRef}
           style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: pos.minWidth }}
-          className="z-50 w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden"
+          className="z-[70] w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden"
         >
           {showSearch && (
             <div className="p-2 border-b border-line">
@@ -124,14 +147,20 @@ export default function Combobox({
                   ref={inputRef}
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
-                  placeholder="Search…"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && canCreate && filtered.length === 0) {
+                      e.preventDefault();
+                      create();
+                    }
+                  }}
+                  placeholder={onCreate ? "Search or add…" : "Search…"}
                   className="w-full rounded-lg border border-line bg-page pl-8 pr-2 py-1.5 text-[13px] text-ink placeholder:text-grey-2 outline-none focus:border-orange"
                 />
               </div>
             </div>
           )}
           <ul className="max-h-60 overflow-y-auto py-1">
-            {filtered.length === 0 ? (
+            {filtered.length === 0 && !canCreate ? (
               <li className="px-3 py-3 text-center text-[12.5px] text-grey-2">No matches</li>
             ) : (
               filtered.map((o) => {
@@ -162,6 +191,20 @@ export default function Combobox({
                   </li>
                 );
               })
+            )}
+            {canCreate && (
+              <li className={cn(filtered.length > 0 && "border-t border-line mt-1 pt-1")}>
+                <button
+                  type="button"
+                  onClick={create}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition hover:bg-orange-soft/40"
+                >
+                  <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-orange-soft text-orange">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  </span>
+                  <span className="min-w-0 flex-1 text-[13.5px] text-orange font-semibold truncate">{createLabel(trimmed)}</span>
+                </button>
+              </li>
             )}
           </ul>
         </div>,

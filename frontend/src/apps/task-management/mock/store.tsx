@@ -1,11 +1,9 @@
 import { createContext, useContext, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { AppRole, AvatarColor, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
+import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import {
   activity as seedActivity,
-  departments as seedDepartments,
   notifications as seedNotifications,
-  profiles as seedProfiles,
   recurringTasks as seedRecurring,
   tasks as seedTasks,
   weeklyPlans as seedWeeklyPlans,
@@ -14,14 +12,17 @@ import {
   workspaceSettings as seedWorkspace,
 } from "./data";
 import { useSession } from "./session";
+import { useDirectory } from "@/core/platform/store";
 import { formatDate, isoWeekOf, weekEndOf } from "@/shared/lib/time";
 
 /**
- * In-memory app store for the frontend phase. Owns tasks, activity, notifications,
- * recurring templates AND the directory (people + departments). Implements the same
- * mutations the backend will, so the UI is fully interactive during the audit.
- * Business rules the DB does NOT enforce (revision limit, shift linkage, mention
- * fan-out) live here and move to the data layer / RPCs in Stage B.
+ * In-memory app store for the frontend phase. Owns the task domain (tasks, activity,
+ * notifications, recurring templates, weekly plans, workspace settings) and implements
+ * the same mutations the backend will. The directory (people + departments) now lives
+ * in the portal core (core/platform/store); this store reads it via useDirectory() and
+ * re-exposes those fields so its existing consumers stay unchanged. Business rules the
+ * DB does NOT enforce (revision limit, shift linkage, mention fan-out) live here and
+ * move to the data layer / RPCs in Stage B.
  */
 
 const nowIso = () => new Date().toISOString();
@@ -31,7 +32,6 @@ const mondayOf = (iso: string) => {
   d.setDate(d.getDate() - dow);
   return d.toISOString().slice(0, 10);
 };
-const AVATAR_COLORS: AvatarColor[] = ["blue", "orange", "teal", "violet", "rose", "green", "navy"];
 
 export interface RevisionInfo {
   usedThisWeek: number;
@@ -91,6 +91,7 @@ const StoreContext = createContext<TaskStoreValue | null>(null);
 
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const { user } = useSession();
+  const dir = useDirectory();
   const actorRef = useRef(user.id);
   actorRef.current = user.id;
 
@@ -98,8 +99,6 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const [activity, setActivity] = useState<TaskActivity[]>(() => seedActivity.map((a) => ({ ...a })));
   const [notifications, setNotifications] = useState<Notification[]>(() => seedNotifications.map((n) => ({ ...n })));
   const [recurringTasks, setRecurring] = useState<RecurringTask[]>(() => seedRecurring.map((r) => ({ ...r })));
-  const [profiles, setProfiles] = useState<Profile[]>(() => seedProfiles.map((p) => ({ ...p, hodIds: [...p.hodIds] })));
-  const [departments, setDepartments] = useState<Department[]>(() => seedDepartments.map((d) => ({ ...d })));
   const [workspace, setWorkspace] = useState<WorkspaceSettings>(() => ({ ...seedWorkspace }));
   const [weeklyPlans, setWeeklyPlans] = useState<WeeklyPlan[]>(() => seedWeeklyPlans.map((p) => ({ ...p })));
   const seq = useRef(1000);
@@ -113,18 +112,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     const patch = (id: string, fn: (t: Task) => Task) =>
       setTasks((prev) => prev.map((t) => (t.id === id ? { ...fn(t), updatedAt: nowIso() } : t)));
 
-    const profileById = (id: string | null) => profiles.find((p) => p.id === id);
-    const departmentById = (id: string | null) => departments.find((d) => d.id === id);
-    const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
-
-    const assignableUsers = (role: AppRole, userId: string): Profile[] => {
-      if (role === "admin") return profiles;
-      if (role === "hod" || role === "sub_hod") {
-        const ids = new Set([userId, ...directReportIds(userId)]);
-        return profiles.filter((p) => ids.has(p.id));
-      }
-      return profiles.filter((p) => p.id === userId);
-    };
+    // Directory (people + departments) is owned by the portal core; reuse it here.
+    const { directReportIds } = dir;
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
@@ -214,7 +203,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         if (mentionedIds.length) {
           setNotifications((prev) => [
             ...mentionedIds
-              .filter((uid) => profiles.some((p) => p.id === uid))
+              .filter((uid) => dir.profiles.some((p) => p.id === uid))
               .map((uid) => ({ id: nextId("n"), userId: uid, type: "mention" as const, taskId: id, actorId: actorRef.current, readAt: null, createdAt: nowIso() })),
             ...prev,
           ]);
@@ -232,41 +221,20 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       toggleRecurring: (id) => setRecurring((prev) => prev.map((r) => (r.id === id ? { ...r, active: !r.active } : r))),
       deleteRecurring: (id) => setRecurring((prev) => prev.filter((r) => r.id !== id)),
 
-      // ---- directory ----
-      profiles,
-      departments,
-      profileById,
-      departmentById,
-      directReportIds,
-      assignableUsers,
+      // ---- directory (delegated to the portal core; re-exposed for existing consumers) ----
+      profiles: dir.profiles,
+      departments: dir.departments,
+      profileById: dir.profileById,
+      departmentById: dir.departmentById,
+      directReportIds: dir.directReportIds,
+      assignableUsers: dir.assignableUsers,
       visibleTasks,
-
-      addDepartment: ({ name, description }) => {
-        const id = nextId("d");
-        setDepartments((prev) => [...prev, { id, name, description: description ?? null }]);
-        return id;
-      },
-      updateDepartment: (id, p) => setDepartments((prev) => prev.map((d) => (d.id === id ? { ...d, ...p } : d))),
-      deleteDepartment: (id) => {
-        setDepartments((prev) => prev.filter((d) => d.id !== id));
-        setProfiles((prev) => prev.map((p) => (p.departmentId === id ? { ...p, departmentId: null } : p)));
-      },
-
-      addUser: ({ name, email, designation, role, departmentId, hodIds }) => {
-        const id = nextId("u");
-        setProfiles((prev) => [
-          ...prev,
-          {
-            id, name, email: email ?? null, designation: designation ?? null,
-            avatarColor: AVATAR_COLORS[prev.length % AVATAR_COLORS.length],
-            departmentId, role, hodIds: hodIds ?? [],
-          },
-        ]);
-        return id;
-      },
-      updateUser: (id, p) => setProfiles((prev) => prev.map((u) => (u.id === id ? { ...u, ...p } : u))),
-      deleteUser: (id) =>
-        setProfiles((prev) => prev.filter((u) => u.id !== id).map((u) => ({ ...u, hodIds: u.hodIds.filter((h) => h !== id) }))),
+      addDepartment: dir.addDepartment,
+      updateDepartment: dir.updateDepartment,
+      deleteDepartment: dir.deleteDepartment,
+      addUser: dir.addUser,
+      updateUser: dir.updateUser,
+      deleteUser: dir.deleteUser,
 
       // ---- weekly plans ----
       weeklyPlans,
@@ -291,7 +259,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       workspace,
       updateWorkspace: (patch) => setWorkspace((prev) => ({ ...prev, ...patch })),
     };
-  }, [tasks, activity, notifications, recurringTasks, profiles, departments, workspace, weeklyPlans]);
+  }, [tasks, activity, notifications, recurringTasks, dir, workspace, weeklyPlans]);
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

@@ -70,12 +70,16 @@ export default function CreateTask() {
                 value={assignedTo}
                 onChange={setAssignedTo}
                 disabled={canAssign.length <= 1}
-                options={canAssign.map((p) => ({
-                  value: p.id,
-                  label: p.id === user.id ? `${p.name} (me)` : p.name,
-                  sublabel: p.designation ?? undefined,
-                  icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
-                }))}
+                options={canAssign.map((p) => {
+                  const dept = departmentById(p.departmentId)?.name;
+                  const sub = [p.designation, dept].filter(Boolean).join(" · ");
+                  return {
+                    value: p.id,
+                    label: p.id === user.id ? `${p.name} (me)` : p.name,
+                    sublabel: sub || undefined,
+                    icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
+                  };
+                })}
               />
             </FieldLabel>
 

@@ -12,13 +12,14 @@ export default function RygBar({
 }) {
   return (
     <div>
-      <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-line">
-        <span style={{ width: `${green}%` }} className="bg-ryg-green" />
-        <span style={{ width: `${yellow}%` }} className="bg-ryg-yellow" />
-        <span style={{ width: `${red}%` }} className="bg-ryg-red" />
+      {/* thin, gently-muted track so rows of bars read as calm context, not alarm */}
+      <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-[#eef1f6]">
+        <span style={{ width: `${green}%` }} className="bg-ryg-green/80" />
+        <span style={{ width: `${yellow}%` }} className="bg-ryg-yellow/80" />
+        <span style={{ width: `${red}%` }} className="bg-ryg-red/80" />
       </div>
       {showLegend && (
-        <div className="mt-2.5 flex items-center gap-4 text-[11px] text-grey">
+        <div className="mt-2 flex items-center gap-3.5 text-[11px] text-grey-2">
           <Legend color="bg-ryg-green" label="Green" pct={green} />
           <Legend color="bg-ryg-yellow" label="Yellow" pct={yellow} />
           <Legend color="bg-ryg-red" label="Red" pct={red} />
@@ -31,7 +32,7 @@ export default function RygBar({
 function Legend({ color, label, pct }: { color: string; label: string; pct: number }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <span className={`w-2 h-2 rounded-full ${color}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${color}`} />
       {label} <b className="text-navy font-semibold">{pct}%</b>
     </span>
   );

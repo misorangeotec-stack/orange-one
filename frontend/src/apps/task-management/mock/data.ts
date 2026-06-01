@@ -5,9 +5,7 @@
  * Stage B replaces these arrays with live Supabase queries (same shapes).
  */
 import type {
-  Department,
   Notification,
-  Profile,
   RecurringTask,
   Task,
   TaskActivity,
@@ -36,29 +34,19 @@ const dt = (days: number, h = 10) => {
   return x.toISOString();
 };
 
-// ---- departments (real) ----
-export const departments: Department[] = [
-  { id: "d1", name: "Management" },
-  { id: "d2", name: "Accounting & Finance" },
-  { id: "d3", name: "Administration" },
-  { id: "d4", name: "AI & tech" },
-  { id: "d5", name: "Research & Development" },
-];
+// ---- directory (people + departments) — now portal-wide, sourced from core/platform ----
+// Re-exported so existing task-management imports (e.g. `from "./data"`) keep working.
+export { departments, profiles, profileById, departmentById } from "@/core/platform/data";
+import { profileById } from "@/core/platform/data";
 
-// ---- profiles (real users; roles assigned for a representative demo) ----
-export const profiles: Profile[] = [
-  { id: "u1", name: "Yash Agarwal", email: "yash@orangeotec.com", designation: "CAIO", avatarColor: "orange", departmentId: "d4", role: "admin", hodIds: [] },
-  { id: "u2", name: "Aayush Rathi", email: "aayush@orangeotec.com", designation: "Director", avatarColor: "navy", departmentId: "d1", role: "admin", hodIds: [] },
-  { id: "u3", name: "Karan Toshniwal", email: "karan@orangeotec.com", designation: "Director", avatarColor: "blue", departmentId: "d1", role: "hod", hodIds: [] },
-  { id: "u4", name: "Ritesh Tulsyan", email: "ritesh@orangeotec.com", designation: "CFA", avatarColor: "teal", departmentId: "d2", role: "hod", hodIds: [] },
-  { id: "u5", name: "Dimple", email: "dimple@orangeotec.com", designation: "Senior Manager", avatarColor: "violet", departmentId: "d3", role: "sub_hod", hodIds: ["u3"] },
-  { id: "u6", name: "Aayushi Shah", email: "ea1@orangeotec.com", designation: "Executive Assistant", avatarColor: "rose", departmentId: "d3", role: "employee", hodIds: ["u3", "u5"] },
-  { id: "u7", name: "Vivek Boid", email: "vivek.boid@orangeotec.com", designation: "Head - Plant", avatarColor: "green", departmentId: "d5", role: "employee", hodIds: ["u2"] },
-  { id: "u8", name: "Master Admin", email: "master@taskflow.app", designation: "Master Admin", avatarColor: "navy", departmentId: "d1", role: "admin", hodIds: [] },
+// Historical tasks for prior weeks — realistic titles, only status + weekStart matter for RYG.
+// Declared before `tasks` because the array below calls weekTasks()/mkWeekTask() during
+// module init, which read these — keeping them here avoids a temporal-dead-zone crash.
+const HIST_TITLES = [
+  "Daily sales report", "Bank reconciliation", "Vendor follow-up", "Stock movement update",
+  "Petty cash audit", "CRM record cleanup", "Invoice filing", "Cash position report",
 ];
-
-export const profileById = (id: string | null) => profiles.find((p) => p.id === id) ?? null;
-export const departmentById = (id: string | null) => departments.find((dep) => dep.id === id) ?? null;
+let histSeq = 100;
 
 // ---- tasks ----
 export const tasks: Task[] = [
@@ -83,12 +71,6 @@ export const tasks: Task[] = [
   ...weekTasks("u6", addWeeks(WEEK_START, -3), { completed: 4, revised: 2, red: 1 }),
 ];
 
-// Historical tasks for prior weeks — realistic titles, only status + weekStart matter for RYG.
-const HIST_TITLES = [
-  "Daily sales report", "Bank reconciliation", "Vendor follow-up", "Stock movement update",
-  "Petty cash audit", "CRM record cleanup", "Invoice filing", "Cash position report",
-];
-let histSeq = 100;
 function mkWeekTask(to: string, week: string, status: Task["status"]): Task {
   const id = `t${++histSeq}`;
   const at = (h: number) => week + `T${String(h).padStart(2, "0")}:00:00Z`;
@@ -158,9 +140,10 @@ function addDaysIso(n: number) {
 
 // ---- recurring tasks ----
 export const recurringTasks: RecurringTask[] = [
-  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
-  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
-  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false },
+  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
+  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
+  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], monthlyDays: [], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false },
+  { id: "r4", title: "Monthly expense report", description: "Due on the 1st of each month.", recurrenceType: "monthly", weeklyDays: [], monthlyDays: [1], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: true },
 ];
 
 // ---- weekly plans (Red/Yellow/Green target per doer per ISO week) ----

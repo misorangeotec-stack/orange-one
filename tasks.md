@@ -34,21 +34,21 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] **9. Task Detail** — description, details sidebar (revisions left, follow-up, shift links), activity timeline + @mention remark composer
 - [x] **10. Action modals** — Revise (follow-up + note, disabled at limit), Shift to next week (linked task), Mark Complete (note)
 - [x] _Shared UI: Modal, Tabs, Form controls, EmptyState_
-- [ ] 🔍 **Audit Phase 3** — log in → Task Management → My Tasks. Try: open a task → Start / Revise / Shift / Complete; post an @mention remark; create a task. (`?role=` to switch views)
+- [x] 🔍 **Audit Phase 3** — log in → Task Management → My Tasks. Try: open a task → Start / Revise / Shift / Complete; post an @mention remark; create a task. (`?role=` to switch views)
 - [x] _Committed + pushed to GitHub_
 
 ### Phase 4 — Manager & admin task views  ✅ built · 🔍 awaiting audit
 - [x] **Reusable TaskBrowser** — stats strip + filters (search / person / department / status / week) + list with assignee avatars
 - [x] **11. Team Tasks** (HOD / sub-HOD) — direct reports' tasks, filter by team member
 - [x] **12. All Tasks** (admin) — org-wide, filter by department + person
-- [ ] 🔍 **Audit Phase 4** (review with Phase 3) — `?role=hod` → Team Tasks; `?role=admin` → All Tasks
+- [x] 🔍 **Audit Phase 4** (review with Phase 3) — `?role=hod` → Team Tasks; `?role=admin` → All Tasks
 - [x] _Committed + pushed to GitHub_
 
 ### Phase 5 — Recurring tasks  ✅ built · 🔍 awaiting audit
 - [x] **13. Recurring list** — daily/weekly templates, frequency text, assignee, active/pause toggle, edit + delete (confirm)
 - [x] **Create/Edit Recurring** — title, description, assignee, Daily/Weekly toggle, weekday picker (weekly), active toggle
 - [x] _Store extended with recurring CRUD; HOD/admin scoped_
-- [ ] 🔍 **Audit Phase 5** — `?role=hod` or `admin` → Recurring
+- [x] 🔍 **Audit Phase 5** — `?role=hod` or `admin` → Recurring
 - [x] _Committed + pushed to GitHub_
 
 ### Refinements (post Phase 3/4, applied)
@@ -59,27 +59,41 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 - [x] **14. Reports** — role-gated tabs Weekly / Employee / Team / Department; planned-vs-actual tiles, per-person RYG, status donut, avg RYG; contextual selectors (person/HOD/department)
 - [x] **15. Activity History** — filterable audit trail (by action type + person), role-scoped, timeline with task links
 - [x] _Report stat helpers (reportFor) in selectors_
-- [ ] 🔍 **Audit Phase 6** — `?role=admin` → Reports (try tabs) + Activity
+- [x] 🔍 **Audit Phase 6** — `?role=admin` → Reports (try tabs) + Activity
 
 ### Phase 7 — Admin setup  ✅ built · 🔍 awaiting audit
 - [x] **Directory promoted into store** — profiles + departments are now live/editable; admin mutators (add/edit/delete dept + user); directory helpers (profileById/directReportIds/assignableUsers/visibleTasks) moved to store; all consumers refactored
 - [x] **16. Setup** — sub-nav shell + Onboarding checklist (live progress), Department Management (add/edit/delete), User Management (filters + role badges), Add/Edit User (role picker, department, multi-HOD reporting), Hierarchy mapping (teams + unmapped)
-- [ ] 🔍 **Audit Phase 7** — `?role=admin` → Setup
+- [x] 🔍 **Audit Phase 7** — `?role=admin` → Setup
 - [x] _Committed + pushed to GitHub_
 
 ### Phase 8 — Settings + utility  ✅ built · 🔍 awaiting audit
 - [x] **17. Settings** — Profile (edit own details + in-app change password), Organization (workspace name / week-start / max-revisions, admin), Permissions (read-only role matrix, admin)
 - [x] **18. Utility** — Empty states (reused), Access Denied (+ RequireRole guards on manager/admin routes), in-app 404
 - [x] _Workspace settings promoted into store (live max-revisions feeds the revision rule)_
-- [ ] 🔍 **Audit Phase 8 / full frontend review**
+- [x] 🔍 **Audit Phase 8 / full frontend review**
 - [x] _Committed + pushed to GitHub_
 
 > 🎉 **STAGE A (frontend) COMPLETE** — all 34 screens built, on-theme, interactive with mock data. Next: Stage B (Supabase wiring).
 
 ---
 
+## STAGE A.5 — Portal platform layer + per-user module access  ✅ built · 🔍 awaiting audit
+Pulls identity/admin out of Task Management into the portal core so module access can be granted per user.
+- [x] **Launcher trimmed** — workspace shows Task Management (live) + Outstanding Dashboard ("Coming soon", named) + one generic "More apps coming soon" tile; other named placeholders removed
+- [x] **Identity lifted to `core/platform/`** — types, seed data, session, and a directory store (`useDirectory`) moved out of task-management; Task store now re-exposes the directory via pass-through so its existing consumers are unchanged; providers wrap the whole app in `main.tsx`
+- [x] **`moduleAccess: string[]` on Profile** — denormalised read-model (like role/hodIds); `session.hasModule(appId)` (admins bypass)
+- [x] **Core Admin area `/admin`** (admin-only) — Onboarding, Departments, Users + Add/Edit User (with module-access selector), Hierarchy, **Module Access matrix** (users × apps); reached via an Admin gear on the launcher
+- [x] **Core account `/account`** — personal profile + password, for all users
+- [x] **Access enforced** — launcher only shows apps the user can open; each live-app route is guarded (`RequireModule` → /home); admins see everything
+- [x] _Task Management keeps only task-specific settings (Organization rules + Permissions matrix); its Setup screens were removed (moved to /admin)_
+- [x] 🔍 **Audit Stage A.5** — log in → workspace (3 tiles) → Admin gear → manage users + module access; `?role=employee` to verify gating
+
+---
+
 ## STAGE B — Backend wiring (after frontend approved)
 - [ ] Add supabase-js (anon key + RLS) + TanStack Query; generate TS types from schema
+- [x] **NEW table `app_access` created** `(id, user_id → profiles.id, app_id text, created_at, unique(user_id,app_id))` + RLS mirroring `user_roles`/`user_hods` (`app_access_select`: own rows OR `is_admin`; `app_access_admin_write`: admin-only ALL). Purely additive — no existing table/data touched. _Still pending: back `Profile.moduleAccess` with it + wire the launcher filter / `RequireModule` guard to live grants._
 - [ ] AuthProvider / useAuth + route guards (RequireAuth / RequireRole)
 - [ ] Per-entity data modules + query/mutation hooks; replace mock data with live queries
 - [ ] Business rules: revision limit (2/week), shift-to-next-week linkage, complete, @mention fan-out
@@ -90,4 +104,4 @@ Full plan: `C:\Users\etech\.claude\plans\now-the-main-thing-cached-rossum.md`
 
 ---
 
-_Last updated: Phase 1 in progress._
+_Last updated: Stage A.5 complete (portal platform + per-user module access); `app_access` table created in Supabase. Next: Stage B (Supabase wiring)._
