@@ -200,7 +200,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       rescheduleTask: async (id, newDueDate) => {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
-        const newId = await rescheduleTaskWrite(task, newDueDate, user.id);
+        const newId = await rescheduleTaskWrite(task, newDueDate);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return newId;
       },

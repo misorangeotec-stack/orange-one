@@ -114,25 +114,16 @@ export async function reviseTask(
  *                            new task's id so the caller can navigate to it.
  *
  * The trigger auto-logs `shifted` (on the original's status update) and `created`
- * (on the continuation insert), so we don't log either here. RLS requires the
- * continuation's created_by = auth.uid() (no admin bypass on insert), so the
- * shifter owns the new row while the original assignee/department carry over.
- *
- * NOTE: this is two writes (insert + update) without a transaction. If the second
- * write fails the continuation is left pending and the original un-shifted — both
- * rows are still valid/recoverable. An atomic RPC is a candidate follow-up.
+ * (on the continuation insert), so we don't log either here. The future-week shift
+ * runs in the `shift_task_to_week` RPC so the insert + update are one transaction
+ * (no half-applied shift); RLS still applies inside it.
  */
 export async function rescheduleTask(
   task: {
     id: string;
-    title: string;
-    description: string | null;
-    assignedTo: string | null;
-    departmentId: string | null;
     weekStart: string | null;
   },
-  newDueDate: string,
-  actorId: string
+  newDueDate: string
 ): Promise<string | null> {
   const targetWeek = mondayOf(newDueDate);
   const currentWeek = task.weekStart ?? mondayOf(new Date().toISOString());
@@ -142,30 +133,15 @@ export async function rescheduleTask(
     return null;
   }
 
-  const { data, error } = await supabase
-    .from("tasks")
-    .insert({
-      title: task.title,
-      description: task.description ?? null,
-      assigned_to: task.assignedTo,
-      department_id: task.departmentId,
-      due_date: newDueDate,
-      week_start: targetWeek,
-      created_by: actorId,
-      status: "pending",
-      shifted_from_task_id: task.id,
-    })
-    .select("id")
-    .single();
+  // Future week → atomic shift via RPC (single transaction; the function sets
+  // created_by = auth.uid() inside, satisfying the insert RLS, and marks the
+  // original 'shifted' in the same transaction).
+  const { data, error } = await supabase.rpc("shift_task_to_week", {
+    p_task_id: task.id,
+    p_new_due_date: newDueDate,
+  });
   if (error) throw new Error(error.message);
-  const newId = data.id as string;
-
-  const { error: updErr } = await supabase
-    .from("tasks")
-    .update({ status: "shifted", shifted_to_task_id: newId })
-    .eq("id", task.id);
-  if (updErr) throw new Error(updErr.message);
-  return newId;
+  return data as string;
 }
 
 /**
