@@ -34,9 +34,10 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, deleteRecurring, directReportIds, profileById, canWrite } = useTaskStore();
+  const { recurringTasks, toggleRecurring, deleteRecurring, directReportIds, profileById, canRecurring } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const visible = useMemo(() => {
     if (role === "admin") return recurringTasks;
@@ -52,9 +53,9 @@ export default function RecurringList() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-[22px] font-bold text-navy">Recurring Tasks</h2>
-          <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily, weekly, and monthly templates.</p>
+          <p className="text-grey text-[13px] mt-1">Automate repetitive work with daily and weekly templates.</p>
         </div>
-        {canWrite && (
+        {canRecurring && (
           <Link
             to="/task-management/recurring/new"
             className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
@@ -69,9 +70,9 @@ export default function RecurringList() {
         {visible.length === 0 ? (
           <EmptyState
             title="No recurring tasks yet"
-            message="Set up a daily, weekly, or monthly template and it will generate tasks automatically."
-            actionLabel={canWrite ? "New Recurring Task" : undefined}
-            actionTo={canWrite ? "/task-management/recurring/new" : undefined}
+            message="Set up a daily or weekly template and it will generate tasks automatically."
+            actionLabel={canRecurring ? "New Recurring Task" : undefined}
+            actionTo={canRecurring ? "/task-management/recurring/new" : undefined}
           />
         ) : (
           <ul className="divide-y divide-line">
@@ -101,18 +102,25 @@ export default function RecurringList() {
                   )}
 
                   <button
-                    onClick={() => toggleRecurring(r.id)}
-                    disabled={!canWrite}
-                    title={!canWrite ? "Read-only preview" : r.active ? "Active — click to pause" : "Paused — click to resume"}
+                    onClick={async () => {
+                      setBusyId(r.id);
+                      try {
+                        await toggleRecurring(r.id);
+                      } finally {
+                        setBusyId(null);
+                      }
+                    }}
+                    disabled={!canRecurring || busyId === r.id}
+                    title={!canRecurring ? "Read-only preview" : r.active ? "Active — click to pause" : "Paused — click to resume"}
                     className={cn("relative w-10 h-[22px] rounded-full transition shrink-0 disabled:opacity-50", r.active ? "bg-[#27AE60]" : "bg-line")}
                   >
                     <span className={cn("absolute top-0.5 w-[18px] h-[18px] rounded-full bg-white shadow transition-all", r.active ? "left-[20px]" : "left-0.5")} />
                   </button>
 
-                  <button onClick={() => navigate(`/task-management/recurring/${r.id}/edit`)} disabled={!canWrite} className="text-grey-2 hover:text-orange transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2" title={canWrite ? "Edit" : "Read-only preview"}>
+                  <button onClick={() => navigate(`/task-management/recurring/${r.id}/edit`)} disabled={!canRecurring} className="text-grey-2 hover:text-orange transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2" title={canRecurring ? "Edit" : "Read-only preview"}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                   </button>
-                  <button onClick={() => setConfirmId(r.id)} disabled={!canWrite} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2" title={canWrite ? "Delete" : "Read-only preview"}>
+                  <button onClick={() => setConfirmId(r.id)} disabled={!canRecurring} className="text-grey-2 hover:text-[#d4493f] transition p-1 shrink-0 disabled:opacity-40 disabled:hover:text-grey-2" title={canRecurring ? "Delete" : "Read-only preview"}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6" /></svg>
                   </button>
                 </li>
@@ -134,12 +142,19 @@ export default function RecurringList() {
             <Button variant="ghost" onClick={() => setConfirmId(null)}>Cancel</Button>
             <Button
               className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
-              onClick={() => {
-                if (confirmId) deleteRecurring(confirmId);
-                setConfirmId(null);
+              disabled={busyId === confirmId}
+              onClick={async () => {
+                if (!confirmId) return;
+                setBusyId(confirmId);
+                try {
+                  await deleteRecurring(confirmId);
+                  setConfirmId(null);
+                } finally {
+                  setBusyId(null);
+                }
               }}
             >
-              Delete
+              {busyId === confirmId ? "Deleting…" : "Delete"}
             </Button>
           </>
         }

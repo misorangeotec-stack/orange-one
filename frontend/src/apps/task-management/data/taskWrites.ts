@@ -185,3 +185,67 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
   if (error) throw new Error(error.message);
   return data as string;
 }
+
+/* ----------------------------- recurring tasks ----------------------------- */
+// The live recurrence_type enum is daily/weekly only (no monthly); weekly_days
+// is an int[] (0=Sun..6=Sat). RLS: insert created_by=auth.uid(); update
+// created_by/admin/hod-of-assignee; delete created_by/admin.
+
+export type RecurringWriteInput = {
+  title: string;
+  description: string | null;
+  recurrenceType: "daily" | "weekly";
+  weeklyDays: number[];
+  assignedTo: string | null;
+  departmentId: string | null;
+  active: boolean;
+};
+
+/** Insert a recurring-task template (returns the new id). */
+export async function insertRecurring(input: RecurringWriteInput & { createdBy: string }): Promise<string> {
+  const { data, error } = await supabase
+    .from("recurring_tasks")
+    .insert({
+      title: input.title,
+      description: input.description,
+      recurrence_type: input.recurrenceType,
+      weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
+      assigned_to: input.assignedTo,
+      department_id: input.departmentId,
+      created_by: input.createdBy,
+      active: input.active,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+/** Update a recurring-task template. */
+export async function updateRecurring(id: string, input: RecurringWriteInput): Promise<void> {
+  const { error } = await supabase
+    .from("recurring_tasks")
+    .update({
+      title: input.title,
+      description: input.description,
+      recurrence_type: input.recurrenceType,
+      weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
+      assigned_to: input.assignedTo,
+      department_id: input.departmentId,
+      active: input.active,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Flip a recurring template's active flag (caller passes the new value). */
+export async function setRecurringActive(id: string, active: boolean): Promise<void> {
+  const { error } = await supabase.from("recurring_tasks").update({ active }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Delete a recurring-task template. */
+export async function deleteRecurring(id: string): Promise<void> {
+  const { error } = await supabase.from("recurring_tasks").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}

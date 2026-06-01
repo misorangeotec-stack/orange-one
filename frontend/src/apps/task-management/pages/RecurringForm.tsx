@@ -8,7 +8,7 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { MONTH_LAST_DAY, type RecurrenceType } from "../types";
+import type { RecurrenceType } from "../types";
 
 // display order Mon→Sun, stored as 0=Sun..6=Sat
 const WEEKDAYS = [
@@ -16,14 +16,11 @@ const WEEKDAYS = [
   { v: 5, l: "Fri" }, { v: 6, l: "Sat" }, { v: 0, l: "Sun" },
 ];
 
-// days 1..31 for the monthly picker
-const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
-
 export default function RecurringForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role } = useSession();
-  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById, departmentById, canWrite } = useTaskStore();
+  const { getRecurring, createRecurring, updateRecurring, assignableUsers, profileById, departmentById, canRecurring } = useTaskStore();
   const editing = getRecurring(id ?? "");
   const canAssign = assignableUsers(role, user.id);
 
@@ -32,9 +29,9 @@ export default function RecurringForm() {
   const [assignedTo, setAssignedTo] = useState(editing?.assignedTo ?? user.id);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
-  const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
   const [active, setActive] = useState(editing?.active ?? true);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   // Department is derived from the assignee — never selected manually.
   const departmentName = departmentById(profileById(assignedTo)?.departmentId ?? null)?.name;
@@ -42,28 +39,31 @@ export default function RecurringForm() {
   const toggleDay = (v: number) =>
     setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort()));
 
-  const toggleMonthDay = (v: number) =>
-    setMonthlyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort((a, b) => a - b)));
-
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return setError("Please enter a title.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
-    if (recurrenceType === "monthly" && monthlyDays.length === 0) return setError("Pick at least one day of the month.");
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
       recurrenceType,
       weeklyDays: recurrenceType === "weekly" ? weeklyDays : [],
-      monthlyDays: recurrenceType === "monthly" ? monthlyDays : [],
+      monthlyDays: [],
       assignedTo,
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
       active,
     };
-    if (editing) updateRecurring(editing.id, payload);
-    else createRecurring(payload);
-    navigate("/task-management/recurring");
+    setBusy(true);
+    setError("");
+    try {
+      if (editing) await updateRecurring(editing.id, payload);
+      else await createRecurring(payload);
+      navigate("/task-management/recurring");
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
   };
 
   return (
@@ -108,7 +108,7 @@ export default function RecurringForm() {
           {/* frequency segmented */}
           <FieldLabel label="Frequency">
             <div className="inline-flex rounded-xl border border-line p-1 bg-page">
-              {(["daily", "weekly", "monthly"] as RecurrenceType[]).map((f) => (
+              {(["daily", "weekly"] as RecurrenceType[]).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -147,39 +147,6 @@ export default function RecurringForm() {
             </FieldLabel>
           )}
 
-          {recurrenceType === "monthly" && (
-            <FieldLabel label="Repeat on" hint="day(s) of the month">
-              <div className="flex flex-wrap gap-2">
-                {MONTH_DAYS.map((v) => {
-                  const on = monthlyDays.includes(v);
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => toggleMonthDay(v)}
-                      className={cn(
-                        "w-10 py-2 rounded-lg text-[12.5px] font-semibold border transition",
-                        on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
-                      )}
-                    >
-                      {v}
-                    </button>
-                  );
-                })}
-                <button
-                  type="button"
-                  onClick={() => toggleMonthDay(MONTH_LAST_DAY)}
-                  className={cn(
-                    "px-3 py-2 rounded-lg text-[12.5px] font-semibold border transition",
-                    monthlyDays.includes(MONTH_LAST_DAY) ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
-                  )}
-                >
-                  Last day
-                </button>
-              </div>
-            </FieldLabel>
-          )}
-
           <label className="flex items-center gap-3 pt-1 cursor-pointer select-none">
             <button
               type="button"
@@ -194,9 +161,9 @@ export default function RecurringForm() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
-            <Button variant="ghost" onClick={() => navigate("/task-management/recurring")}>{canWrite ? "Cancel" : "Back"}</Button>
-            <Button type="submit" disabled={!canWrite}>{editing ? "Save changes" : "Create"}</Button>
+            {!canRecurring && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+            <Button variant="ghost" onClick={() => navigate("/task-management/recurring")} disabled={busy}>{canRecurring ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canRecurring || busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create"}</Button>
           </div>
         </form>
       </Card>

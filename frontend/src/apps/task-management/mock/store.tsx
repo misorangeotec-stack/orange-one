@@ -6,7 +6,18 @@ import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { isoWeekOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
-import { insertTask, startTask as startTaskWrite, completeTask as completeTaskWrite, reviseTask as reviseTaskWrite, rescheduleTask as rescheduleTaskWrite, addRemark as addRemarkWrite } from "../data/taskWrites";
+import {
+  insertTask,
+  startTask as startTaskWrite,
+  completeTask as completeTaskWrite,
+  reviseTask as reviseTaskWrite,
+  rescheduleTask as rescheduleTaskWrite,
+  addRemark as addRemarkWrite,
+  insertRecurring as insertRecurringWrite,
+  updateRecurring as updateRecurringWrite,
+  setRecurringActive as setRecurringActiveWrite,
+  deleteRecurring as deleteRecurringWrite,
+} from "../data/taskWrites";
 
 /**
  * Task-domain store (Stage B B3b, READ-ONLY). Loads the live task tables for the
@@ -54,10 +65,10 @@ interface TaskStoreValue {
 
   recurringTasks: RecurringTask[];
   getRecurring: (id: string) => RecurringTask | undefined;
-  createRecurring: (input: Omit<RecurringTask, "id">) => string;
-  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => void;
-  toggleRecurring: (id: string) => void;
-  deleteRecurring: (id: string) => void;
+  createRecurring: (input: Omit<RecurringTask, "id">) => Promise<string>;
+  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => Promise<void>;
+  toggleRecurring: (id: string) => Promise<void>;
+  deleteRecurring: (id: string) => Promise<void>;
 
   // directory (people + departments) — re-exposed from the portal core
   profiles: Profile[];
@@ -91,6 +102,8 @@ interface TaskStoreValue {
   canReschedule: boolean;
   /** B4 rollout: posting @mention remarks (+ notification fan-out) is live. */
   canRemark: boolean;
+  /** B4 rollout: recurring-task CRUD (create/edit/toggle/delete) is live. */
+  canRecurring: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -195,10 +208,47 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
       recurringTasks,
       getRecurring: (id) => recurringTasks.find((r) => r.id === id),
-      createRecurring: readOnlyId,
-      updateRecurring: readOnly,
-      toggleRecurring: readOnly,
-      deleteRecurring: readOnly,
+      // Recurring CRUD: LIVE (B4). recurrence_type is daily/weekly only; monthly
+      // (frontend-only) collapses to daily defensively. RLS scopes the writes.
+      createRecurring: async (input) => {
+        const id = await insertRecurringWrite({
+          title: input.title,
+          description: input.description ?? null,
+          recurrenceType: input.recurrenceType === "weekly" ? "weekly" : "daily",
+          weeklyDays: input.weeklyDays ?? [],
+          assignedTo: input.assignedTo,
+          departmentId: input.departmentId,
+          active: input.active,
+          createdBy: user.id,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return id;
+      },
+      updateRecurring: async (id, patch) => {
+        const cur = recurringTasks.find((r) => r.id === id);
+        if (!cur) return;
+        const m = { ...cur, ...patch };
+        await updateRecurringWrite(id, {
+          title: m.title,
+          description: m.description ?? null,
+          recurrenceType: m.recurrenceType === "weekly" ? "weekly" : "daily",
+          weeklyDays: m.weeklyDays ?? [],
+          assignedTo: m.assignedTo,
+          departmentId: m.departmentId,
+          active: m.active,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      toggleRecurring: async (id) => {
+        const cur = recurringTasks.find((r) => r.id === id);
+        if (!cur) return;
+        await setRecurringActiveWrite(id, !cur.active);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      deleteRecurring: async (id) => {
+        await deleteRecurringWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
 
       // ---- directory (delegated to the portal core) ----
       profiles: dir.profiles,
@@ -230,6 +280,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canStatusActions: true,
       canReschedule: true,
       canRemark: true,
+      canRecurring: true,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
 
