@@ -15,11 +15,12 @@ import {
 } from "./directoryWrites";
 
 /**
- * Portal directory (Stage B, READ-ONLY). Loads the workspace people + departments
- * live from Supabase (RLS-gated) for the signed-in user, and exposes the same
- * interface the app already consumes. Writes are disabled this phase (`canWrite`
- * is false; mutations are inert no-ops) until a safe write path is agreed — so
- * nothing here can change production data.
+ * Portal directory (Stage B). Loads the workspace people + departments live from
+ * Supabase (RLS-gated) for the signed-in user and exposes the same interface the
+ * app consumes. B4 wires the admin writes under their RLS: department CRUD, editing
+ * an existing user (profile / role / reporting / module access), and self-profile
+ * edits — each gated by a granular flag. Creating or hard-deleting a user needs the
+ * auth admin API (service role), so `canAddUser`/`canDeleteUser` stay false.
  */
 
 export interface DirectoryValue {
@@ -99,10 +100,10 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
 
       canWrite: false,
       canManageDepartments: true,
-      // Flipped to true in the next commit once verified against a throwaway user.
-      canEditUser: false,
-      canManageModules: false,
-      canEditOwnProfile: false,
+      canEditUser: true,
+      canManageModules: true,
+      canEditOwnProfile: true,
+      // Creating / hard-deleting a user needs the auth admin API (service role).
       canAddUser: false,
       canDeleteUser: false,
 
