@@ -167,3 +167,21 @@ export async function rescheduleTask(
   if (updErr) throw new Error(updErr.message);
   return newId;
 }
+
+/**
+ * Post a remark and fan out @mention notifications via the `add_task_remark`
+ * SECURITY DEFINER RPC. The RPC inserts the remark activity (actor = auth.uid()),
+ * bumps tasks.last_remark_at, and inserts one notification per mentioned user —
+ * all atomically and under a server-side visibility guard. (Done as an RPC because
+ * notifications has RLS with no INSERT policy for the client.) Returns the new
+ * remark activity id.
+ */
+export async function addRemark(taskId: string, note: string, mentionedIds: string[]): Promise<string> {
+  const { data, error } = await supabase.rpc("add_task_remark", {
+    p_task_id: taskId,
+    p_note: note,
+    p_mentioned: mentionedIds,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}

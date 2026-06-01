@@ -6,7 +6,7 @@ import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { isoWeekOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
-import { insertTask, startTask as startTaskWrite, completeTask as completeTaskWrite, reviseTask as reviseTaskWrite, rescheduleTask as rescheduleTaskWrite } from "../data/taskWrites";
+import { insertTask, startTask as startTaskWrite, completeTask as completeTaskWrite, reviseTask as reviseTaskWrite, rescheduleTask as rescheduleTaskWrite, addRemark as addRemarkWrite } from "../data/taskWrites";
 
 /**
  * Task-domain store (Stage B B3b, READ-ONLY). Loads the live task tables for the
@@ -50,7 +50,7 @@ interface TaskStoreValue {
   completeTask: (id: string, note?: string) => Promise<void>;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
-  addRemark: (id: string, note: string, mentionedIds: string[]) => void;
+  addRemark: (id: string, note: string, mentionedIds: string[]) => Promise<void>;
 
   recurringTasks: RecurringTask[];
   getRecurring: (id: string) => RecurringTask | undefined;
@@ -89,6 +89,8 @@ interface TaskStoreValue {
   canStatusActions: boolean;
   /** B4 rollout: due-date reschedule + shift-to-next-week is live. */
   canReschedule: boolean;
+  /** B4 rollout: posting @mention remarks (+ notification fan-out) is live. */
+  canRemark: boolean;
 }
 
 const StoreContext = createContext<TaskStoreValue | null>(null);
@@ -184,7 +186,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return newId;
       },
-      addRemark: readOnly,
+      // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
+      // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
+      addRemark: async (id, note, mentionedIds) => {
+        await addRemarkWrite(id, note, mentionedIds);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
 
       recurringTasks,
       getRecurring: (id) => recurringTasks.find((r) => r.id === id),
@@ -222,6 +229,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canCreateTask: true,
       canStatusActions: true,
       canReschedule: true,
+      canRemark: true,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
 

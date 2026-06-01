@@ -5,12 +5,15 @@ import { useTaskStore } from "../mock/store";
 
 /**
  * Remark box with @mention autocomplete. Mentioned users are resolved by scanning
- * the text for "@Full Name" against the people list, then passed to addRemark so
- * notifications fan out (Stage B persists these to task_remark_mentions/notifications).
+ * the text for "@Full Name" against the people list, then passed to addRemark, which
+ * (Stage B / B4) calls the add_task_remark RPC to persist the remark + fan out a
+ * notification row per mentioned user.
  */
 export default function RemarkComposer({ taskId }: { taskId: string }) {
-  const { addRemark, profiles, canWrite } = useTaskStore();
+  const { addRemark, profiles, canRemark } = useTaskStore();
   const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
 
   // trailing "@token" → suggestions
@@ -29,15 +32,23 @@ export default function RemarkComposer({ taskId }: { taskId: string }) {
     taRef.current?.focus();
   };
 
-  const post = () => {
+  const post = async () => {
     const body = text.trim();
-    if (!body) return;
+    if (!body || busy) return;
     const mentioned = profiles.filter((p) => body.includes(`@${p.name}`)).map((p) => p.id);
-    addRemark(taskId, body, mentioned);
-    setText("");
+    setBusy(true);
+    setError("");
+    try {
+      await addRemark(taskId, body, mentioned);
+      setText("");
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  if (!canWrite) {
+  if (!canRemark) {
     return (
       <p className="rounded-xl border border-dashed border-line bg-page px-3.5 py-2.5 text-[12.5px] text-grey-2">
         Posting remarks is read-only in this preview.
@@ -58,11 +69,12 @@ export default function RemarkComposer({ taskId }: { taskId: string }) {
         />
         <div className="flex items-center justify-between px-3 pb-2.5">
           <span className="text-[11px] text-grey-2">Type @ to mention</span>
-          <Button size="sm" onClick={post} disabled={!text.trim()}>
-            Post remark
+          <Button size="sm" onClick={post} disabled={!text.trim() || busy}>
+            {busy ? "Posting…" : "Post remark"}
           </Button>
         </div>
       </div>
+      {error && <p className="mt-1.5 text-[12px] text-[#d4493f]">{error}</p>}
 
       {suggestions.length > 0 && (
         <div className="absolute left-0 right-0 mt-1 bg-white border border-line rounded-xl shadow-card z-20 overflow-hidden">
