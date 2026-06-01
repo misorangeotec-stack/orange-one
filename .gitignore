@@ -9,6 +9,11 @@ token.json
 .tmp/
 *.log
 
+# Database backups — contain real user data (PII). NEVER commit.
+backups/
+*.dump
+*.sql.gz
+
 # Node / frontend (React + Vite)
 node_modules/
 frontend/node_modules/
