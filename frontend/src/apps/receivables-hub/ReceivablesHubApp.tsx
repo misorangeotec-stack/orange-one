@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@hub/components/ui/sonner";
 import { Toaster } from "@hub/components/ui/toaster";
 import { TooltipProvider } from "@hub/components/ui/tooltip";
 import { FYProvider } from "@hub/lib/fyContext";
+import { ReceivablesScopeProvider } from "@hub/lib/scope";
 import UserLayout from "@hub/layouts/UserLayout";
 import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
@@ -30,6 +31,7 @@ import Settings from "@hub/pages/Settings";
 export default function ReceivablesHubApp() {
   return (
     <div className="hub-root">
+      <ReceivablesScopeProvider>
       <FYProvider>
         <TooltipProvider>
           <Toaster />
@@ -52,6 +54,7 @@ export default function ReceivablesHubApp() {
           </Routes>
         </TooltipProvider>
       </FYProvider>
+      </ReceivablesScopeProvider>
     </div>
   );
 }

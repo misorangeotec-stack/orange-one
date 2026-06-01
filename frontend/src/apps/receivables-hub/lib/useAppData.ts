@@ -8,6 +8,7 @@ import type {
   CustomerGroupMap, GroupedCustomer,
 } from "./types";
 import { useFY } from "./fyContext";
+import { useReceivablesScope } from "./scope";
 import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } from "./receivables";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -383,6 +384,13 @@ const EMPTY_GROUP_MAP: CustomerGroupMap = { mapping: {}, groups: {} };
 
 export function useAppData(filters: Filters = {}): AppData {
   const { suffix: fySuffix } = useFY();
+  // Per-salesperson scope (UI-level): null = unrestricted (admin); otherwise only
+  // these salesperson names are visible — an empty array means "nothing".
+  const { restrictToSalespersons } = useReceivablesScope();
+  const allowedSalespersonSet = useMemo(
+    () => (restrictToSalespersons !== null ? new Set(restrictToSalespersons) : null),
+    [restrictToSalespersons],
+  );
 
   // React Query caches the fetched payload at the QueryClient level (configured
   // in App.tsx), so navigating between pages no longer triggers a refetch — the
@@ -401,12 +409,33 @@ export function useAppData(filters: Filters = {}): AppData {
 
   // Derive `blocked` on the frontend from the credit-limit sentinel so the rule
   // can be tweaked without regenerating data. Single source of truth: creditLimit === 1.
-  const allCustomers = useMemo<Customer[]>(
-    () => (raw ? raw.cust.map((c) => ({ ...c, blocked: c.creditLimit === 1 })) : []),
-    [raw],
-  );
+  // SCOPE CHOKEPOINT: when restricted, drop customers outside the allowed
+  // salesperson set here — this cascades to every downstream list/KPI, and to
+  // the allowed-id set used to scope customerDetail (blocks /customer/:id guessing).
+  const allCustomers = useMemo<Customer[]>(() => {
+    const list = raw ? raw.cust.map((c) => ({ ...c, blocked: c.creditLimit === 1 })) : [];
+    return allowedSalespersonSet ? list.filter((c) => allowedSalespersonSet.has(c.salesPerson)) : list;
+  }, [raw, allowedSalespersonSet]);
   const dashboard = raw?.dash ?? null;
-  const customerDetail = raw?.inv ?? ({} as Record<string, CustomerDetail>);
+  // Allowed customer ids for the current scope (null = unrestricted).
+  const allowedCustomerIds = useMemo(
+    () => (allowedSalespersonSet ? new Set(allCustomers.map((c) => c.id)) : null),
+    [allowedSalespersonSet, allCustomers],
+  );
+  // Allowed customer names for the current scope (used to scope alerts).
+  const allowedCustomerNames = useMemo(
+    () => (allowedSalespersonSet ? new Set(allCustomers.map((c) => c.name)) : null),
+    [allowedSalespersonSet, allCustomers],
+  );
+  // Scope the per-customer invoice/trend detail too, so a restricted user can't
+  // open another salesperson's customer by typing the /customer/:id URL.
+  const customerDetail = useMemo<Record<string, CustomerDetail>>(() => {
+    const inv = raw?.inv ?? ({} as Record<string, CustomerDetail>);
+    if (!allowedCustomerIds) return inv;
+    const out: Record<string, CustomerDetail> = {};
+    for (const [cid, detail] of Object.entries(inv)) if (allowedCustomerIds.has(cid)) out[cid] = detail;
+    return out;
+  }, [raw, allowedCustomerIds]);
   const customerGroupMap = raw?.grp ?? EMPTY_GROUP_MAP;
   const loading = isLoading;
   const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null;
@@ -762,10 +791,18 @@ export function useAppData(filters: Filters = {}): AppData {
     [projectedCustomers],
   );
 
-  // ── Alerts filtered by company / location ────────────────────────────────────
+  // ── Alerts filtered by salesperson scope, then company / location ─────────────
   const alerts = useMemo<AlertItem[]>(() => {
     if (!dashboard?.alerts) return [];
     let result = dashboard.alerts;
+    // Salesperson scope: only alerts for customers in the allowed set.
+    if (allowedCustomerIds || allowedCustomerNames) {
+      result = result.filter(
+        (a) =>
+          (a.customerId != null && allowedCustomerIds?.has(a.customerId)) ||
+          (a.customer != null && allowedCustomerNames?.has(a.customer)),
+      );
+    }
     if (filters.company && filters.company !== "all") {
       result = result.filter((a) => a.company === filters.company);
     }
@@ -773,7 +810,7 @@ export function useAppData(filters: Filters = {}): AppData {
       result = result.filter((a) => a.location === filters.location);
     }
     return result;
-  }, [dashboard?.alerts, filters.company, filters.location]);
+  }, [dashboard?.alerts, allowedCustomerIds, allowedCustomerNames, filters.company, filters.location]);
 
   // ── Trend (monthly sales vs receipts vs outstanding) ─────────────────────────
   // When saleType = "all", returns the pre-computed company-wide trend from dashboard.json.

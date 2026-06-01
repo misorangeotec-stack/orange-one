@@ -1,6 +1,7 @@
 import { Popover, PopoverContent, PopoverTrigger } from "@hub/components/ui/popover";
 import { Button } from "@hub/components/ui/button";
 import { Checkbox } from "@hub/components/ui/checkbox";
+import { useReceivablesScope } from "@hub/lib/scope";
 import { ChevronDown } from "lucide-react";
 
 interface Props {
@@ -11,6 +12,11 @@ interface Props {
 }
 
 export function SalesPersonMultiSelect({ options, value, onChange, triggerClassName }: Props) {
+  // A salesperson-scoped (non-admin) user can't widen their view, so the selector
+  // becomes a fixed badge. `restrictToSalespersons !== null` == "this user is scoped".
+  const { restrictToSalespersons } = useReceivablesScope();
+  const locked = restrictToSalespersons !== null;
+
   const toggle = (sp: string) => {
     onChange(value.includes(sp) ? value.filter((v) => v !== sp) : [...value, sp]);
   };
@@ -21,6 +27,22 @@ export function SalesPersonMultiSelect({ options, value, onChange, triggerClassN
       : value.length <= 2
       ? value.join(", ")
       : `${value.length} Persons`;
+
+  if (locked) {
+    const lockedLabel = restrictToSalespersons && restrictToSalespersons.length
+      ? restrictToSalespersons.join(", ")
+      : "My data";
+    return (
+      <Button
+        variant="outline"
+        disabled
+        className={`justify-start font-normal opacity-100 cursor-default ${triggerClassName ?? "w-44 h-9 text-sm rounded-input"}`}
+        title="Locked to your salesperson access"
+      >
+        <span className="truncate">{lockedLabel}</span>
+      </Button>
+    );
+  }
 
   return (
     <Popover>

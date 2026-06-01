@@ -80,6 +80,36 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ---
 
+---
+
+# FEATURE 2 — Per-salesperson data scoping
+
+**Goal:** a salesperson login sees only their own customers' data in the Outstanding Dashboard. Admin → all; non-admin → exactly the salesperson name(s) tagged on their profile; untagged non-admin → empty dashboard. Role-independent (employee/HOD/sub-HOD can all be scoped).
+
+> **Enforcement = UI-level only (this phase).** Raw data still reaches the browser; a technical user could read other rows via DevTools. Server-side isolation (Edge Function returning only the caller's rows) is the hardening follow-up. Documented in `scope.tsx`.
+
+## ⚠️ Required manual steps (must run BEFORE deploying/testing this against live Supabase)
+- [ ] **Apply the migration** `supabase/migrations/20260601_add_receivables_salespersons.sql` to the Orange One Supabase (`coshondiqdhorwvibrwu`) — SQL editor or `supabase db push`. *The frontend now selects this column; without it, the directory load errors.*
+- [ ] **Redeploy the Edge Function**: `supabase functions deploy admin-users` (so salesperson tags can be set at user-creation time). Editing an existing user already works without redeploy (direct RLS write).
+
+## Implementation (done, build green)
+- [x] Schema migration file + `database.types.ts` (`receivables_salespersons text[]`)
+- [x] Identity plumbing: `Profile.receivablesSalespersons`, `liveDirectory` read, `directoryWrites` write, `adminUserApi` + Edge Function create, store `addUser`/`updateUser`, mock `data.ts`
+- [x] Admin UI: "Outstanding Dashboard — salesperson access" multiselect in `UserForm` (live names via `fetchSalespersonNames`), shown for non-admins with the module
+- [x] Scope provider `lib/scope.tsx` + mounted in `ReceivablesHubApp`
+- [x] Chokepoint in `useAppData`: scope `allCustomers` + `customerDetail` (+ `alerts`); cascades to every KPI/list and blocks `/customer/:id` URL-guessing
+- [x] Selector auto-locks to a fixed badge for scoped users (`SalesPersonMultiSelect`)
+- [x] `npm run build` passes (tsc + vite)
+
+## Verification (after migration + redeploy)
+- [ ] Admin: create a test user, grant `outstanding-dashboard`, tag one real salesperson
+- [ ] Restricted salesperson login: sees only their customers everywhere; selector is a locked badge; `/outstanding-dashboard/customer/<other>` shows not-found
+- [ ] Admin login: sees all; selector works
+- [ ] Non-admin with NO tag: empty dashboard
+- [ ] Orange One core + admin screens unaffected
+
+---
+
 ### Notes / decisions
 - Data stays in the Hub's existing Supabase (`lkwtvcpeamkzzqkfnkuc`); auth stays on OO's (`coshondiqdhorwvibrwu`). No data migration.
 - Phase 1 = core dashboards only. AI chat + Hub admin deferred (chat exposes Anthropic key in browser).

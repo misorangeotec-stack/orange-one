@@ -142,6 +142,25 @@ export async function fetchCustomersFromSupabase(fySuffix: string): Promise<Cust
   return rows.map(toCustomer);
 }
 
+/**
+ * Distinct salesperson names from the receivables data, for the admin
+ * "salesperson access" picker in Orange One. Returns exactly the strings the
+ * dashboard scopes on (customers.sales_person), so tagged values match 1:1.
+ * Reads the combined ("default") fiscal-year customer set.
+ */
+export async function fetchSalespersonNames(): Promise<string[]> {
+  const sb = getSupabase();
+  const rows = await fetchAllRows<{ sales_person: string | null }>(
+    () => sb.from("customers").select("sales_person").eq("fiscal_year", "default")
+  );
+  const names = new Set<string>();
+  for (const r of rows) {
+    const n = (r.sales_person ?? "").trim();
+    if (n) names.add(n);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}
+
 // ── dashboard ───────────────────────────────────────────────────────────────
 
 export async function fetchDashboardFromSupabase(fySuffix: string): Promise<DashboardData> {

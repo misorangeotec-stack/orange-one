@@ -6,8 +6,10 @@
 // anything with the service-role key.
 //
 //   POST  body { action: "create", name, email, phone, designation?, role,
-//                departmentId?, hodIds?: string[], moduleAccess?: string[] }  -> { id }
-//                  (phone = mobile number; used as the initial login password)
+//                departmentId?, hodIds?: string[], moduleAccess?: string[],
+//                receivablesSalespersons?: string[] }  -> { id }
+//                  (phone = mobile number; used as the initial login password;
+//                   receivablesSalespersons = Outstanding Dashboard scope tags)
 //   POST  body { action: "set-password", userId, password }       -> { ok: true }
 //   POST  body { action: "delete", userId }                       -> { ok: true }
 //
@@ -100,6 +102,7 @@ Deno.serve(async (req) => {
     const designation = (body.designation as string | null) ?? null;
     const hodIds = Array.isArray(body.hodIds) ? (body.hodIds as string[]) : [];
     const moduleAccess = Array.isArray(body.moduleAccess) ? (body.moduleAccess as string[]) : [];
+    const receivablesSalespersons = Array.isArray(body.receivablesSalespersons) ? (body.receivablesSalespersons as string[]) : [];
 
     // Create the auth user with the mobile number as the initial password (email
     // pre-confirmed). The on_auth_user_created trigger inserts the profile + an
@@ -116,7 +119,7 @@ Deno.serve(async (req) => {
     // Patch the auto-created profile + identity rows.
     const { error: profErr } = await admin
       .from("profiles")
-      .update({ name, designation, department_id: departmentId, phone })
+      .update({ name, designation, department_id: departmentId, phone, receivables_salespersons: receivablesSalespersons })
       .eq("id", id);
     if (profErr) return json(400, { error: profErr.message });
 
