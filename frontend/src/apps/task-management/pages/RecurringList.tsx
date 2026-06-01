@@ -5,6 +5,8 @@ import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -43,6 +45,7 @@ export default function RecurringList() {
   }, [recurringTasks, role, user.id]);
 
   const target = recurringTasks.find((r) => r.id === confirmId);
+  const pg = usePagination(visible);
 
   return (
     <div className="space-y-5">
@@ -72,7 +75,7 @@ export default function RecurringList() {
           />
         ) : (
           <ul className="divide-y divide-line">
-            {visible.map((r) => {
+            {pg.pageItems.map((r) => {
               const assignee = profileById(r.assignedTo);
               return (
                 <li key={r.id} className="flex items-center gap-4 px-4 py-4">
@@ -117,6 +120,7 @@ export default function RecurringList() {
             })}
           </ul>
         )}
+        {visible.length > 0 && <Pagination state={pg} rowsLabel="recurring tasks" />}
       </Card>
 
       <Modal

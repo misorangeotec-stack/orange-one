@@ -1,5 +1,7 @@
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
 import { apps } from "@/apps/registry";
@@ -15,11 +17,14 @@ export default function ModuleAccess() {
   const toggle = (userId: string, current: string[], appId: string) =>
     setUserModules(userId, current.includes(appId) ? current.filter((a) => a !== appId) : [...current, appId]);
 
+  const pg = usePagination(profiles);
+
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-grey">Choose which apps each person can open. Admins always have access to every app.</p>
 
-      <Card className="overflow-x-auto">
+      <Card>
+      <div className="overflow-x-auto">
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-line">
@@ -33,7 +38,7 @@ export default function ModuleAccess() {
             </tr>
           </thead>
           <tbody>
-            {profiles.map((u) => {
+            {pg.pageItems.map((u) => {
               const isAdmin = u.role === "admin";
               return (
                 <tr key={u.id} className="border-b border-line last:border-0">
@@ -73,6 +78,8 @@ export default function ModuleAccess() {
             })}
           </tbody>
         </table>
+      </div>
+      {profiles.length > 0 && <Pagination state={pg} rowsLabel="users" />}
       </Card>
     </div>
   );

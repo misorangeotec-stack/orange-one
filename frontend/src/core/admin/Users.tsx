@@ -7,6 +7,8 @@ import Modal from "@/shared/components/ui/Modal";
 import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
 import type { AppRole, Profile } from "@/core/platform/types";
@@ -38,6 +40,8 @@ export default function Users() {
     [profiles, role, dept, q]
   );
 
+  const pg = usePagination(filtered, { resetKey: `${q}|${role}|${dept}` });
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -62,7 +66,7 @@ export default function Users() {
           <EmptyState title="No users found" message="Try different filters, or add a user." actionLabel="Add User" actionTo="/admin/users/new" />
         ) : (
           <ul className="divide-y divide-line">
-            {filtered.map((u) => (
+            {pg.pageItems.map((u) => (
               <li key={u.id} className="flex items-center gap-3 px-4 py-3.5">
                 <Avatar name={u.name} color={u.avatarColor} size={38} />
                 <div className="min-w-0 flex-1">
@@ -85,6 +89,7 @@ export default function Users() {
             ))}
           </ul>
         )}
+        {filtered.length > 0 && <Pagination state={pg} rowsLabel="users" />}
       </Card>
 
       <Modal

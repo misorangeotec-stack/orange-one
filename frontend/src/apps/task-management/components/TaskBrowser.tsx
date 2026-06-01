@@ -4,6 +4,8 @@ import { TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { WEEK_START } from "../mock/data";
 import type { Department, Profile, Task, TaskStatus } from "../types";
 import TaskListItem from "./TaskListItem";
@@ -41,17 +43,6 @@ export default function TaskBrowser({
   const [status, setStatus] = useState<TaskStatus | "all">("all");
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
 
-  const counts = useMemo(() => {
-    const c = { total: tasks.length, open: 0, completed: 0, revised: 0, shifted: 0 };
-    for (const t of tasks) {
-      if (t.status === "pending" || t.status === "in_progress") c.open++;
-      else if (t.status === "completed") c.completed++;
-      else if (t.status === "revised") c.revised++;
-      else if (t.status === "shifted") c.shifted++;
-    }
-    return c;
-  }, [tasks]);
-
   const filtered = useMemo(() => {
     const nw = nextWeekStart();
     return tasks.filter((t) => {
@@ -64,6 +55,20 @@ export default function TaskBrowser({
       return true;
     });
   }, [tasks, person, dept, status, week, q]);
+
+  // KPI cards reflect the active filters (not the full list).
+  const counts = useMemo(() => {
+    const c = { total: filtered.length, open: 0, completed: 0, revised: 0, shifted: 0 };
+    for (const t of filtered) {
+      if (t.status === "pending" || t.status === "in_progress") c.open++;
+      else if (t.status === "completed") c.completed++;
+      else if (t.status === "revised") c.revised++;
+      else if (t.status === "shifted") c.shifted++;
+    }
+    return c;
+  }, [filtered]);
+
+  const pg = usePagination(filtered, { resetKey: `${q}|${person}|${dept}|${status}|${week}` });
 
   return (
     <div className="space-y-4">
@@ -124,13 +129,16 @@ export default function TaskBrowser({
         </div>
 
         {/* list */}
-        <div className="divide-y divide-line">
-          {filtered.length === 0 ? (
-            <EmptyState title="Nothing here" message={emptyMessage} />
-          ) : (
-            filtered.map((t) => <TaskListItem key={t.id} task={t} showAssignee />)
-          )}
-        </div>
+        {filtered.length === 0 ? (
+          <EmptyState title="Nothing here" message={emptyMessage} />
+        ) : (
+          <>
+            <div className="divide-y divide-line">
+              {pg.pageItems.map((t) => <TaskListItem key={t.id} task={t} showAssignee />)}
+            </div>
+            <Pagination state={pg} rowsLabel="tasks" />
+          </>
+        )}
       </Card>
     </div>
   );

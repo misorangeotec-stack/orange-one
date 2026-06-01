@@ -5,6 +5,8 @@ import Tabs from "@/shared/components/ui/Tabs";
 import Combobox from "@/shared/components/ui/Combobox";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { isOverdue, isToday } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -60,6 +62,8 @@ export default function TasksList() {
     return list;
   }, [mine, view, status, q]);
 
+  const pg = usePagination(filtered, { resetKey: `${view}|${status}|${q}` });
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -110,18 +114,23 @@ export default function TasksList() {
           </div>
         </div>
 
-        <div className="divide-y divide-line border-t border-line">
-          {filtered.length === 0 ? (
+        {filtered.length === 0 ? (
+          <div className="border-t border-line">
             <EmptyState
               title="No tasks here"
               message={view === "all" ? "Tasks assigned to you will appear here." : "Nothing in this view right now."}
               actionLabel={canCreateTask ? "New Task" : undefined}
               actionTo={canCreateTask ? "/task-management/tasks/new" : undefined}
             />
-          ) : (
-            filtered.map((t: Task) => <TaskListItem key={t.id} task={t} />)
-          )}
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="divide-y divide-line border-t border-line">
+              {pg.pageItems.map((t: Task) => <TaskListItem key={t.id} task={t} />)}
+            </div>
+            <Pagination state={pg} rowsLabel="tasks" />
+          </>
+        )}
       </Card>
     </div>
   );

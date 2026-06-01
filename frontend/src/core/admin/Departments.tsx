@@ -4,6 +4,8 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { useDirectory } from "@/core/platform/store";
 import type { Department } from "@/core/platform/types";
 
@@ -26,6 +28,7 @@ export default function Departments() {
     setEdit(null);
   };
   const memberCount = (id: string) => profiles.filter((p) => p.departmentId === id).length;
+  const pg = usePagination(departments);
 
   return (
     <div className="space-y-4">
@@ -42,7 +45,7 @@ export default function Departments() {
           <EmptyState title="No departments yet" message="Add your first department to organize teams." actionLabel="Add Department" onAction={() => open("new")} />
         ) : (
           <ul className="divide-y divide-line">
-            {departments.map((d) => (
+            {pg.pageItems.map((d) => (
               <li key={d.id} className="flex items-center gap-4 px-5 py-4">
                 <span className="w-9 h-9 rounded-card bg-orange-soft text-orange flex items-center justify-center shrink-0">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3" /></svg>
@@ -62,6 +65,7 @@ export default function Departments() {
             ))}
           </ul>
         )}
+        {departments.length > 0 && <Pagination state={pg} rowsLabel="departments" />}
       </Card>
 
       {/* add/edit modal */}

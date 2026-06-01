@@ -4,6 +4,8 @@ import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import Combobox from "@/shared/components/ui/Combobox";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Pagination from "@/shared/components/ui/Pagination";
+import { usePagination } from "@/shared/lib/usePagination";
 import { timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -43,6 +45,8 @@ export default function ActivityHistory() {
     return profiles.filter((p) => set.has(p.id));
   }, [activity, ids]);
 
+  const pg = usePagination(items, { resetKey: `${type}|${actor}` });
+
   return (
     <div className="space-y-5">
       <div>
@@ -65,12 +69,13 @@ export default function ActivityHistory() {
         />
       </div>
 
-      <Card className="p-5">
+      <Card className="overflow-hidden">
         {items.length === 0 ? (
-          <EmptyState title="No activity" message="Nothing matches these filters yet." />
+          <div className="p-5"><EmptyState title="No activity" message="Nothing matches these filters yet." /></div>
         ) : (
-          <ol className="space-y-4 relative before:absolute before:left-[15px] before:top-1 before:bottom-1 before:w-px before:bg-line">
-            {items.map((a) => {
+          <>
+          <ol className="space-y-4 relative p-5 before:absolute before:left-[35px] before:top-6 before:bottom-6 before:w-px before:bg-line">
+            {pg.pageItems.map((a) => {
               const actorP = profileById(a.actorId);
               const task = getTask(a.taskId);
               return (
@@ -95,6 +100,8 @@ export default function ActivityHistory() {
               );
             })}
           </ol>
+          <Pagination state={pg} rowsLabel="entries" />
+          </>
         )}
       </Card>
     </div>
