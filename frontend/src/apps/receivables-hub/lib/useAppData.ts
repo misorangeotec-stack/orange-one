@@ -382,6 +382,26 @@ async function loadFromSupabase(fySuffix: string): Promise<RawAppData> {
 
 const EMPTY_GROUP_MAP: CustomerGroupMap = { mapping: {}, groups: {} };
 
+/**
+ * Turn any thrown value into a readable message. Supabase/PostgREST rejections are
+ * plain objects (`{ message, code, hint, details }`), which `String()` renders as
+ * the useless "[object Object]"; surface their real `message` (e.g. "Invalid API
+ * key") so config problems are diagnosable instead of opaque.
+ */
+function toErrorMessage(err: unknown): string | null {
+  if (err == null) return null;
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const o = err as Record<string, unknown>;
+    if (typeof o.message === "string" && o.message) return o.message;
+    if (typeof o.error_description === "string") return o.error_description;
+    if (typeof o.error === "string") return o.error;
+    try { return JSON.stringify(err); } catch { return "Unknown error"; }
+  }
+  return String(err);
+}
+
 export function useAppData(filters: Filters = {}): AppData {
   const { suffix: fySuffix } = useFY();
   // Per-salesperson scope (UI-level): null = unrestricted (admin); otherwise only
@@ -438,7 +458,7 @@ export function useAppData(filters: Filters = {}): AppData {
   }, [raw, allowedCustomerIds]);
   const customerGroupMap = raw?.grp ?? EMPTY_GROUP_MAP;
   const loading = isLoading;
-  const error = queryError instanceof Error ? queryError.message : queryError ? String(queryError) : null;
+  const error = toErrorMessage(queryError);
 
   // ── Filtered customers ──────────────────────────────────────────────────────
   const customers = useMemo(() => {

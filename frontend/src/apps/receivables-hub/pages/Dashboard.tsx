@@ -355,7 +355,7 @@ export default function Dashboard() {
       <FilterChips chips={filterChips} onClearAll={clearAllFilters} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon;
           const clickable = !!(kpi.link || kpi.toggle);
