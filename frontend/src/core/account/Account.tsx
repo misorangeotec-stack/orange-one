@@ -15,13 +15,15 @@ import { useDirectory } from "@/core/platform/store";
 export default function Account() {
   const navigate = useNavigate();
   const { user } = useSession();
-  const { profileById, departmentById, updateUser, canWrite } = useDirectory();
+  const { profileById, departmentById, updateUser, canEditOwnProfile } = useDirectory();
   const me = profileById(user.id) ?? user;
 
   const [name, setName] = useState(me.name);
   const [email, setEmail] = useState(me.email ?? "");
   const [designation, setDesignation] = useState(me.designation ?? "");
   const [savedProfile, setSavedProfile] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileErr, setProfileErr] = useState("");
 
   const [pw, setPw] = useState("");
   const [pw2, setPw2] = useState("");
@@ -29,11 +31,20 @@ export default function Account() {
 
   const roleLabel = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" }[me.role];
 
-  const saveProfile = (e: React.FormEvent) => {
+  const saveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    updateUser(me.id, { name: name.trim(), email: email.trim() || null, designation: designation.trim() || null });
-    setSavedProfile(true);
-    setTimeout(() => setSavedProfile(false), 2500);
+    if (savingProfile) return;
+    setSavingProfile(true);
+    setProfileErr("");
+    try {
+      await updateUser(me.id, { name: name.trim(), email: email.trim() || null, designation: designation.trim() || null });
+      setSavedProfile(true);
+      setTimeout(() => setSavedProfile(false), 2500);
+    } catch (err) {
+      setProfileErr((err as Error).message);
+    } finally {
+      setSavingProfile(false);
+    }
   };
 
   const changePassword = (e: React.FormEvent) => {
@@ -83,9 +94,10 @@ export default function Account() {
                 <FieldLabel label="Role" hint="set by admin"><TextInput value={roleLabel} disabled /></FieldLabel>
               </div>
               <div className="flex items-center justify-end gap-3 pt-1">
-                {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+                {!canEditOwnProfile && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
+                {profileErr && <span className="mr-auto text-[12.5px] text-[#d4493f]">{profileErr}</span>}
                 {savedProfile && <span className="text-[12.5px] text-[#27AE60] font-medium">✓ Saved</span>}
-                <Button type="submit" disabled={!canWrite}>Save profile</Button>
+                <Button type="submit" disabled={!canEditOwnProfile || savingProfile}>{savingProfile ? "Saving…" : "Save profile"}</Button>
               </div>
             </form>
           </Card>

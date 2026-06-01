@@ -20,8 +20,10 @@ const ROLES: { value: AppRole; label: string; hint: string }[] = [
 export default function UserForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { profiles, departments, profileById, addUser, updateUser, addDepartment, canWrite } = useDirectory();
+  const { profiles, departments, profileById, addUser, updateUser, addDepartment, canEditUser, canAddUser } = useDirectory();
   const editing = id ? profileById(id) : undefined;
+  const canSave = editing ? canEditUser : canAddUser;
+  const [busy, setBusy] = useState(false);
 
   const [name, setName] = useState(editing?.name ?? "");
   const [email, setEmail] = useState(editing?.email ?? "");
@@ -36,9 +38,10 @@ export default function UserForm() {
   const toggleHod = (hid: string) => setHodIds((prev) => (prev.includes(hid) ? prev.filter((h) => h !== hid) : [...prev, hid]));
   const toggleModule = (mid: string) => setModuleAccess((prev) => (prev.includes(mid) ? prev.filter((m) => m !== mid) : [...prev, mid]));
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return setError("Please enter a name.");
+    if (busy) return;
     const payload = {
       name: name.trim(),
       email: email.trim() || undefined,
@@ -48,9 +51,16 @@ export default function UserForm() {
       hodIds,
       moduleAccess,
     };
-    if (editing) updateUser(editing.id, payload);
-    else addUser(payload);
-    navigate("/admin/users");
+    setBusy(true);
+    setError("");
+    try {
+      if (editing) await updateUser(editing.id, payload);
+      else addUser(payload);
+      navigate("/admin/users");
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
   };
 
   return (
@@ -76,7 +86,7 @@ export default function UserForm() {
                 placeholder="— None —"
                 searchable
                 options={[{ value: "", label: "— None —" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
-                onCreate={(name) => addDepartment({ name })}
+                onCreate={(name) => { void addDepartment({ name }); }}
                 createLabel={(q) => `Add department “${q}”`}
               />
             </FieldLabel>
@@ -165,9 +175,13 @@ export default function UserForm() {
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 
           <div className="flex items-center justify-end gap-2.5 pt-2">
-            {!canWrite && <span className="mr-auto text-[12.5px] text-grey-2">Read-only preview — saving is being wired next.</span>}
-            <Button variant="ghost" onClick={() => navigate("/admin/users")}>{canWrite ? "Cancel" : "Back"}</Button>
-            <Button type="submit" disabled={!canWrite}>{editing ? "Save changes" : "Create user"}</Button>
+            {!canSave && (
+              <span className="mr-auto text-[12.5px] text-grey-2">
+                {editing ? "Read-only preview — saving is being wired next." : "Adding users needs an admin invite — coming soon."}
+              </span>
+            )}
+            <Button variant="ghost" onClick={() => navigate("/admin/users")} disabled={busy}>{canSave ? "Cancel" : "Back"}</Button>
+            <Button type="submit" disabled={!canSave || busy}>{busy ? "Saving…" : editing ? "Save changes" : "Create user"}</Button>
           </div>
         </form>
       </Card>

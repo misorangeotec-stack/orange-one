@@ -12,7 +12,7 @@ import { apps } from "@/apps/registry";
  * their cells are shown as always-on and locked.
  */
 export default function ModuleAccess() {
-  const { profiles, departmentById, setUserModules, canWrite } = useDirectory();
+  const { profiles, departmentById, setUserModules, canManageModules } = useDirectory();
 
   const toggle = (userId: string, current: string[], appId: string) =>
     setUserModules(userId, current.includes(appId) ? current.filter((a) => a !== appId) : [...current, appId]);
@@ -53,7 +53,7 @@ export default function ModuleAccess() {
                   </td>
                   {apps.map((a) => {
                     const on = isAdmin || u.moduleAccess.includes(a.id);
-                    const locked = isAdmin || !canWrite;
+                    const locked = isAdmin || !canManageModules;
                     return (
                       <td key={a.id} className="text-center px-4 py-3">
                         <button
@@ -61,7 +61,7 @@ export default function ModuleAccess() {
                           disabled={locked}
                           onClick={() => toggle(u.id, u.moduleAccess, a.id)}
                           aria-pressed={on}
-                          title={isAdmin ? "Admins always have access" : !canWrite ? "Read-only preview" : on ? "Granted — click to revoke" : "Not granted — click to grant"}
+                          title={isAdmin ? "Admins always have access" : !canManageModules ? "Read-only preview" : on ? "Granted — click to revoke" : "Not granted — click to grant"}
                           className={cn(
                             "w-5 h-5 rounded-[6px] border inline-flex items-center justify-center transition",
                             on ? "bg-orange border-orange text-white" : "border-grey-2 hover:border-orange",
