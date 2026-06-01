@@ -1,9 +1,10 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
+import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
 import {
@@ -312,6 +313,23 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canWeeklyPlan: true,
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, queryClient]);
+
+  // Realtime: push the bell + task data when one of my notifications changes
+  // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also
+  // filter server-side by user_id. Any event just refetches the task query.
+  const userId = user?.id;
+  useEffect(() => {
+    if (!userId) return;
+    const channel = supabase
+      .channel(`notifications:${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
+        () => { void queryClient.invalidateQueries({ queryKey: ["taskData"] }); }
+      )
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [userId, queryClient]);
 
   if (isLoading) {
     return (
