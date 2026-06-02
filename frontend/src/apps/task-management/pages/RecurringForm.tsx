@@ -8,6 +8,7 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
+import LocationPicker from "../components/LocationPicker";
 import type { RecurrenceType } from "../types";
 
 // display order Mon→Sun, stored as 0=Sun..6=Sat
@@ -30,6 +31,7 @@ export default function RecurringForm() {
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [active, setActive] = useState(editing?.active ?? true);
+  const [locationIds, setLocationIds] = useState<string[]>(editing?.locationIds ?? []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -53,6 +55,7 @@ export default function RecurringForm() {
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
       active,
+      locationIds,
     };
     setBusy(true);
     setError("");
@@ -146,6 +149,8 @@ export default function RecurringForm() {
               </div>
             </FieldLabel>
           )}
+
+          <LocationPicker value={locationIds} onChange={setLocationIds} />
 
           <label className="flex items-center gap-3 pt-1 cursor-pointer select-none">
             <button

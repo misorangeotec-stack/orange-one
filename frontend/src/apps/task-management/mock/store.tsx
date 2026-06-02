@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
+import type { AppRole, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { supabase } from "@/core/platform/supabase";
@@ -21,6 +21,11 @@ import {
   deleteRecurring as deleteRecurringWrite,
   upsertWeeklyPlan as upsertWeeklyPlanWrite,
   updateWorkspaceSettings as updateWorkspaceSettingsWrite,
+  setTaskLocationDone as setTaskLocationDoneWrite,
+  insertLocation as insertLocationWrite,
+  updateLocation as updateLocationWrite,
+  deleteLocation as deleteLocationWrite,
+  type LocationWriteInput,
 } from "../data/taskWrites";
 
 /**
@@ -60,7 +65,7 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[] }) => Promise<string>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
@@ -74,6 +79,22 @@ interface TaskStoreValue {
   updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => Promise<void>;
   toggleRecurring: (id: string) => Promise<void>;
   deleteRecurring: (id: string) => Promise<void>;
+
+  // locations
+  locations: Location[];
+  /** Active locations, sorted for display (the picker source). */
+  activeLocations: Location[];
+  locationById: (id: string | null) => Location | undefined;
+  /** True when a task has no pending locations (so it may be completed). */
+  taskLocationsComplete: (task: Task) => boolean;
+  /** Tick / untick one location on a task's checklist. */
+  setTaskLocationDone: (taskLocationId: string, done: boolean) => Promise<void>;
+  /** Admin location-master CRUD. */
+  addLocation: (input: LocationWriteInput) => Promise<string>;
+  editLocation: (id: string, input: LocationWriteInput) => Promise<void>;
+  removeLocation: (id: string) => Promise<void>;
+  /** True for admins — the location master is admin-managed. */
+  canManageLocations: boolean;
 
   // directory (people + departments) — re-exposed from the portal core
   profiles: Profile[];
@@ -143,6 +164,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const recurringTasks = data?.recurringTasks ?? [];
   const weeklyPlans = data?.weeklyPlans ?? [];
   const workspace = data?.workspace ?? DEFAULT_WORKSPACE;
+  const locations = data?.locations ?? [];
 
   const value = useMemo<TaskStoreValue>(() => {
     const { directReportIds } = dir;
@@ -178,7 +200,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // createTask: LIVE (B4 first flow). Inserts under RLS (created_by = auth uid)
       // then refetches. Other task mutations stay inert no-ops until wired.
       createTask: async (input) => {
-        const id = await insertTask({ ...input, createdBy: user.id });
+        const id = await insertTask({ ...input, locationIds: input.locationIds ?? [], createdBy: user.id });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
@@ -233,6 +255,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           assignedTo: input.assignedTo,
           departmentId: input.departmentId,
           active: input.active,
+          locationIds: input.locationIds ?? [],
           createdBy: user.id,
         });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
@@ -250,6 +273,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           assignedTo: m.assignedTo,
           departmentId: m.departmentId,
           active: m.active,
+          locationIds: m.locationIds ?? [],
         });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
@@ -263,6 +287,32 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await deleteRecurringWrite(id);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
+
+      // ---- locations ----
+      locations,
+      activeLocations: locations
+        .filter((l) => l.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+      locationById: (id) => (id ? locations.find((l) => l.id === id) : undefined),
+      taskLocationsComplete: (task) => task.locations.every((l) => l.completedAt !== null),
+      setTaskLocationDone: async (taskLocationId, done) => {
+        await setTaskLocationDoneWrite(taskLocationId, done, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      addLocation: async (input) => {
+        const id = await insertLocationWrite({ ...input, createdBy: user.id });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return id;
+      },
+      editLocation: async (id, input) => {
+        await updateLocationWrite(id, input);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      removeLocation: async (id) => {
+        await deleteLocationWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      canManageLocations: role === "admin",
 
       // ---- directory (delegated to the portal core) ----
       profiles: dir.profiles,
@@ -319,7 +369,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canRecurring: true,
       canWeeklyPlan: true,
     };
-  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, role, queryClient]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, dir, user, role, queryClient]);
 
   // Realtime: push the bell + task data when one of my notifications changes
   // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also

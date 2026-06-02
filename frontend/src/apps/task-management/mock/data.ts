@@ -94,6 +94,7 @@ function mkWeekTask(to: string, week: string, status: Task["status"]): Task {
     createdAt: at(9),
     updatedAt: at(16),
     lastRemarkAt: null,
+    locations: [],
   };
 }
 /** Build a week's worth of resolved tasks with a given RYG mix (red modelled as shifted). */
@@ -132,6 +133,7 @@ function mkTask(
     createdAt: dt(-5),
     updatedAt: o.lastRev ?? o.completed ?? dt(-5),
     lastRemarkAt: null,
+    locations: [],
   };
 }
 function addDaysIso(n: number) {
@@ -140,10 +142,10 @@ function addDaysIso(n: number) {
 
 // ---- recurring tasks ----
 export const recurringTasks: RecurringTask[] = [
-  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
-  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true },
-  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], monthlyDays: [], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false },
-  { id: "r4", title: "Monthly expense report", description: "Due on the 1st of each month.", recurrenceType: "monthly", weeklyDays: [], monthlyDays: [1], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: true },
+  { id: "r1", title: "Submit daily sales report", description: "Every working day.", recurrenceType: "daily", weeklyDays: [], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true, locationIds: [] },
+  { id: "r2", title: "Weekly stock update", description: "Every Friday.", recurrenceType: "weekly", weeklyDays: [5], monthlyDays: [], assignedTo: "u6", createdBy: "u3", departmentId: "d3", active: true, locationIds: [] },
+  { id: "r3", title: "Weekly cash position report", description: "Every Monday.", recurrenceType: "weekly", weeklyDays: [1], monthlyDays: [], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: false, locationIds: [] },
+  { id: "r4", title: "Monthly expense report", description: "Due on the 1st of each month.", recurrenceType: "monthly", weeklyDays: [], monthlyDays: [1], assignedTo: "u7", createdBy: "u4", departmentId: "d2", active: true, locationIds: [] },
 ];
 
 // ---- weekly plans (Red/Yellow/Green target per doer per ISO week) ----

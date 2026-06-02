@@ -14,6 +14,7 @@ import Reports from "./pages/Reports";
 import ActivityHistory from "./pages/ActivityHistory";
 import SettingsLayout from "./pages/settings/SettingsLayout";
 import Organization from "./pages/settings/Organization";
+import Locations from "./pages/settings/Locations";
 import Permissions from "./pages/settings/Permissions";
 import NotFound from "./pages/system/NotFound";
 
@@ -48,6 +49,7 @@ export default function TaskManagementApp() {
             {/* User/department/hierarchy setup moved to the portal Admin area (/admin). */}
             <Route path="settings" element={<RequireRole roles={["admin"]}><SettingsLayout /></RequireRole>}>
               <Route index element={<Organization />} />
+              <Route path="locations" element={<Locations />} />
               <Route path="permissions" element={<Permissions />} />
             </Route>
 
