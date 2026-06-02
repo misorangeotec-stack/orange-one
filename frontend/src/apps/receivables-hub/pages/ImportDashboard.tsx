@@ -16,6 +16,7 @@ import {
 } from "@hub/components/ui/select";
 import { Input } from "@hub/components/ui/input";
 import { useImportData } from "@hub/lib/useImportData";
+import { formatDateDMY } from "@hub/lib/utils";
 import type { ImportFilters, ImportProductMonthRow } from "@hub/lib/importTypes";
 
 /* ── Formatters ─────────────────────────────────────────────────────────────*/
@@ -330,7 +331,7 @@ export default function ImportDashboard() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             India import trade · {summary.kpis.totalTransactions.toLocaleString()} shipments
-            · Last updated: {new Date(summary.lastUpdated).toLocaleDateString("en-IN")}
+            · Last updated: {formatDateDMY(summary.lastUpdated)}
           </p>
         </div>
       </div>

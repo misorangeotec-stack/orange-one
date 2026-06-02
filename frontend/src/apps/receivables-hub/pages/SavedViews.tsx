@@ -16,6 +16,7 @@ import {
 } from "@hub/components/ui/dialog";
 import { useToast } from "@hub/hooks/use-toast";
 import { useNavigate } from "react-router-dom";
+import { formatDateDMY } from "@hub/lib/utils";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -314,9 +315,9 @@ export default function SavedViews() {
 
               {/* Dates */}
               <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                <span>Created {view.createdAt}</span>
+                <span>Created {formatDateDMY(view.createdAt)}</span>
                 <span>·</span>
-                <span>Last used {view.lastUsedAt}</span>
+                <span>Last used {formatDateDMY(view.lastUsedAt)}</span>
               </div>
 
               {/* Actions */}
