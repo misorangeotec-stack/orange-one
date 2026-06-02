@@ -13,6 +13,13 @@ import {
 
 export type ShareChannel = "email" | "whatsapp";
 
+/** Format a JS Date as DD-MM-YYYY (numeric, dashes). */
+function ddmmyyyy(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -25,7 +32,7 @@ function defaultSubject(name: string, asOfDate: string) {
   const d = new Date(asOfDate);
   const stamp = isNaN(d.getTime())
     ? asOfDate
-    : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    : ddmmyyyy(d);
   return `Receivables Risk Report — ${name} — as of ${stamp}`;
 }
 
@@ -33,7 +40,7 @@ function defaultBody(name: string, asOfDate: string) {
   const d = new Date(asOfDate);
   const stamp = isNaN(d.getTime())
     ? asOfDate
-    : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    : ddmmyyyy(d);
   return (
     `Hi ${name},\n\n` +
     `Please find attached the receivables risk report for your customer portfolio, as of ${stamp}.\n\n` +

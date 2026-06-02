@@ -48,16 +48,22 @@ function monthLabelToEndDate(label: string): Date {
   return new Date(year, monthIdx + 1, 0, 23, 59, 59, 999);
 }
 
-/** "May-26" → "31 May 2026" */
+/** Format a JS Date as DD-MM-YYYY (numeric, dashes). */
+function ddmmyyyy(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
+/** "May-26" → "31-05-2026" (last day of that month) */
 function monthEndLong(label: string): string {
-  const d = monthLabelToEndDate(label);
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return ddmmyyyy(monthLabelToEndDate(label));
 }
 
 function formatDateLong(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return ddmmyyyy(d);
 }
 
 type SortKey = "salesperson" | "outstanding" | "due" | "received" | "pending" | "collectionPct";

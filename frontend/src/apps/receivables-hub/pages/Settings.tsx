@@ -23,7 +23,7 @@ function formatElapsed(seconds: number): string {
 function formatLastEntry(iso: string | null): string {
   if (!iso) return "—";
   try {
-    return format(parseISO(iso), "dd MMM yyyy");
+    return format(parseISO(iso), "dd-MM-yyyy");
   } catch {
     return iso;
   }
@@ -142,7 +142,7 @@ export default function Settings() {
               {(() => {
                 try {
                   const d = parseISO(meta.refreshedAt);
-                  return `${formatDistanceToNow(d, { addSuffix: true })} — ${format(d, "dd MMM yyyy HH:mm")}`;
+                  return `${formatDistanceToNow(d, { addSuffix: true })} — ${format(d, "dd-MM-yyyy HH:mm")}`;
                 } catch {
                   return meta.refreshedAt;
                 }

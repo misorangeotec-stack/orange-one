@@ -105,10 +105,17 @@ function filtersToStrings(f: ActiveFiltersSummary): string[][] {
   return rows;
 }
 
+/** Format a JS Date as DD-MM-YYYY (numeric, dashes). */
+function ddmmyyyy(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}-${mm}-${d.getFullYear()}`;
+}
+
 function formatDateLong(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return ddmmyyyy(d);
 }
 
 function buildSummarySheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
@@ -297,7 +304,9 @@ function buildFiltersSheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
   const { filters, asOfDate, title } = opts;
   const aoa: (string | number)[][] = [];
   aoa.push([title]);
-  aoa.push([`Report generated: ${new Date().toLocaleString("en-IN")}`]);
+  const _now = new Date();
+  const _gen = `${ddmmyyyy(_now)} ${String(_now.getHours()).padStart(2, "0")}:${String(_now.getMinutes()).padStart(2, "0")}`;
+  aoa.push([`Report generated: ${_gen}`]);
   aoa.push([`As-of date: ${formatDateLong(asOfDate)}`]);
   aoa.push([]);
   aoa.push(["Active Filter", "Value"]);

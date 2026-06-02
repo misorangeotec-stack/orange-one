@@ -44,7 +44,8 @@ export async function exportCustomerPdf(elements: Array<HTMLElement | null>, met
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(9);
   pdf.setTextColor(110);
-  const sub = `${meta.company} · ${meta.location}${meta.asOfDate ? `  ·  As of ${meta.asOfDate}` : ""}`;
+  const asOfDMY = meta.asOfDate ? meta.asOfDate.replace(/^(\d{4})-(\d{2})-(\d{2}).*/, "$3-$2-$1") : "";
+  const sub = `${meta.company} · ${meta.location}${asOfDMY ? `  ·  As of ${asOfDMY}` : ""}`;
   pdf.text(sub, margin, margin + 32);
   pdf.setTextColor(0);
 

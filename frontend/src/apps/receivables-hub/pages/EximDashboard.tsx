@@ -16,6 +16,7 @@ import {
 } from "@hub/components/ui/select";
 import { Input } from "@hub/components/ui/input";
 import { useEximData } from "@hub/lib/useEximData";
+import { formatDateDMY } from "@hub/lib/utils";
 import type { EximFilters } from "@hub/lib/eximTypes";
 
 /* ── Formatters ─────────────────────────────────────────────────────────────*/
@@ -295,7 +296,7 @@ export default function EximDashboard() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             India import trade · {summary.kpis.totalTransactions.toLocaleString()} shipments
-            · Last updated: {new Date(summary.lastUpdated).toLocaleDateString("en-IN")}
+            · Last updated: {formatDateDMY(summary.lastUpdated)}
           </p>
         </div>
       </div>
