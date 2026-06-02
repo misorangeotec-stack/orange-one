@@ -25,6 +25,31 @@ export type ActivityType =
   | "started"
   | "remark";
 
+/** A location is a company + place pair (e.g. Otec · Surat), or the special General entry. */
+export interface Location {
+  id: string;
+  company: string | null; // null for the General entry
+  name: string; // the place, e.g. "Surat"; "General" for the general entry
+  isGeneral: boolean;
+  active: boolean;
+  sortOrder: number;
+}
+
+/** A row in a task's per-location checklist. `completedAt` set = that location is done. */
+export interface TaskLocation {
+  id: string;
+  taskId: string;
+  locationId: string;
+  completedAt: string | null; // ISO datetime
+  completedBy: string | null;
+}
+
+/** Human label for a location: "Otec · Surat", or "General" / a bare place name. */
+export function locationLabel(loc: Pick<Location, "company" | "name" | "isGeneral">): string {
+  if (loc.isGeneral) return loc.name || "General";
+  return loc.company ? `${loc.company} · ${loc.name}` : loc.name;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -45,6 +70,7 @@ export interface Task {
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;
+  locations: TaskLocation[]; // per-location checklist (empty for tasks with no locations)
 }
 
 export interface RecurringTask {
@@ -58,6 +84,7 @@ export interface RecurringTask {
   createdBy: string;
   departmentId: string | null;
   active: boolean;
+  locationIds: string[]; // locations each generated task is tagged with
 }
 
 export interface WeeklyPlan {

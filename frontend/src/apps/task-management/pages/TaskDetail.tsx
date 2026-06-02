@@ -5,8 +5,9 @@ import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { dateLabel, timeAgo } from "@/shared/lib/time";
+import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
-import type { ActivityType } from "../types";
+import { locationLabel, type ActivityType } from "../types";
 import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
 import ReviseModal from "../components/ReviseModal";
@@ -17,9 +18,10 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule } = useTaskStore();
+  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
+  const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
 
   const task = getTask(id);
   if (!task) {
@@ -39,6 +41,13 @@ export default function TaskDetail() {
   const closed = task.status === "completed" || task.status === "shifted";
   const acts = activityFor(task.id);
 
+  // Location checklist + completion gate. A task with locations can't be completed
+  // until every one is ticked (the DB trigger enforces it too — this is the UI guard).
+  const hasLocations = task.locations.length > 0;
+  const pendingLocations = task.locations.filter((l) => !l.completedAt).length;
+  const locationsComplete = taskLocationsComplete(task);
+  const completeBlocked = hasLocations && !locationsComplete;
+
   return (
     <div className="space-y-5">
       <button onClick={() => navigate(-1)} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
@@ -52,6 +61,15 @@ export default function TaskDetail() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[22px] font-bold text-navy">{task.title}</h2>
             <StatusChip status={task.status} />
+            {task.recurringTaskId && (
+              <span
+                title="Generated from a recurring task"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-blue bg-[#EAF1FE] rounded-pill px-2 py-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+                Recurring
+              </span>
+            )}
           </div>
           <p className="text-grey text-[13px] mt-1">
             {dept?.name ?? "No department"} · Created {timeAgo(task.createdAt)}
@@ -85,10 +103,12 @@ export default function TaskDetail() {
                 Revise{!info.allowed ? ` (${info.usedThisWeek}/${info.max})` : ""}
               </Button>
             </span>
-            <Button size="sm" onClick={() => setModal("complete")}>
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-              Mark complete
-            </Button>
+            <span title={completeBlocked ? `Complete all locations first — ${pendingLocations} pending` : ""}>
+              <Button size="sm" onClick={() => setModal("complete")} disabled={completeBlocked}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                Mark complete{completeBlocked ? ` (${pendingLocations} left)` : ""}
+              </Button>
+            </span>
           </div>
         )}
       </div>
@@ -102,6 +122,69 @@ export default function TaskDetail() {
               {task.description || "No description provided."}
             </p>
           </Card>
+
+          {hasLocations && (
+            <Card className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[13px] font-semibold text-navy">Locations</h3>
+                <span className={cn("text-[12px] font-medium", locationsComplete ? "text-[#27AE60]" : "text-grey-2")}>
+                  {task.locations.length - pendingLocations}/{task.locations.length} done
+                </span>
+              </div>
+              <ul className="space-y-1.5">
+                {task.locations.map((tl) => {
+                  const loc = locationById(tl.locationId);
+                  const label = loc ? locationLabel(loc) : "Unknown location";
+                  const done = tl.completedAt !== null;
+                  const by = profileById(tl.completedBy);
+                  const editable = !closed && canStatusActions;
+                  return (
+                    <li key={tl.id}>
+                      <button
+                        type="button"
+                        disabled={!editable || togglingLoc === tl.id}
+                        onClick={async () => {
+                          setTogglingLoc(tl.id);
+                          try {
+                            await setTaskLocationDone(tl.id, !done);
+                          } finally {
+                            setTogglingLoc(null);
+                          }
+                        }}
+                        className={cn(
+                          "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition border",
+                          done ? "bg-[#E8F8EF] border-[#bde9cf]" : "bg-page border-line",
+                          editable ? "hover:border-orange/50 cursor-pointer" : "cursor-default"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "w-[18px] h-[18px] rounded-md border flex items-center justify-center shrink-0 [&>svg]:w-3 [&>svg]:h-3",
+                            done ? "bg-[#27AE60] border-[#27AE60] text-white" : "bg-white border-grey-2/50 text-transparent"
+                          )}
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className={cn("text-[13px] font-medium", done ? "text-navy" : "text-ink")}>{label}</span>
+                          {done && (
+                            <span className="block text-[11px] text-grey-2">
+                              {by ? `Done by ${by.name}` : "Done"} · {timeAgo(tl.completedAt!)}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {completeBlocked && !closed && (
+                <p className="mt-3 text-[12px] text-grey-2">
+                  Tick off every location to enable <b className="text-navy font-medium">Mark complete</b>.
+                </p>
+              )}
+            </Card>
+          )}
 
           <Card className="p-5">
             <h3 className="text-[13px] font-semibold text-navy mb-3">Activity & Remarks</h3>

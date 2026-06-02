@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AppRole, Department, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
+import type { AppRole, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { supabase } from "@/core/platform/supabase";
@@ -18,9 +18,15 @@ import {
   insertRecurring as insertRecurringWrite,
   updateRecurring as updateRecurringWrite,
   setRecurringActive as setRecurringActiveWrite,
+  generateRecurringNow as generateRecurringNowWrite,
   deleteRecurring as deleteRecurringWrite,
   upsertWeeklyPlan as upsertWeeklyPlanWrite,
   updateWorkspaceSettings as updateWorkspaceSettingsWrite,
+  setTaskLocationDone as setTaskLocationDoneWrite,
+  insertLocation as insertLocationWrite,
+  updateLocation as updateLocationWrite,
+  deleteLocation as deleteLocationWrite,
+  type LocationWriteInput,
 } from "../data/taskWrites";
 
 /**
@@ -60,7 +66,7 @@ interface TaskStoreValue {
   getTask: (id: string) => Task | undefined;
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
-  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null }) => Promise<string>;
+  createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[] }) => Promise<string>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
@@ -73,7 +79,25 @@ interface TaskStoreValue {
   createRecurring: (input: Omit<RecurringTask, "id">) => Promise<string>;
   updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => Promise<void>;
   toggleRecurring: (id: string) => Promise<void>;
+  /** Force-generate today's task instance for a template (manual "Generate now"); returns the task id. */
+  generateRecurringNow: (id: string) => Promise<string | null>;
   deleteRecurring: (id: string) => Promise<void>;
+
+  // locations
+  locations: Location[];
+  /** Active locations, sorted for display (the picker source). */
+  activeLocations: Location[];
+  locationById: (id: string | null) => Location | undefined;
+  /** True when a task has no pending locations (so it may be completed). */
+  taskLocationsComplete: (task: Task) => boolean;
+  /** Tick / untick one location on a task's checklist. */
+  setTaskLocationDone: (taskLocationId: string, done: boolean) => Promise<void>;
+  /** Admin location-master CRUD. */
+  addLocation: (input: LocationWriteInput) => Promise<string>;
+  editLocation: (id: string, input: LocationWriteInput) => Promise<void>;
+  removeLocation: (id: string) => Promise<void>;
+  /** True for admins — the location master is admin-managed. */
+  canManageLocations: boolean;
 
   // directory (people + departments) — re-exposed from the portal core
   profiles: Profile[];
@@ -143,6 +167,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const recurringTasks = data?.recurringTasks ?? [];
   const weeklyPlans = data?.weeklyPlans ?? [];
   const workspace = data?.workspace ?? DEFAULT_WORKSPACE;
+  const locations = data?.locations ?? [];
 
   const value = useMemo<TaskStoreValue>(() => {
     const { directReportIds } = dir;
@@ -178,7 +203,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // createTask: LIVE (B4 first flow). Inserts under RLS (created_by = auth uid)
       // then refetches. Other task mutations stay inert no-ops until wired.
       createTask: async (input) => {
-        const id = await insertTask({ ...input, createdBy: user.id });
+        const id = await insertTask({ ...input, locationIds: input.locationIds ?? [], createdBy: user.id });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
@@ -222,19 +247,31 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
       recurringTasks,
       getRecurring: (id) => recurringTasks.find((r) => r.id === id),
-      // Recurring CRUD: LIVE (B4). recurrence_type is daily/weekly only; monthly
-      // (frontend-only) collapses to daily defensively. RLS scopes the writes.
+      // Recurring CRUD: LIVE (B4). recurrence_type is daily/weekly/monthly; the
+      // write layer keeps only the day-set that matches the type. RLS scopes the writes.
       createRecurring: async (input) => {
         const id = await insertRecurringWrite({
           title: input.title,
           description: input.description ?? null,
-          recurrenceType: input.recurrenceType === "weekly" ? "weekly" : "daily",
+          recurrenceType: input.recurrenceType,
           weeklyDays: input.weeklyDays ?? [],
+          monthlyDays: input.monthlyDays ?? [],
           assignedTo: input.assignedTo,
           departmentId: input.departmentId,
           active: input.active,
+          locationIds: input.locationIds ?? [],
           createdBy: user.id,
         });
+        // Materialise today's instance immediately if the template is active and
+        // fires today (otherwise it would wait for the next 06:00 IST cron run).
+        // Best-effort: a generation failure shouldn't fail the template create.
+        if (input.active) {
+          try {
+            await generateRecurringNowWrite(id);
+          } catch {
+            /* template saved; today's instance will be created by the next cron run */
+          }
+        }
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
@@ -245,24 +282,80 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await updateRecurringWrite(id, {
           title: m.title,
           description: m.description ?? null,
-          recurrenceType: m.recurrenceType === "weekly" ? "weekly" : "daily",
+          recurrenceType: m.recurrenceType,
           weeklyDays: m.weeklyDays ?? [],
+          monthlyDays: m.monthlyDays ?? [],
           assignedTo: m.assignedTo,
           departmentId: m.departmentId,
           active: m.active,
+          locationIds: m.locationIds ?? [],
         });
+        // If the edit leaves the template active, ensure today's instance exists
+        // (e.g. activating via the edit form). Idempotent, so no duplicate if it
+        // already generated today. Best-effort.
+        if (m.active) {
+          try {
+            await generateRecurringNowWrite(id);
+          } catch {
+            /* saved; today's instance will be created by the next cron run */
+          }
+        }
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       toggleRecurring: async (id) => {
         const cur = recurringTasks.find((r) => r.id === id);
         if (!cur) return;
-        await setRecurringActiveWrite(id, !cur.active);
+        const nowActive = !cur.active;
+        await setRecurringActiveWrite(id, nowActive);
+        // Re-activating a template should drop today's instance in right away,
+        // same as creating an active one. Best-effort (see createRecurring).
+        if (nowActive) {
+          try {
+            await generateRecurringNowWrite(id);
+          } catch {
+            /* toggled active; today's instance will be created by the next cron run */
+          }
+        }
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      // Manual on-demand generation (force = true): creates today's instance on
+      // any day, ignoring the schedule. Idempotent. Returns the task id so the UI
+      // can jump straight to it.
+      generateRecurringNow: async (id) => {
+        const taskId = await generateRecurringNowWrite(id, true);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return taskId;
       },
       deleteRecurring: async (id) => {
         await deleteRecurringWrite(id);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
+
+      // ---- locations ----
+      locations,
+      activeLocations: locations
+        .filter((l) => l.active)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
+      locationById: (id) => (id ? locations.find((l) => l.id === id) : undefined),
+      taskLocationsComplete: (task) => task.locations.every((l) => l.completedAt !== null),
+      setTaskLocationDone: async (taskLocationId, done) => {
+        await setTaskLocationDoneWrite(taskLocationId, done, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      addLocation: async (input) => {
+        const id = await insertLocationWrite({ ...input, createdBy: user.id });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return id;
+      },
+      editLocation: async (id, input) => {
+        await updateLocationWrite(id, input);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      removeLocation: async (id) => {
+        await deleteLocationWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      canManageLocations: role === "admin",
 
       // ---- directory (delegated to the portal core) ----
       profiles: dir.profiles,
@@ -319,7 +412,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canRecurring: true,
       canWeeklyPlan: true,
     };
-  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, dir, user, role, queryClient]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, dir, user, role, queryClient]);
 
   // Realtime: push the bell + task data when one of my notifications changes
   // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also

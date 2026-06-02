@@ -14,6 +14,7 @@ const MATRIX: [string, boolean[]][] = [
   ["Set weekly RYG plans", [true, true, false, false]],
   ["View team / department reports", [true, true, true, false]],
   ["Manage users & departments", [true, false, false, false]],
+  ["Manage locations", [true, false, false, false]],
   ["Edit workspace settings", [true, false, false, false]],
 ];
 

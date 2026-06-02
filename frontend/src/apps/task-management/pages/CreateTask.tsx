@@ -7,6 +7,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
+import LocationPicker from "../components/LocationPicker";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
 export default function CreateTask() {
@@ -19,6 +20,7 @@ export default function CreateTask() {
   const [description, setDescription] = useState("");
   const [assignedTo, setAssignedTo] = useState(user.id);
   const [dueDate, setDueDate] = useState("");
+  const [locationIds, setLocationIds] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -41,6 +43,7 @@ export default function CreateTask() {
         assignedTo,
         departmentId,
         dueDate: dueDate || null,
+        locationIds,
       });
       navigate(`/task-management/tasks/${id}`);
     } catch (err) {
@@ -95,6 +98,8 @@ export default function CreateTask() {
               <TextInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </FieldLabel>
           </div>
+
+          <LocationPicker value={locationIds} onChange={setLocationIds} />
 
           {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}
 

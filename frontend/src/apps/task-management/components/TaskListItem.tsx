@@ -25,12 +25,24 @@ export default function TaskListItem({ task, showAssignee = false }: { task: Tas
           <span className="text-[14px] font-medium text-navy truncate group-hover:text-orange transition">
             {task.title}
           </span>
+          {task.recurringTaskId && (
+            <span
+              title="Generated from a recurring task"
+              className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue bg-[#EAF1FE] rounded-pill px-1.5 py-0.5"
+            >
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+              Recurring
+            </span>
+          )}
           {task.revisionCount > 0 && (
             <span className="shrink-0 text-[10px] font-semibold text-[#B7820E] bg-[#FEF6E6] rounded-pill px-1.5 py-0.5">
               ↻ {task.revisionCount}
             </span>
           )}
         </div>
+        {task.description?.trim() && (
+          <div className="text-[12px] text-grey mt-0.5 truncate">{task.description}</div>
+        )}
         <div className="text-[11.5px] text-grey-2 mt-0.5 truncate">
           {dept?.name ?? "—"}
           {showAssignee && assignee ? ` · ${assignee.name}` : ""}

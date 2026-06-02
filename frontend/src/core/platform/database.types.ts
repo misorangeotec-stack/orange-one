@@ -70,6 +70,42 @@ export type Database = {
         }
         Relationships: []
       }
+      locations: {
+        Row: {
+          active: boolean
+          company: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_general: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_general?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_general?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       notifications: {
         Row: {
           activity_id: string | null
@@ -179,6 +215,42 @@ export type Database = {
           },
         ]
       }
+      recurring_task_locations: {
+        Row: {
+          created_at: string
+          id: string
+          location_id: string
+          recurring_task_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          location_id: string
+          recurring_task_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          location_id?: string
+          recurring_task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_task_locations_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_task_locations_recurring_task_id_fkey"
+            columns: ["recurring_task_id"]
+            isOneToOne: false
+            referencedRelation: "recurring_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       recurring_tasks: {
         Row: {
           active: boolean
@@ -188,6 +260,7 @@ export type Database = {
           department_id: string | null
           description: string | null
           id: string
+          monthly_days: number[]
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
           updated_at: string
@@ -201,6 +274,7 @@ export type Database = {
           department_id?: string | null
           description?: string | null
           id?: string
+          monthly_days?: number[]
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
           updated_at?: string
@@ -214,6 +288,7 @@ export type Database = {
           department_id?: string | null
           description?: string | null
           id?: string
+          monthly_days?: number[]
           recurrence_type?: Database["public"]["Enums"]["recurrence_type"]
           title?: string
           updated_at?: string
@@ -257,6 +332,48 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "task_activity_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_locations: {
+        Row: {
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          id: string
+          location_id: string
+          task_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          location_id: string
+          task_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          id?: string
+          location_id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_locations_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "locations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_locations_task_id_fkey"
             columns: ["task_id"]
             isOneToOne: false
             referencedRelation: "tasks"
@@ -530,6 +647,10 @@ export type Database = {
         Args: { p_mentioned?: string[]; p_note: string; p_task_id: string }
         Returns: string
       }
+      generate_recurring_task_now: {
+        Args: { p_recurring_id: string; p_force?: boolean }
+        Returns: string
+      }
       generate_recurring_tasks: { Args: { p_date?: string }; Returns: number }
       has_role: {
         Args: {
@@ -562,7 +683,7 @@ export type Database = {
         | "remark"
       app_role: "admin" | "hod" | "employee" | "sub_hod"
       notification_type: "mention"
-      recurrence_type: "daily" | "weekly"
+      recurrence_type: "daily" | "weekly" | "monthly"
       task_status:
         | "pending"
         | "completed"
@@ -709,7 +830,7 @@ export const Constants = {
       ],
       app_role: ["admin", "hod", "employee", "sub_hod"],
       notification_type: ["mention"],
-      recurrence_type: ["daily", "weekly"],
+      recurrence_type: ["daily", "weekly", "monthly"],
       task_status: [
         "pending",
         "completed",

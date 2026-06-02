@@ -5,6 +5,7 @@ import { cn } from "@/shared/lib/cn";
 export default function SettingsLayout() {
   const tabs = [
     { to: "/task-management/settings", label: "Organization", end: true },
+    { to: "/task-management/settings/locations", label: "Locations" },
     { to: "/task-management/settings/permissions", label: "Permissions" },
   ];
 

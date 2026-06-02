@@ -43,6 +43,7 @@ export async function insertTask(input: {
   departmentId: string | null;
   dueDate: string | null;
   createdBy: string;
+  locationIds?: string[];
 }): Promise<string> {
   const weekStart = mondayOf(input.dueDate ?? new Date().toISOString());
   const { data, error } = await supabase
@@ -60,7 +61,39 @@ export async function insertTask(input: {
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  return data.id as string;
+  const taskId = data.id as string;
+
+  // Attach the per-location checklist (optional). Done as a second insert under
+  // RLS (the task_locations policy allows the task's creator).
+  const locationIds = input.locationIds ?? [];
+  if (locationIds.length) {
+    const { error: locErr } = await supabase
+      .from("task_locations")
+      .insert(locationIds.map((location_id) => ({ task_id: taskId, location_id })));
+    if (locErr) throw new Error(locErr.message);
+  }
+  return taskId;
+}
+
+/**
+ * Tick (or untick) a single location on a task's checklist. Sets completed_at +
+ * completed_by (or clears them). RLS limits this to people who can act on the
+ * parent task. Untick is allowed while the task is still open so a mis-tick can
+ * be corrected before completion.
+ */
+export async function setTaskLocationDone(
+  taskLocationId: string,
+  done: boolean,
+  actorId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("task_locations")
+    .update({
+      completed_at: done ? new Date().toISOString() : null,
+      completed_by: done ? actorId : null,
+    })
+    .eq("id", taskLocationId);
+  if (error) throw new Error(error.message);
 }
 
 /**
@@ -195,19 +228,37 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
 }
 
 /* ----------------------------- recurring tasks ----------------------------- */
-// The live recurrence_type enum is daily/weekly only (no monthly); weekly_days
-// is an int[] (0=Sun..6=Sat). RLS: insert created_by=auth.uid(); update
-// created_by/admin/hod-of-assignee; delete created_by/admin.
+// recurrence_type enum is daily/weekly/monthly. weekly_days is an int[]
+// (0=Sun..6=Sat); monthly_days is an int[] (1..31; 32 = last day of month).
+// RLS: insert created_by=auth.uid(); update created_by/admin/hod-of-assignee;
+// delete created_by/admin.
 
 export type RecurringWriteInput = {
   title: string;
   description: string | null;
-  recurrenceType: "daily" | "weekly";
+  recurrenceType: "daily" | "weekly" | "monthly";
   weeklyDays: number[];
+  monthlyDays: number[];
   assignedTo: string | null;
   departmentId: string | null;
   active: boolean;
+  locationIds: string[];
 };
+
+/** Replace a template's location set: delete the old rows, insert the new set. */
+async function syncRecurringLocations(recurringTaskId: string, locationIds: string[]): Promise<void> {
+  const { error: delErr } = await supabase
+    .from("recurring_task_locations")
+    .delete()
+    .eq("recurring_task_id", recurringTaskId);
+  if (delErr) throw new Error(delErr.message);
+  if (locationIds.length) {
+    const { error: insErr } = await supabase
+      .from("recurring_task_locations")
+      .insert(locationIds.map((location_id) => ({ recurring_task_id: recurringTaskId, location_id })));
+    if (insErr) throw new Error(insErr.message);
+  }
+}
 
 /** Insert a recurring-task template (returns the new id). */
 export async function insertRecurring(input: RecurringWriteInput & { createdBy: string }): Promise<string> {
@@ -218,6 +269,7 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       description: input.description,
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
+      monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       created_by: input.createdBy,
@@ -226,7 +278,9 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  return data.id as string;
+  const id = data.id as string;
+  await syncRecurringLocations(id, input.locationIds);
+  return id;
 }
 
 /** Update a recurring-task template. */
@@ -238,12 +292,41 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       description: input.description,
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
+      monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       active: input.active,
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+  await syncRecurringLocations(id, input.locationIds);
+}
+
+/**
+ * Generate TODAY's task instance for one recurring template, right now — so a
+ * freshly created/activated template shows up immediately instead of waiting for
+ * the 06:00 IST cron job. Runs the same dedup as the bulk job via the
+ * `generate_recurring_task_now` SECURITY DEFINER RPC (which carries an owner/
+ * admin/HOD permission guard).
+ *
+ * `force` controls the firing-day rule:
+ *  - false (default, automatic save/activate paths): only generates if the
+ *    template fires today; returns null otherwise.
+ *  - true (the manual "Generate now" button): generates today's instance on ANY
+ *    day, ignoring the daily/weekly schedule.
+ * Either way a paused template no-ops (null), and it's idempotent — returns the
+ * existing task id if today's instance already exists.
+ */
+export async function generateRecurringNow(
+  recurringTaskId: string,
+  force = false
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc("generate_recurring_task_now", {
+    p_recurring_id: recurringTaskId,
+    p_force: force,
+  });
+  if (error) throw new Error(error.message);
+  return (data as string | null) ?? null;
 }
 
 /** Flip a recurring template's active flag (caller passes the new value). */
@@ -255,6 +338,61 @@ export async function setRecurringActive(id: string, active: boolean): Promise<v
 /** Delete a recurring-task template. */
 export async function deleteRecurring(id: string): Promise<void> {
   const { error } = await supabase.from("recurring_tasks").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/* ------------------------------- locations -------------------------------- */
+// Admin-managed master list (RLS: select for all; insert/update/delete admin only).
+// Each entry is a company + place pair, or the special General entry (is_general).
+
+export type LocationWriteInput = {
+  company: string | null;
+  name: string;
+  isGeneral: boolean;
+  active: boolean;
+  sortOrder: number;
+};
+
+/** Insert a location (returns the new id). */
+export async function insertLocation(input: LocationWriteInput & { createdBy: string }): Promise<string> {
+  const { data, error } = await supabase
+    .from("locations")
+    .insert({
+      company: input.isGeneral ? null : input.company,
+      name: input.name,
+      is_general: input.isGeneral,
+      active: input.active,
+      sort_order: input.sortOrder,
+      created_by: input.createdBy,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+/** Update a location. */
+export async function updateLocation(id: string, input: LocationWriteInput): Promise<void> {
+  const { error } = await supabase
+    .from("locations")
+    .update({
+      company: input.isGeneral ? null : input.company,
+      name: input.name,
+      is_general: input.isGeneral,
+      active: input.active,
+      sort_order: input.sortOrder,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Delete a location. Fails (FK on_delete restrict) if it is still referenced by
+ * any task or recurring template — callers should surface that and offer to
+ * deactivate (active=false) instead.
+ */
+export async function deleteLocation(id: string): Promise<void> {
+  const { error } = await supabase.from("locations").delete().eq("id", id);
   if (error) throw new Error(error.message);
 }
 

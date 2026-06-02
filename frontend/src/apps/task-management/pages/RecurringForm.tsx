@@ -8,13 +8,17 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import type { RecurrenceType } from "../types";
+import LocationPicker from "../components/LocationPicker";
+import { MONTH_LAST_DAY, type RecurrenceType } from "../types";
 
 // display order Mon→Sun, stored as 0=Sun..6=Sat
 const WEEKDAYS = [
   { v: 1, l: "Mon" }, { v: 2, l: "Tue" }, { v: 3, l: "Wed" }, { v: 4, l: "Thu" },
   { v: 5, l: "Fri" }, { v: 6, l: "Sat" }, { v: 0, l: "Sun" },
 ];
+
+// 1..31 for the monthly day-of-month grid (MONTH_LAST_DAY is a separate toggle).
+const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
 export default function RecurringForm() {
   const { id } = useParams();
@@ -29,7 +33,9 @@ export default function RecurringForm() {
   const [assignedTo, setAssignedTo] = useState(editing?.assignedTo ?? user.id);
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
+  const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
   const [active, setActive] = useState(editing?.active ?? true);
+  const [locationIds, setLocationIds] = useState<string[]>(editing?.locationIds ?? []);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -37,22 +43,26 @@ export default function RecurringForm() {
   const departmentName = departmentById(profileById(assignedTo)?.departmentId ?? null)?.name;
 
   const toggleDay = (v: number) =>
-    setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort()));
+    setWeeklyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort((a, b) => a - b)));
+  const toggleMonthDay = (v: number) =>
+    setMonthlyDays((prev) => (prev.includes(v) ? prev.filter((d) => d !== v) : [...prev, v].sort((a, b) => a - b)));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return setError("Please enter a title.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
+    if (recurrenceType === "monthly" && monthlyDays.length === 0) return setError("Pick at least one day of the month.");
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
       recurrenceType,
       weeklyDays: recurrenceType === "weekly" ? weeklyDays : [],
-      monthlyDays: [],
+      monthlyDays: recurrenceType === "monthly" ? monthlyDays : [],
       assignedTo,
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
       active,
+      locationIds,
     };
     setBusy(true);
     setError("");
@@ -108,7 +118,7 @@ export default function RecurringForm() {
           {/* frequency segmented */}
           <FieldLabel label="Frequency">
             <div className="inline-flex rounded-xl border border-line p-1 bg-page">
-              {(["daily", "weekly"] as RecurrenceType[]).map((f) => (
+              {(["daily", "weekly", "monthly"] as RecurrenceType[]).map((f) => (
                 <button
                   key={f}
                   type="button"
@@ -146,6 +156,44 @@ export default function RecurringForm() {
               </div>
             </FieldLabel>
           )}
+
+          {recurrenceType === "monthly" && (
+            <FieldLabel label="Day(s) of the month" hint="task generates on these dates each month">
+              <div className="grid grid-cols-7 gap-1.5">
+                {MONTH_DAYS.map((d) => {
+                  const on = monthlyDays.includes(d);
+                  return (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => toggleMonthDay(d)}
+                      className={cn(
+                        "py-1.5 rounded-lg text-[12.5px] font-semibold border transition",
+                        on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
+                      )}
+                    >
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => toggleMonthDay(MONTH_LAST_DAY)}
+                className={cn(
+                  "mt-2 w-full sm:w-auto px-4 py-2 rounded-lg text-[12.5px] font-semibold border transition",
+                  monthlyDays.includes(MONTH_LAST_DAY) ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
+                )}
+              >
+                Last day of month
+              </button>
+              <p className="text-[11.5px] text-grey-2 mt-1.5">
+                Days 29–31 only fire in months that have them — use “Last day of month” for a reliable month-end task.
+              </p>
+            </FieldLabel>
+          )}
+
+          <LocationPicker value={locationIds} onChange={setLocationIds} />
 
           <label className="flex items-center gap-3 pt-1 cursor-pointer select-none">
             <button
