@@ -228,15 +228,17 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
 }
 
 /* ----------------------------- recurring tasks ----------------------------- */
-// The live recurrence_type enum is daily/weekly only (no monthly); weekly_days
-// is an int[] (0=Sun..6=Sat). RLS: insert created_by=auth.uid(); update
-// created_by/admin/hod-of-assignee; delete created_by/admin.
+// recurrence_type enum is daily/weekly/monthly. weekly_days is an int[]
+// (0=Sun..6=Sat); monthly_days is an int[] (1..31; 32 = last day of month).
+// RLS: insert created_by=auth.uid(); update created_by/admin/hod-of-assignee;
+// delete created_by/admin.
 
 export type RecurringWriteInput = {
   title: string;
   description: string | null;
-  recurrenceType: "daily" | "weekly";
+  recurrenceType: "daily" | "weekly" | "monthly";
   weeklyDays: number[];
+  monthlyDays: number[];
   assignedTo: string | null;
   departmentId: string | null;
   active: boolean;
@@ -267,6 +269,7 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       description: input.description,
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
+      monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       created_by: input.createdBy,
@@ -289,6 +292,7 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       description: input.description,
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
+      monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       active: input.active,

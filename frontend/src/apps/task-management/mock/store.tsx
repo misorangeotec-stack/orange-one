@@ -247,14 +247,15 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
       recurringTasks,
       getRecurring: (id) => recurringTasks.find((r) => r.id === id),
-      // Recurring CRUD: LIVE (B4). recurrence_type is daily/weekly only; monthly
-      // (frontend-only) collapses to daily defensively. RLS scopes the writes.
+      // Recurring CRUD: LIVE (B4). recurrence_type is daily/weekly/monthly; the
+      // write layer keeps only the day-set that matches the type. RLS scopes the writes.
       createRecurring: async (input) => {
         const id = await insertRecurringWrite({
           title: input.title,
           description: input.description ?? null,
-          recurrenceType: input.recurrenceType === "weekly" ? "weekly" : "daily",
+          recurrenceType: input.recurrenceType,
           weeklyDays: input.weeklyDays ?? [],
+          monthlyDays: input.monthlyDays ?? [],
           assignedTo: input.assignedTo,
           departmentId: input.departmentId,
           active: input.active,
@@ -281,8 +282,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await updateRecurringWrite(id, {
           title: m.title,
           description: m.description ?? null,
-          recurrenceType: m.recurrenceType === "weekly" ? "weekly" : "daily",
+          recurrenceType: m.recurrenceType,
           weeklyDays: m.weeklyDays ?? [],
+          monthlyDays: m.monthlyDays ?? [],
           assignedTo: m.assignedTo,
           departmentId: m.departmentId,
           active: m.active,

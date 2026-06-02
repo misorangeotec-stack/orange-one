@@ -45,7 +45,7 @@ export default function RecurringList() {
 
   // filters + sort
   const [q, setQ] = useState("");
-  const [type, setType] = useState<"all" | "daily" | "weekly">("all");
+  const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly">("all");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "paused">("all");
   const [person, setPerson] = useState("all");
   const [sort, setSort] = useState<"title-asc" | "title-desc" | "status">("title-asc");
@@ -93,7 +93,7 @@ export default function RecurringList() {
   // active-filter chips
   const chips: ActiveFilter[] = [];
   if (q.trim()) chips.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
-  if (type !== "all") chips.push({ key: "type", label: `Type: ${type === "daily" ? "Daily" : "Weekly"}`, onClear: () => setType("all") });
+  if (type !== "all") chips.push({ key: "type", label: `Type: ${type[0].toUpperCase()}${type.slice(1)}`, onClear: () => setType("all") });
   if (activeFilter !== "all") chips.push({ key: "status", label: activeFilter === "active" ? "Active" : "Paused", onClear: () => setActiveFilter("all") });
   if (person !== "all") chips.push({ key: "person", label: `Person: ${profileById(person)?.name ?? person}`, onClear: () => setPerson("all") });
   const clearAll = () => {
@@ -139,12 +139,13 @@ export default function RecurringList() {
               </div>
               <Combobox
                 value={type}
-                onChange={(v) => setType(v as "all" | "daily" | "weekly")}
+                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly")}
                 className="w-full sm:w-auto sm:min-w-[140px]"
                 options={[
                   { value: "all", label: "All types" },
                   { value: "daily", label: "Daily" },
                   { value: "weekly", label: "Weekly" },
+                  { value: "monthly", label: "Monthly" },
                 ]}
               />
               <Combobox

@@ -260,6 +260,7 @@ export type Database = {
           department_id: string | null
           description: string | null
           id: string
+          monthly_days: number[]
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
           updated_at: string
@@ -273,6 +274,7 @@ export type Database = {
           department_id?: string | null
           description?: string | null
           id?: string
+          monthly_days?: number[]
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
           updated_at?: string
@@ -286,6 +288,7 @@ export type Database = {
           department_id?: string | null
           description?: string | null
           id?: string
+          monthly_days?: number[]
           recurrence_type?: Database["public"]["Enums"]["recurrence_type"]
           title?: string
           updated_at?: string
@@ -680,7 +683,7 @@ export type Database = {
         | "remark"
       app_role: "admin" | "hod" | "employee" | "sub_hod"
       notification_type: "mention"
-      recurrence_type: "daily" | "weekly"
+      recurrence_type: "daily" | "weekly" | "monthly"
       task_status:
         | "pending"
         | "completed"
@@ -827,7 +830,7 @@ export const Constants = {
       ],
       app_role: ["admin", "hod", "employee", "sub_hod"],
       notification_type: ["mention"],
-      recurrence_type: ["daily", "weekly"],
+      recurrence_type: ["daily", "weekly", "monthly"],
       task_status: [
         "pending",
         "completed",
