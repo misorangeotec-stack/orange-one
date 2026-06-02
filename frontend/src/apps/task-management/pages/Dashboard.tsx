@@ -242,7 +242,15 @@ function TaskRow({ task }: { task: Task }) {
     <li>
       <Link to={`/task-management/tasks/${task.id}`} className="flex items-center gap-3 py-3 group">
         <span className="min-w-0 flex-1">
-          <span className="block text-[13.5px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-[13.5px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
+            {task.recurringTaskId && (
+              <svg className="shrink-0 text-blue" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-label="Recurring"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+            )}
+          </span>
+          {task.description?.trim() && (
+            <span className="block text-[12px] text-grey mt-0.5 truncate">{task.description}</span>
+          )}
           <span className="block text-[11.5px] text-grey-2 mt-0.5">
             {dept?.name}
             {assignee ? ` · ${assignee.name}` : ""}

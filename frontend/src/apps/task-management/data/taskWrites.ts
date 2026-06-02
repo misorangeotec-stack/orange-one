@@ -298,6 +298,33 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
   await syncRecurringLocations(id, input.locationIds);
 }
 
+/**
+ * Generate TODAY's task instance for one recurring template, right now — so a
+ * freshly created/activated template shows up immediately instead of waiting for
+ * the 06:00 IST cron job. Runs the same dedup as the bulk job via the
+ * `generate_recurring_task_now` SECURITY DEFINER RPC (which carries an owner/
+ * admin/HOD permission guard).
+ *
+ * `force` controls the firing-day rule:
+ *  - false (default, automatic save/activate paths): only generates if the
+ *    template fires today; returns null otherwise.
+ *  - true (the manual "Generate now" button): generates today's instance on ANY
+ *    day, ignoring the daily/weekly schedule.
+ * Either way a paused template no-ops (null), and it's idempotent — returns the
+ * existing task id if today's instance already exists.
+ */
+export async function generateRecurringNow(
+  recurringTaskId: string,
+  force = false
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc("generate_recurring_task_now", {
+    p_recurring_id: recurringTaskId,
+    p_force: force,
+  });
+  if (error) throw new Error(error.message);
+  return (data as string | null) ?? null;
+}
+
 /** Flip a recurring template's active flag (caller passes the new value). */
 export async function setRecurringActive(id: string, active: boolean): Promise<void> {
   const { error } = await supabase.from("recurring_tasks").update({ active }).eq("id", id);

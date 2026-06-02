@@ -61,6 +61,15 @@ export default function TaskDetail() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[22px] font-bold text-navy">{task.title}</h2>
             <StatusChip status={task.status} />
+            {task.recurringTaskId && (
+              <span
+                title="Generated from a recurring task"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-blue bg-[#EAF1FE] rounded-pill px-2 py-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
+                Recurring
+              </span>
+            )}
           </div>
           <p className="text-grey text-[13px] mt-1">
             {dept?.name ?? "No department"} · Created {timeAgo(task.createdAt)}

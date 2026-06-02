@@ -644,6 +644,10 @@ export type Database = {
         Args: { p_mentioned?: string[]; p_note: string; p_task_id: string }
         Returns: string
       }
+      generate_recurring_task_now: {
+        Args: { p_recurring_id: string; p_force?: boolean }
+        Returns: string
+      }
       generate_recurring_tasks: { Args: { p_date?: string }; Returns: number }
       has_role: {
         Args: {

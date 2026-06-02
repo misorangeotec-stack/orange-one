@@ -18,6 +18,7 @@ import {
   insertRecurring as insertRecurringWrite,
   updateRecurring as updateRecurringWrite,
   setRecurringActive as setRecurringActiveWrite,
+  generateRecurringNow as generateRecurringNowWrite,
   deleteRecurring as deleteRecurringWrite,
   upsertWeeklyPlan as upsertWeeklyPlanWrite,
   updateWorkspaceSettings as updateWorkspaceSettingsWrite,
@@ -78,6 +79,8 @@ interface TaskStoreValue {
   createRecurring: (input: Omit<RecurringTask, "id">) => Promise<string>;
   updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => Promise<void>;
   toggleRecurring: (id: string) => Promise<void>;
+  /** Force-generate today's task instance for a template (manual "Generate now"); returns the task id. */
+  generateRecurringNow: (id: string) => Promise<string | null>;
   deleteRecurring: (id: string) => Promise<void>;
 
   // locations
@@ -258,6 +261,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           locationIds: input.locationIds ?? [],
           createdBy: user.id,
         });
+        // Materialise today's instance immediately if the template is active and
+        // fires today (otherwise it would wait for the next 06:00 IST cron run).
+        // Best-effort: a generation failure shouldn't fail the template create.
+        if (input.active) {
+          try {
+            await generateRecurringNowWrite(id);
+          } catch {
+            /* template saved; today's instance will be created by the next cron run */
+          }
+        }
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
       },
@@ -275,13 +288,41 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           active: m.active,
           locationIds: m.locationIds ?? [],
         });
+        // If the edit leaves the template active, ensure today's instance exists
+        // (e.g. activating via the edit form). Idempotent, so no duplicate if it
+        // already generated today. Best-effort.
+        if (m.active) {
+          try {
+            await generateRecurringNowWrite(id);
+          } catch {
+            /* saved; today's instance will be created by the next cron run */
+          }
+        }
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       toggleRecurring: async (id) => {
         const cur = recurringTasks.find((r) => r.id === id);
         if (!cur) return;
-        await setRecurringActiveWrite(id, !cur.active);
+        const nowActive = !cur.active;
+        await setRecurringActiveWrite(id, nowActive);
+        // Re-activating a template should drop today's instance in right away,
+        // same as creating an active one. Best-effort (see createRecurring).
+        if (nowActive) {
+          try {
+            await generateRecurringNowWrite(id);
+          } catch {
+            /* toggled active; today's instance will be created by the next cron run */
+          }
+        }
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      // Manual on-demand generation (force = true): creates today's instance on
+      // any day, ignoring the schedule. Idempotent. Returns the task id so the UI
+      // can jump straight to it.
+      generateRecurringNow: async (id) => {
+        const taskId = await generateRecurringNowWrite(id, true);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return taskId;
       },
       deleteRecurring: async (id) => {
         await deleteRecurringWrite(id);
