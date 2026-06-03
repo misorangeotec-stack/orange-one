@@ -10,6 +10,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import ShareLoginModal from "./ShareLoginModal";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDirectory } from "@/core/platform/store";
@@ -32,6 +33,7 @@ export default function Users() {
   const [confirmDel, setConfirmDel] = useState<Profile | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [delErr, setDelErr] = useState("");
+  const [shareFor, setShareFor] = useState<Profile | null>(null);
 
   const filtered = useMemo(
     () =>
@@ -112,6 +114,9 @@ export default function Users() {
                   <div className="text-[10px] uppercase tracking-wide text-grey-2">Last active</div>
                   <div className="text-[11.5px] text-navy">{formatDateTime(u.lastActiveAt)}</div>
                 </div>
+                <button onClick={() => setShareFor(u)} className="text-grey-2 hover:text-orange transition p-1 shrink-0" title="Share login details">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.6" y1="13.5" x2="15.4" y2="17.5" /><line x1="15.4" y1="6.5" x2="8.6" y2="10.5" /></svg>
+                </button>
                 <Link to={`/admin/users/${u.id}/edit`} className="text-grey-2 hover:text-orange transition p-1 shrink-0" title="View / edit">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
                 </Link>
@@ -157,6 +162,14 @@ export default function Users() {
         <p className="text-[14px] text-grey leading-relaxed">They'll be removed from the workspace and any reporting links. Existing tasks remain for history.</p>
         {delErr && <p className="mt-2 text-[13px] text-[#d4493f]">{delErr}</p>}
       </Modal>
+
+      <ShareLoginModal
+        open={!!shareFor}
+        onClose={() => setShareFor(null)}
+        name={shareFor?.name ?? ""}
+        email={shareFor?.email ?? ""}
+        defaultPassword={shareFor?.phone ?? ""}
+      />
     </div>
   );
 }

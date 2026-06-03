@@ -10,6 +10,7 @@ import { useDirectory } from "@/core/platform/store";
 import { apps } from "@/apps/registry";
 import type { AppRole } from "@/core/platform/types";
 import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
+import ShareLoginModal from "./ShareLoginModal";
 
 const RECEIVABLES_APP_ID = "outstanding-dashboard";
 
@@ -41,6 +42,11 @@ export default function UserForm() {
   const [spLoading, setSpLoading] = useState(false);
   const [spError, setSpError] = useState("");
   const [error, setError] = useState("");
+  // After a successful save we land on a confirmation panel offering to share the
+  // login details (instead of jumping straight back to the list). Holds the saved
+  // identity + the mobile we pinned as the password so we can pre-fill the message.
+  const [saved, setSaved] = useState<null | { name: string; email: string; password: string }>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const candidateHods = profiles.filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== id);
   const toggleHod = (hid: string) => setHodIds((prev) => (prev.includes(hid) ? prev.filter((h) => h !== hid) : [...prev, hid]));
@@ -91,12 +97,52 @@ export default function UserForm() {
       // Saving always re-pins the password to the mobile number (workspace policy).
       if (editing) await updateUser(editing.id, { ...base, phone: mobileNorm });
       else await addUser({ ...base, mobile: mobileNorm });
-      navigate("/admin/users");
+      // Show the confirmation panel (with the "Share login details" action) rather
+      // than bouncing back to the list — the mobile we just pinned is the password.
+      setSaved({ name: base.name, email: base.email ?? "", password: mobileNorm });
+      setBusy(false);
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
     }
   };
+
+  // Post-save confirmation: offer to share the login details before returning.
+  if (saved) {
+    return (
+      <div className="max-w-2xl space-y-5">
+        <h3 className="text-[18px] font-bold text-navy">{editing ? "User saved" : "User created"}</h3>
+        <Card className="p-6">
+          <div className="flex items-start gap-3.5">
+            <span className="mt-0.5 w-10 h-10 rounded-full bg-orange-soft text-orange flex items-center justify-center shrink-0">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+            </span>
+            <div className="min-w-0">
+              <p className="text-[15px] font-semibold text-navy">{saved.name} is all set.</p>
+              <p className="text-[13px] text-grey mt-1 leading-relaxed">
+                Their login password is their mobile number{saved.email ? <> and their username is <span className="font-medium text-navy">{saved.email}</span></> : ""}. Share the login details so they can sign in.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2.5 pt-5">
+            <Button variant="ghost" onClick={() => navigate("/admin/users")}>Done</Button>
+            <Button onClick={() => setShareOpen(true)}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.6" y1="13.5" x2="15.4" y2="17.5" /><line x1="15.4" y1="6.5" x2="8.6" y2="10.5" /></svg>
+              Share login details
+            </Button>
+          </div>
+        </Card>
+
+        <ShareLoginModal
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          name={saved.name}
+          email={saved.email}
+          defaultPassword={saved.password}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl space-y-5">
