@@ -8,8 +8,9 @@ import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { WEEK_START } from "../mock/data";
+import { useTaskStore } from "../mock/store";
 import type { Department, Profile, Task, TaskStatus } from "../types";
-import TaskListItem from "./TaskListItem";
+import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "./TaskTable";
 
 const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
   { value: "all", label: "All statuses" },
@@ -38,13 +39,27 @@ export default function TaskBrowser({
   departments?: Department[];
   emptyMessage?: string;
 }) {
+  const { profileById } = useTaskStore();
   const [q, setQ] = useState("");
   const [person, setPerson] = useState("all");
+  const [creator, setCreator] = useState("all");
   const [dept, setDept] = useState("all");
   const [status, setStatus] = useState<TaskStatus | "all">("all");
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
+  const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
+  const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
+
+  // "Created by" options come from the creators that actually appear in these
+  // tasks (resolved via the directory), not from `people` — a task's creator may
+  // be an admin or the HOD themselves, who aren't in a team-scoped `people` list.
+  const creatorOptions = useMemo(() => {
+    const ids = [...new Set(tasks.map((t) => t.createdBy))];
+    return ids
+      .map((id) => ({ value: id, label: profileById(id)?.name ?? "—" }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [tasks, profileById]);
 
   // The assignee dropdown is scoped to the selected department, so picking a
   // department surfaces exactly that team's members.
@@ -74,6 +89,7 @@ export default function TaskBrowser({
   const clearAll = () => {
     setQ("");
     setPerson("all");
+    setCreator("all");
     setDept("all");
     setStatus("all");
     setWeek("all");
@@ -83,6 +99,7 @@ export default function TaskBrowser({
     const nw = nextWeekStart();
     return tasks.filter((t) => {
       if (person !== "all" && t.assignedTo !== person) return false;
+      if (creator !== "all" && t.createdBy !== creator) return false;
       if (dept !== "all" && t.departmentId !== dept) return false;
       if (status !== "all" && t.status !== status) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
@@ -90,7 +107,7 @@ export default function TaskBrowser({
       if (q.trim() && !t.title.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
-  }, [tasks, person, dept, status, week, q]);
+  }, [tasks, person, creator, dept, status, week, q]);
 
   // KPI cards reflect the active filters (not the full list).
   const counts = useMemo(() => {
@@ -104,7 +121,12 @@ export default function TaskBrowser({
     return c;
   }, [filtered]);
 
-  const pg = usePagination(filtered, { resetKey: `${q}|${person}|${dept}|${status}|${week}` });
+  const sorted = useMemo(
+    () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
+    [filtered, sort, profileById],
+  );
+
+  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${status}|${week}|${sort.key}|${sort.dir}` });
 
   // Active-filter chips, so it's always visible what's narrowing the list.
   const activeFilters: ActiveFilter[] = [];
@@ -115,10 +137,16 @@ export default function TaskBrowser({
       label: `Department: ${departments.find((d) => d.id === dept)?.name ?? dept}`,
       onClear: () => handleDeptChange("all"),
     });
+  if (creator !== "all")
+    activeFilters.push({
+      key: "creator",
+      label: `Created by: ${creatorOptions.find((c) => c.value === creator)?.label ?? creator}`,
+      onClear: () => setCreator("all"),
+    });
   if (person !== "all")
     activeFilters.push({
       key: "person",
-      label: `Person: ${peopleById.get(person)?.name ?? person}`,
+      label: `Assigned to: ${peopleById.get(person)?.name ?? person}`,
       onClear: () => handlePersonChange("all"),
     });
   if (status !== "all")
@@ -161,11 +189,17 @@ export default function TaskBrowser({
             />
           )}
           <Combobox
+            value={creator}
+            onChange={setCreator}
+            className="w-full sm:w-auto sm:min-w-[170px]"
+            options={[{ value: "all", label: "All creators" }, ...creatorOptions]}
+          />
+          <Combobox
             value={person}
             onChange={handlePersonChange}
             className="w-full sm:w-auto sm:min-w-[170px]"
             options={[
-              { value: "all", label: departments ? "All people" : "All team members" },
+              { value: "all", label: "All assignees" },
               ...visiblePeople.map((p) => ({
                 value: p.id,
                 label: p.name,
@@ -206,9 +240,7 @@ export default function TaskBrowser({
           <EmptyState title="Nothing here" message={emptyMessage} />
         ) : (
           <>
-            <div className="divide-y divide-line">
-              {pg.pageItems.map((t) => <TaskListItem key={t.id} task={t} showAssignee />)}
-            </div>
+            <TaskTable tasks={pg.pageItems} sort={sort} onSort={onSort} />
             <Pagination state={pg} rowsLabel="tasks" />
           </>
         )}

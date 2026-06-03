@@ -11,10 +11,17 @@ import { usePagination } from "@/shared/lib/usePagination";
 import { isOverdue, isToday } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import type { Task, TaskStatus } from "../types";
-import TaskListItem from "../components/TaskListItem";
+import type { TaskStatus } from "../types";
+import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 
 type View = "all" | "today" | "followup" | "pending";
+type Relation = "all" | "assigned" | "created";
+
+const RELATION_OPTIONS: { value: Relation; label: string }[] = [
+  { value: "all", label: "Assigned or created by me" },
+  { value: "assigned", label: "Assigned to me" },
+  { value: "created", label: "Created by me" },
+];
 
 const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
   { value: "all", label: "Any status" },
@@ -28,11 +35,14 @@ const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
   const { user } = useSession();
-  const { tasks, canCreateTask } = useTaskStore();
+  const { tasks, canCreateTask, profileById } = useTaskStore();
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as View) || "all";
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<TaskStatus | "all">("all");
+  const [relation, setRelation] = useState<Relation>("all");
+  const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
+  const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
   const mine = useMemo(
     () =>
@@ -58,14 +68,27 @@ export default function TasksList() {
     else if (view === "followup")
       list = list.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed");
     else if (view === "pending") list = list.filter((t) => t.status === "pending" || t.status === "in_progress");
+    if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
+    else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
     if (status !== "all") list = list.filter((t) => t.status === status);
     if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
     return list;
-  }, [mine, view, status, q]);
+  }, [mine, view, status, q, relation, user.id]);
 
-  const pg = usePagination(filtered, { resetKey: `${view}|${status}|${q}` });
+  const sorted = useMemo(
+    () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
+    [filtered, sort, profileById],
+  );
+
+  const pg = usePagination(sorted, { resetKey: `${view}|${status}|${q}|${relation}|${sort.key}|${sort.dir}` });
 
   const activeFilters: ActiveFilter[] = [];
+  if (relation !== "all")
+    activeFilters.push({
+      key: "relation",
+      label: RELATION_OPTIONS.find((r) => r.value === relation)?.label ?? relation,
+      onClear: () => setRelation("all"),
+    });
   if (status !== "all")
     activeFilters.push({
       key: "status",
@@ -76,6 +99,7 @@ export default function TasksList() {
   const clearAll = () => {
     setStatus("all");
     setQ("");
+    setRelation("all");
   };
 
   return (
@@ -109,6 +133,13 @@ export default function TasksList() {
             onChange={(k) => setParams(k === "all" ? {} : { view: k }, { replace: true })}
           />
           <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
+            <Combobox
+              value={relation}
+              onChange={(v) => setRelation(v as Relation)}
+              className="w-full sm:w-auto sm:min-w-[190px]"
+              align="right"
+              options={RELATION_OPTIONS.map((r) => ({ value: r.value, label: r.label }))}
+            />
             <Combobox
               value={status}
               onChange={(v) => setStatus(v as TaskStatus | "all")}
@@ -147,8 +178,8 @@ export default function TasksList() {
           </div>
         ) : (
           <>
-            <div className="divide-y divide-line border-t border-line">
-              {pg.pageItems.map((t: Task) => <TaskListItem key={t.id} task={t} />)}
+            <div className="border-t border-line">
+              <TaskTable tasks={pg.pageItems} sort={sort} onSort={onSort} />
             </div>
             <Pagination state={pg} rowsLabel="tasks" />
           </>
