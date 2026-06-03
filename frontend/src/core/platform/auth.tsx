@@ -25,12 +25,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Stamp "last active" once per app open / login. Fire-and-forget: a failed
-    // stamp must never block auth. We stamp on the initial session resolve and on
-    // an explicit SIGNED_IN — not on every TOKEN_REFRESHED — matching the
-    // "app open / login only" signal.
+    // Record "last active" whenever the user is actually in the app:
+    //   • app open with a restored session (getSession + INITIAL_SESSION)
+    //   • a fresh sign-in (SIGNED_IN)
+    //   • a long-open tab whose token refreshes (TOKEN_REFRESHED, ~hourly)
+    // Fire-and-forget (a failed stamp must never block auth) and throttled to at
+    // most once a minute, so bursty/duplicate auth events don't spam the write.
+    let lastStampAt = 0;
     const stamp = (s: Session | null) => {
-      if (s) supabase.rpc("touch_last_active").then(() => {}, () => {});
+      if (!s) return;
+      const now = Date.now();
+      if (now - lastStampAt < 60_000) return;
+      lastStampAt = now;
+      supabase.rpc("touch_last_active").then(() => {}, () => {});
     };
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
@@ -39,7 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
-      if (event === "SIGNED_IN") stamp(s);
+      if (event === "SIGNED_IN" || event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") {
+        stamp(s);
+      }
     });
     return () => sub.subscription.unsubscribe();
   }, []);
