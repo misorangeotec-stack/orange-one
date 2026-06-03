@@ -18,6 +18,9 @@ const ic = {
   access: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
   ),
+  backup: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" /><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" /></svg>
+  ),
 };
 
 /** Admin area sidebar nav (admin-only area, so no per-item role gating needed). */
@@ -27,4 +30,5 @@ export const adminNav: NavItem[] = [
   { label: "Users", to: `${B}/users`, icon: ic.users },
   { label: "Hierarchy", to: `${B}/hierarchy`, icon: ic.hierarchy },
   { label: "Module Access", to: `${B}/access`, icon: ic.access },
+  { label: "Backup", to: `${B}/backup`, icon: ic.backup },
 ];

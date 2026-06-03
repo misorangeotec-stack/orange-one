@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "backup": "node scripts/backup-db.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
