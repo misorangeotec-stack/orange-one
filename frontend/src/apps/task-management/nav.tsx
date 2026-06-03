@@ -9,6 +9,9 @@ const ic = {
   myTasks: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8.5 12l2 2 4-4.5" /></svg>
   ),
+  tagged: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.9 7.9" /></svg>
+  ),
   team: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3 3-5 6-5s6 2 6 5" /><circle cx="17.5" cy="9" r="2.4" /><path d="M16 14c3 0 5 2 5 5" /></svg>
   ),
@@ -39,6 +42,7 @@ const ic = {
 export const taskNav: NavItem[] = [
   { label: "Dashboard", to: `${B}`, icon: ic.dashboard, section: "Workspace" },
   { label: "My Tasks", to: `${B}/tasks`, icon: ic.myTasks },
+  { label: "Tagged", to: `${B}/tagged`, icon: ic.tagged },
   { label: "Team Tasks", to: `${B}/team`, icon: ic.team, roles: ["hod", "sub_hod"] },
   { label: "All Tasks", to: `${B}/all`, icon: ic.all, roles: ["admin"] },
   { label: "Recurring", to: `${B}/recurring`, icon: ic.recurring, roles: ["admin", "hod", "sub_hod"], section: "Manage" },
