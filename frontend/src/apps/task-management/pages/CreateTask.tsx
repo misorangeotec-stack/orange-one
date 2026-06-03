@@ -18,7 +18,7 @@ export default function CreateTask() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [assignedTo, setAssignedTo] = useState(user.id);
+  const [assignedTo, setAssignedTo] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [locationIds, setLocationIds] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -32,6 +32,10 @@ export default function CreateTask() {
     e.preventDefault();
     if (!title.trim()) {
       setError("Please enter a task title.");
+      return;
+    }
+    if (!assignedTo) {
+      setError("Please choose who to assign this task to.");
       return;
     }
     setBusy(true);
@@ -52,17 +56,34 @@ export default function CreateTask() {
     }
   };
 
+  const BackLink = (
+    <button onClick={() => navigate(-1)} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
+      Back
+    </button>
+  );
+
+  // You assign tasks down your team — with no team members, there's no one to assign to.
+  if (canAssign.length === 0) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-5">
+        <div>
+          {BackLink}
+          <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
+        </div>
+        <Card className="p-6">
+          <p className="text-[14px] text-grey">You don't have any team members to assign tasks to.</p>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       <div>
-        <button onClick={() => navigate(-1)} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-          Back
-        </button>
+        {BackLink}
         <h2 className="text-[22px] font-bold text-navy mt-2">Create Task</h2>
-        <p className="text-grey text-[13px] mt-1">
-          {role === "employee" ? "Add a task for yourself." : "Assign a task to a team member or yourself."}
-        </p>
+        <p className="text-grey text-[13px] mt-1">Assign a task to a member of your team.</p>
       </div>
 
       <Card className="p-6">
@@ -80,13 +101,12 @@ export default function CreateTask() {
               <Combobox
                 value={assignedTo}
                 onChange={setAssignedTo}
-                disabled={canAssign.length <= 1}
                 options={canAssign.map((p) => {
                   const dept = departmentById(p.departmentId)?.name;
                   const sub = [p.designation, dept].filter(Boolean).join(" · ");
                   return {
                     value: p.id,
-                    label: p.id === user.id ? `${p.name} (me)` : p.name,
+                    label: p.name,
                     sublabel: sub || undefined,
                     icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
                   };

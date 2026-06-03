@@ -4,7 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
-import { dateLabel, timeAgo } from "@/shared/lib/time";
+import { dateLabel, timeAgo, formatDateTime } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
 import { locationLabel, type ActivityType } from "../types";
@@ -72,7 +72,7 @@ export default function TaskDetail() {
             )}
           </div>
           <p className="text-grey text-[13px] mt-1">
-            {dept?.name ?? "No department"} · Created {timeAgo(task.createdAt)}
+            {dept?.name ?? "No department"} · Created <span title={formatDateTime(task.createdAt)}>{timeAgo(task.createdAt)}</span>
             {creator ? ` by ${creator.name}` : ""}
           </p>
         </div>
@@ -168,7 +168,7 @@ export default function TaskDetail() {
                         <span className="min-w-0 flex-1">
                           <span className={cn("text-[13px] font-medium", done ? "text-navy" : "text-ink")}>{label}</span>
                           {done && (
-                            <span className="block text-[11px] text-grey-2">
+                            <span className="block text-[11px] text-grey-2" title={formatDateTime(tl.completedAt!)}>
                               {by ? `Done by ${by.name}` : "Done"} · {timeAgo(tl.completedAt!)}
                             </span>
                           )}
@@ -203,7 +203,7 @@ export default function TaskDetail() {
                         <div className="flex items-center gap-2 mb-1">
                           {actor && <Avatar name={actor.name} color={actor.avatarColor} size={22} />}
                           <span className="text-[12.5px] font-semibold text-navy">{actor?.name ?? "Someone"}</span>
-                          <span className="text-[11px] text-grey-2">{timeAgo(a.createdAt)}</span>
+                          <span className="text-[11px] text-grey-2" title={formatDateTime(a.createdAt)}>{timeAgo(a.createdAt)}</span>
                         </div>
                         <p className="text-[13px] text-ink leading-relaxed whitespace-pre-wrap">{renderMentions(a.note ?? "")}</p>
                       </div>
@@ -213,7 +213,7 @@ export default function TaskDetail() {
                           <b className="text-navy font-semibold">{actor?.name ?? "Someone"}</b> {actVerb(a.type)}
                           {a.note ? <span className="text-grey-2"> — {a.note}</span> : ""}
                         </p>
-                        <span className="text-[11px] text-grey-2">{timeAgo(a.createdAt)}</span>
+                        <span className="text-[11px] text-grey-2" title={formatDateTime(a.createdAt)}>{timeAgo(a.createdAt)}</span>
                       </div>
                     )}
                   </li>
@@ -246,8 +246,8 @@ export default function TaskDetail() {
                   {task.revisionCount} total · {info.remaining}/{info.max} left this week
                 </span>
               </Row>
-              {task.completedAt && <Row label="Completed">{timeAgo(task.completedAt)}</Row>}
-              <Row label="Last updated">{timeAgo(task.updatedAt)}</Row>
+              {task.completedAt && <Row label="Completed"><span title={formatDateTime(task.completedAt)}>{timeAgo(task.completedAt)}</span></Row>}
+              <Row label="Last updated"><span title={formatDateTime(task.updatedAt)}>{timeAgo(task.updatedAt)}</span></Row>
             </dl>
 
             {(task.shiftedFromTaskId || task.shiftedToTaskId) && (

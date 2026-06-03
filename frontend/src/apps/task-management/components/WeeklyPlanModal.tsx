@@ -27,7 +27,7 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
     []
   );
 
-  const [doerId, setDoerId] = useState(defaultDoerId ?? pool[0]?.id ?? user.id);
+  const [doerId, setDoerId] = useState(defaultDoerId ?? pool[0]?.id ?? "");
   const [weekStart, setWeekStart] = useState(weekOptions[0].value);
   const [green, setGreen] = useState(70);
   const [yellow, setYellow] = useState(20);
@@ -90,7 +90,7 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
               disabled={pool.length <= 1}
               options={pool.map((p) => ({
                 value: p.id,
-                label: p.id === user.id ? `${p.name} (me)` : p.name,
+                label: p.name,
                 sublabel: p.designation ?? undefined,
                 icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
               }))}

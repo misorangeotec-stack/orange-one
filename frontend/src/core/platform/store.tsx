@@ -75,13 +75,15 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
     const profileById = (id: string | null) => profiles.find((p) => p.id === id);
     const departmentById = (id: string | null) => departments.find((d) => d.id === id);
     const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
+    // You assign tasks DOWN the hierarchy, never to yourself: admins to anyone,
+    // HOD/sub-HOD to their direct reports, employees to no one.
     const assignableUsers = (role: AppRole, userId: string): Profile[] => {
-      if (role === "admin") return profiles;
+      if (role === "admin") return profiles.filter((p) => p.id !== userId);
       if (role === "hod" || role === "sub_hod") {
-        const ids = new Set([userId, ...directReportIds(userId)]);
-        return profiles.filter((p) => ids.has(p.id));
+        const ids = new Set(directReportIds(userId)); // reports only — no self
+        return profiles.filter((p) => ids.has(p.id) && p.id !== userId);
       }
-      return profiles.filter((p) => p.id === userId);
+      return []; // employees have no one to assign to
     };
     return {
       profiles,

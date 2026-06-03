@@ -18,7 +18,22 @@ export function timeAgo(iso: string): string {
   if (hr < 24) return `${hr} hour${hr > 1 ? "s" : ""} ago`;
   const day = Math.round(hr / 24);
   if (day < 7) return `${day} day${day > 1 ? "s" : ""} ago`;
-  return formatDate(iso);
+  return formatDateTime(iso);
+}
+
+/** Absolute date + time: dd-mm-yyyy h:mm AM/PM (local time, 12-hour). */
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return formatDate(iso);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  let h = d.getHours();
+  const ampm = h >= 12 ? "PM" : "AM";
+  h = h % 12 || 12;
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `${dd}-${mm}-${yyyy} ${h}:${min} ${ampm}`;
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);

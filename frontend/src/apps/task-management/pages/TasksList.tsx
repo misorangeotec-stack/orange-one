@@ -34,8 +34,9 @@ const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
 
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
-  const { user } = useSession();
-  const { tasks, canCreateTask, profileById } = useTaskStore();
+  const { user, role } = useSession();
+  const { tasks, canCreateTask, profileById, assignableUsers } = useTaskStore();
+  const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as View) || "all";
   const [q, setQ] = useState("");
@@ -109,7 +110,7 @@ export default function TasksList() {
           <h2 className="text-[22px] font-bold text-navy">My Tasks</h2>
           <p className="text-grey text-[13px] mt-1">Everything assigned to you or created by you.</p>
         </div>
-        {canCreateTask && (
+        {canCreate && (
           <Link
             to="/task-management/tasks/new"
             className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
@@ -172,8 +173,8 @@ export default function TasksList() {
             <EmptyState
               title="No tasks here"
               message={view === "all" ? "Tasks assigned to you will appear here." : "Nothing in this view right now."}
-              actionLabel={canCreateTask ? "New Task" : undefined}
-              actionTo={canCreateTask ? "/task-management/tasks/new" : undefined}
+              actionLabel={canCreate ? "New Task" : undefined}
+              actionTo={canCreate ? "/task-management/tasks/new" : undefined}
             />
           </div>
         ) : (

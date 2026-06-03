@@ -30,7 +30,7 @@ export default function RecurringForm() {
 
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
-  const [assignedTo, setAssignedTo] = useState(editing?.assignedTo ?? user.id);
+  const [assignedTo, setAssignedTo] = useState(editing?.assignedTo ?? "");
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
@@ -50,6 +50,7 @@ export default function RecurringForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return setError("Please enter a title.");
+    if (!assignedTo) return setError("Please choose who to assign this task to.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
     if (recurrenceType === "monthly" && monthlyDays.length === 0) return setError("Pick at least one day of the month.");
     const payload = {
@@ -101,13 +102,12 @@ export default function RecurringForm() {
             <Combobox
               value={assignedTo}
               onChange={setAssignedTo}
-              disabled={canAssign.length <= 1}
               options={canAssign.map((p) => {
                 const dept = departmentById(p.departmentId)?.name;
                 const sub = [p.designation, dept].filter(Boolean).join(" · ");
                 return {
                   value: p.id,
-                  label: p.id === user.id ? `${p.name} (me)` : p.name,
+                  label: p.name,
                   sublabel: sub || undefined,
                   icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
                 };
