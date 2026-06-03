@@ -176,6 +176,7 @@ export type Database = {
           designation: string | null
           email: string | null
           id: string
+          last_active_at: string | null
           name: string
           phone: string | null
           receivables_salespersons: string[] | null
@@ -188,6 +189,7 @@ export type Database = {
           designation?: string | null
           email?: string | null
           id: string
+          last_active_at?: string | null
           name?: string
           phone?: string | null
           receivables_salespersons?: string[] | null
@@ -200,6 +202,7 @@ export type Database = {
           designation?: string | null
           email?: string | null
           id?: string
+          last_active_at?: string | null
           name?: string
           phone?: string | null
           receivables_salespersons?: string[] | null
@@ -660,6 +663,7 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      touch_last_active: { Args: Record<PropertyKey, never>; Returns: undefined }
       is_hod_of: { Args: { _employee: string; _hod: string }; Returns: boolean }
       is_in_subtree: {
         Args: { _root: string; _target: string }

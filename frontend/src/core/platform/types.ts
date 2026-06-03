@@ -46,4 +46,10 @@ export interface Profile {
    * a non-admin sees only these names, and an empty list means they see nothing.
    */
   receivablesSalespersons: string[];
+  /**
+   * When the user last opened the portal (profiles.last_active_at, ISO). Stamped on
+   * app open / login via the touch_last_active RPC; null if never seen since the
+   * feature shipped. Shown to admins (Users/Hierarchy) and HODs (their team).
+   */
+  lastActiveAt: string | null;
 }

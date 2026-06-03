@@ -25,11 +25,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Stamp "last active" once per app open / login. Fire-and-forget: a failed
+    // stamp must never block auth. We stamp on the initial session resolve and on
+    // an explicit SIGNED_IN — not on every TOKEN_REFRESHED — matching the
+    // "app open / login only" signal.
+    const stamp = (s: Session | null) => {
+      if (s) supabase.rpc("touch_last_active").then(() => {}, () => {});
+    };
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setLoading(false);
+      stamp(data.session);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      setSession(s);
+      if (event === "SIGNED_IN") stamp(s);
+    });
     return () => sub.subscription.unsubscribe();
   }, []);
 

@@ -4,6 +4,9 @@ import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import TaskBrowser from "../components/TaskBrowser";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Card from "@/shared/components/ui/Card";
+import Avatar from "@/shared/components/ui/Avatar";
+import { formatDateTime } from "@/shared/lib/time";
 
 /** HOD / sub-HOD view: tasks of everyone reporting to the current user. */
 export default function TeamTasks() {
@@ -13,6 +16,7 @@ export default function TeamTasks() {
   const reportIds = directReportIds(user.id);
   const teamIds = useMemo(() => [user.id, ...reportIds], [user.id, reportIds.join(",")]);
   const team = useMemo(() => teamIds.map((id) => profileById(id)!).filter(Boolean), [teamIds.join(",")]);
+  const reports = useMemo(() => reportIds.map((id) => profileById(id)!).filter(Boolean), [reportIds.join(",")]);
   const teamTasks = useMemo(
     () => tasks.filter((t) => t.assignedTo && teamIds.includes(t.assignedTo)),
     [tasks, teamIds.join(",")]
@@ -34,10 +38,33 @@ export default function TeamTasks() {
         </Link>
       </div>
 
-      {directReportIds(user.id).length === 0 ? (
+      {reports.length === 0 ? (
         <EmptyState title="No team members mapped" message="Once employees report to you, their tasks appear here." />
       ) : (
-        <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." />
+        <>
+          <Card className="overflow-hidden">
+            <div className="px-4 py-3 border-b border-line">
+              <h3 className="text-[13px] font-semibold text-navy">Team · last active</h3>
+              <p className="text-[11.5px] text-grey-2 mt-0.5">When each of your team members last opened the portal.</p>
+            </div>
+            <ul className="divide-y divide-line">
+              {reports.map((r) => (
+                <li key={r.id} className="flex items-center gap-3 px-4 py-3">
+                  <Avatar name={r.name} color={r.avatarColor} size={32} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13.5px] font-medium text-navy truncate">{r.name}</div>
+                    <div className="text-[11.5px] text-grey-2 truncate">{r.designation || "—"}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-[10px] uppercase tracking-wide text-grey-2">Last active</div>
+                    <div className="text-[11.5px] text-navy">{formatDateTime(r.lastActiveAt)}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Card>
+          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." />
+        </>
       )}
     </div>
   );

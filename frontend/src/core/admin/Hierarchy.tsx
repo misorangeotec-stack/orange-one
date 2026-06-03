@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useDirectory } from "@/core/platform/store";
+import { formatDateTime } from "@/shared/lib/time";
 import type { Profile } from "@/core/platform/types";
 
 /** Read-only view of the reporting structure (edit a person to change their HODs). */
@@ -19,7 +20,7 @@ export default function Hierarchy() {
         <h3 className="text-[13px] font-semibold text-navy mb-3">Leadership (Admins)</h3>
         <div className="flex flex-wrap gap-2">
           {admins.map((a) => (
-            <Chip key={a.id} p={a} sub={departmentById(a.departmentId)?.name} />
+            <Chip key={a.id} p={a} sub={departmentById(a.departmentId)?.name} active={formatDateTime(a.lastActiveAt)} />
           ))}
         </div>
       </Card>
@@ -41,6 +42,7 @@ export default function Hierarchy() {
                       {m.role === "sub_hod" ? "Sub-HOD" : "HOD"} · {departmentById(m.departmentId)?.name ?? "—"}
                       {reportsTo.length > 0 && ` · reports to ${reportsTo.join(", ")}`}
                     </div>
+                    <div className="text-[11px] text-grey-2 truncate">Last active: {formatDateTime(m.lastActiveAt)}</div>
                   </div>
                   <span className="ml-auto text-[11.5px] text-grey-2 shrink-0">{reports.length} report{reports.length !== 1 ? "s" : ""}</span>
                 </div>
@@ -56,6 +58,7 @@ export default function Hierarchy() {
                         <Avatar name={r.name} color={r.avatarColor} size={26} />
                         <span className="text-[13px] text-navy">{r.name}</span>
                         <span className="text-[11.5px] text-grey-2 truncate">· {r.designation}</span>
+                        <span className="ml-auto text-[11px] text-grey-2 shrink-0" title="Last active">{formatDateTime(r.lastActiveAt)}</span>
                       </li>
                     ))}
                   </ul>
@@ -84,12 +87,13 @@ export default function Hierarchy() {
   );
 }
 
-function Chip({ p, sub }: { p: Profile; sub?: string }) {
+function Chip({ p, sub, active }: { p: Profile; sub?: string; active?: string }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-pill border border-line bg-white px-3 py-1.5">
       <Avatar name={p.name} color={p.avatarColor} size={22} />
       <span className="text-[12.5px] font-medium text-navy">{p.name}</span>
       {sub && <span className="text-[11px] text-grey-2">· {sub}</span>}
+      {active && <span className="text-[11px] text-grey-2" title="Last active">· {active}</span>}
     </span>
   );
 }
