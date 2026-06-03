@@ -6,6 +6,7 @@ import Users from "./Users";
 import UserForm from "./UserForm";
 import Hierarchy from "./Hierarchy";
 import ModuleAccess from "./ModuleAccess";
+import Backup from "./Backup";
 
 /**
  * Portal Admin area (mounted at /admin, admin-guarded in App.tsx). Owns the
@@ -23,6 +24,7 @@ export default function AdminApp() {
         <Route path="users/:id/edit" element={<UserForm />} />
         <Route path="hierarchy" element={<Hierarchy />} />
         <Route path="access" element={<ModuleAccess />} />
+        <Route path="backup" element={<Backup />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
     </Routes>
