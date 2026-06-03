@@ -237,6 +237,7 @@ function RecentActivityCard({ list }: { list: Task[] }) {
 function TaskRow({ task }: { task: Task }) {
   const { profileById, departmentById } = useTaskStore();
   const assignee = profileById(task.assignedTo);
+  const creator = profileById(task.createdBy);
   const dept = departmentById(task.departmentId);
   return (
     <li>
@@ -253,6 +254,7 @@ function TaskRow({ task }: { task: Task }) {
           )}
           <span className="block text-[11.5px] text-grey-2 mt-0.5">
             {dept?.name}
+            {creator ? ` · by ${creator.name}` : ""}
             {assignee ? ` · ${assignee.name}` : ""}
             {task.revisionCount > 0 ? ` · ${task.revisionCount} revision${task.revisionCount > 1 ? "s" : ""}` : ""}
           </span>

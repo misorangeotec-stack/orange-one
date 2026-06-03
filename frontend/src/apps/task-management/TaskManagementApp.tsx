@@ -4,6 +4,7 @@ import TaskLayout from "./TaskLayout";
 import RequireRole from "./components/RequireRole";
 import Dashboard from "./pages/Dashboard";
 import TasksList from "./pages/TasksList";
+import TaggedTasks from "./pages/TaggedTasks";
 import CreateTask from "./pages/CreateTask";
 import TaskDetail from "./pages/TaskDetail";
 import TeamTasks from "./pages/TeamTasks";
@@ -33,6 +34,7 @@ export default function TaskManagementApp() {
           <Route element={<TaskLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="tasks" element={<TasksList />} />
+            <Route path="tagged" element={<TaggedTasks />} />
             <Route path="tasks/new" element={<CreateTask />} />
             <Route path="tasks/:id" element={<TaskDetail />} />
 
