@@ -55,6 +55,10 @@ interface CustomerRow {
   name: string;
   salesPerson: string;
   salesPersons?: string[];
+  /** All companies this row spans (one entry = single company; >1 = "Multiple"). */
+  companies?: string[];
+  /** All locations this row spans (one entry = single location; >1 = "Multiple"). */
+  locations?: string[];
   openingBalance: number;
   sales: number;
   receipts: number;
@@ -446,6 +450,8 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 const columns: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "name",           label: "Customer" },
   { key: "salesPerson",    label: "Sales Person" },
+  { key: "companies",      label: "Company" },
+  { key: "locations",      label: "Location" },
   { key: "openingBalance", label: "Opening Bal",   align: "right" },
   { key: "sales",          label: "Sales",         align: "right" },
   { key: "receipts",       label: "Receipts",      align: "right" },
@@ -466,7 +472,7 @@ const columns: { key: SortKey; label: string; align?: "right" }[] = [
 
 const ALL_COL_KEYS = columns.map((c) => c.key);
 // Columns hidden by default — user can opt-in via the column toggle.
-const HIDDEN_BY_DEFAULT: SortKey[] = ["proposedCreditLimit3M", "proposedCreditLimitAI"];
+const HIDDEN_BY_DEFAULT: SortKey[] = ["companies", "locations", "proposedCreditLimit3M", "proposedCreditLimitAI"];
 const DEFAULT_VISIBLE_COL_KEYS = ALL_COL_KEYS.filter((k) => !HIDDEN_BY_DEFAULT.includes(k));
 const COL_STORAGE_KEY = "riskRegister.visibleColumns";
 
@@ -485,6 +491,8 @@ export default function CustomerRiskRegister() {
   const [blockedFilter, setBlockedFilter] = useState<"all" | "blocked" | "not_blocked">("all");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
+  const [companyFilter, setCompanyFilter] = useState("all");
+  const [locationFilter, setLocationFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey | null>("outstanding");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [showKpis, setShowKpis] = useState(false);
@@ -539,13 +547,35 @@ export default function CustomerRiskRegister() {
     });
   };
 
-  const { loading, error, consolidatedCustomers, groupedCustomers, customerDetail, salesPersonOptions } = useAppData({
+  const { loading, error, allCustomers, consolidatedCustomers, groupedCustomers, customerDetail, salesPersonOptions } = useAppData({
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
     customerSegment,
     balanceFilter,
     salesPerson: salesPersons.length === 0 ? "all" : salesPersons.join(","),
+    company:  companyFilter  === "all" ? undefined : companyFilter,
+    location: locationFilter === "all" ? undefined : locationFilter,
   });
   const allData: CustomerRow[] = (viewMode === "group" ? groupedCustomers : consolidatedCustomers) as CustomerRow[];
+
+  // Company / Location filter options — dependent (each list narrows by the other
+  // selection) and sourced from the unfiltered, salesperson-scoped customer set so
+  // the options stay stable as the numeric/segment filters change.
+  const companyOptions = useMemo(
+    () => [...new Set(
+      allCustomers
+        .filter((c) => locationFilter === "all" || c.location === locationFilter)
+        .map((c) => c.company),
+    )].sort(),
+    [allCustomers, locationFilter],
+  );
+  const locationOptions = useMemo(
+    () => [...new Set(
+      allCustomers
+        .filter((c) => companyFilter === "all" || c.company === companyFilter)
+        .map((c) => c.location),
+    )].sort(),
+    [allCustomers, companyFilter],
+  );
 
   // Lookup of consolidated customer rows by Tally name (for rendering child rows
   // under each expanded group).
@@ -591,7 +621,7 @@ export default function CustomerRiskRegister() {
     }
   };
 
-  const activeFilterCount = [agingFilter, specialFilter, customerSegment, balanceFilter, blockedFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0);
+  const activeFilterCount = [agingFilter, specialFilter, customerSegment, balanceFilter, blockedFilter, companyFilter, locationFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setSearch("");
@@ -603,6 +633,8 @@ export default function CustomerRiskRegister() {
     setBlockedFilter("all");
     setSalesPersons([]);
     setSaleTypes([]);
+    setCompanyFilter("all");
+    setLocationFilter("all");
   };
 
   const filterChips: FilterChip[] = [
@@ -641,6 +673,14 @@ export default function CustomerRiskRegister() {
     saleTypes.length > 0 && {
       label: saleTypes.length <= 2 ? `Type: ${saleTypes.join(", ")}` : `Types: ${saleTypes.length} selected`,
       onRemove: () => setSaleTypes([]),
+    },
+    companyFilter !== "all" && {
+      label: `Company: ${companyFilter}`,
+      onRemove: () => setCompanyFilter("all"),
+    },
+    locationFilter !== "all" && {
+      label: `Location: ${locationFilter}`,
+      onRemove: () => setLocationFilter("all"),
     },
   ].filter(Boolean) as FilterChip[];
 
@@ -749,6 +789,10 @@ export default function CustomerRiskRegister() {
   // the bucket-aware KPI total and the customer-detail aging breakdown.
   const overdueForRow = (r: CustomerRow) =>
     agingBucketKey ? (r.agingBuckets?.[agingBucketKey] ?? 0) : r.overdue;
+
+  // Collapse a multi-value company/location list to a single display label,
+  // matching the group view's convention (single value, else "Multiple").
+  const showList = (xs?: string[]) => (!xs?.length ? "—" : xs.length === 1 ? xs[0] : "Multiple");
 
   const totals = useMemo(() => ({
     sales:             rows.reduce((s, r) => s + r.sales, 0),
@@ -867,6 +911,8 @@ export default function CustomerRiskRegister() {
       for (const c of visibleCols_) {
         if (c.key === "salesPerson") {
           r.push(row.salesPersons?.join("; ") ?? row.salesPerson ?? "");
+        } else if (c.key === "companies" || c.key === "locations") {
+          r.push((row[c.key] as string[] | undefined)?.join("; ") ?? "");
         } else if (c.key === "risk") {
           r.push(row.risk.charAt(0).toUpperCase() + row.risk.slice(1));
         } else if (c.key === "blocked") {
@@ -1068,6 +1114,39 @@ export default function CustomerRiskRegister() {
                 </SelectContent>
               </Select>
             </div>
+
+            {companyOptions.length > 1 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Company</span>
+                <Select value={companyFilter} onValueChange={setCompanyFilter}>
+                  <SelectTrigger className="w-[150px] rounded-input border-border text-sm">
+                    <SelectValue placeholder="All Companies" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-input">
+                    <SelectItem value="all">All Companies</SelectItem>
+                    {companyOptions.map((c) => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {locationOptions.length > 1 && (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Location</span>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger className="w-[150px] rounded-input border-border text-sm">
+                    <SelectValue placeholder="All Locations" />
+                  </SelectTrigger>
+                  <SelectContent className="rounded-input">
+                    <SelectItem value="all">All Locations</SelectItem>
+                    {locationOptions.map((loc) => (
+                      <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Segment</span>
@@ -1354,6 +1433,12 @@ export default function CustomerRiskRegister() {
                       )}
                       {visibleCols.has("salesPerson") && (
                         <TableCell className="text-sm whitespace-nowrap">{r.salesPersons?.join(", ") ?? r.salesPerson}</TableCell>
+                      )}
+                      {visibleCols.has("companies") && (
+                        <TableCell className="text-sm whitespace-nowrap" title={r.companies?.join(", ")}>{showList(r.companies)}</TableCell>
+                      )}
+                      {visibleCols.has("locations") && (
+                        <TableCell className="text-sm whitespace-nowrap" title={r.locations?.join(", ")}>{showList(r.locations)}</TableCell>
                       )}
                       {visibleCols.has("openingBalance") && (
                         <TableCell className="text-sm text-right font-mono">{fmt(r.openingBalance)}</TableCell>

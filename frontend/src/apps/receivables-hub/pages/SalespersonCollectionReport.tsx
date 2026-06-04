@@ -66,12 +66,12 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
-type SortKey = "salesperson" | "outstanding" | "due" | "received" | "pending" | "collectionPct";
+type SortKey = "salesperson" | "outstanding" | "due" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 
 interface Metrics { outstanding: number; due: number; received: number; pending: number; dueSoon: number; }
-interface CustomerLine { id: string; name: string; company: string; location: string; m: Metrics; }
-interface SPRow { salesperson: string; customers: CustomerLine[]; m: Metrics; }
+interface CustomerLine { id: string; name: string; company: string; location: string; m: Metrics; mPrev: Metrics; }
+interface SPRow { salesperson: string; customers: CustomerLine[]; m: Metrics; mPrev: Metrics; }
 
 /** Normalize a salesperson name: trim + UPPERCASE; blank / "Others" → "OTHERS"
  *  (merges the pipeline's blank-default "Others" with explicit "OTHERS"). */
@@ -96,6 +96,21 @@ const pctStyle = (pct: number | null): string => {
   if (pct >= 60) return "text-warning font-semibold";
   return "text-destructive font-semibold";
 };
+
+/** Sort an array of rows (salesperson groups OR customer lines) by the active column.
+ *  Both row shapes carry `m`/`mPrev`; the only difference is the name accessor. */
+function sortRows<T extends { m: Metrics; mPrev: Metrics }>(
+  arr: T[], name: (x: T) => string, key: SortKey, dir: number,
+): void {
+  arr.sort((a, b) => {
+    if (key === "salesperson") return dir * name(a).localeCompare(name(b));
+    if (key === "collectionPct")
+      return dir * ((collectionPct(a.m) ?? -1) - (collectionPct(b.m) ?? -1));
+    if (key === "collectionPctPrev")
+      return dir * ((collectionPct(a.mPrev) ?? -1) - (collectionPct(b.mPrev) ?? -1));
+    return dir * (a.m[key] - b.m[key]);
+  });
+}
 
 /* ── Component ─────────────────────────────────────────────── */
 
@@ -127,6 +142,12 @@ export default function SalespersonCollectionReport() {
 
   const selectedMonth = months.includes(monthState) ? monthState : asOfMonth;
   const isCurrentMonth = selectedMonth === asOfMonth;
+
+  // Calendar-previous month (months is FY-ordered); null when selected month is the FY's first.
+  const prevMonth = useMemo(() => {
+    const i = months.indexOf(selectedMonth);
+    return i > 0 ? months[i - 1] : null;
+  }, [months, selectedMonth]);
 
   // Dropdown options
   const companyOptions = useMemo(
@@ -201,36 +222,43 @@ export default function SalespersonCollectionReport() {
     return map;
   }, [filteredCustomers, selectedMonth, metricsForMonth]);
 
+  // Per-customer metrics for the PREVIOUS month (feeds the side-by-side prev-month Collection %).
+  const customerMetricsPrev = useMemo(() => {
+    const map = new Map<string, Metrics>();
+    if (prevMonth) for (const c of filteredCustomers) map.set(c.id, metricsForMonth(c, prevMonth));
+    return map;
+  }, [filteredCustomers, prevMonth, metricsForMonth]);
+
   // Group by salesperson
   const spRows = useMemo<SPRow[]>(() => {
     const map = new Map<string, SPRow>();
     for (const c of filteredCustomers) {
       const sp = spName(c.salesPerson);
       const m = customerMetrics.get(c.id) ?? emptyMetrics();
+      const mPrev = customerMetricsPrev.get(c.id) ?? emptyMetrics();
+      // Skip customers whose (displayed) total outstanding is zero for the selected month.
+      if (Math.round(startMonthOutstanding(m)) === 0) continue;
       let row = map.get(sp);
-      if (!row) { row = { salesperson: sp, customers: [], m: emptyMetrics() }; map.set(sp, row); }
-      row.customers.push({ id: c.id, name: c.name, company: c.company, location: c.location, m });
+      if (!row) { row = { salesperson: sp, customers: [], m: emptyMetrics(), mPrev: emptyMetrics() }; map.set(sp, row); }
+      row.customers.push({ id: c.id, name: c.name, company: c.company, location: c.location, m, mPrev });
       row.m.outstanding += m.outstanding;
       row.m.due         += m.due;
       row.m.received    += m.received;
       row.m.pending     += m.pending;
       row.m.dueSoon     += m.dueSoon;
+      row.mPrev.outstanding += mPrev.outstanding;
+      row.mPrev.due         += mPrev.due;
+      row.mPrev.received    += mPrev.received;
+      row.mPrev.pending     += mPrev.pending;
+      row.mPrev.dueSoon     += mPrev.dueSoon;
     }
     const arr = [...map.values()];
-    // Sort children by pending desc for drill-down readability
-    for (const r of arr) r.customers.sort((a, b) => b.m.pending - a.m.pending);
     const dir = sortDir === "asc" ? 1 : -1;
-    arr.sort((a, b) => {
-      if (sortKey === "salesperson") return dir * a.salesperson.localeCompare(b.salesperson);
-      if (sortKey === "collectionPct") {
-        const av = collectionPct(a.m) ?? -1;
-        const bv = collectionPct(b.m) ?? -1;
-        return dir * (av - bv);
-      }
-      return dir * (a.m[sortKey] - b.m[sortKey]);
-    });
+    // Sort the salesperson groups AND the customers within each group by the same column.
+    sortRows(arr, (r) => r.salesperson, sortKey, dir);
+    for (const r of arr) sortRows(r.customers, (c) => c.name, sortKey, dir);
     return arr;
-  }, [filteredCustomers, customerMetrics, sortKey, sortDir]);
+  }, [filteredCustomers, customerMetrics, customerMetricsPrev, sortKey, sortDir]);
 
   const totals = useMemo<Metrics>(() => {
     const t = emptyMetrics();
@@ -267,11 +295,6 @@ export default function SalespersonCollectionReport() {
       return { month: m, ...agg, sales };
     });
   }, [selectedSalesperson, filteredCustomers, months, customerDetail, metricsForMonth]);
-
-  // Scroll to the panel when a specific salesperson is selected (not on the default view).
-  useEffect(() => {
-    if (selectedSalesperson) panelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [selectedSalesperson]);
 
   // If the selected salesperson is filtered out, revert the panel to consolidated.
   useEffect(() => {
@@ -393,7 +416,8 @@ export default function SalespersonCollectionReport() {
     { key: "due",           label: dueLabel,            align: "right" },
     { key: "received",      label: receivedLabel,       align: "right" },
     { key: "pending",       label: "Total Pending",     align: "right" },
-    { key: "collectionPct", label: "Collection %",      align: "right" },
+    { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right" },
+    { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right" },
   ];
 
   return (
@@ -543,12 +567,14 @@ export default function SalespersonCollectionReport() {
                     <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
                       {collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`}
                     </TableCell>
+                    <TableCell />
                   </TableRow>
 
                   {spRows.map((row) => {
                     const isOpen = expanded.has(row.salesperson);
                     const isSelected = selectedSalesperson === row.salesperson;
                     const pct = collectionPct(row.m);
+                    const pctPrev = collectionPct(row.mPrev);
                     return (
                       <Fragment key={row.salesperson}>
                         <TableRow
@@ -569,10 +595,14 @@ export default function SalespersonCollectionReport() {
                           <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
                             {pct === null ? "—" : `${pct.toFixed(1)}%`}
                           </TableCell>
+                          <TableCell className={`text-sm text-right font-mono ${pctStyle(pctPrev)}`}>
+                            {prevMonth == null || pctPrev === null ? "—" : `${pctPrev.toFixed(1)}%`}
+                          </TableCell>
                         </TableRow>
 
                         {isOpen && row.customers.map((cust) => {
                           const cpct = collectionPct(cust.m);
+                          const cpctPrev = collectionPct(cust.mPrev);
                           return (
                             <TableRow
                               key={`${row.salesperson}-${cust.id}`}
@@ -590,6 +620,9 @@ export default function SalespersonCollectionReport() {
                               <TableCell className={`text-right font-mono ${cust.m.pending > 0 ? "text-destructive/80" : ""}`}>{fmt(cust.m.pending)}</TableCell>
                               <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
                                 {cpct === null ? "—" : `${cpct.toFixed(1)}%`}
+                              </TableCell>
+                              <TableCell className={`text-right font-mono ${pctStyle(cpctPrev)}`}>
+                                {prevMonth == null || cpctPrev === null ? "—" : `${cpctPrev.toFixed(1)}%`}
                               </TableCell>
                             </TableRow>
                           );

@@ -396,6 +396,7 @@ export default function CustomerDetail() {
     refInvoice: string | null;
     amount: number;
     signedAmount: number;        // + increases outstanding, − reduces
+    received?: number;           // sales rows only: amount − pending
     pending?: number;
     dueDate?: string;
     overdueDays?: number;
@@ -420,6 +421,7 @@ export default function CustomerDetail() {
         refInvoice: null,
         amount: inv.amount,
         signedAmount: inv.amount,
+        received: inv.amount - inv.pending,
         pending: inv.pending,
         dueDate: inv.dueDate,
         overdueDays: inv.overdueDays,
@@ -531,7 +533,7 @@ export default function CustomerDetail() {
   type TxnSortKey =
     | "date" | "kind" | "voucherNo" | "refInvoice"
     | "_company" | "_location"
-    | "amount" | "signedAmount" | "pending"
+    | "amount" | "received" | "pending"
     | "dueDate" | "overdueDays" | "status";
   type SortDir = "asc" | "desc";
 
@@ -554,7 +556,7 @@ export default function CustomerDetail() {
     const { key, dir } = txnSort;
     const mul = dir === "asc" ? 1 : -1;
 
-    const numericKeys: TxnSortKey[] = ["amount", "signedAmount", "pending", "overdueDays"];
+    const numericKeys: TxnSortKey[] = ["amount", "received", "pending", "overdueDays"];
     const isNumeric = numericKeys.includes(key);
 
     rows.sort((a, b) => {
@@ -1646,7 +1648,7 @@ export default function CustomerDetail() {
                         </>
                       )}
                       <SortHeader label="Amount"          sortKey="amount"        align="right" />
-                      <SortHeader label="Effect on O/S"   sortKey="signedAmount"  align="right" />
+                      <SortHeader label="Received"        sortKey="received"      align="right" />
                       <SortHeader label="Pending"         sortKey="pending"       align="right" />
                       <SortHeader label="Due Date"        sortKey="dueDate" />
                       <SortHeader label="OD Days"         sortKey="overdueDays"   align="right" />
@@ -1659,9 +1661,7 @@ export default function CustomerDetail() {
             <TableBody>
               {filteredTransactions.length > 0 && (() => {
                 const totAmount = filteredTransactions.reduce((s, r) => s + r.amount, 0);
-                const totPos    = filteredTransactions.reduce((s, r) => s + (r.signedAmount > 0 ? r.signedAmount : 0), 0);
-                const totNeg    = filteredTransactions.reduce((s, r) => s + (r.signedAmount < 0 ? r.signedAmount : 0), 0);
-                const totNet    = totPos + totNeg;
+                const totReceived = filteredTransactions.reduce((s, r) => s + (r.kind === "sales" ? (r.received ?? 0) : 0), 0);
                 const totPending = filteredTransactions.reduce((s, r) => s + (r.kind === "sales" ? (r.pending ?? 0) : 0), 0);
                 const salesCount = filteredTransactions.filter((r) => r.kind === "sales").length;
                 const colSpan   = isConsolidated ? 6 : 4;
@@ -1669,12 +1669,10 @@ export default function CustomerDetail() {
                   <TableRow className="bg-primary/5 border-b-2 border-primary/20 font-semibold sticky top-0">
                     <TableCell className="text-xs font-bold text-primary tracking-wide" colSpan={colSpan}>
                       <span className="uppercase">Total ({filteredTransactions.length})</span>
-                      {" — Dr "}{fmtINRMoney(totPos)}
-                      {totNeg < 0 && <>{" · Cr "}{fmtINRMoney(Math.abs(totNeg))}</>}
                     </TableCell>
                     <TableCell className="text-sm text-right font-mono font-bold text-foreground">{fmt(totAmount)}</TableCell>
-                    <TableCell className={`text-sm text-right font-mono font-bold ${totNet > 0 ? "text-destructive" : totNet < 0 ? "text-emerald-700" : "text-foreground"}`}>
-                      {fmtINRDrCr(totNet)}
+                    <TableCell className="text-sm text-right font-mono font-bold text-emerald-700">
+                      {salesCount > 0 ? fmt(totReceived) : "—"}
                     </TableCell>
                     <TableCell className="text-sm text-right font-mono font-bold text-destructive">
                       {salesCount > 0 ? fmt(totPending) : "—"}
@@ -1726,8 +1724,8 @@ export default function CustomerDetail() {
                         </>
                       )}
                       <TableCell className="text-sm text-right font-mono">{fmt(r.amount)}</TableCell>
-                      <TableCell className={`text-sm text-right font-mono font-semibold ${r.signedAmount > 0 ? "text-destructive" : r.signedAmount < 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
-                        {fmtINRDrCr(r.signedAmount)}
+                      <TableCell className={`text-sm text-right font-mono ${isSales && (r.received ?? 0) > 0 ? "font-semibold text-emerald-700" : "text-muted-foreground"}`}>
+                        {isSales ? fmt(r.received ?? 0) : "—"}
                       </TableCell>
                       <TableCell className={`text-sm text-right font-mono ${isSales && (r.pending ?? 0) > 0 ? "font-semibold" : "text-muted-foreground"}`}>
                         {isSales ? fmt(r.pending ?? 0) : "—"}
