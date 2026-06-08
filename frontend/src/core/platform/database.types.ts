@@ -641,6 +641,332 @@ export type Database = {
         }
         Relationships: []
       }
+      designations: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_workflows: {
+        Row: {
+          active: boolean
+          created_at: string
+          description: string | null
+          id: string
+          key: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          key: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          description?: string | null
+          id?: string
+          key?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_field_options: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          label: string
+          meta: Json
+          option_set: string
+          sort_order: number
+          updated_at: string
+          workflow_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label: string
+          meta?: Json
+          option_set: string
+          sort_order?: number
+          updated_at?: string
+          workflow_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          label?: string
+          meta?: Json
+          option_set?: string
+          sort_order?: number
+          updated_at?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_field_options_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "fms_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_workflow_steps: {
+        Row: {
+          created_at: string
+          department_id: string | null
+          designation_id: string | null
+          how: string | null
+          id: string
+          is_origin: boolean
+          key: string
+          owner_employee_ids: string[]
+          owner_employee_names: string[]
+          short: string | null
+          step_index: number
+          title: string
+          updated_at: string
+          what: string | null
+          when_text: string | null
+          workflow_id: string
+        }
+        Insert: {
+          created_at?: string
+          department_id?: string | null
+          designation_id?: string | null
+          how?: string | null
+          id?: string
+          is_origin?: boolean
+          key: string
+          owner_employee_ids?: string[]
+          owner_employee_names?: string[]
+          short?: string | null
+          step_index: number
+          title: string
+          updated_at?: string
+          what?: string | null
+          when_text?: string | null
+          workflow_id: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string | null
+          designation_id?: string | null
+          how?: string | null
+          id?: string
+          is_origin?: boolean
+          key?: string
+          owner_employee_ids?: string[]
+          owner_employee_names?: string[]
+          short?: string | null
+          step_index?: number
+          title?: string
+          updated_at?: string
+          what?: string | null
+          when_text?: string | null
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_workflow_steps_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "fms_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_step_fields: {
+        Row: {
+          created_at: string
+          half: boolean
+          id: string
+          key: string
+          label: string
+          option_set: string | null
+          options: Json | null
+          placeholder: string | null
+          required: boolean
+          sort_order: number
+          step_id: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          half?: boolean
+          id?: string
+          key: string
+          label: string
+          option_set?: string | null
+          options?: Json | null
+          placeholder?: string | null
+          required?: boolean
+          sort_order?: number
+          step_id: string
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          half?: boolean
+          id?: string
+          key?: string
+          label?: string
+          option_set?: string | null
+          options?: Json | null
+          placeholder?: string | null
+          required?: boolean
+          sort_order?: number
+          step_id?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_step_fields_step_id_fkey"
+            columns: ["step_id"]
+            isOneToOne: false
+            referencedRelation: "fms_workflow_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_entries: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          current_step_index: number
+          id: string
+          status: string
+          summary: Json
+          updated_at: string
+          workflow_id: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          current_step_index?: number
+          id?: string
+          status?: string
+          summary?: Json
+          updated_at?: string
+          workflow_id: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          current_step_index?: number
+          id?: string
+          status?: string
+          summary?: Json
+          updated_at?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_entries_workflow_id_fkey"
+            columns: ["workflow_id"]
+            isOneToOne: false
+            referencedRelation: "fms_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_entry_stages: {
+        Row: {
+          actual_date: string | null
+          completed_by: string | null
+          created_at: string
+          entry_id: string
+          id: string
+          planned_date: string | null
+          status: string
+          step_id: string
+          step_index: number
+          updated_at: string
+          values: Json
+        }
+        Insert: {
+          actual_date?: string | null
+          completed_by?: string | null
+          created_at?: string
+          entry_id: string
+          id?: string
+          planned_date?: string | null
+          status?: string
+          step_id: string
+          step_index: number
+          updated_at?: string
+          values?: Json
+        }
+        Update: {
+          actual_date?: string | null
+          completed_by?: string | null
+          created_at?: string
+          entry_id?: string
+          id?: string
+          planned_date?: string | null
+          status?: string
+          step_id?: string
+          step_index?: number
+          updated_at?: string
+          values?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_entry_stages_entry_id_fkey"
+            columns: ["entry_id"]
+            isOneToOne: false
+            referencedRelation: "fms_entries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_entry_stages_step_id_fkey"
+            columns: ["step_id"]
+            isOneToOne: false
+            referencedRelation: "fms_workflow_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -655,6 +981,14 @@ export type Database = {
         Returns: string
       }
       generate_recurring_tasks: { Args: { p_date?: string }; Returns: number }
+      fms_complete_stage: {
+        Args: {
+          p_entry_id: string
+          p_values?: Json
+          p_next_planned_date?: string
+        }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

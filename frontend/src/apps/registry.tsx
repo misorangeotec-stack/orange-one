@@ -1,6 +1,7 @@
 import type { AppManifest } from "./types";
 import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
+import { purchaseFmsApp } from "./purchase-fms/meta";
 
 /**
  * Central registry of all Orange One apps.
@@ -18,6 +19,7 @@ const comingSoon = (
 export const apps: AppManifest[] = [
   taskManagementApp,
   receivablesHubApp,
+  purchaseFmsApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);
