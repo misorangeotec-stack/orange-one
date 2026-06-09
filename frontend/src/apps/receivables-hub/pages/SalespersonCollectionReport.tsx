@@ -274,6 +274,19 @@ export default function SalespersonCollectionReport() {
     return t;
   }, [spRows, filteredCustomers, isCurrentMonth]);
 
+  // Previous-month totals — only Due/Received feed the grand-total Collection % (prev) cell.
+  const totalsPrev = useMemo<Metrics>(() => {
+    const t = emptyMetrics();
+    for (const r of spRows) {
+      t.outstanding += r.mPrev.outstanding;
+      t.due         += r.mPrev.due;
+      t.received    += r.mPrev.received;
+      t.pending     += r.mPrev.pending;
+      t.dueSoon     += r.mPrev.dueSoon;
+    }
+    return t;
+  }, [spRows]);
+
   /* ── Month-wise series for the panel (selected salesperson, or consolidated) ── */
   interface MonthRow extends Metrics { month: string; sales: number; }
   const monthlyData = useMemo<MonthRow[]>(() => {
@@ -567,7 +580,9 @@ export default function SalespersonCollectionReport() {
                     <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
                       {collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`}
                     </TableCell>
-                    <TableCell />
+                    <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totalsPrev))}`}>
+                      {prevMonth == null || collectionPct(totalsPrev) === null ? "—" : `${(collectionPct(totalsPrev) as number).toFixed(1)}%`}
+                    </TableCell>
                   </TableRow>
 
                   {spRows.map((row) => {

@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
+import { cn } from "@/shared/lib/cn";
 import { dateLabel, timeAgo, formatDate } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -30,12 +32,20 @@ const ICONS = {
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3 3-5 6-5s6 2 6 5" /></svg>,
 };
 
+type Scope = "week" | "all";
+
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
   const { visibleTasks, workspace, canCreateTask, assignableUsers } = useTaskStore();
+  const [scope, setScope] = useState<Scope>("all");
   const list = visibleTasks(role, user.id);
+  // Scope toggle: "this week" keeps only tasks planned for the current week
+  // (weekStart = this Monday, the same boundary the RYG sections use); "all
+  // time" keeps the full backlog. Every card + the donut read the scoped list.
+  const scopedList = scope === "week" ? list.filter((t) => t.weekStart === WEEK_START) : list;
   const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
-  const stats = computeStats(list);
+  const stats = computeStats(scopedList);
+  const weekly = scope === "week";
   const firstName = user.name.split(" ")[0];
 
   return (
@@ -65,20 +75,28 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* scope toggle: this week vs all time */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] text-grey-2">
+          Showing <b className="text-navy font-semibold">{weekly ? "this week" : "all time"}</b> · {stats.total} task{stats.total !== 1 ? "s" : ""}
+        </span>
+        <ScopeToggle scope={scope} onChange={setScope} />
+      </div>
+
       {/* stat cards (role-aware) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {isAdmin || isHod ? (
           <>
-            <StatCard label={isAdmin ? "Total Tasks" : "Team Tasks"} value={stats.total} icon={ICONS.tasks} tone="orange" hint="this week" />
+            <StatCard label={isAdmin ? "Total Tasks" : "Team Tasks"} value={stats.total} icon={ICONS.tasks} tone="orange" hint={weekly ? "this week" : "all tasks"} />
             <StatCard label="Pending" value={stats.pending + stats.inProgress} icon={ICONS.clock} tone="blue" hint={`${stats.overdue} overdue`} />
-            <StatCard label="Completed" value={stats.completedThisWeek} icon={ICONS.check} tone="green" hint="this week" />
+            <StatCard label="Completed" value={stats.completed} icon={ICONS.check} tone="green" hint={weekly ? "this week" : "all time"} />
             <StatCard label="Revised / Shifted" value={`${stats.revised} / ${stats.shifted}`} icon={ICONS.revise} tone="violet" hint="needs attention" />
           </>
         ) : (
           <>
             <StatCard label="Due Today" value={stats.dueToday} icon={ICONS.clock} tone="orange" hint={`${stats.overdue} overdue`} />
             <StatCard label="Pending" value={stats.pending + stats.inProgress} icon={ICONS.tasks} tone="blue" />
-            <StatCard label="Completed (week)" value={stats.completedThisWeek} icon={ICONS.check} tone="green" />
+            <StatCard label="Completed" value={stats.completed} icon={ICONS.check} tone="green" hint={weekly ? "this week" : "all time"} />
             <StatCard label="Follow-ups Due" value={stats.followUpDue} icon={ICONS.flag} tone="rose" />
           </>
         )}
@@ -96,6 +114,31 @@ export default function Dashboard() {
           <RecentActivityCard list={list} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ---------------- Scope toggle (this week / all time) ---------------- */
+function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (s: Scope) => void }) {
+  const opts: { key: Scope; label: string }[] = [
+    { key: "week", label: "This week" },
+    { key: "all", label: "All time" },
+  ];
+  return (
+    <div className="inline-flex items-center rounded-pill bg-page border border-line p-0.5 text-[12px] font-semibold">
+      {opts.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onChange(o.key)}
+          className={cn(
+            "px-3 py-1.5 rounded-pill transition",
+            scope === o.key ? "bg-white text-navy shadow-sm" : "text-grey-2 hover:text-navy",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   );
 }

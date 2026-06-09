@@ -6,7 +6,7 @@ import { useTaskStore } from "../mock/store";
 import type { Task } from "../types";
 import StatusChip from "./StatusChip";
 
-export type TaskSortKey = "title" | "createdBy" | "assignedTo" | "dueDate" | "status";
+export type TaskSortKey = "title" | "createdBy" | "assignedTo" | "createdAt" | "dueDate" | "status";
 export type SortDir = "asc" | "desc";
 export type TaskSort = { key: TaskSortKey; dir: SortDir };
 
@@ -28,6 +28,7 @@ export function sortTasks(tasks: Task[], sort: TaskSort, nameOf: (id: string | n
       case "title": return t.title?.toLowerCase() ?? "";
       case "createdBy": return (nameOf(t.createdBy) ?? "").toLowerCase();
       case "assignedTo": return (nameOf(t.assignedTo) ?? "~").toLowerCase(); // unassigned sorts last (asc)
+      case "createdAt": return t.createdAt ?? "9999-99-99";
       case "dueDate": return t.dueDate ?? "9999-99-99";
       case "status": return t.status;
     }
@@ -87,12 +88,13 @@ export default function TaskTable({ tasks, sort, onSort }: {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] text-[13px] border-collapse table-fixed">
+      <table className="w-full min-w-[930px] text-[13px] border-collapse table-fixed">
         <thead>
           <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50 border-b border-line">
             <SortTh label="Task" sortKey="title" sort={sort} onSort={onSort} className="px-4" />
             <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[170px]" />
             <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[170px]" />
+            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[110px]" />
             <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[110px]" />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" />
             <th className="w-[40px]" />
@@ -150,6 +152,11 @@ export default function TaskTable({ tasks, sort, onSort }: {
                     {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={24} />}
                     <span className="text-[12.5px] text-navy truncate">{assignee?.name ?? "Unassigned"}</span>
                   </div>
+                </td>
+
+                {/* Assigned (task creation date) */}
+                <td className="px-3 py-3 align-middle">
+                  <span className="text-[12.5px] text-navy">{dateLabel(task.createdAt)}</span>
                 </td>
 
                 {/* Due */}

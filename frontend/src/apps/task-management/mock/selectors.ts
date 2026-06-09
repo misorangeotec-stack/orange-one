@@ -13,7 +13,7 @@ export interface DashboardStats {
   dueToday: number;
   pending: number;
   inProgress: number;
-  completedThisWeek: number;
+  completed: number;
   revised: number;
   shifted: number;
   followUpDue: number;
@@ -115,22 +115,22 @@ export function computeStats(list: Task[]): DashboardStats {
     shifted: 0,
   };
   let dueToday = 0,
-    completedThisWeek = 0,
     followUpDue = 0,
     overdue = 0;
   for (const t of list) {
     statusCounts[t.status]++;
     if (isToday(t.dueDate) && t.status !== "completed") dueToday++;
-    if (t.status === "completed") completedThisWeek++;
     if (t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed")
       followUpDue++;
     if (isOverdue(t.dueDate) && (t.status === "pending" || t.status === "in_progress")) overdue++;
   }
+  // Counts reflect whatever list is passed in; the Dashboard scope toggle
+  // ("this week" vs "all time") decides which tasks reach here.
   return {
     dueToday,
     pending: statusCounts.pending,
     inProgress: statusCounts.in_progress,
-    completedThisWeek,
+    completed: statusCounts.completed,
     revised: statusCounts.revised,
     shifted: statusCounts.shifted,
     followUpDue,
