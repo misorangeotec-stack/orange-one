@@ -10,7 +10,7 @@ export type { AppRole, AvatarColor, Department, Profile } from "@/core/platform/
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "shifted";
 
-export type RecurrenceType = "daily" | "weekly" | "monthly";
+export type RecurrenceType = "daily" | "weekly" | "monthly" | "when";
 
 /** Sentinel day-of-month value meaning "last day of the month" (> any real day). */
 export const MONTH_LAST_DAY = 32;
@@ -67,6 +67,8 @@ export interface Task {
   shiftedToTaskId: string | null;
   recurringTaskId: string | null;
   completedAt: string | null; // ISO datetime
+  notApplicable: boolean; // "when" instances can be marked N/A for the day → excluded from all report metrics
+  notApplicableAt: string | null; // ISO datetime — when N/A was set (null when applicable)
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;

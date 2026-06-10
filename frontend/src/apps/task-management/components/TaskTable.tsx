@@ -110,7 +110,10 @@ export default function TaskTable({ tasks, sort, onSort }: {
               <tr
                 key={task.id}
                 onClick={() => navigate(`/task-management/tasks/${task.id}`)}
-                className="group hover:bg-page transition cursor-pointer align-middle"
+                className={cn(
+                  "group hover:bg-page transition cursor-pointer align-middle",
+                  task.notApplicable && "opacity-55" // N/A ("when") instances read as parked
+                )}
               >
                 {/* Task */}
                 <td className="px-4 py-3 align-top">
@@ -166,7 +169,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
 
                 {/* Status */}
                 <td className="px-3 py-3 align-middle text-center">
-                  <StatusChip status={task.status} />
+                  <StatusChip status={task.status} notApplicable={task.notApplicable} />
                 </td>
 
                 {/* Chevron */}

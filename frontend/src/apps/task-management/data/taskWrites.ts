@@ -130,6 +130,21 @@ export async function completeTask(taskId: string, actorId: string, note?: strin
 }
 
 /**
+ * Mark a "when" task instance Not Applicable for its day (or back to applicable).
+ * Reversible: only the not_applicable flag changes, the underlying status is kept.
+ * A plain column update under the existing task UPDATE RLS (assignee/creator/admin/
+ * HOD) — same path completeTask uses. N/A instances are filtered out of all report
+ * metrics in the selectors, so this does not touch status or any count directly.
+ */
+export async function setTaskNotApplicable(taskId: string, value: boolean): Promise<void> {
+  const { error } = await supabase
+    .from("tasks")
+    .update({ not_applicable: value, not_applicable_at: value ? new Date().toISOString() : null })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Revise a task: bump the revision count, stamp last_revised_at, and set the
  * follow-up date. The trigger auto-logs both 'revised' and 'followup', so we only
  * add the optional reason as a 'remark'. The 2-per-week limit is enforced in the
@@ -228,15 +243,16 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
 }
 
 /* ----------------------------- recurring tasks ----------------------------- */
-// recurrence_type enum is daily/weekly/monthly. weekly_days is an int[]
+// recurrence_type enum is daily/weekly/monthly/when. weekly_days is an int[]
 // (0=Sun..6=Sat); monthly_days is an int[] (1..31; 32 = last day of month).
+// "when" fires every working day Mon–Sat and its instances may be marked N/A.
 // RLS: insert created_by=auth.uid(); update created_by/admin/hod-of-assignee;
 // delete created_by/admin.
 
 export type RecurringWriteInput = {
   title: string;
   description: string | null;
-  recurrenceType: "daily" | "weekly" | "monthly";
+  recurrenceType: "daily" | "weekly" | "monthly" | "when";
   weeklyDays: number[];
   monthlyDays: number[];
   assignedTo: string | null;

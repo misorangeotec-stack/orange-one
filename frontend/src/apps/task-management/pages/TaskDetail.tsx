@@ -18,10 +18,11 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone } = useTaskStore();
+  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, isWhenTask, setTaskNotApplicable } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
+  const [togglingNa, setTogglingNa] = useState(false);
 
   const task = getTask(id);
   if (!task) {
@@ -40,6 +41,11 @@ export default function TaskDetail() {
   const info = revisionInfo(task);
   const closed = task.status === "completed" || task.status === "shifted";
   const acts = activityFor(task.id);
+
+  // "When" instances can be parked as Not Applicable for the day (reversible).
+  // While N/A the normal status actions are hidden and the task is excluded from reports.
+  const whenTask = isWhenTask(task);
+  const na = task.notApplicable;
 
   // Location checklist + completion gate. A task with locations can't be completed
   // until every one is ticked (the DB trigger enforces it too — this is the UI guard).
@@ -60,7 +66,7 @@ export default function TaskDetail() {
         <div className="min-w-0">
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[22px] font-bold text-navy">{task.title}</h2>
-            <StatusChip status={task.status} />
+            <StatusChip status={task.status} notApplicable={na} />
             {task.recurringTaskId && (
               <span
                 title="Generated from a recurring task"
@@ -77,8 +83,45 @@ export default function TaskDetail() {
           </p>
         </div>
 
-        {!closed && canStatusActions && (
+        {/* N/A "when" instance: only offer to switch it back to applicable. */}
+        {na && canStatusActions && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={togglingNa}
+            onClick={async () => {
+              setTogglingNa(true);
+              try {
+                await setTaskNotApplicable(task.id, false);
+              } finally {
+                setTogglingNa(false);
+              }
+            }}
+          >
+            {togglingNa ? "Updating…" : "Mark Applicable"}
+          </Button>
+        )}
+
+        {!na && !closed && canStatusActions && (
           <div className="flex flex-wrap items-center gap-2">
+            {whenTask && (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={togglingNa}
+                onClick={async () => {
+                  setTogglingNa(true);
+                  try {
+                    await setTaskNotApplicable(task.id, true);
+                  } finally {
+                    setTogglingNa(false);
+                  }
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="4.9" y1="4.9" x2="19.1" y2="19.1" /></svg>
+                {togglingNa ? "Updating…" : "Mark N/A"}
+              </Button>
+            )}
             {task.status !== "in_progress" && (
               <Button
                 variant="progress"
@@ -112,6 +155,15 @@ export default function TaskDetail() {
           </div>
         )}
       </div>
+
+      {na && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-line bg-[#F4F6F9] px-4 py-3 text-[13px] text-grey">
+          <svg className="mt-0.5 shrink-0 text-grey-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="4.9" y1="4.9" x2="19.1" y2="19.1" /></svg>
+          <span>
+            Marked <b className="text-navy">Not Applicable</b> for this day — it's excluded from the reports and counts. Use <b>Mark Applicable</b> above to bring it back.
+          </span>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-3 gap-4">
         {/* left: description + activity */}

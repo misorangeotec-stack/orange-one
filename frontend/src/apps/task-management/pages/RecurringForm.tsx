@@ -118,21 +118,33 @@ export default function RecurringForm() {
           {/* frequency segmented */}
           <FieldLabel label="Frequency">
             <div className="inline-flex rounded-xl border border-line p-1 bg-page">
-              {(["daily", "weekly", "monthly"] as RecurrenceType[]).map((f) => (
+              {([
+                ["daily", "Daily"],
+                ["weekly", "Weekly"],
+                ["monthly", "Monthly"],
+                ["when", "As and When"],
+              ] as [RecurrenceType, string][]).map(([f, label]) => (
                 <button
                   key={f}
                   type="button"
                   onClick={() => setRecurrenceType(f)}
                   className={cn(
-                    "px-5 py-2 rounded-lg text-[13px] font-semibold capitalize transition",
+                    "px-5 py-2 rounded-lg text-[13px] font-semibold transition",
                     recurrenceType === f ? "bg-white text-orange shadow-soft" : "text-grey hover:text-navy"
                   )}
                 >
-                  {f}
+                  {label}
                 </button>
               ))}
             </div>
           </FieldLabel>
+
+          {recurrenceType === "when" && (
+            <p className="text-[12px] text-grey-2 -mt-1">
+              Added to the assignee's list every working day (Mon–Sat). They can mark it
+              <span className="font-semibold text-navy"> Not Applicable</span> on days it doesn't apply — those days are left out of the reports.
+            </p>
+          )}
 
           {recurrenceType === "weekly" && (
             <FieldLabel label="Repeat on">

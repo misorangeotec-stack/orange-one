@@ -25,6 +25,7 @@ function ordinal(n: number) {
 
 export function frequencyText(r: RecurringTask) {
   if (r.recurrenceType === "daily") return "Every working day";
+  if (r.recurrenceType === "when") return "As and When (Mon–Sat, optional)";
   if (r.recurrenceType === "monthly") {
     if (!r.monthlyDays.length) return "Monthly";
     const parts = r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d)));
@@ -45,7 +46,7 @@ export default function RecurringList() {
 
   // filters + sort
   const [q, setQ] = useState("");
-  const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly">("all");
+  const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly" | "when">("all");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "paused">("all");
   const [person, setPerson] = useState("all");
   const [sort, setSort] = useState<"title-asc" | "title-desc" | "status">("title-asc");
@@ -139,13 +140,14 @@ export default function RecurringList() {
               </div>
               <Combobox
                 value={type}
-                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly")}
+                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly" | "when")}
                 className="w-full sm:w-auto sm:min-w-[140px]"
                 options={[
                   { value: "all", label: "All types" },
                   { value: "daily", label: "Daily" },
                   { value: "weekly", label: "Weekly" },
                   { value: "monthly", label: "Monthly" },
+                  { value: "when", label: "As and When" },
                 ]}
               />
               <Combobox

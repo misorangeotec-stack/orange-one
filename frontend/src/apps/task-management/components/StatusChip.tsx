@@ -10,7 +10,29 @@ const STYLES: Record<TaskStatus, { label: string; cls: string; dot: string }> = 
   shifted: { label: "Shifted", cls: "bg-orange-soft text-orange", dot: "#FF6A1F" },
 };
 
-export default function StatusChip({ status, className }: { status: TaskStatus; className?: string }) {
+export default function StatusChip({
+  status,
+  notApplicable,
+  className,
+}: {
+  status: TaskStatus;
+  /** When true, render a greyed "Not Applicable" pill instead of the status (for "when" instances). */
+  notApplicable?: boolean;
+  className?: string;
+}) {
+  if (notApplicable) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap bg-[#EEF1F5] text-grey-2",
+          className
+        )}
+      >
+        <span className="w-1.5 h-1.5 rounded-full" style={{ background: "#A6B0BF" }} />
+        Not Applicable
+      </span>
+    );
+  }
   const s = STYLES[status];
   return (
     <span

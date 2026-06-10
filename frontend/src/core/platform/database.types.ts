@@ -433,6 +433,8 @@ export type Database = {
           id: string
           last_remark_at: string | null
           last_revised_at: string | null
+          not_applicable: boolean
+          not_applicable_at: string | null
           recurring_task_id: string | null
           revision_count: number
           shifted_from_task_id: string | null
@@ -454,6 +456,8 @@ export type Database = {
           id?: string
           last_remark_at?: string | null
           last_revised_at?: string | null
+          not_applicable?: boolean
+          not_applicable_at?: string | null
           recurring_task_id?: string | null
           revision_count?: number
           shifted_from_task_id?: string | null
@@ -475,6 +479,8 @@ export type Database = {
           id?: string
           last_remark_at?: string | null
           last_revised_at?: string | null
+          not_applicable?: boolean
+          not_applicable_at?: string | null
           recurring_task_id?: string | null
           revision_count?: number
           shifted_from_task_id?: string | null
@@ -1021,7 +1027,7 @@ export type Database = {
         | "remark"
       app_role: "admin" | "hod" | "employee" | "sub_hod"
       notification_type: "mention"
-      recurrence_type: "daily" | "weekly" | "monthly"
+      recurrence_type: "daily" | "weekly" | "monthly" | "when"
       task_status:
         | "pending"
         | "completed"
@@ -1168,7 +1174,7 @@ export const Constants = {
       ],
       app_role: ["admin", "hod", "employee", "sub_hod"],
       notification_type: ["mention"],
-      recurrence_type: ["daily", "weekly", "monthly"],
+      recurrence_type: ["daily", "weekly", "monthly", "when"],
       task_status: [
         "pending",
         "completed",

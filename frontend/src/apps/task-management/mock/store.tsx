@@ -11,6 +11,7 @@ import {
   insertTask,
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
+  setTaskNotApplicable as setTaskNotApplicableWrite,
   reviseTask as reviseTaskWrite,
   rescheduleTask as rescheduleTaskWrite,
   addRemark as addRemarkWrite,
@@ -69,6 +70,10 @@ interface TaskStoreValue {
   createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[] }) => Promise<string>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
+  /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
+  setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
+  /** True when this task was generated from a "when" recurring template (so N/A is offered). */
+  isWhenTask: (task: Task) => boolean;
   reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
   addRemark: (id: string, note: string, mentionedIds: string[]) => Promise<void>;
@@ -216,6 +221,17 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       completeTask: async (id, note) => {
         await completeTaskWrite(id, user.id, note);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
+      // task UPDATE RLS (same path as complete). Reversible; excluded from reports
+      // in the selectors. Only offered for "when" instances (see isWhenTask).
+      setTaskNotApplicable: async (id, value) => {
+        await setTaskNotApplicableWrite(id, value);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      isWhenTask: (task) => {
+        if (!task.recurringTaskId) return false;
+        return recurringTasks.find((r) => r.id === task.recurringTaskId)?.recurrenceType === "when";
       },
       reviseTask: async (id, args) => {
         const task = tasks.find((t) => t.id === id);
