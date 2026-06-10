@@ -13,7 +13,7 @@ import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { MONTH_LAST_DAY, type RecurringTask } from "../types";
+import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurringTask } from "../types";
 
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -216,7 +216,7 @@ export default function RecurringList() {
                     <div className="flex items-center gap-2">
                       <span className="text-[14px] font-medium text-navy truncate">{r.title}</span>
                       <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-[#EAF1FE] text-blue">
-                        {r.recurrenceType}
+                        {RECURRENCE_LABEL[r.recurrenceType]}
                       </span>
                     </div>
                     {r.description?.trim() && (

@@ -7,7 +7,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { dateLabel, timeAgo, formatDateTime } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
-import { locationLabel, type ActivityType } from "../types";
+import { locationLabel, RECURRENCE_LABEL, type ActivityType } from "../types";
 import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
 import ReviseModal from "../components/ReviseModal";
@@ -18,7 +18,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, isWhenTask, setTaskNotApplicable } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, isWhenTask, setTaskNotApplicable } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
@@ -46,6 +46,7 @@ export default function TaskDetail() {
   // While N/A the normal status actions are hidden and the task is excluded from reports.
   const whenTask = isWhenTask(task);
   const na = task.notApplicable;
+  const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
 
   // Location checklist + completion gate. A task with locations can't be completed
   // until every one is ticked (the DB trigger enforces it too — this is the UI guard).
@@ -69,11 +70,11 @@ export default function TaskDetail() {
             <StatusChip status={task.status} notApplicable={na} />
             {task.recurringTaskId && (
               <span
-                title="Generated from a recurring task"
+                title={recurrence ? `Recurring task · ${RECURRENCE_LABEL[recurrence]}` : "Generated from a recurring task"}
                 className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-blue bg-[#EAF1FE] rounded-pill px-2 py-1"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
-                Recurring
+                {recurrence ? RECURRENCE_LABEL[recurrence] : "Recurring"}
               </span>
             )}
           </div>

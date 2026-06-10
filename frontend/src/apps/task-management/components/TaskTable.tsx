@@ -3,7 +3,7 @@ import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, isOverdue } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
-import type { Task } from "../types";
+import { RECURRENCE_LABEL, type Task } from "../types";
 import StatusChip from "./StatusChip";
 
 export type TaskSortKey = "title" | "createdBy" | "assignedTo" | "createdAt" | "dueDate" | "status";
@@ -83,7 +83,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
   sort: TaskSort;
   onSort: (k: TaskSortKey) => void;
 }) {
-  const { profileById, departmentById } = useTaskStore();
+  const { profileById, departmentById, getRecurring } = useTaskStore();
   const navigate = useNavigate();
 
   return (
@@ -106,6 +106,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
             const assignee = profileById(task.assignedTo);
             const dept = departmentById(task.departmentId);
             const overdue = isOverdue(task.dueDate) && task.status !== "completed" && task.status !== "shifted";
+            const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
             return (
               <tr
                 key={task.id}
@@ -121,11 +122,11 @@ export default function TaskTable({ tasks, sort, onSort }: {
                     <span className="text-[14px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
                     {task.recurringTaskId && (
                       <span
-                        title="Generated from a recurring task"
+                        title={recurrence ? `Recurring task · ${RECURRENCE_LABEL[recurrence]}` : "Generated from a recurring task"}
                         className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue bg-[#EAF1FE] rounded-pill px-1.5 py-0.5"
                       >
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M17 2l4 4-4 4" /><path d="M3 11V9a4 4 0 0 1 4-4h14" /><path d="M7 22l-4-4 4-4" /><path d="M21 13v2a4 4 0 0 1-4 4H3" /></svg>
-                        Recurring
+                        {recurrence ? RECURRENCE_LABEL[recurrence] : "Recurring"}
                       </span>
                     )}
                     {task.revisionCount > 0 && (

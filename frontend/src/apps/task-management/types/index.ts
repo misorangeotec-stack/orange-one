@@ -12,6 +12,15 @@ export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "
 
 export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly";
 
+/** Short, badge-friendly label for a recurrence type (e.g. "Weekly", "As & When"). */
+export const RECURRENCE_LABEL: Record<RecurrenceType, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  when: "As and When",
+};
+
 /** Sentinel day-of-month value meaning "last day of the month" (> any real day). */
 export const MONTH_LAST_DAY = 32;
 
