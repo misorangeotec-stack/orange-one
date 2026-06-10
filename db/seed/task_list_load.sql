@@ -14,16 +14,17 @@ select null, 'Personal Accounts', false, true, 7, '79174071-1f03-46dd-bdf7-a6a7d
 where not exists (select 1 from public.locations where name = 'Personal Accounts' and company is null);
 
 -- 2. recurring tasks (title=Category, description=Task) + location checklist
+-- source: Delegation work(Task Work ).csv
 with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Daily Posting of Sales Invoices -INK', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Daily Posting of Sales Invoices -INK', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Daily Posting of Sales Invoices -INK' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Daily Posting of Sales Invoices -INK' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -44,12 +45,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Daily Posting of Sales Invoices -Spare Parts', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Daily Posting of Sales Invoices -Spare Parts', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Daily Posting of Sales Invoices -Spare Parts' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Daily Posting of Sales Invoices -Spare Parts' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -70,12 +71,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Daily Posting of Sales Invoices -Heads', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Daily Posting of Sales Invoices -Heads', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Daily Posting of Sales Invoices -Heads' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Daily Posting of Sales Invoices -Heads' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -96,12 +97,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Daily Posting of Sales Invoices -Machines', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Daily Posting of Sales Invoices -Machines', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Daily Posting of Sales Invoices -Machines' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Daily Posting of Sales Invoices -Machines' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -122,12 +123,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Daily Posting of Sales Invoices -Paper', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Daily Posting of Sales Invoices -Paper', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Daily Posting of Sales Invoices -Paper' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Daily Posting of Sales Invoices -Paper' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -148,12 +149,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Daily Posting of Sales Invoices -Service', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Daily Posting of Sales Invoices -Service', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Daily Posting of Sales Invoices -Service' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Daily Posting of Sales Invoices -Service' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -174,12 +175,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Sales', 'Updating of the credit limit EMAIL TO MGT', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Sale', 'Updating of the credit limit EMAIL TO MGT', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          '261ae1c1-9389-427a-9fa3-1c8df7326f73', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '261ae1c1-9389-427a-9fa3-1c8df7326f73'
-      and t.title = 'Sales' and t.description = 'Updating of the credit limit EMAIL TO MGT' and t.recurrence_type = 'daily')
+      and t.title = 'Sale' and t.description = 'Updating of the credit limit EMAIL TO MGT' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -954,12 +955,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Expenses', 'Update Expenses', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Expenses', 'Update Expenses sheet', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          'fde9faec-c6f5-4670-91b6-5e4ee4c085ff', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'fde9faec-c6f5-4670-91b6-5e4ee4c085ff'
-      and t.title = 'Expenses' and t.description = 'Update Expenses' and t.recurrence_type = 'daily')
+      and t.title = 'Expenses' and t.description = 'Update Expenses sheet' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -1007,11 +1008,29 @@ with ins as (
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
   select 'Cash', 'Cash Payment entry', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
-         '0600d53e-8077-4ee6-9f12-239d3c198558', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+         'fde9faec-c6f5-4670-91b6-5e4ee4c085ff', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
-    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '0600d53e-8077-4ee6-9f12-239d3c198558'
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'fde9faec-c6f5-4670-91b6-5e4ee4c085ff'
       and t.title = 'Cash' and t.description = 'Cash Payment entry' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Audit', 'Filling', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         'fde9faec-c6f5-4670-91b6-5e4ee4c085ff', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'fde9faec-c6f5-4670-91b6-5e4ee4c085ff'
+      and t.title = 'Audit' and t.description = 'Filling' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -1032,12 +1051,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Audit', 'Filling', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Bank', 'BRS', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
          'fde9faec-c6f5-4670-91b6-5e4ee4c085ff', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'fde9faec-c6f5-4670-91b6-5e4ee4c085ff'
-      and t.title = 'Audit' and t.description = 'Filling' and t.recurrence_type = 'daily')
+      and t.title = 'Bank' and t.description = 'BRS' and t.recurrence_type = 'daily')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -1154,38 +1173,12 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
-  select 'Bank', 'BRS', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+  select 'Expenses', 'MSME Follow UP', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
          '0600d53e-8077-4ee6-9f12-239d3c198558', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
     select 1 from public.recurring_tasks t
     where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '0600d53e-8077-4ee6-9f12-239d3c198558'
-      and t.title = 'Bank' and t.description = 'BRS' and t.recurrence_type = 'daily')
-  returning id
-)
-insert into public.recurring_task_locations (recurring_task_id, location_id)
-  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
-  union all
-  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
-  union all
-  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
-  union all
-  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
-  union all
-  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
-  union all
-  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
-on conflict (recurring_task_id, location_id) do nothing;
-
-with ins as (
-  insert into public.recurring_tasks
-    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
-     assigned_to, created_by, department_id, active)
-  select 'Expenses', 'MSME Follow Up', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
-         '0600d53e-8077-4ee6-9f12-239d3c198558', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
-  where not exists (
-    select 1 from public.recurring_tasks t
-    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '0600d53e-8077-4ee6-9f12-239d3c198558'
-      and t.title = 'Expenses' and t.description = 'MSME Follow Up' and t.recurrence_type = 'when')
+      and t.title = 'Expenses' and t.description = 'MSME Follow UP' and t.recurrence_type = 'when')
   returning id
 )
 insert into public.recurring_task_locations (recurring_task_id, location_id)
@@ -1300,6 +1293,50 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
+  select 'Audit', 'Collect DN from customers and Prepare monthly sheet as copy received or note', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         '0600d53e-8077-4ee6-9f12-239d3c198558', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '0600d53e-8077-4ee6-9f12-239d3c198558'
+      and t.title = 'Audit' and t.description = 'Collect DN from customers and Prepare monthly sheet as copy received or note' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Cash', 'Cash Payment entry', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         '0600d53e-8077-4ee6-9f12-239d3c198558', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '0600d53e-8077-4ee6-9f12-239d3c198558'
+      and t.title = 'Cash' and t.description = 'Cash Payment entry' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
   select 'Purchase', 'Domestic Good Purchase', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
          'bf164ac0-e945-427b-9a99-89a3f5018956', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
@@ -1363,11 +1400,7 @@ with ins as (
 insert into public.recurring_task_locations (recurring_task_id, location_id)
   select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
   union all
-  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
-  union all
   select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
-  union all
-  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
   union all
   select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
   union all
@@ -1412,6 +1445,24 @@ insert into public.recurring_task_locations (recurring_task_id, location_id)
   select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
   union all
   select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Expenses', 'Conveyance', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         'bf164ac0-e945-427b-9a99-89a3f5018956', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'bf164ac0-e945-427b-9a99-89a3f5018956'
+      and t.title = 'Expenses' and t.description = 'Conveyance' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
 on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
@@ -1574,6 +1625,90 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
+  select 'Reporting', 'Daily Email of Report', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         'bf164ac0-e945-427b-9a99-89a3f5018956', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'bf164ac0-e945-427b-9a99-89a3f5018956'
+      and t.title = 'Reporting' and t.description = 'Daily Email of Report' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Audit', 'Filling of Goods Purchase & Conveyance', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         'bf164ac0-e945-427b-9a99-89a3f5018956', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'bf164ac0-e945-427b-9a99-89a3f5018956'
+      and t.title = 'Audit' and t.description = 'Filling of Goods Purchase & Conveyance' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Purchase', 'Credit Notes/ Sales Return/ Purchase Returns', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Purchase' and t.description = 'Credit Notes/ Sales Return/ Purchase Returns' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Reporting', 'Daily Email of Report', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Reporting' and t.description = 'Daily Email of Report' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
   select 'Forex', 'Forex Entry and preparing of reprots', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
          '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
@@ -1620,6 +1755,24 @@ insert into public.recurring_task_locations (recurring_task_id, location_id)
   select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
   union all
   select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Expenses', 'Conveyance', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Expenses' and t.description = 'Conveyance' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
 on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
@@ -1678,6 +1831,32 @@ with ins as (
   insert into public.recurring_tasks
     (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
      assigned_to, created_by, department_id, active)
+  select 'Compliance', 'All GST Company update', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Compliance' and t.description = 'All GST Company update' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
   select 'Inventory', 'Stock entry form Machines', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
          '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
   where not exists (
@@ -1708,6 +1887,22 @@ insert into public.recurring_task_locations (recurring_task_id, location_id)
   select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
   union all
   select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Passing of Cartridge entry', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Inventory' and t.description = 'Passing of Cartridge entry' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
 on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
@@ -1786,6 +1981,759 @@ insert into public.recurring_task_locations (recurring_task_id, location_id)
   select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
   union all
   select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Control', 'RELATED PARTYS LEDGER MATCHING REPORT', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Control' and t.description = 'RELATED PARTYS LEDGER MATCHING REPORT' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Control', 'BRANCH PARTYS LEDGER MATCHING REPORT', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         '42653aeb-7c22-4be9-91a8-44513e2d291d', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = '42653aeb-7c22-4be9-91a8-44513e2d291d'
+      and t.title = 'Control' and t.description = 'BRANCH PARTYS LEDGER MATCHING REPORT' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+-- source: Delegation work(DIMPLE).csv
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Head Entry', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Head Entry' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Head entry Match with Gorakh', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Head entry Match with Gorakh' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Head entry Match with Auditor', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Head entry Match with Auditor' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Machine', 'Machine Sales GP report', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Machine' and t.description = 'Machine Sales GP report' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Machine', 'Monthly Machine Sales GP report', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Machine' and t.description = 'Monthly Machine Sales GP report' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Fund Flow', 'Updation of Fund Flow', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Fund Flow' and t.description = 'Updation of Fund Flow' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Fund Flow', 'Matching of Fund Flow with Bank Balance', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Fund Flow' and t.description = 'Matching of Fund Flow with Bank Balance' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Fund Flow', 'Projected Fund Flow', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Fund Flow' and t.description = 'Projected Fund Flow' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Ink Jet' and l.company is null
+  union all
+  select ins.id, l.id from ins, public.locations l where l.name = 'Colorix' and l.company is null
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Import Compensation from Suppliers', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Import Compensation from Suppliers' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Entry of Compensation in Tally', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Entry of Compensation in Tally' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Stock Statements', 'Submission of Stock Statement', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Stock Statements' and t.description = 'Submission of Stock Statement' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Compliance', 'TDS Payment', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Compliance' and t.description = 'TDS Payment' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Compliance', 'GST Payment', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Compliance' and t.description = 'GST Payment' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Compliance', 'PF and ESIC Payment', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Compliance' and t.description = 'PF and ESIC Payment' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Stock Adjustment entry tally', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Stock Adjustment entry tally' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Expenses', 'Commission Working', 'when', '{}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Expenses' and t.description = 'Commission Working' and t.recurrence_type = 'when')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Expenses', 'Salary Entry', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Expenses' and t.description = 'Salary Entry' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Expenses', 'Director Salary Payment', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Expenses' and t.description = 'Director Salary Payment' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Fund Flow', 'Hanglory Dues Statement', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Fund Flow' and t.description = 'Hanglory Dues Statement' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Machine order sheet', 'weekly', '{1}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Machine order sheet' and t.recurrence_type = 'weekly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'BS', 'List of Advance received from Debtors', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'BS' and t.description = 'List of Advance received from Debtors' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'BS', 'List of Advance paid to Creditors with Reason', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'BS' and t.description = 'List of Advance paid to Creditors with Reason' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Total FOC Payable', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Total FOC Payable' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Total FOC Receivable', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Total FOC Receivable' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Debtors', 'Exchange on Machines Sales(Customer)', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Debtors' and t.description = 'Exchange on Machines Sales(Customer)' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'FOC Spare payable report', 'monthly', '{}'::int[], '{}'::int[], 1, 6,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'FOC Spare payable report' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Bank', 'Verify the Bank Payment to vendor', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Bank' and t.description = 'Verify the Bank Payment to vendor' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Bank', 'Approve the Bank Payment to vendor', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Bank' and t.description = 'Approve the Bank Payment to vendor' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Bank', 'Sharing of Bank Statement to team twice', 'daily', '{}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Bank' and t.description = 'Sharing of Bank Statement to team twice' and t.recurrence_type = 'daily')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Physical stock - Data to be shared to team', 'monthly', '{}'::int[], '{1,15}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Physical stock - Data to be shared to team' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Inventory', 'Physical stock - Data to be shared to team', 'monthly', '{}'::int[], '{1,15}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Inventory' and t.description = 'Physical stock - Data to be shared to team' and t.recurrence_type = 'monthly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
+
+with ins as (
+  insert into public.recurring_tasks
+    (title, description, recurrence_type, weekly_days, monthly_days, monthly_nth, monthly_weekday,
+     assigned_to, created_by, department_id, active)
+  select 'Audit coordination', 'Audit closer', 'quarterly', '{}'::int[], '{}'::int[], NULL, NULL,
+         'e27f15d6-6335-4387-8842-fd883988dab4', '79174071-1f03-46dd-bdf7-a6a7d3699877', 'f64dfa08-103d-45bd-ba29-1079d774b526', true
+  where not exists (
+    select 1 from public.recurring_tasks t
+    where t.created_by = '79174071-1f03-46dd-bdf7-a6a7d3699877' and t.assigned_to = 'e27f15d6-6335-4387-8842-fd883988dab4'
+      and t.title = 'Audit coordination' and t.description = 'Audit closer' and t.recurrence_type = 'quarterly')
+  returning id
+)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
 on conflict (recurring_task_id, location_id) do nothing;
 
 commit;
