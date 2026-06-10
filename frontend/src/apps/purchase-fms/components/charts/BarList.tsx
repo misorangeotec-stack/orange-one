@@ -17,11 +17,14 @@ export default function BarList({
   unit,
   highlightKey,
   emptyText = "No data yet.",
+  format,
 }: {
   items: BarItem[];
   unit?: string;
   highlightKey?: string;
   emptyText?: string;
+  /** Custom value label (e.g. ₹ formatting); overrides the `{value}{unit}` default. */
+  format?: (v: number) => string;
 }) {
   if (items.length === 0 || items.every((i) => i.value === 0)) {
     return <p className="text-[12.5px] text-grey-2 py-2">{emptyText}</p>;
@@ -43,7 +46,7 @@ export default function BarList({
               />
             </div>
             <span className="w-16 shrink-0 text-right tabular-nums font-semibold text-navy">
-              {it.value}{unit ? <span className="text-grey-2 font-normal">{unit}</span> : null}
+              {format ? format(it.value) : <>{it.value}{unit ? <span className="text-grey-2 font-normal">{unit}</span> : null}</>}
             </span>
             {it.note && <span className="w-14 shrink-0 text-right text-[11px] text-grey-2">{it.note}</span>}
           </div>

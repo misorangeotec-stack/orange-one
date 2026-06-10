@@ -1,5 +1,6 @@
 import type { PurchaseEntry } from "../types";
 import { PURCHASE_STAGES, STAGE_COUNT } from "../config/stages";
+import { monthKey } from "@/shared/lib/time";
 
 /**
  * Pure aggregations for the Reports screen, computed over the in-memory entries.
@@ -171,4 +172,103 @@ export function bottleneck(rows: TurnaroundRow[]): TurnaroundRow | null {
   const withData = rows.filter((r) => r.avgDays != null && r.samples > 0);
   if (!withData.length) return null;
   return withData.reduce((max, r) => (r.avgDays! > (max.avgDays ?? -1) ? r : max));
+}
+
+// ---- end-to-end (global) trend & value metrics ----
+
+/** PO value (incl. GST) captured at the Share-PO stage; 0 until the entry reaches it. */
+export function poValue(e: PurchaseEntry): number {
+  const v = e.stages.find((s) => s.key === "share_po")?.values?.totalGstValue;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+export interface ThroughputRow {
+  key: string;
+  label: string;
+  raised: number;
+  completed: number;
+}
+
+/** Orders raised (by createdAt) vs completed (by last-stage actualDate) per month, last N months. */
+export function monthlyThroughput(entries: PurchaseEntry[], months = 6): ThroughputRow[] {
+  const now = new Date();
+  const buckets: ThroughputRow[] = [];
+  const index = new Map<string, ThroughputRow>();
+  for (let i = months - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const key = d.toISOString().slice(0, 7);
+    const label = d.toLocaleDateString("en-IN", { month: "short", timeZone: "UTC" });
+    const row = { key, label, raised: 0, completed: 0 };
+    buckets.push(row);
+    index.set(key, row);
+  }
+  for (const e of entries) {
+    const r = index.get(monthKey(e.createdAt));
+    if (r) r.raised++;
+    if (isComplete(e)) {
+      const last = e.stages[STAGE_COUNT - 1]?.actualDate;
+      const c = last && index.get(monthKey(last));
+      if (c) c.completed++;
+    }
+  }
+  return buckets;
+}
+
+export interface ValueRow {
+  key: string;
+  label: string;
+  value: number;
+}
+
+/** Total PO value across all entries that have reached Share-PO. */
+export function totalPoValue(entries: PurchaseEntry[]): number {
+  return entries.reduce((sum, e) => sum + poValue(e), 0);
+}
+
+/** PO value summed by category, highest first. */
+export function spendByCategory(entries: PurchaseEntry[]): ValueRow[] {
+  const acc = new Map<string, number>();
+  for (const e of entries) {
+    const v = poValue(e);
+    if (!v || !e.category) continue;
+    acc.set(e.category, (acc.get(e.category) ?? 0) + v);
+  }
+  return [...acc.entries()]
+    .map(([label, value]) => ({ key: label, label, value }))
+    .sort((a, b) => b.value - a.value);
+}
+
+/** Top vendors by PO value (vendor captured at the Approval stage). */
+export function topVendors(entries: PurchaseEntry[], n = 5): ValueRow[] {
+  const acc = new Map<string, number>();
+  for (const e of entries) {
+    const v = poValue(e);
+    const vendor = String(e.stages.find((s) => s.key === "approval")?.values?.vendorName ?? "").trim();
+    if (!v || !vendor) continue;
+    acc.set(vendor, (acc.get(vendor) ?? 0) + v);
+  }
+  return [...acc.entries()]
+    .map(([label, value]) => ({ key: label, label, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, n);
+}
+
+export interface StatusBreakdown {
+  completed: number;
+  onTrack: number;
+  overdue: number;
+}
+
+/** Mutually-exclusive entry counts: completed / in-progress on-track / in-progress overdue. */
+export function statusBreakdown(entries: PurchaseEntry[]): StatusBreakdown {
+  const today = todayIso();
+  let completed = 0, onTrack = 0, overdue = 0;
+  for (const e of entries) {
+    if (isComplete(e)) { completed++; continue; }
+    const planned = e.stages[e.currentIndex]?.plannedDate;
+    if (planned && planned < today) overdue++;
+    else onTrack++;
+  }
+  return { completed, onTrack, overdue };
 }

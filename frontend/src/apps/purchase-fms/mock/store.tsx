@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Category, Designation, PurchaseEntry, StageState, StepOwner } from "../types";
 import { STAGE_COUNT } from "../config/stages";
 import { useSession } from "@/core/platform/session";
+import { isOverdue } from "@/shared/lib/time";
 import { fetchFmsData } from "../data/fmsFetch";
 import * as writes from "../data/fmsWrites";
 import type { NewOrderInput } from "../data/fmsWrites";
@@ -220,4 +221,18 @@ export function progressPct(entry: PurchaseEntry): number {
 /** The currently-active stage state, or undefined when complete. */
 export function activeStage(entry: PurchaseEntry): StageState | undefined {
   return entry.stages[entry.currentIndex];
+}
+
+/** In-progress entry whose active stage is past its planned date. */
+export function isEntryOverdue(entry: PurchaseEntry): boolean {
+  if (entryStatus(entry) !== "in_progress") return false;
+  return isOverdue(activeStage(entry)?.plannedDate ?? null);
+}
+
+/** Whole days the active stage is past due (0 if not overdue). */
+export function daysOverdue(entry: PurchaseEntry): number {
+  const p = activeStage(entry)?.plannedDate;
+  if (!isEntryOverdue(entry) || !p) return 0;
+  const today = Date.parse(new Date().toISOString().slice(0, 10));
+  return Math.max(0, Math.round((today - Date.parse(p.slice(0, 10))) / 86400000));
 }

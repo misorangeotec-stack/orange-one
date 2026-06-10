@@ -8,11 +8,12 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { usePagination } from "@/shared/lib/usePagination";
 import { formatDate } from "@/shared/lib/time";
 import { useDirectory } from "@/core/platform/store";
-import { useFmsStore, activeStage, entryStatus, doneCount } from "../mock/store";
+import { useFmsStore, activeStage, entryStatus, doneCount, isEntryOverdue, daysOverdue } from "../mock/store";
 import { STAGE_COUNT, stageByKey } from "../config/stages";
 import { ownerLabel } from "../lib/owner";
 import EntryProgressBar from "../components/EntryProgressBar";
 import StageStatusChip from "../components/StageStatusChip";
+import OverdueBadge from "../components/OverdueBadge";
 
 /** All purchase entries — searchable, filterable, paginated 25/page. */
 export default function EntriesList() {
@@ -88,11 +89,12 @@ export default function EntriesList() {
                   const active = activeStage(e);
                   const def = active ? stageByKey(active.key) : undefined;
                   const owner = active ? ownerLabel(ownerForStep(active.key), profileById) : "—";
+                  const overdue = isEntryOverdue(e);
                   return (
                     <tr
                       key={e.id}
                       onClick={() => navigate(`/purchase-fms/entries/${e.id}`)}
-                      className="border-b border-line last:border-0 hover:bg-page cursor-pointer transition"
+                      className={`border-b border-line last:border-0 cursor-pointer transition ${overdue ? "bg-[#FFF5F5] hover:bg-[#FFECEC]" : "hover:bg-page"}`}
                     >
                       <td className="px-4 py-3">
                         <Link to={`/purchase-fms/entries/${e.id}`} className="font-semibold text-navy hover:text-orange" onClick={(ev) => ev.stopPropagation()}>{e.code}</Link>
@@ -107,7 +109,14 @@ export default function EntriesList() {
                       </td>
                       <td className="px-4 py-3"><EntryProgressBar done={doneCount(e)} total={STAGE_COUNT} /></td>
                       <td className="px-4 py-3 text-grey">{st === "completed" ? "—" : owner}</td>
-                      <td className="px-4 py-3 text-grey">{active?.plannedDate ? formatDate(active.plannedDate) : "—"}</td>
+                      <td className="px-4 py-3">
+                        {active?.plannedDate ? (
+                          <div className="flex items-center gap-2">
+                            <span className={overdue ? "text-[#D64545] font-medium" : "text-grey"}>{formatDate(active.plannedDate)}</span>
+                            {overdue && <OverdueBadge days={daysOverdue(e)} />}
+                          </div>
+                        ) : <span className="text-grey">—</span>}
+                      </td>
                     </tr>
                   );
                 })}

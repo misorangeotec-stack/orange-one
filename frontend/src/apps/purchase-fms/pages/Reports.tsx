@@ -17,8 +17,16 @@ import {
   stageOnTime,
   overdueEntries,
   bottleneck,
+  monthlyThroughput,
+  statusBreakdown,
+  totalPoValue,
+  spendByCategory,
+  topVendors,
 } from "../lib/analytics";
+import { formatINRShort } from "../lib/format";
 import BarList from "../components/charts/BarList";
+import DonutChart from "../components/charts/DonutChart";
+import TrendBars from "../components/charts/TrendBars";
 
 const ic = {
   active: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>,
@@ -46,6 +54,13 @@ export default function Reports() {
   const onTime = useMemo(() => stageOnTime(entries, scope), [entries, scope]);
   const overdue = useMemo(() => overdueEntries(entries, scope), [entries, scope]);
   const slowest = useMemo(() => bottleneck(turnaround), [turnaround]);
+
+  // End-to-end (global) trend & value metrics.
+  const throughput = useMemo(() => monthlyThroughput(entries, 6), [entries]);
+  const status = useMemo(() => statusBreakdown(entries), [entries]);
+  const poTotal = useMemo(() => totalPoValue(entries), [entries]);
+  const spendCat = useMemo(() => spendByCategory(entries), [entries]);
+  const vendors = useMemo(() => topVendors(entries, 5), [entries]);
 
   const mostCongested = useMemo(
     () => distribution.filter((d) => d.key !== "__completed").reduce((m, d) => (d.count > (m?.count ?? -1) ? d : m), null as null | (typeof distribution)[number]),
@@ -78,6 +93,27 @@ export default function Reports() {
             <StatCard label="Avg Cycle Time" value={stats.avgCycleDays == null ? "—" : `${stats.avgCycleDays}d`} icon={ic.cycle} tone="orange" hint={`${stats.completed} completed`} />
           </div>
 
+          {/* Status snapshot + throughput trend */}
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card className="p-5">
+              <h3 className="text-[14px] font-semibold text-navy">Status Snapshot</h3>
+              <p className="text-[12px] text-grey-2 mb-4">Where every entry stands right now.</p>
+              <DonutChart
+                centerLabel="entries"
+                items={[
+                  { key: "completed", label: "Completed", value: status.completed, color: "#27AE60" },
+                  { key: "onTrack", label: "In progress", value: status.onTrack, color: "#3B82F6" },
+                  { key: "overdue", label: "Overdue", value: status.overdue, color: "#D64545" },
+                ]}
+              />
+            </Card>
+            <Card className="p-5">
+              <h3 className="text-[14px] font-semibold text-navy">Throughput</h3>
+              <p className="text-[12px] text-grey-2 mb-4">Orders raised vs completed, last 6 months.</p>
+              <TrendBars rows={throughput} />
+            </Card>
+          </div>
+
           {/* Pipeline distribution */}
           <Card className="p-5">
             <h3 className="text-[14px] font-semibold text-navy">Pipeline Distribution</h3>
@@ -89,6 +125,32 @@ export default function Reports() {
               </p>
             )}
           </Card>
+
+          {/* Procurement value (admin-only — org-wide spend) */}
+          {isAdmin && (
+            <Card className="p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <h3 className="text-[14px] font-semibold text-navy">Procurement Value</h3>
+                  <p className="text-[12px] text-grey-2">Based on PO value (incl. GST) captured at the Share-PO stage.</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-[22px] font-bold text-navy leading-none">{formatINRShort(poTotal)}</div>
+                  <div className="text-[11px] text-grey-2 mt-1">total PO value</div>
+                </div>
+              </div>
+              <div className="mt-5 grid gap-6 lg:grid-cols-2">
+                <div>
+                  <h4 className="text-[12.5px] font-semibold text-navy mb-3">Spend by Category</h4>
+                  <BarList items={spendCat} format={formatINRShort} emptyText="No PO value captured yet." />
+                </div>
+                <div>
+                  <h4 className="text-[12.5px] font-semibold text-navy mb-3">Top Vendors</h4>
+                  <BarList items={vendors} format={formatINRShort} emptyText="No PO value captured yet." />
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* Turnaround & SLA */}
           <Card className="p-5 space-y-6">
