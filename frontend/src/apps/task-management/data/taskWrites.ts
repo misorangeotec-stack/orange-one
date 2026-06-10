@@ -252,9 +252,11 @@ export async function addRemark(taskId: string, note: string, mentionedIds: stri
 export type RecurringWriteInput = {
   title: string;
   description: string | null;
-  recurrenceType: "daily" | "weekly" | "monthly" | "when";
+  recurrenceType: "daily" | "weekly" | "monthly" | "when" | "quarterly";
   weeklyDays: number[];
   monthlyDays: number[];
+  monthlyNth: number | null; // monthly Nth-weekday mode (e.g. 1 = 1st); null = day-of-month mode
+  monthlyWeekday: number | null; // monthly Nth-weekday mode (0=Sun..6=Sat); null = day-of-month mode
   assignedTo: string | null;
   departmentId: string | null;
   active: boolean;
@@ -286,6 +288,8 @@ export async function insertRecurring(input: RecurringWriteInput & { createdBy: 
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
       monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
+      monthly_nth: input.recurrenceType === "monthly" ? input.monthlyNth : null,
+      monthly_weekday: input.recurrenceType === "monthly" ? input.monthlyWeekday : null,
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       created_by: input.createdBy,
@@ -309,6 +313,8 @@ export async function updateRecurring(id: string, input: RecurringWriteInput): P
       recurrence_type: input.recurrenceType,
       weekly_days: input.recurrenceType === "weekly" ? input.weeklyDays : [],
       monthly_days: input.recurrenceType === "monthly" ? input.monthlyDays : [],
+      monthly_nth: input.recurrenceType === "monthly" ? input.monthlyNth : null,
+      monthly_weekday: input.recurrenceType === "monthly" ? input.monthlyWeekday : null,
       assigned_to: input.assignedTo,
       department_id: input.departmentId,
       active: input.active,

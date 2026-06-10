@@ -10,7 +10,7 @@ export type { AppRole, AvatarColor, Department, Profile } from "@/core/platform/
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "shifted";
 
-export type RecurrenceType = "daily" | "weekly" | "monthly" | "when";
+export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly";
 
 /** Sentinel day-of-month value meaning "last day of the month" (> any real day). */
 export const MONTH_LAST_DAY = 32;
@@ -81,7 +81,9 @@ export interface RecurringTask {
   description: string | null;
   recurrenceType: RecurrenceType;
   weeklyDays: number[]; // 0=Sun..6=Sat (used when weekly)
-  monthlyDays: number[]; // 1..31 (used when monthly); MONTH_LAST_DAY = last day of month
+  monthlyDays: number[]; // 1..31 (used when monthly, day-of-month mode); MONTH_LAST_DAY = last day of month
+  monthlyNth: number | null; // monthly Nth-weekday mode: 1..5 (e.g. 1 = 1st); null = day-of-month mode
+  monthlyWeekday: number | null; // monthly Nth-weekday mode: 0=Sun..6=Sat (e.g. 6 = Saturday); null = day-of-month mode
   assignedTo: string | null;
   createdBy: string;
   departmentId: string | null;

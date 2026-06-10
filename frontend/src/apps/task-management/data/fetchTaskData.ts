@@ -100,6 +100,8 @@ const mapRecurring = (r: any): RecurringTask => ({
   recurrenceType: r.recurrence_type as RecurrenceType,
   weeklyDays: r.weekly_days ?? [],
   monthlyDays: r.monthly_days ?? [],
+  monthlyNth: r.monthly_nth ?? null,
+  monthlyWeekday: r.monthly_weekday ?? null,
   assignedTo: r.assigned_to,
   createdBy: r.created_by,
   departmentId: r.department_id,

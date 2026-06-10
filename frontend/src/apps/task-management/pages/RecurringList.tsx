@@ -23,10 +23,16 @@ function ordinal(n: number) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
+const NTH_WORD = ["", "1st", "2nd", "3rd", "4th", "5th"];
+
 export function frequencyText(r: RecurringTask) {
   if (r.recurrenceType === "daily") return "Every working day";
   if (r.recurrenceType === "when") return "As and When (Mon–Sat, optional)";
+  if (r.recurrenceType === "quarterly") return "Quarterly — 7 days before quarter-end";
   if (r.recurrenceType === "monthly") {
+    if (r.monthlyWeekday != null && r.monthlyNth != null) {
+      return `Every month on the ${NTH_WORD[r.monthlyNth] ?? r.monthlyNth + "th"} ${DOW[r.monthlyWeekday]}`;
+    }
     if (!r.monthlyDays.length) return "Monthly";
     const parts = r.monthlyDays.map((d) => (d === MONTH_LAST_DAY ? "last day" : ordinal(d)));
     return "Every month on the " + parts.join(", ");
@@ -46,7 +52,7 @@ export default function RecurringList() {
 
   // filters + sort
   const [q, setQ] = useState("");
-  const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly" | "when">("all");
+  const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly" | "when" | "quarterly">("all");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "paused">("all");
   const [person, setPerson] = useState("all");
   const [sort, setSort] = useState<"title-asc" | "title-desc" | "status">("title-asc");
@@ -140,7 +146,7 @@ export default function RecurringList() {
               </div>
               <Combobox
                 value={type}
-                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly" | "when")}
+                onChange={(v) => setType(v as "all" | "daily" | "weekly" | "monthly" | "when" | "quarterly")}
                 className="w-full sm:w-auto sm:min-w-[140px]"
                 options={[
                   { value: "all", label: "All types" },
@@ -148,6 +154,7 @@ export default function RecurringList() {
                   { value: "weekly", label: "Weekly" },
                   { value: "monthly", label: "Monthly" },
                   { value: "when", label: "As and When" },
+                  { value: "quarterly", label: "Quarterly" },
                 ]}
               />
               <Combobox

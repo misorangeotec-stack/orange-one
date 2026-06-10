@@ -20,6 +20,14 @@ const WEEKDAYS = [
 // 1..31 for the monthly day-of-month grid (MONTH_LAST_DAY is a separate toggle).
 const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 
+// Monthly "Nth weekday" mode (e.g. 1st Saturday). nth 1..5; weekday 0=Sun..6=Sat.
+const NTH_OPTIONS = [
+  { v: 1, l: "1st" }, { v: 2, l: "2nd" }, { v: 3, l: "3rd" }, { v: 4, l: "4th" }, { v: 5, l: "5th" },
+];
+const WEEKDAY_LABEL: Record<number, string> = {
+  0: "Sunday", 1: "Monday", 2: "Tuesday", 3: "Wednesday", 4: "Thursday", 5: "Friday", 6: "Saturday",
+};
+
 export default function RecurringForm() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -34,6 +42,10 @@ export default function RecurringForm() {
   const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>(editing?.recurrenceType ?? "daily");
   const [weeklyDays, setWeeklyDays] = useState<number[]>(editing?.weeklyDays ?? [1]);
   const [monthlyDays, setMonthlyDays] = useState<number[]>(editing?.monthlyDays ?? [1]);
+  // Monthly sub-mode: "nth" = Nth weekday (e.g. 1st Saturday, the default), "dates" = specific day(s) of month.
+  const [monthlyMode, setMonthlyMode] = useState<"nth" | "dates">(editing && editing.monthlyWeekday == null && editing.recurrenceType === "monthly" ? "dates" : "nth");
+  const [monthlyNth, setMonthlyNth] = useState<number>(editing?.monthlyNth ?? 1);
+  const [monthlyWeekday, setMonthlyWeekday] = useState<number>(editing?.monthlyWeekday ?? 6); // 6 = Saturday
   const [active, setActive] = useState(editing?.active ?? true);
   const [locationIds, setLocationIds] = useState<string[]>(editing?.locationIds ?? []);
   const [error, setError] = useState("");
@@ -52,13 +64,18 @@ export default function RecurringForm() {
     if (!title.trim()) return setError("Please enter a title.");
     if (!assignedTo) return setError("Please choose who to assign this task to.");
     if (recurrenceType === "weekly" && weeklyDays.length === 0) return setError("Pick at least one weekday.");
-    if (recurrenceType === "monthly" && monthlyDays.length === 0) return setError("Pick at least one day of the month.");
+    // Monthly: "dates" sub-mode needs at least one day; "nth" mode (the default) never needs a pick.
+    if (recurrenceType === "monthly" && monthlyMode === "dates" && monthlyDays.length === 0)
+      return setError("Pick at least one day of the month.");
+    const useNth = recurrenceType === "monthly" && monthlyMode === "nth";
     const payload = {
       title: title.trim(),
       description: description.trim() || null,
       recurrenceType,
       weeklyDays: recurrenceType === "weekly" ? weeklyDays : [],
-      monthlyDays: recurrenceType === "monthly" ? monthlyDays : [],
+      monthlyDays: recurrenceType === "monthly" && monthlyMode === "dates" ? monthlyDays : [],
+      monthlyNth: useNth ? monthlyNth : null,
+      monthlyWeekday: useNth ? monthlyWeekday : null,
       assignedTo,
       createdBy: user.id,
       departmentId: profileById(assignedTo)?.departmentId ?? null,
@@ -123,6 +140,7 @@ export default function RecurringForm() {
                 ["weekly", "Weekly"],
                 ["monthly", "Monthly"],
                 ["when", "As and When"],
+                ["quarterly", "Quarterly"],
               ] as [RecurrenceType, string][]).map(([f, label]) => (
                 <button
                   key={f}
@@ -170,39 +188,83 @@ export default function RecurringForm() {
           )}
 
           {recurrenceType === "monthly" && (
-            <FieldLabel label="Day(s) of the month" hint="task generates on these dates each month">
-              <div className="grid grid-cols-7 gap-1.5">
-                {MONTH_DAYS.map((d) => {
-                  const on = monthlyDays.includes(d);
-                  return (
-                    <button
-                      key={d}
-                      type="button"
-                      onClick={() => toggleMonthDay(d)}
-                      className={cn(
-                        "py-1.5 rounded-lg text-[12.5px] font-semibold border transition",
-                        on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
-                      )}
-                    >
-                      {d}
-                    </button>
-                  );
-                })}
+            <FieldLabel label="When each month">
+              {/* sub-mode: Nth weekday (default) vs specific day-of-month */}
+              <div className="inline-flex rounded-xl border border-line p-1 bg-page mb-3">
+                {([["nth", "On the Nth weekday"], ["dates", "On specific dates"]] as ["nth" | "dates", string][]).map(([m, l]) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setMonthlyMode(m)}
+                    className={cn(
+                      "px-4 py-1.5 rounded-lg text-[12.5px] font-semibold transition",
+                      monthlyMode === m ? "bg-white text-orange shadow-soft" : "text-grey hover:text-navy"
+                    )}
+                  >
+                    {l}
+                  </button>
+                ))}
               </div>
-              <button
-                type="button"
-                onClick={() => toggleMonthDay(MONTH_LAST_DAY)}
-                className={cn(
-                  "mt-2 w-full sm:w-auto px-4 py-2 rounded-lg text-[12.5px] font-semibold border transition",
-                  monthlyDays.includes(MONTH_LAST_DAY) ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
-                )}
-              >
-                Last day of month
-              </button>
-              <p className="text-[11.5px] text-grey-2 mt-1.5">
-                Days 29–31 only fire in months that have them — use “Last day of month” for a reliable month-end task.
-              </p>
+
+              {monthlyMode === "nth" ? (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[13px] text-grey">On the</span>
+                  <Combobox
+                    value={String(monthlyNth)}
+                    onChange={(v) => setMonthlyNth(Number(v))}
+                    className="min-w-[88px]"
+                    options={NTH_OPTIONS.map((o) => ({ value: String(o.v), label: o.l }))}
+                  />
+                  <Combobox
+                    value={String(monthlyWeekday)}
+                    onChange={(v) => setMonthlyWeekday(Number(v))}
+                    className="min-w-[128px]"
+                    options={WEEKDAYS.map((d) => ({ value: String(d.v), label: WEEKDAY_LABEL[d.v] }))}
+                  />
+                  <span className="text-[13px] text-grey">of every month</span>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-7 gap-1.5">
+                    {MONTH_DAYS.map((d) => {
+                      const on = monthlyDays.includes(d);
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => toggleMonthDay(d)}
+                          className={cn(
+                            "py-1.5 rounded-lg text-[12.5px] font-semibold border transition",
+                            on ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
+                          )}
+                        >
+                          {d}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => toggleMonthDay(MONTH_LAST_DAY)}
+                    className={cn(
+                      "mt-2 w-full sm:w-auto px-4 py-2 rounded-lg text-[12.5px] font-semibold border transition",
+                      monthlyDays.includes(MONTH_LAST_DAY) ? "bg-orange text-white border-orange shadow-cta" : "bg-white text-grey border-line hover:border-orange/40"
+                    )}
+                  >
+                    Last day of month
+                  </button>
+                  <p className="text-[11.5px] text-grey-2 mt-1.5">
+                    Days 29–31 only fire in months that have them — use “Last day of month” for a reliable month-end task.
+                  </p>
+                </>
+              )}
             </FieldLabel>
+          )}
+
+          {recurrenceType === "quarterly" && (
+            <p className="text-[12px] text-grey-2 -mt-1">
+              Generates <span className="font-semibold text-navy">7 days before each quarter ends</span> — Mar 24, Jun 23, Sep 23 and Dec 24.
+            </p>
           )}
 
           <LocationPicker value={locationIds} onChange={setLocationIds} />

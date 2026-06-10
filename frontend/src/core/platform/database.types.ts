@@ -264,6 +264,8 @@ export type Database = {
           description: string | null
           id: string
           monthly_days: number[]
+          monthly_nth: number | null
+          monthly_weekday: number | null
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
           updated_at: string
@@ -278,6 +280,8 @@ export type Database = {
           description?: string | null
           id?: string
           monthly_days?: number[]
+          monthly_nth?: number | null
+          monthly_weekday?: number | null
           recurrence_type: Database["public"]["Enums"]["recurrence_type"]
           title: string
           updated_at?: string
@@ -292,6 +296,8 @@ export type Database = {
           description?: string | null
           id?: string
           monthly_days?: number[]
+          monthly_nth?: number | null
+          monthly_weekday?: number | null
           recurrence_type?: Database["public"]["Enums"]["recurrence_type"]
           title?: string
           updated_at?: string
@@ -1027,7 +1033,7 @@ export type Database = {
         | "remark"
       app_role: "admin" | "hod" | "employee" | "sub_hod"
       notification_type: "mention"
-      recurrence_type: "daily" | "weekly" | "monthly" | "when"
+      recurrence_type: "daily" | "weekly" | "monthly" | "when" | "quarterly"
       task_status:
         | "pending"
         | "completed"
@@ -1174,7 +1180,7 @@ export const Constants = {
       ],
       app_role: ["admin", "hod", "employee", "sub_hod"],
       notification_type: ["mention"],
-      recurrence_type: ["daily", "weekly", "monthly", "when"],
+      recurrence_type: ["daily", "weekly", "monthly", "when", "quarterly"],
       task_status: [
         "pending",
         "completed",
