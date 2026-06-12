@@ -30,6 +30,8 @@ export interface DirectoryValue {
   profileById: (id: string | null) => Profile | undefined;
   departmentById: (id: string | null) => Department | undefined;
   directReportIds: (hodId: string) => string[];
+  /** Transitive reports (full downline) of `rootId` — used for manager visibility/assignment. */
+  downlineIds: (rootId: string) => string[];
   assignableUsers: (role: AppRole, userId: string) => Profile[];
   /** Legacy umbrella flag; superseded by the granular flags below. */
   canWrite: boolean;
@@ -55,6 +57,27 @@ export interface DirectoryValue {
   setUserModules: (id: string, appIds: string[]) => Promise<void>;
 }
 
+/**
+ * Everyone reporting (transitively) to `rootId`: direct reports, their reports, and so on.
+ * `directReportIds` is direct-only; this walks the chain via each profile's `hodIds` so a
+ * HOD's downline includes the employees nested under her sub-HODs. Cycle-safe (a profile is
+ * never revisited); the root itself is excluded.
+ */
+export function computeDownlineIds(profiles: Profile[], rootId: string): string[] {
+  const seen = new Set<string>();
+  const queue = [rootId];
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const p of profiles) {
+      if (p.hodIds.includes(current) && !seen.has(p.id) && p.id !== rootId) {
+        seen.add(p.id);
+        queue.push(p.id);
+      }
+    }
+  }
+  return [...seen];
+}
+
 const DirectoryContext = createContext<DirectoryValue | null>(null);
 
 export function PlatformDirectoryProvider({ children }: { children: ReactNode }) {
@@ -75,12 +98,14 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
     const profileById = (id: string | null) => profiles.find((p) => p.id === id);
     const departmentById = (id: string | null) => departments.find((d) => d.id === id);
     const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
+    const downlineIds = (rootId: string) => computeDownlineIds(profiles, rootId);
     // You assign tasks DOWN the hierarchy, never to yourself: admins to anyone,
-    // HOD/sub-HOD to their direct reports, employees to no one.
+    // HOD/sub-HOD to their full downline (their reports + everyone nested under their
+    // sub-HODs), employees to no one.
     const assignableUsers = (role: AppRole, userId: string): Profile[] => {
       if (role === "admin") return profiles.filter((p) => p.id !== userId);
       if (role === "hod" || role === "sub_hod") {
-        const ids = new Set(directReportIds(userId)); // reports only — no self
+        const ids = new Set(downlineIds(userId)); // full downline — no self
         return profiles.filter((p) => ids.has(p.id) && p.id !== userId);
       }
       return []; // employees have no one to assign to
@@ -91,6 +116,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
       profileById,
       departmentById,
       directReportIds,
+      downlineIds,
       assignableUsers,
 
       canWrite: false,

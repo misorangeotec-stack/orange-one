@@ -8,6 +8,10 @@ export interface ComboOption {
   label: string;
   sublabel?: string;
   icon?: ReactNode;
+  /** Optional section heading. A header row is shown whenever this changes between
+   *  consecutive options (so order your options by group). Omit on all options to
+   *  keep the plain, ungrouped list. */
+  group?: string;
 }
 
 /**
@@ -209,8 +213,14 @@ export default function Combobox({
             ) : (
               filtered.map((o, idx) => {
                 const on = o.value === value;
+                const showHeader = !!o.group && o.group !== filtered[idx - 1]?.group;
                 return (
                   <li key={o.value}>
+                    {showHeader && (
+                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide text-grey-2 select-none">
+                        {o.group}
+                      </div>
+                    )}
                     <button
                       type="button"
                       data-idx={idx}

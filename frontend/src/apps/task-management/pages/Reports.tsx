@@ -11,19 +11,20 @@ const fmt = (iso: string) => formatDate(iso);
 
 export default function Reports() {
   const { user, isAdmin, isHod } = useSession();
-  const { profileById, directReportIds, canWeeklyPlan } = useTaskStore();
+  const { profileById, downlineIds, canWeeklyPlan } = useTaskStore();
   const [planOpen, setPlanOpen] = useState(false);
   const [weekStart, setWeekStart] = useState(WEEK_START);
   const isManager = isAdmin || isHod;
 
-  // A HOD/sub-HOD's team = themselves + their direct reports; used to scope their department view.
-  const team = useMemo(() => [user.id, ...directReportIds(user.id)].map((id) => profileById(id)!).filter(Boolean), [user.id]);
+  // A HOD/sub-HOD's team = themselves + their full downline (reports + everyone nested under
+  // their sub-HODs); used to scope their department view.
+  const team = useMemo(() => [user.id, ...downlineIds(user.id)].map((id) => profileById(id)!).filter(Boolean), [user.id, downlineIds, profileById]);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-[22px] font-bold text-navy">Reports</h2>
+          <h2 className="text-[22px] font-bold text-navy">Master Analysis</h2>
           <WeekNav weekStart={weekStart} onChange={setWeekStart} />
         </div>
         {isManager && canWeeklyPlan && (
@@ -58,7 +59,7 @@ function RygLegend() {
   const items = [
     { dot: "bg-ryg-green", label: "Green", desc: "Completed on time" },
     { dot: "bg-ryg-yellow", label: "Yellow", desc: "Revised — needed rework" },
-    { dot: "bg-ryg-red", label: "Red", desc: "Missed, shifted, in progress or still pending" },
+    { dot: "bg-ryg-red", label: "Red", desc: "Still pending, in progress or shifted" },
   ];
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line bg-white px-4 py-2.5">

@@ -24,6 +24,9 @@ const ic = {
   reports: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="20" x2="20" y2="20" /><rect x="6" y="11" width="3" height="6" /><rect x="11" y="7" width="3" height="10" /><rect x="16" y="13" width="3" height="4" /></svg>
   ),
+  scorecard: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4.5" /><circle cx="12" cy="12" r="1" fill="currentColor" /></svg>
+  ),
   activity: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
   ),
@@ -46,7 +49,8 @@ export const taskNav: NavItem[] = [
   { label: "Team Tasks", to: `${B}/team`, icon: ic.team, roles: ["hod", "sub_hod"] },
   { label: "All Tasks", to: `${B}/all`, icon: ic.all, roles: ["admin"] },
   { label: "Recurring", to: `${B}/recurring`, icon: ic.recurring, roles: ["admin", "hod", "sub_hod"], section: "Manage" },
-  { label: "Reports", to: `${B}/reports`, icon: ic.reports },
+  { label: "Weekly Scorecard", to: `${B}/scorecard`, icon: ic.scorecard },
+  { label: "Master Analysis", to: `${B}/reports`, icon: ic.reports },
   { label: "Activity", to: `${B}/history`, icon: ic.activity, roles: ["admin", "hod", "sub_hod"] },
   { label: "Settings", to: `${B}/settings`, icon: ic.settings, roles: ["admin"], section: "Administration" },
   { label: "My Account", to: "/account", icon: ic.account },

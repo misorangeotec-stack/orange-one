@@ -44,7 +44,7 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, directReportIds, profileById, canRecurring } = useTaskStore();
+  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, canRecurring } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -59,9 +59,9 @@ export default function RecurringList() {
 
   const visible = useMemo(() => {
     if (role === "admin") return recurringTasks;
-    const team = new Set([user.id, ...directReportIds(user.id)]);
+    const team = new Set([user.id, ...downlineIds(user.id)]);
     return recurringTasks.filter((r) => r.createdBy === user.id || (r.assignedTo && team.has(r.assignedTo)));
-  }, [recurringTasks, role, user.id]);
+  }, [recurringTasks, role, user.id, downlineIds]);
 
   // Assignee options scoped to the people actually used by visible templates.
   const assigneeOptions = useMemo(() => {

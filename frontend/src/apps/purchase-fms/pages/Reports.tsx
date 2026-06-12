@@ -38,15 +38,15 @@ const ic = {
 /** Admin & manager analytics: pipeline distribution and turnaround / SLA. */
 export default function Reports() {
   const { user, isAdmin } = useSession();
-  const { directReportIds, profileById } = useDirectory();
+  const { downlineIds, profileById } = useDirectory();
   const { entries, stepOwners, ownerForStep } = useFmsStore();
 
   // Scope: admins see all stages; managers see only stages their team owns.
   const scope = useMemo(() => {
     if (isAdmin) return ALL_STAGE_KEYS;
-    const team = new Set([user.id, ...directReportIds(user.id)]);
+    const team = new Set([user.id, ...downlineIds(user.id)]);
     return stepOwners.filter((o) => o.employeeIds.some((id) => team.has(id))).map((o) => o.stepKey);
-  }, [isAdmin, user.id, directReportIds, stepOwners]);
+  }, [isAdmin, user.id, downlineIds, stepOwners]);
 
   const stats = useMemo(() => overview(entries, scope), [entries, scope]);
   const distribution = useMemo(() => pipelineDistribution(entries, scope), [entries, scope]);

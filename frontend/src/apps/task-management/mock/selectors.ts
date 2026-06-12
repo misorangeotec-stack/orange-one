@@ -6,8 +6,11 @@
 import type { Task } from "../types";
 import { isToday, isOverdue } from "@/shared/lib/time";
 
-// Directory-dependent selectors (directReportIds / assignableUsers / visibleTasks)
-// now live on the task store, since they read the live people + task lists.
+// Directory-dependent selectors (directReportIds / downlineIds / assignableUsers /
+// visibleTasks) now live on the directory + task stores, since they read the live
+// people + task lists. The transitive-downline walk has a single implementation in
+// the core directory store; re-exported here for the pages that already import it.
+export { computeDownlineIds as downlineIds } from "@/core/platform/store";
 
 export interface DashboardStats {
   dueToday: number;

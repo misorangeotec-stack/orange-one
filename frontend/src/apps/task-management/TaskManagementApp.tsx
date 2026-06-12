@@ -12,6 +12,7 @@ import AllTasks from "./pages/AllTasks";
 import RecurringList from "./pages/RecurringList";
 import RecurringForm from "./pages/RecurringForm";
 import Reports from "./pages/Reports";
+import WeeklyScorecard from "./pages/WeeklyScorecard";
 import ActivityHistory from "./pages/ActivityHistory";
 import SettingsLayout from "./pages/settings/SettingsLayout";
 import Organization from "./pages/settings/Organization";
@@ -46,6 +47,7 @@ export default function TaskManagementApp() {
             <Route path="recurring/:id/edit" element={<RequireRole roles={[...MANAGER]}><RecurringForm /></RequireRole>} />
 
             <Route path="reports" element={<Reports />} />
+            <Route path="scorecard" element={<WeeklyScorecard />} />
             <Route path="history" element={<RequireRole roles={[...MANAGER]}><ActivityHistory /></RequireRole>} />
 
             {/* User/department/hierarchy setup moved to the portal Admin area (/admin). */}

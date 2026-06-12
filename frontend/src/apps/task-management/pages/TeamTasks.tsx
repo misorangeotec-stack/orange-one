@@ -11,9 +11,9 @@ import { formatDateTime } from "@/shared/lib/time";
 /** HOD / sub-HOD view: tasks of everyone reporting to the current user. */
 export default function TeamTasks() {
   const { user } = useSession();
-  const { tasks, directReportIds, profileById } = useTaskStore();
+  const { tasks, downlineIds, profileById } = useTaskStore();
 
-  const reportIds = directReportIds(user.id);
+  const reportIds = downlineIds(user.id);
   const teamIds = useMemo(() => [user.id, ...reportIds], [user.id, reportIds.join(",")]);
   const team = useMemo(() => teamIds.map((id) => profileById(id)!).filter(Boolean), [teamIds.join(",")]);
   const reports = useMemo(() => reportIds.map((id) => profileById(id)!).filter(Boolean), [reportIds.join(",")]);

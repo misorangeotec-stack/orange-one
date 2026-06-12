@@ -110,6 +110,7 @@ interface TaskStoreValue {
   profileById: (id: string | null) => Profile | undefined;
   departmentById: (id: string | null) => Department | undefined;
   directReportIds: (hodId: string) => string[];
+  downlineIds: (rootId: string) => string[];
   assignableUsers: (role: AppRole, userId: string) => Profile[];
   visibleTasks: (role: AppRole, userId: string) => Task[];
   addDepartment: (input: { name: string; description?: string }) => string;
@@ -175,12 +176,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const locations = data?.locations ?? [];
 
   const value = useMemo<TaskStoreValue>(() => {
-    const { directReportIds } = dir;
+    const { downlineIds } = dir;
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
       if (role === "hod" || role === "sub_hod") {
-        const team = new Set([userId, ...directReportIds(userId)]);
+        const team = new Set([userId, ...downlineIds(userId)]);
         return tasks.filter((t) => t.assignedTo === userId || t.createdBy === userId || (t.assignedTo && team.has(t.assignedTo)));
       }
       return tasks.filter((t) => t.assignedTo === userId || t.createdBy === userId);
@@ -383,6 +384,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       profileById: dir.profileById,
       departmentById: dir.departmentById,
       directReportIds: dir.directReportIds,
+      downlineIds: dir.downlineIds,
       assignableUsers: dir.assignableUsers,
       visibleTasks,
       addDepartment: readOnlyId,

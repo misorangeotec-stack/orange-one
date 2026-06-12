@@ -12,11 +12,18 @@ export function rygCounts(r: PersonReport): RygCount {
   return { green: r.completed, yellow: r.revised, red: r.pending + r.shifted, total: r.planned };
 }
 
-/** What the "Red" slice is actually made of, for a set of people's tasks this week. */
+/**
+ * What the "Red" slice is actually made of, for a set of people's tasks this week.
+ * The three buckets are the real task statuses behind Red and sum to the Red column:
+ *   pending    = still pending
+ *   inProgress = being worked on
+ *   shifted    = moved to another week
+ * N/A instances are excluded, matching reportFor so the breakdown ties to the Red count.
+ */
 export function redCounts(tasks: Task[], ids: Set<string>): RedCounts {
   let pending = 0, inProgress = 0, shifted = 0;
   for (const t of tasks) {
-    if (!t.assignedTo || !ids.has(t.assignedTo)) continue;
+    if (!t.assignedTo || !ids.has(t.assignedTo) || t.notApplicable) continue;
     if (t.status === "pending") pending++;
     else if (t.status === "in_progress") inProgress++;
     else if (t.status === "shifted") shifted++;
@@ -34,17 +41,16 @@ export function RygNumCell({ count, pct, tone, has, strong }: { count: number; p
   );
 }
 
-/** Thin proportion bar, plus a subtle breakdown of what the Red column is made of. */
+/** Thin proportion bar, plus a full breakdown of what the Red column is made of.
+ *  All three buckets are shown (including zeros) whenever there's any Red, so the
+ *  split is always explicit rather than implying the only states are the non-zero ones. */
 export function PerfCell({ ryg, red }: { ryg: RygPct; red?: RedCounts }) {
-  const parts = red
-    ? [red.pending && `${red.pending} pending`, red.inProgress && `${red.inProgress} in-progress`, red.shifted && `${red.shifted} shifted`].filter(Boolean)
-    : [];
   return (
     <div className="max-w-[200px] space-y-1">
       <RygBar red={ryg.red} yellow={ryg.yellow} green={ryg.green} showLegend={false} />
-      {parts.length > 0 && (
+      {red && red.total > 0 && (
         <div className="text-[10px] text-grey-2">
-          <span className="font-semibold text-[#c0392b]/70">Red</span> = {parts.join(" · ")}
+          <span className="font-semibold text-[#c0392b]/70">Red</span> = {red.pending} pending · {red.inProgress} in-progress · {red.shifted} shifted
         </div>
       )}
     </div>

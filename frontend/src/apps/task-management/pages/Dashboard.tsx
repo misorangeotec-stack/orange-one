@@ -165,7 +165,7 @@ function TodayPanel({ userId, list }: { userId: string; list: Task[] }) {
 
 /* ---------------- HOD/Admin: team or org performance ---------------- */
 function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string }) {
-  const { departments, profiles, directReportIds, profileById, weeklyPlanFor } = useTaskStore();
+  const { departments, profiles, downlineIds, profileById, weeklyPlanFor } = useTaskStore();
   if (isAdmin) {
     return (
       <SectionCard title="Department Performance" subtitle="Planned execution quality this week">
@@ -188,7 +188,7 @@ function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string })
       </SectionCard>
     );
   }
-  const team = directReportIds(hodId).map((id) => profileById(id)!).filter(Boolean);
+  const team = downlineIds(hodId).map((id) => profileById(id)!).filter(Boolean);
   return (
     <SectionCard title="Team Performance" subtitle="Planned execution quality this week" action={<Link to="/task-management/team" className="text-orange text-[12px] font-semibold hover:underline">Team tasks</Link>}>
       {team.length === 0 ? (

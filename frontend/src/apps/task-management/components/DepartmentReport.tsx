@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
@@ -44,6 +45,9 @@ type Scope = { deptId: string | null; memberIds: string[]; selfId?: string };
  */
 export default function DepartmentReport({ weekStart = WEEK_START, scope }: { weekStart?: string; scope?: Scope }) {
   const { tasks, departments, profiles, profileById, departmentById, weeklyPlanFor } = useTaskStore();
+  const navigate = useNavigate();
+  // Clicking a member opens their Weekly Scorecard for the same week.
+  const openScorecard = (id: string) => navigate(`/task-management/scorecard?user=${id}&week=${weekStart}`);
   const scoped = !!scope;
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpenIds((p) => ({ ...p, [id]: !p[id] }));
@@ -225,7 +229,12 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
                       const isLead = p.role === "hod" || p.role === "sub_hod";
                       const rc = rygCounts(r);
                       return (
-                        <tr key={p.id} className="border-t border-line/60 bg-white">
+                        <tr
+                          key={p.id}
+                          onClick={() => openScorecard(p.id)}
+                          title={`Open ${p.name}'s Weekly Scorecard`}
+                          className="cursor-pointer border-t border-line/60 bg-white hover:bg-page/60 transition"
+                        >
                           <td className="px-4 py-2.5 pl-10 align-middle">
                             <div className="flex items-center gap-2.5">
                               <Avatar name={p.name} color={p.avatarColor} size={26} />
@@ -257,7 +266,7 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
         </div>
       </Card>
 
-      <PlanVsActualTable groups={visibleGroups} scoped={scoped} selfId={scope?.selfId} />
+      <PlanVsActualTable groups={visibleGroups} scoped={scoped} selfId={scope?.selfId} weekStart={weekStart} />
     </div>
   );
 }
@@ -304,7 +313,9 @@ function GreenDelta({ planned, actual }: { planned: RygPct; actual: RygPct }) {
 
 /** Numbers table comparing planned target vs actual result — per department, each expandable
  *  to its members. */
-function PlanVsActualTable({ groups, scoped, selfId }: { groups: Group[]; scoped?: boolean; selfId?: string }) {
+function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Group[]; scoped?: boolean; selfId?: string; weekStart: string }) {
+  const navigate = useNavigate();
+  const openScorecard = (id: string) => navigate(`/task-management/scorecard?user=${id}&week=${weekStart}`);
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpenIds((p) => ({ ...p, [id]: !p[id] }));
   const rows = groups.filter((g) => g.planned.total || g.actual.total);
@@ -358,7 +369,12 @@ function PlanVsActualTable({ groups, scoped, selfId }: { groups: Group[]; scoped
                     ) : memberRows.map(({ p, planned, actual }) => {
                       const isLead = p.role === "hod" || p.role === "sub_hod";
                       return (
-                        <tr key={p.id} className="border-t border-line/60 bg-white">
+                        <tr
+                          key={p.id}
+                          onClick={() => openScorecard(p.id)}
+                          title={`Open ${p.name}'s Weekly Scorecard`}
+                          className="cursor-pointer border-t border-line/60 bg-white hover:bg-page/60 transition"
+                        >
                           <td className="px-5 py-2 pl-12 align-middle">
                             <div className="flex items-center gap-2.5">
                               <Avatar name={p.name} color={p.avatarColor} size={24} />
