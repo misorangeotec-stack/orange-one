@@ -1,13 +1,13 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, timeAgo, formatDate } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { WEEK_START } from "../mock/data";
-import { computeStats } from "../mock/selectors";
-import type { ActivityType, Task, WeeklyPlan } from "../types";
+import { computeStats, actualRygFor, aggregateRyg } from "../mock/selectors";
+import type { ActivityType, Task } from "../types";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
@@ -144,22 +144,27 @@ function TodayPanel({ userId, list }: { userId: string; list: Task[] }) {
 
 /* ---------------- HOD/Admin: team or org performance ---------------- */
 function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string }) {
-  const { departments, profiles, downlineIds, profileById, weeklyPlanFor } = useTaskStore();
+  const { tasks, departments, profiles, downlineIds, profileById, weeklyPlanFor } = useTaskStore();
+  const navigate = useNavigate();
+  // Clicking a member opens their Weekly Scorecard for the current week — same
+  // destination as Master Analysis, scoped to the dashboard's fixed week.
+  const openScorecard = (id: string) => navigate(`/task-management/scorecard?user=${id}&week=${WEEK_START}`);
   if (isAdmin) {
     return (
-      <SectionCard title="Department Performance" subtitle="Planned execution quality this week">
+      <SectionCard title="Department Performance" subtitle="Actual execution quality this week">
         <ul className="space-y-4">
           {departments.map((dep) => {
             const members = profiles.filter((p) => p.departmentId === dep.id);
-            const plans = members.map((m) => weeklyPlanFor(m.id, WEEK_START)).filter((p): p is WeeklyPlan => !!p);
-            const avg = avgRyg(plans);
+            // Actual achieved RYG pooled across the department's tasks this week —
+            // the same calculation Master Analysis uses, so the two reconcile.
+            const avg = aggregateRyg(members.map((m) => m.id), [WEEK_START], tasks, weeklyPlanFor).actual;
             return (
               <li key={dep.id}>
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-[13px] font-semibold text-navy">{dep.name}</span>
                   <span className="text-[11px] text-grey-2">{members.length} member{members.length !== 1 ? "s" : ""}</span>
                 </div>
-                <RygBar {...avg} showLegend={false} />
+                <RygBar red={avg.red} yellow={avg.yellow} green={avg.green} showLegend={false} />
               </li>
             );
           })}
@@ -169,16 +174,22 @@ function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string })
   }
   const team = downlineIds(hodId).map((id) => profileById(id)!).filter(Boolean);
   return (
-    <SectionCard title="Team Performance" subtitle="Planned execution quality this week" action={<Link to="/task-management/team" className="text-orange text-[12px] font-semibold hover:underline">Team tasks</Link>}>
+    <SectionCard title="Team Performance" subtitle="Actual execution quality this week" action={<Link to="/task-management/team" className="text-orange text-[12px] font-semibold hover:underline">Team tasks</Link>}>
       {team.length === 0 ? (
         <Empty>No team members mapped yet.</Empty>
       ) : (
         <ul className="space-y-4">
           {team.map((m) => {
-            const plan = weeklyPlanFor(m.id, WEEK_START);
-            const ryg = plan ? { red: plan.redPct, yellow: plan.yellowPct, green: plan.greenPct } : { red: 0, yellow: 0, green: 0 };
+            // Actual achieved RYG from this member's tasks this week — matches the
+            // per-member row in Master Analysis instead of showing the plan target.
+            const ryg = actualRygFor(tasks, m.id, WEEK_START);
             return (
-              <li key={m.id} className="flex items-center gap-3">
+              <li
+                key={m.id}
+                onClick={() => openScorecard(m.id)}
+                title={`Open ${m.name}'s Weekly Scorecard`}
+                className="flex items-center gap-3 cursor-pointer rounded-lg -mx-2 px-2 py-1 hover:bg-page/60 transition"
+              >
                 <Avatar name={m.name} color={m.avatarColor} size={34} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
@@ -189,7 +200,7 @@ function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string })
                     <span className="text-[11px] text-grey-2 shrink-0">{m.designation}</span>
                   </div>
                   <div className="mt-1.5">
-                    <RygBar {...ryg} showLegend={false} />
+                    <RygBar red={ryg.red} yellow={ryg.yellow} green={ryg.green} showLegend={false} />
                   </div>
                 </div>
               </li>
@@ -327,11 +338,6 @@ function greeting() {
 }
 function labelFor(s: keyof typeof STATUS_COLORS) {
   return { pending: "Pending", in_progress: "In Progress", completed: "Completed", revised: "Revised", shifted: "Shifted" }[s];
-}
-function avgRyg(plans: { redPct: number; yellowPct: number; greenPct: number }[]) {
-  if (!plans.length) return { red: 0, yellow: 0, green: 0 };
-  const sum = plans.reduce((a, p) => ({ red: a.red + p.redPct, yellow: a.yellow + p.yellowPct, green: a.green + p.greenPct }), { red: 0, yellow: 0, green: 0 });
-  return { red: Math.round(sum.red / plans.length), yellow: Math.round(sum.yellow / plans.length), green: Math.round(sum.green / plans.length) };
 }
 function actIcon(t: ActivityType) {
   if (t === "completed") return ICONS.check;
