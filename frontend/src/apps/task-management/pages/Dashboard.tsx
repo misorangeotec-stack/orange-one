@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
-import { cn } from "@/shared/lib/cn";
 import { dateLabel, timeAgo, formatDate } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -13,6 +12,8 @@ import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
 import DonutChart from "../components/DonutChart";
+import ReportsToTag from "../components/ReportsToTag";
+import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
 const STATUS_COLORS = {
   pending: "#8A99B0",
@@ -32,17 +33,15 @@ const ICONS = {
   users: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3 3-5 6-5s6 2 6 5" /></svg>,
 };
 
-type Scope = "week" | "all";
-
 export default function Dashboard() {
   const { user, role, isAdmin, isHod } = useSession();
   const { visibleTasks, workspace, canCreateTask, assignableUsers } = useTaskStore();
-  const [scope, setScope] = useState<Scope>("all");
+  const [scope, setScope] = useState<Scope>("week");
   const list = visibleTasks(role, user.id);
   // Scope toggle: "this week" keeps only tasks planned for the current week
   // (weekStart = this Monday, the same boundary the RYG sections use); "all
   // time" keeps the full backlog. Every card + the donut read the scoped list.
-  const scopedList = scope === "week" ? list.filter((t) => t.weekStart === WEEK_START) : list;
+  const scopedList = scopeTasks(list, scope);
   const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
   const stats = computeStats(scopedList);
   const weekly = scope === "week";
@@ -78,7 +77,12 @@ export default function Dashboard() {
       {/* scope toggle: this week vs all time */}
       <div className="flex items-center justify-between gap-3">
         <span className="text-[12px] text-grey-2">
-          Showing <b className="text-navy font-semibold">{weekly ? "this week" : "all time"}</b> · {stats.total} task{stats.total !== 1 ? "s" : ""}
+          {/* Coverage note: the dashboard total is role-scoped (admin = org-wide,
+              HOD/sub-HOD = own + downline team, employee = own). Spelling it out
+              here explains why this number differs from the personal "My Tasks"
+              count, which only ever counts tasks assigned to or created by you. */}
+          Showing <b className="text-navy font-semibold">{weekly ? "this week" : "all time"}</b> · {stats.total} task{stats.total !== 1 ? "s" : ""}{" "}
+          {isAdmin ? "across the organization" : isHod ? "across your team" : "assigned to or created by you"}
         </span>
         <ScopeToggle scope={scope} onChange={setScope} />
       </div>
@@ -114,31 +118,6 @@ export default function Dashboard() {
           <RecentActivityCard list={list} />
         </div>
       </div>
-    </div>
-  );
-}
-
-/* ---------------- Scope toggle (this week / all time) ---------------- */
-function ScopeToggle({ scope, onChange }: { scope: Scope; onChange: (s: Scope) => void }) {
-  const opts: { key: Scope; label: string }[] = [
-    { key: "week", label: "This week" },
-    { key: "all", label: "All time" },
-  ];
-  return (
-    <div className="inline-flex items-center rounded-pill bg-page border border-line p-0.5 text-[12px] font-semibold">
-      {opts.map((o) => (
-        <button
-          key={o.key}
-          type="button"
-          onClick={() => onChange(o.key)}
-          className={cn(
-            "px-3 py-1.5 rounded-pill transition",
-            scope === o.key ? "bg-white text-navy shadow-sm" : "text-grey-2 hover:text-navy",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
     </div>
   );
 }
@@ -202,9 +181,12 @@ function TeamOrOrgPanel({ isAdmin, hodId }: { isAdmin: boolean; hodId: string })
               <li key={m.id} className="flex items-center gap-3">
                 <Avatar name={m.name} color={m.avatarColor} size={34} />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[13px] font-semibold text-navy truncate">{m.name}</span>
-                    <span className="text-[11px] text-grey-2">{m.designation}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[13px] font-semibold text-navy truncate">{m.name}</span>
+                      <ReportsToTag person={m} viewerId={hodId} />
+                    </span>
+                    <span className="text-[11px] text-grey-2 shrink-0">{m.designation}</span>
                   </div>
                   <div className="mt-1.5">
                     <RygBar {...ryg} showLegend={false} />

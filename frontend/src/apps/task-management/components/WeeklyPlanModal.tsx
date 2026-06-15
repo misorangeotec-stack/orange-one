@@ -9,12 +9,14 @@ import { WEEK_START } from "../mock/data";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import RygBar from "./RygBar";
+import { useReportsToSuffix } from "./ReportsToTag";
 
 /** HOD/admin sets the Red/Yellow/Green completion target for a doer's upcoming week. */
 export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open: boolean; onClose: () => void; defaultDoerId?: string }) {
   const { user, role } = useSession();
   const { assignableUsers, weeklyPlanFor, setWeeklyPlan, canWeeklyPlan } = useTaskStore();
   const pool = useMemo(() => assignableUsers(role, user.id), [role, user.id, assignableUsers]);
+  const reportsToSuffix = useReportsToSuffix();
 
   // week options: next week (default), week after next, this week
   const weekOptions = useMemo(
@@ -91,7 +93,7 @@ export default function WeeklyPlanModal({ open, onClose, defaultDoerId }: { open
               options={pool.map((p) => ({
                 value: p.id,
                 label: p.name,
-                sublabel: p.designation ?? undefined,
+                sublabel: [p.designation, reportsToSuffix(p, user.id)].filter(Boolean).join(" · ") || undefined,
                 icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
               }))}
             />

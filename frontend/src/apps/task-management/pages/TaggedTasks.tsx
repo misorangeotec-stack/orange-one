@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
-import Combobox from "@/shared/components/ui/Combobox";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -11,8 +11,7 @@ import { useTaskStore } from "../mock/store";
 import type { TaskStatus } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 
-const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
-  { value: "all", label: "Any status" },
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "in_progress", label: "In Progress" },
   { value: "revised", label: "Revised" },
@@ -25,7 +24,7 @@ export default function TaggedTasks() {
   const { user } = useSession();
   const { tasks, notifications, profileById } = useTaskStore();
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState<TaskStatus | "all">("all");
+  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
@@ -46,28 +45,28 @@ export default function TaggedTasks() {
 
   const filtered = useMemo(() => {
     let list = mine;
-    if (status !== "all") list = list.filter((t) => t.status === status);
+    if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
     if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
     return list;
-  }, [mine, status, q]);
+  }, [mine, statuses, q]);
 
   const sorted = useMemo(
     () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${status}|${q}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${statuses.join(",")}|${q}|${sort.key}|${sort.dir}` });
 
   const activeFilters: ActiveFilter[] = [];
-  if (status !== "all")
+  if (statuses.length)
     activeFilters.push({
       key: "status",
-      label: `Status: ${STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}`,
-      onClear: () => setStatus("all"),
+      label: `Status: ${STATUS_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
+      onClear: () => setStatuses([]),
     });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   const clearAll = () => {
-    setStatus("all");
+    setStatuses([]);
     setQ("");
   };
 
@@ -83,9 +82,10 @@ export default function TaggedTasks() {
       <Card className="overflow-hidden">
         <div className="px-4 pt-3 flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
-            <Combobox
-              value={status}
-              onChange={(v) => setStatus(v as TaskStatus | "all")}
+            <MultiSelect
+              values={statuses}
+              onChange={(v) => setStatuses(v as TaskStatus[])}
+              placeholder="Any status"
               className="w-full sm:w-auto sm:min-w-[150px]"
               align="right"
               options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}

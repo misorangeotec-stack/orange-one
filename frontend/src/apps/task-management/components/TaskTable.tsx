@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
-import { dateLabel, isOverdue } from "@/shared/lib/time";
+import { dateLabel, isOverdue, todayIso } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
 import { RECURRENCE_LABEL, type Task } from "../types";
@@ -23,6 +23,7 @@ export function nextSort(sort: TaskSort, key: TaskSortKey): TaskSort {
  *  display name so the person columns sort by name, not by raw UUID. */
 export function sortTasks(tasks: Task[], sort: TaskSort, nameOf: (id: string | null) => string | undefined): Task[] {
   const dir = sort.dir === "asc" ? 1 : -1;
+  const today = todayIso();
   const val = (t: Task): string => {
     switch (sort.key) {
       case "title": return t.title?.toLowerCase() ?? "";
@@ -34,6 +35,13 @@ export function sortTasks(tasks: Task[], sort: TaskSort, nameOf: (id: string | n
     }
   };
   return [...tasks].sort((a, b) => {
+    // Due-date ascending (the default view) pins tasks due today to the very top,
+    // then orders the rest chronologically. Reversed, it stays a plain latest-first.
+    if (sort.key === "dueDate" && sort.dir === "asc") {
+      const at = a.dueDate === today;
+      const bt = b.dueDate === today;
+      if (at !== bt) return at ? -1 : 1;
+    }
     const av = val(a);
     const bv = val(b);
     if (av < bv) return -1 * dir;

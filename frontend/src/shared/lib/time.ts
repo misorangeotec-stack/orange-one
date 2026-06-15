@@ -36,7 +36,8 @@ export function formatDateTime(iso: string | null): string {
   return `${dd}-${mm}-${yyyy} ${h}:${min} ${ampm}`;
 }
 
-const todayIso = () => new Date().toISOString().slice(0, 10);
+/** Today's date as yyyy-mm-dd (local). */
+export const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** Friendly date label: Today / Tomorrow / Yesterday / dd-mm-yyyy. */
 export function dateLabel(iso: string | null): string {

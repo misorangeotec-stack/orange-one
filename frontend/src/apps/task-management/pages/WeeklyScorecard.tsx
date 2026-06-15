@@ -12,6 +12,7 @@ import { useTaskStore } from "../mock/store";
 import { actualRygFor, computeStats, downlineIds, reportFor } from "../mock/selectors";
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
+import { useReportsToSuffix } from "../components/ReportsToTag";
 import type { Profile, WeeklyPlan } from "../types";
 
 const GREEN = "text-[#1f8a4d]";
@@ -65,6 +66,7 @@ export default function WeeklyScorecard() {
   }, [pool, selectedId, user.id]);
 
   const selected = profileById(selectedId) ?? user;
+  const reportsToSuffix = useReportsToSuffix();
 
   // Can the current viewer edit the selected doer's plan? Mirrors the weekly_plans
   // RLS (admin, or a HOD anywhere above the doer). Self-editing is not allowed.
@@ -101,7 +103,7 @@ export default function WeeklyScorecard() {
             options={pool.map((p) => ({
               value: p.id,
               label: p.name,
-              sublabel: p.designation ?? undefined,
+              sublabel: [p.designation, reportsToSuffix(p, user.id)].filter(Boolean).join(" · ") || undefined,
               icon: <Avatar name={p.name} color={p.avatarColor} size={22} />,
               group: pool.length > 1 ? roleMeta(p.role).label : undefined,
             }))}

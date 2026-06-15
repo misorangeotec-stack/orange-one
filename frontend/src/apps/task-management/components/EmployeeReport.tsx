@@ -9,6 +9,7 @@ import { addWeeks, monthKey, monthLabel } from "@/shared/lib/time";
 import type { Profile } from "../types";
 import { rygCounts, redCounts, RygNumCell, PerfCell } from "./RygCells";
 import PlanVsActual from "./PlanVsActual";
+import ReportsToTag from "./ReportsToTag";
 
 /**
  * An employee's own Reports view: this-week RYG performance shown in the same columns as the
@@ -54,7 +55,10 @@ export default function EmployeeReport({ user, weekStart = WEEK_START }: { user:
                   <div className="flex items-center gap-2.5">
                     <Avatar name={user.name} color={user.avatarColor} size={30} />
                     <div className="min-w-0">
-                      <span className="block text-[13px] font-semibold text-navy truncate">{user.name}</span>
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-[13px] font-semibold text-navy truncate">{user.name}</span>
+                        <ReportsToTag person={user} />
+                      </span>
                       {user.designation && <span className="block text-[10.5px] text-grey-2 truncate">{user.designation}</span>}
                     </div>
                   </div>

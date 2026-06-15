@@ -83,7 +83,7 @@ const DirectoryContext = createContext<DirectoryValue | null>(null);
 export function PlatformDirectoryProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const queryClient = useQueryClient();
-  const { data, isLoading, error } = useQuery({
+  const { data, error } = useQuery({
     queryKey: ["directory", session?.user.id ?? null],
     queryFn: fetchDirectory,
     enabled: !!session,
@@ -194,13 +194,12 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
   // Hold render until the directory is loaded for an authed user, so the session
   // and admin screens never see a half-empty directory. Unauthed (Landing/Login)
   // renders immediately with an empty directory it doesn't use.
-  if (session && isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-page-grad text-grey text-sm">
-        Loading your workspace…
-      </div>
-    );
-  }
+  //
+  // Gate on `!data` (not just `isLoading`): when a fresh tab restores a session,
+  // there's a render where the query is enabled but hasn't flipped to fetching
+  // yet — isLoading is still false while data is undefined. Rendering children
+  // there lets RequireModule evaluate against an empty directory and wrongly
+  // bounce a deep link (e.g. /outstanding-dashboard/customer/...) to /home.
   if (session && error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-page-grad px-6 text-center">
@@ -208,6 +207,13 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           <p className="text-[15px] font-semibold text-navy">Couldn't load your workspace</p>
           <p className="text-[13px] text-grey mt-1">{(error as Error).message}</p>
         </div>
+      </div>
+    );
+  }
+  if (session && !data) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page-grad text-grey text-sm">
+        Loading your workspace…
       </div>
     );
   }

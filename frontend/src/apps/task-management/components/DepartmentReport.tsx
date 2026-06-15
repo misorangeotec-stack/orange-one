@@ -11,6 +11,7 @@ import type { PersonReport, RygPct } from "../mock/selectors";
 import type { AppRole, Profile } from "../types";
 import { rygCounts, redCounts, RygNumCell, PerfCell } from "./RygCells";
 import type { RedCounts } from "./RygCells";
+import ReportsToTag from "./ReportsToTag";
 
 const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" };
 // HODs/managers surface first inside a department, then everyone else.
@@ -243,6 +244,7 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
                                   <span className="text-[12.5px] font-medium text-navy truncate">{p.name}</span>
                                   <span className={cn("shrink-0 rounded-pill px-1.5 py-0.5 text-[9.5px] font-semibold", isLead ? "bg-orange-soft text-orange" : "bg-line text-grey")}>{ROLE_LABEL[p.role]}</span>
                                   {scope?.selfId === p.id && <span className="shrink-0 rounded-pill bg-navy/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-navy">you</span>}
+                                  <ReportsToTag person={p} viewerId={scope?.selfId} />
                                 </span>
                                 {p.designation && <span className="block text-[10.5px] text-grey-2 truncate">{p.designation}</span>}
                               </div>
@@ -382,6 +384,7 @@ function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Grou
                                 <span className="text-[12px] font-medium text-navy truncate">{p.name}</span>
                                 <span className={cn("shrink-0 rounded-pill px-1.5 py-0.5 text-[9.5px] font-semibold", isLead ? "bg-orange-soft text-orange" : "bg-line text-grey")}>{ROLE_LABEL[p.role]}</span>
                                 {selfId === p.id && <span className="shrink-0 rounded-pill bg-navy/10 px-1.5 py-0.5 text-[9.5px] font-semibold text-navy">you</span>}
+                                <ReportsToTag person={p} viewerId={selfId} />
                               </span>
                             </div>
                           </td>

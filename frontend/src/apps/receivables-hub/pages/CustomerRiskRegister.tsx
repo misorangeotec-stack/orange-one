@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, type ReactNode } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Search, Filter, Download, Save, ChevronRight, ChevronDown, ChevronUp, ArrowUpDown,
   ArrowUp, ArrowDown, RefreshCw, ShieldAlert, X, AlertTriangle,
@@ -479,8 +479,12 @@ const COL_STORAGE_KEY = "riskRegister.visibleColumns";
 /* ── Component ─────────────────────────────────────────── */
 
 export default function CustomerRiskRegister() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Party rows open the Customer/Group Detail page in a NEW tab so the filtered
+  // Risk Register stays intact in the original tab (filters live in component
+  // state and don't survive a same-tab Back navigation).
+  const openInNewTab = (path: string) =>
+    window.open(path, "_blank", "noopener,noreferrer");
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
@@ -1604,7 +1608,7 @@ export default function CustomerRiskRegister() {
                   const out: ReactNode[] = [];
                   out.push(renderRow(row, {
                     key: row.id,
-                    onClick: () => navigate(navTarget),
+                    onClick: () => openInNewTab(navTarget),
                     leadCell: parentLead,
                   }));
 
@@ -1613,7 +1617,7 @@ export default function CustomerRiskRegister() {
                       out.push(renderRow(child, {
                         key: `${row.id}::${child.id}`,
                         isChild: true,
-                        onClick: () => navigate(`/outstanding-dashboard/customer/${encodeURIComponent(child.name)}`),
+                        onClick: () => openInNewTab(`/outstanding-dashboard/customer/${encodeURIComponent(child.name)}`),
                         leadCell: (
                           <span className="inline-flex items-center gap-2 pl-7 text-muted-foreground">
                             <span className="text-xs">↳</span>

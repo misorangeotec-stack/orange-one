@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import { TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -12,8 +13,7 @@ import { useTaskStore } from "../mock/store";
 import type { Department, Profile, Task, TaskStatus } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "./TaskTable";
 
-const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
-  { value: "all", label: "All statuses" },
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "in_progress", label: "In Progress" },
   { value: "revised", label: "Revised" },
@@ -33,18 +33,21 @@ export default function TaskBrowser({
   people,
   departments,
   emptyMessage = "No tasks match these filters.",
+  hideWeekFilter = false,
 }: {
   tasks: Task[];
   people: Profile[];
   departments?: Department[];
   emptyMessage?: string;
+  /** Hide the internal "Any/This/Next week" dropdown when the parent owns the time scope (e.g. Team Tasks' This-week/All-time toggle). */
+  hideWeekFilter?: boolean;
 }) {
   const { profileById } = useTaskStore();
   const [q, setQ] = useState("");
   const [person, setPerson] = useState("all");
   const [creator, setCreator] = useState("all");
   const [dept, setDept] = useState("all");
-  const [status, setStatus] = useState<TaskStatus | "all">("all");
+  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
@@ -91,7 +94,7 @@ export default function TaskBrowser({
     setPerson("all");
     setCreator("all");
     setDept("all");
-    setStatus("all");
+    setStatuses([]);
     setWeek("all");
   };
 
@@ -101,13 +104,13 @@ export default function TaskBrowser({
       if (person !== "all" && t.assignedTo !== person) return false;
       if (creator !== "all" && t.createdBy !== creator) return false;
       if (dept !== "all" && t.departmentId !== dept) return false;
-      if (status !== "all" && t.status !== status) return false;
+      if (statuses.length && !statuses.includes(t.status)) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
       if (week === "next" && t.weekStart !== nw) return false;
       if (q.trim() && !t.title.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
-  }, [tasks, person, creator, dept, status, week, q]);
+  }, [tasks, person, creator, dept, statuses, week, q]);
 
   // KPI cards reflect the active filters (not the full list).
   const counts = useMemo(() => {
@@ -126,7 +129,7 @@ export default function TaskBrowser({
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${status}|${week}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${week}|${sort.key}|${sort.dir}` });
 
   // Active-filter chips, so it's always visible what's narrowing the list.
   const activeFilters: ActiveFilter[] = [];
@@ -149,11 +152,11 @@ export default function TaskBrowser({
       label: `Assigned to: ${peopleById.get(person)?.name ?? person}`,
       onClear: () => handlePersonChange("all"),
     });
-  if (status !== "all")
+  if (statuses.length)
     activeFilters.push({
       key: "status",
-      label: `Status: ${STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}`,
-      onClear: () => setStatus("all"),
+      label: `Status: ${STATUS_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
+      onClear: () => setStatuses([]),
     });
   if (week !== "all")
     activeFilters.push({
@@ -208,22 +211,25 @@ export default function TaskBrowser({
               })),
             ]}
           />
-          <Combobox
-            value={status}
-            onChange={(v) => setStatus(v as TaskStatus | "all")}
+          <MultiSelect
+            values={statuses}
+            onChange={(v) => setStatuses(v as TaskStatus[])}
+            placeholder="All statuses"
             className="w-full sm:w-auto sm:min-w-[150px]"
             options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
           />
-          <Combobox
-            value={week}
-            onChange={(v) => setWeek(v as "all" | "this" | "next")}
-            className="w-full sm:w-auto sm:min-w-[130px]"
-            options={[
-              { value: "all", label: "Any week" },
-              { value: "this", label: "This week" },
-              { value: "next", label: "Next week" },
-            ]}
-          />
+          {!hideWeekFilter && (
+            <Combobox
+              value={week}
+              onChange={(v) => setWeek(v as "all" | "this" | "next")}
+              className="w-full sm:w-auto sm:min-w-[130px]"
+              options={[
+                { value: "all", label: "Any week" },
+                { value: "this", label: "This week" },
+                { value: "next", label: "Next week" },
+              ]}
+            />
+          )}
         </div>
 
         {/* active filters */}

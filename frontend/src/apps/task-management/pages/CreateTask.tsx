@@ -8,6 +8,7 @@ import Avatar from "@/shared/components/ui/Avatar";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
+import { useReportsToSuffix } from "../components/ReportsToTag";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
 export default function CreateTask() {
@@ -15,6 +16,7 @@ export default function CreateTask() {
   const { user, role } = useSession();
   const { createTask, assignableUsers, departmentById, profileById, canCreateTask } = useTaskStore();
   const canAssign = assignableUsers(role, user.id);
+  const reportsToSuffix = useReportsToSuffix();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -103,7 +105,7 @@ export default function CreateTask() {
                 onChange={setAssignedTo}
                 options={canAssign.map((p) => {
                   const dept = departmentById(p.departmentId)?.name;
-                  const sub = [p.designation, dept].filter(Boolean).join(" · ");
+                  const sub = [p.designation, dept, reportsToSuffix(p, user.id)].filter(Boolean).join(" · ");
                   return {
                     value: p.id,
                     label: p.name,

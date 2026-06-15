@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
 import Combobox from "@/shared/components/ui/Combobox";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -13,6 +14,7 @@ import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import type { TaskStatus } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
+import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
 type View = "all" | "today" | "followup" | "pending";
 type Relation = "all" | "assigned" | "created";
@@ -23,8 +25,7 @@ const RELATION_OPTIONS: { value: Relation; label: string }[] = [
   { value: "created", label: "Created by me" },
 ];
 
-const STATUS_OPTIONS: { value: TaskStatus | "all"; label: string }[] = [
-  { value: "all", label: "Any status" },
+const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "pending", label: "Pending" },
   { value: "in_progress", label: "In Progress" },
   { value: "revised", label: "Revised" },
@@ -40,8 +41,9 @@ export default function TasksList() {
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as View) || "all";
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState<TaskStatus | "all">("all");
+  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [relation, setRelation] = useState<Relation>("all");
+  const [scope, setScope] = useState<Scope>("week");
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
@@ -53,35 +55,43 @@ export default function TasksList() {
     [tasks, user.id]
   );
 
+  // Everything EXCEPT the tab (view) selection: time scope + relation + status +
+  // search. The tab counters read from this so they reflect the active filters
+  // (previously they counted the full list and never moved when a filter changed).
+  const base = useMemo(() => {
+    let list = scopeTasks(mine, scope);
+    if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
+    else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
+    if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
+    if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
+    return list;
+  }, [mine, scope, relation, statuses, q, user.id]);
+
   const counts = useMemo(
     () => ({
-      all: mine.length,
-      today: mine.filter((t) => isToday(t.dueDate) && t.status !== "completed").length,
-      followup: mine.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed").length,
-      pending: mine.filter((t) => t.status === "pending" || t.status === "in_progress").length,
+      all: base.length,
+      today: base.filter((t) => isToday(t.dueDate) && t.status !== "completed").length,
+      followup: base.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed").length,
+      pending: base.filter((t) => t.status === "pending" || t.status === "in_progress").length,
     }),
-    [mine]
+    [base]
   );
 
   const filtered = useMemo(() => {
-    let list = mine;
+    let list = base;
     if (view === "today") list = list.filter((t) => isToday(t.dueDate) && t.status !== "completed");
     else if (view === "followup")
       list = list.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed");
     else if (view === "pending") list = list.filter((t) => t.status === "pending" || t.status === "in_progress");
-    if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
-    else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
-    if (status !== "all") list = list.filter((t) => t.status === status);
-    if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
     return list;
-  }, [mine, view, status, q, relation, user.id]);
+  }, [base, view]);
 
   const sorted = useMemo(
     () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${view}|${status}|${q}|${relation}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${q}|${relation}|${scope}|${sort.key}|${sort.dir}` });
 
   const activeFilters: ActiveFilter[] = [];
   if (relation !== "all")
@@ -90,15 +100,15 @@ export default function TasksList() {
       label: RELATION_OPTIONS.find((r) => r.value === relation)?.label ?? relation,
       onClear: () => setRelation("all"),
     });
-  if (status !== "all")
+  if (statuses.length)
     activeFilters.push({
       key: "status",
-      label: `Status: ${STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status}`,
-      onClear: () => setStatus("all"),
+      label: `Status: ${STATUS_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
+      onClear: () => setStatuses([]),
     });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   const clearAll = () => {
-    setStatus("all");
+    setStatuses([]);
     setQ("");
     setRelation("all");
   };
@@ -121,6 +131,14 @@ export default function TasksList() {
         )}
       </div>
 
+      {/* scope toggle: this week vs all time — same placement as the dashboard */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] text-grey-2">
+          Showing <b className="text-navy font-semibold">{scope === "week" ? "this week" : "all time"}</b> · {counts.all} task{counts.all !== 1 ? "s" : ""}
+        </span>
+        <ScopeToggle scope={scope} onChange={setScope} />
+      </div>
+
       <Card className="overflow-hidden">
         <div className="px-4 pt-3 flex flex-wrap items-center justify-between gap-3">
           <Tabs
@@ -141,9 +159,10 @@ export default function TasksList() {
               align="right"
               options={RELATION_OPTIONS.map((r) => ({ value: r.value, label: r.label }))}
             />
-            <Combobox
-              value={status}
-              onChange={(v) => setStatus(v as TaskStatus | "all")}
+            <MultiSelect
+              values={statuses}
+              onChange={(v) => setStatuses(v as TaskStatus[])}
+              placeholder="Any status"
               className="w-full sm:w-auto sm:min-w-[150px]"
               align="right"
               options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
