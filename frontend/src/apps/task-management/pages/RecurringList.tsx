@@ -11,6 +11,7 @@ import { TextInput } from "@/shared/components/ui/Form";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
+import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurringTask } from "../types";
@@ -80,10 +81,7 @@ export default function RecurringList() {
       if (activeFilter === "active" && !r.active) return false;
       if (activeFilter === "paused" && r.active) return false;
       if (person !== "all" && r.assignedTo !== person) return false;
-      if (q.trim()) {
-        const hay = `${r.title} ${r.description ?? ""}`.toLowerCase();
-        if (!hay.includes(q.toLowerCase())) return false;
-      }
+      if (q.trim() && !matchesSearch(q, r.title, r.description)) return false;
       return true;
     });
     out.sort((a, b) => {

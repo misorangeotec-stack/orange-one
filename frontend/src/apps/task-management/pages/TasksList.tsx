@@ -10,6 +10,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { isOverdue, isToday } from "@/shared/lib/time";
+import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import type { TaskStatus } from "../types";
@@ -63,7 +64,7 @@ export default function TasksList() {
     if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
     else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
     if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
-    if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
+    if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title));
     return list;
   }, [mine, scope, relation, statuses, q, user.id]);
 

@@ -1,10 +1,15 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTaskStore } from "../mock/store";
 import TaskBrowser from "../components/TaskBrowser";
+import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
 /** Admin view: every task across the organization, filterable by department/person. */
 export default function AllTasks() {
   const { tasks, profiles, departments } = useTaskStore();
+  const [scope, setScope] = useState<Scope>("week");
+
+  const scopedTasks = useMemo(() => scopeTasks(tasks, scope), [tasks, scope]);
 
   return (
     <div className="space-y-5">
@@ -22,7 +27,15 @@ export default function AllTasks() {
         </Link>
       </div>
 
-      <TaskBrowser tasks={tasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." />
+      {/* scope toggle: this week vs all time — same placement as the dashboard */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] text-grey-2">
+          Showing <b className="text-navy font-semibold">{scope === "week" ? "this week" : "all time"}</b> · {scopedTasks.length} task{scopedTasks.length !== 1 ? "s" : ""} organization-wide
+        </span>
+        <ScopeToggle scope={scope} onChange={setScope} />
+      </div>
+
+      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter />
     </div>
   );
 }

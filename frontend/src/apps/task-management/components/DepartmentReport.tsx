@@ -4,6 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { cn } from "@/shared/lib/cn";
+import { matchesSearch } from "@/shared/lib/search";
 import { useTaskStore } from "../mock/store";
 import { WEEK_START } from "../mock/data";
 import { reportFor, aggregateRyg, actualRygFor } from "../mock/selectors";
@@ -53,7 +54,7 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpenIds((p) => ({ ...p, [id]: !p[id] }));
   const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
+  const q = query.trim();
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "planned", dir: "desc" });
   // Name sorts A→Z by default; numeric columns sort highest-first.
   const onSort = (key: SortKey) =>
@@ -102,11 +103,9 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
   const visibleGroups = useMemo<Group[]>(() => {
     if (!q) return groups;
     return groups.flatMap((g) => {
-      if (g.name.toLowerCase().includes(q)) return [g];
+      if (matchesSearch(q, g.name)) return [g];
       const rows = g.rows.filter(({ p }) =>
-        p.name.toLowerCase().includes(q) ||
-        p.designation?.toLowerCase().includes(q) ||
-        ROLE_LABEL[p.role].toLowerCase().includes(q)
+        matchesSearch(q, p.name, p.designation, ROLE_LABEL[p.role])
       );
       return rows.length ? [{ ...g, rows, members: rows.map((r) => r.p) }] : [];
     });

@@ -7,6 +7,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { usePagination } from "@/shared/lib/usePagination";
 import { formatDate } from "@/shared/lib/time";
+import { matchesSearch } from "@/shared/lib/search";
 import { useDirectory } from "@/core/platform/store";
 import { useFmsStore, activeStage, entryStatus, doneCount, isEntryOverdue, daysOverdue } from "../mock/store";
 import { STAGE_COUNT, stageByKey } from "../config/stages";
@@ -25,9 +26,8 @@ export default function EntriesList() {
   const [status, setStatus] = useState("");
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
     return entries.filter((e) => {
-      if (q && !(`${e.code} ${e.itemName}`.toLowerCase().includes(q))) return false;
+      if (!matchesSearch(search, e.code, e.itemName)) return false;
       if (category && e.category !== category) return false;
       if (status && entryStatus(e) !== status) return false;
       return true;

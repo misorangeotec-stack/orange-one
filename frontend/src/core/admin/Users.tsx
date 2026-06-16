@@ -10,6 +10,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { matchesSearch } from "@/shared/lib/search";
 import ShareLoginModal from "./ShareLoginModal";
 import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/time";
@@ -40,7 +41,7 @@ export default function Users() {
       profiles.filter((p) => {
         if (role !== "all" && p.role !== role) return false;
         if (dept !== "all" && p.departmentId !== dept) return false;
-        if (q.trim() && !p.name.toLowerCase().includes(q.toLowerCase())) return false;
+        if (q.trim() && !matchesSearch(q, p.name)) return false;
         return true;
       }),
     [profiles, role, dept, q]

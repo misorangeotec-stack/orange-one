@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
+import { matchesSearch } from "@/shared/lib/search";
 
 export interface ComboOption {
   value: string;
@@ -102,8 +103,7 @@ export default function Combobox({
 
   const filtered = useMemo(() => {
     if (!q.trim()) return options;
-    const s = q.toLowerCase();
-    return options.filter((o) => o.label.toLowerCase().includes(s) || o.sublabel?.toLowerCase().includes(s));
+    return options.filter((o) => matchesSearch(q, o.label, o.sublabel));
   }, [q, options]);
 
   // Offer creation only when the term doesn't already exactly match an option.

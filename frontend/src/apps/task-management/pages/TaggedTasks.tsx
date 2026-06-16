@@ -6,10 +6,12 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import type { TaskStatus } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
+import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: "pending", label: "Pending" },
@@ -24,6 +26,7 @@ export default function TaggedTasks() {
   const { user } = useSession();
   const { tasks, notifications, profileById } = useTaskStore();
   const [q, setQ] = useState("");
+  const [scope, setScope] = useState<Scope>("week");
   const [statuses, setStatuses] = useState<TaskStatus[]>([]);
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
@@ -44,18 +47,18 @@ export default function TaggedTasks() {
   );
 
   const filtered = useMemo(() => {
-    let list = mine;
+    let list = scopeTasks(mine, scope);
     if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
-    if (q.trim()) list = list.filter((t) => t.title.toLowerCase().includes(q.toLowerCase()));
+    if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title));
     return list;
-  }, [mine, statuses, q]);
+  }, [mine, scope, statuses, q]);
 
   const sorted = useMemo(
     () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${statuses.join(",")}|${q}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${scope}|${statuses.join(",")}|${q}|${sort.key}|${sort.dir}` });
 
   const activeFilters: ActiveFilter[] = [];
   if (statuses.length)
@@ -77,6 +80,14 @@ export default function TaggedTasks() {
           <h2 className="text-[22px] font-bold text-navy">Tagged</h2>
           <p className="text-grey text-[13px] mt-1">Tasks you've been mentioned in.</p>
         </div>
+      </div>
+
+      {/* scope toggle: this week vs all time — same placement as the dashboard */}
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-[12px] text-grey-2">
+          Showing <b className="text-navy font-semibold">{scope === "week" ? "this week" : "all time"}</b> · {filtered.length} task{filtered.length !== 1 ? "s" : ""}
+        </span>
+        <ScopeToggle scope={scope} onChange={setScope} />
       </div>
 
       <Card className="overflow-hidden">

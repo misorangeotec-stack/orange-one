@@ -8,6 +8,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { matchesSearch } from "@/shared/lib/search";
 import { WEEK_START } from "../mock/data";
 import { useTaskStore } from "../mock/store";
 import type { Department, Profile, Task, TaskStatus } from "../types";
@@ -107,7 +108,7 @@ export default function TaskBrowser({
       if (statuses.length && !statuses.includes(t.status)) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
       if (week === "next" && t.weekStart !== nw) return false;
-      if (q.trim() && !t.title.toLowerCase().includes(q.toLowerCase())) return false;
+      if (!matchesSearch(q, t.title)) return false;
       return true;
     });
   }, [tasks, person, creator, dept, statuses, week, q]);

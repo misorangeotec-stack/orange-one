@@ -11,6 +11,7 @@ import {
   downloadPerSalesperson, buildMailtoLink,
   type ExportCustomerRow, type ActiveFiltersSummary,
 } from "@hub/lib/exportSalesperson";
+import { matchesSearch } from "@/shared/lib/search";
 
 export interface SalespersonOption {
   name: string;
@@ -44,9 +45,8 @@ export function SalespersonPickerDialog({
   }, [open]);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return options;
-    return options.filter(o => o.name.toLowerCase().includes(q));
+    if (!search.trim()) return options;
+    return options.filter(o => matchesSearch(search, o.name));
   }, [options, search]);
 
   const toggle = (name: string) => {
