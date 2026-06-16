@@ -18,6 +18,7 @@ import { Input } from "@hub/components/ui/input";
 import { useImportData } from "@hub/lib/useImportData";
 import { formatDateDMY } from "@hub/lib/utils";
 import type { ImportFilters, ImportProductMonthRow } from "@hub/lib/importTypes";
+import { matchesSearch } from "@/shared/lib/search";
 
 /* ── Formatters ─────────────────────────────────────────────────────────────*/
 
@@ -176,32 +177,28 @@ export default function ImportDashboard() {
   );
 
   const filteredProductList = useMemo(() => {
-    const q = productSearch.toLowerCase();
-    return q
-      ? (summary?.products ?? []).filter((p) => p.toLowerCase().includes(q))
+    return productSearch.trim()
+      ? (summary?.products ?? []).filter((p) => matchesSearch(productSearch, p))
       : (summary?.products ?? []);
   }, [summary, productSearch]);
 
   const displayBuyers = useMemo(() => {
-    const q = buyerSearch.toLowerCase();
-    const list = q
-      ? filteredBuyers.filter((b) => b.name.toLowerCase().includes(q))
+    const list = buyerSearch.trim()
+      ? filteredBuyers.filter((b) => matchesSearch(buyerSearch, b.name))
       : filteredBuyers;
     return list.slice(0, 60);
   }, [filteredBuyers, buyerSearch]);
 
   const displaySellers = useMemo(() => {
-    const q = sellerSearch.toLowerCase();
-    const list = q
-      ? filteredSellers.filter((s) => s.name.toLowerCase().includes(q))
+    const list = sellerSearch.trim()
+      ? filteredSellers.filter((s) => matchesSearch(sellerSearch, s.name))
       : filteredSellers;
     return list.slice(0, 80);
   }, [filteredSellers, sellerSearch]);
 
   const displayGroupTree = useMemo(() => {
     if (!groupSearch.trim()) return groupTree;
-    const q = groupSearch.toLowerCase();
-    return groupTree.filter((n) => n.name.toLowerCase().includes(q));
+    return groupTree.filter((n) => matchesSearch(groupSearch, n.name));
   }, [groupTree, groupSearch]);
 
   const totalSubGroups = useMemo(

@@ -92,6 +92,7 @@ type ViewMode = "customer" | "group";
 
 import { fmtINRMoney, fmtINRDrCr } from "@hub/lib/utils";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { matchesSearch } from "@/shared/lib/search";
 
 const fmt = (n: number) => {
   const sign = n < 0 ? "-" : "";
@@ -698,9 +699,8 @@ export default function CustomerRiskRegister() {
       "91-120": "91_120", "121-180": "121_180", "180+": "180_plus",
     };
     const agingBk = agingFilter !== "all" ? bkMap[agingFilter] : null;
-    const q = search ? search.toLowerCase() : null;
     return (r: CustomerRow): boolean => {
-      if (q && !(r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))) return false;
+      if (search && !matchesSearch(search, r.name, r.id)) return false;
       if (riskLevels.length > 0 && !riskLevels.includes(r.risk)) return false;
       if (agingBk && !((r.agingBuckets?.[agingBk] ?? 0) > 0)) return false;
       if (specialFilter === "over_credit_limit" && !(r.utilization > 100)) return false;
@@ -721,11 +721,10 @@ export default function CustomerRiskRegister() {
     const bucketKey: keyof AgingBuckets | null =
       agingFilter !== "all" ? (bkMap[agingFilter] ?? null) : null;
     if (search) {
-      const q = search.toLowerCase();
       // In group mode, also match by underlying Tally child name.
       d = d.filter((r) => {
-        if (r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q)) return true;
-        if (viewMode === "group" && r.childNames?.some((n) => n.toLowerCase().includes(q))) return true;
+        if (matchesSearch(search, r.name, r.id)) return true;
+        if (viewMode === "group" && r.childNames?.some((n) => matchesSearch(search, n))) return true;
         return false;
       });
     }
@@ -858,11 +857,10 @@ export default function CustomerRiskRegister() {
   // Auto-expand groups whose child Tally names match the current search.
   useEffect(() => {
     if (viewMode !== "group" || !search) return;
-    const q = search.toLowerCase();
     const toExpand = new Set<string>();
     for (const r of allData) {
       if (r.childNames && (r.isGroup ?? r.childNames.length > 1)
-          && r.childNames.some((n) => n.toLowerCase().includes(q))) {
+          && r.childNames.some((n) => matchesSearch(search, n))) {
         toExpand.add(r.name);
       }
     }

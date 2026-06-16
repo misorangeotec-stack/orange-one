@@ -35,6 +35,7 @@ import { Input } from "@hub/components/ui/input";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData, consolidateByName, consolidateByGroup } from "@hub/lib/useAppData";
 import { utilizationPct } from "@hub/lib/receivables";
+import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx } from "@hub/lib/exportCustomer";
 import type { InvoiceStatus } from "@hub/lib/types";
 
@@ -504,7 +505,6 @@ export default function CustomerDetail() {
   }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns]);
 
   const filteredTransactions = useMemo(() => {
-    const search = invoiceSearch.trim().toLowerCase();
     return transactions.filter((t) => {
       // Voucher-type filter — "journal" matches both Dr and Cr
       if (voucherTypeFilter !== "all") {
@@ -521,10 +521,7 @@ export default function CustomerDetail() {
       if (agingBucketFilter !== null) {
         if (t.kind !== "sales" || invoiceAgingKey(t.overdueDays ?? 0) !== agingBucketFilter) return false;
       }
-      if (search) {
-        const haystacks = [t.voucherNo, t.refInvoice ?? ""].join(" ").toLowerCase();
-        if (!haystacks.includes(search)) return false;
-      }
+      if (!matchesSearch(invoiceSearch, t.voucherNo, t.refInvoice)) return false;
       return true;
     });
   }, [transactions, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);

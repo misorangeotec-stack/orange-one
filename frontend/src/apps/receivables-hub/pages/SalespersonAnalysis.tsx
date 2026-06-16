@@ -28,6 +28,7 @@ import type { AgingBuckets } from "@hub/lib/types";
 import { ShareReportMenu } from "@hub/pages/salesperson/ShareReportMenu";
 import type { ActiveFiltersSummary } from "@hub/lib/exportSalesperson";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { matchesSearch } from "@/shared/lib/search";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -177,8 +178,7 @@ export default function SalespersonAnalysis() {
   const filteredRows = useMemo(() => {
     let d = [...allData];
     if (search) {
-      const q = search.toLowerCase();
-      d = d.filter((r) => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+      d = d.filter((r) => matchesSearch(search, r.name, r.id));
     }
     if (riskLevels.length > 0) {
       d = d.filter((r) => riskLevels.includes(r.risk));

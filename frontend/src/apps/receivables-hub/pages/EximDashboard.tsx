@@ -18,6 +18,7 @@ import { Input } from "@hub/components/ui/input";
 import { useEximData } from "@hub/lib/useEximData";
 import { formatDateDMY } from "@hub/lib/utils";
 import type { EximFilters } from "@hub/lib/eximTypes";
+import { matchesSearch } from "@/shared/lib/search";
 
 /* ── Formatters ─────────────────────────────────────────────────────────────*/
 
@@ -181,16 +182,14 @@ export default function EximDashboard() {
 
   // Top-8 cat3 names for the stacked bar legend
   const filteredBuyerCountryList = useMemo(() => {
-    const q = buyerCountrySearch.toLowerCase();
-    return q
-      ? (summary?.buyerCountries ?? []).filter((c) => c.toLowerCase().includes(q))
+    return buyerCountrySearch.trim()
+      ? (summary?.buyerCountries ?? []).filter((c) => matchesSearch(buyerCountrySearch, c))
       : (summary?.buyerCountries ?? []);
   }, [summary, buyerCountrySearch]);
 
   const filteredCountryList = useMemo(() => {
-    const q = countrySearch.toLowerCase();
-    return q
-      ? (summary?.sellerCountries ?? []).filter((c) => c.toLowerCase().includes(q))
+    return countrySearch.trim()
+      ? (summary?.sellerCountries ?? []).filter((c) => matchesSearch(countrySearch, c))
       : (summary?.sellerCountries ?? []);
   }, [summary, countrySearch]);
 
@@ -201,18 +200,16 @@ export default function EximDashboard() {
 
   // Buyer grid (searched + limited)
   const displayBuyers = useMemo(() => {
-    const q = buyerSearch.toLowerCase();
-    const list = q
-      ? filteredBuyers.filter((b) => b.name.toLowerCase().includes(q))
+    const list = buyerSearch.trim()
+      ? filteredBuyers.filter((b) => matchesSearch(buyerSearch, b.name))
       : filteredBuyers;
     return list.slice(0, 60);
   }, [filteredBuyers, buyerSearch]);
 
   // Seller list (searched + limited)
   const displaySellers = useMemo(() => {
-    const q = sellerSearch.toLowerCase();
-    const list = q
-      ? filteredSellers.filter((s) => s.name.toLowerCase().includes(q))
+    const list = sellerSearch.trim()
+      ? filteredSellers.filter((s) => matchesSearch(sellerSearch, s.name))
       : filteredSellers;
     return list.slice(0, 80);
   }, [filteredSellers, sellerSearch]);
@@ -220,8 +217,7 @@ export default function EximDashboard() {
   // Category explorer (searched)
   const displayCat3Tree = useMemo(() => {
     if (!catSearch.trim()) return cat3Tree;
-    const q = catSearch.toLowerCase();
-    return cat3Tree.filter((n) => n.name.toLowerCase().includes(q));
+    return cat3Tree.filter((n) => matchesSearch(catSearch, n.name));
   }, [cat3Tree, catSearch]);
 
   // Total subcat count across all (unfiltered) categories — for the badge
