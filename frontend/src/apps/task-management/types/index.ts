@@ -44,13 +44,20 @@ export interface Location {
   sortOrder: number;
 }
 
-/** A row in a task's per-location checklist. `completedAt` set = that location is done. */
+/**
+ * A row in a task's per-location checklist. A location is *resolved* (counts
+ * toward completion) when it is either done (`completedAt` set) OR marked Not
+ * Applicable (`naAt` set). The two are mutually exclusive — setting one clears
+ * the other. A task completes once every location is resolved.
+ */
 export interface TaskLocation {
   id: string;
   taskId: string;
   locationId: string;
-  completedAt: string | null; // ISO datetime
+  completedAt: string | null; // ISO datetime — set = this location is done
   completedBy: string | null;
+  naAt: string | null; // ISO datetime — set = this location is Not Applicable for the task
+  naBy: string | null;
 }
 
 /** Human label for a location: "Otec · Surat", or "General" / a bare place name. */
