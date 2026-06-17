@@ -6,7 +6,7 @@ import { useTaskStore } from "../mock/store";
 import type { Task } from "../types";
 
 /** Confirm completion of a task, with an optional closing note. */
-export default function CompleteModal({ task, open, onClose }: { task: Task; open: boolean; onClose: () => void }) {
+export default function CompleteModal({ task, open, onClose, onCompleted }: { task: Task; open: boolean; onClose: () => void; onCompleted?: () => void }) {
   const { completeTask, taskLocationsComplete } = useTaskStore();
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,6 +31,7 @@ export default function CompleteModal({ task, open, onClose }: { task: Task; ope
     try {
       await completeTask(task.id, note.trim() || undefined);
       onClose();
+      onCompleted?.();
     } catch (e) {
       setError((e as Error).message);
     } finally {

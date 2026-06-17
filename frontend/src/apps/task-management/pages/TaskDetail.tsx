@@ -420,7 +420,7 @@ export default function TaskDetail() {
 
       {/* modals */}
       <ReviseModal task={task} open={modal === "revise"} onClose={() => setModal(null)} />
-      <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} />
+      <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} onCompleted={() => navigate("/task-management/tasks")} />
       <PersonalTaskModal task={task} open={editOpen} onClose={() => setEditOpen(false)} />
       <Modal
         open={confirmDelete}
