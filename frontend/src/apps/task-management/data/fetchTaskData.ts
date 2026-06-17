@@ -72,6 +72,8 @@ const mapTaskLocation = (r: any): TaskLocation => ({
   locationId: r.location_id,
   completedAt: r.completed_at,
   completedBy: r.completed_by,
+  naAt: r.na_at ?? null,
+  naBy: r.na_by ?? null,
 });
 
 const mapActivity = (r: any): TaskActivity => ({
@@ -122,26 +124,59 @@ const mapPlan = (r: any): WeeklyPlan => ({
 });
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/**
+ * PostgREST caps a single response at the project's "Max rows" setting (default
+ * 1000). An admin / senior HOD sees the whole org's rows under RLS, so an
+ * unbounded `select("*")` silently drops everything past row 1000 — e.g.
+ * `task_locations` is well over 1000 org-wide, so many tasks would render with
+ * no/partial companies for them while a normal employee (tiny RLS set) sees all
+ * of theirs. Page through every table by its `id` PK so all RLS-visible rows
+ * load regardless of who is signed in. (`id` is a stable, unique sort key, so
+ * range pages never skip or duplicate.)
+ */
+const PAGE_SIZE = 1000;
+type PagedTable =
+  | "tasks"
+  | "task_activity"
+  | "notifications"
+  | "recurring_tasks"
+  | "weekly_plans"
+  | "locations"
+  | "task_locations"
+  | "recurring_task_locations";
+async function fetchAll(table: PagedTable): Promise<any[]> {
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from(table)
+      .select("*")
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return out;
+}
+
 export async function fetchTaskData(): Promise<TaskData> {
-  const [tasksRes, actRes, notifRes, recRes, planRes, wsRes, locRes, taskLocRes, recLocRes] = await Promise.all([
-    supabase.from("tasks").select("*"),
-    supabase.from("task_activity").select("*"),
-    supabase.from("notifications").select("*"),
-    supabase.from("recurring_tasks").select("*"),
-    supabase.from("weekly_plans").select("*"),
+  const [tasksData, actData, notifData, recData, planData, wsRes, locData, taskLocData, recLocData] = await Promise.all([
+    fetchAll("tasks"),
+    fetchAll("task_activity"),
+    fetchAll("notifications"),
+    fetchAll("recurring_tasks"),
+    fetchAll("weekly_plans"),
     supabase.from("workspace_settings").select("*").limit(1).maybeSingle(),
-    supabase.from("locations").select("*"),
-    supabase.from("task_locations").select("*"),
-    supabase.from("recurring_task_locations").select("*"),
+    fetchAll("locations"),
+    fetchAll("task_locations"),
+    fetchAll("recurring_task_locations"),
   ]);
 
-  for (const res of [tasksRes, actRes, notifRes, recRes, planRes, locRes, taskLocRes, recLocRes]) {
-    if (res.error) throw new Error(res.error.message);
-  }
   if (wsRes.error) throw new Error(wsRes.error.message);
 
   // Group the checklist rows by their parent for attachment.
-  const taskLocs = (taskLocRes.data ?? []).map(mapTaskLocation);
+  const taskLocs = taskLocData.map(mapTaskLocation);
   const taskLocsByTask = new Map<string, TaskLocation[]>();
   for (const tl of taskLocs) {
     const list = taskLocsByTask.get(tl.taskId) ?? [];
@@ -149,27 +184,27 @@ export async function fetchTaskData(): Promise<TaskData> {
     taskLocsByTask.set(tl.taskId, list);
   }
   const recLocIdsByTpl = new Map<string, string[]>();
-  for (const row of recLocRes.data ?? []) {
+  for (const row of recLocData) {
     const list = recLocIdsByTpl.get(row.recurring_task_id) ?? [];
     list.push(row.location_id);
     recLocIdsByTpl.set(row.recurring_task_id, list);
   }
 
-  const tasks = (tasksRes.data ?? []).map(mapTask).map((t) => ({ ...t, locations: taskLocsByTask.get(t.id) ?? [] }));
-  const recurringTasks = (recRes.data ?? [])
+  const tasks = tasksData.map(mapTask).map((t) => ({ ...t, locations: taskLocsByTask.get(t.id) ?? [] }));
+  const recurringTasks = recData
     .map(mapRecurring)
     .map((r) => ({ ...r, locationIds: recLocIdsByTpl.get(r.id) ?? [] }));
 
   const ws = wsRes.data;
   return {
     tasks,
-    activity: (actRes.data ?? []).map(mapActivity),
-    notifications: (notifRes.data ?? []).map(mapNotification),
+    activity: actData.map(mapActivity),
+    notifications: notifData.map(mapNotification),
     recurringTasks,
-    weeklyPlans: (planRes.data ?? []).map(mapPlan),
+    weeklyPlans: planData.map(mapPlan),
     workspace: ws
       ? { workspaceName: ws.workspace_name, weekStart: ws.week_start, maxRevisionsPerWeek: ws.max_revisions_per_week }
       : DEFAULT_WORKSPACE,
-    locations: (locRes.data ?? []).map(mapLocation),
+    locations: locData.map(mapLocation),
   };
 }
