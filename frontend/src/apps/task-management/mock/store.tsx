@@ -1,12 +1,13 @@
 import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AppRole, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, WeeklyPlan, WorkspaceSettings } from "../types";
+import type { QueryClient } from "@tanstack/react-query";
+import type { AppRole, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, TaskLocation, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
-import { fetchTaskData } from "../data/fetchTaskData";
+import { fetchTaskData, type TaskData } from "../data/fetchTaskData";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -167,6 +168,28 @@ const readOnlyId = () => {
   readOnly();
   return "";
 };
+
+/**
+ * Optimistically rewrite one task_location row across every cached taskData query,
+ * so a location tick/N/A shows instantly before the Supabase write returns. The
+ * follow-up invalidate reconciles with server truth (true timestamps, by-names).
+ */
+function patchTaskLocation(
+  queryClient: QueryClient,
+  taskLocationId: string,
+  update: (l: TaskLocation) => TaskLocation
+) {
+  queryClient.setQueriesData<TaskData>({ queryKey: ["taskData"] }, (prev) => {
+    if (!prev) return prev;
+    let changed = false;
+    const tasks = prev.tasks.map((t) => {
+      if (!t.locations.some((l) => l.id === taskLocationId)) return t;
+      changed = true;
+      return { ...t, locations: t.locations.map((l) => (l.id === taskLocationId ? update(l) : l)) };
+    });
+    return changed ? { ...prev, tasks } : prev;
+  });
+}
 
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const { user, role } = useSession();
@@ -396,13 +419,40 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       locationById: (id) => (id ? locations.find((l) => l.id === id) : undefined),
       taskLocationsComplete: (task) =>
         task.locations.every((l) => l.completedAt !== null || l.naAt !== null),
+      // Location toggles flip the React Query cache OPTIMISTICALLY first, so the
+      // tick/N/A renders the instant the user clicks instead of after the Supabase
+      // round-trip + full refetch (which felt like a dead click). The network write
+      // then runs in the background and we invalidate to reconcile timestamps/by-names;
+      // a failed write rolls back by refetching the server truth.
       setTaskLocationDone: async (taskLocationId, done) => {
-        await setTaskLocationDoneWrite(taskLocationId, done, user.id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        patchTaskLocation(queryClient, taskLocationId, (l) => ({
+          ...l,
+          completedAt: done ? new Date().toISOString() : null,
+          completedBy: done ? user.id : null,
+          ...(done ? { naAt: null, naBy: null } : {}),
+        }));
+        try {
+          await setTaskLocationDoneWrite(taskLocationId, done, user.id);
+          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        } catch (e) {
+          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          throw e;
+        }
       },
       setTaskLocationNa: async (taskLocationId, na) => {
-        await setTaskLocationNaWrite(taskLocationId, na, user.id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        patchTaskLocation(queryClient, taskLocationId, (l) => ({
+          ...l,
+          naAt: na ? new Date().toISOString() : null,
+          naBy: na ? user.id : null,
+          ...(na ? { completedAt: null, completedBy: null } : {}),
+        }));
+        try {
+          await setTaskLocationNaWrite(taskLocationId, na, user.id);
+          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        } catch (e) {
+          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          throw e;
+        }
       },
       addLocation: async (input) => {
         const id = await insertLocationWrite({ ...input, createdBy: user.id });
