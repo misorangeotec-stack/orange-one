@@ -77,9 +77,10 @@ export async function insertTask(input: {
 
 /**
  * Tick (or untick) a single location on a task's checklist. Sets completed_at +
- * completed_by (or clears them). RLS limits this to people who can act on the
- * parent task. Untick is allowed while the task is still open so a mis-tick can
- * be corrected before completion.
+ * completed_by (or clears them). Marking done also clears any N/A flag on the row
+ * (done and N/A are mutually exclusive). RLS limits this to people who can act on
+ * the parent task. Untick is allowed while the task is still open so a mis-tick
+ * can be corrected before completion.
  */
 export async function setTaskLocationDone(
   taskLocationId: string,
@@ -91,6 +92,30 @@ export async function setTaskLocationDone(
     .update({
       completed_at: done ? new Date().toISOString() : null,
       completed_by: done ? actorId : null,
+      ...(done ? { na_at: null, na_by: null } : {}),
+    })
+    .eq("id", taskLocationId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Mark (or unmark) a single location as Not Applicable for the task. An N/A
+ * location counts as resolved for the completion gate, so a task whose remaining
+ * locations are all done-or-N/A can be completed. Marking N/A also clears any
+ * done flag on the row (the two are mutually exclusive). Same task-scoped RLS as
+ * setTaskLocationDone; reversible while the task is open.
+ */
+export async function setTaskLocationNa(
+  taskLocationId: string,
+  na: boolean,
+  actorId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("task_locations")
+    .update({
+      na_at: na ? new Date().toISOString() : null,
+      na_by: na ? actorId : null,
+      ...(na ? { completed_at: null, completed_by: null } : {}),
     })
     .eq("id", taskLocationId);
   if (error) throw new Error(error.message);

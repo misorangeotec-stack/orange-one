@@ -64,7 +64,7 @@ export default function TasksList() {
     if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
     else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
     if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
-    if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title));
+    if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
   }, [mine, scope, relation, statuses, q, user.id]);
 

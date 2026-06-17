@@ -108,7 +108,7 @@ export default function TaskBrowser({
       if (statuses.length && !statuses.includes(t.status)) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
       if (week === "next" && t.weekStart !== nw) return false;
-      if (!matchesSearch(q, t.title)) return false;
+      if (!matchesSearch(q, t.title, t.description)) return false;
       return true;
     });
   }, [tasks, person, creator, dept, statuses, week, q]);

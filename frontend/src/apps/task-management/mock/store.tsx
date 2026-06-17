@@ -24,6 +24,7 @@ import {
   upsertWeeklyPlan as upsertWeeklyPlanWrite,
   updateWorkspaceSettings as updateWorkspaceSettingsWrite,
   setTaskLocationDone as setTaskLocationDoneWrite,
+  setTaskLocationNa as setTaskLocationNaWrite,
   insertLocation as insertLocationWrite,
   updateLocation as updateLocationWrite,
   deleteLocation as deleteLocationWrite,
@@ -93,10 +94,12 @@ interface TaskStoreValue {
   /** Active locations, sorted for display (the picker source). */
   activeLocations: Location[];
   locationById: (id: string | null) => Location | undefined;
-  /** True when a task has no pending locations (so it may be completed). */
+  /** True when every location on a task is resolved — done OR N/A (so it may be completed). */
   taskLocationsComplete: (task: Task) => boolean;
   /** Tick / untick one location on a task's checklist. */
   setTaskLocationDone: (taskLocationId: string, done: boolean) => Promise<void>;
+  /** Mark / unmark one location as Not Applicable (counts as resolved for completion). */
+  setTaskLocationNa: (taskLocationId: string, na: boolean) => Promise<void>;
   /** Admin location-master CRUD. */
   addLocation: (input: LocationWriteInput) => Promise<string>;
   editLocation: (id: string, input: LocationWriteInput) => Promise<void>;
@@ -358,9 +361,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         .filter((l) => l.active)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
       locationById: (id) => (id ? locations.find((l) => l.id === id) : undefined),
-      taskLocationsComplete: (task) => task.locations.every((l) => l.completedAt !== null),
+      taskLocationsComplete: (task) =>
+        task.locations.every((l) => l.completedAt !== null || l.naAt !== null),
       setTaskLocationDone: async (taskLocationId, done) => {
         await setTaskLocationDoneWrite(taskLocationId, done, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      setTaskLocationNa: async (taskLocationId, na) => {
+        await setTaskLocationNaWrite(taskLocationId, na, user.id);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       addLocation: async (input) => {

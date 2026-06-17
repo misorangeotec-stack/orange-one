@@ -18,7 +18,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, isWhenTask, setTaskNotApplicable } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
@@ -49,9 +49,12 @@ export default function TaskDetail() {
   const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
 
   // Location checklist + completion gate. A task with locations can't be completed
-  // until every one is ticked (the DB trigger enforces it too — this is the UI guard).
+  // until every one is RESOLVED — ticked done OR marked Not Applicable (the DB
+  // trigger enforces it too — this is the UI guard).
   const hasLocations = task.locations.length > 0;
-  const pendingLocations = task.locations.filter((l) => !l.completedAt).length;
+  const doneLocations = task.locations.filter((l) => l.completedAt).length;
+  const naLocations = task.locations.filter((l) => !l.completedAt && l.naAt).length;
+  const pendingLocations = task.locations.filter((l) => !l.completedAt && !l.naAt).length;
   const locationsComplete = taskLocationsComplete(task);
   const completeBlocked = hasLocations && !locationsComplete;
 
@@ -181,7 +184,7 @@ export default function TaskDetail() {
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[13px] font-semibold text-navy">Locations</h3>
                 <span className={cn("text-[12px] font-medium", locationsComplete ? "text-[#27AE60]" : "text-grey-2")}>
-                  {task.locations.length - pendingLocations}/{task.locations.length} done
+                  {doneLocations}/{task.locations.length} done{naLocations > 0 ? ` · ${naLocations} N/A` : ""}
                 </span>
               </div>
               <ul className="space-y-1.5">
@@ -189,13 +192,23 @@ export default function TaskDetail() {
                   const loc = locationById(tl.locationId);
                   const label = loc ? locationLabel(loc) : "Unknown location";
                   const done = tl.completedAt !== null;
-                  const by = profileById(tl.completedBy);
+                  const na = !done && tl.naAt !== null; // done wins if a row somehow has both
+                  const by = profileById(done ? tl.completedBy : tl.naBy);
                   const editable = !closed && canStatusActions;
+                  const busyRow = togglingLoc === tl.id;
                   return (
-                    <li key={tl.id}>
+                    <li
+                      key={tl.id}
+                      className={cn(
+                        "flex items-center gap-2 rounded-xl px-3 py-2 transition border",
+                        done ? "bg-[#E8F8EF] border-[#bde9cf]" : na ? "bg-[#F4F6F9] border-dashed border-grey-2/45" : "bg-page border-line"
+                      )}
+                    >
+                      {/* left: tick / untick done (also switches a N/A row to done) */}
                       <button
                         type="button"
-                        disabled={!editable || togglingLoc === tl.id}
+                        disabled={!editable || busyRow}
+                        title={done ? "Mark not done" : "Mark done"}
                         onClick={async () => {
                           setTogglingLoc(tl.id);
                           try {
@@ -205,35 +218,63 @@ export default function TaskDetail() {
                           }
                         }}
                         className={cn(
-                          "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition border",
-                          done ? "bg-[#E8F8EF] border-[#bde9cf]" : "bg-page border-line",
-                          editable ? "hover:border-orange/50 cursor-pointer" : "cursor-default"
+                          "flex items-center gap-3 min-w-0 flex-1 text-left",
+                          editable ? "cursor-pointer" : "cursor-default"
                         )}
                       >
                         <span
                           className={cn(
                             "w-[18px] h-[18px] rounded-md border flex items-center justify-center shrink-0 [&>svg]:w-3 [&>svg]:h-3",
-                            done ? "bg-[#27AE60] border-[#27AE60] text-white" : "bg-white border-grey-2/50 text-transparent"
+                            done ? "bg-[#27AE60] border-[#27AE60] text-white" : na ? "bg-white border-grey-2/50 text-grey-2" : "bg-white border-grey-2/50 text-transparent"
                           )}
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                          {na ? (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                          ) : (
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                          )}
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className={cn("text-[13px] font-medium", done ? "text-navy" : "text-ink")}>{label}</span>
-                          {done && (
-                            <span className="block text-[11px] text-grey-2" title={formatDateTime(tl.completedAt!)}>
-                              {by ? `Done by ${by.name}` : "Done"} · {timeAgo(tl.completedAt!)}
+                          <span className={cn("text-[13px] font-medium", done ? "text-navy" : na ? "text-grey-2 line-through" : "text-ink")}>{label}</span>
+                          {(done || na) && (
+                            <span className="block text-[11px] text-grey-2" title={formatDateTime((done ? tl.completedAt : tl.naAt)!)}>
+                              {done ? (by ? `Done by ${by.name}` : "Done") : by ? `N/A by ${by.name}` : "Not applicable"} · {timeAgo((done ? tl.completedAt : tl.naAt)!)}
                             </span>
                           )}
                         </span>
                       </button>
+                      {/* right: mark / unmark Not Applicable (counts as resolved) */}
+                      {editable && (
+                        <button
+                          type="button"
+                          disabled={busyRow}
+                          title={na ? "This location applies again" : "This location doesn't apply — mark Not Applicable"}
+                          onClick={async () => {
+                            setTogglingLoc(tl.id);
+                            try {
+                              await setTaskLocationNa(tl.id, !na);
+                            } finally {
+                              setTogglingLoc(null);
+                            }
+                          }}
+                          className={cn(
+                            "shrink-0 inline-flex items-center gap-1 rounded-pill px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide border transition",
+                            na ? "bg-grey-2/15 border-grey-2/45 text-grey" : "bg-white border-line text-grey-2 hover:border-grey-2/60 hover:text-grey"
+                          )}
+                        >
+                          {na && (
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                          )}
+                          N/A
+                        </button>
+                      )}
                     </li>
                   );
                 })}
               </ul>
               {completeBlocked && !closed && (
                 <p className="mt-3 text-[12px] text-grey-2">
-                  Tick off every location to enable <b className="text-navy font-medium">Mark complete</b>.
+                  Tick off or mark <b className="text-navy font-medium">N/A</b> on every location to enable <b className="text-navy font-medium">Mark complete</b>.
                 </p>
               )}
             </Card>

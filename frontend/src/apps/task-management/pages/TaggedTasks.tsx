@@ -49,7 +49,7 @@ export default function TaggedTasks() {
   const filtered = useMemo(() => {
     let list = scopeTasks(mine, scope);
     if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
-    if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title));
+    if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
   }, [mine, scope, statuses, q]);
 
