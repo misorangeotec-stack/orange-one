@@ -128,6 +128,15 @@ export default function TaskTable({ tasks, sort, onSort }: {
                 <td className="px-4 py-3 align-top">
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
+                    {task.isPersonal && (
+                      <span
+                        title="Personal task — for your own tracking; excluded from all scores"
+                        className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-orange bg-[#FFF1E8] rounded-pill px-1.5 py-0.5"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                        Personal
+                      </span>
+                    )}
                     {task.recurringTaskId && (
                       <span
                         title={recurrence ? `Recurring task · ${RECURRENCE_LABEL[recurrence]}` : "Generated from a recurring task"}

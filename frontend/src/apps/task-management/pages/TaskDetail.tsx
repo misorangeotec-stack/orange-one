@@ -4,6 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import Modal from "@/shared/components/ui/Modal";
 import { dateLabel, timeAgo, formatDateTime } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
@@ -12,17 +13,21 @@ import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
 import ReviseModal from "../components/ReviseModal";
 import CompleteModal from "../components/CompleteModal";
+import PersonalTaskModal from "../components/PersonalTaskModal";
 
 type ModalKind = "revise" | "complete" | null;
 
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
   const [togglingNa, setTogglingNa] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const task = getTask(id);
   if (!task) {
@@ -46,6 +51,7 @@ export default function TaskDetail() {
   // While N/A the normal status actions are hidden and the task is excluded from reports.
   const whenTask = isWhenTask(task);
   const na = task.notApplicable;
+  const personal = task.isPersonal;
   const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
 
   // Location checklist + completion gate. A task with locations can't be completed
@@ -71,6 +77,15 @@ export default function TaskDetail() {
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="text-[22px] font-bold text-navy">{task.title}</h2>
             <StatusChip status={task.status} notApplicable={na} />
+            {personal && (
+              <span
+                title="Personal task — for your own tracking; excluded from all scores"
+                className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-orange bg-[#FFF1E8] rounded-pill px-2 py-1"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+                Personal
+              </span>
+            )}
             {task.recurringTaskId && (
               <span
                 title={recurrence ? `Recurring task · ${RECURRENCE_LABEL[recurrence]}` : "Generated from a recurring task"}
@@ -106,7 +121,44 @@ export default function TaskDetail() {
           </Button>
         )}
 
-        {!na && !closed && canStatusActions && (
+        {personal && canStatusActions && (
+          <div className="flex flex-wrap items-center gap-2">
+            {!closed && task.status !== "in_progress" && (
+              <Button
+                variant="progress"
+                size="sm"
+                disabled={starting}
+                onClick={async () => {
+                  setStarting(true);
+                  try {
+                    await startTask(task.id);
+                  } finally {
+                    setStarting(false);
+                  }
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="6 4 20 12 6 20 6 4" /></svg>
+                {starting ? "Starting…" : "Mark in progress"}
+              </Button>
+            )}
+            {!closed && (
+              <Button size="sm" onClick={() => setModal("complete")}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                Mark complete
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => setEditOpen(true)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+              Edit
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+              Delete
+            </Button>
+          </div>
+        )}
+
+        {!personal && !na && !closed && canStatusActions && (
           <div className="flex flex-wrap items-center gap-2">
             {whenTask && (
               <Button
@@ -332,7 +384,7 @@ export default function TaskDetail() {
               </Row>
               <Row label="Created by">{creator?.name ?? "—"}</Row>
               <Row label="Due date">
-                <DueDateEditor value={task.dueDate} closed={closed || !canReschedule} onChange={onReschedule} />
+                <DueDateEditor value={task.dueDate} closed={closed || !canReschedule || personal} onChange={onReschedule} />
               </Row>
               <Row label="Follow-up">{task.followUpDate ? dateLabel(task.followUpDate) : "—"}</Row>
               <Row label="Revisions">
@@ -369,6 +421,34 @@ export default function TaskDetail() {
       {/* modals */}
       <ReviseModal task={task} open={modal === "revise"} onClose={() => setModal(null)} />
       <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} />
+      <PersonalTaskModal task={task} open={editOpen} onClose={() => setEditOpen(false)} />
+      <Modal
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        title="Delete personal task"
+        subtitle={task.title}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</Button>
+            <Button
+              onClick={async () => {
+                setDeleting(true);
+                try {
+                  await deletePersonalTask(task.id);
+                  navigate("/task-management/tasks");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              disabled={deleting}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] text-grey">This permanently removes the personal task. This can't be undone.</p>
+      </Modal>
     </div>
   );
 }

@@ -85,6 +85,7 @@ export interface Task {
   completedAt: string | null; // ISO datetime
   notApplicable: boolean; // "when" instances can be marked N/A for the day → excluded from all report metrics
   notApplicableAt: string | null; // ISO datetime — when N/A was set (null when applicable)
+  isPersonal: boolean; // user-created self-tracking task → self-assigned and excluded from every score/RYG/dashboard metric
   createdAt: string; // ISO datetime
   updatedAt: string; // ISO datetime — bumped on any task change (status, revise, remark, reschedule)
   lastRemarkAt: string | null;

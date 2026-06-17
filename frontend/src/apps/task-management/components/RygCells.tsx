@@ -1,5 +1,5 @@
 import { cn } from "@/shared/lib/cn";
-import type { PersonReport, RygPct } from "../mock/selectors";
+import { countsTowardMetrics, type PersonReport, type RygPct } from "../mock/selectors";
 import type { Task } from "../types";
 import RygBar from "./RygBar";
 
@@ -18,12 +18,12 @@ export function rygCounts(r: PersonReport): RygCount {
  *   pending    = still pending
  *   inProgress = being worked on
  *   shifted    = moved to another week
- * N/A instances are excluded, matching reportFor so the breakdown ties to the Red count.
+ * N/A and personal tasks are excluded, matching reportFor so the breakdown ties to the Red count.
  */
 export function redCounts(tasks: Task[], ids: Set<string>): RedCounts {
   let pending = 0, inProgress = 0, shifted = 0;
   for (const t of tasks) {
-    if (!t.assignedTo || !ids.has(t.assignedTo) || t.notApplicable) continue;
+    if (!t.assignedTo || !ids.has(t.assignedTo) || !countsTowardMetrics(t)) continue;
     if (t.status === "pending") pending++;
     else if (t.status === "in_progress") inProgress++;
     else if (t.status === "shifted") shifted++;

@@ -44,6 +44,7 @@ export async function insertTask(input: {
   dueDate: string | null;
   createdBy: string;
   locationIds?: string[];
+  isPersonal?: boolean;
 }): Promise<string> {
   const weekStart = mondayOf(input.dueDate ?? new Date().toISOString());
   const { data, error } = await supabase
@@ -57,6 +58,7 @@ export async function insertTask(input: {
       week_start: weekStart,
       created_by: input.createdBy,
       status: "pending",
+      is_personal: input.isPersonal ?? false,
     })
     .select("id")
     .single();
@@ -73,6 +75,38 @@ export async function insertTask(input: {
     if (locErr) throw new Error(locErr.message);
   }
   return taskId;
+}
+
+/**
+ * Edit a personal (self-tracking) task's basics: title, description, due date.
+ * Recomputes week_start from the new due date (kept consistent with insertTask;
+ * harmless since personal tasks are excluded from every week-keyed metric). Runs
+ * under the existing task UPDATE RLS (creator is the assignee here).
+ */
+export async function updatePersonalTask(
+  taskId: string,
+  patch: { title: string; description?: string | null; dueDate: string | null }
+): Promise<void> {
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      title: patch.title,
+      description: patch.description ?? null,
+      due_date: patch.dueDate,
+      week_start: mondayOf(patch.dueDate ?? new Date().toISOString()),
+    })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Delete a personal task. RLS (policy `tasks_delete_personal`) restricts this to
+ * the creator's own is_personal rows, so standard assigned tasks can't be deleted
+ * this way even if the id is passed.
+ */
+export async function deletePersonalTask(taskId: string): Promise<void> {
+  const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+  if (error) throw new Error(error.message);
 }
 
 /**
