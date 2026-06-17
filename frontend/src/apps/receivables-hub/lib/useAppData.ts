@@ -424,7 +424,13 @@ export function useAppData(filters: Filters = {}): AppData {
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
+    // Always revalidate on mount. The payload is persisted to IndexedDB for 24h
+    // (see queryPersister.ts), so a page reload restores the old snapshot
+    // instantly — but with refetchOnMount:false it NEVER refetched, leaving the
+    // dashboard (incl. the "Data updated as of" date) showing a stale snapshot
+    // for up to 24h even after a fresh Supabase push. "always" keeps the instant
+    // hydrate but kicks a background refetch so a reload picks up the live data.
+    refetchOnMount: "always",
   });
 
   // Derive `blocked` on the frontend from the credit-limit sentinel so the rule
