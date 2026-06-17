@@ -12,6 +12,13 @@ import { isToday, isOverdue } from "@/shared/lib/time";
 // the core directory store; re-exported here for the pages that already import it.
 export { computeDownlineIds as downlineIds } from "@/core/platform/store";
 
+/**
+ * A task counts toward scores / RYG / dashboard metrics only if it is neither
+ * marked Not Applicable ("when" instances) nor a personal (self-tracking) task.
+ * Personal tasks are visible in list views but must never affect any number.
+ */
+export const countsTowardMetrics = (t: Task) => !t.notApplicable && !t.isPersonal;
+
 export interface DashboardStats {
   dueToday: number;
   pending: number;
@@ -36,9 +43,10 @@ export interface PersonReport {
 
 /** Planned-vs-actual style report numbers for one person, from a task list. */
 export function reportFor(all: Task[], personId: string): PersonReport {
-  // N/A instances ("when" tasks marked Not Applicable for the day) are excluded
-  // from every count so they never affect the planned total or RYG buckets.
-  const mine = all.filter((t) => t.assignedTo === personId && !t.notApplicable);
+  // N/A instances ("when" tasks marked Not Applicable for the day) and personal
+  // self-tracking tasks are excluded from every count so they never affect the
+  // planned total or RYG buckets.
+  const mine = all.filter((t) => t.assignedTo === personId && countsTowardMetrics(t));
   const r: PersonReport = { planned: mine.length, completed: 0, pending: 0, revised: 0, shifted: 0, revisionTotal: 0 };
   for (const t of mine) {
     if (t.status === "completed") r.completed++;
@@ -66,7 +74,7 @@ const EMPTY_RYG: RygPct = { red: 0, yellow: 0, green: 0, total: 0 };
  * Green = completed, Yellow = revised, Red = everything else (pending / in-progress / overdue / shifted).
  */
 export function actualRygFor(all: Task[], personId: string, weekStart: string): RygPct {
-  const mine = all.filter((t) => t.assignedTo === personId && t.weekStart === weekStart && !t.notApplicable);
+  const mine = all.filter((t) => t.assignedTo === personId && t.weekStart === weekStart && countsTowardMetrics(t));
   const total = mine.length;
   if (!total) return EMPTY_RYG;
   let g = 0, y = 0;
@@ -93,7 +101,7 @@ export function aggregateRyg(people: string[], weeks: string[], all: Task[], pla
       const plan = planFor(pid, w);
       if (plan) { pr += plan.redPct; py += plan.yellowPct; pg += plan.greenPct; plans++; }
       for (const t of all) {
-        if (t.assignedTo !== pid || t.weekStart !== w || t.notApplicable) continue;
+        if (t.assignedTo !== pid || t.weekStart !== w || !countsTowardMetrics(t)) continue;
         tasks++;
         if (t.status === "completed") g++;
         else if (t.status === "revised") y++;
@@ -121,9 +129,11 @@ export function computeStats(list: Task[]): DashboardStats {
   };
   let dueToday = 0,
     followUpDue = 0,
-    overdue = 0;
+    overdue = 0,
+    total = 0;
   for (const t of list) {
-    if (t.notApplicable) continue; // N/A instances are excluded from every dashboard metric
+    if (!countsTowardMetrics(t)) continue; // N/A + personal tasks are excluded from every dashboard metric
+    total++;
     statusCounts[t.status]++;
     if (isToday(t.dueDate) && t.status !== "completed") dueToday++;
     if (t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed")
@@ -141,7 +151,7 @@ export function computeStats(list: Task[]): DashboardStats {
     shifted: statusCounts.shifted,
     followUpDue,
     overdue,
-    total: list.length,
+    total,
     statusCounts,
   };
 }

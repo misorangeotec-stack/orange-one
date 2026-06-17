@@ -443,6 +443,7 @@ export type Database = {
           due_date: string | null
           follow_up_date: string | null
           id: string
+          is_personal: boolean
           last_remark_at: string | null
           last_revised_at: string | null
           not_applicable: boolean
@@ -466,6 +467,7 @@ export type Database = {
           due_date?: string | null
           follow_up_date?: string | null
           id?: string
+          is_personal?: boolean
           last_remark_at?: string | null
           last_revised_at?: string | null
           not_applicable?: boolean
@@ -489,6 +491,7 @@ export type Database = {
           due_date?: string | null
           follow_up_date?: string | null
           id?: string
+          is_personal?: boolean
           last_remark_at?: string | null
           last_revised_at?: string | null
           not_applicable?: boolean

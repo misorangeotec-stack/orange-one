@@ -16,8 +16,9 @@ import { useTaskStore } from "../mock/store";
 import type { TaskStatus } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
+import PersonalTaskModal from "../components/PersonalTaskModal";
 
-type View = "all" | "today" | "followup" | "pending";
+type View = "all" | "today" | "followup" | "pending" | "personal";
 type Relation = "all" | "assigned" | "created";
 
 const RELATION_OPTIONS: { value: Relation; label: string }[] = [
@@ -47,6 +48,7 @@ export default function TasksList() {
   const [scope, setScope] = useState<Scope>("week");
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
+  const [personalOpen, setPersonalOpen] = useState(false);
 
   const mine = useMemo(
     () =>
@@ -74,6 +76,7 @@ export default function TasksList() {
       today: base.filter((t) => isToday(t.dueDate) && t.status !== "completed").length,
       followup: base.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed").length,
       pending: base.filter((t) => t.status === "pending" || t.status === "in_progress").length,
+      personal: base.filter((t) => t.isPersonal).length,
     }),
     [base]
   );
@@ -84,6 +87,7 @@ export default function TasksList() {
     else if (view === "followup")
       list = list.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed");
     else if (view === "pending") list = list.filter((t) => t.status === "pending" || t.status === "in_progress");
+    else if (view === "personal") list = list.filter((t) => t.isPersonal);
     return list;
   }, [base, view]);
 
@@ -121,16 +125,27 @@ export default function TasksList() {
           <h2 className="text-[22px] font-bold text-navy">My Tasks</h2>
           <p className="text-grey text-[13px] mt-1">Everything assigned to you or created by you.</p>
         </div>
-        {canCreate && (
-          <Link
-            to="/task-management/tasks/new"
-            className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setPersonalOpen(true)}
+            className="inline-flex items-center gap-2 bg-white text-navy font-semibold text-sm px-4 py-2.5 rounded-xl border border-line hover:border-orange hover:text-orange transition"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            New Task
-          </Link>
-        )}
+            Add personal task
+          </button>
+          {canCreate && (
+            <Link
+              to="/task-management/tasks/new"
+              className="inline-flex items-center gap-2 bg-orange-grad text-white font-semibold text-sm px-4 py-2.5 rounded-xl shadow-cta hover:-translate-y-0.5 transition"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              New Task
+            </Link>
+          )}
+        </div>
       </div>
+
+      <PersonalTaskModal open={personalOpen} onClose={() => setPersonalOpen(false)} />
 
       {/* scope toggle: this week vs all time — same placement as the dashboard */}
       <div className="flex items-center justify-between gap-3">
@@ -148,6 +163,7 @@ export default function TasksList() {
               { key: "today", label: "Today", count: counts.today },
               { key: "followup", label: "Follow-ups", count: counts.followup },
               { key: "pending", label: "Pending", count: counts.pending },
+              { key: "personal", label: "Personal", count: counts.personal },
             ]}
             active={view}
             onChange={(k) => setParams(k === "all" ? {} : { view: k }, { replace: true })}

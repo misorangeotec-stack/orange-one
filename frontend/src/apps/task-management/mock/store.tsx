@@ -9,6 +9,8 @@ import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
 import { fetchTaskData } from "../data/fetchTaskData";
 import {
   insertTask,
+  updatePersonalTask as updatePersonalTaskWrite,
+  deletePersonalTask as deletePersonalTaskWrite,
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
   setTaskNotApplicable as setTaskNotApplicableWrite,
@@ -69,6 +71,12 @@ interface TaskStoreValue {
   activityFor: (taskId: string) => TaskActivity[];
   revisionInfo: (task: Task) => RevisionInfo;
   createTask: (input: { title: string; description?: string; assignedTo: string | null; departmentId: string | null; dueDate: string | null; locationIds?: string[] }) => Promise<string>;
+  /** Create a personal (self-tracking) task. Self-assigned and excluded from every score/RYG/dashboard metric. */
+  createPersonalTask: (input: { title: string; description?: string; dueDate: string | null }) => Promise<string>;
+  /** Edit a personal task's title/description/due date. */
+  updatePersonalTask: (id: string, patch: { title: string; description?: string; dueDate: string | null }) => Promise<void>;
+  /** Delete a personal task (creator only, RLS-enforced). */
+  deletePersonalTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
@@ -215,6 +223,31 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         const id = await insertTask({ ...input, locationIds: input.locationIds ?? [], createdBy: user.id });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         return id;
+      },
+      // Personal tasks: self-assigned, flagged is_personal, no locations. Excluded
+      // from every metric in the selectors, so they never touch a score. Department
+      // is set to the creator's own for sensible display in list views only.
+      createPersonalTask: async (input) => {
+        const id = await insertTask({
+          title: input.title,
+          description: input.description,
+          assignedTo: user.id,
+          departmentId: dir.profileById(user.id)?.departmentId ?? null,
+          dueDate: input.dueDate,
+          locationIds: [],
+          isPersonal: true,
+          createdBy: user.id,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return id;
+      },
+      updatePersonalTask: async (id, patch) => {
+        await updatePersonalTaskWrite(id, patch);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      deletePersonalTask: async (id) => {
+        await deletePersonalTaskWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the
       // status-change activity (started is logged by the write itself); refetch after.
