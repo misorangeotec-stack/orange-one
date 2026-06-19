@@ -2,10 +2,11 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
-  Download, Search, FileText, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronDown,
+  Download, Share2, Mail, MessageCircle, Search, FileText, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronDown,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@hub/components/ui/dialog";
 import { Button } from "@hub/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@hub/components/ui/dropdown-menu";
 import { Input } from "@hub/components/ui/input";
 import {
   TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -429,7 +430,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     </TableRow>
   );
 
-  const handleExport = () => {
+  const buildExport = (): { blob: Blob; filename: string } => {
     const aoa: (string | number)[][] = [];
     aoa.push([title]);
     aoa.push([subtitle]);
@@ -516,7 +517,56 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const safe = subtitle.replace(/[^\w-]+/g, "_").slice(0, 60);
-    saveAs(blob, `Invoices_${safe}_${asOfDate}.xlsx`);
+    return { blob, filename: `Invoices_${safe}_${asOfDate}.xlsx` };
+  };
+
+  /** Download the styled Excel export. */
+  const handleExport = () => {
+    const { blob, filename } = buildExport();
+    saveAs(blob, filename);
+  };
+
+  const shareSubject = `${title} — as on ${formatDateDMY(asOfDate)}`;
+  const shareText = (filename: string) => `${subtitle}\n\nReceivables export: ${filename}`;
+  const canShareFiles = (() => {
+    const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
+    try {
+      return !!nav.canShare && nav.canShare({ files: [new File([""], "a.xlsx")] });
+    } catch {
+      return false;
+    }
+  })();
+
+  /** Native OS share sheet — Email / WhatsApp / Teams / … — with the file attached. */
+  const handleShareNative = async () => {
+    const { blob, filename } = buildExport();
+    const file = new File([blob], filename, { type: blob.type });
+    const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
+    if (nav.canShare && nav.canShare({ files: [file] })) {
+      try {
+        await nav.share({ files: [file], title: shareSubject, text: shareText(filename) });
+        return;
+      } catch (err) {
+        if ((err as DOMException)?.name === "AbortError") return; // user dismissed the sheet
+      }
+    }
+    saveAs(blob, filename); // last resort: at least save the file
+  };
+
+  /** Email — download the file + open the mail client (mailto cannot carry attachments). */
+  const handleShareEmail = () => {
+    const { blob, filename } = buildExport();
+    saveAs(blob, filename);
+    const body = `${shareText(filename)}\n\n(The file "${filename}" was just downloaded — please attach it to this email.)`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  /** WhatsApp — download the file + open WhatsApp with the message (attach the file manually). */
+  const handleShareWhatsApp = () => {
+    const { blob, filename } = buildExport();
+    saveAs(blob, filename);
+    const text = `*${shareSubject}*\n\n${shareText(filename)}\n\n(File "${filename}" downloaded — please attach it.)`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   };
 
   return (
@@ -583,6 +633,30 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
             <Download className="h-3.5 w-3.5 mr-1.5" />
             Export Excel
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="rounded-button border-border h-8" disabled={sorted.length === 0}>
+                <Share2 className="h-3.5 w-3.5 mr-1.5" />
+                Share
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52">
+              {canShareFiles && (
+                <DropdownMenuItem onClick={handleShareNative} className="cursor-pointer">
+                  <Share2 className="h-4 w-4 mr-2" />
+                  Share via apps… <span className="ml-1 text-[10px] text-muted-foreground">(file attached)</span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={handleShareEmail} className="cursor-pointer">
+                <Mail className="h-4 w-4 mr-2" />
+                Email
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleShareWhatsApp} className="cursor-pointer">
+                <MessageCircle className="h-4 w-4 mr-2" />
+                WhatsApp
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Active filters — live chips, each removable */}
