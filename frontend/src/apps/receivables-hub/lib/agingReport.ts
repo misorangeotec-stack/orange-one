@@ -296,8 +296,17 @@ export function billMatchesColumn(b: EnrichedBill, col: MetricKey): boolean {
       return true;
     case "totalOverdue":
       return b.overdueKey !== null;
+    case "od_0_120":
+      return (
+        b.overdueKey === "od_0_30" ||
+        b.overdueKey === "od_31_60" ||
+        b.overdueKey === "od_61_90" ||
+        b.overdueKey === "od_91_120"
+      );
+    case "od_120_plus":
+      return b.overdueKey === "od_121_180" || b.overdueKey === "od_180_plus";
     default:
-      return b.overdueKey === col; // od_* bracket
+      return b.overdueKey === col; // a single od_* bracket
   }
 }
 
