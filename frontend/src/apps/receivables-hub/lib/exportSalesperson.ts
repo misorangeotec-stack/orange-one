@@ -1,8 +1,9 @@
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import JSZip from "jszip";
 import type { AgingBuckets } from "@hub/lib/types";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 
 export type RiskCategory = "critical" | "high" | "medium" | "low";
 
@@ -231,6 +232,14 @@ function buildSummarySheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
   // Freeze header row of the pivot block
   ws["!freeze"] = { xSplit: 0, ySplit: 11 };
 
+  // Styling: banner + pivot headers black/white/bold; KPI rows green; grand total stronger green.
+  const NC = 17;
+  styleRow(ws, 0, NC, HEADER_STYLE);
+  styleRow(ws, 9, NC, HEADER_STYLE);
+  styleRow(ws, 10, NC, HEADER_STYLE);
+  for (let r = 3; r <= 7; r++) styleRow(ws, r, NC, TOTAL_STYLE); // KPI total rows
+  styleRow(ws, 11 + pivot.length, NC, GRAND_TOTAL_STYLE);        // grand TOTAL row
+
   return ws;
 }
 
@@ -297,6 +306,10 @@ function buildCustomersSheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
   ws["!freeze"] = { xSplit: 2, ySplit: 1 };
   ws["!autofilter"] = { ref: `A1:T${lastRow}` };
 
+  // Header row black/white/bold; TOTAL row (row index 1) stronger green.
+  styleRow(ws, 0, header.length, HEADER_STYLE);
+  styleRow(ws, 1, header.length, GRAND_TOTAL_STYLE);
+
   return ws;
 }
 
@@ -314,6 +327,8 @@ function buildFiltersSheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"] = [{ wch: 22 }, { wch: 50 }];
   ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+  styleRow(ws, 0, 2, HEADER_STYLE); // title
+  styleRow(ws, 4, 2, HEADER_STYLE); // "Active Filter / Value" header
   return ws;
 }
 

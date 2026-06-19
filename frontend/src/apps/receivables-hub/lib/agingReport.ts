@@ -74,8 +74,8 @@ export interface AgingMetrics {
   od_180_plus: number;
   /** Subtotal of the 0-120 day overdue buckets (0-30 + 31-60 + 61-90 + 91-120). */
   od_0_120: number;
-  /** Subtotal of the 120-180 day overdue range (= the 121-180 bucket). */
-  od_120_180: number;
+  /** Subtotal of the 120+ day overdue range (121-180 + 180+). */
+  od_120_plus: number;
   /** Total overdue (sum of the six overdue brackets). */
   totalOverdue: number;
   /** Number of open bills rolled into this node. */
@@ -92,32 +92,34 @@ export type MetricKey =
   | "od_91_120"
   | "od_0_120"
   | "od_121_180"
-  | "od_120_180"
   | "od_180_plus"
+  | "od_120_plus"
   | "totalOverdue";
 
 export interface AgingColumn {
   key: MetricKey;
   label: string;
   group: "outstanding" | "overdue";
-  /** Emphasised total columns get a slightly stronger style in the table. */
+  /** Interim subtotal column (lighter highlight). */
   total?: boolean;
+  /** Grand-total column (Total Outstanding / Total Overdue) — stronger, distinct highlight. */
+  grand?: boolean;
 }
 
 /** The numeric columns, in display order (Outstanding lens then Overdue lens). */
 export const AGING_COLUMNS: AgingColumn[] = [
   { key: "outLt180", label: "Out < 180", group: "outstanding" },
   { key: "outGe180", label: "Out > 180", group: "outstanding" },
-  { key: "totalOutstanding", label: "Total Outstanding", group: "outstanding", total: true },
+  { key: "totalOutstanding", label: "Total Outstanding", group: "outstanding", total: true, grand: true },
   { key: "od_0_30", label: "0-30", group: "overdue" },
   { key: "od_31_60", label: "31-60", group: "overdue" },
   { key: "od_61_90", label: "61-90", group: "overdue" },
   { key: "od_91_120", label: "91-120", group: "overdue" },
   { key: "od_0_120", label: "Total 0-120", group: "overdue", total: true },
   { key: "od_121_180", label: "121-180", group: "overdue" },
-  { key: "od_120_180", label: "Total 120-180", group: "overdue", total: true },
   { key: "od_180_plus", label: "180+", group: "overdue" },
-  { key: "totalOverdue", label: "Total Overdue", group: "overdue", total: true },
+  { key: "od_120_plus", label: "Total 120+", group: "overdue", total: true },
+  { key: "totalOverdue", label: "Total Overdue", group: "overdue", total: true, grand: true },
 ];
 
 function emptyMetrics(): AgingMetrics {
@@ -132,7 +134,7 @@ function emptyMetrics(): AgingMetrics {
     od_121_180: 0,
     od_180_plus: 0,
     od_0_120: 0,
-    od_120_180: 0,
+    od_120_plus: 0,
     totalOverdue: 0,
     billCount: 0,
   };
@@ -343,7 +345,7 @@ function addBill(m: AgingMetrics, b: EnrichedBill): void {
     m[b.overdueKey] += p;
     m.totalOverdue += p;
     if (b.overdueKey !== "od_121_180" && b.overdueKey !== "od_180_plus") m.od_0_120 += p;
-    if (b.overdueKey === "od_121_180") m.od_120_180 += p;
+    else m.od_120_plus += p; // 121-180 and 180+
   }
   m.billCount += 1;
 }
@@ -448,11 +450,13 @@ function groupBills(
 
 /* ── Export flattening ─────────────────────────────────────────────────────── */
 
+export type RowTier = "detail" | "subtotal" | "onaccount" | "grand";
+
 export interface FlatAgingRow {
   depth: number;
   label: string;
   metrics: AgingMetrics;
-  isTotal?: boolean;
+  tier: RowTier;
 }
 
 /** Pre-order flatten of the tree (parents before children) for spreadsheet export. */
@@ -460,14 +464,20 @@ export function flattenForExport(tree: AgingTree): FlatAgingRow[] {
   const rows: FlatAgingRow[] = [];
   const walk = (nodes: AgingNode[]) => {
     for (const n of nodes) {
-      rows.push({ depth: n.depth, label: n.sub ? `${n.label} (${n.sub})` : n.label, metrics: n.metrics });
+      rows.push({
+        depth: n.depth,
+        label: n.sub ? `${n.label} (${n.sub})` : n.label,
+        metrics: n.metrics,
+        // Top-level rows are the category subtotals; nested rows are detail.
+        tier: n.depth === 0 ? "subtotal" : "detail",
+      });
       if (n.children.length > 0) walk(n.children);
     }
   };
   walk(tree.roots);
   if (tree.onAccount) {
-    rows.push({ depth: 0, label: tree.onAccount.label, metrics: tree.onAccount.metrics });
+    rows.push({ depth: 0, label: tree.onAccount.label, metrics: tree.onAccount.metrics, tier: "onaccount" });
   }
-  rows.push({ depth: 0, label: "Grand Total", metrics: tree.total, isTotal: true });
+  rows.push({ depth: 0, label: "Grand Total", metrics: tree.total, tier: "grand" });
   return rows;
 }

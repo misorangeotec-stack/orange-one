@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import {
   Download, Search, FileText, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ChevronDown,
@@ -15,6 +15,7 @@ import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ColumnPicker } from "@hub/components/ColumnPicker";
 import { formatDateDMY } from "@hub/lib/utils";
+import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import type { InvoiceStatus, SaleType } from "@hub/lib/types";
 
 /** One open-bill line shown in the drill-down. */
@@ -470,23 +471,31 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const invCountOf = (c: Bucket) => c.rows.filter((r) => !r.isAdjustment).length;
     const ledgerLabel = (c: Bucket) => `${c.label}${c.sub ? ` — ${c.sub}` : ""} (${invCountOf(c)} invoices)`;
     // Mirror the on-screen view: Groups → group subtotal → ledger subtotal → invoices.
+    // Track 0-indexed subtotal rows so they can be styled (green) afterwards.
+    const subtotalRows0: number[] = [];
+    const pushSummary = (label: string, v: { amount: number; received: number; pending: number }) => {
+      subtotalRows0.push(aoa.length);
+      aoa.push(summaryRow(label, v));
+    };
     if (groupBy === "group") {
       for (const g of groupTree) {
-        aoa.push(summaryRow(`${g.label} (${g.ledgers.length} ledgers)`, g));
+        pushSummary(`${g.label} (${g.ledgers.length} ledgers)`, g);
         for (const c of g.ledgers) {
-          aoa.push(summaryRow(`    ${ledgerLabel(c)}`, c));
+          pushSummary(`    ${ledgerLabel(c)}`, c);
           for (const r of c.rows) aoa.push(extractors.map((f) => f(r)));
         }
       }
     } else {
       for (const c of customerTree) {
-        aoa.push(summaryRow(ledgerLabel(c), c));
+        pushSummary(ledgerLabel(c), c);
         for (const r of c.rows) aoa.push(extractors.map((f) => f(r)));
       }
     }
+    const grandRow0 = aoa.length;
     aoa.push(summaryRow(`Total (${topCount} ${groupBy === "group" ? "groups" : "ledgers"})`, totals));
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
+    const ncols = header.length;
     ws["!cols"] = header.map((h) => ({ wch: h === "Customer" ? 30 : h === "Bill Ref" || h === "Voucher #" ? 16 : 13 }));
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
     const firstData = colHeaderIdx0 + 2; // 1-indexed first data row (row after the column header)
@@ -497,6 +506,11 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
     }
+    // Styling: title + column header black/white/bold; subtotals green; grand total stronger green.
+    styleRow(ws, 0, ncols, HEADER_STYLE);
+    styleRow(ws, colHeaderIdx0, ncols, HEADER_STYLE);
+    for (const r0 of subtotalRows0) styleRow(ws, r0, ncols, TOTAL_STYLE);
+    styleRow(ws, grandRow0, ncols, GRAND_TOTAL_STYLE);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Invoices");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });

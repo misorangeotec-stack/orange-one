@@ -1,7 +1,8 @@
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { AGING_COLUMNS, flattenForExport, type AgingTree, type AgingDimension, DIMENSION_LABELS } from "./agingReport";
 import { formatDateDMY } from "./utils";
+import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 
 /** INR cell number format (whole rupees, "₹" prefixed, dash for zero). */
 const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
@@ -16,7 +17,9 @@ export interface AgingExportMeta {
 /**
  * Export the aging roll-up as a single-sheet workbook. Group-by, as-of date and
  * active filters sit in a header block; each tree row is indented by depth, with
- * the grand total last. Money columns carry the INR number format.
+ * the grand total last. Money columns carry the INR number format. The title +
+ * column-header rows are styled black/white/bold; subtotal & On-Account rows
+ * light green; the grand total a stronger, distinct green.
  */
 export function exportAgingReportXlsx(tree: AgingTree, meta: AgingExportMeta): void {
   const aoa: Array<Array<string | number>> = [];
@@ -29,9 +32,10 @@ export function exportAgingReportXlsx(tree: AgingTree, meta: AgingExportMeta): v
   aoa.push([]);
 
   const header = ["Group", ...AGING_COLUMNS.map((c) => c.label), "Bills"];
+  const headerRow0 = aoa.length; // 0-indexed row of the column-header row
   aoa.push(header);
 
-  const firstDataRow = aoa.length + 1; // 1-indexed sheet row of the first data row
+  const firstData0 = aoa.length; // 0-indexed first data row
   const rows = flattenForExport(tree);
   for (const r of rows) {
     const indent = r.depth > 0 ? `${"    ".repeat(r.depth)}` : "";
@@ -41,18 +45,27 @@ export function exportAgingReportXlsx(tree: AgingTree, meta: AgingExportMeta): v
       r.metrics.billCount,
     ]);
   }
-  const lastDataRow = firstDataRow + rows.length - 1;
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const ncols = header.length;
   ws["!cols"] = [{ wch: 34 }, ...AGING_COLUMNS.map(() => ({ wch: 15 })), { wch: 7 }];
 
-  // Apply INR format to the money columns (B … = column index 1 .. AGING_COLUMNS.length).
-  for (let row = firstDataRow; row <= lastDataRow; row++) {
+  // INR number format on the money columns (1 .. AGING_COLUMNS.length).
+  for (let i = 0; i < rows.length; i++) {
+    const sheetRow = firstData0 + i + 1; // 1-indexed
     for (let col = 1; col <= AGING_COLUMNS.length; col++) {
-      const cell = ws[`${XLSX.utils.encode_col(col)}${row}`];
+      const cell = ws[`${XLSX.utils.encode_col(col)}${sheetRow}`];
       if (cell && typeof cell.v === "number") cell.z = INR_FMT;
     }
   }
+
+  // Styling: title + column header black/white/bold; rows by tier.
+  styleRow(ws, 0, ncols, HEADER_STYLE);
+  styleRow(ws, headerRow0, ncols, HEADER_STYLE);
+  rows.forEach((r, i) => {
+    const style = r.tier === "grand" ? GRAND_TOTAL_STYLE : r.tier === "detail" ? null : TOTAL_STYLE;
+    if (style) styleRow(ws, firstData0 + i, ncols, style);
+  });
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Aging Report");
