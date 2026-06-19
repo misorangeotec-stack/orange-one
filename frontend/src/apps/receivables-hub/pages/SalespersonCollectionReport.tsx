@@ -1,17 +1,17 @@
-import { useState, useMemo, useEffect, useRef, useCallback, Fragment } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
-  TrendingDown, Percent, Download, BarChart3, X,
+  TrendingDown, Percent, Download, BarChart3, X, Search,
 } from "lucide-react";
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
+import { Input } from "@hub/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@hub/components/ui/select";
@@ -19,11 +19,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
+import { MultiSelect } from "@hub/components/MultiSelect";
+import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
-import type { Customer } from "@hub/lib/types";
+import type { Customer, SaleType } from "@hub/lib/types";
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -68,10 +72,34 @@ function formatDateLong(iso: string): string {
 
 type SortKey = "salesperson" | "outstanding" | "due" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
+type ViewMode = "customer" | "group";
+
+/** All sale-type keys (mirrors SaleTypeMultiSelect); used for residual projection. */
+const ALL_SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
+const SALE_TYPE_LABELS: Record<string, string> = {
+  ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
+};
 
 interface Metrics { outstanding: number; due: number; received: number; pending: number; dueSoon: number; }
 interface CustomerLine { id: string; name: string; company: string; location: string; m: Metrics; mPrev: Metrics; }
-interface SPRow { salesperson: string; customers: CustomerLine[]; m: Metrics; mPrev: Metrics; }
+/** One constituent party (ledger) inside a group's expansion. */
+interface PartyLine { key: string; name: string; sub: string; m: Metrics; mPrev: Metrics; }
+/** A second-level drill row — either a single customer or a rolled-up customer group. */
+interface DrillRow {
+  key: string;
+  name: string;
+  /** Sub-label (e.g. "ACME · Mumbai" for a customer, or "N ledgers" for a group). */
+  sub: string;
+  /** True for a multi-party group — such rows expand to reveal their parties. */
+  isGroup: boolean;
+  /** Constituent parties (group view only; empty in customer view). */
+  children: PartyLine[];
+  /** Backing customer-ledger ids (for invoice drill-down). */
+  customerIds: string[];
+  m: Metrics;
+  mPrev: Metrics;
+}
+interface SPRow { salesperson: string; rows: DrillRow[]; customerIds: string[]; m: Metrics; mPrev: Metrics; }
 
 /** Normalize a salesperson name: trim + UPPERCASE; blank / "Others" → "OTHERS"
  *  (merges the pipeline's blank-default "Others" with explicit "OTHERS"). */
@@ -81,6 +109,13 @@ const spName = (s: string | undefined): string => {
 };
 
 const emptyMetrics = (): Metrics => ({ outstanding: 0, due: 0, received: 0, pending: 0, dueSoon: 0 });
+const addInto = (t: Metrics, m: Metrics): void => {
+  t.outstanding += m.outstanding;
+  t.due         += m.due;
+  t.received    += m.received;
+  t.pending     += m.pending;
+  t.dueSoon     += m.dueSoon;
+};
 const collectionPct = (m: Metrics): number | null => (m.due > 0 ? (m.received / m.due) * 100 : null);
 
 /** Outstanding to DISPLAY = the START-of-month balance = month-end balance + that month's
@@ -115,9 +150,8 @@ function sortRows<T extends { m: Metrics; mPrev: Metrics }>(
 /* ── Component ─────────────────────────────────────────────── */
 
 export default function SalespersonCollectionReport() {
-  const navigate = useNavigate();
   const { label: fyLabel } = useFY();
-  const { loading, error, allCustomers, customerDetail, dashboard } = useAppData();
+  const { loading, error, allCustomers, customerDetail, dashboard, customerGroupMap } = useAppData();
 
   const asOfDate = dashboard?.asOfDate ?? new Date().toISOString().slice(0, 10);
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
@@ -125,10 +159,17 @@ export default function SalespersonCollectionReport() {
 
   // Filter / control state
   const [monthState, setMonthState] = useState<string>("");
-  const [company, setCompany] = useState<string>("all");
-  const [location, setLocation] = useState<string>("all");
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [saleTypes, setSaleTypes] = useState<string[]>([]);
+  const [customerSearch, setCustomerSearch] = useState<string>("");
+  const [viewMode, setViewMode] = useState<ViewMode>("customer");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Expanded group rows (group view): keyed by `${salesperson}::${groupKey}`.
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // Invoice drill-down popup (current month only).
+  const [drill, setDrill] = useState<{ title: string; subtitle: string; rows: InvoiceDrillRow[] } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("pending");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   // Month-wise panel: null = consolidated (all filtered salespersons)
@@ -163,17 +204,77 @@ export default function SalespersonCollectionReport() {
     [allCustomers],
   );
 
+  // ── Sale-type filter (best-effort projection) ────────────────────────────────
+  // The pipeline only stores OUTSTANDING per sale type per month — not receipts or
+  // overdue. So when a sale type is selected we filter Outstanding/Due exactly where
+  // a per-type breakdown exists and ESTIMATE the rest (Received, past-month overdue)
+  // by the customer's sales mix — the same residual-share approach the Dashboard uses.
+  // All 5 types selected = no filter.
+  const saleTypeActive = saleTypes.length > 0 && saleTypes.length < ALL_SALE_TYPES.length;
+  const saleTypeSet = useMemo(() => new Set(saleTypes), [saleTypes]);
+
+  /** Fraction of a customer's activity belonging to the selected sale types
+   *  (by full-year sales mix). Customers with no sales mix put their whole
+   *  residual into "other". Returns 1 when no sale-type filter is active. */
+  const shareFor = useCallback((c: Customer): number => {
+    if (!saleTypeActive) return 1;
+    const salesTotal = ALL_SALE_TYPES.reduce((s, t) => s + (c.salesByType?.[t] ?? 0), 0);
+    if (salesTotal > 1e-9) {
+      return saleTypes.reduce((s, t) => s + (c.salesByType?.[t as SaleType] ?? 0), 0) / salesTotal;
+    }
+    return saleTypeSet.has("other") ? 1 : 0;
+  }, [saleTypeActive, saleTypes, saleTypeSet]);
+
+  /** Project an amount onto the selected sale types: exact part for types that carry
+   *  a breakdown + the untyped residual apportioned by `share`. With no per-type
+   *  breakdown (byType omitted) this is simply total × share. */
+  const projectAmt = useCallback(
+    (total: number, byType: Partial<Record<SaleType, number>> | undefined, share: number): number => {
+      if (!saleTypeActive) return total;
+      const typedSum = saleTypes.reduce((s, t) => s + (byType?.[t as SaleType] ?? 0), 0);
+      const breakdownSum = ALL_SALE_TYPES.reduce((s, t) => s + (byType?.[t] ?? 0), 0);
+      return typedSum + (total - breakdownSum) * share;
+    },
+    [saleTypeActive, saleTypes],
+  );
+
   // Filtered raw customers (grouping is salesperson-level, so we work from raw rows)
   const filteredCustomers = useMemo(() => {
     let d = allCustomers;
-    if (company !== "all")  d = d.filter((c) => c.company === company);
-    if (location !== "all") d = d.filter((c) => c.location === location);
+    if (companies.length > 0) {
+      const set = new Set(companies);
+      d = d.filter((c) => set.has(c.company));
+    }
+    if (locations.length > 0) {
+      const set = new Set(locations);
+      d = d.filter((c) => set.has(c.location));
+    }
     if (salesPersons.length > 0) {
       const set = new Set(salesPersons);
       d = d.filter((c) => set.has(spName(c.salesPerson)));
     }
+    if (saleTypeActive) {
+      d = d.filter((c) => {
+        const hasInType = saleTypes.some(
+          (t) => (c.salesByType?.[t as SaleType] ?? 0) > 0 || (c.outstandingByType?.[t as SaleType] ?? 0) > 0,
+        );
+        if (hasInType) return true;
+        // No sales mix → residual lands in "other"; keep only when "other" is selected.
+        const salesTotal = ALL_SALE_TYPES.reduce((s, t) => s + (c.salesByType?.[t] ?? 0), 0);
+        return salesTotal <= 1e-9 && saleTypeSet.has("other");
+      });
+    }
+    const q = customerSearch.trim().toLowerCase();
+    if (q) d = d.filter((c) => c.name.toLowerCase().includes(q));
     return d;
-  }, [allCustomers, company, location, salesPersons]);
+  }, [allCustomers, companies, locations, salesPersons, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
+
+  // Customer-ledger lookup for the invoice drill-down (company/location/name per id).
+  const customerById = useMemo(() => {
+    const m = new Map<string, Customer>();
+    for (const c of filteredCustomers) m.set(c.id, c);
+    return m;
+  }, [filteredCustomers]);
 
   // Per-customer metrics for ONE month. Shared by the main table (selected month) and the
   // month-wise panel (every month) so the two always reconcile for the same month.
@@ -188,12 +289,15 @@ export default function SalespersonCollectionReport() {
   const metricsForMonth = useCallback((c: Customer, month: string): Metrics => {
     const detail = customerDetail[c.id];
     const mt = detail?.trend.find((t) => t.month === month);
-    const received = (mt?.receipts ?? 0) * 100_000;
+    const share = shareFor(c);
+    // Received has no per-type breakdown → estimate by sales-mix share.
+    const received = projectAmt((mt?.receipts ?? 0) * 100_000, undefined, share);
     let outstanding: number;
     let openDue: number;
     let dueSoon = 0; // not-yet-overdue bills coming due by month-end (current month only)
     if (month === asOfMonth) {
-      outstanding = c.outstanding; // as on asOfDate (NET)
+      // Outstanding/overdue carry a per-type breakdown at the customer level → project exactly.
+      outstanding = projectAmt(c.outstanding, c.outstandingByType, share); // as on asOfDate (NET)
       // openDue = the pipeline's CANONICAL overdue (c.overdue — reconciles to the dashboard,
       // already capped ≤ outstanding & advance-aware) PLUS bills genuinely coming due before
       // month-end (not overdue yet). We deliberately do NOT use a raw dueDate ≤ monthEnd sum:
@@ -202,18 +306,27 @@ export default function SalespersonCollectionReport() {
       const monthEnd = monthLabelToEndDate(month);
       const asOf = new Date(asOfDate);
       for (const inv of detail?.invoices ?? []) {
+        // dueSoon is exact: skip bills whose voucher type isn't in the selected sale types.
+        if (saleTypeActive && !saleTypeSet.has(inv.voucherType)) continue;
         if (inv.pending > 0 && (inv.overdueDays ?? 0) <= 0) {
           const dd = new Date(inv.dueDate);
           if (dd > asOf && dd <= monthEnd) dueSoon += inv.pending;
         }
       }
-      openDue = c.overdue + dueSoon;
+      openDue = projectAmt(c.overdue, c.overdueByType, share) + dueSoon;
     } else {
-      outstanding = (mt?.outstanding ?? 0) * 100_000;
-      openDue = (mt?.overdue ?? 0) * 100_000;
+      // Past months: outstanding carries a per-type breakdown in the trend (lakhs → rupees);
+      // overdue does not, so it falls back to the sales-mix share.
+      const obByType = mt?.outstandingByType
+        ? (Object.fromEntries(
+            ALL_SALE_TYPES.map((t) => [t, (mt.outstandingByType?.[t] ?? 0) * 100_000]),
+          ) as Partial<Record<SaleType, number>>)
+        : undefined;
+      outstanding = projectAmt((mt?.outstanding ?? 0) * 100_000, obByType, share);
+      openDue = projectAmt((mt?.overdue ?? 0) * 100_000, undefined, share);
     }
     return { outstanding, due: openDue + received, received, pending: openDue, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate]);
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {
@@ -229,9 +342,11 @@ export default function SalespersonCollectionReport() {
     return map;
   }, [filteredCustomers, prevMonth, metricsForMonth]);
 
-  // Group by salesperson
+  // Group by salesperson; each salesperson's drill rows are either individual customers
+  // or customers rolled up into customer-groups (View toggle).
   const spRows = useMemo<SPRow[]>(() => {
-    const map = new Map<string, SPRow>();
+    interface Acc { salesperson: string; customers: CustomerLine[]; m: Metrics; mPrev: Metrics; }
+    const map = new Map<string, Acc>();
     for (const c of filteredCustomers) {
       const sp = spName(c.salesPerson);
       const m = customerMetrics.get(c.id) ?? emptyMetrics();
@@ -241,24 +356,67 @@ export default function SalespersonCollectionReport() {
       let row = map.get(sp);
       if (!row) { row = { salesperson: sp, customers: [], m: emptyMetrics(), mPrev: emptyMetrics() }; map.set(sp, row); }
       row.customers.push({ id: c.id, name: c.name, company: c.company, location: c.location, m, mPrev });
-      row.m.outstanding += m.outstanding;
-      row.m.due         += m.due;
-      row.m.received    += m.received;
-      row.m.pending     += m.pending;
-      row.m.dueSoon     += m.dueSoon;
-      row.mPrev.outstanding += mPrev.outstanding;
-      row.mPrev.due         += mPrev.due;
-      row.mPrev.received    += mPrev.received;
-      row.mPrev.pending     += mPrev.pending;
-      row.mPrev.dueSoon     += mPrev.dueSoon;
+      addInto(row.m, m);
+      addInto(row.mPrev, mPrev);
     }
-    const arr = [...map.values()];
+
     const dir = sortDir === "asc" ? 1 : -1;
-    // Sort the salesperson groups AND the customers within each group by the same column.
+
+    // Roll a salesperson's customer lines up into customer-groups (mapping sheet);
+    // customers absent from the mapping become their own single-party group.
+    const rollupGroups = (custs: CustomerLine[]): DrillRow[] => {
+      const groups = new Map<string, { lines: CustomerLine[]; m: Metrics; mPrev: Metrics }>();
+      for (const cl of custs) {
+        const gName = customerGroupMap.mapping[cl.name] ?? cl.name;
+        let g = groups.get(gName);
+        if (!g) { g = { lines: [], m: emptyMetrics(), mPrev: emptyMetrics() }; groups.set(gName, g); }
+        g.lines.push(cl);
+        addInto(g.m, cl.m);
+        addInto(g.mPrev, cl.mPrev);
+      }
+      return [...groups.entries()].map(([gName, g]): DrillRow => {
+        const isGroup = g.lines.length > 1;
+        const children: PartyLine[] = g.lines.map((cl) => ({
+          key: cl.id,
+          name: cl.name,
+          sub: `${cl.company} · ${cl.location}`,
+          m: cl.m,
+          mPrev: cl.mPrev,
+        }));
+        sortRows(children, (c) => c.name, sortKey, dir);
+        return {
+          key: `G:${gName}`,
+          name: gName,
+          sub: isGroup ? `${g.lines.length} ledgers` : "",
+          isGroup,
+          children,
+          customerIds: g.lines.map((cl) => cl.id),
+          m: g.m,
+          mPrev: g.mPrev,
+        };
+      });
+    };
+
+    const arr: SPRow[] = [...map.values()].map((acc) => {
+      const rows: DrillRow[] = viewMode === "group"
+        ? rollupGroups(acc.customers)
+        : acc.customers.map((cl) => ({
+            key: cl.id,
+            name: cl.name,
+            sub: `${cl.company} · ${cl.location}`,
+            isGroup: false,
+            children: [],
+            customerIds: [cl.id],
+            m: cl.m,
+            mPrev: cl.mPrev,
+          }));
+      // Sort drill rows by the same active column as the salesperson groups.
+      sortRows(rows, (r) => r.name, sortKey, dir);
+      return { salesperson: acc.salesperson, rows, customerIds: acc.customers.map((cl) => cl.id), m: acc.m, mPrev: acc.mPrev };
+    });
     sortRows(arr, (r) => r.salesperson, sortKey, dir);
-    for (const r of arr) sortRows(r.customers, (c) => c.name, sortKey, dir);
     return arr;
-  }, [filteredCustomers, customerMetrics, customerMetricsPrev, sortKey, sortDir]);
+  }, [filteredCustomers, customerMetrics, customerMetricsPrev, sortKey, sortDir, viewMode, customerGroupMap]);
 
   const totals = useMemo<Metrics>(() => {
     const t = emptyMetrics();
@@ -269,10 +427,12 @@ export default function SalespersonCollectionReport() {
       t.pending     += r.m.pending;
       t.dueSoon     += r.m.dueSoon;
     }
-    // Use the locked NET convention for the headline outstanding in the current month
-    if (isCurrentMonth) t.outstanding = sumOutstanding(filteredCustomers);
+    // Use the locked NET convention for the headline outstanding in the current month.
+    // Skip when a sale type is active — sumOutstanding would use the un-projected (full)
+    // balances, diverging from the projected per-row totals shown in the table.
+    if (isCurrentMonth && !saleTypeActive) t.outstanding = sumOutstanding(filteredCustomers);
     return t;
-  }, [spRows, filteredCustomers, isCurrentMonth]);
+  }, [spRows, filteredCustomers, isCurrentMonth, saleTypeActive]);
 
   // Previous-month totals — only Due/Received feed the grand-total Collection % (prev) cell.
   const totalsPrev = useMemo<Metrics>(() => {
@@ -331,15 +491,91 @@ export default function SalespersonCollectionReport() {
       if (next.has(sp)) next.delete(sp); else next.add(sp);
       return next;
     });
+  const toggleGroup = (key: string) =>
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
 
-  const clearFilters = () => { setCompany("all"); setLocation("all"); setSalesPersons([]); };
+  // Open the invoice drill-down for a clicked figure. Current-month only (per-bill
+  // detail is a live snapshot; past months carry monthly totals only).
+  //  - outstanding → every open bill (pending > 0)
+  //  - due / pending → open bills due on/before the selected month-end
+  const openDrill = useCallback(
+    (customerIds: string[], category: "outstanding" | "due" | "pending", entityLabel: string) => {
+      const monthEnd = monthLabelToEndDate(selectedMonth);
+      const dueOnly = category !== "outstanding";
+      const rows: InvoiceDrillRow[] = [];
+      for (const id of customerIds) {
+        const c = customerById.get(id);
+        if (!c) continue;
+        const groupName = customerGroupMap.mapping[c.name] ?? c.name;
+        for (const inv of customerDetail[id]?.invoices ?? []) {
+          if (inv.billType === "Agst Ref" || inv.amount <= 0) continue;
+          if (inv.pending <= 0) continue;
+          if (dueOnly && new Date(inv.dueDate) > monthEnd) continue;
+          rows.push({
+            customerName: c.name, groupName, company: c.company, location: c.location,
+            number: inv.number, billRefName: inv.billRefName, date: inv.date,
+            amount: inv.amount, received: inv.amount - inv.pending, pending: inv.pending,
+            dueDate: inv.dueDate, overdueDays: inv.overdueDays, status: inv.status,
+            voucherType: inv.voucherType,
+          });
+        }
+      }
+      rows.sort((a, b) => b.pending - a.pending);
+      const catLabel = category === "outstanding"
+        ? "Total Outstanding — open invoices"
+        : category === "due"
+        ? `Due upto ${monthEndLong(selectedMonth)} — open invoices`
+        : "Total Pending — open invoices";
+      setDrill({ title: catLabel, subtitle: entityLabel, rows });
+    },
+    [customerById, customerDetail, selectedMonth, customerGroupMap],
+  );
+
+  // All backing ids across the visible salespersons (for the Grand Total drill).
+  const allCustomerIds = useMemo(() => spRows.flatMap((r) => r.customerIds), [spRows]);
+
+  /** A figure cell that drills into its invoices — clickable only in the current month.
+   *  Plain render fn (not a component) so cells don't remount each render. */
+  const drillCell = (
+    ids: string[], category: "outstanding" | "due" | "pending", label: string,
+    className: string, children: ReactNode,
+  ) => (
+    <TableCell
+      className={`${className} ${isCurrentMonth ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+      title={isCurrentMonth ? "Click to view invoices" : "Per-invoice detail is available for the current month only"}
+      onClick={isCurrentMonth ? (e) => { e.stopPropagation(); openDrill(ids, category, label); } : undefined}
+    >
+      {children}
+    </TableCell>
+  );
+
+  const clearFilters = () => {
+    setCompanies([]); setLocations([]); setSalesPersons([]); setSaleTypes([]); setCustomerSearch("");
+  };
   const filterChips: FilterChip[] = [
-    company !== "all"  && { label: `Company: ${company}`,   onRemove: () => setCompany("all") },
-    location !== "all" && { label: `Location: ${location}`, onRemove: () => setLocation("all") },
+    companies.length > 0 && {
+      label: companies.length <= 2 ? `Company: ${companies.join(", ")}` : `${companies.length} companies`,
+      onRemove: () => setCompanies([]),
+    },
+    locations.length > 0 && {
+      label: locations.length <= 2 ? `Location: ${locations.join(", ")}` : `${locations.length} locations`,
+      onRemove: () => setLocations([]),
+    },
     salesPersons.length > 0 && {
       label: salesPersons.length <= 2 ? `Person: ${salesPersons.join(", ")}` : `${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
     },
+    saleTypes.length > 0 && {
+      label: saleTypes.length <= 2
+        ? `Type: ${saleTypes.map((t) => SALE_TYPE_LABELS[t] ?? t).join(", ")}`
+        : `${saleTypes.length} types`,
+      onRemove: () => setSaleTypes([]),
+    },
+    customerSearch.trim() && { label: `Search: ${customerSearch.trim()}`, onRemove: () => setCustomerSearch("") },
   ].filter(Boolean) as FilterChip[];
 
   const dueLabel = `Due upto ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
@@ -352,7 +588,14 @@ export default function SalespersonCollectionReport() {
     aoa.push([`Financial Year: ${fyLabel}`]);
     aoa.push([`Month: ${selectedMonth}`]);
     aoa.push([`As on: ${formatDateLong(asOfDate)}`]);
-    aoa.push([`Company: ${company === "all" ? "All" : company}`, `Location: ${location === "all" ? "All" : location}`]);
+    aoa.push([
+      `Company: ${companies.length ? companies.join(", ") : "All"}`,
+      `Location: ${locations.length ? locations.join(", ") : "All"}`,
+    ]);
+    aoa.push([
+      `Sale Type: ${saleTypes.length ? saleTypes.map((t) => SALE_TYPE_LABELS[t] ?? t).join(", ") : "All"}`,
+      `Search: ${customerSearch.trim() || "—"}`,
+    ]);
     aoa.push([]);
     aoa.push(["Salesperson", "Total Outstanding", dueLabel, receivedLabel, "Total Pending", "Collection %"]);
     for (const r of spRows) {
@@ -366,7 +609,7 @@ export default function SalespersonCollectionReport() {
     ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 13 }];
     ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
-    const firstData = 8; // 1-indexed first salesperson row
+    const firstData = 9; // 1-indexed first salesperson row (8 header rows incl. Sale Type/Search)
     const lastData = firstData + spRows.length; // includes grand total
     for (let row = firstData; row <= lastData; row++) {
       for (const col of ["B", "C", "D", "E"]) {
@@ -459,6 +702,25 @@ export default function SalespersonCollectionReport() {
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">View</span>
+              <div className="inline-flex rounded-input border border-border h-9 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("customer")}
+                  className={`px-3 text-sm font-medium transition-colors ${viewMode === "customer" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted/50"}`}
+                >
+                  Customers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("group")}
+                  className={`px-3 text-sm font-medium transition-colors border-l border-border ${viewMode === "group" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted/50"}`}
+                >
+                  Groups
+                </button>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Month</span>
               <Select value={selectedMonth} onValueChange={setMonthState}>
                 <SelectTrigger className="w-[130px] rounded-input border-border text-sm h-9">
@@ -473,31 +735,45 @@ export default function SalespersonCollectionReport() {
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Company</span>
-              <Select value={company} onValueChange={setCompany}>
-                <SelectTrigger className="w-36 rounded-input border-border text-sm h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-input">
-                  <SelectItem value="all">All Companies</SelectItem>
-                  {companyOptions.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                options={companyOptions}
+                value={companies}
+                onChange={setCompanies}
+                allLabel="All Companies"
+                noun="companies"
+                triggerClassName="w-40 h-9 text-sm rounded-input border-border"
+              />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Location</span>
-              <Select value={location} onValueChange={setLocation}>
-                <SelectTrigger className="w-36 rounded-input border-border text-sm h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-input">
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {locationOptions.map((l) => <SelectItem key={l} value={l}>{l}</SelectItem>)}
-                </SelectContent>
-              </Select>
+              <MultiSelect
+                options={locationOptions}
+                value={locations}
+                onChange={setLocations}
+                allLabel="All Locations"
+                noun="locations"
+                triggerClassName="w-40 h-9 text-sm rounded-input border-border"
+              />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sales Person</span>
               <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
+              <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="w-40 h-9 text-sm rounded-input border-border" />
+            </div>
+            <div className="flex flex-col gap-1 flex-1 min-w-[180px] max-w-xs">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Search Customer</span>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search customer..."
+                  value={customerSearch}
+                  onChange={(e) => setCustomerSearch(e.target.value)}
+                  className="pl-9 h-9 rounded-input border-border text-sm"
+                />
+              </div>
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Financial Year</span>
@@ -539,9 +815,9 @@ export default function SalespersonCollectionReport() {
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             {spRows.length} salesperson{spRows.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[11px] text-muted-foreground">Click a salesperson to drill into customers + see their monthly trend below</span>
+          <span className="text-[11px] text-muted-foreground">Click a salesperson to drill into {viewMode === "group" ? "groups" : "customers"} + see their monthly trend below</span>
         </div>
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -573,10 +849,10 @@ export default function SalespersonCollectionReport() {
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
                     <TableCell />
                     <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">Grand Total</TableCell>
-                    <TableCell className="text-sm text-right font-mono">{fmt(startMonthOutstanding(totals))}</TableCell>
-                    <TableCell className="text-sm text-right font-mono">{fmt(totals.due)}</TableCell>
+                    {drillCell(allCustomerIds, "outstanding", "Grand Total", "text-sm text-right font-mono", fmt(startMonthOutstanding(totals)))}
+                    {drillCell(allCustomerIds, "due", "Grand Total", "text-sm text-right font-mono", fmt(totals.due))}
                     <TableCell className="text-sm text-right font-mono">{fmt(totals.received)}</TableCell>
-                    <TableCell className={`text-sm text-right font-mono ${totals.pending > 0 ? "text-destructive" : ""}`}>{fmt(totals.pending)}</TableCell>
+                    {drillCell(allCustomerIds, "pending", "Grand Total", `text-sm text-right font-mono ${totals.pending > 0 ? "text-destructive" : ""}`, fmt(totals.pending))}
                     <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
                       {collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`}
                     </TableCell>
@@ -601,12 +877,12 @@ export default function SalespersonCollectionReport() {
                           </TableCell>
                           <TableCell className="font-medium text-sm whitespace-nowrap">
                             {row.salesperson}
-                            <span className="ml-1.5 text-[11px] text-muted-foreground">({row.customers.length})</span>
+                            <span className="ml-1.5 text-[11px] text-muted-foreground">({row.rows.length})</span>
                           </TableCell>
-                          <TableCell className="text-sm text-right font-mono font-semibold">{fmt(startMonthOutstanding(row.m))}</TableCell>
-                          <TableCell className="text-sm text-right font-mono">{fmt(row.m.due)}</TableCell>
+                          {drillCell(row.customerIds, "outstanding", row.salesperson, "text-sm text-right font-mono font-semibold", fmt(startMonthOutstanding(row.m)))}
+                          {drillCell(row.customerIds, "due", row.salesperson, "text-sm text-right font-mono", fmt(row.m.due))}
                           <TableCell className="text-sm text-right font-mono">{fmt(row.m.received)}</TableCell>
-                          <TableCell className={`text-sm text-right font-mono font-semibold ${row.m.pending > 0 ? "text-destructive" : ""}`}>{fmt(row.m.pending)}</TableCell>
+                          {drillCell(row.customerIds, "pending", row.salesperson, `text-sm text-right font-mono font-semibold ${row.m.pending > 0 ? "text-destructive" : ""}`, fmt(row.m.pending))}
                           <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
                             {pct === null ? "—" : `${pct.toFixed(1)}%`}
                           </TableCell>
@@ -615,31 +891,61 @@ export default function SalespersonCollectionReport() {
                           </TableCell>
                         </TableRow>
 
-                        {isOpen && row.customers.map((cust) => {
-                          const cpct = collectionPct(cust.m);
-                          const cpctPrev = collectionPct(cust.mPrev);
+                        {isOpen && row.rows.map((drill) => {
+                          const cpct = collectionPct(drill.m);
+                          const cpctPrev = collectionPct(drill.mPrev);
+                          const groupKey = `${row.salesperson}::${drill.key}`;
+                          const canExpand = drill.isGroup && drill.children.length > 0;
+                          const groupOpen = canExpand && expandedGroups.has(groupKey);
                           return (
-                            <TableRow
-                              key={`${row.salesperson}-${cust.id}`}
-                              className="bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer text-[13px]"
-                              onClick={() => navigate(`/outstanding-dashboard/customer/${encodeURIComponent(cust.name)}`)}
-                            >
-                              <TableCell />
-                              <TableCell className="whitespace-nowrap pl-6 text-muted-foreground">
-                                {cust.name}
-                                <span className="ml-1.5 text-[10px] opacity-70">{cust.company} · {cust.location}</span>
-                              </TableCell>
-                              <TableCell className="text-right font-mono">{fmt(startMonthOutstanding(cust.m))}</TableCell>
-                              <TableCell className="text-right font-mono">{fmt(cust.m.due)}</TableCell>
-                              <TableCell className="text-right font-mono">{fmt(cust.m.received)}</TableCell>
-                              <TableCell className={`text-right font-mono ${cust.m.pending > 0 ? "text-destructive/80" : ""}`}>{fmt(cust.m.pending)}</TableCell>
-                              <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
-                                {cpct === null ? "—" : `${cpct.toFixed(1)}%`}
-                              </TableCell>
-                              <TableCell className={`text-right font-mono ${pctStyle(cpctPrev)}`}>
-                                {prevMonth == null || cpctPrev === null ? "—" : `${cpctPrev.toFixed(1)}%`}
-                              </TableCell>
-                            </TableRow>
+                            <Fragment key={`${row.salesperson}-${drill.key}`}>
+                              <TableRow
+                                className={`bg-muted/20 transition-colors text-[13px] ${canExpand ? "cursor-pointer hover:bg-muted/40" : ""}`}
+                                onClick={canExpand ? () => toggleGroup(groupKey) : undefined}
+                              >
+                                <TableCell className="text-muted-foreground pl-4">
+                                  {canExpand && (groupOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                                </TableCell>
+                                <TableCell className="whitespace-nowrap pl-6 text-muted-foreground">
+                                  {drill.name}
+                                  {drill.sub && <span className="ml-1.5 text-[10px] opacity-70">{drill.sub}</span>}
+                                </TableCell>
+                                {drillCell(drill.customerIds, "outstanding", drill.name, "text-right font-mono", fmt(startMonthOutstanding(drill.m)))}
+                                {drillCell(drill.customerIds, "due", drill.name, "text-right font-mono", fmt(drill.m.due))}
+                                <TableCell className="text-right font-mono">{fmt(drill.m.received)}</TableCell>
+                                {drillCell(drill.customerIds, "pending", drill.name, `text-right font-mono ${drill.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(drill.m.pending))}
+                                <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
+                                  {cpct === null ? "—" : `${cpct.toFixed(1)}%`}
+                                </TableCell>
+                                <TableCell className={`text-right font-mono ${pctStyle(cpctPrev)}`}>
+                                  {prevMonth == null || cpctPrev === null ? "—" : `${cpctPrev.toFixed(1)}%`}
+                                </TableCell>
+                              </TableRow>
+
+                              {groupOpen && drill.children.map((party) => {
+                                const ppct = collectionPct(party.m);
+                                const ppctPrev = collectionPct(party.mPrev);
+                                return (
+                                  <TableRow key={`${groupKey}-${party.key}`} className="bg-muted/10 text-[12px]">
+                                    <TableCell />
+                                    <TableCell className="whitespace-nowrap pl-12 text-muted-foreground">
+                                      {party.name}
+                                      <span className="ml-1.5 text-[10px] opacity-70">{party.sub}</span>
+                                    </TableCell>
+                                    {drillCell([party.key], "outstanding", party.name, "text-right font-mono", fmt(startMonthOutstanding(party.m)))}
+                                    {drillCell([party.key], "due", party.name, "text-right font-mono", fmt(party.m.due))}
+                                    <TableCell className="text-right font-mono">{fmt(party.m.received)}</TableCell>
+                                    {drillCell([party.key], "pending", party.name, `text-right font-mono ${party.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(party.m.pending))}
+                                    <TableCell className={`text-right font-mono ${pctStyle(ppct)}`}>
+                                      {ppct === null ? "—" : `${ppct.toFixed(1)}%`}
+                                    </TableCell>
+                                    <TableCell className={`text-right font-mono ${pctStyle(ppctPrev)}`}>
+                                      {prevMonth == null || ppctPrev === null ? "—" : `${ppctPrev.toFixed(1)}%`}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </Fragment>
                           );
                         })}
                       </Fragment>
@@ -649,7 +955,7 @@ export default function SalespersonCollectionReport() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </ScrollableTable>
       </Card>
 
       {/* Month-wise analysis panel — consolidated by default, or per selected salesperson */}
@@ -723,7 +1029,7 @@ export default function SalespersonCollectionReport() {
             </div>
 
             {/* Month table */}
-            <div className="overflow-x-auto">
+            <ScrollableTable>
               <Table>
                 <TableHeader>
                   <TableRow className="bg-muted/50">
@@ -765,7 +1071,7 @@ export default function SalespersonCollectionReport() {
                   )}
                 </TableBody>
               </Table>
-            </div>
+            </ScrollableTable>
             <div className="px-4 py-2 text-[11px] text-muted-foreground border-t border-border">
               Outstanding = start-of-month balance (so it is always ≥ Due, the part of it due by month-end); Pending = Due − Received.
               Total row: Received = total collected across the months shown; Outstanding, Due, Pending &amp; Collection % = latest month ({latest?.month ?? "—"}) — balances aren't summed across months as they'd double-count.
@@ -773,6 +1079,16 @@ export default function SalespersonCollectionReport() {
           </Card>
         );
       })()}
+
+      {/* Invoice drill-down popup */}
+      <InvoiceDrilldownDialog
+        open={drill !== null}
+        onOpenChange={(o) => { if (!o) setDrill(null); }}
+        title={drill?.title ?? ""}
+        subtitle={drill?.subtitle ?? ""}
+        rows={drill?.rows ?? []}
+        asOfDate={asOfDate}
+      />
     </div>
   );
 }

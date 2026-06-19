@@ -12,10 +12,13 @@ interface Props {
 }
 
 export function SalesPersonMultiSelect({ options, value, onChange, triggerClassName }: Props) {
-  // A salesperson-scoped (non-admin) user can't widen their view, so the selector
-  // becomes a fixed badge. `restrictToSalespersons !== null` == "this user is scoped".
+  // A scoped (non-admin) user can still FILTER within their allowed salespersons —
+  // `options` is already limited to the scoped set upstream (useAppData scopes
+  // allCustomers), and useAppData enforces the data scope regardless of selection,
+  // so widening the picker can never leak another salesperson's data. The selector
+  // is only inert when the user has no salesperson access at all (no options).
   const { restrictToSalespersons } = useReceivablesScope();
-  const locked = restrictToSalespersons !== null;
+  const scoped = restrictToSalespersons !== null;
 
   const toggle = (sp: string) => {
     onChange(value.includes(sp) ? value.filter((v) => v !== sp) : [...value, sp]);
@@ -28,18 +31,16 @@ export function SalesPersonMultiSelect({ options, value, onChange, triggerClassN
       ? value.join(", ")
       : `${value.length} Persons`;
 
-  if (locked) {
-    const lockedLabel = restrictToSalespersons && restrictToSalespersons.length
-      ? restrictToSalespersons.join(", ")
-      : "My data";
+  // Scoped user with no accessible salespersons → nothing to filter.
+  if (scoped && options.length === 0) {
     return (
       <Button
         variant="outline"
         disabled
         className={`justify-start font-normal opacity-100 cursor-default ${triggerClassName ?? "w-44 h-9 text-sm rounded-input"}`}
-        title="Locked to your salesperson access"
+        title="No salesperson access"
       >
-        <span className="truncate">{lockedLabel}</span>
+        <span className="truncate">No access</span>
       </Button>
     );
   }
