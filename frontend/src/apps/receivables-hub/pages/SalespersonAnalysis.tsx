@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -583,7 +584,7 @@ export default function SalespersonAnalysis() {
           </span>
           <span className="text-[11px] text-muted-foreground">Click a name or cell to filter the list below</span>
         </div>
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -735,7 +736,7 @@ export default function SalespersonAnalysis() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </ScrollableTable>
       </Card>
 
       {/* Selection chip */}
@@ -758,7 +759,7 @@ export default function SalespersonAnalysis() {
             Customers {customerRows.length > 0 && `— ${rangeStart}–${rangeEnd} of ${customerRows.length}`}
           </span>
         </div>
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -843,7 +844,7 @@ export default function SalespersonAnalysis() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </ScrollableTable>
       </Card>
 
       {/* Pagination */}

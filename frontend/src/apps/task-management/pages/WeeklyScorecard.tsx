@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -236,7 +237,7 @@ export default function WeeklyScorecard() {
           <h3 className="text-[15px] font-bold text-navy">Planned vs Actual vs Next</h3>
           <p className="text-[11.5px] text-grey-2">All values as % of weekly tasks.</p>
         </div>
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[10.5px] uppercase tracking-wide bg-page/50 border-t border-line">
@@ -262,7 +263,7 @@ export default function WeeklyScorecard() {
               />
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       </Card>
     </div>
   );

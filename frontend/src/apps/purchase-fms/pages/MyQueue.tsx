@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -93,7 +94,7 @@ export default function MyQueue() {
           )
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <ScrollableTable>
               <table className="w-full text-[13px]">
                 <thead>
                   <tr className="text-left text-[11.5px] uppercase tracking-wide text-grey-2 border-b border-line">
@@ -141,7 +142,7 @@ export default function MyQueue() {
                   })}
                 </tbody>
               </table>
-            </div>
+            </ScrollableTable>
             <Pagination state={pg} rowsLabel="entries" />
           </>
         )}

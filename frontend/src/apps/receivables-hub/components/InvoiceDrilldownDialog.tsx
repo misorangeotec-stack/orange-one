@@ -112,8 +112,11 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [visibleCols, setVisibleCols] = useState<string[]>(COL_DEFS.map((c) => c.key));
   const [groupBy, setGroupBy] = useState<"customer" | "group">("customer");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [toggled, setToggled] = useState<Set<string>>(new Set());
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Switching view resets expansion so each view shows its default (Customers open, Groups collapsed).
+  useEffect(() => { setToggled(new Set()); }, [groupBy]);
 
   const customerOptions = useMemo(
     () => [...new Set(rows.map((r) => r.customerName).filter(Boolean))].sort(),
@@ -179,29 +182,41 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     [filtered],
   );
 
-  // Group the (sorted) rows by individual customer or by customer-group, with subtotals.
-  const groups = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; rows: InvoiceDrillRow[]; amount: number; received: number; pending: number }>();
-    for (const r of sorted) {
-      const key = groupBy === "group" ? r.groupName : r.customerName;
-      let g = map.get(key);
-      if (!g) { g = { key, label: key, rows: [], amount: 0, received: 0, pending: 0 }; map.set(key, g); }
+  // Bucket rows by a key, with subtotals, ordered by the active sort column.
+  type Bucket = { key: string; label: string; rows: InvoiceDrillRow[]; amount: number; received: number; pending: number };
+  const orderBuckets = (arr: Bucket[]): Bucket[] => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    if (sortKey === "amount" || sortKey === "received" || sortKey === "pending") arr.sort((a, b) => dir * (a[sortKey] - b[sortKey]));
+    else arr.sort((a, b) => dir * a.label.localeCompare(b.label));
+    return arr;
+  };
+  const bucketBy = (rows: InvoiceDrillRow[], keyOf: (r: InvoiceDrillRow) => string): Bucket[] => {
+    const map = new Map<string, Bucket>();
+    for (const r of rows) {
+      const k = keyOf(r);
+      let g = map.get(k);
+      if (!g) { g = { key: k, label: k, rows: [], amount: 0, received: 0, pending: 0 }; map.set(k, g); }
       g.rows.push(r); g.amount += r.amount; g.received += r.received; g.pending += r.pending;
     }
-    const arr = [...map.values()];
-    const dir = sortDir === "asc" ? 1 : -1;
-    if (sortKey === "amount" || sortKey === "received" || sortKey === "pending") {
-      arr.sort((a, b) => dir * (a[sortKey] - b[sortKey]));
-    } else {
-      arr.sort((a, b) => dir * a.label.localeCompare(b.label));
-    }
-    return arr;
-  }, [sorted, groupBy, sortKey, sortDir]);
+    return orderBuckets([...map.values()]);
+  };
 
-  const toggleGroup = (key: string) =>
-    setCollapsed((prev) => {
+  // Customers view: customer → invoices. Groups view: group → customers → invoices.
+  const customerTree = useMemo(() => bucketBy(sorted, (r) => r.customerName), [sorted, sortKey, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
+  const groupTree = useMemo(() => {
+    const byGroup = bucketBy(sorted, (r) => r.groupName);
+    return byGroup.map((g) => ({ ...g, customers: bucketBy(g.rows, (r) => r.customerName) }));
+  }, [sorted, sortKey, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const topCount = groupBy === "group" ? groupTree.length : customerTree.length;
+
+  // Open/close: Customers view defaults OPEN (toggled = collapsed), Groups view
+  // defaults CLOSED (toggled = expanded). Reset when the view switches.
+  const isOpen = (k: string) => (groupBy === "customer" ? !toggled.has(k) : toggled.has(k));
+  const toggle = (k: string) =>
+    setToggled((prev) => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
+      if (next.has(k)) next.delete(k); else next.add(k);
       return next;
     });
 
@@ -313,32 +328,48 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
 
   /** Render one total cell for a visible column. */
   const renderTotalCell = (key: ColKey, idx: number): ReactNode => {
-    if (idx === 0) return <TableCell key={key} className="text-sm uppercase tracking-wide text-foreground/80 whitespace-nowrap">Total ({sorted.length})</TableCell>;
+    if (idx === 0) return <TableCell key={key} className="text-sm uppercase tracking-wide text-foreground/80 whitespace-nowrap">Total ({topCount} {groupBy === "group" ? "groups" : "customers"})</TableCell>;
     if (key === "amount")   return <TableCell key={key} className="text-right font-mono text-sm">{fmt(totals.amount)}</TableCell>;
     if (key === "received") return <TableCell key={key} className="text-right font-mono text-sm text-emerald-700">{fmt(totals.received)}</TableCell>;
     if (key === "pending")  return <TableCell key={key} className="text-right font-mono text-sm text-destructive">{fmt(totals.pending)}</TableCell>;
     return <TableCell key={key} />;
   };
 
-  /** Render one cell of a collapsible group-subtotal row. */
-  const renderGroupCell = (
-    g: { key: string; label: string; rows: InvoiceDrillRow[]; amount: number; received: number; pending: number },
-    key: ColKey, idx: number, isCollapsed: boolean,
-  ): ReactNode => {
-    if (idx === 0) return (
-      <TableCell key={key} className="whitespace-nowrap font-medium">
-        <span className="inline-flex items-center gap-1.5">
-          {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-          {g.label}
-          <span className="text-[10px] text-muted-foreground">({g.rows.length})</span>
-        </span>
-      </TableCell>
-    );
-    if (key === "amount")   return <TableCell key={key} className="text-right font-mono">{fmt(g.amount)}</TableCell>;
-    if (key === "received") return <TableCell key={key} className="text-right font-mono text-emerald-700">{fmt(g.received)}</TableCell>;
-    if (key === "pending")  return <TableCell key={key} className="text-right font-mono text-destructive">{fmt(g.pending)}</TableCell>;
-    return <TableCell key={key} />;
-  };
+  /** A collapsible subtotal row (group or customer) — `level` controls indent. */
+  const renderSummaryRow = (
+    rowKey: string, label: string, count: number, countNoun: string,
+    vals: { amount: number; received: number; pending: number },
+    level: number, open: boolean, onClick: () => void,
+  ): ReactNode => (
+    <TableRow
+      key={rowKey}
+      className={`cursor-pointer text-[13px] ${level === 0 ? "bg-muted/50 hover:bg-muted/70 font-semibold" : "bg-muted/25 hover:bg-muted/40 font-medium"}`}
+      onClick={onClick}
+    >
+      {visibleDefs.map((d, idx) => {
+        if (idx === 0) return (
+          <TableCell key={d.key} className="whitespace-nowrap" style={{ paddingLeft: 12 + level * 22 }}>
+            <span className="inline-flex items-center gap-1.5">
+              {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              {label}
+              <span className="text-[10px] text-muted-foreground">({count} {countNoun})</span>
+            </span>
+          </TableCell>
+        );
+        if (d.key === "amount")   return <TableCell key={d.key} className="text-right font-mono">{fmt(vals.amount)}</TableCell>;
+        if (d.key === "received") return <TableCell key={d.key} className="text-right font-mono text-emerald-700">{fmt(vals.received)}</TableCell>;
+        if (d.key === "pending")  return <TableCell key={d.key} className="text-right font-mono text-destructive">{fmt(vals.pending)}</TableCell>;
+        return <TableCell key={d.key} />;
+      })}
+    </TableRow>
+  );
+
+  /** An invoice row, indented under its group/customer. */
+  const renderInvoiceRow = (r: InvoiceDrillRow, rowKey: string, indentClass: string): ReactNode => (
+    <TableRow key={rowKey} className={`hover:bg-muted/30 transition-colors text-[13px] ${indentClass}`}>
+      {visibleDefs.map((d) => renderCell(d.key, r))}
+    </TableRow>
+  );
 
   const handleExport = () => {
     const aoa: (string | number)[][] = [];
@@ -370,27 +401,37 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
         extractors.push((r) => exportVal(d.key, r));
       }
     }
+    const colHeaderIdx0 = aoa.length; // 0-indexed position of the column-header row
     aoa.push(header);
-    // Summary row builder (group subtotals + grand total) aligned to the columns.
+    // Summary row builder (group/customer subtotals + grand total) aligned to the columns.
     const summaryRow = (label: string, v: { amount: number; received: number; pending: number }) => {
       const a: (string | number)[] = header.map(() => "");
       a[0] = label;
       for (const m of money) a[m.idx] = v[m.key];
       return a;
     };
-    // Grouped: each group's subtotal row, then its invoice lines.
-    for (const g of groups) {
-      aoa.push(summaryRow(`${g.label} (${g.rows.length})`, g));
-      for (const r of g.rows) aoa.push(extractors.map((f) => f(r)));
+    // Mirror the on-screen view: Groups → group subtotal → customer subtotal → invoices.
+    if (groupBy === "group") {
+      for (const g of groupTree) {
+        aoa.push(summaryRow(`${g.label} (${g.customers.length} customers)`, g));
+        for (const c of g.customers) {
+          aoa.push(summaryRow(`    ${c.label} (${c.rows.length})`, c));
+          for (const r of c.rows) aoa.push(extractors.map((f) => f(r)));
+        }
+      }
+    } else {
+      for (const c of customerTree) {
+        aoa.push(summaryRow(`${c.label} (${c.rows.length})`, c));
+        for (const r of c.rows) aoa.push(extractors.map((f) => f(r)));
+      }
     }
-    aoa.push(summaryRow(`Total (${sorted.length})`, totals));
+    aoa.push(summaryRow(`Total (${topCount} ${groupBy === "group" ? "groups" : "customers"})`, totals));
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = header.map((h) => ({ wch: h === "Customer" ? 30 : h === "Bill Ref" || h === "Voucher #" ? 16 : 13 }));
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
-    const firstData = 7; // 1-indexed first data row (6 header rows)
-    const dataRows = groups.reduce((s, g) => s + 1 + g.rows.length, 0) + 1; // group headers + lines + grand total
-    const lastData = firstData + dataRows - 1;
+    const firstData = colHeaderIdx0 + 2; // 1-indexed first data row (row after the column header)
+    const lastData = aoa.length;          // 1-indexed last row
     for (let row = firstData; row <= lastData; row++) {
       for (const m of money) {
         const cell = ws[`${XLSX.utils.encode_col(m.idx)}${row}`];
@@ -517,22 +558,30 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
                 <TableRow>
                   <TableCell colSpan={visibleDefs.length} className="text-center py-10 text-muted-foreground text-sm">No invoices match these filters.</TableCell>
                 </TableRow>
+              ) : groupBy === "group" ? (
+                // Group → Customer → Invoices (collapsed to group level by default)
+                groupTree.map((g) => (
+                  <Fragment key={`g:${g.key}`}>
+                    {renderSummaryRow(`g:${g.key}`, g.label, g.customers.length, "customers", g, 0, isOpen(g.key), () => toggle(g.key))}
+                    {isOpen(g.key) && g.customers.map((c) => {
+                      const ck = `${g.key}|${c.key}`;
+                      return (
+                        <Fragment key={`c:${ck}`}>
+                          {renderSummaryRow(`c:${ck}`, c.label, c.rows.length, "invoices", c, 1, isOpen(ck), () => toggle(ck))}
+                          {isOpen(ck) && c.rows.map((r, i) => renderInvoiceRow(r, `${ck}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-16"))}
+                        </Fragment>
+                      );
+                    })}
+                  </Fragment>
+                ))
               ) : (
-                groups.map((g) => {
-                  const isCollapsed = collapsed.has(g.key);
-                  return (
-                    <Fragment key={g.key}>
-                      <TableRow className="bg-muted/40 hover:bg-muted/60 cursor-pointer text-[13px]" onClick={() => toggleGroup(g.key)}>
-                        {visibleDefs.map((d, idx) => renderGroupCell(g, d.key, idx, isCollapsed))}
-                      </TableRow>
-                      {!isCollapsed && g.rows.map((r, i) => (
-                        <TableRow key={`${g.key}-${r.number}-${r.billRefName}-${i}`} className="hover:bg-muted/30 transition-colors text-[13px]">
-                          {visibleDefs.map((d) => renderCell(d.key, r))}
-                        </TableRow>
-                      ))}
-                    </Fragment>
-                  );
-                })
+                // Customer → Invoices (open by default)
+                customerTree.map((c) => (
+                  <Fragment key={`c:${c.key}`}>
+                    {renderSummaryRow(`c:${c.key}`, c.label, c.rows.length, "invoices", c, 0, isOpen(c.key), () => toggle(c.key))}
+                    {isOpen(c.key) && c.rows.map((r, i) => renderInvoiceRow(r, `${c.key}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-10"))}
+                  </Fragment>
+                ))
               )}
             </TableBody>
           </table>

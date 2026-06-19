@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, isOverdue, todayIso } from "@/shared/lib/time";
@@ -95,7 +96,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
   const navigate = useNavigate();
 
   return (
-    <div className="overflow-x-auto">
+    <ScrollableTable>
       <table className="w-full min-w-[930px] text-[13px] border-collapse table-fixed">
         <thead>
           <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50 border-b border-line">
@@ -199,6 +200,6 @@ export default function TaskTable({ tasks, sort, onSort }: {
           })}
         </tbody>
       </table>
-    </div>
+    </ScrollableTable>
   );
 }

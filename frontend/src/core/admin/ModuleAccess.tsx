@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -24,7 +25,7 @@ export default function ModuleAccess() {
       <p className="text-[13px] text-grey">Choose which apps each person can open. Admins always have access to every app.</p>
 
       <Card>
-      <div className="overflow-x-auto">
+      <ScrollableTable>
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-line">
@@ -78,7 +79,7 @@ export default function ModuleAccess() {
             })}
           </tbody>
         </table>
-      </div>
+      </ScrollableTable>
       {profiles.length > 0 && <Pagination state={pg} rowsLabel="users" />}
       </Card>
     </div>

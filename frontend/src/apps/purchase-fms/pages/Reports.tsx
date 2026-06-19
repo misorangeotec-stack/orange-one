@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -173,7 +174,7 @@ export default function Reports() {
             <div>
               <h3 className="text-[14px] font-semibold text-navy">On-time vs Delayed by Stage</h3>
               <p className="text-[12px] text-grey-2 mb-3">Share of completions that met their planned date.</p>
-              <div className="overflow-x-auto">
+              <ScrollableTable>
                 <table className="w-full text-[12.5px]">
                   <thead>
                     <tr className="text-left text-[11px] uppercase tracking-wide text-grey-2 border-b border-line">
@@ -199,7 +200,7 @@ export default function Reports() {
                     })}
                   </tbody>
                 </table>
-              </div>
+              </ScrollableTable>
             </div>
 
             <div>

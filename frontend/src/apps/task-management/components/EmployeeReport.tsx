@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -40,7 +41,7 @@ export default function EmployeeReport({ user, weekStart = WEEK_START }: { user:
     <div className="space-y-5">
       {/* this week — same RYG columns as the manager views */}
       <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50">
@@ -76,7 +77,7 @@ export default function EmployeeReport({ user, weekStart = WEEK_START }: { user:
               </tr>
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       </Card>
 
       {/* plan vs actual — monthly rollup + weekly breakdown */}

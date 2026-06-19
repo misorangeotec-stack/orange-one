@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
   PackageOpen, Filter, Package, TrendingUp, Users, DollarSign,
@@ -827,7 +828,7 @@ export default function ImportDashboard() {
                 No data available.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <ScrollableTable>
                 <table className="w-full text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
@@ -911,7 +912,7 @@ export default function ImportDashboard() {
                     </tr>
                   </tbody>
                 </table>
-              </div>
+              </ScrollableTable>
             )}
           </CardContent>
         )}
@@ -976,7 +977,7 @@ export default function ImportDashboard() {
               }
               const grandTotal = Object.values(unitTotals).reduce((s, v) => s + v, 0);
               return (
-                <div className="overflow-x-auto">
+                <ScrollableTable>
                   <table className="w-full text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-border bg-muted/30">
@@ -1059,7 +1060,7 @@ export default function ImportDashboard() {
                       </tr>
                     </tbody>
                   </table>
-                </div>
+                </ScrollableTable>
               );
             })()}
           </CardContent>
@@ -1110,7 +1111,7 @@ export default function ImportDashboard() {
             </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
+              <ScrollableTable>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
@@ -1192,7 +1193,7 @@ export default function ImportDashboard() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </ScrollableTable>
 
               {/* Pagination */}
               {pageCount > 1 && (

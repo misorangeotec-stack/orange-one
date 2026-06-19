@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { Fragment, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
@@ -179,7 +180,7 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
 
       {/* all departments in one table */}
       <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50">
@@ -271,7 +272,7 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       </Card>
 
       <PlanVsActualTable groups={visibleGroups} scoped={scoped} selfId={scope?.selfId} weekStart={weekStart} />
@@ -336,7 +337,7 @@ function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Grou
       {rows.length === 0 ? (
         <p className="px-5 py-6 text-center text-[12.5px] text-grey-2">No plans set or tasks logged for this week yet.</p>
       ) : (
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-[12.5px] border-collapse">
             <thead>
               <tr className="text-grey-2 text-[11px] uppercase tracking-wide">
@@ -405,7 +406,7 @@ function PlanVsActualTable({ groups, scoped, selfId, weekStart }: { groups: Grou
               })}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       )}
     </Card>
   );

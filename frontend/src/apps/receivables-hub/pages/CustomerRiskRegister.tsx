@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
@@ -1373,7 +1374,7 @@ export default function CustomerRiskRegister() {
 
       {/* Table */}
       <Card className="rounded-card border-border bg-surface overflow-hidden">
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -1631,7 +1632,7 @@ export default function CustomerRiskRegister() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </ScrollableTable>
       </Card>
 
       {/* Pagination */}

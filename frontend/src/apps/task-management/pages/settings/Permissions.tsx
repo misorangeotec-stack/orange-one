@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Card from "@/shared/components/ui/Card";
 
 const ROLES = ["Admin", "HOD", "Sub-HOD", "Employee"] as const;
@@ -28,7 +29,7 @@ export default function Permissions() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <table className="w-full text-[13px] min-w-[560px]">
             <thead>
               <tr className="border-b border-line bg-page/60">
@@ -55,7 +56,7 @@ export default function Permissions() {
               ))}
             </tbody>
           </table>
-        </div>
+        </ScrollableTable>
       </Card>
     </div>
   );

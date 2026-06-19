@@ -1,3 +1,4 @@
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState } from "react";
 import { ChevronDown, ChevronUp, Info } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@hub/components/ui/card";
@@ -99,7 +100,7 @@ export function SaleTypeReconciliationTable({ breakdown }: Props) {
 
       {open && (
         <CardContent className="p-0 pb-4">
-          <div className="overflow-x-auto">
+          <ScrollableTable>
             <Table className="text-sm min-w-[1100px]">
               <TableHeader>
                 <TableRow className="bg-muted/40">
@@ -221,7 +222,7 @@ export function SaleTypeReconciliationTable({ breakdown }: Props) {
                 </TableRow>
               </TableBody>
             </Table>
-          </div>
+          </ScrollableTable>
         </CardContent>
       )}
     </Card>
