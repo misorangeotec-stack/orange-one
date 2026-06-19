@@ -169,7 +169,7 @@ export default function SalespersonCollectionReport() {
   // Expanded group rows (group view): keyed by `${salesperson}::${groupKey}`.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   // Invoice drill-down popup (current month only).
-  const [drill, setDrill] = useState<{ title: string; subtitle: string; rows: InvoiceDrillRow[] } | null>(null);
+  const [drill, setDrill] = useState<{ title: string; subtitle: string; rows: InvoiceDrillRow[]; ledgerFigures: Record<string, number> } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("pending");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   // Month-wise panel: null = consolidated (all filtered salespersons)
@@ -507,10 +507,18 @@ export default function SalespersonCollectionReport() {
       const monthEnd = monthLabelToEndDate(selectedMonth);
       const dueOnly = category !== "outstanding";
       const rows: InvoiceDrillRow[] = [];
+      // Report's authoritative (net) figure per ledger key, so the popup can reconcile.
+      const ledgerFigures: Record<string, number> = {};
       for (const id of customerIds) {
         const c = customerById.get(id);
         if (!c) continue;
         const groupName = customerGroupMap.mapping[c.name] ?? c.name;
+        const m = customerMetrics.get(id);
+        if (m) {
+          const key = `${c.name}|||${c.company}|||${c.location}`;
+          const fig = category === "outstanding" ? startMonthOutstanding(m) : category === "due" ? m.due : m.pending;
+          ledgerFigures[key] = (ledgerFigures[key] ?? 0) + fig;
+        }
         for (const inv of customerDetail[id]?.invoices ?? []) {
           if (inv.billType === "Agst Ref" || inv.amount <= 0) continue;
           if (inv.pending <= 0) continue;
@@ -530,9 +538,9 @@ export default function SalespersonCollectionReport() {
         : category === "due"
         ? `Due upto ${monthEndLong(selectedMonth)} — open invoices`
         : "Total Pending — open invoices";
-      setDrill({ title: catLabel, subtitle: entityLabel, rows });
+      setDrill({ title: catLabel, subtitle: entityLabel, rows, ledgerFigures });
     },
-    [customerById, customerDetail, selectedMonth, customerGroupMap],
+    [customerById, customerDetail, selectedMonth, customerGroupMap, customerMetrics],
   );
 
   // All backing ids across the visible salespersons (for the Grand Total drill).
@@ -1087,6 +1095,7 @@ export default function SalespersonCollectionReport() {
         title={drill?.title ?? ""}
         subtitle={drill?.subtitle ?? ""}
         rows={drill?.rows ?? []}
+        ledgerFigures={drill?.ledgerFigures}
         asOfDate={asOfDate}
       />
     </div>

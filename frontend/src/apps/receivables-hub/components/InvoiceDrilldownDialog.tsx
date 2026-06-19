@@ -33,6 +33,8 @@ export interface InvoiceDrillRow {
   overdueDays: number;
   status: InvoiceStatus;
   voucherType: SaleType;
+  /** Synthetic reconciliation line bridging gross bills → the report's net figure. */
+  isAdjustment?: boolean;
 }
 
 interface Props {
@@ -42,6 +44,10 @@ interface Props {
   subtitle: string;
   rows: InvoiceDrillRow[];
   asOfDate: string;
+  /** Report's net figure per ledger key (`name|||company|||location`) for the clicked
+   *  category. The popup adds a reconciliation line so each ledger/group/total matches
+   *  the base report exactly. */
+  ledgerFigures?: Record<string, number>;
 }
 
 const SALE_TYPE_LABELS: Record<string, string> = {
@@ -101,7 +107,7 @@ const exportVal = (key: ColKey, r: InvoiceDrillRow): string | number => {
   }
 };
 
-export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, rows, asOfDate }: Props) {
+export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, rows, asOfDate, ledgerFigures }: Props) {
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
@@ -174,26 +180,53 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   };
 
-  const totals = useMemo(
-    () => filtered.reduce(
-      (t, r) => { t.amount += r.amount; t.received += r.received; t.pending += r.pending; return t; },
-      { amount: 0, received: 0, pending: 0 },
-    ),
-    [filtered],
-  );
+  // Reconcile each ledger's bill-level pending to the report's net figure — but only
+  // in the default (unfiltered) view, since a popup filter shows a subset of bills.
+  const reconcile =
+    ledgerFigures != null &&
+    !customerNames.length && !companies.length && !locations.length &&
+    !saleTypes.length && !statuses.length && !search.trim();
 
-  // Bucket rows by a key, with subtotals, ordered by the active sort column.
-  type Bucket = { key: string; label: string; rows: InvoiceDrillRow[]; amount: number; received: number; pending: number };
+  // Bucket rows into groups/ledgers with subtotals, ordered by the active sort column.
+  type Bucket = { key: string; label: string; sub?: string; rows: InvoiceDrillRow[]; amount: number; received: number; pending: number };
   const orderBuckets = (arr: Bucket[]): Bucket[] => {
     const dir = sortDir === "asc" ? 1 : -1;
     if (sortKey === "amount" || sortKey === "received" || sortKey === "pending") arr.sort((a, b) => dir * (a[sortKey] - b[sortKey]));
     else arr.sort((a, b) => dir * a.label.localeCompare(b.label));
     return arr;
   };
-  const bucketBy = (rows: InvoiceDrillRow[], keyOf: (r: InvoiceDrillRow) => string): Bucket[] => {
+  // A "ledger" = customer name + company + location (matches the report's ledger rows),
+  // so two same-named ledgers in different companies stay separate.
+  const bucketLedgers = (rows: InvoiceDrillRow[]): Bucket[] => {
     const map = new Map<string, Bucket>();
     for (const r of rows) {
-      const k = keyOf(r);
+      const k = `${r.customerName}|||${r.company}|||${r.location}`;
+      let g = map.get(k);
+      if (!g) { g = { key: k, label: r.customerName, sub: `${r.company} · ${r.location}`, rows: [], amount: 0, received: 0, pending: 0 }; map.set(k, g); }
+      g.rows.push(r); g.amount += r.amount; g.received += r.received; g.pending += r.pending;
+    }
+    const arr = [...map.values()];
+    if (reconcile) {
+      for (const g of arr) {
+        const net = ledgerFigures![g.key];
+        if (net == null || Math.abs(g.pending - net) < 1) continue;
+        const adj = g.pending - net; // >0: advances/credits reduce; <0: receipts add
+        const r0 = g.rows[0];
+        g.rows = [...g.rows, {
+          customerName: g.label, groupName: r0.groupName, company: r0.company, location: r0.location,
+          number: "", billRefName: adj >= 0 ? "Advances / on-account / credit notes (not bill-allocated)" : "Receipts collected this period",
+          date: "", amount: 0, received: adj, pending: -adj, dueDate: "", overdueDays: 0,
+          status: "pending", voucherType: "other", isAdjustment: true,
+        }];
+        g.received += adj; g.pending -= adj; // pending now equals the report's net figure
+      }
+    }
+    return orderBuckets(arr);
+  };
+  const bucketGroups = (rows: InvoiceDrillRow[]): Bucket[] => {
+    const map = new Map<string, Bucket>();
+    for (const r of rows) {
+      const k = r.groupName;
       let g = map.get(k);
       if (!g) { g = { key: k, label: k, rows: [], amount: 0, received: 0, pending: 0 }; map.set(k, g); }
       g.rows.push(r); g.amount += r.amount; g.received += r.received; g.pending += r.pending;
@@ -201,12 +234,28 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     return orderBuckets([...map.values()]);
   };
 
-  // Customers view: customer → invoices. Groups view: group → customers → invoices.
-  const customerTree = useMemo(() => bucketBy(sorted, (r) => r.customerName), [sorted, sortKey, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
-  const groupTree = useMemo(() => {
-    const byGroup = bucketBy(sorted, (r) => r.groupName);
-    return byGroup.map((g) => ({ ...g, customers: bucketBy(g.rows, (r) => r.customerName) }));
-  }, [sorted, sortKey, sortDir]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Customers view: ledger → invoices. Groups view: group → ledger → invoices.
+  const customerTree = useMemo(() => bucketLedgers(sorted), [sorted, sortKey, sortDir, reconcile, ledgerFigures]); // eslint-disable-line react-hooks/exhaustive-deps
+  const groupTree = useMemo(
+    () => bucketGroups(sorted).map((g) => {
+      const ledgers = bucketLedgers(g.rows);
+      // Group subtotal = sum of its ledgers (so it reflects the reconciliation too).
+      const amount = ledgers.reduce((s, l) => s + l.amount, 0);
+      const received = ledgers.reduce((s, l) => s + l.received, 0);
+      const pending = ledgers.reduce((s, l) => s + l.pending, 0);
+      return { ...g, ledgers, amount, received, pending };
+    }),
+    [sorted, sortKey, sortDir, reconcile, ledgerFigures], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Grand total derived from the (reconciled) ledger tree so it matches the report.
+  const totals = useMemo(
+    () => customerTree.reduce(
+      (t, b) => { t.amount += b.amount; t.received += b.received; t.pending += b.pending; return t; },
+      { amount: 0, received: 0, pending: 0 },
+    ),
+    [customerTree],
+  );
 
   const topCount = groupBy === "group" ? groupTree.length : customerTree.length;
 
@@ -287,6 +336,13 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
 
   /** Render one data cell for a visible column. */
   const renderCell = (key: ColKey, r: InvoiceDrillRow): ReactNode => {
+    if (r.isAdjustment) {
+      // Reconciliation line: label in the first column, only Received/Pending carry values.
+      if (key === "customerName") return <TableCell key={key} className="whitespace-nowrap italic text-muted-foreground">{r.billRefName}</TableCell>;
+      if (key === "received")     return <TableCell key={key} className="text-right font-mono italic text-muted-foreground">{fmt(r.received)}</TableCell>;
+      if (key === "pending")      return <TableCell key={key} className="text-right font-mono italic text-muted-foreground">{fmt(r.pending)}</TableCell>;
+      return <TableCell key={key} />;
+    }
     switch (key) {
       case "customerName":
         return (
@@ -328,16 +384,16 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
 
   /** Render one total cell for a visible column. */
   const renderTotalCell = (key: ColKey, idx: number): ReactNode => {
-    if (idx === 0) return <TableCell key={key} className="text-sm uppercase tracking-wide text-foreground/80 whitespace-nowrap">Total ({topCount} {groupBy === "group" ? "groups" : "customers"})</TableCell>;
+    if (idx === 0) return <TableCell key={key} className="text-sm uppercase tracking-wide text-foreground/80 whitespace-nowrap">Total ({topCount} {groupBy === "group" ? "groups" : "ledgers"})</TableCell>;
     if (key === "amount")   return <TableCell key={key} className="text-right font-mono text-sm">{fmt(totals.amount)}</TableCell>;
     if (key === "received") return <TableCell key={key} className="text-right font-mono text-sm text-emerald-700">{fmt(totals.received)}</TableCell>;
     if (key === "pending")  return <TableCell key={key} className="text-right font-mono text-sm text-destructive">{fmt(totals.pending)}</TableCell>;
     return <TableCell key={key} />;
   };
 
-  /** A collapsible subtotal row (group or customer) — `level` controls indent. */
+  /** A collapsible subtotal row (group or ledger) — `level` controls indent. */
   const renderSummaryRow = (
-    rowKey: string, label: string, count: number, countNoun: string,
+    rowKey: string, label: string, sub: string | undefined, count: number, countNoun: string,
     vals: { amount: number; received: number; pending: number },
     level: number, open: boolean, onClick: () => void,
   ): ReactNode => (
@@ -352,6 +408,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
             <span className="inline-flex items-center gap-1.5">
               {open ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
               {label}
+              {sub && <span className="text-[10px] text-muted-foreground opacity-70">{sub}</span>}
               <span className="text-[10px] text-muted-foreground">({count} {countNoun})</span>
             </span>
           </TableCell>
@@ -410,22 +467,24 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
       for (const m of money) a[m.idx] = v[m.key];
       return a;
     };
-    // Mirror the on-screen view: Groups → group subtotal → customer subtotal → invoices.
+    const invCountOf = (c: Bucket) => c.rows.filter((r) => !r.isAdjustment).length;
+    const ledgerLabel = (c: Bucket) => `${c.label}${c.sub ? ` — ${c.sub}` : ""} (${invCountOf(c)} invoices)`;
+    // Mirror the on-screen view: Groups → group subtotal → ledger subtotal → invoices.
     if (groupBy === "group") {
       for (const g of groupTree) {
-        aoa.push(summaryRow(`${g.label} (${g.customers.length} customers)`, g));
-        for (const c of g.customers) {
-          aoa.push(summaryRow(`    ${c.label} (${c.rows.length})`, c));
+        aoa.push(summaryRow(`${g.label} (${g.ledgers.length} ledgers)`, g));
+        for (const c of g.ledgers) {
+          aoa.push(summaryRow(`    ${ledgerLabel(c)}`, c));
           for (const r of c.rows) aoa.push(extractors.map((f) => f(r)));
         }
       }
     } else {
       for (const c of customerTree) {
-        aoa.push(summaryRow(`${c.label} (${c.rows.length})`, c));
+        aoa.push(summaryRow(ledgerLabel(c), c));
         for (const r of c.rows) aoa.push(extractors.map((f) => f(r)));
       }
     }
-    aoa.push(summaryRow(`Total (${topCount} ${groupBy === "group" ? "groups" : "customers"})`, totals));
+    aoa.push(summaryRow(`Total (${topCount} ${groupBy === "group" ? "groups" : "ledgers"})`, totals));
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     ws["!cols"] = header.map((h) => ({ wch: h === "Customer" ? 30 : h === "Bill Ref" || h === "Voucher #" ? 16 : 13 }));
@@ -562,12 +621,13 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
                 // Group → Customer → Invoices (collapsed to group level by default)
                 groupTree.map((g) => (
                   <Fragment key={`g:${g.key}`}>
-                    {renderSummaryRow(`g:${g.key}`, g.label, g.customers.length, "customers", g, 0, isOpen(g.key), () => toggle(g.key))}
-                    {isOpen(g.key) && g.customers.map((c) => {
+                    {renderSummaryRow(`g:${g.key}`, g.label, undefined, g.ledgers.length, "ledgers", g, 0, isOpen(g.key), () => toggle(g.key))}
+                    {isOpen(g.key) && g.ledgers.map((c) => {
                       const ck = `${g.key}|${c.key}`;
+                      const invCount = c.rows.filter((r) => !r.isAdjustment).length;
                       return (
                         <Fragment key={`c:${ck}`}>
-                          {renderSummaryRow(`c:${ck}`, c.label, c.rows.length, "invoices", c, 1, isOpen(ck), () => toggle(ck))}
+                          {renderSummaryRow(`c:${ck}`, c.label, c.sub, invCount, "invoices", c, 1, isOpen(ck), () => toggle(ck))}
                           {isOpen(ck) && c.rows.map((r, i) => renderInvoiceRow(r, `${ck}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-16"))}
                         </Fragment>
                       );
@@ -575,20 +635,23 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
                   </Fragment>
                 ))
               ) : (
-                // Customer → Invoices (open by default)
-                customerTree.map((c) => (
-                  <Fragment key={`c:${c.key}`}>
-                    {renderSummaryRow(`c:${c.key}`, c.label, c.rows.length, "invoices", c, 0, isOpen(c.key), () => toggle(c.key))}
-                    {isOpen(c.key) && c.rows.map((r, i) => renderInvoiceRow(r, `${c.key}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-10"))}
-                  </Fragment>
-                ))
+                // Ledger → Invoices (open by default)
+                customerTree.map((c) => {
+                  const invCount = c.rows.filter((r) => !r.isAdjustment).length;
+                  return (
+                    <Fragment key={`c:${c.key}`}>
+                      {renderSummaryRow(`c:${c.key}`, c.label, c.sub, invCount, "invoices", c, 0, isOpen(c.key), () => toggle(c.key))}
+                      {isOpen(c.key) && c.rows.map((r, i) => renderInvoiceRow(r, `${c.key}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-10"))}
+                    </Fragment>
+                  );
+                })
               )}
             </TableBody>
           </table>
         </div>
 
         <p className="text-[11px] text-muted-foreground">
-          Bill-level open invoices (as on {formatDateDMY(asOfDate)}). Totals are source-true and may differ slightly from the card figure, which is net of advances / on-account receipts not tied to a specific bill.
+          Bill-level open invoices (as on {formatDateDMY(asOfDate)}). Where a ledger carries advances / on-account / credit notes not tied to a specific bill, a reconciliation line nets the bills down to the report's figure — so each ledger, group and total matches the base report.
         </p>
       </DialogContent>
     </Dialog>
