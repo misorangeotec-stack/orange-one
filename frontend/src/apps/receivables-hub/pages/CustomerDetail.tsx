@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect, useRef, type CSSProperties } from "react";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { useState, useMemo, useEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import { useParams, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import {
   ArrowLeft, Download, ShieldAlert, Clock, AlertTriangle,
@@ -32,11 +33,12 @@ import {
   PaginationNext, PaginationPrevious,
 } from "@hub/components/ui/pagination";
 import { Input } from "@hub/components/ui/input";
+import { Checkbox } from "@hub/components/ui/checkbox";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData, consolidateByName, consolidateByGroup } from "@hub/lib/useAppData";
 import { utilizationPct } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
-import { exportCustomerPdf, exportCustomerXlsx } from "@hub/lib/exportCustomer";
+import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
 import type { InvoiceStatus } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
@@ -112,6 +114,272 @@ const MONTHLY_COLS = [
   { key: "overdue",            label: "Overdue" },
 ] as const;
 
+// Options for the Transactions multi-select filters (value ≠ display label).
+const VOUCHER_TYPE_OPTIONS = [
+  { value: "sales",        label: "Sales Invoice" },
+  { value: "receipt",      label: "Receipt" },
+  { value: "credit_note",  label: "Credit Note" },
+  { value: "debit_note",   label: "Debit Note" },
+  { value: "journal",      label: "Journal (Dr/Cr)" },
+  { value: "check_return", label: "Cheque Return" },
+] as const;
+
+const STATUS_OPTIONS = [
+  { value: "paid",    label: "Paid" },
+  { value: "partial", label: "Partial" },
+  { value: "overdue", label: "Overdue" },
+  { value: "pending", label: "Pending" },
+] as const;
+
+/* ── Transaction ledger types & column config ──────────────────────────── */
+
+type TxnKind =
+  | "sales" | "receipt" | "credit_note" | "debit_note"
+  | "journal_dr" | "journal_cr" | "check_return";
+
+type TxnRow = {
+  rowKey: string;
+  date: string;
+  kind: TxnKind;
+  voucherNo: string;
+  refInvoice: string | null;
+  amount: number;
+  signedAmount: number;        // + increases outstanding, − reduces
+  received?: number;           // sales rows only: amount − pending
+  pending?: number;
+  dueDate?: string;
+  overdueDays?: number;
+  status?: InvoiceStatus;
+  narration?: string;
+  saleType?: string;           // sales rows only
+  subType?: string;            // e.g. AGST REF / ON ACCOUNT for receipts
+  _company: string;
+  _location: string;
+};
+
+const TXN_TYPE_META: Record<TxnKind, { label: string; cls: string }> = {
+  sales:        { label: "Sales",       cls: "bg-primary/10 text-primary border-primary/20" },
+  receipt:      { label: "Receipt",     cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  credit_note:  { label: "Credit Note", cls: "bg-purple-100 text-purple-700 border-purple-200" },
+  debit_note:   { label: "Debit Note",  cls: "bg-orange-100 text-orange-700 border-orange-200" },
+  journal_dr:   { label: "Journal Dr",  cls: "bg-destructive/10 text-destructive border-destructive/20" },
+  journal_cr:   { label: "Journal Cr",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  check_return: { label: "Chq Return",  cls: "bg-blue-100 text-blue-700 border-blue-200" },
+};
+
+type TxnSortKey =
+  | "date" | "kind" | "voucherNo" | "refInvoice"
+  | "_company" | "_location"
+  | "amount" | "received" | "pending"
+  | "dueDate" | "overdueDays" | "status";
+
+type TxnTotals = { amount: number; received: number; pending: number; salesCount: number };
+
+type TxnColumn = {
+  key: string;
+  label: string;
+  sortKey: TxnSortKey;
+  align: "left" | "right";
+  /** Only offered/shown on the consolidated (multi-entity) view. */
+  consolidatedOnly?: boolean;
+  cell: (r: TxnRow) => ReactNode;
+  total?: (t: TxnTotals) => ReactNode;
+  /** Raw value used for spreadsheet export. */
+  exportValue: (r: TxnRow) => string | number;
+};
+
+// Single source of truth for the Transactions table: header, body, totals,
+// the column selector, and export all derive from this list.
+const TXN_COLUMNS: TxnColumn[] = [
+  {
+    key: "date", label: "Date", sortKey: "date", align: "left",
+    cell: (r) => <span className="text-sm text-muted-foreground whitespace-nowrap">{formatDateDMY(r.date)}</span>,
+    exportValue: (r) => formatDateDMY(r.date),
+  },
+  {
+    key: "kind", label: "Type", sortKey: "kind", align: "left",
+    cell: (r) => {
+      const meta = TXN_TYPE_META[r.kind];
+      return (
+        <>
+          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${meta.cls}`}>{meta.label}</Badge>
+          {r.subType && r.kind === "receipt" && (
+            <span className="text-[10px] text-muted-foreground ml-1">{r.subType}</span>
+          )}
+        </>
+      );
+    },
+    exportValue: (r) => TXN_TYPE_META[r.kind].label + (r.subType && r.kind === "receipt" ? ` (${r.subType})` : ""),
+  },
+  {
+    key: "voucherNo", label: "Voucher #", sortKey: "voucherNo", align: "left",
+    cell: (r) => (
+      <span className="text-sm font-mono whitespace-nowrap max-w-[160px] truncate inline-block align-bottom" title={r.voucherNo || "—"}>
+        {r.voucherNo || "—"}
+      </span>
+    ),
+    exportValue: (r) => r.voucherNo || "",
+  },
+  {
+    key: "refInvoice", label: "Against / Ref", sortKey: "refInvoice", align: "left",
+    cell: (r) => <span className="text-sm text-muted-foreground">{r.refInvoice ?? "—"}</span>,
+    exportValue: (r) => r.refInvoice ?? "",
+  },
+  {
+    key: "_company", label: "Company", sortKey: "_company", align: "left", consolidatedOnly: true,
+    cell: (r) => <span className="text-sm text-muted-foreground">{r._company}</span>,
+    exportValue: (r) => r._company,
+  },
+  {
+    key: "_location", label: "Location", sortKey: "_location", align: "left", consolidatedOnly: true,
+    cell: (r) => <span className="text-sm text-muted-foreground">{r._location}</span>,
+    exportValue: (r) => r._location,
+  },
+  {
+    key: "amount", label: "Amount", sortKey: "amount", align: "right",
+    cell: (r) => <span className="text-sm text-right font-mono">{fmt(r.amount)}</span>,
+    total: (t) => <span className="text-sm font-mono font-bold text-foreground">{fmt(t.amount)}</span>,
+    exportValue: (r) => Math.round(r.amount),
+  },
+  {
+    key: "received", label: "Received", sortKey: "received", align: "right",
+    cell: (r) => {
+      const isSales = r.kind === "sales";
+      return (
+        <span className={`text-sm text-right font-mono ${isSales && (r.received ?? 0) > 0 ? "font-semibold text-emerald-700" : "text-muted-foreground"}`}>
+          {isSales ? fmt(r.received ?? 0) : "—"}
+        </span>
+      );
+    },
+    total: (t) => <span className="text-sm font-mono font-bold text-emerald-700">{t.salesCount > 0 ? fmt(t.received) : "—"}</span>,
+    exportValue: (r) => (r.kind === "sales" ? Math.round(r.received ?? 0) : ""),
+  },
+  {
+    key: "pending", label: "Pending", sortKey: "pending", align: "right",
+    cell: (r) => {
+      const isSales = r.kind === "sales";
+      return (
+        <span className={`text-sm text-right font-mono ${isSales && (r.pending ?? 0) > 0 ? "font-semibold" : "text-muted-foreground"}`}>
+          {isSales ? fmt(r.pending ?? 0) : "—"}
+        </span>
+      );
+    },
+    total: (t) => <span className="text-sm font-mono font-bold text-destructive">{t.salesCount > 0 ? fmt(t.pending) : "—"}</span>,
+    exportValue: (r) => (r.kind === "sales" ? Math.round(r.pending ?? 0) : ""),
+  },
+  {
+    key: "dueDate", label: "Due Date", sortKey: "dueDate", align: "left",
+    cell: (r) => <span className="text-sm text-muted-foreground">{r.kind === "sales" ? formatDateDMY(r.dueDate) : "—"}</span>,
+    exportValue: (r) => (r.kind === "sales" ? formatDateDMY(r.dueDate) : ""),
+  },
+  {
+    key: "overdueDays", label: "OD Days", sortKey: "overdueDays", align: "right",
+    cell: (r) => {
+      const isSales = r.kind === "sales";
+      return (
+        <span className={`text-sm text-right font-mono ${
+          isSales && (r.overdueDays ?? 0) > 90 ? "text-destructive font-semibold"
+          : isSales && (r.overdueDays ?? 0) > 0 ? "text-primary font-semibold"
+          : "text-muted-foreground"
+        }`}>
+          {isSales ? ((r.overdueDays ?? 0) > 0 ? r.overdueDays : "—") : "—"}
+        </span>
+      );
+    },
+    exportValue: (r) => (r.kind === "sales" && (r.overdueDays ?? 0) > 0 ? (r.overdueDays ?? 0) : ""),
+  },
+  {
+    key: "status", label: "Status / Narration", sortKey: "status", align: "left",
+    cell: (r) => {
+      const isSales = r.kind === "sales";
+      return (
+        <span className="text-xs text-muted-foreground max-w-md truncate inline-block align-bottom" title={isSales ? r.status : (r.narration || "")}>
+          {isSales && r.status ? (
+            <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-button capitalize ${statusStyle[r.status]}`}>
+              {r.status}
+            </Badge>
+          ) : (r.narration || "—")}
+        </span>
+      );
+    },
+    exportValue: (r) => (r.kind === "sales" ? (r.status ?? "") : (r.narration ?? "")),
+  },
+];
+
+/** Checkbox multi-select for value/label filters (Voucher Type, Status).
+ *  Empty selection = "all" (no filter). */
+function FilterMultiSelect({
+  label, options, selected, allLabel, noun, triggerWidth, onChange,
+}: {
+  label: string;
+  options: readonly { value: string; label: string }[];
+  selected: Set<string>;
+  allLabel: string;
+  noun: string;
+  triggerWidth: string;
+  onChange: (next: Set<string>) => void;
+}) {
+  const summary =
+    selected.size === 0 || selected.size === options.length
+      ? allLabel
+      : selected.size === 1
+        ? options.find((o) => selected.has(o.value))?.label ?? `1 ${noun}`
+        : `${selected.size} ${noun}`;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">{label}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline" size="sm"
+            className={`${triggerWidth} h-8 rounded-input border-border text-sm justify-between gap-2 font-normal`}
+          >
+            <span className="truncate">{summary}</span>
+            <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-[200px]">
+          <div className="flex items-center gap-1 px-1 py-0.5">
+            <DropdownMenuItem
+              onClick={(e) => { e.preventDefault(); onChange(new Set(options.map((o) => o.value))); }}
+              onSelect={(e) => e.preventDefault()}
+              className="text-xs flex-1 justify-center"
+            >
+              Select all
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={(e) => { e.preventDefault(); onChange(new Set()); }}
+              onSelect={(e) => e.preventDefault()}
+              className="text-xs flex-1 justify-center"
+            >
+              Clear all
+            </DropdownMenuItem>
+          </div>
+          <DropdownMenuSeparator />
+          {options.map((o) => {
+            const toggle = () => {
+              const next = new Set(selected);
+              if (next.has(o.value)) next.delete(o.value); else next.add(o.value);
+              onChange(next);
+            };
+            return (
+              <DropdownMenuItem
+                key={o.value}
+                onClick={(e) => { e.preventDefault(); toggle(); }}
+                onSelect={(e) => e.preventDefault()}
+                className="text-xs gap-2"
+              >
+                <Checkbox checked={selected.has(o.value)} onCheckedChange={toggle} />
+                <span className="truncate">{o.label}</span>
+              </DropdownMenuItem>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 /* ── Component ─────────────────────────────────────────── */
 
 export default function CustomerDetail() {
@@ -127,8 +395,10 @@ export default function CustomerDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { toast } = useToast();
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [voucherTypeFilter, setVoucherTypeFilter] = useState("all");
+  // Voucher-type and status filters are multi-select. An empty set means "all"
+  // (no filter), matching the agingBucketFilter convention.
+  const [statusFilter, setStatusFilter] = useState<Set<string>>(new Set());
+  const [voucherTypeFilter, setVoucherTypeFilter] = useState<Set<string>>(new Set());
   const [saleTypeFilter, setSaleTypeFilter] = useState(
     searchParams.get("saleType") ?? "all"
   );
@@ -137,11 +407,15 @@ export default function CustomerDetail() {
   const [trendOpen, setTrendOpen] = useState(true);
   const [agingOpen, setAgingOpen] = useState(true);
   const [obOpen, setObOpen] = useState(false);
-  const [agingBucketFilter, setAgingBucketFilter] = useState<string | null>(null);
+  const [agingBucketFilter, setAgingBucketFilter] = useState<Set<string>>(new Set());
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [monthlyOpen, setMonthlyOpen] = useState(false);
   const [monthlyCols, setMonthlyCols] = useState<Set<string>>(
     () => new Set(MONTHLY_COLS.map((c) => c.key)),
+  );
+  // Transactions table column visibility (defaults to all columns shown).
+  const [txnCols, setTxnCols] = useState<Set<string>>(
+    () => new Set(TXN_COLUMNS.map((c) => c.key)),
   );
   const exportTopRef = useRef<HTMLDivElement>(null);
   const exportMonthlyRef = useRef<HTMLDivElement>(null);
@@ -255,6 +529,17 @@ export default function CustomerDetail() {
   }, [activeEntities, isGroupRoute, groupName]);
 
   const isConsolidated = allEntities.length > 1 && activeEntities.length > 1;
+
+  // Columns offered for the Transactions table (Company/Location only when
+  // viewing multiple entities) and the subset currently shown.
+  const availableTxnColumns = useMemo(
+    () => TXN_COLUMNS.filter((c) => !c.consolidatedOnly || isConsolidated),
+    [isConsolidated],
+  );
+  const visibleTxnColumns = useMemo(
+    () => availableTxnColumns.filter((c) => txnCols.has(c.key)),
+    [availableTxnColumns, txnCols],
+  );
 
   // Merged invoices from all active entities (sorted by date).
   // Agst Ref lines are Tally's internal advance-application bookkeeping entries
@@ -385,29 +670,8 @@ export default function CustomerDetail() {
   // ── Unified transaction ledger ──────────────────────────────────────────
   // Combines invoices, receipts, credit notes, debit notes, journal Dr/Cr,
   // and cheque returns into a single chronologically sorted list.
-  type TxnKind =
-    | "sales" | "receipt" | "credit_note" | "debit_note"
-    | "journal_dr" | "journal_cr" | "check_return";
-
-  type TxnRow = {
-    rowKey: string;
-    date: string;
-    kind: TxnKind;
-    voucherNo: string;
-    refInvoice: string | null;
-    amount: number;
-    signedAmount: number;        // + increases outstanding, − reduces
-    received?: number;           // sales rows only: amount − pending
-    pending?: number;
-    dueDate?: string;
-    overdueDays?: number;
-    status?: InvoiceStatus;
-    narration?: string;
-    saleType?: string;           // sales rows only
-    subType?: string;            // e.g. AGST REF / ON ACCOUNT for receipts
-    _company: string;
-    _location: string;
-  };
+  // (TxnKind / TxnRow are declared at module scope so the column config can
+  // reference them.)
 
   const transactions = useMemo<TxnRow[]>(() => {
     const rows: TxnRow[] = [];
@@ -506,20 +770,20 @@ export default function CustomerDetail() {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
-      // Voucher-type filter — "journal" matches both Dr and Cr
-      if (voucherTypeFilter !== "all") {
-        if (voucherTypeFilter === "journal") {
-          if (t.kind !== "journal_dr" && t.kind !== "journal_cr") return false;
-        } else if (t.kind !== voucherTypeFilter) {
-          return false;
-        }
+      // Voucher-type filter (multi-select) — "journal" matches both Dr and Cr
+      if (voucherTypeFilter.size > 0) {
+        const isJournal = t.kind === "journal_dr" || t.kind === "journal_cr";
+        const matches = isJournal
+          ? voucherTypeFilter.has("journal")
+          : voucherTypeFilter.has(t.kind);
+        if (!matches) return false;
       }
       // Status / aging only narrow sales rows
-      if (statusFilter !== "all") {
-        if (t.kind !== "sales" || t.status !== statusFilter) return false;
+      if (statusFilter.size > 0) {
+        if (t.kind !== "sales" || !statusFilter.has(t.status ?? "")) return false;
       }
-      if (agingBucketFilter !== null) {
-        if (t.kind !== "sales" || invoiceAgingKey(t.overdueDays ?? 0) !== agingBucketFilter) return false;
+      if (agingBucketFilter.size > 0) {
+        if (t.kind !== "sales" || !agingBucketFilter.has(invoiceAgingKey(t.overdueDays ?? 0) ?? "")) return false;
       }
       if (!matchesSearch(invoiceSearch, t.voucherNo, t.refInvoice)) return false;
       return true;
@@ -527,11 +791,7 @@ export default function CustomerDetail() {
   }, [transactions, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);
 
   // ── Transactions table sort ──────────────────────────────────────────────
-  type TxnSortKey =
-    | "date" | "kind" | "voucherNo" | "refInvoice"
-    | "_company" | "_location"
-    | "amount" | "received" | "pending"
-    | "dueDate" | "overdueDays" | "status";
+  // (TxnSortKey is declared at module scope alongside the column config.)
   type SortDir = "asc" | "desc";
 
   // Default: date ascending (matches the natural row order before the user clicks).
@@ -585,7 +845,7 @@ export default function CustomerDetail() {
   );
 
   // Whether the status filter is meaningful for the current voucher-type filter
-  const showStatusFilter = voucherTypeFilter === "all" || voucherTypeFilter === "sales";
+  const showStatusFilter = voucherTypeFilter.size === 0 || voucherTypeFilter.has("sales");
 
   // ── Ledger drill-down for selected month ──────────────────────────────────
   const ledgerTrendRow = useMemo(
@@ -647,20 +907,36 @@ export default function CustomerDetail() {
   // ── KPI tile filter handler — same UX as the trend-strip tiles ──
   // Clicking a tile applies a transactions filter, expands the ledger,
   // and scrolls to it. Re-clicking the active tile clears the filter.
+  // Helpers bridging the single-select KPI/trend tiles to the multi-select state.
+  // "all" maps to an empty set; a tile is "active" only when its value is the
+  // sole selection.
+  const onlyVType = (vType: string) =>
+    vType === "all"
+      ? voucherTypeFilter.size === 0
+      : voucherTypeFilter.size === 1 && voucherTypeFilter.has(vType);
+  const onlyStatus = (status: string) =>
+    status === "all"
+      ? statusFilter.size === 0
+      : statusFilter.size === 1 && statusFilter.has(status);
+  const setSingleVType = (vType: string) =>
+    setVoucherTypeFilter(vType === "all" ? new Set() : new Set([vType]));
+  const setSingleStatus = (status: string) =>
+    setStatusFilter(status === "all" ? new Set() : new Set([status]));
+
   const applyKpiFilter = (vType: string, status: string = "all") => {
     const currentlyActive =
-      voucherTypeFilter === vType &&
-      statusFilter === status &&
-      agingBucketFilter === null;
+      onlyVType(vType) &&
+      onlyStatus(status) &&
+      agingBucketFilter.size === 0;
     if (currentlyActive) {
-      setVoucherTypeFilter("all");
-      setStatusFilter("all");
+      setVoucherTypeFilter(new Set());
+      setStatusFilter(new Set());
       setInvoicePage(1);
       return;
     }
-    setVoucherTypeFilter(vType);
-    setStatusFilter(status);
-    setAgingBucketFilter(null);
+    setSingleVType(vType);
+    setSingleStatus(status);
+    setAgingBucketFilter(new Set());
     setInvoicesOpen(true);
     setInvoicePage(1);
     setTimeout(() => {
@@ -669,9 +945,9 @@ export default function CustomerDetail() {
   };
 
   const isKpiActive = (vType: string, status: string = "all") =>
-    voucherTypeFilter === vType &&
-    statusFilter === status &&
-    agingBucketFilter === null;
+    onlyVType(vType) &&
+    onlyStatus(status) &&
+    agingBucketFilter.size === 0;
 
   const debitNotesAmt   = (customer as any).debitNotes ?? 0;
   const journalAdjAmt   = (customer as any).journalAdjustments ?? 0;
@@ -837,6 +1113,27 @@ export default function CustomerDetail() {
       setAgingOpen(prev.aging);
       setMonthlyOpen(prev.monthly);
       setExporting(false);
+    }
+  };
+
+  // Export the currently-filtered transactions, with only the visible columns,
+  // to an Excel sheet headed by the customer name.
+  const handleTransactionsExport = () => {
+    if (!customer) return;
+    const meta = {
+      customerName: isGroupRoute ? groupName : customer.name,
+      company: entityCompany === "all" ? "All Companies" : entityCompany,
+      location: entityLocation === "all" ? "All Locations" : entityLocation,
+      asOfDate: dashboard?.asOfDate,
+    };
+    const columns = visibleTxnColumns.map((c) => c.label);
+    const rows = sortedTransactions.map((r) => visibleTxnColumns.map((c) => c.exportValue(r)));
+    try {
+      exportTransactionsXlsx({ meta, columns, rows });
+      toast({ title: "Export complete", description: `${rows.length} transactions exported.` });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Export failed", description: String((e as Error)?.message ?? e), variant: "destructive" });
     }
   };
 
@@ -1147,26 +1444,8 @@ export default function CustomerDetail() {
 
           {/* Summary strip below chart — each tile filters the Transactions table */}
           {trendData.length > 0 && (() => {
-            const handleTileClick = (vType: string, status: string = "all") => {
-              const currentlyActive =
-                voucherTypeFilter === vType &&
-                statusFilter === status &&
-                agingBucketFilter === null;
-              if (currentlyActive) {
-                setVoucherTypeFilter("all");
-                setStatusFilter("all");
-                setInvoicePage(1);
-                return;
-              }
-              setVoucherTypeFilter(vType);
-              setStatusFilter(status);
-              setAgingBucketFilter(null);
-              setInvoicesOpen(true);
-              setInvoicePage(1);
-              setTimeout(() => {
-                transactionsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }, 80);
-            };
+            const handleTileClick = (vType: string, status: string = "all") =>
+              applyKpiFilter(vType, status);
 
             const tiles: Array<{
               label: string;
@@ -1184,18 +1463,12 @@ export default function CustomerDetail() {
             ];
 
             const overdueFilter = { voucherType: "sales", status: "overdue" };
-            const isOverdueActive =
-              voucherTypeFilter === overdueFilter.voucherType &&
-              statusFilter === overdueFilter.status &&
-              agingBucketFilter === null;
+            const isOverdueActive = isKpiActive(overdueFilter.voucherType, overdueFilter.status);
 
             return (
               <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
                 {tiles.map((item) => {
-                  const isActive =
-                    voucherTypeFilter === item.filter.voucherType &&
-                    statusFilter === item.filter.status &&
-                    agingBucketFilter === null;
+                  const isActive = isKpiActive(item.filter.voucherType, item.filter.status);
                   return (
                     <button
                       key={item.label}
@@ -1246,12 +1519,17 @@ export default function CustomerDetail() {
         ] as const;
 
         const handleBucketClick = (key: string) => {
-          const next = agingBucketFilter === key ? null : key;
-          setAgingBucketFilter(next);
-          if (next !== null) {
+          setAgingBucketFilter((prev) => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+          });
+          // Reveal the (now filtered) transactions whenever a bucket is toggled on.
+          if (!agingBucketFilter.has(key)) {
             setInvoicesOpen(true);
             setInvoicePage(1);
-            setVoucherTypeFilter("sales");
+            setVoucherTypeFilter(new Set(["sales"]));
           }
         };
 
@@ -1298,7 +1576,7 @@ export default function CustomerDetail() {
                     <Bar dataKey="amount" radius={[4, 4, 0, 0]} maxBarSize={72} cursor="pointer"
                       onClick={(entry) => handleBucketClick(AGING_BUCKETS.find((b) => b.label === entry.label)?.key ?? "")}>
                       {agingData.map((d, i) => (
-                        <Cell key={i} fill={d.color} opacity={agingBucketFilter === null || agingBucketFilter === AGING_BUCKETS.find((b) => b.label === d.label)?.key ? 1 : 0.35} />
+                        <Cell key={i} fill={d.color} opacity={agingBucketFilter.size === 0 || agingBucketFilter.has(AGING_BUCKETS.find((b) => b.label === d.label)?.key ?? "") ? 1 : 0.35} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -1310,7 +1588,7 @@ export default function CustomerDetail() {
                 <div className="flex-1 space-y-1.5">
                   {agingData.map((d) => {
                     const bk = AGING_BUCKETS.find((b) => b.label === d.label)?.key ?? "";
-                    const isActive = agingBucketFilter === bk;
+                    const isActive = agingBucketFilter.has(bk);
                     return (
                       <div
                         key={d.label}
@@ -1410,7 +1688,7 @@ export default function CustomerDetail() {
           </div>
         </CardHeader>
         <CollapsibleContent>
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -1477,7 +1755,7 @@ export default function CustomerDetail() {
               )}
             </TableBody>
           </Table>
-        </div>
+        </ScrollableTable>
         </CollapsibleContent>
       </Card>
       </Collapsible>
@@ -1545,19 +1823,43 @@ export default function CustomerDetail() {
                 <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${invoicesOpen ? "rotate-180" : ""}`} />
               </button>
             </CollapsibleTrigger>
-            {agingBucketFilter !== null && (() => {
-              const label = [
-                { key: "0_30", label: "0–30 days" }, { key: "31_60", label: "31–60 days" },
-                { key: "61_90", label: "61–90 days" }, { key: "91_120", label: "91–120 days" },
-                { key: "121_180", label: "121–180 days" }, { key: "180_plus", label: "180+ days" },
-              ].find((b) => b.key === agingBucketFilter)?.label ?? agingBucketFilter;
+            {agingBucketFilter.size > 0 && (() => {
+              const labels: Record<string, string> = {
+                "0_30": "0–30 days", "31_60": "31–60 days", "61_90": "61–90 days",
+                "91_120": "91–120 days", "121_180": "121–180 days", "180_plus": "180+ days",
+              };
+              // Preserve bucket order rather than Set insertion order.
+              const order = ["0_30", "31_60", "61_90", "91_120", "121_180", "180_plus"];
+              const selected = order.filter((k) => agingBucketFilter.has(k));
               return (
-                <Badge
-                  className="bg-primary/10 text-primary border-primary/20 text-xs gap-1 cursor-pointer mb-1"
-                  onClick={(e) => { e.stopPropagation(); setAgingBucketFilter(null); setInvoicePage(1); }}
-                >
-                  {label} <X className="h-3 w-3" />
-                </Badge>
+                <div className="flex flex-wrap items-center gap-1 mb-1">
+                  {selected.map((k) => (
+                    <Badge
+                      key={k}
+                      className="bg-primary/10 text-primary border-primary/20 text-xs gap-1 cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setAgingBucketFilter((prev) => {
+                          const next = new Set(prev);
+                          next.delete(k);
+                          return next;
+                        });
+                        setInvoicePage(1);
+                      }}
+                    >
+                      {labels[k] ?? k} <X className="h-3 w-3" />
+                    </Badge>
+                  ))}
+                  {selected.length > 1 && (
+                    <Badge
+                      variant="outline"
+                      className="text-xs gap-1 cursor-pointer text-muted-foreground"
+                      onClick={(e) => { e.stopPropagation(); setAgingBucketFilter(new Set()); setInvoicePage(1); }}
+                    >
+                      Clear all <X className="h-3 w-3" />
+                    </Badge>
+                  )}
+                </div>
               );
             })()}
             <div className="flex flex-col gap-0.5">
@@ -1572,183 +1874,159 @@ export default function CustomerDetail() {
                 />
               </div>
             </div>
-            <div className="flex flex-col gap-0.5">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Voucher Type</span>
-              <Select value={voucherTypeFilter} onValueChange={(v) => { setVoucherTypeFilter(v); setInvoicePage(1); }}>
-                <SelectTrigger className="w-[170px] rounded-input border-border text-sm h-8">
-                  <SelectValue placeholder="Voucher Type" />
-                </SelectTrigger>
-                <SelectContent className="rounded-input">
-                  <SelectItem value="all">All Vouchers</SelectItem>
-                  <SelectItem value="sales">Sales Invoice</SelectItem>
-                  <SelectItem value="receipt">Receipt</SelectItem>
-                  <SelectItem value="credit_note">Credit Note</SelectItem>
-                  <SelectItem value="debit_note">Debit Note</SelectItem>
-                  <SelectItem value="journal">Journal (Dr/Cr)</SelectItem>
-                  <SelectItem value="check_return">Cheque Return</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <FilterMultiSelect
+              label="Voucher Type"
+              options={VOUCHER_TYPE_OPTIONS}
+              selected={voucherTypeFilter}
+              allLabel="All Vouchers"
+              noun="types"
+              triggerWidth="w-[170px]"
+              onChange={(next) => { setVoucherTypeFilter(next); setInvoicePage(1); }}
+            />
             {showStatusFilter && (
-              <div className="flex flex-col gap-0.5">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Status (Sales)</span>
-                <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setInvoicePage(1); }}>
-                  <SelectTrigger className="w-[140px] rounded-input border-border text-sm h-8">
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-input">
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="paid">Paid</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                    <SelectItem value="overdue">Overdue</SelectItem>
-                    <SelectItem value="pending">Pending</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <FilterMultiSelect
+                label="Status (Sales)"
+                options={STATUS_OPTIONS}
+                selected={statusFilter}
+                allLabel="All Status"
+                noun="statuses"
+                triggerWidth="w-[140px]"
+                onChange={(next) => { setStatusFilter(next); setInvoicePage(1); }}
+              />
             )}
+            {/* Column selector */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Columns</span>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 gap-1.5 text-sm rounded-input border-border" onClick={(e) => e.stopPropagation()}>
+                    <Columns3 className="h-3.5 w-3.5" />
+                    Columns
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52">
+                  <div className="flex items-center gap-1 px-1 py-0.5">
+                    <DropdownMenuItem
+                      onClick={(e) => { e.preventDefault(); setTxnCols(new Set(availableTxnColumns.map((c) => c.key))); }}
+                      onSelect={(e) => e.preventDefault()}
+                      className="text-xs flex-1 justify-center"
+                    >
+                      Select all
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={(e) => { e.preventDefault(); setTxnCols(new Set()); }}
+                      onSelect={(e) => e.preventDefault()}
+                      className="text-xs flex-1 justify-center"
+                    >
+                      Clear all
+                    </DropdownMenuItem>
+                  </div>
+                  <DropdownMenuSeparator />
+                  {availableTxnColumns.map((col) => {
+                    const toggle = () =>
+                      setTxnCols((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(col.key)) next.delete(col.key); else next.add(col.key);
+                        return next;
+                      });
+                    return (
+                      <DropdownMenuItem
+                        key={col.key}
+                        onClick={(e) => { e.preventDefault(); toggle(); }}
+                        onSelect={(e) => e.preventDefault()}
+                        className="text-xs gap-2"
+                      >
+                        <Checkbox checked={txnCols.has(col.key)} onCheckedChange={toggle} />
+                        <span className="truncate">{col.label}</span>
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            {/* Export transactions */}
+            <div className="flex flex-col gap-0.5">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">&nbsp;</span>
+              <Button
+                variant="outline" size="sm"
+                onClick={(e) => { e.stopPropagation(); handleTransactionsExport(); }}
+                disabled={filteredTransactions.length === 0}
+                className="h-8 gap-1.5 text-sm rounded-input border-border"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Export
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CollapsibleContent>
-        <div className="overflow-x-auto">
+        <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                {(() => {
-                  const SortHeader = ({
-                    label, sortKey, align = "left",
-                  }: { label: string; sortKey: TxnSortKey; align?: "left" | "right" }) => {
-                    const active = txnSort.key === sortKey;
-                    const Icon = !active ? ArrowUpDown : txnSort.dir === "asc" ? ArrowUp : ArrowDown;
-                    return (
-                      <TableHead className={`text-xs font-semibold text-foreground/70 ${align === "right" ? "text-right" : ""}`}>
-                        <button
-                          type="button"
-                          onClick={() => handleSortClick(sortKey)}
-                          className={`inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer select-none ${active ? "text-primary" : ""} ${align === "right" ? "ml-auto" : ""}`}
-                        >
-                          <span>{label}</span>
-                          <Icon className={`h-3 w-3 ${active ? "opacity-100" : "opacity-40"}`} />
-                        </button>
-                      </TableHead>
-                    );
-                  };
+                {visibleTxnColumns.map((col) => {
+                  const active = txnSort.key === col.sortKey;
+                  const Icon = !active ? ArrowUpDown : txnSort.dir === "asc" ? ArrowUp : ArrowDown;
                   return (
-                    <>
-                      <SortHeader label="Date"            sortKey="date" />
-                      <SortHeader label="Type"            sortKey="kind" />
-                      <SortHeader label="Voucher #"       sortKey="voucherNo" />
-                      <SortHeader label="Against / Ref"   sortKey="refInvoice" />
-                      {isConsolidated && (
-                        <>
-                          <SortHeader label="Company"  sortKey="_company" />
-                          <SortHeader label="Location" sortKey="_location" />
-                        </>
-                      )}
-                      <SortHeader label="Amount"          sortKey="amount"        align="right" />
-                      <SortHeader label="Received"        sortKey="received"      align="right" />
-                      <SortHeader label="Pending"         sortKey="pending"       align="right" />
-                      <SortHeader label="Due Date"        sortKey="dueDate" />
-                      <SortHeader label="OD Days"         sortKey="overdueDays"   align="right" />
-                      <SortHeader label="Status / Narration" sortKey="status" />
-                    </>
+                    <TableHead key={col.key} className={`text-xs font-semibold text-foreground/70 ${col.align === "right" ? "text-right" : ""}`}>
+                      <button
+                        type="button"
+                        onClick={() => handleSortClick(col.sortKey)}
+                        className={`inline-flex items-center gap-1 hover:text-foreground transition-colors cursor-pointer select-none ${active ? "text-primary" : ""} ${col.align === "right" ? "ml-auto" : ""}`}
+                      >
+                        <span>{col.label}</span>
+                        <Icon className={`h-3 w-3 ${active ? "opacity-100" : "opacity-40"}`} />
+                      </button>
+                    </TableHead>
                   );
-                })()}
+                })}
               </TableRow>
             </TableHeader>
             <TableBody>
               {filteredTransactions.length > 0 && (() => {
-                const totAmount = filteredTransactions.reduce((s, r) => s + r.amount, 0);
-                const totReceived = filteredTransactions.reduce((s, r) => s + (r.kind === "sales" ? (r.received ?? 0) : 0), 0);
-                const totPending = filteredTransactions.reduce((s, r) => s + (r.kind === "sales" ? (r.pending ?? 0) : 0), 0);
-                const salesCount = filteredTransactions.filter((r) => r.kind === "sales").length;
-                const colSpan   = isConsolidated ? 6 : 4;
+                const totals: TxnTotals = {
+                  amount:    filteredTransactions.reduce((s, r) => s + r.amount, 0),
+                  received:  filteredTransactions.reduce((s, r) => s + (r.kind === "sales" ? (r.received ?? 0) : 0), 0),
+                  pending:   filteredTransactions.reduce((s, r) => s + (r.kind === "sales" ? (r.pending ?? 0) : 0), 0),
+                  salesCount: filteredTransactions.filter((r) => r.kind === "sales").length,
+                };
+                // "TOTAL (N)" label sits in the first visible column; remaining
+                // columns render their own total (or stay blank).
                 return (
                   <TableRow className="bg-primary/5 border-b-2 border-primary/20 font-semibold sticky top-0">
-                    <TableCell className="text-xs font-bold text-primary tracking-wide" colSpan={colSpan}>
-                      <span className="uppercase">Total ({filteredTransactions.length})</span>
-                    </TableCell>
-                    <TableCell className="text-sm text-right font-mono font-bold text-foreground">{fmt(totAmount)}</TableCell>
-                    <TableCell className="text-sm text-right font-mono font-bold text-emerald-700">
-                      {salesCount > 0 ? fmt(totReceived) : "—"}
-                    </TableCell>
-                    <TableCell className="text-sm text-right font-mono font-bold text-destructive">
-                      {salesCount > 0 ? fmt(totPending) : "—"}
-                    </TableCell>
-                    <TableCell />
-                    <TableCell />
-                    <TableCell />
+                    {visibleTxnColumns.map((col, i) => (
+                      <TableCell
+                        key={col.key}
+                        className={`${col.align === "right" ? "text-right" : ""} ${i === 0 ? "text-xs font-bold text-primary tracking-wide" : ""}`}
+                      >
+                        {i === 0
+                          ? <span className="uppercase">Total ({filteredTransactions.length})</span>
+                          : col.total?.(totals) ?? null}
+                      </TableCell>
+                    ))}
                   </TableRow>
                 );
               })()}
               {filteredTransactions.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={isConsolidated ? 12 : 10} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={Math.max(1, visibleTxnColumns.length)} className="text-center py-8 text-muted-foreground">
                     No transactions match the selected filter.
                   </TableCell>
                 </TableRow>
               ) : (
-                pagedTransactions.map((r) => {
-                  const typeMeta: Record<TxnKind, { label: string; cls: string }> = {
-                    sales:        { label: "Sales",       cls: "bg-primary/10 text-primary border-primary/20" },
-                    receipt:      { label: "Receipt",     cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-                    credit_note:  { label: "Credit Note", cls: "bg-purple-100 text-purple-700 border-purple-200" },
-                    debit_note:   { label: "Debit Note",  cls: "bg-orange-100 text-orange-700 border-orange-200" },
-                    journal_dr:   { label: "Journal Dr",  cls: "bg-destructive/10 text-destructive border-destructive/20" },
-                    journal_cr:   { label: "Journal Cr",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
-                    check_return: { label: "Chq Return",  cls: "bg-blue-100 text-blue-700 border-blue-200" },
-                  };
-                  const meta = typeMeta[r.kind];
-                  const isSales = r.kind === "sales";
-                  return (
-                    <TableRow key={r.rowKey} className="hover:bg-muted/30 transition-colors">
-                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{formatDateDMY(r.date)}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${meta.cls}`}>
-                          {meta.label}
-                        </Badge>
-                        {r.subType && r.kind === "receipt" && (
-                          <span className="text-[10px] text-muted-foreground ml-1">{r.subType}</span>
-                        )}
+                pagedTransactions.map((r) => (
+                  <TableRow key={r.rowKey} className="hover:bg-muted/30 transition-colors">
+                    {visibleTxnColumns.map((col) => (
+                      <TableCell key={col.key} className={col.align === "right" ? "text-right" : ""}>
+                        {col.cell(r)}
                       </TableCell>
-                      <TableCell className="text-sm font-mono whitespace-nowrap max-w-[160px] truncate" title={r.voucherNo || "—"}>
-                        {r.voucherNo || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{r.refInvoice ?? "—"}</TableCell>
-                      {isConsolidated && (
-                        <>
-                          <TableCell className="text-sm text-muted-foreground">{r._company}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{r._location}</TableCell>
-                        </>
-                      )}
-                      <TableCell className="text-sm text-right font-mono">{fmt(r.amount)}</TableCell>
-                      <TableCell className={`text-sm text-right font-mono ${isSales && (r.received ?? 0) > 0 ? "font-semibold text-emerald-700" : "text-muted-foreground"}`}>
-                        {isSales ? fmt(r.received ?? 0) : "—"}
-                      </TableCell>
-                      <TableCell className={`text-sm text-right font-mono ${isSales && (r.pending ?? 0) > 0 ? "font-semibold" : "text-muted-foreground"}`}>
-                        {isSales ? fmt(r.pending ?? 0) : "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{isSales ? formatDateDMY(r.dueDate) : "—"}</TableCell>
-                      <TableCell className={`text-sm text-right font-mono ${
-                        isSales && (r.overdueDays ?? 0) > 90  ? "text-destructive font-semibold"
-                        : isSales && (r.overdueDays ?? 0) > 0 ? "text-primary font-semibold"
-                        : "text-muted-foreground"
-                      }`}>
-                        {isSales ? ((r.overdueDays ?? 0) > 0 ? r.overdueDays : "—") : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground max-w-md truncate" title={isSales ? r.status : (r.narration || "")}>
-                        {isSales && r.status ? (
-                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-button capitalize ${statusStyle[r.status]}`}>
-                            {r.status}
-                          </Badge>
-                        ) : (r.narration || "—")}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                    ))}
+                  </TableRow>
+                ))
               )}
             </TableBody>
           </Table>
-        </div>
+        </ScrollableTable>
         {totalInvoicePages > 1 && (
           <div className="px-4 py-3 border-t border-border">
             <Pagination>
@@ -1858,7 +2136,7 @@ export default function CustomerDetail() {
                   )}
                 </p>
                 {ledgerInvoices.length > 0 && (
-                  <div className="overflow-x-auto rounded-card border border-border">
+                  <ScrollableTable className="rounded-card border border-border">
                     <Table>
                       <TableHeader>
                         <TableRow className="bg-muted/50">
@@ -1933,7 +2211,7 @@ export default function CustomerDetail() {
                         </TableRow>
                       </TableBody>
                     </Table>
-                  </div>
+                  </ScrollableTable>
                 )}
               </div>
 

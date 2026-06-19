@@ -129,3 +129,27 @@ export function exportCustomerXlsx(data: CustomerExportData): void {
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   saveAs(new Blob([out], { type: "application/octet-stream" }), `${safeFileName(data.meta.customerName)}.xlsx`);
 }
+
+/** Export the (filtered, visible-column) transactions ledger as a single-sheet
+ *  workbook. The customer name + context sit at the top of the sheet. */
+export function exportTransactionsXlsx(opts: {
+  meta: ExportMeta;
+  columns: string[];
+  rows: Array<Array<string | number>>;
+}): void {
+  const wb = XLSX.utils.book_new();
+  const aoa: Array<Array<string | number>> = [
+    ["Customer", opts.meta.customerName],
+    ["Company", opts.meta.company],
+    ["Location", opts.meta.location],
+  ];
+  if (opts.meta.asOfDate) aoa.push(["As of", opts.meta.asOfDate]);
+  aoa.push([], opts.columns, ...opts.rows);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+  saveAs(
+    new Blob([out], { type: "application/octet-stream" }),
+    `${safeFileName(opts.meta.customerName)}-transactions.xlsx`,
+  );
+}
