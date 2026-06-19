@@ -72,6 +72,10 @@ export interface AgingMetrics {
   od_91_120: number;
   od_121_180: number;
   od_180_plus: number;
+  /** Subtotal of the 0-120 day overdue buckets (0-30 + 31-60 + 61-90 + 91-120). */
+  od_0_120: number;
+  /** Subtotal of the 120-180 day overdue range (= the 121-180 bucket). */
+  od_120_180: number;
   /** Total overdue (sum of the six overdue brackets). */
   totalOverdue: number;
   /** Number of open bills rolled into this node. */
@@ -86,7 +90,9 @@ export type MetricKey =
   | "od_31_60"
   | "od_61_90"
   | "od_91_120"
+  | "od_0_120"
   | "od_121_180"
+  | "od_120_180"
   | "od_180_plus"
   | "totalOverdue";
 
@@ -107,7 +113,9 @@ export const AGING_COLUMNS: AgingColumn[] = [
   { key: "od_31_60", label: "31-60", group: "overdue" },
   { key: "od_61_90", label: "61-90", group: "overdue" },
   { key: "od_91_120", label: "91-120", group: "overdue" },
+  { key: "od_0_120", label: "Total 0-120", group: "overdue", total: true },
   { key: "od_121_180", label: "121-180", group: "overdue" },
+  { key: "od_120_180", label: "Total 120-180", group: "overdue", total: true },
   { key: "od_180_plus", label: "180+", group: "overdue" },
   { key: "totalOverdue", label: "Total Overdue", group: "overdue", total: true },
 ];
@@ -123,6 +131,8 @@ function emptyMetrics(): AgingMetrics {
     od_91_120: 0,
     od_121_180: 0,
     od_180_plus: 0,
+    od_0_120: 0,
+    od_120_180: 0,
     totalOverdue: 0,
     billCount: 0,
   };
@@ -332,6 +342,8 @@ function addBill(m: AgingMetrics, b: EnrichedBill): void {
   if (b.overdueKey) {
     m[b.overdueKey] += p;
     m.totalOverdue += p;
+    if (b.overdueKey !== "od_121_180" && b.overdueKey !== "od_180_plus") m.od_0_120 += p;
+    if (b.overdueKey === "od_121_180") m.od_120_180 += p;
   }
   m.billCount += 1;
 }

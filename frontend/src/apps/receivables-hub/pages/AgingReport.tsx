@@ -211,7 +211,7 @@ export default function AgingReport() {
           key={col.key}
           onClick={clickable ? (e) => { e.stopPropagation(); openDrillFor(node, col); } : undefined}
           title={clickable ? "Click to see the bills" : undefined}
-          className={`text-right font-mono whitespace-nowrap ${firstOfGroup ? "!border-l-2 !border-l-border" : ""} ${clickable ? "cursor-pointer hover:underline hover:text-primary" : ""} ${col.total ? "font-semibold" : ""} ${
+          className={`text-right font-mono whitespace-nowrap ${firstOfGroup ? "!border-l-2 !border-l-border" : ""} ${col.total ? "bg-primary/[0.07] font-semibold" : ""} ${clickable ? "cursor-pointer hover:underline hover:text-primary" : ""} ${
             col.group === "overdue" && (col.key === "od_180_plus" || col.key === "od_121_180") && v > 0.5
               ? "text-destructive"
               : ""
@@ -377,7 +377,7 @@ export default function AgingReport() {
                 return (
                   <TableHead
                     key={col.key}
-                    className={`text-right text-[11px] font-semibold text-foreground/60 whitespace-nowrap ${firstOfGroup ? "!border-l-2 !border-l-border" : ""}`}
+                    className={`text-right text-[11px] font-semibold whitespace-nowrap ${firstOfGroup ? "!border-l-2 !border-l-border" : ""} ${col.total ? "bg-primary/10 text-foreground/80" : "text-foreground/60"}`}
                   >
                     {col.label}
                   </TableHead>
