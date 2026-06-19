@@ -24,7 +24,8 @@ Mapping (confirmed with the user):
     (Saturday counts as working) — see db/migrations/0020_holiday_prepone.sql.
   - The embedded "Ritesh/Dimples" and "Bushar/Ritesh" sub-headers (non-numeric text
     in H/I/J/K on rows 12, 17, 34) are ignored; those rows load as plain Ritesh tasks.
-  - NO location checklist — this sheet has no company columns (unlike the team CSV).
+  - The sheet has no company columns, but every task applies to ALL companies,
+    so each template gets the full 7-company location checklist (ALL_COMPANY_LOCATIONS).
 
 ADDITIVE only: all writes are NOT-EXISTS-guarded INSERTs, safe to re-run. Do NOT run
 task_list_clear.sql — it deletes every created_by=Ritesh template (the 113 team tasks).
@@ -44,6 +45,20 @@ DIMPLE = "e27f15d6-6335-4387-8842-fd883988dab4"   # Dimple
 BUSHRA = "a43038e5-1c05-45b0-b316-9e87bbb2b11b"   # Bushra
 DEPT_AF = "f64dfa08-103d-45bd-ba29-1079d774b526"  # Accounting & Finance (all three)
 CREATED_BY = RITESH
+
+# Ritesh's review list has no per-row company columns, but (per the user) every
+# task applies to ALL companies, so each template gets the full company checklist:
+# the 7 active non-General locations. See ritesh_tasks_all_companies.sql, which
+# backfilled the same set onto the already-loaded live templates + open instances.
+ALL_COMPANY_LOCATIONS = [
+    "01c1f41e-50fa-459f-b21b-f098fdf204b0",  # O-Tec Surat
+    "1c9c6c9f-6fa2-450b-b883-64fbfe9cd882",  # O-Tec Noida
+    "2943b5b6-a1d9-4afc-a38b-381425d1dd6c",  # Enterprise Surat
+    "521b79c0-80df-480d-a130-7d946b7683ae",  # Enterprise Noida
+    "e98c2cf0-ca28-446e-8633-f99291f3d058",  # Ink Jet
+    "940fa09a-6472-4249-b17e-d47818159a06",  # Colorix
+    "d7c30d44-997f-4eb4-bce6-35339ad0f86d",  # Personal Accounts
+]
 
 # ---- obvious-typo cleanup (shared with load_task_list.py) ------------------
 WORD_FIX = {
@@ -110,7 +125,9 @@ def read_rows(path):
 
 
 def emit_template(w, assigned_to, title_s, desc_s, rtype, wd, md, nth, wday, prepone):
-    """Emit one guarded recurring-task INSERT (no location checklist)."""
+    """Emit one guarded recurring-task INSERT + its all-companies checklist."""
+    links = "\n  union all\n".join(
+        f"  select id, {sql_str(loc)}::uuid from ins" for loc in ALL_COMPANY_LOCATIONS)
     w(
         f"with ins as (\n"
         f"  insert into public.recurring_tasks\n"
@@ -124,7 +141,9 @@ def emit_template(w, assigned_to, title_s, desc_s, rtype, wd, md, nth, wday, pre
         f"      and t.title = {title_s} and t.description = {desc_s} and t.recurrence_type = '{rtype}')\n"
         f"  returning id\n"
         f")\n"
-        f"select 1;  -- (Ritesh review list has no location checklist)"
+        f"insert into public.recurring_task_locations (recurring_task_id, location_id)\n"
+        f"{links}\n"
+        f"on conflict (recurring_task_id, location_id) do nothing;"
     )
     w("")
 

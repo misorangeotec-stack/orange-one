@@ -16,7 +16,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Head Entry' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 3: Inventory / Review -Head entry Match with Gorakh
 with ins as (
@@ -31,7 +45,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Head entry Match with Gorakh' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 4: Inventory / Review -Head entry Match with Auditor
 with ins as (
@@ -46,7 +74,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Head entry Match with Auditor' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 5: Machine / Review -Machine Sales GP report
 with ins as (
@@ -61,7 +103,21 @@ with ins as (
       and t.title = 'Machine' and t.description = 'Review -Machine Sales GP report' and t.recurrence_type = 'when')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 6: Machine / Review -Monthly Machine Sales GP report
 with ins as (
@@ -76,7 +132,21 @@ with ins as (
       and t.title = 'Machine' and t.description = 'Review -Monthly Machine Sales GP report' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 7: Fund Flow / Review -Updation of Fund Flow
 with ins as (
@@ -91,7 +161,21 @@ with ins as (
       and t.title = 'Fund Flow' and t.description = 'Review -Updation of Fund Flow' and t.recurrence_type = 'weekly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 8: Fund Flow / Review -Matching of Fund Flow with Bank Balance
 with ins as (
@@ -106,7 +190,21 @@ with ins as (
       and t.title = 'Fund Flow' and t.description = 'Review -Matching of Fund Flow with Bank Balance' and t.recurrence_type = 'weekly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 9: Fund Flow / Review -Projected Fund Flow
 with ins as (
@@ -121,7 +219,21 @@ with ins as (
       and t.title = 'Fund Flow' and t.description = 'Review -Projected Fund Flow' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 10: Inventory / Review -Import Compensation from Suppliers
 with ins as (
@@ -136,7 +248,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Import Compensation from Suppliers' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 11: Inventory / Review -Entry of Compensation in Tally
 with ins as (
@@ -151,7 +277,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Entry of Compensation in Tally' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 12: Stock Statements / Review -Submission of Stock Statement
 with ins as (
@@ -166,7 +306,21 @@ with ins as (
       and t.title = 'Stock Statements' and t.description = 'Review -Submission of Stock Statement' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 13: Compliance / Review -TDS Payment
 with ins as (
@@ -181,7 +335,21 @@ with ins as (
       and t.title = 'Compliance' and t.description = 'Review -TDS Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -195,7 +363,21 @@ with ins as (
       and t.title = 'Compliance' and t.description = 'Review -TDS Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 14: Compliance / Review -GST Payment
 with ins as (
@@ -210,7 +392,21 @@ with ins as (
       and t.title = 'Compliance' and t.description = 'Review -GST Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -224,7 +420,21 @@ with ins as (
       and t.title = 'Compliance' and t.description = 'Review -GST Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 15: Compliance / Review -PF and ESIC Payment
 with ins as (
@@ -239,7 +449,21 @@ with ins as (
       and t.title = 'Compliance' and t.description = 'Review -PF and ESIC Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -253,7 +477,21 @@ with ins as (
       and t.title = 'Compliance' and t.description = 'Review -PF and ESIC Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 16: Inventory / Review -Stock Adjustment entry tally
 with ins as (
@@ -268,7 +506,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Stock Adjustment entry tally' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 17: Expenses / Review -Commission Working
 with ins as (
@@ -283,7 +535,21 @@ with ins as (
       and t.title = 'Expenses' and t.description = 'Review -Commission Working' and t.recurrence_type = 'when')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 18: Expenses / Review -Salary Entry
 with ins as (
@@ -298,7 +564,21 @@ with ins as (
       and t.title = 'Expenses' and t.description = 'Review -Salary Entry' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -312,7 +592,21 @@ with ins as (
       and t.title = 'Expenses' and t.description = 'Review -Salary Entry' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 19: Expenses / Review -Director Salary Payment
 with ins as (
@@ -327,7 +621,21 @@ with ins as (
       and t.title = 'Expenses' and t.description = 'Review -Director Salary Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -341,7 +649,21 @@ with ins as (
       and t.title = 'Expenses' and t.description = 'Review -Director Salary Payment' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 20: Fund Flow / Review -Hanglory Dues Statement
 with ins as (
@@ -356,7 +678,21 @@ with ins as (
       and t.title = 'Fund Flow' and t.description = 'Review -Hanglory Dues Statement' and t.recurrence_type = 'weekly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 21: Inventory / Review -Machine order sheet
 with ins as (
@@ -371,7 +707,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Machine order sheet' and t.recurrence_type = 'weekly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 22: MIS / Review -List of Advance received from Debtors
 with ins as (
@@ -386,7 +736,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review -List of Advance received from Debtors' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 23: MIS / Review -List of Advance paid to Creditors with Reason
 with ins as (
@@ -401,7 +765,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review -List of Advance paid to Creditors with Reason' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 24: Inventory / Review -Total FOC Payable
 with ins as (
@@ -416,7 +794,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Total FOC Payable' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 25: Inventory / Review -Total FOC Receivable
 with ins as (
@@ -431,7 +823,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Total FOC Receivable' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 26: Debtors / Review -Exchange on Machines Sales(Customer)
 with ins as (
@@ -446,7 +852,21 @@ with ins as (
       and t.title = 'Debtors' and t.description = 'Review -Exchange on Machines Sales(Customer)' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 27: Inventory / Review -FOC Spare payable report
 with ins as (
@@ -461,7 +881,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -FOC Spare payable report' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 28: Bank / Review -Verify the Bank Payment to vendor
 with ins as (
@@ -476,7 +910,21 @@ with ins as (
       and t.title = 'Bank' and t.description = 'Review -Verify the Bank Payment to vendor' and t.recurrence_type = 'daily')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 29: Bank / Review -Approve the Bank Payment to vendor
 with ins as (
@@ -491,7 +939,21 @@ with ins as (
       and t.title = 'Bank' and t.description = 'Review -Approve the Bank Payment to vendor' and t.recurrence_type = 'daily')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 30: Bank / Review -Sharing of Bank Statement to team twice
 with ins as (
@@ -506,7 +968,21 @@ with ins as (
       and t.title = 'Bank' and t.description = 'Review -Sharing of Bank Statement to team twice' and t.recurrence_type = 'daily')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 31: Inventory / Review -Physical stock - Data to be shared to team
 with ins as (
@@ -521,7 +997,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Physical stock - Data to be shared to team' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 32: Inventory / Review -Physical stock - Data to be shared to team
 with ins as (
@@ -536,7 +1026,21 @@ with ins as (
       and t.title = 'Inventory' and t.description = 'Review -Physical stock - Data to be shared to team' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 33: Audit coordination / Review -Audit closer
 with ins as (
@@ -551,7 +1055,21 @@ with ins as (
       and t.title = 'Audit coordination' and t.description = 'Review -Audit closer' and t.recurrence_type = 'quarterly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 34: Debtors reco. / Review -Solve Debtors Reco. mismatch with their accountant and do necessery action like need to issue credit note
 with ins as (
@@ -566,7 +1084,21 @@ with ins as (
       and t.title = 'Debtors reco.' and t.description = 'Review -Solve Debtors Reco. mismatch with their accountant and do necessery action like need to issue credit note' and t.recurrence_type = 'when')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 35: MIS / Review of Balance Sheet
 with ins as (
@@ -581,7 +1113,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review of Balance Sheet' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -595,7 +1141,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review of Balance Sheet' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 36: MIS / Review of P&L
 with ins as (
@@ -610,7 +1170,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review of P&L' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -624,7 +1198,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review of P&L' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 -- row 37: MIS / Review of Expenses
 with ins as (
@@ -639,7 +1227,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review of Expenses' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 with ins as (
   insert into public.recurring_tasks
@@ -653,7 +1255,21 @@ with ins as (
       and t.title = 'MIS' and t.description = 'Review of Expenses' and t.recurrence_type = 'monthly')
   returning id
 )
-select 1;  -- (Ritesh review list has no location checklist)
+insert into public.recurring_task_locations (recurring_task_id, location_id)
+  select id, '01c1f41e-50fa-459f-b21b-f098fdf204b0'::uuid from ins
+  union all
+  select id, '1c9c6c9f-6fa2-450b-b883-64fbfe9cd882'::uuid from ins
+  union all
+  select id, '2943b5b6-a1d9-4afc-a38b-381425d1dd6c'::uuid from ins
+  union all
+  select id, '521b79c0-80df-480d-a130-7d946b7683ae'::uuid from ins
+  union all
+  select id, 'e98c2cf0-ca28-446e-8633-f99291f3d058'::uuid from ins
+  union all
+  select id, '940fa09a-6472-4249-b17e-d47818159a06'::uuid from ins
+  union all
+  select id, 'd7c30d44-997f-4eb4-bce6-35339ad0f86d'::uuid from ins
+on conflict (recurring_task_id, location_id) do nothing;
 
 commit;
 
