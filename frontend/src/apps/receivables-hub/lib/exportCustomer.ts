@@ -1,7 +1,8 @@
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
+import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 
 export interface ExportMeta {
   customerName: string;
@@ -112,19 +113,30 @@ export function exportCustomerXlsx(data: CustomerExportData): void {
     ["Location", data.meta.location],
   ];
   if (data.meta.asOfDate) overview.push(["As of", data.meta.asOfDate]);
-  overview.push([], ["KPI", "Value"]);
+  overview.push([]);
+  const kpiHeader0 = overview.length;
+  overview.push(["KPI", "Value"]);
   for (const k of data.kpis) overview.push([k.label, k.value]);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(overview), "Overview");
+  const wsOverview = XLSX.utils.aoa_to_sheet(overview);
+  styleRow(wsOverview, 0, 2, HEADER_STYLE);          // Customer banner row
+  styleRow(wsOverview, kpiHeader0, 2, HEADER_STYLE); // KPI / Value header
+  XLSX.utils.book_append_sheet(wb, wsOverview, "Overview");
 
   if (data.aging.length > 0) {
     const aging: Array<Array<string | number>> = [["Aging Bucket", "Amount (INR)"]];
     for (const a of data.aging) aging.push([a.bucket, a.amount]);
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aging), "Aging");
+    const wsAging = XLSX.utils.aoa_to_sheet(aging);
+    styleRow(wsAging, 0, 2, HEADER_STYLE);
+    XLSX.utils.book_append_sheet(wb, wsAging, "Aging");
   }
 
   const monthly: Array<Array<string | number>> = [data.monthly.columns, ...data.monthly.rows];
   if (data.monthly.summary) monthly.push(data.monthly.summary);
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(monthly), "Monthly Analysis");
+  const wsMonthly = XLSX.utils.aoa_to_sheet(monthly);
+  const ncolsM = data.monthly.columns.length;
+  styleRow(wsMonthly, 0, ncolsM, HEADER_STYLE);
+  if (data.monthly.summary) styleRow(wsMonthly, monthly.length - 1, ncolsM, GRAND_TOTAL_STYLE);
+  XLSX.utils.book_append_sheet(wb, wsMonthly, "Monthly Analysis");
 
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   saveAs(new Blob([out], { type: "application/octet-stream" }), `${safeFileName(data.meta.customerName)}.xlsx`);
@@ -144,8 +156,12 @@ export function exportTransactionsXlsx(opts: {
     ["Location", opts.meta.location],
   ];
   if (opts.meta.asOfDate) aoa.push(["As of", opts.meta.asOfDate]);
-  aoa.push([], opts.columns, ...opts.rows);
+  aoa.push([]);
+  const colHeader0 = aoa.length;
+  aoa.push(opts.columns, ...opts.rows);
   const ws = XLSX.utils.aoa_to_sheet(aoa);
+  styleRow(ws, 0, opts.columns.length, HEADER_STYLE);          // Customer banner
+  styleRow(ws, colHeader0, opts.columns.length, HEADER_STYLE); // column header
   XLSX.utils.book_append_sheet(wb, ws, "Transactions");
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   saveAs(

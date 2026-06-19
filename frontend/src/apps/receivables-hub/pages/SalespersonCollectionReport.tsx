@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from "react";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
+import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
@@ -627,6 +628,10 @@ export default function SalespersonCollectionReport() {
       const pctCell = ws[`F${row}`];
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
+    // Styling: title + column header black/white/bold; grand total stronger green.
+    styleRow(ws, 0, 6, HEADER_STYLE);                  // title banner
+    styleRow(ws, 7, 6, HEADER_STYLE);                  // column header row
+    styleRow(ws, 8 + spRows.length, 6, GRAND_TOTAL_STYLE); // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });

@@ -35,7 +35,8 @@ import {
   TooltipTrigger as UITooltipTrigger,
   TooltipProvider as UITooltipProvider,
 } from "@hub/components/ui/tooltip";
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
+import { HEADER_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import { saveAs } from "file-saver";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
@@ -960,6 +961,9 @@ export default function CustomerRiskRegister() {
 
     // Freeze header row.
     ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+    // Column header row: bold, black fill, white text.
+    styleRow(ws, 0, visibleCols_.length, HEADER_STYLE);
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Risk Register");
