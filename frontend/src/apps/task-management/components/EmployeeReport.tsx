@@ -2,11 +2,13 @@ import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
 import Combobox from "@/shared/components/ui/Combobox";
+import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { WEEK_START } from "../mock/data";
 import { reportFor, actualRygFor } from "../mock/selectors";
 import { addWeeks, monthKey, monthLabel } from "@/shared/lib/time";
 import type { Profile } from "../types";
+import { taskListLink } from "../lib/taskLink";
 import { rygCounts, redCounts, RygNumCell, PerfCell } from "./RygCells";
 import PlanVsActual from "./PlanVsActual";
 import ReportsToTag from "./ReportsToTag";
@@ -16,6 +18,7 @@ import ReportsToTag from "./ReportsToTag";
  * admin / HOD views, followed by their monthly Plan vs Actual breakdown.
  */
 export default function EmployeeReport({ user, weekStart = WEEK_START }: { user: Profile; weekStart?: string }) {
+  const { role } = useSession();
   const { tasks } = useTaskStore();
   const weekTasks = useMemo(() => tasks.filter((t) => t.weekStart === weekStart), [tasks, weekStart]);
 
@@ -67,9 +70,9 @@ export default function EmployeeReport({ user, weekStart = WEEK_START }: { user:
                   {r.planned ? <PerfCell ryg={actual} red={red} /> : <span className="text-[11.5px] text-grey-2">No tasks this week</span>}
                 </td>
                 <td className="px-3 py-3 text-center align-middle tabular-nums font-bold text-[15px] text-navy">{r.planned}</td>
-                <RygNumCell count={c.green} pct={actual.green} tone="text-[#1f8a4d]" has={!!r.planned} strong />
-                <RygNumCell count={c.yellow} pct={actual.yellow} tone="text-[#B7820E]" has={!!r.planned} strong />
-                <RygNumCell count={c.red} pct={actual.red} tone="text-[#c0392b]" has={!!r.planned} strong />
+                <RygNumCell count={c.green} pct={actual.green} tone="text-[#1f8a4d]" has={!!r.planned} strong to={r.planned ? taskListLink({ role, assignee: user.id, weekStart, colour: "green", metricOnly: true }) : undefined} />
+                <RygNumCell count={c.yellow} pct={actual.yellow} tone="text-[#B7820E]" has={!!r.planned} strong to={r.planned ? taskListLink({ role, assignee: user.id, weekStart, colour: "yellow", metricOnly: true }) : undefined} />
+                <RygNumCell count={c.red} pct={actual.red} tone="text-[#c0392b]" has={!!r.planned} strong to={r.planned ? taskListLink({ role, assignee: user.id, weekStart, colour: "red", metricOnly: true }) : undefined} />
               </tr>
             </tbody>
           </table>

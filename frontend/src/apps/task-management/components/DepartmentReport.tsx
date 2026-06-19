@@ -5,7 +5,9 @@ import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { cn } from "@/shared/lib/cn";
 import { matchesSearch } from "@/shared/lib/search";
+import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
+import { taskListLink, type RygColour } from "../lib/taskLink";
 import { WEEK_START } from "../mock/data";
 import { reportFor, aggregateRyg, actualRygFor } from "../mock/selectors";
 import type { PersonReport, RygPct } from "../mock/selectors";
@@ -47,9 +49,14 @@ type Scope = { deptId: string | null; memberIds: string[]; selfId?: string };
  */
 export default function DepartmentReport({ weekStart = WEEK_START, scope }: { weekStart?: string; scope?: Scope }) {
   const { tasks, departments, profiles, profileById, departmentById, weeklyPlanFor } = useTaskStore();
+  const { role } = useSession();
   const navigate = useNavigate();
   // Clicking a member opens their Weekly Scorecard for the same week.
   const openScorecard = (id: string) => navigate(`/task-management/scorecard?user=${id}&week=${weekStart}`);
+  // A RYG count drills into the filtered task list for that person/department + week + colour.
+  const memberLink = (personId: string, colour: RygColour) => taskListLink({ role, assignee: personId, weekStart, colour, metricOnly: true });
+  const deptLink = (deptId: string, colour: RygColour) =>
+    deptId === "__none__" ? undefined : taskListLink({ role, dept: deptId, weekStart, colour, metricOnly: true });
   const scoped = !!scope;
   const [openIds, setOpenIds] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setOpenIds((p) => ({ ...p, [id]: !p[id] }));
@@ -219,9 +226,9 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
                         {g.agg.planned ? <PerfCell ryg={g.actual} red={g.red} /> : <span className="text-[11.5px] text-grey-2">No tasks logged</span>}
                       </td>
                       <td className="px-3 py-3 text-center align-middle tabular-nums font-bold text-[15px] text-navy">{g.agg.planned}</td>
-                      <RygNumCell count={c.green} pct={g.actual.green} tone="text-[#1f8a4d]" has={!!g.agg.planned} strong />
-                      <RygNumCell count={c.yellow} pct={g.actual.yellow} tone="text-[#B7820E]" has={!!g.agg.planned} strong />
-                      <RygNumCell count={c.red} pct={g.actual.red} tone="text-[#c0392b]" has={!!g.agg.planned} strong />
+                      <RygNumCell count={c.green} pct={g.actual.green} tone="text-[#1f8a4d]" has={!!g.agg.planned} strong to={g.agg.planned ? deptLink(g.id, "green") : undefined} />
+                      <RygNumCell count={c.yellow} pct={g.actual.yellow} tone="text-[#B7820E]" has={!!g.agg.planned} strong to={g.agg.planned ? deptLink(g.id, "yellow") : undefined} />
+                      <RygNumCell count={c.red} pct={g.actual.red} tone="text-[#c0392b]" has={!!g.agg.planned} strong to={g.agg.planned ? deptLink(g.id, "red") : undefined} />
                     </tr>
 
                     {/* member rows — indented, lighter, clearly subordinate */}
@@ -253,9 +260,9 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
                             {r.planned ? <PerfCell ryg={actual} red={red} /> : <span className="text-[11px] text-grey-2">No tasks this week</span>}
                           </td>
                           <td className="px-3 py-2.5 text-center align-middle tabular-nums font-semibold text-navy">{r.planned}</td>
-                          <RygNumCell count={rc.green} pct={actual.green} tone="text-[#1f8a4d]" has={!!r.planned} />
-                          <RygNumCell count={rc.yellow} pct={actual.yellow} tone="text-[#B7820E]" has={!!r.planned} />
-                          <RygNumCell count={rc.red} pct={actual.red} tone="text-[#c0392b]" has={!!r.planned} />
+                          <RygNumCell count={rc.green} pct={actual.green} tone="text-[#1f8a4d]" has={!!r.planned} to={r.planned ? memberLink(p.id, "green") : undefined} />
+                          <RygNumCell count={rc.yellow} pct={actual.yellow} tone="text-[#B7820E]" has={!!r.planned} to={r.planned ? memberLink(p.id, "yellow") : undefined} />
+                          <RygNumCell count={rc.red} pct={actual.red} tone="text-[#c0392b]" has={!!r.planned} to={r.planned ? memberLink(p.id, "red") : undefined} />
                         </tr>
                       );
                     })}

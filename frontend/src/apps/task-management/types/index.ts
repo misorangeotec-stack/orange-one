@@ -10,6 +10,34 @@ export type { AppRole, AvatarColor, Department, Profile } from "@/core/platform/
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "shifted";
 
+/**
+ * "Not Applicable" is a separate boolean flag on a task, not a status enum value,
+ * but filter UIs surface it as a pseudo-status so users can isolate or include
+ * N/A tasks. `StatusFilter` is the status enum plus that pseudo-value, and the
+ * helpers below are the single source of truth for the dropdown options and the
+ * filtering rule (N/A overrides the underlying status, matching StatusChip).
+ */
+export type StatusFilter = TaskStatus | "not_applicable";
+
+export const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "pending", label: "Pending" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "revised", label: "Revised" },
+  { value: "completed", label: "Completed" },
+  { value: "shifted", label: "Shifted" },
+  { value: "not_applicable", label: "Not Applicable" },
+];
+
+/** A task's effective status for filtering: N/A overrides the underlying status. */
+export const effectiveStatus = (t: { status: TaskStatus; notApplicable: boolean }): StatusFilter =>
+  t.notApplicable ? "not_applicable" : t.status;
+
+/** Whether a task passes a status-filter selection (empty selection = match all). */
+export const matchesStatusFilter = (
+  t: { status: TaskStatus; notApplicable: boolean },
+  statuses: StatusFilter[],
+): boolean => statuses.length === 0 || statuses.includes(effectiveStatus(t));
+
 export type RecurrenceType = "daily" | "weekly" | "monthly" | "when" | "quarterly";
 
 /** Short, badge-friendly label for a recurrence type (e.g. "Weekly", "As & When"). */

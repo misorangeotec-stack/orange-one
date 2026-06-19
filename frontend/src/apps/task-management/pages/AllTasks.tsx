@@ -1,13 +1,18 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useTaskStore } from "../mock/store";
+import { parseTaskFilters } from "../lib/taskLink";
 import TaskBrowser from "../components/TaskBrowser";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
 /** Admin view: every task across the organization, filterable by department/person. */
 export default function AllTasks() {
   const { tasks, profiles, departments } = useTaskStore();
-  const [scope, setScope] = useState<Scope>("week");
+  const [searchParams] = useSearchParams();
+  // Seed filters from a deep-link; a linked week starts in "all time" so the
+  // historical week isn't pre-scoped out before TaskBrowser's exact-week filter.
+  const initialFilters = useMemo(() => parseTaskFilters(searchParams), [searchParams]);
+  const [scope, setScope] = useState<Scope>(initialFilters.week ? "all" : "week");
 
   const scopedTasks = useMemo(() => scopeTasks(tasks, scope), [tasks, scope]);
 
@@ -35,7 +40,7 @@ export default function AllTasks() {
         <ScopeToggle scope={scope} onChange={setScope} />
       </div>
 
-      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter />
+      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter initialFilters={initialFilters} />
     </div>
   );
 }

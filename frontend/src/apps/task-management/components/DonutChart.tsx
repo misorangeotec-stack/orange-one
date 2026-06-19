@@ -1,8 +1,12 @@
+import { Link } from "react-router-dom";
+
 /** Small SVG donut for status breakdowns (matches the landing donut style). */
 export interface DonutSegment {
   label: string;
   value: number;
   color: string;
+  /** When set, the legend row links to a filtered task list. */
+  to?: string;
 }
 
 export default function DonutChart({ segments, size = 104 }: { segments: DonutSegment[]; size?: number }) {
@@ -41,13 +45,24 @@ export default function DonutChart({ segments, size = 104 }: { segments: DonutSe
         </div>
       </div>
       <div className="flex-1 min-w-0 space-y-2">
-        {segments.map((s, i) => (
-          <div key={i} className="flex items-center text-[12px] text-grey">
-            <span className="w-2.5 h-2.5 rounded-full mr-2 shrink-0" style={{ background: s.color }} />
-            <span className="truncate">{s.label}</span>
-            <b className="ml-auto text-navy font-semibold">{s.value}</b>
-          </div>
-        ))}
+        {segments.map((s, i) => {
+          const inner = (
+            <>
+              <span className="w-2.5 h-2.5 rounded-full mr-2 shrink-0" style={{ background: s.color }} />
+              <span className="truncate">{s.label}</span>
+              <b className="ml-auto text-navy font-semibold">{s.value}</b>
+            </>
+          );
+          return s.to ? (
+            <Link key={i} to={s.to} className="flex items-center text-[12px] text-grey rounded-md -mx-1 px-1 py-0.5 transition hover:bg-page hover:text-navy" title={`View ${s.label.toLowerCase()} tasks`}>
+              {inner}
+            </Link>
+          ) : (
+            <div key={i} className="flex items-center text-[12px] text-grey">
+              {inner}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

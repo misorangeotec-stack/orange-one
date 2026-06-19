@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -13,6 +13,7 @@ import { actualRygFor, computeStats, downlineIds, reportFor } from "../mock/sele
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import { useReportsToSuffix } from "../components/ReportsToTag";
+import { taskListLink, type RygColour } from "../lib/taskLink";
 import type { Profile, WeeklyPlan } from "../types";
 
 const GREEN = "text-[#1f8a4d]";
@@ -37,7 +38,7 @@ const roleMeta = (role: string) => ROLE_GROUP[role] ?? { label: "Employees", ran
  * (admin, or a manager somewhere up the doer's chain) and is RLS-enforced on save.
  */
 export default function WeeklyScorecard() {
-  const { user, isAdmin, isHod } = useSession();
+  const { user, role, isAdmin, isHod } = useSession();
   const { tasks, profiles, profileById, weeklyPlanFor } = useTaskStore();
   // Optional deep-link from Master Analysis: ?user=<id>&week=<yyyy-mm-dd>.
   const [searchParams] = useSearchParams();
@@ -87,7 +88,28 @@ export default function WeeklyScorecard() {
   const stats = useMemo(() => computeStats(weekTasks), [weekTasks]);
   const hasTasks = actual.total > 0;
 
+  // Personal (self-tracking) tasks are excluded from every score, so they never
+  // show up in the RYG/stat counts above. Surface their own counters here — all
+  // of the selected person's personal tasks, since they aren't week-planned.
+  const personalStats = useMemo(() => {
+    const s = { total: 0, pending: 0, inProgress: 0, completed: 0 };
+    for (const t of tasks) {
+      if (t.assignedTo !== selectedId || !t.isPersonal) continue;
+      s.total++;
+      if (t.status === "pending") s.pending++;
+      else if (t.status === "in_progress") s.inProgress++;
+      else if (t.status === "completed") s.completed++;
+    }
+    return s;
+  }, [tasks, selectedId]);
+
   const { isoYear, isoWeek } = isoWeekOf(weekStart);
+
+  // Deep-link from a number on this card into the role-appropriate task list,
+  // pre-filtered to this person + this week + the matching status/colour.
+  const colourLink = (colour: RygColour) => taskListLink({ role, assignee: selectedId, weekStart, colour, metricOnly: true });
+  const statusLink = (status: "pending" | "in_progress" | "shifted") =>
+    taskListLink({ role, assignee: selectedId, weekStart, statuses: [status], metricOnly: true });
 
   return (
     <div className="space-y-5">
@@ -151,22 +173,22 @@ export default function WeeklyScorecard() {
           <div className="mt-4">
             <RygBar red={actual.red} yellow={actual.yellow} green={actual.green} showLegend={false} />
             <div className="mt-2 flex items-center justify-between text-[11.5px] font-medium">
-              <span className={GREEN}>G {hasTasks ? actual.green : 0}%</span>
-              <span className={YELLOW}>Y {hasTasks ? actual.yellow : 0}%</span>
-              <span className={RED}>R {hasTasks ? actual.red : 0}%</span>
+              <Link to={colourLink("green")} className={cn(GREEN, "hover:underline")}>G {hasTasks ? actual.green : 0}%</Link>
+              <Link to={colourLink("yellow")} className={cn(YELLOW, "hover:underline")}>Y {hasTasks ? actual.yellow : 0}%</Link>
+              <Link to={colourLink("red")} className={cn(RED, "hover:underline")}>R {hasTasks ? actual.red : 0}%</Link>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-3 text-center">
-            <BigNum tone={GREEN} value={counts.green} label="Green" />
-            <BigNum tone={YELLOW} value={counts.yellow} label="Yellow" />
-            <BigNum tone={RED} value={counts.red} label="Red" />
+            <BigNum tone={GREEN} value={counts.green} label="Green" to={colourLink("green")} />
+            <BigNum tone={YELLOW} value={counts.yellow} label="Yellow" to={colourLink("yellow")} />
+            <BigNum tone={RED} value={counts.red} label="Red" to={colourLink("red")} />
           </div>
 
           <div className="mt-4 flex flex-wrap gap-1.5">
-            <Pill label="Pending" count={stats.pending} tone="red" />
-            <Pill label="In progress" count={stats.inProgress} tone="red" />
-            <Pill label="Shifted" count={stats.shifted} tone="red" />
+            <Pill label="Pending" count={stats.pending} tone="red" to={statusLink("pending")} />
+            <Pill label="In progress" count={stats.inProgress} tone="red" to={statusLink("in_progress")} />
+            <Pill label="Shifted" count={stats.shifted} tone="red" to={statusLink("shifted")} />
           </div>
         </Card>
 
@@ -187,6 +209,26 @@ export default function WeeklyScorecard() {
           </div>
         </Card>
       </div>
+
+      {/* personal tasks — self-tracking, deliberately excluded from the score above */}
+      <Card className="p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Personal tasks</h3>
+            <p className="mt-1 text-[12px] text-grey-2">Self-tracking · not counted in the score</p>
+          </div>
+          <p className="text-[26px] font-bold text-navy leading-none tabular-nums">{personalStats.total}</p>
+        </div>
+        {personalStats.total === 0 ? (
+          <p className="mt-3 text-[13px] text-grey-2 italic">No personal tasks.</p>
+        ) : (
+          <div className="mt-4 grid max-w-md grid-cols-3 text-center">
+            <BigNum tone="text-navy" value={personalStats.pending} label="Pending" />
+            <BigNum tone="text-blue" value={personalStats.inProgress} label="In progress" />
+            <BigNum tone={GREEN} value={personalStats.completed} label="Completed" />
+          </div>
+        )}
+      </Card>
 
       {/* comparison table */}
       <Card className="p-0 overflow-hidden">
@@ -332,23 +374,36 @@ function PctRow({ label, dot, value, onChange }: { label: string; dot: string; v
 
 /* ---------- small presentational helpers ---------- */
 
-function BigNum({ tone, value, label }: { tone: string; value: number; label: string }) {
-  return (
-    <div>
+function BigNum({ tone, value, label, to }: { tone: string; value: number; label: string; to?: string }) {
+  const inner = (
+    <>
       <div className={cn("text-[24px] font-bold leading-none tabular-nums", tone)}>{value}</div>
       <div className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-grey-2">{label}</div>
-    </div>
+    </>
+  );
+  if (!to) return <div>{inner}</div>;
+  return (
+    <Link to={to} title={`View ${label.toLowerCase()} tasks`} className="block rounded-lg py-1 transition hover:bg-page">
+      {inner}
+    </Link>
   );
 }
 
-function Pill({ label, count, tone }: { label: string; count: number; tone: "red" | "yellow" }) {
+function Pill({ label, count, tone, to }: { label: string; count: number; tone: "red" | "yellow"; to?: string }) {
   const on = count > 0;
   const onCls = tone === "red" ? "bg-[#fdeceb] text-[#c0392b]" : "bg-[#fcf3df] text-[#B7820E]";
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide",
-      on ? onCls : "bg-page text-grey-2/70")}>
+  const cls = cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide transition",
+    on ? onCls : "bg-page text-grey-2/70", to && "hover:ring-2 hover:ring-orange/30");
+  const inner = (
+    <>
       {label} <span className="tabular-nums">{count}</span>
-    </span>
+    </>
+  );
+  if (!to) return <span className={cls}>{inner}</span>;
+  return (
+    <Link to={to} title={`View ${label.toLowerCase()} tasks`} className={cls}>
+      {inner}
+    </Link>
   );
 }
 

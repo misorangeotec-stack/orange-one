@@ -7,7 +7,8 @@ import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { WEEK_START } from "../mock/data";
 import { computeStats, actualRygFor, aggregateRyg } from "../mock/selectors";
-import type { ActivityType, Task } from "../types";
+import type { ActivityType, AppRole, StatusFilter, Task } from "../types";
+import { taskListLink } from "../lib/taskLink";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
@@ -46,6 +47,11 @@ export default function Dashboard() {
   const stats = computeStats(scopedList);
   const weekly = scope === "week";
   const firstName = user.name.split(" ")[0];
+  // Deep-link a stat card to the role-appropriate task list, scoped to this week
+  // when the weekly toggle is on (the destination route already matches the
+  // dashboard's role scope: admin → All, HOD → Team, employee → My Tasks).
+  const cardLink = (statuses?: StatusFilter[]) =>
+    taskListLink({ role, weekStart: weekly ? WEEK_START : undefined, statuses, metricOnly: true });
 
   return (
     <div className="space-y-5">
@@ -91,16 +97,16 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {isAdmin || isHod ? (
           <>
-            <StatCard label={isAdmin ? "Total Tasks" : "Team Tasks"} value={stats.total} icon={ICONS.tasks} tone="orange" hint={weekly ? "this week" : "all tasks"} />
-            <StatCard label="Pending" value={stats.pending + stats.inProgress} icon={ICONS.clock} tone="blue" hint={`${stats.overdue} overdue`} />
-            <StatCard label="Completed" value={stats.completed} icon={ICONS.check} tone="green" hint={weekly ? "this week" : "all time"} />
-            <StatCard label="Revised / Shifted" value={`${stats.revised} / ${stats.shifted}`} icon={ICONS.revise} tone="violet" hint="needs attention" />
+            <StatCard label={isAdmin ? "Total Tasks" : "Team Tasks"} value={stats.total} icon={ICONS.tasks} tone="orange" hint={weekly ? "this week" : "all tasks"} to={cardLink()} />
+            <StatCard label="Pending" value={stats.pending + stats.inProgress} icon={ICONS.clock} tone="blue" hint={`${stats.overdue} overdue`} to={cardLink(["pending", "in_progress"])} />
+            <StatCard label="Completed" value={stats.completed} icon={ICONS.check} tone="green" hint={weekly ? "this week" : "all time"} to={cardLink(["completed"])} />
+            <StatCard label="Revised / Shifted" value={`${stats.revised} / ${stats.shifted}`} icon={ICONS.revise} tone="violet" hint="needs attention" to={cardLink(["revised", "shifted"])} />
           </>
         ) : (
           <>
             <StatCard label="Due Today" value={stats.dueToday} icon={ICONS.clock} tone="orange" hint={`${stats.overdue} overdue`} />
-            <StatCard label="Pending" value={stats.pending + stats.inProgress} icon={ICONS.tasks} tone="blue" />
-            <StatCard label="Completed" value={stats.completed} icon={ICONS.check} tone="green" hint={weekly ? "this week" : "all time"} />
+            <StatCard label="Pending" value={stats.pending + stats.inProgress} icon={ICONS.tasks} tone="blue" to={cardLink(["pending", "in_progress"])} />
+            <StatCard label="Completed" value={stats.completed} icon={ICONS.check} tone="green" hint={weekly ? "this week" : "all time"} to={cardLink(["completed"])} />
             <StatCard label="Follow-ups Due" value={stats.followUpDue} icon={ICONS.flag} tone="rose" />
           </>
         )}
@@ -114,7 +120,7 @@ export default function Dashboard() {
 
         <div className="space-y-4">
           {!isAdmin && !isHod && <WeeklyRygCard doerId={user.id} />}
-          <StatusBreakdownCard stats={stats} />
+          <StatusBreakdownCard stats={stats} role={role} weekly={weekly} />
           <RecentActivityCard list={list} />
         </div>
       </div>
@@ -228,9 +234,14 @@ function WeeklyRygCard({ doerId }: { doerId: string }) {
 }
 
 /* ---------------- Status breakdown donut ---------------- */
-function StatusBreakdownCard({ stats }: { stats: ReturnType<typeof computeStats> }) {
+function StatusBreakdownCard({ stats, role, weekly }: { stats: ReturnType<typeof computeStats>; role: AppRole; weekly: boolean }) {
   const segments = (Object.keys(stats.statusCounts) as Array<keyof typeof STATUS_COLORS>)
-    .map((k) => ({ label: labelFor(k), value: stats.statusCounts[k], color: STATUS_COLORS[k] }))
+    .map((k) => ({
+      label: labelFor(k),
+      value: stats.statusCounts[k],
+      color: STATUS_COLORS[k],
+      to: taskListLink({ role, weekStart: weekly ? WEEK_START : undefined, statuses: [k], metricOnly: true }),
+    }))
     .filter((s) => s.value > 0);
   return (
     <SectionCard title="Status Breakdown">

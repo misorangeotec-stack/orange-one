@@ -9,18 +9,14 @@ import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
+import { formatDate } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
 import { useTaskStore } from "../mock/store";
-import type { Department, Profile, Task, TaskStatus } from "../types";
+import { countsTowardMetrics } from "../mock/selectors";
+import type { Department, Profile, Task } from "../types";
+import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
+import type { ParsedTaskFilters } from "../lib/taskLink";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "./TaskTable";
-
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: "pending", label: "Pending" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "revised", label: "Revised" },
-  { value: "completed", label: "Completed" },
-  { value: "shifted", label: "Shifted" },
-];
 
 const nextWeekStart = () => {
   const d = new Date(WEEK_START);
@@ -35,6 +31,7 @@ export default function TaskBrowser({
   departments,
   emptyMessage = "No tasks match these filters.",
   hideWeekFilter = false,
+  initialFilters,
 }: {
   tasks: Task[];
   people: Profile[];
@@ -42,14 +39,22 @@ export default function TaskBrowser({
   emptyMessage?: string;
   /** Hide the internal "Any/This/Next week" dropdown when the parent owns the time scope (e.g. Team Tasks' This-week/All-time toggle). */
   hideWeekFilter?: boolean;
+  /** Seed the filters from a deep-link (e.g. clicking a RYG number on the scorecard). */
+  initialFilters?: ParsedTaskFilters;
 }) {
   const { profileById } = useTaskStore();
   const [q, setQ] = useState("");
-  const [person, setPerson] = useState("all");
+  const [person, setPerson] = useState(initialFilters?.assignee ?? "all");
   const [creator, setCreator] = useState("all");
-  const [dept, setDept] = useState("all");
-  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
+  const [dept, setDept] = useState(initialFilters?.dept ?? "all");
+  const [statuses, setStatuses] = useState<StatusFilter[]>(initialFilters?.statuses ?? []);
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
+  // An exact ISO-Monday week from a deep-link — independent of the all/this/next
+  // dropdown, so it can target a historical week even when that dropdown is hidden.
+  const [exactWeek, setExactWeek] = useState<string | null>(initialFilters?.week ?? null);
+  // Exclude personal + N/A tasks (set when arriving from a score/RYG number, so
+  // the list matches the count behind it). Clearable, like any other filter.
+  const [metricOnly, setMetricOnly] = useState(initialFilters?.metricOnly ?? false);
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
@@ -97,21 +102,25 @@ export default function TaskBrowser({
     setDept("all");
     setStatuses([]);
     setWeek("all");
+    setExactWeek(null);
+    setMetricOnly(false);
   };
 
   const filtered = useMemo(() => {
     const nw = nextWeekStart();
     return tasks.filter((t) => {
+      if (metricOnly && !countsTowardMetrics(t)) return false;
       if (person !== "all" && t.assignedTo !== person) return false;
       if (creator !== "all" && t.createdBy !== creator) return false;
       if (dept !== "all" && t.departmentId !== dept) return false;
-      if (statuses.length && !statuses.includes(t.status)) return false;
+      if (statuses.length && !matchesStatusFilter(t, statuses)) return false;
+      if (exactWeek && t.weekStart !== exactWeek) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
       if (week === "next" && t.weekStart !== nw) return false;
       if (!matchesSearch(q, t.title, t.description)) return false;
       return true;
     });
-  }, [tasks, person, creator, dept, statuses, week, q]);
+  }, [tasks, person, creator, dept, statuses, week, exactWeek, metricOnly, q]);
 
   // KPI cards reflect the active filters (not the full list).
   const counts = useMemo(() => {
@@ -130,7 +139,7 @@ export default function TaskBrowser({
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${week}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${week}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}` });
 
   // Active-filter chips, so it's always visible what's narrowing the list.
   const activeFilters: ActiveFilter[] = [];
@@ -156,7 +165,7 @@ export default function TaskBrowser({
   if (statuses.length)
     activeFilters.push({
       key: "status",
-      label: `Status: ${STATUS_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
+      label: `Status: ${STATUS_FILTER_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
       onClear: () => setStatuses([]),
     });
   if (week !== "all")
@@ -164,6 +173,18 @@ export default function TaskBrowser({
       key: "week",
       label: week === "this" ? "This week" : "Next week",
       onClear: () => setWeek("all"),
+    });
+  if (exactWeek)
+    activeFilters.push({
+      key: "exactWeek",
+      label: `Week of ${formatDate(exactWeek)}`,
+      onClear: () => setExactWeek(null),
+    });
+  if (metricOnly)
+    activeFilters.push({
+      key: "metric",
+      label: "Scored tasks only",
+      onClear: () => setMetricOnly(false),
     });
 
   return (
@@ -214,10 +235,10 @@ export default function TaskBrowser({
           />
           <MultiSelect
             values={statuses}
-            onChange={(v) => setStatuses(v as TaskStatus[])}
+            onChange={(v) => setStatuses(v as StatusFilter[])}
             placeholder="All statuses"
             className="w-full sm:w-auto sm:min-w-[150px]"
-            options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+            options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
           />
           {!hideWeekFilter && (
             <Combobox

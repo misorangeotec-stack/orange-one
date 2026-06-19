@@ -9,11 +9,13 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
-import { isOverdue, isToday } from "@/shared/lib/time";
+import { formatDate, isOverdue, isToday } from "@/shared/lib/time";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import type { TaskStatus } from "../types";
+import { countsTowardMetrics } from "../mock/selectors";
+import { parseTaskFilters } from "../lib/taskLink";
+import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 import PersonalTaskModal from "../components/PersonalTaskModal";
@@ -27,14 +29,6 @@ const RELATION_OPTIONS: { value: Relation; label: string }[] = [
   { value: "created", label: "Created by me" },
 ];
 
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: "pending", label: "Pending" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "revised", label: "Revised" },
-  { value: "completed", label: "Completed" },
-  { value: "shifted", label: "Shifted" },
-];
-
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
   const { user, role } = useSession();
@@ -42,10 +36,17 @@ export default function TasksList() {
   const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
   const [params, setParams] = useSearchParams();
   const view = (params.get("view") as View) || "all";
+  // Seed status + an exact week from a deep-link (e.g. a RYG number on the scorecard).
+  const initialFilters = useMemo(() => parseTaskFilters(params), [params]);
   const [q, setQ] = useState("");
-  const [statuses, setStatuses] = useState<TaskStatus[]>([]);
-  const [relation, setRelation] = useState<Relation>("all");
+  const [statuses, setStatuses] = useState<StatusFilter[]>(initialFilters.statuses);
+  const [relation, setRelation] = useState<Relation>("assigned");
   const [scope, setScope] = useState<Scope>("week");
+  // A specific ISO-Monday week from a deep-link; when set it overrides the
+  // this-week/all-time scope so a historical week's tasks are shown.
+  const [exactWeek, setExactWeek] = useState<string | null>(initialFilters.week ?? null);
+  // Exclude personal + N/A tasks (set when arriving from a score number).
+  const [metricOnly, setMetricOnly] = useState(initialFilters.metricOnly);
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
   const [personalOpen, setPersonalOpen] = useState(false);
@@ -62,20 +63,21 @@ export default function TasksList() {
   // search. The tab counters read from this so they reflect the active filters
   // (previously they counted the full list and never moved when a filter changed).
   const base = useMemo(() => {
-    let list = scopeTasks(mine, scope);
+    let list = exactWeek ? mine.filter((t) => t.weekStart === exactWeek) : scopeTasks(mine, scope);
+    if (metricOnly) list = list.filter(countsTowardMetrics);
     if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
     else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
-    if (statuses.length) list = list.filter((t) => statuses.includes(t.status));
+    if (statuses.length) list = list.filter((t) => matchesStatusFilter(t, statuses));
     if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
-  }, [mine, scope, relation, statuses, q, user.id]);
+  }, [mine, scope, exactWeek, metricOnly, relation, statuses, q, user.id]);
 
   const counts = useMemo(
     () => ({
       all: base.length,
       today: base.filter((t) => isToday(t.dueDate) && t.status !== "completed").length,
       followup: base.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed").length,
-      pending: base.filter((t) => t.status === "pending" || t.status === "in_progress").length,
+      pending: base.filter((t) => !t.notApplicable && (t.status === "pending" || t.status === "in_progress")).length,
       personal: base.filter((t) => t.isPersonal).length,
     }),
     [base]
@@ -86,7 +88,7 @@ export default function TasksList() {
     if (view === "today") list = list.filter((t) => isToday(t.dueDate) && t.status !== "completed");
     else if (view === "followup")
       list = list.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed");
-    else if (view === "pending") list = list.filter((t) => t.status === "pending" || t.status === "in_progress");
+    else if (view === "pending") list = list.filter((t) => !t.notApplicable && (t.status === "pending" || t.status === "in_progress"));
     else if (view === "personal") list = list.filter((t) => t.isPersonal);
     return list;
   }, [base, view]);
@@ -96,9 +98,21 @@ export default function TasksList() {
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${q}|${relation}|${scope}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}` });
 
   const activeFilters: ActiveFilter[] = [];
+  if (exactWeek)
+    activeFilters.push({
+      key: "exactWeek",
+      label: `Week of ${formatDate(exactWeek)}`,
+      onClear: () => setExactWeek(null),
+    });
+  if (metricOnly)
+    activeFilters.push({
+      key: "metric",
+      label: "Scored tasks only",
+      onClear: () => setMetricOnly(false),
+    });
   if (relation !== "all")
     activeFilters.push({
       key: "relation",
@@ -108,7 +122,7 @@ export default function TasksList() {
   if (statuses.length)
     activeFilters.push({
       key: "status",
-      label: `Status: ${STATUS_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
+      label: `Status: ${STATUS_FILTER_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
       onClear: () => setStatuses([]),
     });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
@@ -116,6 +130,8 @@ export default function TasksList() {
     setStatuses([]);
     setQ("");
     setRelation("all");
+    setExactWeek(null);
+    setMetricOnly(false);
   };
 
   return (
@@ -178,11 +194,11 @@ export default function TasksList() {
             />
             <MultiSelect
               values={statuses}
-              onChange={(v) => setStatuses(v as TaskStatus[])}
+              onChange={(v) => setStatuses(v as StatusFilter[])}
               placeholder="Any status"
               className="w-full sm:w-auto sm:min-w-[150px]"
               align="right"
-              options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+              options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
             />
             <div className="relative w-full sm:w-auto">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>

@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
 import { countsTowardMetrics, type PersonReport, type RygPct } from "../mock/selectors";
 import type { Task } from "../types";
@@ -31,11 +32,16 @@ export function redCounts(tasks: Task[], ids: Set<string>): RedCounts {
   return { pending, inProgress, shifted, total: pending + inProgress + shifted };
 }
 
-/** One Green/Yellow/Red column cell: the task count (bold, coloured) with its % beneath. */
-export function RygNumCell({ count, pct, tone, has, strong }: { count: number; pct: number; tone: string; has: boolean; strong?: boolean }) {
+/** One Green/Yellow/Red column cell: the task count (bold, coloured) with its % beneath.
+ *  When `to` is set the count drills into a filtered task list; `stopPropagation`
+ *  keeps the enclosing row's own click (e.g. open scorecard) intact. */
+export function RygNumCell({ count, pct, tone, has, strong, to }: { count: number; pct: number; tone: string; has: boolean; strong?: boolean; to?: string }) {
+  const num = <div className={cn("tabular-nums leading-none", tone, strong ? "font-bold text-[15px]" : "font-semibold text-[13.5px]")}>{count}</div>;
   return (
     <td className="px-3 py-2.5 text-center align-middle">
-      <div className={cn("tabular-nums leading-none", tone, strong ? "font-bold text-[15px]" : "font-semibold text-[13.5px]")}>{count}</div>
+      {to ? (
+        <Link to={to} onClick={(e) => e.stopPropagation()} className="block hover:underline" title="View these tasks">{num}</Link>
+      ) : num}
       <div className="mt-1 text-[9.5px] tabular-nums text-grey-2">{has ? `${pct}%` : "—"}</div>
     </td>
   );

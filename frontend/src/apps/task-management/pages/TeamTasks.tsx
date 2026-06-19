@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
+import { parseTaskFilters } from "../lib/taskLink";
 import ReportsToTag from "../components/ReportsToTag";
 import TaskBrowser from "../components/TaskBrowser";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
@@ -14,7 +15,12 @@ import { formatDateTime } from "@/shared/lib/time";
 export default function TeamTasks() {
   const { user } = useSession();
   const { tasks, downlineIds, profileById } = useTaskStore();
-  const [scope, setScope] = useState<Scope>("week");
+  const [searchParams] = useSearchParams();
+  // Seed filters from a deep-link (e.g. a RYG number on the scorecard). When a
+  // specific week is linked, start in "all time" so that historical week isn't
+  // pre-scoped out before TaskBrowser's exact-week filter can apply.
+  const initialFilters = useMemo(() => parseTaskFilters(searchParams), [searchParams]);
+  const [scope, setScope] = useState<Scope>(initialFilters.week ? "all" : "week");
   // The "Team · last active" panel is collapsed by default so the task list is
   // the focus; the header acts as the expand/collapse toggle.
   const [showActivity, setShowActivity] = useState(false);
@@ -97,7 +103,7 @@ export default function TeamTasks() {
               </ul>
             )}
           </Card>
-          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." hideWeekFilter />
+          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." hideWeekFilter initialFilters={initialFilters} />
         </>
       )}
     </div>
