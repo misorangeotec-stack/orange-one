@@ -12,6 +12,7 @@ import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport"
 import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
+import AgingReport from "@hub/pages/AgingReport";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -46,6 +47,7 @@ export default function ReceivablesHubApp() {
               <Route path="group/:id" element={<CustomerDetail />} />
               <Route path="import" element={<ImportDashboard />} />
               <Route path="reports" element={<Reports />} />
+              <Route path="reports/aging" element={<AgingReport />} />
               <Route path="saved-views" element={<SavedViews />} />
               <Route path="profile" element={<Profile />} />
               <Route path="settings" element={<Settings />} />

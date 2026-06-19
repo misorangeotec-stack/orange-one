@@ -23,11 +23,11 @@ const navItems = [
   { title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck },
   { title: "Salesperson Collection Report", url: `${BASE}/salesperson-collection`, icon: HandCoins },
   { title: "Import Data", url: `${BASE}/import`, icon: PackageOpen },
+  { title: "Reports", url: `${BASE}/reports`, icon: FileText },
   { title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },
   // Hidden for client demo — restore when ready:
   // { title: "Alerts", url: `${BASE}/alerts`, icon: Bell },
   // { title: "Export Import Data", url: `${BASE}/exim`, icon: Globe },
-  // { title: "Reports", url: `${BASE}/reports`, icon: FileText },
   // { title: "Saved Views", url: `${BASE}/saved-views`, icon: Bookmark },
   // { title: "Profile", url: `${BASE}/profile`, icon: User },
 ];
