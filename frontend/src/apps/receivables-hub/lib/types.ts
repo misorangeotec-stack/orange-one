@@ -241,6 +241,8 @@ export interface OtherPaymentTransaction {
   type: string;
   refInvoice: string | null;
   paymentRef: string | null;
+  /** Why it's on account (e.g. invoice before 01-04-2025), from the feed sheet. */
+  remark: string | null;
 }
 
 export interface CustomerDetail {

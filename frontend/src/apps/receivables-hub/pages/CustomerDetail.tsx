@@ -793,6 +793,7 @@ export default function CustomerDetail() {
         amount: gross,
         signedAmount: -gross,
         subType: o.type,
+        narration: o.remark ?? undefined,
         _company: o._company,
         _location: o._location,
       });

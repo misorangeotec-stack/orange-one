@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   TrendingUp, TrendingDown, AlertTriangle, Users, DollarSign, Receipt,
   Clock, ShieldAlert, Filter, Download, RefreshCw, ChevronRight, ChevronDown, ChevronUp,
-  FileMinus, FilePlus, RotateCcw, BookOpen,
+  FileMinus, FilePlus, RotateCcw, BookOpen, Wallet,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -243,6 +243,7 @@ export default function Dashboard() {
     { label: totalCountLabel,      value: totalCountValue,                icon: Users,         warn: false, link: buildRRUrl(riskLevels.length > 0 ? `/outstanding-dashboard/risk-register?risk=${riskLevels.join(",")}` : "/outstanding-dashboard/risk-register"), toggle: null },
     { label: "Total Sales",        value: fmt(kpis.totalSales),           icon: DollarSign,    warn: false, link: null,                                                                   toggle: null },
     { label: "Total Receipts",     value: fmt(kpis.totalReceipts),        icon: Receipt,       warn: false, link: null,                                                                   toggle: null },
+    { label: "Total Other Payments", value: fmt(kpis.totalOtherPayments ?? 0), icon: Wallet,      warn: false, link: "/outstanding-dashboard/reports/other-payments",                       toggle: null },
     { label: "Total Outstanding",  value: fmt(kpis.totalOutstanding),     icon: TrendingDown,  warn: true,  link: null,                                                                   toggle: () => setShowBuildup((v) => !v) },
     { label: "Total Overdue",      value: fmt(kpis.totalOverdue),         icon: Clock,         warn: true,  link: null,                                                                   toggle: null },
     { label: "Credit Notes",       value: fmtINRMoney(kpis.totalCreditNotes),       icon: FileMinus,     warn: false, link: null,                                                                   toggle: null },

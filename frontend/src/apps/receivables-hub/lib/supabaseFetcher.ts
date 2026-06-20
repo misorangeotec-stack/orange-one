@@ -288,6 +288,7 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
     ensure(r.customer_id).otherPaymentTransactions!.push({
       date: r.date, amount: Number(r.amount), type: r.type,
       refInvoice: r.ref_invoice, paymentRef: r.payment_ref ?? null,
+      remark: r.remark ?? null,
     } as OtherPaymentTransaction);
   }
   for (const r of cns) {

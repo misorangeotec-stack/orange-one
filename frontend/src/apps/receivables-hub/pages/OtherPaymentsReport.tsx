@@ -63,6 +63,7 @@ interface OpRow {
   refInvoice: string;
   paymentRef: string;
   amount: number;
+  remark: string;
 }
 
 type SortKey = "date" | "customer" | "salesPerson" | "alloc" | "amount";
@@ -98,6 +99,7 @@ export default function OtherPaymentsReport() {
           refInvoice: t.refInvoice ?? "",
           paymentRef: t.paymentRef ?? "",
           amount: t.amount,
+          remark: t.remark ?? "",
         });
       }
     }
@@ -113,7 +115,7 @@ export default function OtherPaymentsReport() {
     const rows = allRows.filter((r) => {
       if (spSet.size > 0 && !spSet.has(r.salesPerson)) return false;
       if (alSet.size > 0 && !alSet.has(r.alloc)) return false;
-      if (q && !(r.customer.toLowerCase().includes(q) || r.refInvoice.toLowerCase().includes(q) || r.paymentRef.toLowerCase().includes(q))) return false;
+      if (q && !(r.customer.toLowerCase().includes(q) || r.refInvoice.toLowerCase().includes(q) || r.paymentRef.toLowerCase().includes(q) || r.remark.toLowerCase().includes(q))) return false;
       return true;
     });
     const dir = sortDir === "asc" ? 1 : -1;
@@ -161,19 +163,19 @@ export default function OtherPaymentsReport() {
     : <ArrowDown className="h-3 w-3 inline" />;
 
   const exportXlsx = () => {
-    const header = ["Date", "Customer", "Sales Person", "Company", "Location", "Allocation", "Ref Invoice", "Payment Ref", "Amount"];
+    const header = ["Date", "Customer", "Sales Person", "Company", "Location", "Allocation", "Ref Invoice", "Payment Ref", "Amount", "Remarks"];
     const aoa: (string | number)[][] = [
       [`Other Payments Report — ${fyLabel}`],
       [],
       header,
       ...filteredRows.map((r) => [
         formatDateDMY(r.date), r.customer, r.salesPerson, r.company, r.location,
-        r.alloc, r.refInvoice, r.paymentRef, Math.round(r.amount),
+        r.alloc, r.refInvoice, r.paymentRef, Math.round(r.amount), r.remark,
       ]),
-      ["", "", "", "", "", "", "", "Total", Math.round(totalAmt)],
+      ["", "", "", "", "", "", "", "Total", Math.round(totalAmt), ""],
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 12 }, { wch: 34 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 22 }, { wch: 12 }, { wch: 14 }];
+    ws["!cols"] = [{ wch: 12 }, { wch: 34 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 60 }];
     styleRow(ws, 0, header.length, HEADER_STYLE);          // title
     styleRow(ws, 2, header.length, HEADER_STYLE);          // column header
     styleRow(ws, aoa.length - 1, header.length, GRAND_TOTAL_STYLE);  // grand total
@@ -260,6 +262,7 @@ export default function OtherPaymentsReport() {
                     <TableHead className="text-xs">Ref Invoice</TableHead>
                     <TableHead className="text-xs">Pmt Ref</TableHead>
                     <TableHead className="text-xs text-right cursor-pointer" onClick={() => toggleSort("amount")}>Amount <SortIcon k="amount" /></TableHead>
+                    <TableHead className="text-xs">Remarks</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -278,12 +281,14 @@ export default function OtherPaymentsReport() {
                       <TableCell className="text-xs font-mono text-muted-foreground max-w-[180px] truncate" title={r.refInvoice}>{r.refInvoice || "—"}</TableCell>
                       <TableCell className="text-xs font-mono text-muted-foreground">{r.paymentRef || "—"}</TableCell>
                       <TableCell className="text-xs text-right font-mono font-semibold text-indigo-700">{fmt(r.amount)}</TableCell>
+                      <TableCell className="text-[11px] text-muted-foreground max-w-[320px]" title={r.remark}>{r.remark || "—"}</TableCell>
                     </TableRow>
                   ))}
                   {/* Grand total */}
                   <TableRow className="bg-muted/50 font-semibold border-t border-border">
                     <TableCell className="text-xs font-bold" colSpan={8}>Total ({filteredRows.length} entr{filteredRows.length === 1 ? "y" : "ies"})</TableCell>
                     <TableCell className="text-xs text-right font-mono font-bold text-indigo-700">{fmt(totalAmt)}</TableCell>
+                    <TableCell />
                   </TableRow>
                 </TableBody>
               </Table>
