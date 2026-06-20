@@ -26,6 +26,8 @@ export interface AdvanceBreakdown {
   onAccount:     number;
   agstRefExcess: number;
   creditNotes:   number;
+  /** Advance arising from manual (non-Tally) other-payments on account. */
+  otherPayment?: number;
 }
 
 export interface Customer {
@@ -45,6 +47,12 @@ export interface Customer {
   advanceBreakdown: AdvanceBreakdown;
   sales: number;
   receipts: number;
+  /** Manual (non-Tally) payments applied to this customer, tracked separately from receipts. */
+  otherPayments?: number;
+  /** Other-payments that landed on a specific invoice. */
+  otherPaymentsApplied?: number;
+  /** Other-payments with no invoice target (on account). */
+  otherPaymentsOnAccount?: number;
   creditNotes: number;
   debitNotes: number;
   journalDr: number;
@@ -167,6 +175,8 @@ export interface Invoice {
   creditNoteAdj: number;
   debitNoteAdj: number;
   journalAdj: number;
+  /** Manual (non-Tally) other-payment applied to this invoice line. */
+  otherPaymentAdj?: number;
   pending: number;
   dueDate: string;
   overdueDays: number;
@@ -224,8 +234,18 @@ export interface ReceiptTransaction {
   refInvoice: string | null;
 }
 
+export interface OtherPaymentTransaction {
+  date: string | null;
+  amount: number;
+  /** "AGST REF" | "ON ACCOUNT" (normalized allocation type). */
+  type: string;
+  refInvoice: string | null;
+  paymentRef: string | null;
+}
+
 export interface CustomerDetail {
   receiptTransactions: ReceiptTransaction[];
+  otherPaymentTransactions?: OtherPaymentTransaction[];
   creditNoteTransactions?: CreditNoteTransaction[];
   debitNoteTransactions?: DebitNoteTransaction[];
   journalTransactions?: JournalTransaction[];
@@ -238,6 +258,7 @@ export interface CustomerDetail {
 export interface KPIs {
   totalSales: number;
   totalReceipts: number;
+  totalOtherPayments?: number;
   totalCreditNotes: number;
   totalDebitNotes: number;
   totalJournalAdjustments: number;

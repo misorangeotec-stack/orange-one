@@ -71,6 +71,14 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+/** ISO date "2025-08-15" → trend month label "Aug-25" (matches trend.month). */
+function isoToMonthLabel(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return `${MONTH_ABBR[d.getMonth()]}-${String(d.getFullYear() % 100).padStart(2, "0")}`;
+}
+
 type SortKey = "salesperson" | "outstanding" | "due" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 type ViewMode = "customer" | "group";
@@ -277,11 +285,32 @@ export default function SalespersonCollectionReport() {
     return m;
   }, [filteredCustomers]);
 
+  // Per-customer → per-month total of manual "other payments" (non-Tally), derived from
+  // the transactions (which carry dates). Folded into "Received" so collection % reflects
+  // them. They already reduced openDue (via outstanding), so Pending = Due − Received stays
+  // consistent (Due = openDue + received).
+  const otherPaymentsByCustomerMonth = useMemo(() => {
+    const m = new Map<string, Map<string, number>>();
+    for (const c of allCustomers) {
+      const txns = customerDetail[c.id]?.otherPaymentTransactions ?? [];
+      if (!txns.length) continue;
+      const byMonth = new Map<string, number>();
+      for (const t of txns) {
+        if (!t.date) continue;
+        const lbl = isoToMonthLabel(t.date);
+        if (lbl) byMonth.set(lbl, (byMonth.get(lbl) ?? 0) + t.amount);
+      }
+      if (byMonth.size) m.set(c.id, byMonth);
+    }
+    return m;
+  }, [allCustomers, customerDetail]);
+
   // Per-customer metrics for ONE month. Shared by the main table (selected month) and the
   // month-wise panel (every month) so the two always reconcile for the same month.
-  //  - Received = PURE receipt vouchers (LAKHS → rupees). Cheque returns / credit notes /
-  //    debit notes are NOT netted here — the pipeline folds them into outstanding → invoice
-  //    pending → trend.overdue, i.e. the Due/Overdue side. (Works in local-JSON & Supabase.)
+  //  - Received = PURE receipt vouchers (LAKHS → rupees) PLUS manual "other payments" for the
+  //    month (non-Tally, derived from transactions). Cheque returns / credit notes / debit
+  //    notes are NOT netted here — the pipeline folds them into outstanding → invoice pending
+  //    → trend.overdue, i.e. the Due/Overdue side. (Works in local-JSON & Supabase.)
   //  - openDue = bills due by month-end still OPEN (net of all receipts to date) = the true
   //    "still to collect". Current/as-of month uses live invoice pending + remaining opening
   //    balance; past months use the stored month-end snapshot (trend.overdue).
@@ -291,8 +320,10 @@ export default function SalespersonCollectionReport() {
     const detail = customerDetail[c.id];
     const mt = detail?.trend.find((t) => t.month === month);
     const share = shareFor(c);
-    // Received has no per-type breakdown → estimate by sales-mix share.
-    const received = projectAmt((mt?.receipts ?? 0) * 100_000, undefined, share);
+    // Received = Tally receipts + manual other-payments for this month (both lack a
+    // per-type breakdown → estimate by sales-mix share).
+    const opForMonth = otherPaymentsByCustomerMonth.get(c.id)?.get(month) ?? 0;
+    const received = projectAmt((mt?.receipts ?? 0) * 100_000 + opForMonth, undefined, share);
     let outstanding: number;
     let openDue: number;
     let dueSoon = 0; // not-yet-overdue bills coming due by month-end (current month only)
@@ -327,7 +358,7 @@ export default function SalespersonCollectionReport() {
       openDue = projectAmt((mt?.overdue ?? 0) * 100_000, undefined, share);
     }
     return { outstanding, due: openDue + received, received, pending: openDue, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet]);
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, otherPaymentsByCustomerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {
@@ -819,7 +850,7 @@ export default function SalespersonCollectionReport() {
         })}
       </div>
       <p className="text-[11px] text-muted-foreground -mt-3">
-        Pending = Overdue (matches the dashboard) + "Due till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received; Outstanding = start-of-month balance.
+        Pending = Overdue (matches the dashboard) + "Due till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received; Outstanding = start-of-month balance. Received includes manual "other payments".
       </p>
 
       {/* Main table */}

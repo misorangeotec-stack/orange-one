@@ -12,7 +12,7 @@
 import { getSupabase } from "./receivablesSupabase";
 import type {
   Customer, CustomerDetail, DashboardData, CustomerGroupMap,
-  Invoice, MonthlyTrend, ReceiptTransaction, CreditNoteTransaction,
+  Invoice, MonthlyTrend, ReceiptTransaction, OtherPaymentTransaction, CreditNoteTransaction,
   DebitNoteTransaction, JournalTransaction, TrendPoint,
 } from "./types";
 
@@ -72,7 +72,7 @@ interface CustomerRow {
   opening_balance: number; remaining_opening_balance: number;
   ob_receipts_applied: number; ob_credit_notes_applied: number;
   advance_balance: number; advance_breakdown: any;
-  sales: number; receipts: number; receipts_3m: number;
+  sales: number; receipts: number; other_payments: number | null; receipts_3m: number;
   credit_notes: number; debit_notes: number;
   journal_dr: number; journal_cr: number; journal_adjustments: number;
   check_returns: number;
@@ -102,9 +102,10 @@ function toCustomer(r: CustomerRow): Customer {
     obReceiptsApplied: Number(r.ob_receipts_applied),
     obCreditNotesApplied: Number(r.ob_credit_notes_applied),
     advanceBalance: Number(r.advance_balance),
-    advanceBreakdown: r.advance_breakdown ?? { onAccount: 0, agstRefExcess: 0, creditNotes: 0 },
+    advanceBreakdown: r.advance_breakdown ?? { onAccount: 0, agstRefExcess: 0, creditNotes: 0, otherPayment: 0 },
     sales: Number(r.sales),
     receipts: Number(r.receipts),
+    otherPayments: Number(r.other_payments ?? 0),
     receipts1M: 0, receipts3M: Number(r.receipts_3m), receipts6M: 0,
     monthlyReceipts: {},
     creditNotes: Number(r.credit_notes),
@@ -229,10 +230,11 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
   const sb = getSupabase();
   const fy = fySuffixToFy(fySuffix);
 
-  const [invs, trends, rcpts, cns, dns, jns] = await Promise.all([
+  const [invs, trends, rcpts, ops, cns, dns, jns] = await Promise.all([
     fetchAllRows<any>(() => sb.from("invoices").select("*").eq("fiscal_year", fy)),
     fetchAllRows<any>(() => sb.from("customer_trend").select("*").eq("fiscal_year", fy)),
     fetchAllRows<any>(() => sb.from("receipt_transactions").select("*").eq("fiscal_year", fy)),
+    fetchAllRows<any>(() => sb.from("other_payment_transactions").select("*").eq("fiscal_year", fy)),
     fetchAllRows<any>(() => sb.from("credit_note_transactions").select("*").eq("fiscal_year", fy)),
     fetchAllRows<any>(() => sb.from("debit_note_transactions").select("*").eq("fiscal_year", fy)),
     fetchAllRows<any>(() => sb.from("journal_transactions").select("*").eq("fiscal_year", fy)),
@@ -241,7 +243,7 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
   const result: Record<string, CustomerDetail> = {};
   const ensure = (cid: string): CustomerDetail => (result[cid] ??= {
     invoices: [], trend: [],
-    receiptTransactions: [], creditNoteTransactions: [],
+    receiptTransactions: [], otherPaymentTransactions: [], creditNoteTransactions: [],
     debitNoteTransactions: [], journalTransactions: [],
   });
 
@@ -251,6 +253,7 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
       amount: Number(r.amount),
       receiptAdj: Number(r.receipt_adj),
       creditNoteAdj: 0, debitNoteAdj: 0, journalAdj: 0,
+      otherPaymentAdj: Number(r.other_payment_adj ?? 0),
       pending: Number(r.pending),
       dueDate: r.due_date ?? "",
       overdueDays: r.overdue_days,
@@ -280,6 +283,12 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
     ensure(r.customer_id).receiptTransactions.push({
       date: r.date, amount: Number(r.amount), type: r.type, refInvoice: r.ref_invoice,
     } as ReceiptTransaction);
+  }
+  for (const r of ops) {
+    ensure(r.customer_id).otherPaymentTransactions!.push({
+      date: r.date, amount: Number(r.amount), type: r.type,
+      refInvoice: r.ref_invoice, paymentRef: r.payment_ref ?? null,
+    } as OtherPaymentTransaction);
   }
   for (const r of cns) {
     ensure(r.customer_id).creditNoteTransactions!.push({

@@ -122,6 +122,7 @@ const VOUCHER_TYPE_OPTIONS = [
   { value: "debit_note",   label: "Debit Note" },
   { value: "journal",      label: "Journal (Dr/Cr)" },
   { value: "check_return", label: "Cheque Return" },
+  { value: "other_payment", label: "Other Payment" },
 ] as const;
 
 const STATUS_OPTIONS = [
@@ -135,7 +136,7 @@ const STATUS_OPTIONS = [
 
 type TxnKind =
   | "sales" | "receipt" | "credit_note" | "debit_note"
-  | "journal_dr" | "journal_cr" | "check_return";
+  | "journal_dr" | "journal_cr" | "check_return" | "other_payment";
 
 type TxnRow = {
   rowKey: string;
@@ -165,6 +166,7 @@ const TXN_TYPE_META: Record<TxnKind, { label: string; cls: string }> = {
   journal_dr:   { label: "Journal Dr",  cls: "bg-destructive/10 text-destructive border-destructive/20" },
   journal_cr:   { label: "Journal Cr",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   check_return: { label: "Chq Return",  cls: "bg-blue-100 text-blue-700 border-blue-200" },
+  other_payment: { label: "Other Pmt",  cls: "bg-indigo-100 text-indigo-700 border-indigo-200" },
 };
 
 type TxnSortKey =
@@ -203,13 +205,13 @@ const TXN_COLUMNS: TxnColumn[] = [
       return (
         <>
           <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${meta.cls}`}>{meta.label}</Badge>
-          {r.subType && r.kind === "receipt" && (
+          {r.subType && (r.kind === "receipt" || r.kind === "other_payment") && (
             <span className="text-[10px] text-muted-foreground ml-1">{r.subType}</span>
           )}
         </>
       );
     },
-    exportValue: (r) => TXN_TYPE_META[r.kind].label + (r.subType && r.kind === "receipt" ? ` (${r.subType})` : ""),
+    exportValue: (r) => TXN_TYPE_META[r.kind].label + (r.subType && (r.kind === "receipt" || r.kind === "other_payment") ? ` (${r.subType})` : ""),
   },
   {
     key: "voucherNo", label: "Voucher #", sortKey: "voucherNo", align: "left",
@@ -610,6 +612,20 @@ export default function CustomerDetail() {
     [activeEntities, customerDetail],
   );
 
+  // Merged other-payment transactions (manual, non-Tally; skip rows with null date)
+  const otherPaymentTxns = useMemo(() =>
+    activeEntities
+      .flatMap((e) =>
+        (customerDetail[e.id]?.otherPaymentTransactions ?? [])
+          .filter((t) => t.date)
+          .map((t) => ({
+            ...t, _company: e.company, _location: e.location,
+          }))
+      )
+      .sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "")),
+    [activeEntities, customerDetail],
+  );
+
   // Consolidated monthly trend (sum by month across active entities)
   const trendData = useMemo(() => {
     const byMonth = new Map<string, { month: string; sales: number; receipts: number; creditNotes: number; debitNotes: number; journalAdjustments: number; checkReturns: number; outstanding: number; overdue: number }>();
@@ -764,9 +780,27 @@ export default function CustomerDetail() {
       });
     });
 
+    // Other payments (manual, non-Tally) — reduce outstanding like a receipt,
+    // tracked separately. paymentRef shown as the voucher reference.
+    otherPaymentTxns.forEach((o, i) => {
+      const gross = Math.abs(o.amount);
+      rows.push({
+        rowKey: `op-${i}-${o.date}`,
+        date: o.date ?? "",
+        kind: "other_payment",
+        voucherNo: o.paymentRef ?? "",
+        refInvoice: o.refInvoice,
+        amount: gross,
+        signedAmount: -gross,
+        subType: o.type,
+        _company: o._company,
+        _location: o._location,
+      });
+    });
+
     rows.sort((a, b) => a.date.localeCompare(b.date));
     return rows;
-  }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns]);
+  }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns, otherPaymentTxns]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
@@ -2146,6 +2180,7 @@ export default function CustomerDetail() {
                           <TableHead className="text-xs text-right">Amount</TableHead>
                           <TableHead className="text-xs text-right">Receipt Adj</TableHead>
                           <TableHead className="text-xs text-right">CN Adj</TableHead>
+                          <TableHead className="text-xs text-right">Other Pmt</TableHead>
                           <TableHead className="text-xs text-right">Pending</TableHead>
                           <TableHead className="text-xs">Due Date</TableHead>
                           <TableHead className="text-xs text-right">OD Days</TableHead>
@@ -2168,6 +2203,9 @@ export default function CustomerDetail() {
                             </TableCell>
                             <TableCell className="text-xs text-right font-mono text-emerald-700">
                               {inv.creditNoteAdj > 0 ? fmt(inv.creditNoteAdj) : "—"}
+                            </TableCell>
+                            <TableCell className="text-xs text-right font-mono text-indigo-700">
+                              {(inv.otherPaymentAdj ?? 0) > 0 ? fmt(inv.otherPaymentAdj ?? 0) : "—"}
                             </TableCell>
                             <TableCell className={`text-xs text-right font-mono ${inv.pending > 0 ? "font-semibold" : "text-muted-foreground"}`}>
                               {fmt(inv.pending)}
@@ -2204,6 +2242,9 @@ export default function CustomerDetail() {
                           <TableCell className="text-xs text-right font-mono font-bold text-emerald-700">
                             {fmt(ledgerInvoices.reduce((s, i) => s + i.creditNoteAdj, 0))}
                           </TableCell>
+                          <TableCell className="text-xs text-right font-mono font-bold text-indigo-700">
+                            {fmt(ledgerInvoices.reduce((s, i) => s + (i.otherPaymentAdj ?? 0), 0))}
+                          </TableCell>
                           <TableCell className="text-xs text-right font-mono font-bold">
                             {fmt(ledgerInvoices.reduce((s, i) => s + i.pending, 0))}
                           </TableCell>
@@ -2216,7 +2257,7 @@ export default function CustomerDetail() {
               </div>
 
               <p className="text-[10px] text-muted-foreground">
-                Note: Receipt Adj and CN Adj shown per invoice are cumulative totals applied to date, not restricted to this month.
+                Note: Receipt Adj, CN Adj and Other Pmt shown per invoice are cumulative totals applied to date, not restricted to this month.
                 Monthly receipts and credit notes totals in the summary strip reflect actual transactions in {ledgerMonth}.
               </p>
             </div>

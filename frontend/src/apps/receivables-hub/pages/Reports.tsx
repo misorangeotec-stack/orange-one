@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -24,6 +24,15 @@ const REPORTS: ReportCard[] = [
       "Outstanding split by invoice age (< 180 / > 180) and overdue split by days-past-due brackets — grouped by sale type, customer or salesperson, with stacked grouping.",
     icon: CalendarClock,
     to: "/outstanding-dashboard/reports/aging",
+    ready: true,
+  },
+  {
+    id: "other-payments",
+    title: "Other Payments Report",
+    description:
+      "Manual (non-Tally) payments applied against invoices or booked on account — grouped by salesperson or customer, with against-invoice vs on-account split and styled Excel export.",
+    icon: HandCoins,
+    to: "/outstanding-dashboard/reports/other-payments",
     ready: true,
   },
 ];
