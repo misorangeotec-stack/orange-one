@@ -79,7 +79,18 @@ function isoToMonthLabel(iso: string): string {
   return `${MONTH_ABBR[d.getMonth()]}-${String(d.getFullYear() % 100).padStart(2, "0")}`;
 }
 
-type SortKey = "salesperson" | "outstanding" | "due" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
+/** Classify a receipt / other-payment allocation as applied AGAINST a specific invoice
+ *  (true) vs ON ACCOUNT — an advance / unallocated payment (false). Mirrors the pipeline's
+ *  normalized allocation labels ("AGST REF" / "ON ACCOUNT") used in OtherPaymentsReport,
+ *  falling back to the presence of a reference invoice when the type is unlabelled. */
+function isAgainstInvoice(type: string | null | undefined, refInvoice: string | null | undefined): boolean {
+  const ty = (type ?? "").toUpperCase();
+  if (ty.includes("ON ACC") || ty.includes("ADVANCE")) return false;
+  if (ty.includes("AGST")) return true;
+  return !!(refInvoice && refInvoice.trim());
+}
+
+type SortKey = "salesperson" | "outstanding" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 type ViewMode = "customer" | "group";
 
@@ -89,7 +100,19 @@ const SALE_TYPE_LABELS: Record<string, string> = {
   ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
 };
 
-interface Metrics { outstanding: number; due: number; received: number; pending: number; dueSoon: number; }
+interface Metrics {
+  outstanding: number;
+  due: number;
+  /** Total collected in the month = receivedOnAccount + receivedAgainst (kept whole; the
+   *  split is a best-effort apportioning of this total — see receivedSplitByCustomerMonth). */
+  received: number;
+  /** Portion of `received` that landed ON ACCOUNT (advance / unallocated). */
+  receivedOnAccount: number;
+  /** Portion of `received` applied AGAINST a specific invoice. */
+  receivedAgainst: number;
+  pending: number;
+  dueSoon: number;
+}
 interface CustomerLine { id: string; name: string; company: string; location: string; m: Metrics; mPrev: Metrics; }
 /** One constituent party (ledger) inside a group's expansion. */
 interface PartyLine { key: string; name: string; sub: string; m: Metrics; mPrev: Metrics; }
@@ -117,13 +140,17 @@ const spName = (s: string | undefined): string => {
   return t ? t.toUpperCase() : "OTHERS";
 };
 
-const emptyMetrics = (): Metrics => ({ outstanding: 0, due: 0, received: 0, pending: 0, dueSoon: 0 });
+const emptyMetrics = (): Metrics => ({
+  outstanding: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, pending: 0, dueSoon: 0,
+});
 const addInto = (t: Metrics, m: Metrics): void => {
-  t.outstanding += m.outstanding;
-  t.due         += m.due;
-  t.received    += m.received;
-  t.pending     += m.pending;
-  t.dueSoon     += m.dueSoon;
+  t.outstanding       += m.outstanding;
+  t.due               += m.due;
+  t.received          += m.received;
+  t.receivedOnAccount += m.receivedOnAccount;
+  t.receivedAgainst   += m.receivedAgainst;
+  t.pending           += m.pending;
+  t.dueSoon           += m.dueSoon;
 };
 const collectionPct = (m: Metrics): number | null => (m.due > 0 ? (m.received / m.due) * 100 : null);
 
@@ -305,6 +332,38 @@ export default function SalespersonCollectionReport() {
     return m;
   }, [allCustomers, customerDetail]);
 
+  // Per-customer → per-month split of "Received" into ON ACCOUNT (advance / unallocated)
+  // vs AGAINST a specific invoice, built from the receipt + manual other-payment
+  // transactions (both carry an allocation type + ref invoice). Cheque-return rows
+  // (type "check_return", negative) are excluded — they sit on the Due side, not Received.
+  // Used only to derive the on-account SHARE of each month's receipts; the displayed total
+  // stays anchored to trend.receipts (+ other payments) so the two columns sum exactly to it.
+  const receivedSplitByCustomerMonth = useMemo(() => {
+    const m = new Map<string, Map<string, { onAccount: number; against: number }>>();
+    const add = (cid: string, lbl: string, amt: number, against: boolean) => {
+      if (!lbl || amt <= 0) return;
+      let byMonth = m.get(cid);
+      if (!byMonth) { byMonth = new Map(); m.set(cid, byMonth); }
+      const cur = byMonth.get(lbl) ?? { onAccount: 0, against: 0 };
+      if (against) cur.against += amt; else cur.onAccount += amt;
+      byMonth.set(lbl, cur);
+    };
+    for (const c of allCustomers) {
+      const det = customerDetail[c.id];
+      if (!det) continue;
+      for (const r of det.receiptTransactions ?? []) {
+        if ((r.type ?? "").toLowerCase() === "check_return") continue;
+        if (!r.date) continue;
+        add(c.id, isoToMonthLabel(r.date), Math.abs(r.amount), isAgainstInvoice(r.type, r.refInvoice));
+      }
+      for (const o of det.otherPaymentTransactions ?? []) {
+        if (!o.date) continue;
+        add(c.id, isoToMonthLabel(o.date), Math.abs(o.amount), isAgainstInvoice(o.type, o.refInvoice));
+      }
+    }
+    return m;
+  }, [allCustomers, customerDetail]);
+
   // Per-customer metrics for ONE month. Shared by the main table (selected month) and the
   // month-wise panel (every month) so the two always reconcile for the same month.
   //  - Received = PURE receipt vouchers (LAKHS → rupees) PLUS manual "other payments" for the
@@ -357,8 +416,16 @@ export default function SalespersonCollectionReport() {
       outstanding = projectAmt((mt?.outstanding ?? 0) * 100_000, obByType, share);
       openDue = projectAmt((mt?.overdue ?? 0) * 100_000, undefined, share);
     }
-    return { outstanding, due: openDue + received, received, pending: openDue, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, otherPaymentsByCustomerMonth]);
+    // Split `received` into on-account vs against-invoice by the month's raw allocation mix
+    // (scale-invariant ratio, so the sale-type projection on `received` carries through).
+    // Unclassified receipts (no allocation/ref) default to against-invoice, the common case.
+    const split = receivedSplitByCustomerMonth.get(c.id)?.get(month);
+    const rawOn = split?.onAccount ?? 0;
+    const rawTotal = rawOn + (split?.against ?? 0);
+    const receivedOnAccount = rawTotal > 1e-9 ? received * (rawOn / rawTotal) : 0;
+    const receivedAgainst = received - receivedOnAccount;
+    return { outstanding, due: openDue + received, received, receivedOnAccount, receivedAgainst, pending: openDue, dueSoon };
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, otherPaymentsByCustomerMonth, receivedSplitByCustomerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {
@@ -452,13 +519,7 @@ export default function SalespersonCollectionReport() {
 
   const totals = useMemo<Metrics>(() => {
     const t = emptyMetrics();
-    for (const r of spRows) {
-      t.outstanding += r.m.outstanding;
-      t.due         += r.m.due;
-      t.received    += r.m.received;
-      t.pending     += r.m.pending;
-      t.dueSoon     += r.m.dueSoon;
-    }
+    for (const r of spRows) addInto(t, r.m);
     // Use the locked NET convention for the headline outstanding in the current month.
     // Skip when a sale type is active — sumOutstanding would use the un-projected (full)
     // balances, diverging from the projected per-row totals shown in the table.
@@ -469,13 +530,7 @@ export default function SalespersonCollectionReport() {
   // Previous-month totals — only Due/Received feed the grand-total Collection % (prev) cell.
   const totalsPrev = useMemo<Metrics>(() => {
     const t = emptyMetrics();
-    for (const r of spRows) {
-      t.outstanding += r.mPrev.outstanding;
-      t.due         += r.mPrev.due;
-      t.received    += r.mPrev.received;
-      t.pending     += r.mPrev.pending;
-      t.dueSoon     += r.mPrev.dueSoon;
-    }
+    for (const r of spRows) addInto(t, r.mPrev);
     return t;
   }, [spRows]);
 
@@ -489,12 +544,7 @@ export default function SalespersonCollectionReport() {
       const agg: Metrics = emptyMetrics();
       let sales = 0;
       for (const c of custs) {
-        const mm = metricsForMonth(c, m);
-        agg.outstanding += mm.outstanding;
-        agg.due         += mm.due;
-        agg.received    += mm.received;
-        agg.pending     += mm.pending;
-        agg.dueSoon     += mm.dueSoon;
+        addInto(agg, metricsForMonth(c, m));
         sales += (customerDetail[c.id]?.trend.find((x) => x.month === m)?.sales ?? 0) * 100_000;
       }
       return { month: m, ...agg, sales };
@@ -637,32 +687,32 @@ export default function SalespersonCollectionReport() {
       `Search: ${customerSearch.trim() || "—"}`,
     ]);
     aoa.push([]);
-    aoa.push(["Salesperson", "Total Outstanding", dueLabel, receivedLabel, "Total Pending", "Collection %"]);
+    aoa.push(["Salesperson", "Total Outstanding", dueLabel, "On Account", "Against Invoices", receivedLabel, "Total Pending", "Collection %"]);
     for (const r of spRows) {
       const pct = collectionPct(r.m);
-      aoa.push([r.salesperson, startMonthOutstanding(r.m), r.m.due, r.m.received, r.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
+      aoa.push([r.salesperson, startMonthOutstanding(r.m), r.m.due, r.m.receivedOnAccount, r.m.receivedAgainst, r.m.received, r.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
     }
     const totalPct = collectionPct(totals);
-    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.due, totals.received, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
+    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 20 }, { wch: 18 }, { wch: 13 }];
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }];
+    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 13 }];
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }];
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
     const firstData = 9; // 1-indexed first salesperson row (8 header rows incl. Sale Type/Search)
     const lastData = firstData + spRows.length; // includes grand total
     for (let row = firstData; row <= lastData; row++) {
-      for (const col of ["B", "C", "D", "E"]) {
+      for (const col of ["B", "C", "D", "E", "F", "G"]) {
         const cell = ws[`${col}${row}`];
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
-      const pctCell = ws[`F${row}`];
+      const pctCell = ws[`H${row}`];
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
-    styleRow(ws, 0, 6, HEADER_STYLE);                  // title banner
-    styleRow(ws, 7, 6, HEADER_STYLE);                  // column header row
-    styleRow(ws, 8 + spRows.length, 6, GRAND_TOTAL_STYLE); // Grand Total row
+    styleRow(ws, 0, 8, HEADER_STYLE);                  // title banner
+    styleRow(ws, 7, 8, HEADER_STYLE);                  // column header row
+    styleRow(ws, 8 + spRows.length, 8, GRAND_TOTAL_STYLE); // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -699,11 +749,6 @@ export default function SalespersonCollectionReport() {
     { label: receivedLabel,       value: fmt(totals.received),    icon: Coins,          warn: false },
     { label: "Total Pending",     value: fmt(totals.pending),     icon: TrendingDown,   warn: true  },
     {
-      label: `Due till month-end (${selectedMonth ? monthEndLong(selectedMonth) : "—"})`,
-      value: fmt(totals.dueSoon),
-      icon: CalendarClock, warn: false,
-    },
-    {
       label: "Collection %",
       value: collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`,
       icon: Percent, warn: false,
@@ -714,7 +759,9 @@ export default function SalespersonCollectionReport() {
     { key: "salesperson",   label: "Salesperson" },
     { key: "outstanding",   label: "Total Outstanding", align: "right" },
     { key: "due",           label: dueLabel,            align: "right" },
-    { key: "received",      label: receivedLabel,       align: "right" },
+    { key: "receivedOnAccount", label: "On Account",        align: "right" },
+    { key: "receivedAgainst",   label: "Against Invoices",  align: "right" },
+    { key: "received",          label: "Total",             align: "right" },
     { key: "pending",       label: "Total Pending",     align: "right" },
     { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right" },
     { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right" },
@@ -850,7 +897,7 @@ export default function SalespersonCollectionReport() {
         })}
       </div>
       <p className="text-[11px] text-muted-foreground -mt-3">
-        Pending = Overdue (matches the dashboard) + "Due till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received; Outstanding = start-of-month balance. Received includes manual "other payments".
+        Pending = Overdue (matches the dashboard) + "Due till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received; Outstanding = start-of-month balance. Received = On Account (advance / unallocated) + Against Invoices, and includes manual "other payments".
       </p>
 
       {/* Main table */}
@@ -864,15 +911,48 @@ export default function SalespersonCollectionReport() {
         <ScrollableTable>
           <Table>
             <TableHeader>
+              {/* Two-row header: the three Received figures are grouped under a single
+                  "Received in <month>" banner; all other columns span both rows. */}
               <TableRow className="bg-muted/50">
-                <TableHead className="w-8" />
-                {COLS.map((col) => (
+                <TableHead className="w-8" rowSpan={2} />
+                {COLS.map((col) => {
+                  // The Received group: render the spanning parent once (at the first sub-column),
+                  // and skip the other two — they appear in the second header row instead.
+                  if (col.key === "receivedAgainst" || col.key === "received") return null;
+                  if (col.key === "receivedOnAccount") {
+                    return (
+                      <TableHead
+                        key="received-group"
+                        colSpan={3}
+                        className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border"
+                      >
+                        {receivedLabel}
+                      </TableHead>
+                    );
+                  }
+                  return (
+                    <TableHead
+                      key={col.key}
+                      rowSpan={2}
+                      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
+                      onClick={() => toggleSort(col.key)}
+                    >
+                      <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
+                        {col.label}
+                        {sortIcon(col.key)}
+                      </span>
+                    </TableHead>
+                  );
+                })}
+              </TableRow>
+              <TableRow className="bg-muted/50">
+                {COLS.filter((c) => c.key === "receivedOnAccount" || c.key === "receivedAgainst" || c.key === "received").map((col) => (
                   <TableHead
                     key={col.key}
-                    className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
+                    className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "receivedOnAccount" ? "border-l border-border" : ""}`}
                     onClick={() => toggleSort(col.key)}
                   >
-                    <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
+                    <span className="inline-flex items-center gap-1 justify-end w-full">
                       {col.label}
                       {sortIcon(col.key)}
                     </span>
@@ -895,6 +975,8 @@ export default function SalespersonCollectionReport() {
                     <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">Grand Total</TableCell>
                     {drillCell(allCustomerIds, "outstanding", "Grand Total", "text-sm text-right font-mono", fmt(startMonthOutstanding(totals)))}
                     {drillCell(allCustomerIds, "due", "Grand Total", "text-sm text-right font-mono", fmt(totals.due))}
+                    <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.receivedOnAccount)}</TableCell>
+                    <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.receivedAgainst)}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(totals.received)}</TableCell>
                     {drillCell(allCustomerIds, "pending", "Grand Total", `text-sm text-right font-mono ${totals.pending > 0 ? "text-destructive" : ""}`, fmt(totals.pending))}
                     <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
@@ -925,6 +1007,8 @@ export default function SalespersonCollectionReport() {
                           </TableCell>
                           {drillCell(row.customerIds, "outstanding", row.salesperson, "text-sm text-right font-mono font-semibold", fmt(startMonthOutstanding(row.m)))}
                           {drillCell(row.customerIds, "due", row.salesperson, "text-sm text-right font-mono", fmt(row.m.due))}
+                          <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.receivedOnAccount)}</TableCell>
+                          <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.receivedAgainst)}</TableCell>
                           <TableCell className="text-sm text-right font-mono">{fmt(row.m.received)}</TableCell>
                           {drillCell(row.customerIds, "pending", row.salesperson, `text-sm text-right font-mono font-semibold ${row.m.pending > 0 ? "text-destructive" : ""}`, fmt(row.m.pending))}
                           <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
@@ -956,6 +1040,8 @@ export default function SalespersonCollectionReport() {
                                 </TableCell>
                                 {drillCell(drill.customerIds, "outstanding", drill.name, "text-right font-mono", fmt(startMonthOutstanding(drill.m)))}
                                 {drillCell(drill.customerIds, "due", drill.name, "text-right font-mono", fmt(drill.m.due))}
+                                <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.receivedOnAccount)}</TableCell>
+                                <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.receivedAgainst)}</TableCell>
                                 <TableCell className="text-right font-mono">{fmt(drill.m.received)}</TableCell>
                                 {drillCell(drill.customerIds, "pending", drill.name, `text-right font-mono ${drill.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(drill.m.pending))}
                                 <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
@@ -978,6 +1064,8 @@ export default function SalespersonCollectionReport() {
                                     </TableCell>
                                     {drillCell([party.key], "outstanding", party.name, "text-right font-mono", fmt(startMonthOutstanding(party.m)))}
                                     {drillCell([party.key], "due", party.name, "text-right font-mono", fmt(party.m.due))}
+                                    <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.receivedOnAccount)}</TableCell>
+                                    <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.receivedAgainst)}</TableCell>
                                     <TableCell className="text-right font-mono">{fmt(party.m.received)}</TableCell>
                                     {drillCell([party.key], "pending", party.name, `text-right font-mono ${party.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(party.m.pending))}
                                     <TableCell className={`text-right font-mono ${pctStyle(ppct)}`}>
@@ -1009,6 +1097,8 @@ export default function SalespersonCollectionReport() {
         // Outstanding / Due / Pending are point-in-time STOCKS → not summable; show the latest
         // (current) month. (Summing them would double-count the same open balance every month.)
         const sumReceived = monthlyData.reduce((s, d) => s + d.received, 0);
+        const sumOnAccount = monthlyData.reduce((s, d) => s + d.receivedOnAccount, 0);
+        const sumAgainst = monthlyData.reduce((s, d) => s + d.receivedAgainst, 0);
         const latest = monthlyData[monthlyData.length - 1];
         const latestPct = latest ? collectionPct(latest) : null;
         const chartData = monthlyData.map((d) => ({
@@ -1076,13 +1166,19 @@ export default function SalespersonCollectionReport() {
             <ScrollableTable>
               <Table>
                 <TableHeader>
+                  {/* Two-row header: the three Received figures sit under one "Received" banner. */}
                   <TableRow className="bg-muted/50">
-                    <TableHead className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
-                    <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Outstanding</TableHead>
-                    <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
-                    <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Received</TableHead>
-                    <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Pending</TableHead>
-                    <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
+                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
+                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Outstanding</TableHead>
+                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
+                    <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">Received</TableHead>
+                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Pending</TableHead>
+                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
+                  </TableRow>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">On Account</TableHead>
+                    <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Against Invoices</TableHead>
+                    <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1093,6 +1189,8 @@ export default function SalespersonCollectionReport() {
                         <TableCell className="text-sm font-medium whitespace-nowrap">{d.month}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(startMonthOutstanding(d))}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(d.due)}</TableCell>
+                        <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(d.receivedOnAccount)}</TableCell>
+                        <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.receivedAgainst)}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(d.received)}</TableCell>
                         <TableCell className={`text-sm text-right font-mono ${d.pending > 0 ? "text-destructive" : ""}`}>{fmt(d.pending)}</TableCell>
                         <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
@@ -1106,6 +1204,8 @@ export default function SalespersonCollectionReport() {
                       <TableCell className="text-sm uppercase tracking-wide text-foreground/80">Total</TableCell>
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(startMonthOutstanding(latest)) : "—"}</TableCell>
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(latest.due) : "—"}</TableCell>
+                      <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(sumOnAccount)}</TableCell>
+                      <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(sumAgainst)}</TableCell>
                       <TableCell className="text-sm text-right font-mono">{fmt(sumReceived)}</TableCell>
                       <TableCell className={`text-sm text-right font-mono ${(latest?.pending ?? 0) > 0 ? "text-destructive" : ""}`}>{fmt(latest?.pending ?? 0)}</TableCell>
                       <TableCell className={`text-sm text-right font-mono ${pctStyle(latestPct)}`}>
