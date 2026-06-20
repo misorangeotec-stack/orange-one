@@ -196,6 +196,8 @@ export interface AgingFilters {
   locations?: string[];
   salespersons?: string[];
   saleTypes?: SaleType[];
+  /** Filter to these exact customer (ledger) display names. */
+  customerNames?: string[];
 }
 
 /** Field separator for composite dimension keys (kept out of any real value). */
@@ -206,23 +208,28 @@ function dimsForCustomer(
   saleType: SaleType,
   groupMapping: Record<string, string>,
 ): Record<AgingDimension, string> {
+  // Per-company granularity for both customer lenses: the same display name in
+  // different companies stays as separate rows (never clubbed), while a name's
+  // ledgers WITHIN one company (e.g. multiple locations) combine into one row.
+  const perCompany = `${c.name || "—"}${KEY_SEP}${c.company || "—"}`;
   return {
     saleType: SALE_TYPE_LABEL[saleType] ?? saleType,
-    // Key each individual ledger separately — the same display name can exist
-    // under different companies/locations, so name alone would wrongly merge them.
-    customer: `${c.name || "—"}${KEY_SEP}${c.company || "—"}${KEY_SEP}${c.location || "—"}`,
-    group: groupMapping[c.name] || c.name || "—",
+    customer: perCompany,
+    // Mapped customer-groups roll up deliberately (may span companies); unmapped
+    // names fall back to the per-company key so same-name/different-company stay split.
+    group: groupMapping[c.name] || perCompany,
     salesperson: c.salesPerson || "Unassigned",
     company: c.company || "—",
     location: c.location || "—",
   };
 }
 
-/** Display name + optional sub-label (e.g. "O-tec · Surat") for a grouped node. */
+/** Display name + optional sub-label (e.g. the company) for a grouped node. */
 function nodeDisplay(dim: AgingDimension, keyValue: string, sample: EnrichedBill): { label: string; sub?: string } {
-  if (dim === "customer") {
-    const sub = [sample.cust.company, sample.cust.location].filter(Boolean).join(" · ");
-    return { label: sample.cust.name || "—", sub: sub || undefined };
+  // Customer rows, and unmapped customer-group rows (composite per-company key),
+  // show the name with the company as a sub-label so the split is visible.
+  if (dim === "customer" || (dim === "group" && keyValue.includes(KEY_SEP))) {
+    return { label: sample.cust.name || "—", sub: sample.cust.company || undefined };
   }
   return { label: keyValue };
 }
@@ -254,6 +261,7 @@ export function enumerateBills(
     if (!inFilter(filters.companies, cust.company)) continue;
     if (!inFilter(filters.locations, cust.location)) continue;
     if (!inFilter(filters.salespersons, cust.salesPerson)) continue;
+    if (!inFilter(filters.customerNames, cust.name)) continue;
 
     for (const inv of detail.invoices) {
       if (Math.abs(inv.pending) < 0.5) continue; // settled bill

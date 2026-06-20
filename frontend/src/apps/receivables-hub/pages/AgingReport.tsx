@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fra
 import { Link } from "react-router-dom";
 import {
   CalendarClock, ChevronRight, ChevronDown, Download, Plus, X, ArrowLeft, Info, Pin,
+  ArrowUpDown, ArrowUp, ArrowDown,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -23,7 +24,7 @@ import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import {
   enumerateBills, buildAgingTree, billMatchesPath, billMatchesColumn,
   AGING_COLUMNS, DIMENSION_LABELS, DIMENSION_ORDER,
-  type AgingDimension, type AgingNode, type AgingColumn, type EnrichedBill,
+  type AgingDimension, type AgingNode, type AgingColumn, type EnrichedBill, type MetricKey,
 } from "@hub/lib/agingReport";
 import { exportAgingReportXlsx } from "@hub/lib/exportAgingReport";
 import type { SaleType } from "@hub/lib/types";
@@ -71,6 +72,7 @@ export default function AgingReport() {
   const [locations, setLocations] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
+  const [customerNames, setCustomerNames] = useState<string[]>([]);
 
   const companyOptions = useMemo(
     () => [...new Set(customers.map((c) => c.company).filter(Boolean))].sort(),
@@ -78,6 +80,10 @@ export default function AgingReport() {
   );
   const locationOptions = useMemo(
     () => [...new Set(customers.map((c) => c.location).filter(Boolean))].sort(),
+    [customers],
+  );
+  const customerOptions = useMemo(
+    () => [...new Set(customers.map((c) => c.name).filter(Boolean))].sort(),
     [customers],
   );
 
@@ -134,11 +140,26 @@ export default function AgingReport() {
     return () => window.removeEventListener("resize", measureCols);
   }, [measureCols]);
 
+  // ── Sorting ──────────────────────────────────────────────────────────────────
+  // Click a column to sort every level of the roll-up by it; "label" sorts the
+  // group-name column alphabetically. Default: biggest Total Outstanding first.
+  type SortKey = MetricKey | "label";
+  const [sortKey, setSortKey] = useState<SortKey>("totalOutstanding");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir(key === "label" ? "asc" : "desc"); }
+  };
+  const sortIcon = (key: SortKey) => {
+    if (sortKey !== key) return <ArrowUpDown className="h-3 w-3 opacity-30 inline" />;
+    return sortDir === "asc" ? <ArrowUp className="h-3 w-3 inline" /> : <ArrowDown className="h-3 w-3 inline" />;
+  };
+
   // Reset expansion + paging when the shape of the report changes.
   useEffect(() => {
     setExpanded(new Set());
     setPage(1);
-  }, [groupBy, companies, locations, salespersons, saleTypes]);
+  }, [groupBy, companies, locations, salespersons, saleTypes, customerNames]);
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -150,14 +171,29 @@ export default function AgingReport() {
 
   // ── Build the bill list + tree ───────────────────────────────────────────────
   const filters = useMemo(
-    () => ({ companies, locations, salespersons, saleTypes: saleTypes as SaleType[] }),
-    [companies, locations, salespersons, saleTypes],
+    () => ({ companies, locations, salespersons, saleTypes: saleTypes as SaleType[], customerNames }),
+    [companies, locations, salespersons, saleTypes, customerNames],
   );
   const bills = useMemo(
     () => enumerateBills(customers, customerDetail, asOfDate, filters, customerGroupMap.mapping),
     [customers, customerDetail, asOfDate, filters, customerGroupMap],
   );
   const tree = useMemo(() => buildAgingTree(bills, groupBy, asOfDate), [bills, groupBy, asOfDate]);
+
+  // Re-sort every level of the roll-up by the active column (the tree builder seeds
+  // a Total-Outstanding-desc order; this lets the user re-sort interactively).
+  const sortedRoots = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const sortNodes = (nodes: AgingNode[]): AgingNode[] =>
+      [...nodes]
+        .sort((a, b) =>
+          sortKey === "label"
+            ? dir * a.label.localeCompare(b.label)
+            : dir * (a.metrics[sortKey] - b.metrics[sortKey]),
+        )
+        .map((n) => (n.children.length ? { ...n, children: sortNodes(n.children) } : n));
+    return sortNodes(tree.roots);
+  }, [tree.roots, sortKey, sortDir]);
 
   // ── Invoice drill-down ───────────────────────────────────────────────────────
   const [drill, setDrill] = useState<{ open: boolean; title: string; subtitle: string; rows: InvoiceDrillRow[] }>({
@@ -188,10 +224,10 @@ export default function AgingReport() {
     setDrill({ open: true, title: `${lens} · ${col.label}`, subtitle: scopeLabel, rows });
   };
 
-  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(tree.roots.length / pageSize));
+  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(sortedRoots.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedRoots =
-    pageSize === "all" ? tree.roots : tree.roots.slice((safePage - 1) * pageSize, safePage * pageSize);
+    pageSize === "all" ? sortedRoots : sortedRoots.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   // ── Filter chips ─────────────────────────────────────────────────────────────
   const chips: FilterChip[] = [
@@ -199,6 +235,10 @@ export default function AgingReport() {
     locations.length > 0 && { label: `Location: ${locations.join(", ")}`, onRemove: () => setLocations([]) },
     salespersons.length > 0 && { label: `Salesperson: ${salespersons.length} sel.`, onRemove: () => setSalespersons([]) },
     saleTypes.length > 0 && { label: `Sale Type: ${saleTypes.length} sel.`, onRemove: () => setSaleTypes([]) },
+    customerNames.length > 0 && {
+      label: customerNames.length <= 2 ? `Customer: ${customerNames.join(", ")}` : `Customer: ${customerNames.length} sel.`,
+      onRemove: () => setCustomerNames([]),
+    },
   ].filter(Boolean) as FilterChip[];
 
   const clearFilters = () => {
@@ -206,6 +246,7 @@ export default function AgingReport() {
     setLocations([]);
     setSalespersons([]);
     setSaleTypes([]);
+    setCustomerNames([]);
   };
 
   const handleExport = () => {
@@ -214,6 +255,7 @@ export default function AgingReport() {
     if (locations.length) filterSummary.push(`Location: ${locations.join(", ")}`);
     if (salespersons.length) filterSummary.push(`Salesperson: ${salespersons.join(", ")}`);
     if (saleTypes.length) filterSummary.push(`Sale Type: ${saleTypes.join(", ")}`);
+    if (customerNames.length) filterSummary.push(`Customer: ${customerNames.join(", ")}`);
     exportAgingReportXlsx(tree, { groupBy, asOfDate, filterSummary });
   };
 
@@ -386,6 +428,7 @@ export default function AgingReport() {
           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/60">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">Filters</span>
             <div className="pt-2 flex flex-wrap items-center gap-2">
+              <MultiSelect options={customerOptions} value={customerNames} onChange={setCustomerNames} allLabel="All Customers" noun="customers" triggerClassName="h-8 w-48 text-xs rounded-input" />
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
@@ -409,9 +452,16 @@ export default function AgingReport() {
           <TableHeader>
             <TableRow className="bg-muted/60 hover:bg-muted/60">
               <TableHead ref={chevRef} rowSpan={2} style={freezeStick("chevron", { header: true }).style} className={`w-8 ${freezeStick("chevron", { header: true }).className}`} />
-              <TableHead ref={labelRef} rowSpan={2} style={freezeStick("label", { header: true }).style} className={`text-xs font-semibold text-foreground/70 whitespace-nowrap align-bottom pb-2 ${freezeStick("label", { header: true }).className}`}>
+              <TableHead
+                ref={labelRef}
+                rowSpan={2}
+                style={freezeStick("label", { header: true }).style}
+                className={`text-xs font-semibold text-foreground/70 whitespace-nowrap align-bottom pb-2 cursor-pointer select-none ${freezeStick("label", { header: true }).className}`}
+                onClick={() => toggleSort("label")}
+              >
                 <span className="inline-flex items-center gap-1">
                   {groupBy.map((d) => DIMENSION_LABELS[d]).join(" → ")}
+                  {sortIcon("label")}
                   {freezePin()}
                 </span>
               </TableHead>
@@ -434,9 +484,10 @@ export default function AgingReport() {
                 return (
                   <TableHead
                     key={col.key}
-                    className={`text-right text-[11px] font-semibold whitespace-nowrap ${firstOfGroup ? "!border-l-2 !border-l-border" : ""} ${col.grand ? "bg-emerald-200 text-emerald-950" : col.total ? "bg-emerald-100 text-emerald-900" : "text-foreground/60"}`}
+                    onClick={() => toggleSort(col.key)}
+                    className={`text-right text-[11px] font-semibold whitespace-nowrap cursor-pointer select-none ${firstOfGroup ? "!border-l-2 !border-l-border" : ""} ${col.grand ? "bg-emerald-200 text-emerald-950" : col.total ? "bg-emerald-100 text-emerald-900" : "text-foreground/60"}`}
                   >
-                    {col.label}
+                    <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
                   </TableHead>
                 );
               })}
