@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect, Fragment, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment, type ReactNode, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import {
-  CalendarClock, ChevronRight, ChevronDown, Download, Plus, X, ArrowLeft, Info,
+  CalendarClock, ChevronRight, ChevronDown, Download, Plus, X, ArrowLeft, Info, Pin,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -115,6 +115,25 @@ export default function AgingReport() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(25);
 
+  // ── Freeze panes ─────────────────────────────────────────────────────────────
+  // Excel-style freeze of the leading columns (chevron + the group-by label) so the
+  // group name stays visible while scrolling right through the aging buckets.
+  // 0 = none, 1 = frozen (default). The user toggles it via the pin in the label header.
+  const [freezeLevel, setFreezeLevel] = useState<0 | 1>(1);
+  const chevRef = useRef<HTMLTableCellElement>(null);
+  const labelRef = useRef<HTMLTableCellElement>(null);
+  const [colW, setColW] = useState({ chev: 32, label: 200 });
+  const measureCols = useCallback(() => {
+    const chev = chevRef.current?.offsetWidth ?? 32;
+    const label = labelRef.current?.offsetWidth ?? 200;
+    setColW((prev) => (prev.chev === chev && prev.label === label ? prev : { chev, label }));
+  }, []);
+  useLayoutEffect(measureCols); // re-measure after every render; setState is guarded so it can't loop
+  useEffect(() => {
+    window.addEventListener("resize", measureCols);
+    return () => window.removeEventListener("resize", measureCols);
+  }, [measureCols]);
+
   // Reset expansion + paging when the shape of the report changes.
   useEffect(() => {
     setExpanded(new Set());
@@ -198,6 +217,36 @@ export default function AgingReport() {
     exportAgingReportXlsx(tree, { groupBy, asOfDate, filterSummary });
   };
 
+  // ── Frozen columns (freeze panes) ──────────────────────────────────────────
+  // Each frozen cell is `position: sticky` with a cumulative `left` offset and an
+  // OPAQUE background (so scrolled cells pass underneath); the label column (the
+  // rightmost frozen one) carries an edge shadow.
+  type FreezeId = "chevron" | "label";
+  type FreezeStick = { className: string; style?: CSSProperties };
+  const leftOf = (id: FreezeId): number => (id === "chevron" ? 0 : colW.chev);
+  /** Sticky props for a leading column cell, or empty when freeze is off.
+   *  `bg` is the OPAQUE background to use (defaults: header → muted, body → surface). */
+  const freezeStick = (id: FreezeId, opts?: { header?: boolean; bg?: string }): FreezeStick => {
+    if (freezeLevel < 1) return { className: "" };
+    const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
+    const shadow = id === "label" ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : ""; // edge on the boundary
+    return { className: `sticky ${opts?.header ? "z-20" : "z-10"} ${bg} ${shadow}`, style: { left: leftOf(id) } };
+  };
+  /** Pin button in the label header — toggles the freeze on/off. */
+  const freezePin = () => {
+    const active = freezeLevel >= 1;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setFreezeLevel(active ? 0 : 1); }}
+        className={`ml-1 inline-flex items-center justify-center h-4 w-4 rounded shrink-0 ${active ? "text-primary" : "text-foreground/35 hover:text-foreground/70"}`}
+        title={active ? "Unfreeze the group column" : "Freeze the group column while scrolling"}
+      >
+        <Pin className={`h-3 w-3 ${active ? "fill-primary" : ""}`} />
+      </button>
+    );
+  };
+
   // ── Row rendering (recursive; pagination applies to top-level only) ──────────
   const metricCells = (node: AgingNode | null, isTotal: boolean): ReactNode =>
     visibleColumns.map((col, idx) => {
@@ -230,20 +279,24 @@ export default function AgingReport() {
       return (
         <Fragment key={n.key}>
           <TableRow
-            className={`${tint} ${hasChildren ? "cursor-pointer hover:bg-muted/40" : ""} transition-colors`}
+            className={`group ${tint} ${hasChildren ? "cursor-pointer hover:bg-muted/40" : ""} transition-colors`}
             onClick={hasChildren ? () => toggle(n.key) : undefined}
           >
-            <TableCell className="text-muted-foreground">
-              {hasChildren && (isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
-            </TableCell>
-            <TableCell
-              className={`whitespace-nowrap ${n.depth === 0 ? "font-medium text-sm" : "text-[13px] text-muted-foreground"}`}
-              style={{ paddingLeft: 8 + n.depth * 18 }}
-            >
-              {n.label}
-              {n.sub && <span className="ml-1.5 text-[10px] font-normal opacity-70">{n.sub}</span>}
-              {hasChildren && <span className="ml-1.5 text-[11px] opacity-70">({n.children.length})</span>}
-            </TableCell>
+            {(() => { const bg = hasChildren ? "bg-surface group-hover:bg-[hsl(var(--muted))]" : "bg-surface"; const f = freezeStick("chevron", { bg }); return (
+              <TableCell style={f.style} className={`text-muted-foreground ${f.className}`}>
+                {hasChildren && (isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+              </TableCell>
+            ); })()}
+            {(() => { const bg = hasChildren ? "bg-surface group-hover:bg-[hsl(var(--muted))]" : "bg-surface"; const f = freezeStick("label", { bg }); return (
+              <TableCell
+                className={`whitespace-nowrap ${n.depth === 0 ? "font-medium text-sm" : "text-[13px] text-muted-foreground"} ${f.className}`}
+                style={{ ...f.style, paddingLeft: 8 + n.depth * 18 }}
+              >
+                {n.label}
+                {n.sub && <span className="ml-1.5 text-[10px] font-normal opacity-70">{n.sub}</span>}
+                {hasChildren && <span className="ml-1.5 text-[11px] opacity-70">({n.children.length})</span>}
+              </TableCell>
+            ); })()}
             {metricCells(n, false)}
           </TableRow>
           {isOpen && hasChildren && renderNodes(n.children)}
@@ -347,6 +400,7 @@ export default function AgingReport() {
       <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
         <Info className="h-3.5 w-3.5 shrink-0" />
         Bill-wise (gross) basis — sums open-bill pending, like the source workbook. May differ slightly from the dashboard's net outstanding. Overdue ⊆ Outstanding.
+        <span className="inline-flex items-center gap-1">· use the <Pin className="h-3 w-3 inline" /> on the group column to freeze it while scrolling.</span>
       </p>
 
       {/* Table */}
@@ -354,9 +408,12 @@ export default function AgingReport() {
         <Table className="border-collapse [&_th]:border-b [&_th]:border-border [&_td]:border-b [&_td]:border-border/70 [&_th:not(:last-child)]:border-r [&_td:not(:last-child)]:border-r [&_th]:border-r-border [&_td]:border-r-border/60">
           <TableHeader>
             <TableRow className="bg-muted/60 hover:bg-muted/60">
-              <TableHead rowSpan={2} className="w-8" />
-              <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 whitespace-nowrap align-bottom pb-2">
-                {groupBy.map((d) => DIMENSION_LABELS[d]).join(" → ")}
+              <TableHead ref={chevRef} rowSpan={2} style={freezeStick("chevron", { header: true }).style} className={`w-8 ${freezeStick("chevron", { header: true }).className}`} />
+              <TableHead ref={labelRef} rowSpan={2} style={freezeStick("label", { header: true }).style} className={`text-xs font-semibold text-foreground/70 whitespace-nowrap align-bottom pb-2 ${freezeStick("label", { header: true }).className}`}>
+                <span className="inline-flex items-center gap-1">
+                  {groupBy.map((d) => DIMENSION_LABELS[d]).join(" → ")}
+                  {freezePin()}
+                </span>
               </TableHead>
               {outstandingCount > 0 && (
                 <TableHead colSpan={outstandingCount} className="text-center text-xs font-semibold text-foreground/70 !border-l-2 !border-l-border whitespace-nowrap">
@@ -402,15 +459,15 @@ export default function AgingReport() {
               <>
                 {/* Grand total */}
                 <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
-                  <TableCell />
-                  <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">Grand Total</TableCell>
+                  <TableCell style={freezeStick("chevron", { bg: "bg-muted" }).style} className={freezeStick("chevron", { bg: "bg-muted" }).className} />
+                  <TableCell style={freezeStick("label", { bg: "bg-muted" }).style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${freezeStick("label", { bg: "bg-muted" }).className}`}>Grand Total</TableCell>
                   {metricCells(null, true)}
                 </TableRow>
                 {renderNodes(pagedRoots)}
                 {tree.onAccount && (
                   <TableRow className="bg-amber-50/70 border-t-2 border-border/50">
-                    <TableCell />
-                    <TableCell className="text-[13px] whitespace-nowrap text-foreground/70 italic">
+                    <TableCell style={freezeStick("chevron", { bg: "bg-amber-50" }).style} className={freezeStick("chevron", { bg: "bg-amber-50" }).className} />
+                    <TableCell style={freezeStick("label", { bg: "bg-amber-50" }).style} className={`text-[13px] whitespace-nowrap text-foreground/70 italic ${freezeStick("label", { bg: "bg-amber-50" }).className}`}>
                       {tree.onAccount.label}
                       <span className="ml-1.5 text-[10px] not-italic opacity-70">advances / unallocated receipts (credit)</span>
                     </TableCell>
