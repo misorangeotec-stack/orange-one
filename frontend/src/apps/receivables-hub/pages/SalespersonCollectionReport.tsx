@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode, type Dispatch, type SetStateAction } from "react";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
@@ -201,9 +201,10 @@ export default function SalespersonCollectionReport() {
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerSearch, setCustomerSearch] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("customer");
-  // Collapsed by default: the Received column shows only the Total; expanding reveals the
-  // On Account / Against Invoices breakup sub-columns.
+  // Collapsed by default: the Received / Total Pending columns show only their Total; expanding
+  // reveals the breakup sub-columns (On Account / Against Invoices, and As-on-today / Till-month-end).
   const [receivedExpanded, setReceivedExpanded] = useState<boolean>(false);
+  const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Expanded group rows (group view): keyed by `${salesperson}::${groupKey}`.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -673,6 +674,10 @@ export default function SalespersonCollectionReport() {
 
   const dueLabel = `Due upto ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
   const receivedLabel = `Received in ${selectedMonth || "—"}`;
+  // Total Pending breakup labels: As-on-today = overdue (matches the dashboard's overview);
+  // the remaining difference = bills coming due between today and month-end.
+  const pendingNowLabel = `As on ${formatDateLong(asOfDate)}`;
+  const pendingTillLabel = `Till ${selectedMonth ? monthEndLong(selectedMonth) : "month-end"}`;
 
   /* ── Export ── */
   const handleExport = () => {
@@ -690,32 +695,32 @@ export default function SalespersonCollectionReport() {
       `Search: ${customerSearch.trim() || "—"}`,
     ]);
     aoa.push([]);
-    aoa.push(["Salesperson", "Total Outstanding", dueLabel, "On Account", "Against Invoices", receivedLabel, "Total Pending", "Collection %"]);
+    aoa.push(["Salesperson", "Total Outstanding", dueLabel, "On Account", "Against Invoices", receivedLabel, `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Total Pending", "Collection %"]);
     for (const r of spRows) {
       const pct = collectionPct(r.m);
-      aoa.push([r.salesperson, startMonthOutstanding(r.m), r.m.due, r.m.receivedOnAccount, r.m.receivedAgainst, r.m.received, r.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
+      aoa.push([r.salesperson, startMonthOutstanding(r.m), r.m.due, r.m.receivedOnAccount, r.m.receivedAgainst, r.m.received, r.m.pending - r.m.dueSoon, r.m.dueSoon, r.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
     }
     const totalPct = collectionPct(totals);
-    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
+    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 13 }];
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } }];
+    ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 9 } }];
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
     const firstData = 9; // 1-indexed first salesperson row (8 header rows incl. Sale Type/Search)
     const lastData = firstData + spRows.length; // includes grand total
     for (let row = firstData; row <= lastData; row++) {
-      for (const col of ["B", "C", "D", "E", "F", "G"]) {
+      for (const col of ["B", "C", "D", "E", "F", "G", "H", "I"]) {
         const cell = ws[`${col}${row}`];
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
-      const pctCell = ws[`H${row}`];
+      const pctCell = ws[`J${row}`];
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
-    styleRow(ws, 0, 8, HEADER_STYLE);                  // title banner
-    styleRow(ws, 7, 8, HEADER_STYLE);                  // column header row
-    styleRow(ws, 8 + spRows.length, 8, GRAND_TOTAL_STYLE); // Grand Total row
+    styleRow(ws, 0, 10, HEADER_STYLE);                  // title banner
+    styleRow(ws, 7, 10, HEADER_STYLE);                  // column header row
+    styleRow(ws, 8 + spRows.length, 10, GRAND_TOTAL_STYLE); // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -758,7 +763,7 @@ export default function SalespersonCollectionReport() {
     },
   ];
 
-  const COLS: { key: SortKey; label: string; align?: "right" }[] = [
+  const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
     { key: "salesperson",   label: "Salesperson" },
     { key: "outstanding",   label: "Total Outstanding", align: "right" },
     { key: "due",           label: dueLabel,            align: "right" },
@@ -766,22 +771,24 @@ export default function SalespersonCollectionReport() {
     { key: "receivedAgainst",   label: "Against Invoices",  align: "right" },
     { key: "received",          label: "Total",             align: "right" },
     { key: "pending",       label: "Total Pending",     align: "right" },
-    { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right" },
-    { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right" },
+    { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right", width: "w-[80px]", wrap: true },
+    { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right", width: "w-[80px]", wrap: true },
   ];
   type Col = (typeof COLS)[number];
-  const leadingCols  = COLS.filter((c) => ["salesperson", "outstanding", "due"].includes(c.key));
-  const trailingCols = COLS.filter((c) => ["pending", "collectionPct", "collectionPctPrev"].includes(c.key));
+  const anyExpanded = receivedExpanded || pendingExpanded;
+  const leadingCols    = COLS.filter((c) => ["salesperson", "outstanding", "due"].includes(c.key));
+  const collectionCols = COLS.filter((c) => ["collectionPct", "collectionPctPrev"].includes(c.key));
   const onAccountCol = COLS.find((c) => c.key === "receivedOnAccount")!;
   const againstCol   = COLS.find((c) => c.key === "receivedAgainst")!;
   const totalCol     = COLS.find((c) => c.key === "received")!;
+  const pendingCol   = COLS.find((c) => c.key === "pending")!;
 
   /** A sortable column header cell (used for every non-grouped column). */
   const sortHead = (col: Col, rowSpan?: number) => (
     <TableHead
       key={col.key}
       rowSpan={rowSpan}
-      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
+      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none ${col.wrap ? "" : "whitespace-nowrap"} ${col.width ?? ""} ${col.align === "right" ? "text-right" : ""}`}
       onClick={() => toggleSort(col.key)}
     >
       <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
@@ -791,17 +798,19 @@ export default function SalespersonCollectionReport() {
     </TableHead>
   );
 
-  /** Small +/− button toggling the On Account / Against Invoices breakup. */
-  const receivedToggle = (
+  /** Small +/− button toggling a column's breakup sub-columns. */
+  const makeToggle = (expanded: boolean, set: Dispatch<SetStateAction<boolean>>, hint: string) => (
     <button
       type="button"
-      onClick={(e) => { e.stopPropagation(); setReceivedExpanded((v) => !v); }}
+      onClick={(e) => { e.stopPropagation(); set((v) => !v); }}
       className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded border border-border/70 text-foreground/60 hover:bg-muted hover:text-foreground shrink-0"
-      title={receivedExpanded ? "Hide On Account / Against Invoices breakup" : "Show On Account / Against Invoices breakup"}
+      title={expanded ? `Hide ${hint}` : `Show ${hint}`}
     >
-      {receivedExpanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+      {expanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
     </button>
   );
+  const receivedToggle = makeToggle(receivedExpanded, setReceivedExpanded, "On Account / Against Invoices breakup");
+  const pendingToggle  = makeToggle(pendingExpanded, setPendingExpanded, "As-on-today / Till-month-end breakup");
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
@@ -933,7 +942,7 @@ export default function SalespersonCollectionReport() {
         })}
       </div>
       <p className="text-[11px] text-muted-foreground -mt-3">
-        Pending = Overdue (matches the dashboard) + "Due till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received; Outstanding = start-of-month balance. Received = On Account (advance / unallocated) + Against Invoices, and includes manual "other payments".
+        Total Pending = "As on {formatDateLong(asOfDate)}" (Overdue — matches the dashboard's overview) + "Till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received; Outstanding = start-of-month balance. Received = On Account (advance / unallocated) + Against Invoices, and includes manual "other payments". Use the +/− toggles to show or hide each breakup.
       </p>
 
       {/* Main table */}
@@ -947,50 +956,62 @@ export default function SalespersonCollectionReport() {
         <ScrollableTable>
           <Table>
             <TableHeader>
-              {/* Received is collapsed by default (Total only, with a + toggle). When expanded,
-                  a two-row header groups On Account / Against Invoices / Total under the banner. */}
+              {/* Received and Total Pending are each collapsed by default (Total only, with a +
+                  toggle). When expanded, a two-row header groups their breakup under the banner. */}
               <TableRow className="bg-muted/50">
-                <TableHead className="w-8" rowSpan={receivedExpanded ? 2 : 1} />
-                {leadingCols.map((col) => sortHead(col, receivedExpanded ? 2 : 1))}
+                <TableHead className="w-8" rowSpan={anyExpanded ? 2 : 1} />
+                {leadingCols.map((col) => sortHead(col, anyExpanded ? 2 : 1))}
                 {receivedExpanded ? (
-                  <TableHead
-                    colSpan={3}
-                    className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border"
-                  >
-                    <span className="inline-flex items-center justify-center">
-                      {receivedLabel}
-                      {receivedToggle}
-                    </span>
+                  <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
+                    <span className="inline-flex items-center justify-center">{receivedLabel}{receivedToggle}</span>
                   </TableHead>
                 ) : (
                   <TableHead
-                    rowSpan={1}
-                    className="text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap text-right"
+                    rowSpan={anyExpanded ? 2 : 1}
+                    className="text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap text-right border-l border-border"
                     onClick={() => toggleSort("received")}
                   >
-                    <span className="inline-flex items-center gap-1 justify-end w-full">
-                      {receivedLabel}
-                      {sortIcon("received")}
-                      {receivedToggle}
-                    </span>
+                    <span className="inline-flex items-center gap-1 justify-end w-full">{receivedLabel}{sortIcon("received")}{receivedToggle}</span>
                   </TableHead>
                 )}
-                {trailingCols.map((col) => sortHead(col, receivedExpanded ? 2 : 1))}
+                {pendingExpanded ? (
+                  <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
+                    <span className="inline-flex items-center justify-center">{pendingCol.label}{pendingToggle}</span>
+                  </TableHead>
+                ) : (
+                  <TableHead
+                    rowSpan={anyExpanded ? 2 : 1}
+                    className="text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap text-right border-l border-border"
+                    onClick={() => toggleSort("pending")}
+                  >
+                    <span className="inline-flex items-center gap-1 justify-end w-full">{pendingCol.label}{sortIcon("pending")}{pendingToggle}</span>
+                  </TableHead>
+                )}
+                {collectionCols.map((col) => sortHead(col, anyExpanded ? 2 : 1))}
               </TableRow>
-              {receivedExpanded && (
+              {anyExpanded && (
                 <TableRow className="bg-muted/50">
-                  {[onAccountCol, againstCol, totalCol].map((col) => (
+                  {receivedExpanded && [onAccountCol, againstCol, totalCol].map((col) => (
                     <TableHead
                       key={col.key}
                       className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "receivedOnAccount" ? "border-l border-border" : ""}`}
                       onClick={() => toggleSort(col.key)}
                     >
-                      <span className="inline-flex items-center gap-1 justify-end w-full">
-                        {col.label}
-                        {sortIcon(col.key)}
-                      </span>
+                      <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
                     </TableHead>
                   ))}
+                  {pendingExpanded && (
+                    <>
+                      <TableHead className="text-xs font-medium text-foreground/60 whitespace-nowrap text-right border-l border-border">{pendingNowLabel}</TableHead>
+                      <TableHead className="text-xs font-medium text-foreground/60 whitespace-nowrap text-right">{pendingTillLabel}</TableHead>
+                      <TableHead
+                        className="text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right"
+                        onClick={() => toggleSort("pending")}
+                      >
+                        <span className="inline-flex items-center gap-1 justify-end w-full">Total{sortIcon("pending")}</span>
+                      </TableHead>
+                    </>
+                  )}
                 </TableRow>
               )}
             </TableHeader>
@@ -1014,6 +1035,10 @@ export default function SalespersonCollectionReport() {
                       <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.receivedAgainst)}</TableCell>
                     </>}
                     <TableCell className="text-sm text-right font-mono">{fmt(totals.received)}</TableCell>
+                    {pendingExpanded && <>
+                      <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.pending - totals.dueSoon)}</TableCell>
+                      <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.dueSoon)}</TableCell>
+                    </>}
                     {drillCell(allCustomerIds, "pending", "Grand Total", `text-sm text-right font-mono ${totals.pending > 0 ? "text-destructive" : ""}`, fmt(totals.pending))}
                     <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
                       {collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`}
@@ -1048,6 +1073,10 @@ export default function SalespersonCollectionReport() {
                             <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.receivedAgainst)}</TableCell>
                           </>}
                           <TableCell className="text-sm text-right font-mono">{fmt(row.m.received)}</TableCell>
+                          {pendingExpanded && <>
+                            <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.pending - row.m.dueSoon)}</TableCell>
+                            <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.dueSoon)}</TableCell>
+                          </>}
                           {drillCell(row.customerIds, "pending", row.salesperson, `text-sm text-right font-mono font-semibold ${row.m.pending > 0 ? "text-destructive" : ""}`, fmt(row.m.pending))}
                           <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
                             {pct === null ? "—" : `${pct.toFixed(1)}%`}
@@ -1083,6 +1112,10 @@ export default function SalespersonCollectionReport() {
                                   <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.receivedAgainst)}</TableCell>
                                 </>}
                                 <TableCell className="text-right font-mono">{fmt(drill.m.received)}</TableCell>
+                                {pendingExpanded && <>
+                                  <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.pending - drill.m.dueSoon)}</TableCell>
+                                  <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.dueSoon)}</TableCell>
+                                </>}
                                 {drillCell(drill.customerIds, "pending", drill.name, `text-right font-mono ${drill.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(drill.m.pending))}
                                 <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
                                   {cpct === null ? "—" : `${cpct.toFixed(1)}%`}
@@ -1109,6 +1142,10 @@ export default function SalespersonCollectionReport() {
                                       <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.receivedAgainst)}</TableCell>
                                     </>}
                                     <TableCell className="text-right font-mono">{fmt(party.m.received)}</TableCell>
+                                    {pendingExpanded && <>
+                                      <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.pending - party.m.dueSoon)}</TableCell>
+                                      <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.dueSoon)}</TableCell>
+                                    </>}
                                     {drillCell([party.key], "pending", party.name, `text-right font-mono ${party.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(party.m.pending))}
                                     <TableCell className={`text-right font-mono ${pctStyle(ppct)}`}>
                                       {ppct === null ? "—" : `${ppct.toFixed(1)}%`}
@@ -1208,28 +1245,43 @@ export default function SalespersonCollectionReport() {
             <ScrollableTable>
               <Table>
                 <TableHeader>
-                  {/* Received is collapsed by default (Total only); the + toggle reveals the breakup. */}
+                  {/* Received and Pending are each collapsed by default; the + toggle reveals the breakup. */}
                   <TableRow className="bg-muted/50">
-                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
-                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Outstanding</TableHead>
-                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
+                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
+                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Outstanding</TableHead>
+                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
                     {receivedExpanded ? (
                       <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                         <span className="inline-flex items-center justify-center">Received{receivedToggle}</span>
                       </TableHead>
                     ) : (
-                      <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">
+                      <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap border-l border-border">
                         <span className="inline-flex items-center gap-1 justify-end w-full">Received{receivedToggle}</span>
                       </TableHead>
                     )}
-                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Pending</TableHead>
-                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
+                    {pendingExpanded ? (
+                      <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
+                        <span className="inline-flex items-center justify-center">Pending{pendingToggle}</span>
+                      </TableHead>
+                    ) : (
+                      <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap border-l border-border">
+                        <span className="inline-flex items-center gap-1 justify-end w-full">Pending{pendingToggle}</span>
+                      </TableHead>
+                    )}
+                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
                   </TableRow>
-                  {receivedExpanded && (
+                  {anyExpanded && (
                     <TableRow className="bg-muted/50">
-                      <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">On Account</TableHead>
-                      <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Against Invoices</TableHead>
-                      <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
+                      {receivedExpanded && <>
+                        <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">On Account</TableHead>
+                        <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Against Invoices</TableHead>
+                        <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
+                      </>}
+                      {pendingExpanded && <>
+                        <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">{pendingNowLabel}</TableHead>
+                        <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">{pendingTillLabel}</TableHead>
+                        <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
+                      </>}
                     </TableRow>
                   )}
                 </TableHeader>
@@ -1246,6 +1298,10 @@ export default function SalespersonCollectionReport() {
                           <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.receivedAgainst)}</TableCell>
                         </>}
                         <TableCell className="text-sm text-right font-mono">{fmt(d.received)}</TableCell>
+                        {pendingExpanded && <>
+                          <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(d.pending - d.dueSoon)}</TableCell>
+                          <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.dueSoon)}</TableCell>
+                        </>}
                         <TableCell className={`text-sm text-right font-mono ${d.pending > 0 ? "text-destructive" : ""}`}>{fmt(d.pending)}</TableCell>
                         <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
                           {pct === null ? "—" : `${pct.toFixed(1)}%`}
@@ -1263,6 +1319,10 @@ export default function SalespersonCollectionReport() {
                         <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(sumAgainst)}</TableCell>
                       </>}
                       <TableCell className="text-sm text-right font-mono">{fmt(sumReceived)}</TableCell>
+                      {pendingExpanded && <>
+                        <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt((latest?.pending ?? 0) - (latest?.dueSoon ?? 0))}</TableCell>
+                        <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(latest?.dueSoon ?? 0)}</TableCell>
+                      </>}
                       <TableCell className={`text-sm text-right font-mono ${(latest?.pending ?? 0) > 0 ? "text-destructive" : ""}`}>{fmt(latest?.pending ?? 0)}</TableCell>
                       <TableCell className={`text-sm text-right font-mono ${pctStyle(latestPct)}`}>
                         {latestPct === null ? "—" : `${latestPct.toFixed(1)}%`}
