@@ -600,9 +600,9 @@ export function useAppData(filters: Filters = {}): AppData {
   const segmentedConsolidatedCustomers = useMemo(() => {
     let result = projectedConsolidatedCustomers;
     if (filters.customerSegment === "active")
-      result = result.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0);
+      result = result.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
     else if (filters.customerSegment === "no_activity")
-      result = result.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0);
+      result = result.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0 && (c.otherPayments ?? 0) === 0);
     if (filters.balanceFilter === "has_outstanding")
       result = result.filter((c) => c.outstanding > 0);
     else if (filters.balanceFilter === "zero_outstanding")
@@ -658,9 +658,9 @@ export function useAppData(filters: Filters = {}): AppData {
     let result = projectedConsolidatedCustomers;
 
     if (filters.customerSegment === "active")
-      result = result.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0);
+      result = result.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
     else if (filters.customerSegment === "no_activity")
-      result = result.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0);
+      result = result.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0 && (c.otherPayments ?? 0) === 0);
 
     if (filters.balanceFilter === "has_outstanding")
       result = result.filter((c) => c.outstanding > 0);
