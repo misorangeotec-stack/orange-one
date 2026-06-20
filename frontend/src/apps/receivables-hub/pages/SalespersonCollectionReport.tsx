@@ -5,7 +5,7 @@ import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
-  TrendingDown, Percent, Download, BarChart3, X, Search,
+  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus,
 } from "lucide-react";
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -201,6 +201,9 @@ export default function SalespersonCollectionReport() {
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerSearch, setCustomerSearch] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("customer");
+  // Collapsed by default: the Received column shows only the Total; expanding reveals the
+  // On Account / Against Invoices breakup sub-columns.
+  const [receivedExpanded, setReceivedExpanded] = useState<boolean>(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Expanded group rows (group view): keyed by `${salesperson}::${groupKey}`.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -766,6 +769,39 @@ export default function SalespersonCollectionReport() {
     { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right" },
     { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right" },
   ];
+  type Col = (typeof COLS)[number];
+  const leadingCols  = COLS.filter((c) => ["salesperson", "outstanding", "due"].includes(c.key));
+  const trailingCols = COLS.filter((c) => ["pending", "collectionPct", "collectionPctPrev"].includes(c.key));
+  const onAccountCol = COLS.find((c) => c.key === "receivedOnAccount")!;
+  const againstCol   = COLS.find((c) => c.key === "receivedAgainst")!;
+  const totalCol     = COLS.find((c) => c.key === "received")!;
+
+  /** A sortable column header cell (used for every non-grouped column). */
+  const sortHead = (col: Col, rowSpan?: number) => (
+    <TableHead
+      key={col.key}
+      rowSpan={rowSpan}
+      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
+      onClick={() => toggleSort(col.key)}
+    >
+      <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
+        {col.label}
+        {sortIcon(col.key)}
+      </span>
+    </TableHead>
+  );
+
+  /** Small +/− button toggling the On Account / Against Invoices breakup. */
+  const receivedToggle = (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); setReceivedExpanded((v) => !v); }}
+      className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded border border-border/70 text-foreground/60 hover:bg-muted hover:text-foreground shrink-0"
+      title={receivedExpanded ? "Hide On Account / Against Invoices breakup" : "Show On Account / Against Invoices breakup"}
+    >
+      {receivedExpanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+    </button>
+  );
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
@@ -911,54 +947,52 @@ export default function SalespersonCollectionReport() {
         <ScrollableTable>
           <Table>
             <TableHeader>
-              {/* Two-row header: the three Received figures are grouped under a single
-                  "Received in <month>" banner; all other columns span both rows. */}
+              {/* Received is collapsed by default (Total only, with a + toggle). When expanded,
+                  a two-row header groups On Account / Against Invoices / Total under the banner. */}
               <TableRow className="bg-muted/50">
-                <TableHead className="w-8" rowSpan={2} />
-                {COLS.map((col) => {
-                  // The Received group: render the spanning parent once (at the first sub-column),
-                  // and skip the other two — they appear in the second header row instead.
-                  if (col.key === "receivedAgainst" || col.key === "received") return null;
-                  if (col.key === "receivedOnAccount") {
-                    return (
-                      <TableHead
-                        key="received-group"
-                        colSpan={3}
-                        className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border"
-                      >
-                        {receivedLabel}
-                      </TableHead>
-                    );
-                  }
-                  return (
+                <TableHead className="w-8" rowSpan={receivedExpanded ? 2 : 1} />
+                {leadingCols.map((col) => sortHead(col, receivedExpanded ? 2 : 1))}
+                {receivedExpanded ? (
+                  <TableHead
+                    colSpan={3}
+                    className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border"
+                  >
+                    <span className="inline-flex items-center justify-center">
+                      {receivedLabel}
+                      {receivedToggle}
+                    </span>
+                  </TableHead>
+                ) : (
+                  <TableHead
+                    rowSpan={1}
+                    className="text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap text-right"
+                    onClick={() => toggleSort("received")}
+                  >
+                    <span className="inline-flex items-center gap-1 justify-end w-full">
+                      {receivedLabel}
+                      {sortIcon("received")}
+                      {receivedToggle}
+                    </span>
+                  </TableHead>
+                )}
+                {trailingCols.map((col) => sortHead(col, receivedExpanded ? 2 : 1))}
+              </TableRow>
+              {receivedExpanded && (
+                <TableRow className="bg-muted/50">
+                  {[onAccountCol, againstCol, totalCol].map((col) => (
                     <TableHead
                       key={col.key}
-                      rowSpan={2}
-                      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
+                      className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "receivedOnAccount" ? "border-l border-border" : ""}`}
                       onClick={() => toggleSort(col.key)}
                     >
-                      <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
+                      <span className="inline-flex items-center gap-1 justify-end w-full">
                         {col.label}
                         {sortIcon(col.key)}
                       </span>
                     </TableHead>
-                  );
-                })}
-              </TableRow>
-              <TableRow className="bg-muted/50">
-                {COLS.filter((c) => c.key === "receivedOnAccount" || c.key === "receivedAgainst" || c.key === "received").map((col) => (
-                  <TableHead
-                    key={col.key}
-                    className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "receivedOnAccount" ? "border-l border-border" : ""}`}
-                    onClick={() => toggleSort(col.key)}
-                  >
-                    <span className="inline-flex items-center gap-1 justify-end w-full">
-                      {col.label}
-                      {sortIcon(col.key)}
-                    </span>
-                  </TableHead>
-                ))}
-              </TableRow>
+                  ))}
+                </TableRow>
+              )}
             </TableHeader>
             <TableBody>
               {spRows.length === 0 ? (
@@ -975,8 +1009,10 @@ export default function SalespersonCollectionReport() {
                     <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">Grand Total</TableCell>
                     {drillCell(allCustomerIds, "outstanding", "Grand Total", "text-sm text-right font-mono", fmt(startMonthOutstanding(totals)))}
                     {drillCell(allCustomerIds, "due", "Grand Total", "text-sm text-right font-mono", fmt(totals.due))}
-                    <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.receivedOnAccount)}</TableCell>
-                    <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.receivedAgainst)}</TableCell>
+                    {receivedExpanded && <>
+                      <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.receivedOnAccount)}</TableCell>
+                      <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.receivedAgainst)}</TableCell>
+                    </>}
                     <TableCell className="text-sm text-right font-mono">{fmt(totals.received)}</TableCell>
                     {drillCell(allCustomerIds, "pending", "Grand Total", `text-sm text-right font-mono ${totals.pending > 0 ? "text-destructive" : ""}`, fmt(totals.pending))}
                     <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
@@ -1007,8 +1043,10 @@ export default function SalespersonCollectionReport() {
                           </TableCell>
                           {drillCell(row.customerIds, "outstanding", row.salesperson, "text-sm text-right font-mono font-semibold", fmt(startMonthOutstanding(row.m)))}
                           {drillCell(row.customerIds, "due", row.salesperson, "text-sm text-right font-mono", fmt(row.m.due))}
-                          <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.receivedOnAccount)}</TableCell>
-                          <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.receivedAgainst)}</TableCell>
+                          {receivedExpanded && <>
+                            <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.receivedOnAccount)}</TableCell>
+                            <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.receivedAgainst)}</TableCell>
+                          </>}
                           <TableCell className="text-sm text-right font-mono">{fmt(row.m.received)}</TableCell>
                           {drillCell(row.customerIds, "pending", row.salesperson, `text-sm text-right font-mono font-semibold ${row.m.pending > 0 ? "text-destructive" : ""}`, fmt(row.m.pending))}
                           <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
@@ -1040,8 +1078,10 @@ export default function SalespersonCollectionReport() {
                                 </TableCell>
                                 {drillCell(drill.customerIds, "outstanding", drill.name, "text-right font-mono", fmt(startMonthOutstanding(drill.m)))}
                                 {drillCell(drill.customerIds, "due", drill.name, "text-right font-mono", fmt(drill.m.due))}
-                                <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.receivedOnAccount)}</TableCell>
-                                <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.receivedAgainst)}</TableCell>
+                                {receivedExpanded && <>
+                                  <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.receivedOnAccount)}</TableCell>
+                                  <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.receivedAgainst)}</TableCell>
+                                </>}
                                 <TableCell className="text-right font-mono">{fmt(drill.m.received)}</TableCell>
                                 {drillCell(drill.customerIds, "pending", drill.name, `text-right font-mono ${drill.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(drill.m.pending))}
                                 <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
@@ -1064,8 +1104,10 @@ export default function SalespersonCollectionReport() {
                                     </TableCell>
                                     {drillCell([party.key], "outstanding", party.name, "text-right font-mono", fmt(startMonthOutstanding(party.m)))}
                                     {drillCell([party.key], "due", party.name, "text-right font-mono", fmt(party.m.due))}
-                                    <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.receivedOnAccount)}</TableCell>
-                                    <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.receivedAgainst)}</TableCell>
+                                    {receivedExpanded && <>
+                                      <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.receivedOnAccount)}</TableCell>
+                                      <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.receivedAgainst)}</TableCell>
+                                    </>}
                                     <TableCell className="text-right font-mono">{fmt(party.m.received)}</TableCell>
                                     {drillCell([party.key], "pending", party.name, `text-right font-mono ${party.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(party.m.pending))}
                                     <TableCell className={`text-right font-mono ${pctStyle(ppct)}`}>
@@ -1166,20 +1208,30 @@ export default function SalespersonCollectionReport() {
             <ScrollableTable>
               <Table>
                 <TableHeader>
-                  {/* Two-row header: the three Received figures sit under one "Received" banner. */}
+                  {/* Received is collapsed by default (Total only); the + toggle reveals the breakup. */}
                   <TableRow className="bg-muted/50">
-                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
-                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Outstanding</TableHead>
-                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
-                    <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">Received</TableHead>
-                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Pending</TableHead>
-                    <TableHead rowSpan={2} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
+                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
+                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Outstanding</TableHead>
+                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
+                    {receivedExpanded ? (
+                      <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
+                        <span className="inline-flex items-center justify-center">Received{receivedToggle}</span>
+                      </TableHead>
+                    ) : (
+                      <TableHead className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 justify-end w-full">Received{receivedToggle}</span>
+                      </TableHead>
+                    )}
+                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Pending</TableHead>
+                    <TableHead rowSpan={receivedExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
                   </TableRow>
-                  <TableRow className="bg-muted/50">
-                    <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">On Account</TableHead>
-                    <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Against Invoices</TableHead>
-                    <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
-                  </TableRow>
+                  {receivedExpanded && (
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">On Account</TableHead>
+                      <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Against Invoices</TableHead>
+                      <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
+                    </TableRow>
+                  )}
                 </TableHeader>
                 <TableBody>
                   {monthlyData.map((d) => {
@@ -1189,8 +1241,10 @@ export default function SalespersonCollectionReport() {
                         <TableCell className="text-sm font-medium whitespace-nowrap">{d.month}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(startMonthOutstanding(d))}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(d.due)}</TableCell>
-                        <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(d.receivedOnAccount)}</TableCell>
-                        <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.receivedAgainst)}</TableCell>
+                        {receivedExpanded && <>
+                          <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(d.receivedOnAccount)}</TableCell>
+                          <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.receivedAgainst)}</TableCell>
+                        </>}
                         <TableCell className="text-sm text-right font-mono">{fmt(d.received)}</TableCell>
                         <TableCell className={`text-sm text-right font-mono ${d.pending > 0 ? "text-destructive" : ""}`}>{fmt(d.pending)}</TableCell>
                         <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
@@ -1204,8 +1258,10 @@ export default function SalespersonCollectionReport() {
                       <TableCell className="text-sm uppercase tracking-wide text-foreground/80">Total</TableCell>
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(startMonthOutstanding(latest)) : "—"}</TableCell>
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(latest.due) : "—"}</TableCell>
-                      <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(sumOnAccount)}</TableCell>
-                      <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(sumAgainst)}</TableCell>
+                      {receivedExpanded && <>
+                        <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(sumOnAccount)}</TableCell>
+                        <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(sumAgainst)}</TableCell>
+                      </>}
                       <TableCell className="text-sm text-right font-mono">{fmt(sumReceived)}</TableCell>
                       <TableCell className={`text-sm text-right font-mono ${(latest?.pending ?? 0) > 0 ? "text-destructive" : ""}`}>{fmt(latest?.pending ?? 0)}</TableCell>
                       <TableCell className={`text-sm text-right font-mono ${pctStyle(latestPct)}`}>
