@@ -208,28 +208,29 @@ function dimsForCustomer(
   saleType: SaleType,
   groupMapping: Record<string, string>,
 ): Record<AgingDimension, string> {
-  // Per-company granularity for both customer lenses: the same display name in
-  // different companies stays as separate rows (never clubbed), while a name's
-  // ledgers WITHIN one company (e.g. multiple locations) combine into one row.
-  const perCompany = `${c.name || "—"}${KEY_SEP}${c.company || "—"}`;
+  // Per-ledger granularity for both customer lenses: every distinct ledger
+  // (name + company + location) is its own row, so the same display name never
+  // clubs across companies OR locations.
+  const perLedger = `${c.name || "—"}${KEY_SEP}${c.company || "—"}${KEY_SEP}${c.location || "—"}`;
   return {
     saleType: SALE_TYPE_LABEL[saleType] ?? saleType,
-    customer: perCompany,
+    customer: perLedger,
     // Mapped customer-groups roll up deliberately (may span companies); unmapped
-    // names fall back to the per-company key so same-name/different-company stay split.
-    group: groupMapping[c.name] || perCompany,
+    // names fall back to the per-ledger key so same-name ledgers stay split.
+    group: groupMapping[c.name] || perLedger,
     salesperson: c.salesPerson || "Unassigned",
     company: c.company || "—",
     location: c.location || "—",
   };
 }
 
-/** Display name + optional sub-label (e.g. the company) for a grouped node. */
+/** Display name + optional sub-label (e.g. "O-tec · Surat") for a grouped node. */
 function nodeDisplay(dim: AgingDimension, keyValue: string, sample: EnrichedBill): { label: string; sub?: string } {
-  // Customer rows, and unmapped customer-group rows (composite per-company key),
-  // show the name with the company as a sub-label so the split is visible.
+  // Customer rows, and unmapped customer-group rows (composite per-ledger key),
+  // show the name with company · location as a sub-label so the split is visible.
   if (dim === "customer" || (dim === "group" && keyValue.includes(KEY_SEP))) {
-    return { label: sample.cust.name || "—", sub: sample.cust.company || undefined };
+    const sub = [sample.cust.company, sample.cust.location].filter(Boolean).join(" · ");
+    return { label: sample.cust.name || "—", sub: sub || undefined };
   }
   return { label: keyValue };
 }
