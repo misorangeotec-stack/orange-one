@@ -15,6 +15,7 @@ import {
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
@@ -71,6 +72,7 @@ export default function AgingReport() {
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerNames, setCustomerNames] = useState<string[]>([]);
 
@@ -159,7 +161,7 @@ export default function AgingReport() {
   useEffect(() => {
     setExpanded(new Set());
     setPage(1);
-  }, [groupBy, companies, locations, salespersons, saleTypes, customerNames]);
+  }, [groupBy, companies, locations, salespersons, categories, saleTypes, customerNames]);
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -175,8 +177,15 @@ export default function AgingReport() {
     [companies, locations, salespersons, saleTypes, customerNames],
   );
   const bills = useMemo(
-    () => enumerateBills(customers, customerDetail, asOfDate, filters, customerGroupMap.mapping),
-    [customers, customerDetail, asOfDate, filters, customerGroupMap],
+    () =>
+      enumerateBills(
+        customers.filter((c) => matchesCategory(c, categories)),
+        customerDetail,
+        asOfDate,
+        filters,
+        customerGroupMap.mapping,
+      ),
+    [customers, customerDetail, asOfDate, filters, customerGroupMap, categories],
   );
   const tree = useMemo(() => buildAgingTree(bills, groupBy, asOfDate), [bills, groupBy, asOfDate]);
 
@@ -234,6 +243,7 @@ export default function AgingReport() {
     companies.length > 0 && { label: `Company: ${companies.join(", ")}`, onRemove: () => setCompanies([]) },
     locations.length > 0 && { label: `Location: ${locations.join(", ")}`, onRemove: () => setLocations([]) },
     salespersons.length > 0 && { label: `Salesperson: ${salespersons.length} sel.`, onRemove: () => setSalespersons([]) },
+    categories.length > 0 && { label: `Category: ${categories.join(", ")}`, onRemove: () => setCategories([]) },
     saleTypes.length > 0 && { label: `Sale Type: ${saleTypes.length} sel.`, onRemove: () => setSaleTypes([]) },
     customerNames.length > 0 && {
       label: customerNames.length <= 2 ? `Customer: ${customerNames.join(", ")}` : `Customer: ${customerNames.length} sel.`,
@@ -245,6 +255,7 @@ export default function AgingReport() {
     setCompanies([]);
     setLocations([]);
     setSalespersons([]);
+    setCategories([]);
     setSaleTypes([]);
     setCustomerNames([]);
   };
@@ -254,6 +265,7 @@ export default function AgingReport() {
     if (companies.length) filterSummary.push(`Company: ${companies.join(", ")}`);
     if (locations.length) filterSummary.push(`Location: ${locations.join(", ")}`);
     if (salespersons.length) filterSummary.push(`Salesperson: ${salespersons.join(", ")}`);
+    if (categories.length) filterSummary.push(`Category: ${categories.join(", ")}`);
     if (saleTypes.length) filterSummary.push(`Sale Type: ${saleTypes.join(", ")}`);
     if (customerNames.length) filterSummary.push(`Customer: ${customerNames.join(", ")}`);
     exportAgingReportXlsx(tree, { groupBy, asOfDate, filterSummary });
@@ -432,6 +444,7 @@ export default function AgingReport() {
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="h-8 w-40 text-xs rounded-input" />
             </div>
           </div>

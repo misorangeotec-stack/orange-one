@@ -36,6 +36,8 @@ export interface Customer {
   company: string;
   location: string;
   salesPerson: string;
+  /** Sales/finance tier: 'A' | 'B' | 'C' | 'D' | 'E' | 'AA'; '' when Uncategorized. */
+  category: string;
   creditPeriod: number;
   creditLimit: number;
   /** True when the source-sheet Credit Limit equals 1 (the "blocked" sentinel). */
@@ -133,6 +135,8 @@ export interface ConsolidatedCustomer extends Customer {
   constituentIds: string[];
   /** All unique sales persons for this consolidated customer */
   salesPersons: string[];
+  /** All unique categories (tiers) for this consolidated customer */
+  categories: string[];
   /** Per-constituent AI-proposed-limit breakdowns (one entry per merged source row). */
   proposedConstituents: ProposedConstituent[];
 }

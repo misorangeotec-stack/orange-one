@@ -24,6 +24,7 @@ import { useAppData } from "@hub/lib/useAppData";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
+import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import type { AgingBuckets } from "@hub/lib/types";
 import { ShareReportMenu } from "@hub/pages/salesperson/ShareReportMenu";
@@ -52,6 +53,8 @@ interface CustomerRow {
   utilization: number;
   risk: RiskCategory;
   agingBuckets: AgingBuckets;
+  category?: string;
+  categories?: string[];
 }
 
 interface RiskSlice { customers: number; outstanding: number; overdue: number; }
@@ -152,6 +155,7 @@ export default function SalespersonAnalysis() {
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
 
   // Pivot-selection state (drives the bottom customer table)
   const [selectedSalesperson, setSelectedSalesperson] = useState<string | null>(null);
@@ -184,6 +188,9 @@ export default function SalespersonAnalysis() {
     if (riskLevels.length > 0) {
       d = d.filter((r) => riskLevels.includes(r.risk));
     }
+    if (categories.length > 0) {
+      d = d.filter((r) => matchesCategory(r, categories));
+    }
     if (agingFilter !== "all") {
       const bkMap: Record<string, keyof AgingBuckets> = {
         "0-30": "0_30", "31-60": "31_60", "61-90": "61_90",
@@ -193,7 +200,7 @@ export default function SalespersonAnalysis() {
       if (bk) d = d.filter((r) => (r.agingBuckets?.[bk] ?? 0) > 0);
     }
     return d;
-  }, [allData, search, riskLevels, agingFilter]);
+  }, [allData, search, riskLevels, categories, agingFilter]);
 
   /* ── Derived: salesperson × risk pivot ── */
   const pivotRows = useMemo(() => {
@@ -334,6 +341,7 @@ export default function SalespersonAnalysis() {
     setCustomerSegment("all");
     setBalanceFilter("all");
     setSaleTypes([]);
+    setCategories([]);
   };
 
   const filterChips: FilterChip[] = [
@@ -358,12 +366,16 @@ export default function SalespersonAnalysis() {
       label: saleTypes.length <= 2 ? `Type: ${saleTypes.join(", ")}` : `Types: ${saleTypes.length} selected`,
       onRemove: () => setSaleTypes([]),
     },
+    categories.length > 0 && {
+      label: categories.length <= 2 ? `Category: ${categories.join(", ")}` : `Categories: ${categories.length} selected`,
+      onRemove: () => setCategories([]),
+    },
   ].filter(Boolean) as FilterChip[];
 
   /* Reset page when filters or selection change */
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, riskLevels, agingFilter, customerSegment, balanceFilter, saleTypes, selectedSalesperson, selectedRisk, bottomSortKey, bottomSortDir]);
+  }, [search, riskLevels, agingFilter, customerSegment, balanceFilter, saleTypes, categories, selectedSalesperson, selectedRisk, bottomSortKey, bottomSortDir]);
 
   /* Reset selection if salesperson disappears from filtered set */
   useEffect(() => {
@@ -520,6 +532,10 @@ export default function SalespersonAnalysis() {
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
               <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>
+              <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="w-[150px] h-9 text-sm rounded-input border-border" />
             </div>
           </div>
           <FilterChips chips={filterChips} onClearAll={clearFilters} />

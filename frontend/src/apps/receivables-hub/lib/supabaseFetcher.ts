@@ -63,6 +63,7 @@ async function fetchAllRows<T>(
 interface CustomerRow {
   id: string; name: string; company: string; location: string;
   sales_person: string | null;
+  category: string | null;
   credit_period: number; credit_limit: number;
   proposed_credit_limit_3m: number;
   proposed_credit_limit_3m_delta_pct: number | null;
@@ -87,6 +88,7 @@ function toCustomer(r: CustomerRow): Customer {
   return {
     id: r.id, name: r.name, company: r.company, location: r.location,
     salesPerson: r.sales_person ?? "",
+    category: r.category ?? "",
     creditPeriod: r.credit_period,
     creditLimit: Number(r.credit_limit),
     proposedCreditLimit3M: Number(r.proposed_credit_limit_3m),

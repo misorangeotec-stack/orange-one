@@ -20,6 +20,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
@@ -198,6 +199,7 @@ export default function SalespersonCollectionReport() {
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerSearch, setCustomerSearch] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("customer");
@@ -302,6 +304,7 @@ export default function SalespersonCollectionReport() {
       const set = new Set(salesPersons);
       d = d.filter((c) => set.has(spName(c.salesPerson)));
     }
+    if (categories.length) d = d.filter((c) => matchesCategory(c, categories));
     if (saleTypeActive) {
       d = d.filter((c) => {
         const hasInType = saleTypes.some(
@@ -316,7 +319,7 @@ export default function SalespersonCollectionReport() {
     const q = customerSearch.trim().toLowerCase();
     if (q) d = d.filter((c) => c.name.toLowerCase().includes(q));
     return d;
-  }, [allCustomers, companies, locations, salesPersons, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
+  }, [allCustomers, companies, locations, salesPersons, categories, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
 
   // Customer-ledger lookup for the invoice drill-down (company/location/name per id).
   const customerById = useMemo(() => {
@@ -697,7 +700,7 @@ export default function SalespersonCollectionReport() {
   );
 
   const clearFilters = () => {
-    setCompanies([]); setLocations([]); setSalesPersons([]); setSaleTypes([]); setCustomerSearch("");
+    setCompanies([]); setLocations([]); setSalesPersons([]); setCategories([]); setSaleTypes([]); setCustomerSearch("");
   };
   const filterChips: FilterChip[] = [
     companies.length > 0 && {
@@ -711,6 +714,10 @@ export default function SalespersonCollectionReport() {
     salesPersons.length > 0 && {
       label: salesPersons.length <= 2 ? `Person: ${salesPersons.join(", ")}` : `${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
+    },
+    categories.length > 0 && {
+      label: categories.length <= 2 ? `Category: ${categories.join(", ")}` : `${categories.length} categories`,
+      onRemove: () => setCategories([]),
     },
     saleTypes.length > 0 && {
       label: saleTypes.length <= 2
@@ -986,6 +993,10 @@ export default function SalespersonCollectionReport() {
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sales Person</span>
               <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>
+              <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="w-40 h-9 text-sm rounded-input border-border" />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>

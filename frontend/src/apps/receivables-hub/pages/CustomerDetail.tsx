@@ -1206,6 +1206,19 @@ export default function CustomerDetail() {
                 >
                   {customer.risk}
                 </Badge>
+                {(() => {
+                  const cats = (customer as { categories?: string[] }).categories;
+                  const catLabel = cats && cats.length ? cats.join(", ") : (customer.category || "");
+                  return catLabel ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 rounded-button bg-primary/10 text-primary border-primary/30"
+                      title="Customer category (tier) from the sales mapping"
+                    >
+                      Category {catLabel}
+                    </Badge>
+                  ) : null;
+                })()}
                 {customer.blocked && (
                   <Badge
                     variant="outline"

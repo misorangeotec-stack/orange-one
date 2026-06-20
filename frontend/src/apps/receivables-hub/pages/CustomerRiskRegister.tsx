@@ -2,9 +2,8 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
-  Search, Filter, Download, Save, ChevronRight, ChevronDown, ChevronUp, ArrowUpDown,
-  ArrowUp, ArrowDown, RefreshCw, ShieldAlert, X, AlertTriangle,
-  Users, DollarSign, Receipt, FileMinus, TrendingDown, TrendingUp, Clock, RotateCcw,
+  Search, Download, Save, ChevronRight, ChevronDown, ChevronUp, ArrowUpDown,
+  ArrowUp, ArrowDown, RefreshCw, ShieldAlert, AlertTriangle,
   Columns3,
 } from "lucide-react";
 import {
@@ -43,9 +42,10 @@ import { useAppData } from "@hub/lib/useAppData";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
-import type { AgingBuckets, ConsolidatedCustomer, GroupedCustomer, ProposedCreditLimitReason, ProposedConstituent } from "@hub/lib/types";
+import type { AgingBuckets, Customer, ConsolidatedCustomer, GroupedCustomer, ProposedCreditLimitReason, ProposedConstituent } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -57,6 +57,10 @@ interface CustomerRow {
   name: string;
   salesPerson: string;
   salesPersons?: string[];
+  /** Sales/finance tier: 'A' | 'B' | 'C' | 'D' | 'E' | 'AA'; '' when Uncategorized. */
+  category: string;
+  /** All unique categories (tiers) for this consolidated/group row. */
+  categories?: string[];
   /** All companies this row spans (one entry = single company; >1 = "Multiple"). */
   companies?: string[];
   /** All locations this row spans (one entry = single location; >1 = "Multiple"). */
@@ -138,83 +142,216 @@ function DeltaBadge({ pct }: { pct: number | null }) {
   );
 }
 
-/** Single-constituent breakdown for the 3M Proposed (avg-of-last-3-months × 3). */
-function ThreeMReasonBreakdown({
-  avg3MMonthlySales,
-  proposed3M,
-  compact = false,
-}: {
-  avg3MMonthlySales: number;
-  proposed3M: number;
+/* ── Plain-language helpers for the proposed-limit tooltips ─────────────────
+ * Turn the stored ProposedCreditLimitReason (factors + raw strings) into
+ * everyday wording a non-finance user can read. */
+
+const numTrim = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
+
+/** A multiplier factor → a plain "+10%" / "−20%" / "no change" phrase. */
+function factorPct(factor: number): string {
+  const pct = Math.round((factor - 1) * 100);
+  if (pct === 0) return "no change";
+  return pct > 0 ? `+${pct}%` : `−${Math.abs(pct)}%`;
+}
+
+/** Payment-discipline reason → plain sentence ("Payments are 87 days late"). */
+function paymentPhrase(reason: ProposedCreditLimitReason): string {
+  if (/clean/i.test(reason.paymentReason)) return "Payments are always on time";
+  const m = reason.paymentReason.match(/(\d+)\s*days/);
+  const days = m ? parseInt(m[1], 10) : null;
+  if (days === null) return reason.paymentReason;
+  if (days === 0) return "Payments are always on time";
+  return reason.paymentFactor >= 1 ? `Payments are on time (${days} days)` : `Payments are ${days} days late`;
+}
+
+/** Overdue-exposure reason → plain sentence. */
+function overduePhrase(reason: ProposedCreditLimitReason): string {
+  const m = reason.overdueReason.match(/([\d.]+)%/);
+  if (!m) return reason.overdueReason;
+  const pct = Math.round(parseFloat(m[1]));
+  if (pct >= 100) return "Overdue is more than their total sales";
+  if (pct <= 10) return `Only ${pct}% of their sales are overdue`;
+  return `${pct}% of their sales are still unpaid`;
+}
+
+/** Risk-band reason → "Risk level Medium". */
+function riskPhrase(reason: ProposedCreditLimitReason): string {
+  const word = reason.riskReason.replace(/\s*risk band\s*/i, "").trim();
+  return `Risk level ${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+}
+
+/** Headline verdict tag from the AI-vs-current delta. */
+function verdictTag(deltaPct: number | null): { arrow: string; label: string; cls: string } {
+  if (deltaPct === null || !isFinite(deltaPct)) return { arrow: "", label: "Suggested limit", cls: "text-muted-foreground" };
+  if (deltaPct > 5)  return { arrow: "▲", label: "Raise limit",  cls: "text-emerald-600" };
+  if (deltaPct < -5) return { arrow: "▼", label: "Reduce limit", cls: "text-destructive" };
+  return { arrow: "=", label: "Hold limit", cls: "text-muted-foreground" };
+}
+
+/** "88% below their current ₹4 Cr limit" punchline. */
+function deltaText(deltaPct: number | null, creditLimit: number): string | null {
+  if (deltaPct === null || !isFinite(deltaPct)) return null;
+  const abs = Math.abs(Math.round(deltaPct));
+  if (abs === 0) return `same as their current ${fmt(creditLimit)} limit`;
+  return `${abs}% ${deltaPct < 0 ? "below" : "above"} their current ${fmt(creditLimit)} limit`;
+}
+
+/** One short reason line for a single company account inside an aggregated tooltip
+ *  (multi-company customers list one line each instead of the full working). */
+function compactReason(reason: ProposedCreditLimitReason): string {
+  if (reason.edgeCase === "dormant") return "No recent purchases — held at half its limit";
+  const bits: string[] = [];
+  if (reason.paymentFactor < 1) {
+    const m = reason.paymentReason.match(/(\d+)\s*days/);
+    bits.push(m ? `${m[1]} days late` : "late payments");
+  } else if (reason.paymentFactor > 1) {
+    bits.push("pays on time");
+  }
+  if (reason.riskFactor !== 1) {
+    bits.push(`${reason.riskReason.replace(/\s*risk band\s*/i, "").trim().toLowerCase()} risk`);
+  }
+  if (reason.overdueFactor <= 0.5) bits.push("most sales unpaid");
+  return bits.length ? `Cut for ${bits.join(", ")}` : "Within normal range";
+}
+
+/** One-line plain summary for a multi-company customer: the total IS the sum of
+ *  each account's safe limit, plus the headline reason. */
+function aggregateSummary(cs: ProposedConstituent[], total: number, deltaPct: number | null, creditLimit: number): string {
+  const dormant = cs.filter((k) => k.reason.edgeCase === "dormant").length;
+  const late = cs.filter((k) => k.reason.edgeCase !== "dormant" && k.reason.paymentFactor < 1).length;
+  const risky = cs.filter((k) => k.reason.edgeCase !== "dormant" && k.reason.paymentFactor >= 1 && k.reason.riskFactor < 1).length;
+  const reasons: string[] = [];
+  if (dormant) reasons.push(`${dormant} ${dormant > 1 ? "have" : "has"} no recent purchases`);
+  if (late) reasons.push(`${late} ${late > 1 ? "are" : "is"} paying late`);
+  if (risky) reasons.push(`${risky} carr${risky > 1 ? "y" : "ies"} high risk`);
+  const because = reasons.length ? ` Most are cut back because ${reasons.slice(0, 2).join(" and ")}.` : "";
+  const dt = deltaText(deltaPct, creditLimit);
+  return `${fmt(total)} is the safe limits of this customer's ${cs.length} company account${cs.length > 1 ? "s" : ""} added together${dt ? ` — ${dt}` : ""}.${because}`;
+}
+
+/** Plain step-by-step working that lands on the AI Proposed number.
+ *  compact (used inside aggregated rows) drops the "Why this number" label and
+ *  the bordered final line — the constituent header already shows the figure. */
+function AIWorking({ reason, creditLimit, deltaPct, compact = false }: {
+  reason: ProposedCreditLimitReason;
+  creditLimit: number;
+  deltaPct: number | null;
   compact?: boolean;
 }) {
-  const sizeCls = compact ? "text-[11px]" : "text-xs";
+  const size = compact ? "text-[11px]" : "text-xs";
 
-  if (avg3MMonthlySales <= 0) {
+  if (reason.edgeCase === "dormant") {
     return (
-      <div className={`${sizeCls} text-muted-foreground break-words whitespace-normal`}>
-        No sales in last 3 months — 3M Proposed = ₹0.
+      <div className={`${size} leading-relaxed break-words whitespace-normal`}>
+        {!compact && <div className="text-muted-foreground mb-1">Why this number:</div>}
+        No purchases in the last 3 months. We hold them at{" "}
+        <span className="font-semibold">half their current limit (<span className="font-mono">{fmt(reason.final)}</span>)</span>{" "}
+        as a safety limit until they start buying again.
       </div>
     );
   }
 
-  const total3M = avg3MMonthlySales * 3;
+  const cut = (label: ReactNode, pct: string) => (
+    <li className="flex items-start gap-1">
+      <span className="break-words whitespace-normal min-w-0">{label}</span>
+      <span className={`ml-auto pl-2 whitespace-nowrap font-medium ${pct === "no change" ? "text-muted-foreground" : pct.startsWith("+") ? "text-emerald-600" : "text-destructive"}`}>
+        {pct === "no change" ? "no change" : `→ ${pct}`}
+      </span>
+    </li>
+  );
+
+  const floored = reason.finalBeforeRounding === reason.floor && reason.computed < reason.floor;
+  const capped  = reason.finalBeforeRounding === reason.ceiling && reason.computed > reason.ceiling && !floored;
+  const delta   = deltaText(deltaPct, creditLimit);
 
   return (
-    <div className={`${sizeCls} grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5`}>
-      <div className="text-muted-foreground whitespace-nowrap">3M total sales</div>
-      <div className="break-words whitespace-normal"><span className="font-mono">{fmt(total3M)}</span></div>
-
-      <div className="text-muted-foreground whitespace-nowrap">Monthly avg</div>
-      <div className="break-words whitespace-normal"><span className="font-mono">{fmt(avg3MMonthlySales)}</span> /mo</div>
-
-      <div className="text-muted-foreground whitespace-nowrap">× 3 months</div>
-      <div className="break-words whitespace-normal"><span className="font-mono">{fmt(total3M)}</span></div>
-
+    <div className={`${size} leading-relaxed`}>
+      {!compact && <div className="text-muted-foreground mb-1">Why this number:</div>}
+      <div className="mb-1.5 break-words whitespace-normal">
+        They buy about <span className="font-semibold font-mono">{fmt(reason.avg3MMonthlySales)}</span> a month.
+        Allowing <span className="font-semibold">{numTrim(reason.cycleMultiplier)} months of cover</span> for their
+        credit terms gives a starting limit of <span className="font-semibold font-mono">{fmt(reason.base)}</span>.
+      </div>
+      <ul className="space-y-0.5 mb-1">
+        {reason.paymentFactor !== 1 && cut(paymentPhrase(reason), factorPct(reason.paymentFactor))}
+        {reason.overdueFactor !== 1 && cut(overduePhrase(reason), factorPct(reason.overdueFactor))}
+        {reason.riskFactor    !== 1 && cut(riskPhrase(reason),    factorPct(reason.riskFactor))}
+      </ul>
+      {floored && (
+        <div className="mb-1 break-words whitespace-normal text-muted-foreground">
+          This is below our minimum, so it is set to <span className="font-mono">{fmt(reason.floor)}</span>.
+        </div>
+      )}
+      {capped && (
+        <div className="mb-1 break-words whitespace-normal text-muted-foreground">
+          This is above the allowed maximum, so it is capped at <span className="font-mono">{fmt(reason.ceiling)}</span>.
+        </div>
+      )}
       {!compact && (
-        <>
-          <div className="text-muted-foreground whitespace-nowrap border-t border-border/60 pt-1 mt-0.5">Rounded</div>
-          <div className="break-words whitespace-normal border-t border-border/60 pt-1 mt-0.5">
-            <span className="font-mono">{fmt(proposed3M)}</span>
-          </div>
-        </>
+        <div className="border-t border-border/60 pt-1 mt-1 font-semibold break-words whitespace-normal">
+          Final safe limit: <span className="font-mono">{fmt(reason.final)}</span>
+          {delta && <span className="font-normal text-muted-foreground"> — {delta}.</span>}
+        </div>
       )}
     </div>
   );
 }
 
-/** Tooltip body explaining the 3M Proposed credit limit. For aggregated rows,
- *  groups constituents under company headers (same layout as AI Proposed). */
+const RISK_TAGLINE: Record<RiskCategory, string> = {
+  critical: "highest risk",
+  high: "needs attention",
+  medium: "keep an eye on this",
+  low: "healthy",
+};
+
+/** Plain per-cell tooltip for the Risk badge, using the customer's own numbers. */
+function RiskReason({ row }: { row: CustomerRow }) {
+  const usage = row.blocked
+    ? "and their limit is blocked"
+    : `and they're using ${row.utilization}% of their credit limit`;
+  return (
+    <div className="text-xs leading-relaxed break-words whitespace-normal space-y-1">
+      <div className="font-semibold capitalize">
+        {row.risk} — {RISK_TAGLINE[row.risk]}.
+      </div>
+      <div>
+        Their oldest unpaid bill is <span className="font-semibold">{row.maxOverdueDays} days overdue</span> {usage}.
+      </div>
+      <div className="text-muted-foreground">
+        We rate risk on whichever is worse: Critical = more than 180 days late OR over the limit.
+      </div>
+    </div>
+  );
+}
+
+/** Tooltip body explaining the 3M Proposed credit limit — a plain-language note.
+ *  For aggregated rows, lists the per-company contributions. */
 function ThreeMProposedReason({ row }: { row: CustomerRow }) {
   const constituents = row.proposedConstituents ?? [];
   const reason = row.proposedCreditLimitReason;
 
-  // Single-constituent — show full breakdown
+  // Single-constituent
   if (constituents.length <= 1) {
-    if (!reason) {
-      return (
-        <div>
-          <div className="font-semibold mb-1">
-            3M Proposed: <span className="font-mono">{fmt(row.proposedCreditLimit3M ?? 0)}</span>
-          </div>
-          <div className="text-muted-foreground">Reasoning unavailable.</div>
-        </div>
-      );
-    }
+    const avg = reason?.avg3MMonthlySales ?? 0;
     return (
       <div className="space-y-1">
         <div className="font-semibold">
-          3M Proposed: <span className="font-mono">{fmt(row.proposedCreditLimit3M)}</span>
+          3M Proposed: <span className="font-mono">{fmt(row.proposedCreditLimit3M ?? 0)}</span>
           <DeltaBadge pct={row.proposedCreditLimit3MDeltaPct ?? null} />
         </div>
-        <div className="text-[11px] text-muted-foreground mb-1">
-          Avg monthly sales (last 3 months) × 3
-        </div>
         <div className="border-t border-border/60 my-1" />
-        <ThreeMReasonBreakdown
-          avg3MMonthlySales={reason.avg3MMonthlySales}
-          proposed3M={row.proposedCreditLimit3M}
-        />
+        {avg > 0 ? (
+          <div className="text-xs leading-relaxed break-words whitespace-normal">
+            A simple benchmark based only on how much they buy: average monthly
+            purchases (<span className="font-mono font-semibold">{fmt(avg)}</span>/mo) × 3 months.
+            It does not look at whether they pay on time — see <span className="font-medium">AI Proposed</span> for the risk-adjusted limit.
+          </div>
+        ) : (
+          <div className="text-xs leading-relaxed text-muted-foreground break-words whitespace-normal">
+            No purchases in the last 3 months, so the 3-month benchmark is ₹0.
+          </div>
+        )}
       </div>
     );
   }
@@ -234,7 +371,7 @@ function ThreeMProposedReason({ row }: { row: CustomerRow }) {
           <DeltaBadge pct={row.proposedCreditLimit3MDeltaPct ?? null} />
         </div>
         <div className="text-[11px] text-muted-foreground">
-          Avg monthly sales (last 3 months) × 3 — sum of {constituents.length} row{constituents.length !== 1 ? "s" : ""} across {byCompany.size} compan{byCompany.size !== 1 ? "ies" : "y"}.
+          A simple benchmark — average monthly purchases × 3 months. Total of {constituents.length} row{constituents.length !== 1 ? "s" : ""} across {byCompany.size} compan{byCompany.size !== 1 ? "ies" : "y"}.
         </div>
       </div>
 
@@ -251,26 +388,14 @@ function ThreeMProposedReason({ row }: { row: CustomerRow }) {
               </span>
             </div>
             {list.map((k, i) => (
-              <div key={`${k.customerId}-${i}`} className={i > 0 ? "mt-2" : ""}>
-                <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                  <span className="text-[11px] font-medium text-foreground/90 break-words whitespace-normal min-w-0">
-                    {k.customerName}
-                  </span>
-                  <span className="font-semibold whitespace-nowrap shrink-0">
-                    <span className="font-mono">{fmt(k.proposed3M)}</span>
-                    <DeltaBadge pct={k.delta3MPct} />
-                  </span>
-                </div>
-                <div className="text-[10px] text-muted-foreground mb-0.5 flex flex-wrap gap-x-2 gap-y-0">
-                  <span>{k.company} · {k.location}</span>
-                  <span>•</span>
-                  <span>Current limit <span className="font-mono text-foreground/80">{fmt(k.creditLimit)}</span></span>
-                </div>
-                <ThreeMReasonBreakdown
-                  avg3MMonthlySales={k.reason.avg3MMonthlySales}
-                  proposed3M={k.proposed3M}
-                  compact
-                />
+              <div key={`${k.customerId}-${i}`} className={`flex items-baseline justify-between gap-2 ${i > 0 ? "mt-1" : ""}`}>
+                <span className="text-[11px] text-foreground/90 break-words whitespace-normal min-w-0">
+                  {k.customerName} <span className="text-muted-foreground">· {k.location}</span>
+                </span>
+                <span className="font-semibold whitespace-nowrap shrink-0">
+                  <span className="font-mono">{fmt(k.proposed3M)}</span>
+                  <DeltaBadge pct={k.delta3MPct} />
+                </span>
               </div>
             ))}
           </div>
@@ -280,74 +405,15 @@ function ThreeMProposedReason({ row }: { row: CustomerRow }) {
   );
 }
 
-/** Single-constituent factor breakdown. Two-column wrap-friendly layout. */
-function ReasonBreakdown({ reason, compact = false }: { reason: ProposedCreditLimitReason; compact?: boolean }) {
-  if (reason.edgeCase === "dormant") {
-    return (
-      <div className={`${compact ? "text-[11px]" : "text-xs"} text-muted-foreground break-words whitespace-normal`}>
-        No sales in last 3 months — dormant. Suggested = current × 0.5.
-      </div>
-    );
-  }
-
-  const sizeCls = compact ? "text-[11px]" : "text-xs";
-
-  const labelCell = (text: string, factor?: string) => (
-    <div className="text-muted-foreground whitespace-nowrap">
-      {text}{factor !== undefined && <> <span className="font-mono text-foreground/90">{factor}</span></>}
-    </div>
-  );
-  const noteCell = (children: ReactNode) => (
-    <div className="break-words whitespace-normal">{children}</div>
-  );
-
-  return (
-    <div className={`${sizeCls} grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5`}>
-      {labelCell("Base")}
-      {noteCell(<><span className="font-mono">{fmt(reason.base)}</span> · {fmt(reason.avg3MMonthlySales)}/mo × {reason.cycleMultiplier.toFixed(2)} cycle</>)}
-
-      {labelCell("× Payment", reason.paymentFactor.toFixed(2))}
-      {noteCell(reason.paymentReason)}
-
-      {labelCell("× Overdue", reason.overdueFactor.toFixed(2))}
-      {noteCell(reason.overdueReason)}
-
-      {labelCell("× Risk", reason.riskFactor.toFixed(2))}
-      {noteCell(reason.riskReason)}
-
-      {!compact && (
-        <>
-          <div className="text-muted-foreground border-t border-border/60 pt-1 mt-0.5 whitespace-nowrap">Computed</div>
-          <div className="break-words whitespace-normal border-t border-border/60 pt-1 mt-0.5">
-            <span className="font-mono">{fmt(reason.computed)}</span>
-          </div>
-          {reason.finalBeforeRounding === reason.floor && (
-            <>
-              {labelCell("Floored")}
-              {noteCell(<><span className="font-mono">{fmt(reason.floor)}</span> <span className="text-muted-foreground">(min)</span></>)}
-            </>
-          )}
-          {reason.finalBeforeRounding === reason.ceiling && reason.finalBeforeRounding !== reason.floor && (
-            <>
-              {labelCell("Capped")}
-              {noteCell(<><span className="font-mono">{fmt(reason.ceiling)}</span> <span className="text-muted-foreground">(max)</span></>)}
-            </>
-          )}
-          {labelCell("Rounded")}
-          {noteCell(<span className="font-mono">{fmt(reason.final)}</span>)}
-        </>
-      )}
-    </div>
-  );
-}
-
-/** Tooltip body explaining the AI Proposed credit limit. For aggregated rows,
- *  groups constituents under company headers so the same company isn't repeated. */
+/** Tooltip body explaining the AI Proposed credit limit in plain language, showing
+ *  the full step-by-step working that lands on the number. For aggregated rows,
+ *  groups constituents under company headers, each with its own working. */
 function AIProposedReason({ row }: { row: CustomerRow }) {
+  const [expanded, setExpanded] = useState(false);
   const constituents = row.proposedConstituents ?? [];
   const reason = row.proposedCreditLimitReason;
 
-  // Single-constituent (or fallback) — show full breakdown
+  // Single-constituent (or fallback)
   if (constituents.length <= 1) {
     if (!reason) {
       return (
@@ -359,71 +425,86 @@ function AIProposedReason({ row }: { row: CustomerRow }) {
         </div>
       );
     }
+    const tag = verdictTag(row.proposedCreditLimitAIDeltaPct ?? null);
     return (
       <div className="space-y-1">
         <div className="font-semibold">
           AI Proposed: <span className="font-mono">{fmt(reason.final)}</span>
-          <DeltaBadge pct={row.proposedCreditLimitAIDeltaPct ?? null} />
+          {tag.arrow && <span className={`ml-2 ${tag.cls}`}>{tag.arrow} {tag.label}</span>}
         </div>
         <div className="border-t border-border/60 my-1" />
-        <ReasonBreakdown reason={reason} />
+        <AIWorking reason={reason} creditLimit={row.creditLimit} deltaPct={row.proposedCreditLimitAIDeltaPct ?? null} />
       </div>
     );
   }
 
-  // Multi-constituent — group by company, list customers under each company header.
+  // Multi-constituent — group by company, each with its own plain working.
   const byCompany = new Map<string, ProposedConstituent[]>();
   for (const k of constituents) {
     if (!byCompany.has(k.company)) byCompany.set(k.company, []);
     byCompany.get(k.company)!.push(k);
   }
+  const tag = verdictTag(row.proposedCreditLimitAIDeltaPct ?? null);
 
   return (
-    <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
-      <div>
-        <div className="font-semibold">
-          AI Proposed: <span className="font-mono">{fmt(row.proposedCreditLimitAI)}</span>
-          <DeltaBadge pct={row.proposedCreditLimitAIDeltaPct ?? null} />
-        </div>
-        <div className="text-[11px] text-muted-foreground">
-          Sum of {constituents.length} row{constituents.length !== 1 ? "s" : ""} across {byCompany.size} compan{byCompany.size !== 1 ? "ies" : "y"}.
-        </div>
+    <div className="space-y-1.5 max-h-[60vh] overflow-y-auto pr-1">
+      <div className="font-semibold">
+        AI Proposed: <span className="font-mono">{fmt(row.proposedCreditLimitAI)}</span>
+        {tag.arrow && <span className={`ml-2 ${tag.cls}`}>{tag.arrow} {tag.label}</span>}
       </div>
 
-      {Array.from(byCompany.entries()).map(([company, list]) => {
-        const companySum = list.reduce((s, k) => s + k.proposedAI, 0);
-        return (
-          <div key={company} className="border-t border-border/60 pt-1.5">
-            <div className="flex items-baseline justify-between gap-2 mb-1">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
-                {company}
-              </span>
-              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                Σ <span className="font-mono">{fmt(companySum)}</span>
-              </span>
-            </div>
-            {list.map((k, i) => (
-              <div key={`${k.customerId}-${i}`} className={i > 0 ? "mt-2" : ""}>
-                <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                  <span className="text-[11px] font-medium text-foreground/90 break-words whitespace-normal min-w-0">
-                    {k.customerName}
+      {/* Short summary first — the total IS the sum of the account limits below. */}
+      <div className="text-[11px] leading-relaxed text-muted-foreground break-words whitespace-normal">
+        {aggregateSummary(constituents, row.proposedCreditLimitAI, row.proposedCreditLimitAIDeltaPct ?? null, row.creditLimit)}
+      </div>
+
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+        className="text-[11px] font-medium text-primary hover:underline"
+      >
+        {expanded ? "Hide breakdown ▲" : `Show how it adds up (${constituents.length} accounts) ▾`}
+      </button>
+
+      {expanded && (
+        <div className="space-y-1.5 pt-0.5">
+          {Array.from(byCompany.entries()).map(([company, list]) => {
+            const companySum = list.reduce((s, k) => s + k.proposedAI, 0);
+            return (
+              <div key={company} className="border-t border-border/60 pt-1.5">
+                <div className="flex items-baseline justify-between gap-2 mb-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-foreground/70">
+                    {company}
                   </span>
-                  <span className="font-semibold whitespace-nowrap shrink-0">
-                    <span className="font-mono">{fmt(k.proposedAI)}</span>
-                    <DeltaBadge pct={k.deltaPct} />
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    Σ <span className="font-mono">{fmt(companySum)}</span>
                   </span>
                 </div>
-                <div className="text-[10px] text-muted-foreground mb-0.5 flex flex-wrap gap-x-2 gap-y-0">
-                  <span>{k.company} · {k.location}</span>
-                  <span>•</span>
-                  <span>Current limit <span className="font-mono text-foreground/80">{fmt(k.creditLimit)}</span></span>
-                </div>
-                <ReasonBreakdown reason={k.reason} compact />
+                {list.map((k, i) => (
+                  <div key={`${k.customerId}-${i}`} className={i > 0 ? "mt-1.5" : ""}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-[11px] font-medium text-foreground/90 break-words whitespace-normal min-w-0">
+                        {k.customerName} <span className="text-muted-foreground font-normal">· {k.location}</span>
+                      </span>
+                      <span className="font-semibold whitespace-nowrap shrink-0">
+                        <span className="font-mono">{fmt(k.proposedAI)}</span>
+                        <DeltaBadge pct={k.deltaPct} />
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground break-words whitespace-normal">
+                      {compactReason(k.reason)}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            );
+          })}
+          <div className="flex items-baseline justify-between gap-2 border-t border-border/80 pt-1 font-semibold">
+            <span>Total</span>
+            <span className="font-mono">{fmt(row.proposedCreditLimitAI)}</span>
           </div>
-        );
-      })}
+        </div>
+      )}
     </div>
   );
 }
@@ -497,12 +578,12 @@ export default function CustomerRiskRegister() {
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
   const [blockedFilter, setBlockedFilter] = useState<"all" | "blocked" | "not_blocked">("all");
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [companyFilter, setCompanyFilter] = useState("all");
   const [locationFilter, setLocationFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey | null>("outstanding");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [showKpis, setShowKpis] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(() => {
     try {
@@ -554,7 +635,7 @@ export default function CustomerRiskRegister() {
     });
   };
 
-  const { loading, error, allCustomers, consolidatedCustomers, groupedCustomers, customerDetail, salesPersonOptions } = useAppData({
+  const { loading, error, customers, allCustomers, consolidatedCustomers, groupedCustomers, customerDetail, salesPersonOptions } = useAppData({
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
     customerSegment,
     balanceFilter,
@@ -592,6 +673,36 @@ export default function CustomerRiskRegister() {
     return m;
   }, [consolidatedCustomers]);
 
+  // Per-ledger expansion for group children. A customer that trades under more
+  // than one company/location is ONE consolidated row but several Tally ledgers;
+  // under a group we show each ledger as its own row (matching the Aging Report),
+  // so a 2-company customer contributes 2 rows, not 1.
+  const projectedById = useMemo(() => {
+    const m = new Map<string, Customer>();
+    for (const c of customers) m.set(c.id, c);
+    return m;
+  }, [customers]);
+
+  const ledgerRowsOf = (child: CustomerRow): CustomerRow[] => {
+    const ids = child.constituentIds ?? [];
+    if (ids.length <= 1) return [child];
+    const ledgers = ids
+      .map((id) => projectedById.get(id))
+      .filter((c): c is Customer => !!c)
+      .map((c): CustomerRow => ({
+        ...c,
+        companies:      [c.company],
+        locations:      [c.location],
+        salesPersons:   c.salesPerson ? [c.salesPerson] : [],
+        categories:     c.category ? [c.category] : [],
+        constituentIds: [c.id],
+      }))
+      .sort((a, b) => b.outstanding - a.outstanding);
+    // Fall back to the consolidated child if its ledgers aren't in the current
+    // (company/location-filtered) set — never collapse to nothing.
+    return ledgers.length > 1 ? ledgers : [child];
+  };
+
   // Persist view mode in the URL so deep links/refreshes preserve it.
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
@@ -628,7 +739,7 @@ export default function CustomerRiskRegister() {
     }
   };
 
-  const activeFilterCount = [agingFilter, specialFilter, customerSegment, balanceFilter, blockedFilter, companyFilter, locationFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0);
+  const activeFilterCount = [agingFilter, specialFilter, customerSegment, balanceFilter, blockedFilter, companyFilter, locationFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setSearch("");
@@ -639,6 +750,7 @@ export default function CustomerRiskRegister() {
     setBalanceFilter("all");
     setBlockedFilter("all");
     setSalesPersons([]);
+    setCategories([]);
     setSaleTypes([]);
     setCompanyFilter("all");
     setLocationFilter("all");
@@ -677,6 +789,10 @@ export default function CustomerRiskRegister() {
       label: salesPersons.length <= 2 ? `Sales: ${salesPersons.join(", ")}` : `Sales: ${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
     },
+    categories.length > 0 && {
+      label: categories.length <= 3 ? `Category: ${categories.join(", ")}` : `Category: ${categories.length} selected`,
+      onRemove: () => setCategories([]),
+    },
     saleTypes.length > 0 && {
       label: saleTypes.length <= 2 ? `Type: ${saleTypes.join(", ")}` : `Types: ${saleTypes.length} selected`,
       onRemove: () => setSaleTypes([]),
@@ -708,9 +824,10 @@ export default function CustomerRiskRegister() {
       if (specialFilter === "over_credit_limit" && !(r.utilization > 100)) return false;
       if (blockedFilter === "blocked" && r.blocked !== true) return false;
       if (blockedFilter === "not_blocked" && r.blocked === true) return false;
+      if (!matchesCategory(r, categories)) return false;
       return true;
     };
-  }, [search, riskLevels, agingFilter, specialFilter, blockedFilter]);
+  }, [search, riskLevels, agingFilter, specialFilter, blockedFilter, categories]);
 
   const rows = useMemo(() => {
     let d = [...allData];
@@ -744,6 +861,9 @@ export default function CustomerRiskRegister() {
     } else if (blockedFilter === "not_blocked") {
       d = d.filter((r) => r.blocked !== true);
     }
+    if (categories.length > 0) {
+      d = d.filter((r) => matchesCategory(r, categories));
+    }
     // Refine expandable groups by the visible-child count: a group with zero
     // surviving children is dropped, and a group with only one is degraded
     // to a plain customer row (no tree, no expand chevron, no badge) so it
@@ -772,7 +892,7 @@ export default function CustomerRiskRegister() {
       });
     }
     return d;
-  }, [allData, search, riskLevels, agingFilter, specialFilter, blockedFilter, sortKey, sortDir, viewMode, customerByName, childPassesFilters]);
+  }, [allData, search, riskLevels, agingFilter, specialFilter, blockedFilter, categories, sortKey, sortDir, viewMode, customerByName, childPassesFilters]);
 
   // When an aging bucket filter is active, sum only that specific bucket's overdue
   // rather than the customer's total overdue — otherwise customers with e.g. 180+ day
@@ -800,6 +920,7 @@ export default function CustomerRiskRegister() {
   const showList = (xs?: string[]) => (!xs?.length ? "—" : xs.length === 1 ? xs[0] : "Multiple");
 
   const totals = useMemo(() => ({
+    openingBalance:    rows.reduce((s, r) => s + (r.openingBalance ?? 0), 0),
     sales:             rows.reduce((s, r) => s + r.sales, 0),
     receipts:          rows.reduce((s, r) => s + r.receipts, 0),
     creditNotes:       rows.reduce((s, r) => s + r.creditNotes, 0),
@@ -810,6 +931,9 @@ export default function CustomerRiskRegister() {
     overdue:           agingBucketKey
                          ? rows.reduce((s, r) => s + (r.agingBuckets?.[agingBucketKey] ?? 0), 0)
                          : rows.reduce((s, r) => s + r.overdue, 0),
+    creditLimit:       rows.reduce((s, r) => s + (r.creditLimit ?? 0), 0),
+    proposedCreditLimit3M: rows.reduce((s, r) => s + (r.proposedCreditLimit3M ?? 0), 0),
+    proposedCreditLimitAI: rows.reduce((s, r) => s + (r.proposedCreditLimitAI ?? 0), 0),
     count:             rows.length,
     criticalCustomers: rows.filter((r) => r.risk === "critical").length,
     overCreditLimit:   rows.filter((r) => r.utilization > 100).length,
@@ -1199,76 +1323,22 @@ export default function CustomerRiskRegister() {
               <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
             </div>
             <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>
+              <CustomerCategoryMultiSelect value={categories} onChange={setCategories} />
+            </div>
+            <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
               <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} />
             </div>
           </div>
           {saleTypes.length > 0 && (
             <p className="text-[11px] text-muted-foreground italic mt-2">
-              Opening balance, on-account/advance receipts, unlinked credit notes and cheque returns have no sale type — they're distributed across types by each customer's sales mix (estimate), so figures still reconcile to the total.
+              Receipts and credit notes are attributed to the sale type of the bill they settle; amounts paid against a bill with no readable reference (true on-account / opening-balance collections) are left unallocated, not split. Opening balance and cheque returns carry no sale type, so outstanding/overdue distribute them across types by each customer's sales mix (estimate).
             </p>
           )}
           <FilterChips chips={filterChips} onClearAll={clearFilters} />
         </CardContent>
       </Card>
-
-      {/* KPI Cards — collapsible, closed by default */}
-      {rows.length > 0 && (() => {
-        const groupMode = viewMode === "group";
-        const kpiCards = [
-          { label: groupMode ? "Groups" : "Customers", value: String(totals.count), icon: Users, warn: false },
-          { label: "Sales",              value: fmt(totals.sales),                icon: DollarSign,    warn: false },
-          { label: "Receipts",           value: fmt(totals.receipts),             icon: Receipt,       warn: false },
-          { label: "Credit Notes",       value: fmtINRMoney(totals.creditNotes),          icon: FileMinus,     warn: false },
-          { label: "Debit Notes",        value: fmtINRMoney(totals.debitNotes),           icon: FileMinus,     warn: true  },
-          { label: "Journal Adj (Net)",  value: fmtINRDrCr(totals.journalAdjustments),    icon: FileMinus,     warn: totals.journalAdjustments > 0 },
-          { label: "Cheque Returns",     value: fmtINRMoney(totals.checkReturns),         icon: RotateCcw,     warn: true  },
-          { label: "Outstanding",        value: fmt(Math.abs(totals.outstanding)),          icon: TrendingDown,  warn: true  },
-          { label: "Overdue",            value: fmt(totals.overdue),              icon: Clock,         warn: true  },
-          { label: groupMode ? "Critical Groups" : "Critical Customers", value: String(totals.criticalCustomers), icon: ShieldAlert,   warn: true  },
-          { label: "Over Credit Limit",  value: String(totals.overCreditLimit),   icon: AlertTriangle, warn: true  },
-          { label: "180+ Overdue",       value: String(totals.overdue180Plus),    icon: Users,         warn: true  },
-        ];
-        return (
-          <Card className="rounded-card">
-            <button
-              className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-muted/30 transition-colors rounded-card"
-              onClick={() => setShowKpis((v) => !v)}
-            >
-              <div className="flex items-center gap-2">
-                {showKpis
-                  ? <ChevronUp   className="h-3.5 w-3.5 text-muted-foreground" />
-                  : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  Summary — {totals.count} {viewMode === "group" ? "group" : "customer"}{totals.count !== 1 ? "s" : ""}
-                </span>
-              </div>
-            </button>
-            {showKpis && (
-              <CardContent className="px-4 pb-4 pt-0">
-                <div className="border-t border-border pt-3">
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-                    {kpiCards.map((kpi) => {
-                      const Icon = kpi.icon;
-                      return (
-                        <div key={kpi.label} className="bg-muted/40 rounded-card px-3 py-2">
-                          <div className="flex items-center gap-1 mb-0.5">
-                            <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
-                            <span className="text-[11px] text-muted-foreground leading-tight">{kpi.label}</span>
-                          </div>
-                          <p className={`text-sm font-bold ${kpi.warn ? "text-destructive" : "text-foreground"}`}>
-                            {kpi.value}
-                          </p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </CardContent>
-            )}
-          </Card>
-        );
-      })()}
 
       {/* Aggregate Trend — shown only when < 10 customers match filters */}
       {rows.length > 0 && rows.length < 10 && aggregatedTrend.length > 0 && (
@@ -1400,6 +1470,60 @@ export default function CustomerRiskRegister() {
               </TableRow>
             </TableHeader>
             <TableBody>
+              {/* Grand Total — sums the entire filtered set (all pages), not just
+                  the current page. Money columns sum; ratio/count columns (Util %,
+                  Max OD, Credit Period, Risk, Blocked) are left blank. */}
+              {rows.length > 0 && (
+                <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold hover:bg-muted/60">
+                  {columns.filter((col) => visibleCols.has(col.key)).map((col) => {
+                    if (col.key === "name") {
+                      return (
+                        <TableCell
+                          key="name"
+                          className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 sticky left-0 z-10 bg-muted shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
+                        >
+                          Grand Total
+                        </TableCell>
+                      );
+                    }
+                    let content: ReactNode = null;
+                    let cls = "text-sm text-right font-mono";
+                    switch (col.key) {
+                      case "openingBalance": content = fmt(totals.openingBalance); break;
+                      case "sales":          content = fmt(totals.sales); break;
+                      case "receipts":       content = fmt(totals.receipts); break;
+                      case "creditNotes":    content = fmt(totals.creditNotes); break;
+                      case "debitNotes":
+                        content = fmtINRMoney(totals.debitNotes);
+                        if (totals.debitNotes > 0) cls += " text-destructive";
+                        break;
+                      case "journalAdjustments":
+                        content = fmtINRDrCr(totals.journalAdjustments);
+                        cls += totals.journalAdjustments > 0 ? " text-destructive" : totals.journalAdjustments < 0 ? " text-emerald-700" : "";
+                        break;
+                      case "outstanding":
+                        content = (
+                          <>
+                            {fmt(Math.abs(totals.outstanding))}
+                            {totals.outstanding < 0 && <span className="text-[10px] font-normal ml-0.5">(Cr)</span>}
+                          </>
+                        );
+                        if (totals.outstanding < 0) cls += " text-emerald-600";
+                        break;
+                      case "overdue":
+                        content = fmt(totals.overdue);
+                        if (totals.overdue > 0) cls += " text-destructive";
+                        break;
+                      case "creditLimit":           content = fmt(totals.creditLimit); break;
+                      case "proposedCreditLimit3M":  content = fmt(totals.proposedCreditLimit3M); break;
+                      case "proposedCreditLimitAI":  content = fmt(totals.proposedCreditLimitAI); break;
+                      default: content = null; cls = "";  // salesPerson, companies, locations, maxOverdueDays, creditPeriod, utilization, risk, blocked
+                    }
+                    return <TableCell key={col.key} className={cls}>{content}</TableCell>;
+                  })}
+                  <TableCell className="w-8" />
+                </TableRow>
+              )}
               {paginatedRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={visibleCols.size + 1} className="text-center py-12 text-muted-foreground">
@@ -1420,6 +1544,11 @@ export default function CustomerRiskRegister() {
                     ? (row.childNames ?? [])
                         .map((n) => customerByName.get(n) as CustomerRow | undefined)
                         .filter((c): c is CustomerRow => !!c)
+                    : [];
+                  // Split each consolidated child into its per-ledger rows so a
+                  // multi-company customer shows once per company/location.
+                  const visibleLedgerChildren: CustomerRow[] = isExpandableGroup
+                    ? visibleChildren.flatMap(ledgerRowsOf)
                     : [];
 
                   const renderRow = (
@@ -1542,9 +1671,24 @@ export default function CustomerRiskRegister() {
                       )}
                       {visibleCols.has("risk") && (
                         <TableCell>
-                          <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-button capitalize ${riskStyle[r.risk]}`}>
-                            {r.risk}
-                          </Badge>
+                          <UITooltip delayDuration={150}>
+                            <UITooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 rounded-button capitalize cursor-help ${riskStyle[r.risk]}`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {r.risk}
+                              </Badge>
+                            </UITooltipTrigger>
+                            <UITooltipContent
+                              side="left"
+                              className="w-[20rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <RiskReason row={r} />
+                            </UITooltipContent>
+                          </UITooltip>
                         </TableCell>
                       )}
                       {visibleCols.has("blocked") && (
@@ -1597,7 +1741,7 @@ export default function CustomerRiskRegister() {
                       {row.name}
                       {isExpandableGroup && (
                         <Badge variant="outline" className="text-[9px] px-1 py-0 rounded font-normal text-muted-foreground border-border shrink-0">
-                          {row.childNames?.length ?? 0} customers
+                          {visibleLedgerChildren.length} ledgers
                         </Badge>
                       )}
                       {row.sales === 0 && row.receipts === 0 && row.creditNotes === 0 && (
@@ -1616,7 +1760,8 @@ export default function CustomerRiskRegister() {
                   }));
 
                   if (isExpanded) {
-                    for (const child of visibleChildren) {
+                    for (const child of visibleLedgerChildren) {
+                      const ledgerTag = [child.companies?.[0], child.locations?.[0]].filter(Boolean).join(" · ");
                       out.push(renderRow(child, {
                         key: `${row.id}::${child.id}`,
                         isChild: true,
@@ -1625,6 +1770,7 @@ export default function CustomerRiskRegister() {
                           <span className="inline-flex items-center gap-2 pl-7 text-muted-foreground">
                             <span className="text-xs">↳</span>
                             <span className="text-foreground">{child.name}</span>
+                            {ledgerTag && <span className="text-[11px] text-muted-foreground">{ledgerTag}</span>}
                           </span>
                         ),
                       }));

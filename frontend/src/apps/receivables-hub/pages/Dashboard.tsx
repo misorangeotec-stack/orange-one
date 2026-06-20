@@ -23,6 +23,7 @@ import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { ActivityLegendPopover } from "@hub/components/ActivityLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { CustomerCategoryMultiSelect } from "@hub/components/CustomerCategoryMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 
@@ -63,6 +64,7 @@ export default function Dashboard() {
   const [balanceFilter,   setBalanceFilter]   = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
   const [blockedFilter,   setBlockedFilter]   = useState<"all" | "blocked" | "not_blocked">("all");
   const [salesPersons,    setSalesPersons]    = useState<string[]>([]);
+  const [categories,      setCategories]      = useState<string[]>([]);
   const [saleTypes,       setSaleTypes]       = useState<string[]>([]);
   const [showBuildup,     setShowBuildup]     = useState(false);
   const [viewMode,        setViewMode]        = useState<ViewMode>(
@@ -80,6 +82,7 @@ export default function Dashboard() {
     balanceFilter,
     blockedFilter,
     salesPerson: salesPersons.length === 0 ? "all" : salesPersons.join(","),
+    category: categories.length === 0 ? "all" : categories.join(","),
   });
 
   // Persist view mode in URL so refresh / deep links keep the toggle state.
@@ -204,6 +207,10 @@ export default function Dashboard() {
       label: salesPersons.length <= 2 ? `Sales: ${salesPersons.join(", ")}` : `Sales: ${salesPersons.length} persons`,
       onRemove: () => setSalesPersons([]),
     },
+    categories.length > 0 && {
+      label: categories.length <= 3 ? `Category: ${categories.join(", ")}` : `Category: ${categories.length} selected`,
+      onRemove: () => setCategories([]),
+    },
     saleTypes.length > 0 && {
       label: saleTypes.length <= 2 ? `Type: ${saleTypes.join(", ")}` : `Types: ${saleTypes.length} selected`,
       onRemove: () => setSaleTypes([]),
@@ -216,6 +223,7 @@ export default function Dashboard() {
     setBalanceFilter("all");
     setBlockedFilter("all");
     setSalesPersons([]);
+    setCategories([]);
     setSaleTypes([]);
   };
 
@@ -347,6 +355,10 @@ export default function Dashboard() {
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sales Person</span>
           <SalesPersonMultiSelect options={salesPersonOptions} value={salesPersons} onChange={setSalesPersons} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>
+          <CustomerCategoryMultiSelect value={categories} onChange={setCategories} />
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>

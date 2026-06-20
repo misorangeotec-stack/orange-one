@@ -125,6 +125,7 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
       locations:               [...new Set(entries.map((c) => c.location))].sort(),
       constituentIds:          entries.map((c) => c.id),
       salesPersons:            [...new Set(entries.map((c) => c.salesPerson).filter(Boolean))].sort(),
+      categories:              [...new Set(entries.map((c) => c.category).filter(Boolean))].sort(),
     } as ConsolidatedCustomer;
   });
 }
@@ -194,6 +195,7 @@ export function consolidateByGroup(
     const companies = [...new Set(children.flatMap((c) => c.companies ?? [c.company]))].sort();
     const locations = [...new Set(children.flatMap((c) => c.locations ?? [c.location]))].sort();
     const salesPersons = [...new Set(children.flatMap((c) => c.salesPersons ?? (c.salesPerson ? [c.salesPerson] : [])).filter(Boolean))].sort();
+    const categories = [...new Set(children.flatMap((c) => c.categories ?? (c.category ? [c.category] : [])).filter(Boolean))].sort();
     const constituentIds = children.flatMap((c) => c.constituentIds ?? [c.id]);
     const childNames = children.map((c) => c.name).sort();
 
@@ -214,6 +216,8 @@ export function consolidateByGroup(
       company:                  collapsed(companies),
       location:                 collapsed(locations),
       salesPerson:              collapsed(salesPersons.length > 0 ? salesPersons : ["Others"]),
+      category:                 categories.length === 0 ? "" : collapsed(categories),
+      categories,
       sales:                    numSum("sales"),
       receipts:                 numSum("receipts"),
       otherPayments:            numSum("otherPayments"),
@@ -294,6 +298,7 @@ interface Filters {
   balanceFilter?: "all" | "has_outstanding" | "zero_outstanding";
   blockedFilter?: "all" | "blocked" | "not_blocked";
   salesPerson?: string; // comma-separated list of selected salespersons, or "all"
+  category?: string;    // comma-separated list of selected categories, or "all"
 }
 
 interface AppData {
@@ -577,9 +582,16 @@ export function useAppData(filters: Filters = {}): AppData {
 
         return {
           ...c,
+          // Sales, receipts and credit notes are now read straight from their
+          // per-type buckets (the pipeline tags each receipt/credit note by the
+          // sale type of the bill it settles). Their unallocated remainder
+          // (true on-account / unreadable refs) is deliberately NOT smeared into
+          // a product — it simply isn't attributed to any selected type.
           sales:          saleTypeList.reduce((s, t) => s + (c.salesByType?.[t] ?? 0), 0),
-          receipts:       project(c.receipts,     c.receiptsByType),
-          creditNotes:    project(c.creditNotes,  c.creditNotesByType),
+          receipts:       saleTypeList.reduce((s, t) => s + (c.receiptsByType?.[t] ?? 0), 0),
+          creditNotes:    saleTypeList.reduce((s, t) => s + (c.creditNotesByType?.[t] ?? 0), 0),
+          // Outstanding & overdue keep the sales-mix projection: their untyped
+          // remainder is the opening balance, which has no bill-level sale type.
           outstanding:    project(c.outstanding,  c.outstandingByType),
           overdue:        project(c.overdue,      c.overdueByType),
           maxOverdueDays: typeMaxOD,
@@ -615,8 +627,16 @@ export function useAppData(filters: Filters = {}): AppData {
       const spSet = new Set(filters.salesPerson.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => c.salesPersons?.some((sp) => spSet.has(sp)) || spSet.has(c.salesPerson));
     }
+    if (filters.category && filters.category !== "all") {
+      const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
+      result = result.filter((c) => {
+        const toks = c.categories?.length ? c.categories
+          : c.category && c.category !== "Multiple" ? [c.category] : ["Uncategorized"];
+        return toks.some((t) => catSet.has(t));
+      });
+    }
     return result;
-  }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson]);
+  }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson, filters.category]);
 
   // ── KPIs recomputed from filtered customers ──────────────────────────────────
   const kpis = useMemo<KPIs | null>(() => {
@@ -674,9 +694,17 @@ export function useAppData(filters: Filters = {}): AppData {
       const spSet = new Set(filters.salesPerson.split(",").map((s) => s.trim()).filter(Boolean));
       result = result.filter((c) => c.salesPersons?.some((sp) => spSet.has(sp)) || spSet.has(c.salesPerson));
     }
+    if (filters.category && filters.category !== "all") {
+      const catSet = new Set(filters.category.split(",").map((s) => s.trim()).filter(Boolean));
+      result = result.filter((c) => {
+        const toks = c.categories?.length ? c.categories
+          : c.category && c.category !== "Multiple" ? [c.category] : ["Uncategorized"];
+        return toks.some((t) => catSet.has(t));
+      });
+    }
 
     return result;
-  }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson]);
+  }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson, filters.category]);
 
   // ── customerDetail filtered by saleType (moved up — used by aging & trend) ──
   const filteredCustomerDetail = useMemo(() => {
