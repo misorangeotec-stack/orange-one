@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect, useRef, useCallback, Fragment, type ReactNode, type Dispatch, type SetStateAction } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, Fragment, type ReactNode, type Dispatch, type SetStateAction, type CSSProperties } from "react";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
-  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus,
+  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus, Pin,
 } from "lucide-react";
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -205,6 +205,15 @@ export default function SalespersonCollectionReport() {
   // reveals the breakup sub-columns (On Account / Against Invoices, and As-on-today / Till-month-end).
   const [receivedExpanded, setReceivedExpanded] = useState<boolean>(false);
   const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
+  // Frozen "panes" — Excel-style freeze from the left edge through the chosen leading column.
+  // 0 = none, 1 = Salesperson (default), 2 = + Total Outstanding, 3 = + Due. The user pins a
+  // column via the freeze pins in those headers.
+  const [freezeLevel, setFreezeLevel] = useState<0 | 1 | 2 | 3>(1);
+  // Measured widths of the leading columns, so frozen columns get the right cumulative left offset.
+  const chevRef = useRef<HTMLTableCellElement>(null);
+  const spHeadRef = useRef<HTMLTableCellElement>(null);
+  const outHeadRef = useRef<HTMLTableCellElement>(null);
+  const [colW, setColW] = useState({ chev: 32, sp: 160, out: 120 });
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Expanded group rows (group view): keyed by `${salesperson}::${groupKey}`.
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -562,6 +571,19 @@ export default function SalespersonCollectionReport() {
     }
   }, [spRows, selectedSalesperson]);
 
+  // Measure the leading column widths so frozen columns get the correct sticky left offset.
+  const measureCols = useCallback(() => {
+    const chev = chevRef.current?.offsetWidth ?? 32;
+    const sp = spHeadRef.current?.offsetWidth ?? 160;
+    const out = outHeadRef.current?.offsetWidth ?? 120;
+    setColW((prev) => (prev.chev === chev && prev.sp === sp && prev.out === out ? prev : { chev, sp, out }));
+  }, []);
+  useLayoutEffect(measureCols); // re-measure after every render; setState is guarded so it can't loop
+  useEffect(() => {
+    window.addEventListener("resize", measureCols);
+    return () => window.removeEventListener("resize", measureCols);
+  }, [measureCols]);
+
   /* ── Handlers ── */
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -595,13 +617,20 @@ export default function SalespersonCollectionReport() {
       const rows: InvoiceDrillRow[] = [];
       // Report's authoritative (net) figure per ledger key, so the popup can reconcile.
       const ledgerFigures: Record<string, number> = {};
+      // Per-ledger context + whether the ledger emitted any open bill. A ledger can carry a
+      // non-zero report figure (e.g. overdue from an opening balance) without any qualifying
+      // open invoice; we track these so they still appear in the popup instead of being
+      // dropped — otherwise the popup total falls short of the report's headline figure.
+      const ledgerInfo = new Map<string, { c: Customer; groupName: string }>();
+      const keysWithRows = new Set<string>();
       for (const id of customerIds) {
         const c = customerById.get(id);
         if (!c) continue;
         const groupName = customerGroupMap.mapping[c.name] ?? c.name;
+        const key = `${c.name}|||${c.company}|||${c.location}`;
+        if (!ledgerInfo.has(key)) ledgerInfo.set(key, { c, groupName });
         const m = customerMetrics.get(id);
         if (m) {
-          const key = `${c.name}|||${c.company}|||${c.location}`;
           const fig = category === "outstanding" ? startMonthOutstanding(m) : category === "due" ? m.due : m.pending;
           ledgerFigures[key] = (ledgerFigures[key] ?? 0) + fig;
         }
@@ -609,6 +638,7 @@ export default function SalespersonCollectionReport() {
           if (inv.billType === "Agst Ref" || inv.amount <= 0) continue;
           if (inv.pending <= 0) continue;
           if (dueOnly && new Date(inv.dueDate) > monthEnd) continue;
+          keysWithRows.add(key);
           rows.push({
             customerName: c.name, groupName, company: c.company, location: c.location,
             number: inv.number, billRefName: inv.billRefName, date: inv.date,
@@ -617,6 +647,23 @@ export default function SalespersonCollectionReport() {
             voucherType: inv.voucherType,
           });
         }
+      }
+      // Ledgers with a non-zero report figure but no qualifying open bill: emit a single
+      // reconciliation line carrying the whole figure (opening-balance / advance-derived
+      // pending). This keeps each such ledger — and the grand total — equal to the base
+      // report. The dialog's per-ledger reconciliation leaves these untouched (already net).
+      for (const [key, fig] of Object.entries(ledgerFigures)) {
+        if (keysWithRows.has(key) || Math.abs(fig) < 1) continue;
+        const info = ledgerInfo.get(key);
+        if (!info) continue;
+        const { c, groupName } = info;
+        rows.push({
+          customerName: c.name, groupName, company: c.company, location: c.location,
+          number: "", billRefName: "Opening balance / advances (no open invoice)",
+          date: "", amount: 0, received: 0, pending: fig,
+          dueDate: "", overdueDays: 0, status: "pending", voucherType: "other",
+          isAdjustment: true,
+        });
       }
       rows.sort((a, b) => b.pending - a.pending);
       const catLabel = category === "outstanding"
@@ -637,9 +684,11 @@ export default function SalespersonCollectionReport() {
   const drillCell = (
     ids: string[], category: "outstanding" | "due" | "pending", label: string,
     className: string, children: ReactNode,
+    freeze?: { className: string; style?: CSSProperties },
   ) => (
     <TableCell
-      className={`${className} ${isCurrentMonth ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+      style={freeze?.style}
+      className={`${className} ${freeze?.className ?? ""} ${isCurrentMonth ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
       title={isCurrentMonth ? "Click to view invoices" : "Per-invoice detail is available for the current month only"}
       onClick={isCurrentMonth ? (e) => { e.stopPropagation(); openDrill(ids, category, label); } : undefined}
     >
@@ -784,19 +833,62 @@ export default function SalespersonCollectionReport() {
   const pendingCol   = COLS.find((c) => c.key === "pending")!;
 
   /** A sortable column header cell (used for every non-grouped column). */
-  const sortHead = (col: Col, rowSpan?: number) => (
+  const sortHead = (
+    col: Col, rowSpan?: number,
+    opts?: { headRef?: React.Ref<HTMLTableCellElement>; extra?: ReactNode; freeze?: FreezeStick },
+  ) => (
     <TableHead
       key={col.key}
+      ref={opts?.headRef}
       rowSpan={rowSpan}
-      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none ${col.wrap ? "" : "whitespace-nowrap"} ${col.width ?? ""} ${col.align === "right" ? "text-right" : ""}`}
+      style={opts?.freeze?.style}
+      className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none ${col.wrap ? "" : "whitespace-nowrap"} ${col.width ?? ""} ${col.align === "right" ? "text-right" : ""} ${opts?.freeze?.className ?? ""}`}
       onClick={() => toggleSort(col.key)}
     >
       <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
         {col.label}
         {sortIcon(col.key)}
+        {opts?.extra}
       </span>
     </TableHead>
   );
+
+  /* ── Frozen columns (freeze panes) ─────────────────────────────────────────
+     Excel-style: freeze from the left edge through `freezeLevel`. Each frozen cell
+     is `position: sticky` with a cumulative `left` offset and an OPAQUE background
+     (so scrolled cells pass underneath); the rightmost frozen column carries an edge
+     shadow. Scoped to the leading columns, which are stable across the expand state. */
+  type FreezeId = "chevron" | "salesperson" | "outstanding" | "due";
+  type FreezeStick = { className: string; style?: CSSProperties };
+  const freezeLevelOf = (id: FreezeId): 1 | 2 | 3 =>
+    id === "outstanding" ? 2 : id === "due" ? 3 : 1; // chevron + salesperson share level 1
+  const leftOf = (id: FreezeId): number =>
+    id === "chevron" ? 0 : id === "salesperson" ? colW.chev
+    : id === "outstanding" ? colW.chev + colW.sp : colW.chev + colW.sp + colW.out;
+  /** Sticky props for a leading column cell, or empty when it isn't frozen.
+   *  `bg` is the OPAQUE background to use (defaults: header → muted, body → surface). */
+  const freezeStick = (id: FreezeId, opts?: { header?: boolean; bg?: string }): FreezeStick => {
+    if (freezeLevel < freezeLevelOf(id)) return { className: "" };
+    const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
+    // Boundary = the rightmost frozen column (salesperson at level 1, else outstanding/due).
+    const boundary = id !== "chevron" && freezeLevelOf(id) === freezeLevel;
+    const shadow = boundary ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : "";
+    return { className: `sticky ${opts?.header ? "z-20" : "z-10"} ${bg} ${shadow}`, style: { left: leftOf(id) } };
+  };
+  /** Pin button shown in a freezable header — sets/clears the freeze boundary at this column. */
+  const freezePin = (level: 1 | 2 | 3) => {
+    const active = freezeLevel >= level;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setFreezeLevel(freezeLevel === level ? (level - 1) as 0 | 1 | 2 : level); }}
+        className={`ml-1 inline-flex items-center justify-center h-4 w-4 rounded shrink-0 ${active ? "text-primary" : "text-foreground/35 hover:text-foreground/70"}`}
+        title={active ? "Unfreeze this column" : "Freeze columns up to here"}
+      >
+        <Pin className={`h-3 w-3 ${active ? "fill-primary" : ""}`} />
+      </button>
+    );
+  };
 
   /** Small +/− button toggling a column's breakup sub-columns. */
   const makeToggle = (expanded: boolean, set: Dispatch<SetStateAction<boolean>>, hint: string) => (
@@ -951,7 +1043,7 @@ export default function SalespersonCollectionReport() {
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             {spRows.length} salesperson{spRows.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[11px] text-muted-foreground">Click a salesperson to drill into {viewMode === "group" ? "groups" : "customers"} + see their monthly trend below</span>
+          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a salesperson to drill into {viewMode === "group" ? "groups" : "customers"}; use the <Pin className="h-3 w-3 inline" /> on a column to freeze it while scrolling</span>
         </div>
         <ScrollableTable>
           <Table>
@@ -959,8 +1051,20 @@ export default function SalespersonCollectionReport() {
               {/* Received and Total Pending are each collapsed by default (Total only, with a +
                   toggle). When expanded, a two-row header groups their breakup under the banner. */}
               <TableRow className="bg-muted/50">
-                <TableHead className="w-8" rowSpan={anyExpanded ? 2 : 1} />
-                {leadingCols.map((col) => sortHead(col, anyExpanded ? 2 : 1))}
+                <TableHead
+                  ref={chevRef}
+                  rowSpan={anyExpanded ? 2 : 1}
+                  style={freezeStick("chevron", { header: true }).style}
+                  className={`w-8 ${freezeStick("chevron", { header: true }).className}`}
+                />
+                {leadingCols.map((col) => {
+                  const id = col.key as FreezeId; // leadingCols only holds salesperson/outstanding/due
+                  return sortHead(col, anyExpanded ? 2 : 1, {
+                    headRef: id === "salesperson" ? spHeadRef : id === "outstanding" ? outHeadRef : undefined,
+                    extra: freezePin(freezeLevelOf(id)),
+                    freeze: freezeStick(id, { header: true }),
+                  });
+                })}
                 {receivedExpanded ? (
                   <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                     <span className="inline-flex items-center justify-center">{receivedLabel}{receivedToggle}</span>
@@ -1026,10 +1130,10 @@ export default function SalespersonCollectionReport() {
                 <>
                   {/* Grand total row */}
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
-                    <TableCell />
-                    <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">Grand Total</TableCell>
-                    {drillCell(allCustomerIds, "outstanding", "Grand Total", "text-sm text-right font-mono", fmt(startMonthOutstanding(totals)))}
-                    {drillCell(allCustomerIds, "due", "Grand Total", "text-sm text-right font-mono", fmt(totals.due))}
+                    <TableCell style={freezeStick("chevron", { bg: "bg-muted" }).style} className={freezeStick("chevron", { bg: "bg-muted" }).className} />
+                    <TableCell style={freezeStick("salesperson", { bg: "bg-muted" }).style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${freezeStick("salesperson", { bg: "bg-muted" }).className}`}>Grand Total</TableCell>
+                    {drillCell(allCustomerIds, "outstanding", "Grand Total", "text-sm text-right font-mono", fmt(startMonthOutstanding(totals)), freezeStick("outstanding", { bg: "bg-muted" }))}
+                    {drillCell(allCustomerIds, "due", "Grand Total", "text-sm text-right font-mono", fmt(totals.due), freezeStick("due", { bg: "bg-muted" }))}
                     {receivedExpanded && <>
                       <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.receivedOnAccount)}</TableCell>
                       <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.receivedAgainst)}</TableCell>
@@ -1056,18 +1160,22 @@ export default function SalespersonCollectionReport() {
                     return (
                       <Fragment key={row.salesperson}>
                         <TableRow
-                          className={`transition-colors cursor-pointer ${isSelected ? "bg-primary/10" : isOpen ? "bg-primary/5" : "hover:bg-muted/30"}`}
+                          className={`group transition-colors cursor-pointer ${isSelected ? "bg-primary/10" : isOpen ? "bg-primary/5" : "hover:bg-muted/30"}`}
                           onClick={() => { toggleExpand(row.salesperson); setSelectedSalesperson(row.salesperson); }}
                         >
-                          <TableCell className="text-muted-foreground">
-                            {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </TableCell>
-                          <TableCell className="font-medium text-sm whitespace-nowrap">
-                            {row.salesperson}
-                            <span className="ml-1.5 text-[11px] text-muted-foreground">({row.rows.length})</span>
-                          </TableCell>
-                          {drillCell(row.customerIds, "outstanding", row.salesperson, "text-sm text-right font-mono font-semibold", fmt(startMonthOutstanding(row.m)))}
-                          {drillCell(row.customerIds, "due", row.salesperson, "text-sm text-right font-mono", fmt(row.m.due))}
+                          {(() => { const f = freezeStick("chevron", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
+                            <TableCell style={f.style} className={`text-muted-foreground ${f.className}`}>
+                              {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                            </TableCell>
+                          ); })()}
+                          {(() => { const f = freezeStick("salesperson", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
+                            <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>
+                              {row.salesperson}
+                              <span className="ml-1.5 text-[11px] text-muted-foreground">({row.rows.length})</span>
+                            </TableCell>
+                          ); })()}
+                          {drillCell(row.customerIds, "outstanding", row.salesperson, "text-sm text-right font-mono font-semibold", fmt(startMonthOutstanding(row.m)), freezeStick("outstanding", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }))}
+                          {drillCell(row.customerIds, "due", row.salesperson, "text-sm text-right font-mono", fmt(row.m.due), freezeStick("due", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }))}
                           {receivedExpanded && <>
                             <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.receivedOnAccount)}</TableCell>
                             <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.receivedAgainst)}</TableCell>
@@ -1098,15 +1206,19 @@ export default function SalespersonCollectionReport() {
                                 className={`bg-muted/20 transition-colors text-[13px] ${canExpand ? "cursor-pointer hover:bg-muted/40" : ""}`}
                                 onClick={canExpand ? () => toggleGroup(groupKey) : undefined}
                               >
-                                <TableCell className="text-muted-foreground pl-4">
-                                  {canExpand && (groupOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
-                                </TableCell>
-                                <TableCell className="whitespace-nowrap pl-6 text-muted-foreground">
-                                  {drill.name}
-                                  {drill.sub && <span className="ml-1.5 text-[10px] opacity-70">{drill.sub}</span>}
-                                </TableCell>
-                                {drillCell(drill.customerIds, "outstanding", drill.name, "text-right font-mono", fmt(startMonthOutstanding(drill.m)))}
-                                {drillCell(drill.customerIds, "due", drill.name, "text-right font-mono", fmt(drill.m.due))}
+                                {(() => { const f = freezeStick("chevron", { bg: "bg-surface" }); return (
+                                  <TableCell style={f.style} className={`text-muted-foreground pl-4 ${f.className}`}>
+                                    {canExpand && (groupOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+                                  </TableCell>
+                                ); })()}
+                                {(() => { const f = freezeStick("salesperson", { bg: "bg-surface" }); return (
+                                  <TableCell style={f.style} className={`whitespace-nowrap pl-6 text-muted-foreground ${f.className}`}>
+                                    {drill.name}
+                                    {drill.sub && <span className="ml-1.5 text-[10px] opacity-70">{drill.sub}</span>}
+                                  </TableCell>
+                                ); })()}
+                                {drillCell(drill.customerIds, "outstanding", drill.name, "text-right font-mono", fmt(startMonthOutstanding(drill.m)), freezeStick("outstanding", { bg: "bg-surface" }))}
+                                {drillCell(drill.customerIds, "due", drill.name, "text-right font-mono", fmt(drill.m.due), freezeStick("due", { bg: "bg-surface" }))}
                                 {receivedExpanded && <>
                                   <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.receivedOnAccount)}</TableCell>
                                   <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.receivedAgainst)}</TableCell>
@@ -1130,13 +1242,15 @@ export default function SalespersonCollectionReport() {
                                 const ppctPrev = collectionPct(party.mPrev);
                                 return (
                                   <TableRow key={`${groupKey}-${party.key}`} className="bg-muted/10 text-[12px]">
-                                    <TableCell />
-                                    <TableCell className="whitespace-nowrap pl-12 text-muted-foreground">
-                                      {party.name}
-                                      <span className="ml-1.5 text-[10px] opacity-70">{party.sub}</span>
-                                    </TableCell>
-                                    {drillCell([party.key], "outstanding", party.name, "text-right font-mono", fmt(startMonthOutstanding(party.m)))}
-                                    {drillCell([party.key], "due", party.name, "text-right font-mono", fmt(party.m.due))}
+                                    <TableCell style={freezeStick("chevron", { bg: "bg-surface" }).style} className={freezeStick("chevron", { bg: "bg-surface" }).className} />
+                                    {(() => { const f = freezeStick("salesperson", { bg: "bg-surface" }); return (
+                                      <TableCell style={f.style} className={`whitespace-nowrap pl-12 text-muted-foreground ${f.className}`}>
+                                        {party.name}
+                                        <span className="ml-1.5 text-[10px] opacity-70">{party.sub}</span>
+                                      </TableCell>
+                                    ); })()}
+                                    {drillCell([party.key], "outstanding", party.name, "text-right font-mono", fmt(startMonthOutstanding(party.m)), freezeStick("outstanding", { bg: "bg-surface" }))}
+                                    {drillCell([party.key], "due", party.name, "text-right font-mono", fmt(party.m.due), freezeStick("due", { bg: "bg-surface" }))}
                                     {receivedExpanded && <>
                                       <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.receivedOnAccount)}</TableCell>
                                       <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.receivedAgainst)}</TableCell>
