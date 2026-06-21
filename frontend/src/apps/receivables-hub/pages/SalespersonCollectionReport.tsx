@@ -255,12 +255,12 @@ export default function SalespersonCollectionReport() {
     [allCustomers],
   );
 
-  // ── Sale-type filter (best-effort projection) ────────────────────────────────
-  // The pipeline only stores OUTSTANDING per sale type per month — not receipts or
-  // overdue. So when a sale type is selected we filter Outstanding/Due exactly where
-  // a per-type breakdown exists and ESTIMATE the rest (Received, past-month overdue)
-  // by the customer's sales mix — the same residual-share approach the Dashboard uses.
-  // All 5 types selected = no filter.
+  // ── Sale-type filter ─────────────────────────────────────────────────────────
+  // Received (Tally receipts) is now tagged per month by the sale type of the bill
+  // each receipt settled (trend.receiptsByType), so it filters EXACTLY — no estimate.
+  // Outstanding also carries a per-type breakdown. The remainder that still has no
+  // per-type source (manual other-payments, past-month overdue) is estimated by the
+  // customer's sales mix via projectAmt(). All 5 types selected = no filter.
   const saleTypeActive = saleTypes.length > 0 && saleTypes.length < ALL_SALE_TYPES.length;
   const saleTypeSet = useMemo(() => new Set(saleTypes), [saleTypes]);
 
@@ -395,10 +395,17 @@ export default function SalespersonCollectionReport() {
     const detail = customerDetail[c.id];
     const mt = detail?.trend.find((t) => t.month === month);
     const share = shareFor(c);
-    // Received = Tally receipts + manual other-payments for this month (both lack a
-    // per-type breakdown → estimate by sales-mix share).
     const opForMonth = otherPaymentsByCustomerMonth.get(c.id)?.get(month) ?? 0;
-    const received = projectAmt((mt?.receipts ?? 0) * 100_000 + opForMonth, undefined, share);
+    // Tally receipts are now tagged by the sale type of the bill each one settled,
+    // so under a sale-type filter we read the REAL per-type monthly receipts
+    // (trend.receiptsByType, lakhs) instead of estimating by sales mix. Manual
+    // "other payments" carry no bill, so they keep the sales-mix estimate.
+    const tallyReceipts = !saleTypeActive
+      ? (mt?.receipts ?? 0) * 100_000
+      : mt?.receiptsByType
+        ? saleTypes.reduce((s, t) => s + (mt.receiptsByType?.[t as SaleType] ?? 0), 0) * 100_000
+        : projectAmt((mt?.receipts ?? 0) * 100_000, undefined, share); // fallback: pre-tagging snapshot
+    const received = tallyReceipts + projectAmt(opForMonth, undefined, share);
     let outstanding: number;
     let openDue: number;
     let dueSoon = 0; // not-yet-overdue bills coming due by month-end (current month only)
@@ -441,7 +448,7 @@ export default function SalespersonCollectionReport() {
     const receivedOnAccount = rawTotal > 1e-9 ? received * (rawOn / rawTotal) : 0;
     const receivedAgainst = received - receivedOnAccount;
     return { outstanding, due: openDue + received, received, receivedOnAccount, receivedAgainst, pending: openDue, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, otherPaymentsByCustomerMonth, receivedSplitByCustomerMonth]);
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, receivedSplitByCustomerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {

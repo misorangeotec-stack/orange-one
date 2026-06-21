@@ -229,6 +229,10 @@ export interface MonthlyTrend {
   risk: RiskCategory;
   outstandingByType: Record<SaleType, number>;
   maxOverdueDaysByType: Record<SaleType, number>;
+  /** Receipts this month split by the sale type of the bill each one settled
+   *  (lakhs, like the other trend amounts). Σ months == the customer's yearly
+   *  receiptsByType. Absent on pre-tagging snapshots. */
+  receiptsByType?: Partial<Record<SaleType, number>>;
 }
 
 export interface ReceiptTransaction {
@@ -236,6 +240,8 @@ export interface ReceiptTransaction {
   amount: number;
   type: string;
   refInvoice: string | null;
+  /** Sale type of the bill this receipt settled (null = Unallocated). */
+  saleType?: SaleType | null;
 }
 
 export interface OtherPaymentTransaction {

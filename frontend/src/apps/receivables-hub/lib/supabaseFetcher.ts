@@ -279,11 +279,13 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
       risk: r.risk ?? "low",
       outstandingByType: r.outstanding_by_type ?? {},
       maxOverdueDaysByType: r.max_overdue_days_by_type ?? {},
+      receiptsByType: r.receipts_by_type ?? {},
     } as MonthlyTrend);
   }
   for (const r of rcpts) {
     ensure(r.customer_id).receiptTransactions.push({
       date: r.date, amount: Number(r.amount), type: r.type, refInvoice: r.ref_invoice,
+      saleType: r.sale_type ?? null,
     } as ReceiptTransaction);
   }
   for (const r of ops) {
