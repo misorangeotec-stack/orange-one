@@ -853,36 +853,25 @@ export default function CustomerDetail() {
     return rows;
   }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns, otherPaymentTxns]);
 
-  // Bill-series prefixes belonging to the selected sale type(s) for this customer
-  // (the part of the bill ref before the first "/", e.g. "SPARE" in
-  // "SPARE/25-26/450"). `customerDetail` is already type-filtered, so these are
-  // the series used by the selected type. We match non-sales rows on the series
-  // of the bill they settle (refInvoice) rather than the exact bill number,
-  // because the invoices table keeps only OPEN bills — a receipt that fully paid
-  // a bill references an invoice that's no longer present, so an exact-number
-  // match would drop it. NOTE: this is a heuristic (a series maps to a type
-  // *mostly*, and opening-balance receipts share a series but carry no type), so
-  // the ledger total is an approximation of the headline, not an exact tie-out.
-  const selectedTypePrefixes = useMemo<Set<string> | null>(() => {
+  // Selected sale type(s) for scoping the transaction ledger. Each non-sales row
+  // carries the authoritative `saleType` written by the pipeline (the sale type
+  // of the bill it settles; null = Unallocated / on-account). Filtering on it
+  // makes the ledger reconcile to the headline by construction, since the
+  // headline's per-type receipts / credit notes use the exact same tagging.
+  const selectedTypes = useMemo<Set<string> | null>(() => {
     if (saleTypeFilter === "all") return null;
-    const set = new Set<string>();
-    for (const e of activeEntities)
-      for (const inv of customerDetail[e.id]?.invoices ?? []) {
-        const pre = inv.number?.split("/")[0];
-        if (pre) set.add(pre);
-      }
-    return set;
-  }, [saleTypeFilter, activeEntities, customerDetail]);
+    return new Set(saleTypeFilter.split(",").filter(Boolean));
+  }, [saleTypeFilter]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
-      // Sale-type scope: a non-sales row is attributed by the series of the bill
-      // it settles (refInvoice prefix). Rows whose series isn't in the selected
-      // type — including unmatched / on-account references that carry no series —
-      // are dropped. Sales rows already come from the type-filtered invoice list.
-      if (selectedTypePrefixes && t.kind !== "sales") {
-        const pre = t.refInvoice?.split("/")[0];
-        if (!pre || !selectedTypePrefixes.has(pre)) return false;
+      // Sale-type scope: keep a non-sales row only if the bill it settles is in
+      // the selected type. Rows with no sale type (Unallocated / on-account) are
+      // dropped under a specific-type filter — matching the headline, where that
+      // remainder is left unallocated. Sales rows already come from the
+      // type-filtered invoice list.
+      if (selectedTypes && t.kind !== "sales") {
+        if (!t.saleType || !selectedTypes.has(t.saleType)) return false;
       }
       // Voucher-type filter (multi-select) — "journal" matches both Dr and Cr
       if (voucherTypeFilter.size > 0) {
@@ -902,7 +891,7 @@ export default function CustomerDetail() {
       if (!matchesSearch(invoiceSearch, t.voucherNo, t.refInvoice)) return false;
       return true;
     });
-  }, [transactions, selectedTypePrefixes, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);
+  }, [transactions, selectedTypes, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);
 
   // ── Transactions table sort ──────────────────────────────────────────────
   // (TxnSortKey is declared at module scope alongside the column config.)
