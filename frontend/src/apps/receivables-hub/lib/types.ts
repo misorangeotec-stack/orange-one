@@ -72,6 +72,10 @@ export interface Customer {
   salesByType:        Record<SaleType, number>;
   receiptsByType:     Record<SaleType, number>;
   creditNotesByType:  Record<SaleType, number>;
+  /** Yearly debit notes (gross) split by the sale type of the bill each references. */
+  debitNotesByType?:  Partial<Record<SaleType, number>>;
+  /** Yearly journals (signed Dr−Cr) split by the referenced bill's sale type. */
+  journalByType?:     Partial<Record<SaleType, number>>;
   outstandingByType:  Record<SaleType, number>;
   overdueByType:      Record<SaleType, number>;
   obReceiptsApplied:    number;
@@ -195,6 +199,8 @@ export interface DebitNoteTransaction {
   amount: number;
   refInvoice: string | null;
   narration: string;
+  /** Sale type of the bill this debit note referenced (null = Unallocated). */
+  saleType?: SaleType | null;
 }
 
 export interface CreditNoteTransaction {
@@ -203,6 +209,8 @@ export interface CreditNoteTransaction {
   amount: number;
   refInvoice: string | null;
   narration: string;
+  /** Sale type of the bill this credit note settled (null = Unallocated). */
+  saleType?: SaleType | null;
 }
 
 export interface JournalTransaction {
@@ -213,6 +221,8 @@ export interface JournalTransaction {
   signedAmount: number;
   refInvoice: string | null;
   narration: string;
+  /** Sale type of the bill this journal referenced (null = Unallocated). */
+  saleType?: SaleType | null;
 }
 
 export interface MonthlyTrend {

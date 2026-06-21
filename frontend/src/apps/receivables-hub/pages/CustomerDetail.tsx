@@ -34,12 +34,13 @@ import {
 } from "@hub/components/ui/pagination";
 import { Input } from "@hub/components/ui/input";
 import { Checkbox } from "@hub/components/ui/checkbox";
+import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData, consolidateByName, consolidateByGroup } from "@hub/lib/useAppData";
 import { utilizationPct } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
-import type { InvoiceStatus } from "@hub/lib/types";
+import type { Customer, InvoiceStatus } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -152,7 +153,7 @@ type TxnRow = {
   overdueDays?: number;
   status?: InvoiceStatus;
   narration?: string;
-  saleType?: string;           // sales rows only
+  saleType?: string;           // sale type of the bill this row settles/references (null = Unallocated)
   subType?: string;            // e.g. AGST REF / ON ACCOUNT for receipts
   _company: string;
   _location: string;
@@ -170,10 +171,16 @@ const TXN_TYPE_META: Record<TxnKind, { label: string; cls: string }> = {
 };
 
 type TxnSortKey =
-  | "date" | "kind" | "voucherNo" | "refInvoice"
+  | "date" | "kind" | "voucherNo" | "refInvoice" | "saleType"
   | "_company" | "_location"
   | "amount" | "received" | "pending"
   | "dueDate" | "overdueDays" | "status";
+
+// Friendly labels for the per-transaction sale-type tag. A row with no readable
+// bill reference resolves to no type (Unallocated) and shows "—".
+const SALE_TYPE_LABELS: Record<string, string> = {
+  ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
+};
 
 type TxnTotals = { amount: number; received: number; pending: number; salesCount: number };
 
@@ -226,6 +233,18 @@ const TXN_COLUMNS: TxnColumn[] = [
     key: "refInvoice", label: "Against / Ref", sortKey: "refInvoice", align: "left",
     cell: (r) => <span className="text-sm text-muted-foreground">{r.refInvoice ?? "—"}</span>,
     exportValue: (r) => r.refInvoice ?? "",
+  },
+  {
+    key: "saleType", label: "Sale Type", sortKey: "saleType", align: "left",
+    cell: (r) =>
+      r.saleType ? (
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-slate-100 text-slate-700 border-slate-200">
+          {SALE_TYPE_LABELS[r.saleType] ?? r.saleType}
+        </Badge>
+      ) : (
+        <span className="text-sm text-muted-foreground">—</span>
+      ),
+    exportValue: (r) => (r.saleType ? (SALE_TYPE_LABELS[r.saleType] ?? r.saleType) : ""),
   },
   {
     key: "_company", label: "Company", sortKey: "_company", align: "left", consolidatedOnly: true,
@@ -395,7 +414,7 @@ export default function CustomerDetail() {
   const customerName = decoded;  // for single-customer route, this is the Tally name
   const groupName    = decoded;  // for group route, this is the group name
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   // Voucher-type and status filters are multi-select. An empty set means "all"
   // (no filter), matching the agingBucketFilter convention.
@@ -447,7 +466,7 @@ export default function CustomerDetail() {
     lastInitKey.current = "";  // force re-init under the new route
   }, [decoded, isGroupRoute]);
 
-  const { loading, error, allCustomers, customerDetail, customerGroupMap, dashboard } = useAppData({ saleType: saleTypeFilter });
+  const { loading, error, customers, allCustomers, customerDetail, customerGroupMap, dashboard } = useAppData({ saleType: saleTypeFilter });
 
   // Resolve the list of Tally names that belong to this group (only meaningful
   // on the group route). A group's children are: every Tally name `n` such
@@ -512,23 +531,50 @@ export default function CustomerDetail() {
     return list;
   }, [allEntities, entityCompany, entityLocation, isGroupRoute, selectedChildren]);
 
-  // Consolidated customer object (aggregated from activeEntities).
+  // Sale-type-projected version of each active entity (Sales/Receipts/Cr-Notes
+  // read from the per-type buckets; Outstanding/Overdue split by sales mix), so
+  // the headline cards re-slice with the Sale Type filter — exactly as the Risk
+  // Register row does. `customers` (projectedCustomers) drops entities with no
+  // activity in the selected type, mirroring the Risk Register.
+  const projectedById = useMemo(
+    () => new Map(customers.map((c) => [c.id, c])),
+    [customers],
+  );
+  const projectedActiveEntities = useMemo<Customer[]>(() => {
+    if (saleTypeFilter === "all") return activeEntities;
+    return activeEntities
+      .map((e) => projectedById.get(e.id))
+      .filter((c): c is Customer => Boolean(c));
+  }, [activeEntities, projectedById, saleTypeFilter]);
+
+  // Consolidated customer object (aggregated from the projected active entities).
   // - Single-customer route: merge by name (one Tally name; collapses cross-company/location duplicates).
   // - Group route: first merge by name, then roll all distinct Tally names up via consolidateByGroup
   //   (using a synthetic mapping so all selected children land in the same group).
   const customer = useMemo(() => {
     if (activeEntities.length === 0) return null;
-    if (isGroupRoute) {
-      const byName = consolidateByName(activeEntities);
-      if (byName.length === 0) return null;
-      const synthetic: Record<string, string> = {};
-      for (const c of byName) synthetic[c.name] = groupName;
-      const grouped = consolidateByGroup(byName, synthetic);
-      return grouped[0] ?? null;
-    }
-    if (activeEntities.length === 1) return activeEntities[0];
-    return consolidateByName(activeEntities)[0];
-  }, [activeEntities, isGroupRoute, groupName]);
+    const consolidate = (ents: Customer[]): Customer | null => {
+      if (ents.length === 0) return null;
+      if (isGroupRoute) {
+        const byName = consolidateByName(ents);
+        if (byName.length === 0) return null;
+        const synthetic: Record<string, string> = {};
+        for (const c of byName) synthetic[c.name] = groupName;
+        const grouped = consolidateByGroup(byName, synthetic);
+        return grouped[0] ?? null;
+      }
+      if (ents.length === 1) return ents[0];
+      return consolidateByName(ents)[0] ?? null;
+    };
+    if (saleTypeFilter === "all") return consolidate(activeEntities);
+    if (projectedActiveEntities.length > 0) return consolidate(projectedActiveEntities);
+    // No exposure in the selected sale type → show the consolidated customer with
+    // the typed flows zeroed (the typed value really is ₹0) rather than blank/raw.
+    const base = consolidate(activeEntities);
+    return base
+      ? { ...base, sales: 0, receipts: 0, creditNotes: 0, outstanding: 0, overdue: 0, maxOverdueDays: 0 }
+      : null;
+  }, [activeEntities, projectedActiveEntities, saleTypeFilter, isGroupRoute, groupName]);
 
   const isConsolidated = allEntities.length > 1 && activeEntities.length > 1;
 
@@ -727,6 +773,7 @@ export default function CustomerDetail() {
         amount: gross,
         signedAmount: isChq ? gross : -gross,
         subType: r.type,
+        saleType: r.saleType ?? undefined,
         _company: r._company,
         _location: r._location,
       });
@@ -743,6 +790,7 @@ export default function CustomerDetail() {
         amount: cn.amount,
         signedAmount: -cn.amount,
         narration: cn.narration,
+        saleType: cn.saleType ?? undefined,
         _company: cn._company,
         _location: cn._location,
       });
@@ -759,6 +807,7 @@ export default function CustomerDetail() {
         amount: dn.amount,
         signedAmount: dn.amount,
         narration: dn.narration,
+        saleType: dn.saleType ?? undefined,
         _company: dn._company,
         _location: dn._location,
       });
@@ -775,6 +824,7 @@ export default function CustomerDetail() {
         amount: j.amount,
         signedAmount: j.signedAmount,
         narration: j.narration,
+        saleType: j.saleType ?? undefined,
         _company: j._company,
         _location: j._location,
       });
@@ -803,8 +853,37 @@ export default function CustomerDetail() {
     return rows;
   }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns, otherPaymentTxns]);
 
+  // Bill-series prefixes belonging to the selected sale type(s) for this customer
+  // (the part of the bill ref before the first "/", e.g. "SPARE" in
+  // "SPARE/25-26/450"). `customerDetail` is already type-filtered, so these are
+  // the series used by the selected type. We match non-sales rows on the series
+  // of the bill they settle (refInvoice) rather than the exact bill number,
+  // because the invoices table keeps only OPEN bills — a receipt that fully paid
+  // a bill references an invoice that's no longer present, so an exact-number
+  // match would drop it. NOTE: this is a heuristic (a series maps to a type
+  // *mostly*, and opening-balance receipts share a series but carry no type), so
+  // the ledger total is an approximation of the headline, not an exact tie-out.
+  const selectedTypePrefixes = useMemo<Set<string> | null>(() => {
+    if (saleTypeFilter === "all") return null;
+    const set = new Set<string>();
+    for (const e of activeEntities)
+      for (const inv of customerDetail[e.id]?.invoices ?? []) {
+        const pre = inv.number?.split("/")[0];
+        if (pre) set.add(pre);
+      }
+    return set;
+  }, [saleTypeFilter, activeEntities, customerDetail]);
+
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
+      // Sale-type scope: a non-sales row is attributed by the series of the bill
+      // it settles (refInvoice prefix). Rows whose series isn't in the selected
+      // type — including unmatched / on-account references that carry no series —
+      // are dropped. Sales rows already come from the type-filtered invoice list.
+      if (selectedTypePrefixes && t.kind !== "sales") {
+        const pre = t.refInvoice?.split("/")[0];
+        if (!pre || !selectedTypePrefixes.has(pre)) return false;
+      }
       // Voucher-type filter (multi-select) — "journal" matches both Dr and Cr
       if (voucherTypeFilter.size > 0) {
         const isJournal = t.kind === "journal_dr" || t.kind === "journal_cr";
@@ -823,7 +902,7 @@ export default function CustomerDetail() {
       if (!matchesSearch(invoiceSearch, t.voucherNo, t.refInvoice)) return false;
       return true;
     });
-  }, [transactions, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);
+  }, [transactions, selectedTypePrefixes, voucherTypeFilter, statusFilter, agingBucketFilter, invoiceSearch]);
 
   // ── Transactions table sort ──────────────────────────────────────────────
   // (TxnSortKey is declared at module scope alongside the column config.)
@@ -1251,10 +1330,32 @@ export default function CustomerDetail() {
                   Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
                 </p>
               )}
-              {/* Combined filters row: child multi-select (groups) + company/location */}
-              {((isGroupRoute && groupChildNames.length > 1 && selectedChildren) || allEntities.length > 1) && (
-                <div className="flex items-end gap-2 mt-1.5 flex-wrap">
+              {saleTypeFilter !== "all" && (
+                <p className="text-[11px] text-muted-foreground/80 italic mt-1 max-w-2xl">
+                  Sale-type view: Sales, Receipts and Credit Notes are attributed by the sale type of the bill they settle. Opening Balance is the customer's all-types total (opening carries no sale type), so the headline cards won't reconcile against the typed flows; outstanding/overdue are split by sales mix (estimate).
+                </p>
+              )}
+              {/* Combined filters row: sale type + child multi-select (groups) + company/location */}
+              <div className="flex items-end gap-2 mt-1.5 flex-wrap">
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
+                  <SaleTypeMultiSelect
+                    value={saleTypeFilter === "all" ? [] : saleTypeFilter.split(",").filter(Boolean)}
+                    onChange={(arr) => {
+                      const next = arr.length === 0 ? "all" : arr.join(",");
+                      setSaleTypeFilter(next);
+                      setSearchParams((prev) => {
+                        const p = new URLSearchParams(prev);
+                        if (next === "all") p.delete("saleType"); else p.set("saleType", next);
+                        return p;
+                      }, { replace: true });
+                    }}
+                    triggerClassName="h-7 w-[160px] text-xs rounded-input border-border"
+                  />
+                </div>
+                {((isGroupRoute && groupChildNames.length > 1 && selectedChildren) || allEntities.length > 1) && (
                   <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mb-2" />
+                )}
                   {isGroupRoute && groupChildNames.length > 1 && selectedChildren && (
                     <div className="flex flex-col gap-0.5">
                       <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customers in Group</span>
@@ -1344,7 +1445,6 @@ export default function CustomerDetail() {
                     </>
                   )}
                 </div>
-              )}
             </div>
           </div>
         </div>

@@ -81,6 +81,7 @@ interface CustomerRow {
   max_overdue_days: number; utilization: number; risk: string;
   aging_buckets: any; aging_buckets_by_type: any;
   sales_by_type: any; receipts_by_type: any; credit_notes_by_type: any;
+  debit_notes_by_type: any; journal_by_type: any;
   outstanding_by_type: any; overdue_by_type: any;
 }
 
@@ -127,6 +128,8 @@ function toCustomer(r: CustomerRow): Customer {
     salesByType: r.sales_by_type ?? {},
     receiptsByType: r.receipts_by_type ?? {},
     creditNotesByType: r.credit_notes_by_type ?? {},
+    debitNotesByType: r.debit_notes_by_type ?? {},
+    journalByType: r.journal_by_type ?? {},
     outstandingByType: r.outstanding_by_type ?? {},
     overdueByType: r.overdue_by_type ?? {},
     lastReceiptDate: null,
@@ -299,12 +302,14 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
     ensure(r.customer_id).creditNoteTransactions!.push({
       date: r.date ?? "", voucherNo: r.voucher_no ?? "",
       amount: Number(r.amount), refInvoice: r.ref_invoice, narration: r.narration ?? "",
+      saleType: r.sale_type ?? null,
     } as CreditNoteTransaction);
   }
   for (const r of dns) {
     ensure(r.customer_id).debitNoteTransactions!.push({
       date: r.date ?? "", voucherNo: r.voucher_no ?? "",
       amount: Number(r.amount), refInvoice: r.ref_invoice, narration: r.narration ?? "",
+      saleType: r.sale_type ?? null,
     } as DebitNoteTransaction);
   }
   for (const r of jns) {
@@ -313,6 +318,7 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
       amount: Number(r.amount), type: r.type as JournalTransaction["type"],
       signedAmount: Number(r.signed_amount),
       refInvoice: r.ref_invoice, narration: r.narration ?? "",
+      saleType: r.sale_type ?? null,
     } as JournalTransaction);
   }
   return result;
