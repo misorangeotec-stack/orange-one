@@ -575,6 +575,12 @@ export default function CustomerRiskRegister() {
   // state and don't survive a same-tab Back navigation).
   const openInNewTab = (path: string) =>
     window.open(path, "_blank", "noopener,noreferrer");
+  // Carry the active Sale Type filter into the Customer/Group Detail page so the
+  // detail view opens pre-filtered to the same type(s) (it reads ?saleType).
+  const withSaleType = (path: string) =>
+    saleTypes.length > 0
+      ? `${path}?saleType=${encodeURIComponent(saleTypes.join(","))}`
+      : path;
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
@@ -1626,9 +1632,9 @@ export default function CustomerRiskRegister() {
                 paginatedRows.flatMap((row) => {
                   const isExpandableGroup = viewMode === "group" && (row.isGroup ?? false);
                   const isExpanded        = isExpandableGroup && expandedGroups.has(row.name);
-                  const navTarget = isExpandableGroup
+                  const navTarget = withSaleType(isExpandableGroup
                     ? `/outstanding-dashboard/group/${encodeURIComponent(row.name)}`
-                    : `/outstanding-dashboard/customer/${encodeURIComponent(row.name)}`;
+                    : `/outstanding-dashboard/customer/${encodeURIComponent(row.name)}`);
                   // `rows` has already pruned childNames to those that pass the
                   // active filters (and degraded single-child groups to plain
                   // rows), so this lookup is straightforward.
@@ -1867,7 +1873,7 @@ export default function CustomerRiskRegister() {
                       out.push(renderRow(child, {
                         key: `${row.id}::${child.id}`,
                         isChild: true,
-                        onClick: () => openInNewTab(`/outstanding-dashboard/customer/${encodeURIComponent(child.name)}`),
+                        onClick: () => openInNewTab(withSaleType(`/outstanding-dashboard/customer/${encodeURIComponent(child.name)}`)),
                         leadCell: (
                           <span className="inline-flex items-center gap-2 pl-7 text-muted-foreground">
                             <span className="text-xs">↳</span>

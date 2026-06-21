@@ -149,6 +149,32 @@ export async function fetchCustomersFromSupabase(fySuffix: string): Promise<Cust
 }
 
 /**
+ * Normalised set of every invoice/bill number this customer (or set of grouped
+ * customers) has across ALL fiscal years. Used by Customer Detail to classify a
+ * receipt / credit-note / etc. as settling a *current-period invoice* vs an
+ * *opening-balance* bill: a bill reference NOT present in this universe predates
+ * the dashboard's period (≤ 31-Mar-2025) and so belongs to the opening balance.
+ *
+ * Deliberately FY-agnostic (no `.eq("fiscal_year", …)`): the per-FY "default"
+ * bundle drops fully-paid early bills, which would mislabel their receipts as
+ * opening balance. Selects only `number` to stay cheap.
+ */
+export async function fetchInvoiceNumbersForCustomers(customerIds: string[]): Promise<Set<string>> {
+  const ids = [...new Set(customerIds.filter(Boolean))];
+  if (ids.length === 0) return new Set();
+  const sb = getSupabase();
+  const rows = await fetchAllRows<{ number: string | null }>(
+    () => sb.from("invoices").select("number").in("customer_id", ids)
+  );
+  const set = new Set<string>();
+  for (const r of rows) {
+    const n = (r.number ?? "").trim().toUpperCase();
+    if (n) set.add(n);
+  }
+  return set;
+}
+
+/**
  * Distinct salesperson names from the receivables data, for the admin
  * "salesperson access" picker in Orange One. Returns exactly the strings the
  * dashboard scopes on (customers.sales_person), so tagged values match 1:1.

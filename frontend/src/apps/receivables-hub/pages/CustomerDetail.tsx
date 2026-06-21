@@ -139,6 +139,10 @@ type TxnKind =
   | "sales" | "receipt" | "credit_note" | "debit_note"
   | "journal_dr" | "journal_cr" | "check_return" | "other_payment";
 
+// Classifies what a non-sales row settles: an opening-balance (pre-period) bill,
+// a current-period invoice, or nothing specific (on-account / advance).
+type AppliedTo = "opening" | "current" | "on_account";
+
 type TxnRow = {
   rowKey: string;
   date: string;
@@ -155,6 +159,7 @@ type TxnRow = {
   narration?: string;
   saleType?: string;           // sale type of the bill this row settles/references (null = Unallocated)
   subType?: string;            // e.g. AGST REF / ON ACCOUNT for receipts
+  appliedTo?: AppliedTo;       // opening-balance bill vs current invoice vs on-account
   _company: string;
   _location: string;
 };
@@ -170,8 +175,14 @@ const TXN_TYPE_META: Record<TxnKind, { label: string; cls: string }> = {
   other_payment: { label: "Other Pmt",  cls: "bg-indigo-100 text-indigo-700 border-indigo-200" },
 };
 
+const APPLIED_TO_META: Record<AppliedTo, { label: string; cls: string }> = {
+  opening:    { label: "Opening Balance", cls: "bg-amber-100 text-amber-700 border-amber-200" },
+  current:    { label: "Current Invoice", cls: "bg-sky-100 text-sky-700 border-sky-200" },
+  on_account: { label: "On-Account",      cls: "bg-slate-100 text-slate-600 border-slate-200" },
+};
+
 type TxnSortKey =
-  | "date" | "kind" | "voucherNo" | "refInvoice" | "saleType"
+  | "date" | "kind" | "voucherNo" | "refInvoice" | "saleType" | "appliedTo"
   | "_company" | "_location"
   | "amount" | "received" | "pending"
   | "dueDate" | "overdueDays" | "status";
@@ -245,6 +256,18 @@ const TXN_COLUMNS: TxnColumn[] = [
         <span className="text-sm text-muted-foreground">—</span>
       ),
     exportValue: (r) => (r.saleType ? (SALE_TYPE_LABELS[r.saleType] ?? r.saleType) : ""),
+  },
+  {
+    key: "appliedTo", label: "Applied To", sortKey: "appliedTo", align: "left",
+    cell: (r) =>
+      r.kind !== "sales" && r.appliedTo ? (
+        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${APPLIED_TO_META[r.appliedTo].cls}`}>
+          {APPLIED_TO_META[r.appliedTo].label}
+        </Badge>
+      ) : (
+        <span className="text-sm text-muted-foreground">—</span>
+      ),
+    exportValue: (r) => (r.kind !== "sales" && r.appliedTo ? APPLIED_TO_META[r.appliedTo].label : ""),
   },
   {
     key: "_company", label: "Company", sortKey: "_company", align: "left", consolidatedOnly: true,
@@ -608,6 +631,53 @@ export default function CustomerDetail() {
     [activeEntities, customerDetail],
   );
 
+  // ── Bill-reference universe (for the "Applied To" classification) ───────────
+  // The full set of this customer's invoice/bill numbers across ALL fiscal years.
+  // A receipt / credit-note / etc. whose bill reference is NOT in this set settles
+  // a bill that predates the dashboard period (≤ 31-Mar-2025) → the opening balance.
+  // Fetched FY-agnostically because the per-FY "default" bundle drops fully-paid
+  // early bills, which would otherwise mislabel their receipts as opening balance.
+  const entityIdsKey = useMemo(
+    () => activeEntities.map((e) => e.id).sort().join(","),
+    [activeEntities],
+  );
+  const [extraInvoiceRefs, setExtraInvoiceRefs] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const ids = entityIdsKey ? entityIdsKey.split(",") : [];
+    const source = (import.meta.env.VITE_DATA_SOURCE ?? "local").toLowerCase();
+    if (ids.length === 0 || source !== "supabase") {
+      setExtraInvoiceRefs(new Set());
+      return;
+    }
+    let cancelled = false;
+    import("@hub/lib/supabaseFetcher")
+      .then(({ fetchInvoiceNumbersForCustomers }) => fetchInvoiceNumbersForCustomers(ids))
+      .then((set) => { if (!cancelled) setExtraInvoiceRefs(set); })
+      .catch(() => { if (!cancelled) setExtraInvoiceRefs(new Set()); });
+    return () => { cancelled = true; };
+  }, [entityIdsKey]);
+
+  // Union of the authoritative cross-FY fetch and the currently-loaded invoices
+  // (the latter keeps JSON-mode / pre-fetch renders reasonable).
+  const billRefUniverse = useMemo(() => {
+    const s = new Set<string>(extraInvoiceRefs);
+    for (const inv of invoices) {
+      const n = (inv.number ?? "").trim().toUpperCase();
+      if (n) s.add(n);
+    }
+    return s;
+  }, [extraInvoiceRefs, invoices]);
+
+  // Classify a bill reference: empty / sentinel → on-account; present in the
+  // current-period universe → current invoice; otherwise → opening-balance bill.
+  const classifyApplied = useMemo(() => {
+    return (ref: string | null | undefined): AppliedTo => {
+      const n = (ref ?? "").trim().toUpperCase();
+      if (!n || n === "ON ACCOUNT" || n === "UNALLOCATED") return "on_account";
+      return billRefUniverse.has(n) ? "current" : "opening";
+    };
+  }, [billRefUniverse]);
+
   // Merged debit-note transactions
   const debitNoteTxns = useMemo(() =>
     activeEntities
@@ -672,6 +742,16 @@ export default function CustomerDetail() {
     [activeEntities, customerDetail],
   );
 
+  // Selected sale type(s) for scoping the transaction ledger and the trend. Each
+  // non-sales row carries the authoritative `saleType` written by the pipeline
+  // (the sale type of the bill it settles; null = Unallocated / on-account).
+  // Filtering on it makes the ledger reconcile to the headline by construction,
+  // since the headline's per-type receipts / credit notes use the exact same tagging.
+  const selectedTypes = useMemo<Set<string> | null>(() => {
+    if (saleTypeFilter === "all") return null;
+    return new Set(saleTypeFilter.split(",").filter(Boolean));
+  }, [saleTypeFilter]);
+
   // Consolidated monthly trend (sum by month across active entities)
   const trendData = useMemo(() => {
     const byMonth = new Map<string, { month: string; sales: number; receipts: number; creditNotes: number; debitNotes: number; journalAdjustments: number; checkReturns: number; outstanding: number; overdue: number }>();
@@ -697,6 +777,65 @@ export default function CustomerDetail() {
         }
       }
     }
+
+    // ── Sale-type re-slice ────────────────────────────────────────────────
+    // The per-month MonthlyTrend flows are whole-customer (all sale types) —
+    // filteredCustomerDetail narrows only `invoices`, not `.trend`. So when a
+    // sale-type filter is active, rebuild each month from the authoritative
+    // type-tagged transactions: sales come from the already type-filtered
+    // invoices; receipts / credit notes / debit notes / journals / cheque
+    // returns carry the sale type of the bill they settle. Per-month outstanding
+    // comes from `outstandingByType`. This makes the chart + totals reconcile to
+    // the headline cards, exactly like the transaction ledger does.
+    if (selectedTypes) {
+      const monthLabel = (iso: string) => {
+        const d = new Date(iso);
+        return d.toLocaleString("en-US", { month: "short" }) + "-" + String(d.getFullYear()).slice(2);
+      };
+      for (const m of byMonth.values()) {
+        m.sales = 0; m.receipts = 0; m.creditNotes = 0; m.debitNotes = 0;
+        m.journalAdjustments = 0; m.checkReturns = 0; m.outstanding = 0; m.overdue = 0;
+      }
+      // transactions are in rupees; the trend series is in lakhs.
+      const add = (
+        label: string,
+        key: "sales" | "receipts" | "creditNotes" | "debitNotes" | "journalAdjustments" | "checkReturns",
+        amt: number,
+      ) => {
+        const m = byMonth.get(label);
+        if (m) m[key] += amt / 100_000;
+      };
+      for (const inv of invoices) add(monthLabel(inv.date), "sales", inv.amount);
+      for (const r of receiptTxns) {
+        if (!r.date || !r.saleType || !selectedTypes.has(r.saleType)) continue;
+        const isChq = (r.type ?? "").toLowerCase() === "check_return";
+        add(monthLabel(r.date), isChq ? "checkReturns" : "receipts", Math.abs(r.amount));
+      }
+      for (const cn of creditNoteTxns) {
+        if (!cn.saleType || !selectedTypes.has(cn.saleType)) continue;
+        add(monthLabel(cn.date), "creditNotes", cn.amount);
+      }
+      for (const dn of debitNoteTxns) {
+        if (!dn.saleType || !selectedTypes.has(dn.saleType)) continue;
+        add(monthLabel(dn.date), "debitNotes", dn.amount);
+      }
+      for (const j of journalTxns) {
+        if (!j.saleType || !selectedTypes.has(j.saleType)) continue;
+        add(monthLabel(j.date), "journalAdjustments", j.signedAmount);
+      }
+      // Per-month outstanding by selected type(s) (already in lakhs). Overdue has
+      // no per-type history, so it stays 0 here and only the as-of month is
+      // pinned below to the projected headline value (matches the dashboard trend).
+      for (const e of activeEntities) {
+        for (const t of customerDetail[e.id]?.trend ?? []) {
+          const m = byMonth.get(t.month);
+          if (!m) continue;
+          const obt = t.outstandingByType as Record<string, number> | undefined;
+          for (const ty of selectedTypes) m.outstanding += obt?.[ty] ?? 0;
+        }
+      }
+    }
+
     // Sort chronologically by calendar order (handles cross-FY ranges, e.g.
     // Jan-26/Feb-26/Mar-26 in FY 25-26 followed by Apr-26 in FY 26-27).
     const calMonth = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -717,7 +856,7 @@ export default function CustomerDetail() {
       last.outstanding = customer.outstanding / 100_000;
     }
     return sorted;
-  }, [activeEntities, customerDetail, customer]);
+  }, [activeEntities, customerDetail, customer, selectedTypes, invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns]);
 
   const invoiceAgingKey = (overdueDays: number): string | null => {
     if (overdueDays <= 0)   return null;
@@ -774,6 +913,7 @@ export default function CustomerDetail() {
         signedAmount: isChq ? gross : -gross,
         subType: r.type,
         saleType: r.saleType ?? undefined,
+        appliedTo: classifyApplied(r.refInvoice),
         _company: r._company,
         _location: r._location,
       });
@@ -791,6 +931,7 @@ export default function CustomerDetail() {
         signedAmount: -cn.amount,
         narration: cn.narration,
         saleType: cn.saleType ?? undefined,
+        appliedTo: classifyApplied(cn.refInvoice),
         _company: cn._company,
         _location: cn._location,
       });
@@ -808,6 +949,7 @@ export default function CustomerDetail() {
         signedAmount: dn.amount,
         narration: dn.narration,
         saleType: dn.saleType ?? undefined,
+        appliedTo: classifyApplied(dn.refInvoice),
         _company: dn._company,
         _location: dn._location,
       });
@@ -825,6 +967,7 @@ export default function CustomerDetail() {
         signedAmount: j.signedAmount,
         narration: j.narration,
         saleType: j.saleType ?? undefined,
+        appliedTo: classifyApplied(j.refInvoice),
         _company: j._company,
         _location: j._location,
       });
@@ -844,6 +987,7 @@ export default function CustomerDetail() {
         signedAmount: -gross,
         subType: o.type,
         narration: o.remark ?? undefined,
+        appliedTo: classifyApplied(o.refInvoice),
         _company: o._company,
         _location: o._location,
       });
@@ -851,17 +995,7 @@ export default function CustomerDetail() {
 
     rows.sort((a, b) => a.date.localeCompare(b.date));
     return rows;
-  }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns, otherPaymentTxns]);
-
-  // Selected sale type(s) for scoping the transaction ledger. Each non-sales row
-  // carries the authoritative `saleType` written by the pipeline (the sale type
-  // of the bill it settles; null = Unallocated / on-account). Filtering on it
-  // makes the ledger reconcile to the headline by construction, since the
-  // headline's per-type receipts / credit notes use the exact same tagging.
-  const selectedTypes = useMemo<Set<string> | null>(() => {
-    if (saleTypeFilter === "all") return null;
-    return new Set(saleTypeFilter.split(",").filter(Boolean));
-  }, [saleTypeFilter]);
+  }, [invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns, otherPaymentTxns, classifyApplied]);
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
