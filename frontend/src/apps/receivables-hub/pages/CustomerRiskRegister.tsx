@@ -1,10 +1,10 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useState, useMemo, useEffect, type ReactNode } from "react";
+import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type ReactNode, type CSSProperties } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   Search, Download, Save, ChevronRight, ChevronDown, ChevronUp, ArrowUpDown,
   ArrowUp, ArrowDown, RefreshCw, ShieldAlert, AlertTriangle,
-  Columns3,
+  Columns3, Pin,
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -44,6 +44,7 @@ import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
+import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import type { AgingBuckets, Customer, ConsolidatedCustomer, GroupedCustomer, ProposedCreditLimitReason, ProposedConstituent } from "@hub/lib/types";
 
@@ -554,6 +555,11 @@ const columns: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "blocked",        label: "Blocked" },
 ];
 
+// Leading identity columns that can be frozen (Excel-style freeze panes). They are
+// the leading block of `columns`, so any visible subset stays contiguous from the
+// left edge — the user pins one via the 📌 in its header to set the freeze boundary.
+const FREEZABLE_KEYS: SortKey[] = ["name", "salesPerson", "companies", "locations"];
+
 const ALL_COL_KEYS = columns.map((c) => c.key);
 // Columns hidden by default — user can opt-in via the column toggle.
 const HIDDEN_BY_DEFAULT: SortKey[] = ["companies", "locations", "proposedCreditLimit3M", "proposedCreditLimitAI"];
@@ -572,7 +578,7 @@ export default function CustomerRiskRegister() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
-  const [agingFilter, setAgingFilter] = useState("all");
+  const [agingFilters, setAgingFilters] = useState<string[]>([]);
   const [specialFilter, setSpecialFilter] = useState("all");
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
@@ -580,8 +586,8 @@ export default function CustomerRiskRegister() {
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
-  const [companyFilter, setCompanyFilter] = useState("all");
-  const [locationFilter, setLocationFilter] = useState("all");
+  const [companyFilters, setCompanyFilters] = useState<string[]>([]);
+  const [locationFilters, setLocationFilters] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey | null>("outstanding");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [currentPage, setCurrentPage] = useState(1);
@@ -635,13 +641,43 @@ export default function CustomerRiskRegister() {
     });
   };
 
+  // ── Frozen columns (Excel-style freeze panes) ────────────────────────────────
+  // Freeze from the left edge through `freezeKey` (one of the leading identity
+  // columns). Default = Customer name. Each frozen cell is position:sticky with a
+  // cumulative left offset and an OPAQUE background; the boundary column carries an
+  // edge shadow. Mirrors the Salesperson Collection Report, generalised for this
+  // table's user-configurable columns.
+  const [freezeKey, setFreezeKey] = useState<SortKey | null>("name");
+  const headRefs = useRef<Map<SortKey, HTMLTableCellElement | null>>(new Map());
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+
+  const measureCols = useCallback(() => {
+    setColWidths((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of FREEZABLE_KEYS) {
+        const el = headRefs.current.get(key);
+        if (el) {
+          const w = el.offsetWidth;
+          if (next[key] !== w) { next[key] = w; changed = true; }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+  useLayoutEffect(measureCols); // re-measure after every render; setState is guarded so it can't loop
+  useEffect(() => {
+    window.addEventListener("resize", measureCols);
+    return () => window.removeEventListener("resize", measureCols);
+  }, [measureCols]);
+
   const { loading, error, customers, allCustomers, consolidatedCustomers, groupedCustomers, customerDetail, salesPersonOptions } = useAppData({
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
     customerSegment,
     balanceFilter,
     salesPerson: salesPersons.length === 0 ? "all" : salesPersons.join(","),
-    company:  companyFilter  === "all" ? undefined : companyFilter,
-    location: locationFilter === "all" ? undefined : locationFilter,
+    company:  companyFilters.length  === 0 ? undefined : companyFilters.join(","),
+    location: locationFilters.length === 0 ? undefined : locationFilters.join(","),
   });
   const allData: CustomerRow[] = (viewMode === "group" ? groupedCustomers : consolidatedCustomers) as CustomerRow[];
 
@@ -651,18 +687,18 @@ export default function CustomerRiskRegister() {
   const companyOptions = useMemo(
     () => [...new Set(
       allCustomers
-        .filter((c) => locationFilter === "all" || c.location === locationFilter)
+        .filter((c) => locationFilters.length === 0 || locationFilters.includes(c.location))
         .map((c) => c.company),
     )].sort(),
-    [allCustomers, locationFilter],
+    [allCustomers, locationFilters],
   );
   const locationOptions = useMemo(
     () => [...new Set(
       allCustomers
-        .filter((c) => companyFilter === "all" || c.company === companyFilter)
+        .filter((c) => companyFilters.length === 0 || companyFilters.includes(c.company))
         .map((c) => c.location),
     )].sort(),
-    [allCustomers, companyFilter],
+    [allCustomers, companyFilters],
   );
 
   // Lookup of consolidated customer rows by Tally name (for rendering child rows
@@ -721,7 +757,7 @@ export default function CustomerRiskRegister() {
     const filterParam   = searchParams.get("filter");
     const segmentParam  = searchParams.get("segment");
     if (riskParam)     setRiskLevels(riskParam.toLowerCase().split(",").filter(Boolean));
-    if (agingParam)    setAgingFilter(agingParam);
+    if (agingParam)    setAgingFilters(agingParam.split(",").filter((a) => a !== "all").filter(Boolean));
 
     if (filterParam)   setSpecialFilter(filterParam);
     if (segmentParam === "all" || segmentParam === "active" || segmentParam === "no_activity") setCustomerSegment(segmentParam);
@@ -739,12 +775,12 @@ export default function CustomerRiskRegister() {
     }
   };
 
-  const activeFilterCount = [agingFilter, specialFilter, customerSegment, balanceFilter, blockedFilter, companyFilter, locationFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0);
+  const activeFilterCount = [specialFilter, customerSegment, balanceFilter, blockedFilter].filter((f) => f !== "all").length + (search ? 1 : 0) + (riskLevels.length > 0 ? 1 : 0) + (agingFilters.length > 0 ? 1 : 0) + (saleTypes.length > 0 ? 1 : 0) + (salesPersons.length > 0 ? 1 : 0) + (categories.length > 0 ? 1 : 0) + (companyFilters.length > 0 ? 1 : 0) + (locationFilters.length > 0 ? 1 : 0);
 
   const clearFilters = () => {
     setSearch("");
     setRiskLevels([]);
-    setAgingFilter("all");
+    setAgingFilters([]);
     setSpecialFilter("all");
     setCustomerSegment("all");
     setBalanceFilter("all");
@@ -752,8 +788,8 @@ export default function CustomerRiskRegister() {
     setSalesPersons([]);
     setCategories([]);
     setSaleTypes([]);
-    setCompanyFilter("all");
-    setLocationFilter("all");
+    setCompanyFilters([]);
+    setLocationFilters([]);
   };
 
   const filterChips: FilterChip[] = [
@@ -765,9 +801,9 @@ export default function CustomerRiskRegister() {
       label: `Risk: ${riskLevels.map((r) => r.charAt(0).toUpperCase() + r.slice(1)).join(", ")}`,
       onRemove: () => setRiskLevels([]),
     },
-    agingFilter !== "all" && {
-      label: `Aging: ${agingFilter} days`,
-      onRemove: () => setAgingFilter("all"),
+    agingFilters.length > 0 && {
+      label: agingFilters.length <= 2 ? `Aging: ${agingFilters.join(", ")} days` : `Aging: ${agingFilters.length} buckets`,
+      onRemove: () => setAgingFilters([]),
     },
     specialFilter !== "all" && {
       label: specialFilter === "over_credit_limit" ? "Over Credit Limit" : specialFilter,
@@ -797,13 +833,13 @@ export default function CustomerRiskRegister() {
       label: saleTypes.length <= 2 ? `Type: ${saleTypes.join(", ")}` : `Types: ${saleTypes.length} selected`,
       onRemove: () => setSaleTypes([]),
     },
-    companyFilter !== "all" && {
-      label: `Company: ${companyFilter}`,
-      onRemove: () => setCompanyFilter("all"),
+    companyFilters.length > 0 && {
+      label: companyFilters.length <= 2 ? `Company: ${companyFilters.join(", ")}` : `Company: ${companyFilters.length} selected`,
+      onRemove: () => setCompanyFilters([]),
     },
-    locationFilter !== "all" && {
-      label: `Location: ${locationFilter}`,
-      onRemove: () => setLocationFilter("all"),
+    locationFilters.length > 0 && {
+      label: locationFilters.length <= 2 ? `Location: ${locationFilters.join(", ")}` : `Location: ${locationFilters.length} selected`,
+      onRemove: () => setLocationFilters([]),
     },
   ].filter(Boolean) as FilterChip[];
 
@@ -816,18 +852,18 @@ export default function CustomerRiskRegister() {
       "0-30": "0_30", "31-60": "31_60", "61-90": "61_90",
       "91-120": "91_120", "121-180": "121_180", "180+": "180_plus",
     };
-    const agingBk = agingFilter !== "all" ? bkMap[agingFilter] : null;
+    const agingBks = agingFilters.map((a) => bkMap[a]).filter(Boolean) as (keyof AgingBuckets)[];
     return (r: CustomerRow): boolean => {
       if (search && !matchesSearch(search, r.name, r.id)) return false;
       if (riskLevels.length > 0 && !riskLevels.includes(r.risk)) return false;
-      if (agingBk && !((r.agingBuckets?.[agingBk] ?? 0) > 0)) return false;
+      if (agingBks.length > 0 && !agingBks.some((bk) => (r.agingBuckets?.[bk] ?? 0) > 0)) return false;
       if (specialFilter === "over_credit_limit" && !(r.utilization > 100)) return false;
       if (blockedFilter === "blocked" && r.blocked !== true) return false;
       if (blockedFilter === "not_blocked" && r.blocked === true) return false;
       if (!matchesCategory(r, categories)) return false;
       return true;
     };
-  }, [search, riskLevels, agingFilter, specialFilter, blockedFilter, categories]);
+  }, [search, riskLevels, agingFilters, specialFilter, blockedFilter, categories]);
 
   const rows = useMemo(() => {
     let d = [...allData];
@@ -837,8 +873,8 @@ export default function CustomerRiskRegister() {
       "0-30": "0_30", "31-60": "31_60", "61-90": "61_90",
       "91-120": "91_120", "121-180": "121_180", "180+": "180_plus",
     };
-    const bucketKey: keyof AgingBuckets | null =
-      agingFilter !== "all" ? (bkMap[agingFilter] ?? null) : null;
+    const bucketKeys: (keyof AgingBuckets)[] =
+      agingFilters.map((a) => bkMap[a]).filter(Boolean) as (keyof AgingBuckets)[];
     if (search) {
       // In group mode, also match by underlying Tally child name.
       d = d.filter((r) => {
@@ -850,8 +886,8 @@ export default function CustomerRiskRegister() {
     if (riskLevels.length > 0) {
       d = d.filter((r) => riskLevels.includes(r.risk));
     }
-    if (bucketKey) {
-      d = d.filter((r) => (r.agingBuckets?.[bucketKey] ?? 0) > 0);
+    if (bucketKeys.length > 0) {
+      d = d.filter((r) => bucketKeys.some((bk) => (r.agingBuckets?.[bk] ?? 0) > 0));
     }
     if (specialFilter === "over_credit_limit") {
       d = d.filter((r) => r.utilization > 100);
@@ -883,7 +919,9 @@ export default function CustomerRiskRegister() {
       // For the Overdue column, sort by the value actually shown: the selected
       // aging bucket's amount when a bucket filter is active, else total overdue.
       const valueFor = (r: CustomerRow) =>
-        sortKey === "overdue" && bucketKey ? (r.agingBuckets?.[bucketKey] ?? 0) : r[sortKey];
+        sortKey === "overdue" && bucketKeys.length > 0
+          ? bucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0)
+          : r[sortKey];
       d.sort((a, b) => {
         const av = valueFor(a);
         const bv = valueFor(b);
@@ -892,12 +930,12 @@ export default function CustomerRiskRegister() {
       });
     }
     return d;
-  }, [allData, search, riskLevels, agingFilter, specialFilter, blockedFilter, categories, sortKey, sortDir, viewMode, customerByName, childPassesFilters]);
+  }, [allData, search, riskLevels, agingFilters, specialFilter, blockedFilter, categories, sortKey, sortDir, viewMode, customerByName, childPassesFilters]);
 
   // When an aging bucket filter is active, sum only that specific bucket's overdue
   // rather than the customer's total overdue — otherwise customers with e.g. 180+ day
   // invoices also bring in their 0–30 day overdue amounts, overstating the figure.
-  const agingBucketKey: keyof AgingBuckets | null = useMemo(() => {
+  const agingBucketKeys: (keyof AgingBuckets)[] = useMemo(() => {
     const map: Record<string, keyof AgingBuckets> = {
       "0-30":    "0_30",
       "31-60":   "31_60",
@@ -906,18 +944,65 @@ export default function CustomerRiskRegister() {
       "121-180": "121_180",
       "180+":    "180_plus",
     };
-    return agingFilter !== "all" ? (map[agingFilter] ?? null) : null;
-  }, [agingFilter]);
+    return agingFilters.map((a) => map[a]).filter(Boolean) as (keyof AgingBuckets)[];
+  }, [agingFilters]);
 
-  // Overdue shown per row: the selected bucket's amount when an aging filter is
-  // active, else the customer's total overdue. Keeps the column consistent with
-  // the bucket-aware KPI total and the customer-detail aging breakdown.
+  // Overdue shown per row: the sum of the selected buckets' amounts when an aging
+  // filter is active, else the customer's total overdue. Keeps the column
+  // consistent with the bucket-aware KPI total and the customer-detail aging
+  // breakdown.
   const overdueForRow = (r: CustomerRow) =>
-    agingBucketKey ? (r.agingBuckets?.[agingBucketKey] ?? 0) : r.overdue;
+    agingBucketKeys.length > 0
+      ? agingBucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0)
+      : r.overdue;
 
   // Collapse a multi-value company/location list to a single display label,
   // matching the group view's convention (single value, else "Multiple").
   const showList = (xs?: string[]) => (!xs?.length ? "—" : xs.length === 1 ? xs[0] : "Multiple");
+
+  // Visible columns in render order — also the basis for the freeze-pane offsets.
+  const visibleColumnList = useMemo(() => columns.filter((c) => visibleCols.has(c.key)), [visibleCols]);
+  const freezeIndex = freezeKey ? visibleColumnList.findIndex((c) => c.key === freezeKey) : -1;
+
+  type FreezeStick = { className: string; style?: CSSProperties };
+  /** Cumulative left offset (px) of a column = total width of the visible columns before it. */
+  const leftOf = (key: SortKey): number => {
+    const i = visibleColumnList.findIndex((c) => c.key === key);
+    let left = 0;
+    for (let j = 0; j < i; j++) left += colWidths[visibleColumnList[j].key] ?? 0;
+    return left;
+  };
+  /** Sticky props for a leading column cell, or empty when it isn't frozen.
+   *  `bg` is the OPAQUE background to use (defaults: header → muted, body → surface). */
+  const freezeStick = (key: SortKey, opts?: { header?: boolean; bg?: string }): FreezeStick => {
+    const i = visibleColumnList.findIndex((c) => c.key === key);
+    if (i < 0 || freezeIndex < 0 || i > freezeIndex) return { className: "" };
+    const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
+    const boundary = i === freezeIndex;
+    const shadow = boundary ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : "";
+    return { className: `sticky ${opts?.header ? "z-20" : "z-10"} ${bg} ${shadow}`, style: { left: leftOf(key) } };
+  };
+  /** Click a column's pin → freeze through it; click the current boundary → step back one. */
+  const handlePin = (key: SortKey) => {
+    const i = visibleColumnList.findIndex((c) => c.key === key);
+    if (freezeKey === key) setFreezeKey(i > 0 ? visibleColumnList[i - 1].key : null);
+    else                   setFreezeKey(key);
+  };
+  /** Pin button shown in a freezable header. */
+  const freezePin = (key: SortKey) => {
+    const i = visibleColumnList.findIndex((c) => c.key === key);
+    const active = freezeIndex >= 0 && i >= 0 && i <= freezeIndex;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); handlePin(key); }}
+        className={`ml-1 inline-flex items-center justify-center h-4 w-4 rounded shrink-0 ${active ? "text-primary" : "text-foreground/35 hover:text-foreground/70"}`}
+        title={active ? "Unfreeze from here" : "Freeze columns up to here"}
+      >
+        <Pin className={`h-3 w-3 ${active ? "fill-primary" : ""}`} />
+      </button>
+    );
+  };
 
   const totals = useMemo(() => ({
     openingBalance:    rows.reduce((s, r) => s + (r.openingBalance ?? 0), 0),
@@ -928,8 +1013,8 @@ export default function CustomerRiskRegister() {
     journalAdjustments: rows.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0),
     checkReturns:      rows.reduce((s, r) => s + (r.checkReturns ?? 0), 0),
     outstanding:       sumOutstanding(rows),
-    overdue:           agingBucketKey
-                         ? rows.reduce((s, r) => s + (r.agingBuckets?.[agingBucketKey] ?? 0), 0)
+    overdue:           agingBucketKeys.length > 0
+                         ? rows.reduce((s, r) => s + agingBucketKeys.reduce((t, bk) => t + (r.agingBuckets?.[bk] ?? 0), 0), 0)
                          : rows.reduce((s, r) => s + r.overdue, 0),
     creditLimit:       rows.reduce((s, r) => s + (r.creditLimit ?? 0), 0),
     proposedCreditLimit3M: rows.reduce((s, r) => s + (r.proposedCreditLimit3M ?? 0), 0),
@@ -938,7 +1023,7 @@ export default function CustomerRiskRegister() {
     criticalCustomers: rows.filter((r) => r.risk === "critical").length,
     overCreditLimit:   rows.filter((r) => r.utilization > 100).length,
     overdue180Plus:    rows.filter((r) => r.maxOverdueDays > 180).length,
-  }), [rows, agingBucketKey]);
+  }), [rows, agingBucketKeys]);
 
   const aggregatedTrend = useMemo(() => {
     if (rows.length === 0 || rows.length >= 10) return [];
@@ -1002,7 +1087,7 @@ export default function CustomerRiskRegister() {
   // Reset to page 1 whenever filters, sort, or page size changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, riskLevels, agingFilter, blockedFilter, sortKey, sortDir, viewMode, pageSize]);
+  }, [search, riskLevels, agingFilters, blockedFilter, companyFilters, locationFilters, sortKey, sortDir, viewMode, pageSize]);
 
   const effectivePageSize = pageSize === "all" ? Math.max(rows.length, 1) : pageSize;
   const totalPages = Math.max(1, Math.ceil(rows.length / effectivePageSize));
@@ -1032,7 +1117,7 @@ export default function CustomerRiskRegister() {
     };
 
     const header = visibleCols_.map((c) =>
-      c.key === "overdue" && agingBucketKey ? `Overdue (${agingFilter})` : c.label);
+      c.key === "overdue" && agingBucketKeys.length > 0 ? `Overdue (${agingFilters.join(", ")})` : c.label);
     const aoa: (string | number)[][] = [header];
     for (const row of rows) {
       const r: (string | number)[] = [];
@@ -1230,52 +1315,47 @@ export default function CustomerRiskRegister() {
             <div className="mb-1"><RiskLegendPopover /></div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Aging</span>
-              <Select value={agingFilter} onValueChange={setAgingFilter}>
-                <SelectTrigger className="w-[150px] rounded-input border-border text-sm">
-                  <SelectValue placeholder="Aging" />
-                </SelectTrigger>
-                <SelectContent className="rounded-input">
-                  <SelectItem value="all">All Aging</SelectItem>
-                  <SelectItem value="0-30">0–30 days</SelectItem>
-                  <SelectItem value="31-60">31–60 days</SelectItem>
-                  <SelectItem value="61-90">61–90 days</SelectItem>
-                  <SelectItem value="91-120">91–120 days</SelectItem>
-                  <SelectItem value="121-180">121–180 days</SelectItem>
-                  <SelectItem value="180+">180+ days</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                options={[
+                  { value: "0-30",    label: "0–30 days" },
+                  { value: "31-60",   label: "31–60 days" },
+                  { value: "61-90",   label: "61–90 days" },
+                  { value: "91-120",  label: "91–120 days" },
+                  { value: "121-180", label: "121–180 days" },
+                  { value: "180+",    label: "180+ days" },
+                ]}
+                value={agingFilters}
+                onChange={setAgingFilters}
+                allLabel="All Aging"
+                unit="buckets"
+                triggerClassName="w-[150px] h-9 text-sm rounded-input border-border"
+              />
             </div>
 
             {companyOptions.length > 1 && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Company</span>
-                <Select value={companyFilter} onValueChange={setCompanyFilter}>
-                  <SelectTrigger className="w-[150px] rounded-input border-border text-sm">
-                    <SelectValue placeholder="All Companies" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-input">
-                    <SelectItem value="all">All Companies</SelectItem>
-                    {companyOptions.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectFilter
+                  options={companyOptions.map((c) => ({ value: c, label: c }))}
+                  value={companyFilters}
+                  onChange={setCompanyFilters}
+                  allLabel="All Companies"
+                  unit="Companies"
+                  triggerClassName="w-[150px] h-9 text-sm rounded-input border-border"
+                />
               </div>
             )}
             {locationOptions.length > 1 && (
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Location</span>
-                <Select value={locationFilter} onValueChange={setLocationFilter}>
-                  <SelectTrigger className="w-[150px] rounded-input border-border text-sm">
-                    <SelectValue placeholder="All Locations" />
-                  </SelectTrigger>
-                  <SelectContent className="rounded-input">
-                    <SelectItem value="all">All Locations</SelectItem>
-                    {locationOptions.map((loc) => (
-                      <SelectItem key={loc} value={loc}>{loc}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <MultiSelectFilter
+                  options={locationOptions.map((loc) => ({ value: loc, label: loc }))}
+                  value={locationFilters}
+                  onChange={setLocationFilters}
+                  allLabel="All Locations"
+                  unit="Locations"
+                  triggerClassName="w-[150px] h-9 text-sm rounded-input border-border"
+                />
               </div>
             )}
 
@@ -1447,25 +1527,35 @@ export default function CustomerRiskRegister() {
       )}
 
       {/* Table */}
+      <p className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+        Use the <Pin className="h-3 w-3 inline" /> on a leading column header to freeze it (and everything to its left) while scrolling sideways.
+      </p>
       <Card className="rounded-card border-border bg-surface overflow-hidden">
         <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                {columns.filter((col) => visibleCols.has(col.key)).map((col) => (
+                {visibleColumnList.map((col) => {
+                  const freezable = FREEZABLE_KEYS.includes(col.key);
+                  const f = freezeStick(col.key, { header: true });
+                  return (
                   <TableHead
                     key={col.key}
-                    className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""} ${col.key === "name" ? "sticky left-0 z-20 bg-muted shadow-[2px_0_4px_-2px_rgba(0,0,0,0.12)]" : ""}`}
+                    ref={freezable ? (el) => { headRefs.current.set(col.key, el); } : undefined}
+                    style={f.style}
+                    className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""} ${f.className}`}
                     onClick={() => toggleSort(col.key)}
                   >
                     <span className="inline-flex items-center gap-1">
-                      {col.key === "overdue" && agingBucketKey ? `Overdue (${agingFilter})` : col.label}
+                      {col.key === "overdue" && agingBucketKeys.length > 0 ? `Overdue (${agingFilters.join(", ")})` : col.label}
                       {sortKey === col.key && sortDir === "asc"  && <ArrowUp   className="h-3 w-3" />}
                       {sortKey === col.key && sortDir === "desc" && <ArrowDown  className="h-3 w-3" />}
                       {sortKey !== col.key && <ArrowUpDown className="h-3 w-3 opacity-30" />}
+                      {freezable && freezePin(col.key)}
                     </span>
                   </TableHead>
-                ))}
+                  );
+                })}
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
@@ -1475,12 +1565,14 @@ export default function CustomerRiskRegister() {
                   Max OD, Credit Period, Risk, Blocked) are left blank. */}
               {rows.length > 0 && (
                 <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold hover:bg-muted/60">
-                  {columns.filter((col) => visibleCols.has(col.key)).map((col) => {
+                  {visibleColumnList.map((col) => {
+                    const f = freezeStick(col.key, { bg: "bg-muted" });
                     if (col.key === "name") {
                       return (
                         <TableCell
                           key="name"
-                          className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 sticky left-0 z-10 bg-muted shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]"
+                          style={f.style}
+                          className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${f.className}`}
                         >
                           Grand Total
                         </TableCell>
@@ -1519,7 +1611,7 @@ export default function CustomerRiskRegister() {
                       case "proposedCreditLimitAI":  content = fmt(totals.proposedCreditLimitAI); break;
                       default: content = null; cls = "";  // salesPerson, companies, locations, maxOverdueDays, creditPeriod, utilization, risk, blocked
                     }
-                    return <TableCell key={col.key} className={cls}>{content}</TableCell>;
+                    return <TableCell key={col.key} style={f.style} className={`${cls} ${f.className}`}>{content}</TableCell>;
                   })}
                   <TableCell className="w-8" />
                 </TableRow>
@@ -1560,22 +1652,32 @@ export default function CustomerRiskRegister() {
                       className={`group hover:bg-muted/30 transition-colors cursor-pointer ${opts.isChild ? "bg-muted/10" : ""}`}
                       onClick={opts.onClick}
                     >
-                      {visibleCols.has("name") && (
-                        <TableCell
-                          className={`font-medium text-sm whitespace-nowrap sticky left-0 z-10 bg-surface group-hover:bg-[hsl(var(--muted))] shadow-[2px_0_4px_-2px_rgba(0,0,0,0.08)]`}
-                        >
-                          {opts.leadCell}
-                        </TableCell>
-                      )}
-                      {visibleCols.has("salesPerson") && (
-                        <TableCell className="text-sm whitespace-nowrap">{r.salesPersons?.join(", ") ?? r.salesPerson}</TableCell>
-                      )}
-                      {visibleCols.has("companies") && (
-                        <TableCell className="text-sm whitespace-nowrap" title={r.companies?.join(", ")}>{showList(r.companies)}</TableCell>
-                      )}
-                      {visibleCols.has("locations") && (
-                        <TableCell className="text-sm whitespace-nowrap" title={r.locations?.join(", ")}>{showList(r.locations)}</TableCell>
-                      )}
+                      {visibleCols.has("name") && (() => {
+                        const f = freezeStick("name", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
+                        return (
+                          <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>
+                            {opts.leadCell}
+                          </TableCell>
+                        );
+                      })()}
+                      {visibleCols.has("salesPerson") && (() => {
+                        const f = freezeStick("salesPerson", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
+                        return (
+                          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`}>{r.salesPersons?.join(", ") ?? r.salesPerson}</TableCell>
+                        );
+                      })()}
+                      {visibleCols.has("companies") && (() => {
+                        const f = freezeStick("companies", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
+                        return (
+                          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.companies?.join(", ")}>{showList(r.companies)}</TableCell>
+                        );
+                      })()}
+                      {visibleCols.has("locations") && (() => {
+                        const f = freezeStick("locations", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
+                        return (
+                          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.locations?.join(", ")}>{showList(r.locations)}</TableCell>
+                        );
+                      })()}
                       {visibleCols.has("openingBalance") && (
                         <TableCell className="text-sm text-right font-mono">{fmt(r.openingBalance)}</TableCell>
                       )}

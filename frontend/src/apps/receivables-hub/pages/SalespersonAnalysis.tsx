@@ -1,10 +1,10 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type CSSProperties } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search, ChevronRight, ChevronDown, ChevronUp, ArrowUpDown,
   ArrowUp, ArrowDown, RefreshCw, UserCheck, X, AlertTriangle,
-  Users, DollarSign, TrendingDown, Clock, UserCircle,
+  Users, DollarSign, TrendingDown, Clock, UserCircle, Pin,
 } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Button } from "@hub/components/ui/button";
@@ -24,6 +24,7 @@ import { useAppData } from "@hub/lib/useAppData";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
+import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import type { AgingBuckets } from "@hub/lib/types";
@@ -131,6 +132,10 @@ const pivotValue = (row: PivotRow, key: PivotSortKey): number | string => {
   return row[group][field];
 };
 
+// Leading identity columns that can be frozen (Excel-style freeze panes) in the
+// bottom customer table; the user pins one via the 📌 in its header.
+const FREEZABLE_KEYS: BottomSortKey[] = ["name", "salesPerson"];
+
 const bottomColumns: { key: BottomSortKey; label: string; align?: "right" }[] = [
   { key: "name",           label: "Customer" },
   { key: "salesPerson",    label: "Sales Person" },
@@ -151,7 +156,7 @@ export default function SalespersonAnalysis() {
   // Filter state
   const [search, setSearch] = useState("");
   const [riskLevels, setRiskLevels] = useState<string[]>([]);
-  const [agingFilter, setAgingFilter] = useState("all");
+  const [agingFilters, setAgingFilters] = useState<string[]>([]);
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
   const [balanceFilter, setBalanceFilter] = useState<"all" | "has_outstanding" | "zero_outstanding">("all");
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
@@ -170,6 +175,88 @@ export default function SalespersonAnalysis() {
   // UI state
   const [showKpis, setShowKpis] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+
+  // ── Frozen columns (Excel-style freeze panes) ────────────────────────────────
+  // Bottom customer table: freeze from the left edge through `freezeKey` (Customer
+  // or Sales Person). Pivot table: a simple on/off freeze of its leading
+  // Salesperson column (left offset 0). Both are pinned via the 📌 in the header.
+  const [freezeKey, setFreezeKey] = useState<BottomSortKey | null>("name");
+  const [pivotFrozen, setPivotFrozen] = useState(true);
+  const headRefs = useRef<Map<BottomSortKey, HTMLTableCellElement | null>>(new Map());
+  const [colWidths, setColWidths] = useState<Record<string, number>>({});
+
+  const measureCols = useCallback(() => {
+    setColWidths((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const key of FREEZABLE_KEYS) {
+        const el = headRefs.current.get(key);
+        if (el) {
+          const w = el.offsetWidth;
+          if (next[key] !== w) { next[key] = w; changed = true; }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+  useLayoutEffect(measureCols); // re-measure after every render; setState is guarded so it can't loop
+  useEffect(() => {
+    window.addEventListener("resize", measureCols);
+    return () => window.removeEventListener("resize", measureCols);
+  }, [measureCols]);
+
+  // Freeze helpers for the bottom customer table (column set is fixed = bottomColumns).
+  const freezeIndex = freezeKey ? bottomColumns.findIndex((c) => c.key === freezeKey) : -1;
+  type FreezeStick = { className: string; style?: CSSProperties };
+  const leftOf = (key: BottomSortKey): number => {
+    const i = bottomColumns.findIndex((c) => c.key === key);
+    let left = 0;
+    for (let j = 0; j < i; j++) left += colWidths[bottomColumns[j].key] ?? 0;
+    return left;
+  };
+  const freezeStick = (key: BottomSortKey, opts?: { header?: boolean; bg?: string }): FreezeStick => {
+    const i = bottomColumns.findIndex((c) => c.key === key);
+    if (i < 0 || freezeIndex < 0 || i > freezeIndex) return { className: "" };
+    const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
+    const boundary = i === freezeIndex;
+    const shadow = boundary ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : "";
+    return { className: `sticky ${opts?.header ? "z-20" : "z-10"} ${bg} ${shadow}`, style: { left: leftOf(key) } };
+  };
+  const handlePin = (key: BottomSortKey) => {
+    const i = bottomColumns.findIndex((c) => c.key === key);
+    if (freezeKey === key) setFreezeKey(i > 0 ? bottomColumns[i - 1].key : null);
+    else                   setFreezeKey(key);
+  };
+  const freezePin = (key: BottomSortKey) => {
+    const i = bottomColumns.findIndex((c) => c.key === key);
+    const active = freezeIndex >= 0 && i >= 0 && i <= freezeIndex;
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); handlePin(key); }}
+        className={`ml-1 inline-flex items-center justify-center h-4 w-4 rounded shrink-0 ${active ? "text-primary" : "text-foreground/35 hover:text-foreground/70"}`}
+        title={active ? "Unfreeze from here" : "Freeze columns up to here"}
+      >
+        <Pin className={`h-3 w-3 ${active ? "fill-primary" : ""}`} />
+      </button>
+    );
+  };
+  // Pivot table: sticky props for its single leading Salesperson column.
+  const pivotStick = (opts?: { header?: boolean; bg?: string }): FreezeStick => {
+    if (!pivotFrozen) return { className: "" };
+    const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
+    return { className: `sticky left-0 ${opts?.header ? "z-20" : "z-10"} ${bg} shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]` };
+  };
+  const pivotPin = () => (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); setPivotFrozen((v) => !v); }}
+      className={`ml-1 inline-flex items-center justify-center h-4 w-4 rounded shrink-0 ${pivotFrozen ? "text-primary" : "text-foreground/35 hover:text-foreground/70"}`}
+      title={pivotFrozen ? "Unfreeze this column" : "Freeze this column"}
+    >
+      <Pin className={`h-3 w-3 ${pivotFrozen ? "fill-primary" : ""}`} />
+    </button>
+  );
 
   const { loading, error, consolidatedCustomers, dashboard } = useAppData({
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
@@ -191,16 +278,16 @@ export default function SalespersonAnalysis() {
     if (categories.length > 0) {
       d = d.filter((r) => matchesCategory(r, categories));
     }
-    if (agingFilter !== "all") {
+    if (agingFilters.length > 0) {
       const bkMap: Record<string, keyof AgingBuckets> = {
         "0-30": "0_30", "31-60": "31_60", "61-90": "61_90",
         "91-120": "91_120", "121-180": "121_180", "180+": "180_plus",
       };
-      const bk = bkMap[agingFilter];
-      if (bk) d = d.filter((r) => (r.agingBuckets?.[bk] ?? 0) > 0);
+      const bks = agingFilters.map((a) => bkMap[a]).filter(Boolean) as (keyof AgingBuckets)[];
+      if (bks.length > 0) d = d.filter((r) => bks.some((bk) => (r.agingBuckets?.[bk] ?? 0) > 0));
     }
     return d;
-  }, [allData, search, riskLevels, categories, agingFilter]);
+  }, [allData, search, riskLevels, categories, agingFilters]);
 
   /* ── Derived: salesperson × risk pivot ── */
   const pivotRows = useMemo(() => {
@@ -337,7 +424,7 @@ export default function SalespersonAnalysis() {
   const clearFilters = () => {
     setSearch("");
     setRiskLevels([]);
-    setAgingFilter("all");
+    setAgingFilters([]);
     setCustomerSegment("all");
     setBalanceFilter("all");
     setSaleTypes([]);
@@ -350,9 +437,9 @@ export default function SalespersonAnalysis() {
       label: `Risk: ${riskLevels.map((r) => r.charAt(0).toUpperCase() + r.slice(1)).join(", ")}`,
       onRemove: () => setRiskLevels([]),
     },
-    agingFilter !== "all" && {
-      label: `Aging: ${agingFilter} days`,
-      onRemove: () => setAgingFilter("all"),
+    agingFilters.length > 0 && {
+      label: agingFilters.length <= 2 ? `Aging: ${agingFilters.join(", ")} days` : `Aging: ${agingFilters.length} buckets`,
+      onRemove: () => setAgingFilters([]),
     },
     customerSegment !== "all" && {
       label: `Segment: ${customerSegment === "active" ? "Active" : "No Activity"}`,
@@ -375,7 +462,7 @@ export default function SalespersonAnalysis() {
   /* Reset page when filters or selection change */
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, riskLevels, agingFilter, customerSegment, balanceFilter, saleTypes, categories, selectedSalesperson, selectedRisk, bottomSortKey, bottomSortDir]);
+  }, [search, riskLevels, agingFilters, customerSegment, balanceFilter, saleTypes, categories, selectedSalesperson, selectedRisk, bottomSortKey, bottomSortDir]);
 
   /* Reset selection if salesperson disappears from filtered set */
   useEffect(() => {
@@ -392,7 +479,7 @@ export default function SalespersonAnalysis() {
   const activeFilters: ActiveFiltersSummary = {
     search,
     riskLevels,
-    aging: agingFilter,
+    aging: agingFilters.length > 0 ? agingFilters.join(", ") : "all",
     customerSegment,
     balance: balanceFilter,
     saleTypes,
@@ -488,20 +575,21 @@ export default function SalespersonAnalysis() {
             <div className="mb-1"><RiskLegendPopover /></div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Aging</span>
-              <Select value={agingFilter} onValueChange={setAgingFilter}>
-                <SelectTrigger className="w-[150px] rounded-input border-border text-sm">
-                  <SelectValue placeholder="Aging" />
-                </SelectTrigger>
-                <SelectContent className="rounded-input">
-                  <SelectItem value="all">All Aging</SelectItem>
-                  <SelectItem value="0-30">0–30 days</SelectItem>
-                  <SelectItem value="31-60">31–60 days</SelectItem>
-                  <SelectItem value="61-90">61–90 days</SelectItem>
-                  <SelectItem value="91-120">91–120 days</SelectItem>
-                  <SelectItem value="121-180">121–180 days</SelectItem>
-                  <SelectItem value="180+">180+ days</SelectItem>
-                </SelectContent>
-              </Select>
+              <MultiSelectFilter
+                options={[
+                  { value: "0-30",    label: "0–30 days" },
+                  { value: "31-60",   label: "31–60 days" },
+                  { value: "61-90",   label: "61–90 days" },
+                  { value: "91-120",  label: "91–120 days" },
+                  { value: "121-180", label: "121–180 days" },
+                  { value: "180+",    label: "180+ days" },
+                ]}
+                value={agingFilters}
+                onChange={setAgingFilters}
+                allLabel="All Aging"
+                unit="buckets"
+                triggerClassName="w-[150px] h-9 text-sm rounded-input border-border"
+              />
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Segment</span>
@@ -604,15 +692,19 @@ export default function SalespersonAnalysis() {
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
+                {(() => { const f = pivotStick({ header: true }); return (
                 <TableHead
                   rowSpan={2}
-                  className="text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap align-middle"
+                  style={f.style}
+                  className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap align-middle ${f.className}`}
                   onClick={() => togglePivotSort("salesperson")}
                 >
                   <span className="inline-flex items-center gap-1">
                     Salesperson {pivotSortIcon("salesperson")}
+                    {pivotPin()}
                   </span>
                 </TableHead>
+                ); })()}
                 <TableHead colSpan={4} className="text-xs font-semibold text-foreground/70 text-center border-l border-border">
                   Totals
                 </TableHead>
@@ -669,9 +761,11 @@ export default function SalespersonAnalysis() {
                 <>
                   {/* Running totals row — must equal the Summary KPI block */}
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
-                    <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">
-                      Total
-                    </TableCell>
+                    {(() => { const f = pivotStick({ bg: "bg-muted" }); return (
+                      <TableCell style={f.style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${f.className}`}>
+                        Total
+                      </TableCell>
+                    ); })()}
                     <TableCell className="text-sm text-right font-mono border-l border-border">{pivotTotals.total.customers}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(pivotTotals.total.sales)}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(Math.abs(pivotTotals.total.outstanding))}</TableCell>
@@ -699,10 +793,12 @@ export default function SalespersonAnalysis() {
                   return (
                     <TableRow
                       key={row.salesperson}
-                      className={`transition-colors ${isRowSelected ? "bg-primary/5" : "hover:bg-muted/30"}`}
+                      className={`group transition-colors ${isRowSelected ? "bg-primary/5" : "hover:bg-muted/30"}`}
                     >
+                      {(() => { const f = pivotStick({ bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
                       <TableCell
-                        className={`font-medium text-sm whitespace-nowrap cursor-pointer ${isRowSelected && !selectedRisk ? "text-primary font-semibold" : ""}`}
+                        style={f.style}
+                        className={`font-medium text-sm whitespace-nowrap cursor-pointer ${isRowSelected && !selectedRisk ? "text-primary font-semibold" : ""} ${f.className}`}
                         onClick={() => handleSalespersonClick(row.salesperson)}
                       >
                         <span className="inline-flex items-center gap-1.5">
@@ -710,6 +806,7 @@ export default function SalespersonAnalysis() {
                           {isRowSelected && !selectedRisk && <X className="h-3 w-3 opacity-70" />}
                         </span>
                       </TableCell>
+                      ); })()}
                       <TableCell className="text-sm text-right font-mono border-l border-border">{row.total.customers}</TableCell>
                       <TableCell className="text-sm text-right font-mono">{fmt(row.total.sales)}</TableCell>
                       <TableCell className="text-sm text-right font-mono font-semibold">{fmt(Math.abs(row.total.outstanding))}</TableCell>
@@ -770,27 +867,37 @@ export default function SalespersonAnalysis() {
 
       {/* Customer table */}
       <Card className="rounded-card border-border bg-surface overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-2">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             Customers {customerRows.length > 0 && `— ${rangeStart}–${rangeEnd} of ${customerRows.length}`}
+          </span>
+          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">
+            Use the <Pin className="h-3 w-3 inline" /> on a leading column to freeze it while scrolling sideways
           </span>
         </div>
         <ScrollableTable>
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
-                {bottomColumns.map((col) => (
+                {bottomColumns.map((col) => {
+                  const freezable = FREEZABLE_KEYS.includes(col.key);
+                  const f = freezeStick(col.key, { header: true });
+                  return (
                   <TableHead
                     key={col.key}
-                    className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""}`}
+                    ref={freezable ? (el) => { headRefs.current.set(col.key, el); } : undefined}
+                    style={f.style}
+                    className={`text-xs font-semibold text-foreground/70 cursor-pointer select-none whitespace-nowrap ${col.align === "right" ? "text-right" : ""} ${f.className}`}
                     onClick={() => toggleBottomSort(col.key)}
                   >
                     <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
                       {col.label}
                       {bottomSortIcon(col.key)}
+                      {freezable && freezePin(col.key)}
                     </span>
                   </TableHead>
-                ))}
+                  );
+                })}
                 <TableHead className="w-8" />
               </TableRow>
             </TableHeader>
@@ -805,10 +912,14 @@ export default function SalespersonAnalysis() {
                 <>
                   {/* Running totals across all filtered customers (all pages) */}
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
-                    <TableCell className="text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80">
-                      Total ({customerTotals.count})
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground/60">—</TableCell>
+                    {(() => { const f = freezeStick("name", { bg: "bg-muted" }); return (
+                      <TableCell style={f.style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${f.className}`}>
+                        Total ({customerTotals.count})
+                      </TableCell>
+                    ); })()}
+                    {(() => { const f = freezeStick("salesPerson", { bg: "bg-muted" }); return (
+                      <TableCell style={f.style} className={`text-sm text-muted-foreground/60 ${f.className}`}>—</TableCell>
+                    ); })()}
                     <TableCell className="text-sm text-right font-mono">{fmt(customerTotals.sales)}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(customerTotals.receipts)}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(Math.abs(customerTotals.outstanding))}</TableCell>
@@ -823,11 +934,15 @@ export default function SalespersonAnalysis() {
                   {paginatedCustomerRows.map((row) => (
                   <TableRow
                     key={row.id}
-                    className="hover:bg-muted/30 transition-colors cursor-pointer"
+                    className="group hover:bg-muted/30 transition-colors cursor-pointer"
                     onClick={() => navigate(`/outstanding-dashboard/customer/${encodeURIComponent(row.name)}`)}
                   >
-                    <TableCell className="font-medium text-sm whitespace-nowrap">{row.name}</TableCell>
-                    <TableCell className="text-sm whitespace-nowrap">{row.salesPersons?.join(", ") ?? row.salesPerson}</TableCell>
+                    {(() => { const f = freezeStick("name", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
+                      <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>{row.name}</TableCell>
+                    ); })()}
+                    {(() => { const f = freezeStick("salesPerson", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
+                      <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`}>{row.salesPersons?.join(", ") ?? row.salesPerson}</TableCell>
+                    ); })()}
                     <TableCell className="text-sm text-right font-mono">{fmt(row.sales)}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(row.receipts)}</TableCell>
                     <TableCell className="text-sm text-right font-mono font-semibold">{fmt(Math.abs(row.outstanding))}</TableCell>

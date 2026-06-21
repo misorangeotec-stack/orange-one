@@ -483,10 +483,12 @@ export function useAppData(filters: Filters = {}): AppData {
   const customers = useMemo(() => {
     let result = allCustomers;
     if (filters.company && filters.company !== "all") {
-      result = result.filter((c) => c.company === filters.company);
+      const companies = filters.company.split(",").map((c) => c.trim());
+      result = result.filter((c) => companies.includes(c.company));
     }
     if (filters.location && filters.location !== "all") {
-      result = result.filter((c) => c.location === filters.location);
+      const locations = filters.location.split(",").map((l) => l.trim());
+      result = result.filter((c) => locations.includes(c.location));
     }
     if (filters.risk && filters.risk !== "all") {
       const risks = filters.risk.split(",").map((r) => r.trim());
@@ -868,10 +870,12 @@ export function useAppData(filters: Filters = {}): AppData {
       );
     }
     if (filters.company && filters.company !== "all") {
-      result = result.filter((a) => a.company === filters.company);
+      const companies = filters.company.split(",").map((c) => c.trim());
+      result = result.filter((a) => companies.includes(a.company));
     }
     if (filters.location && filters.location !== "all") {
-      result = result.filter((a) => a.location === filters.location);
+      const locations = filters.location.split(",").map((l) => l.trim());
+      result = result.filter((a) => locations.includes(a.location));
     }
     return result;
   }, [dashboard?.alerts, allowedCustomerIds, allowedCustomerNames, filters.company, filters.location]);
