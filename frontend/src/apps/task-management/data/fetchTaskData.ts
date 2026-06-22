@@ -48,6 +48,7 @@ const mapTask = (r: any): Task => ({
   shiftedFromTaskId: r.shifted_from_task_id,
   shiftedToTaskId: r.shifted_to_task_id,
   recurringTaskId: r.recurring_task_id,
+  fromRecurring: r.from_recurring ?? false,
   completedAt: r.completed_at,
   notApplicable: r.not_applicable ?? false,
   notApplicableAt: r.not_applicable_at ?? null,

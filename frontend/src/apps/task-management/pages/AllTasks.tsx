@@ -11,8 +11,9 @@ export default function AllTasks() {
   const [searchParams] = useSearchParams();
   // Seed filters from a deep-link; a linked week starts in "all time" so the
   // historical week isn't pre-scoped out before TaskBrowser's exact-week filter.
+  // Other-tasks links are week-agnostic (counted all-time), so start all-time too.
   const initialFilters = useMemo(() => parseTaskFilters(searchParams), [searchParams]);
-  const [scope, setScope] = useState<Scope>(initialFilters.week ? "all" : "week");
+  const [scope, setScope] = useState<Scope>(initialFilters.week || initialFilters.personal ? "all" : "week");
 
   const scopedTasks = useMemo(() => scopeTasks(tasks, scope), [tasks, scope]);
 

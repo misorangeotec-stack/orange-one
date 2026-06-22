@@ -19,6 +19,16 @@ export { computeDownlineIds as downlineIds } from "@/core/platform/store";
  */
 export const countsTowardMetrics = (t: Task) => !t.notApplicable && !t.isPersonal;
 
+/**
+ * Whether a task originated from a recurring template (vs an ad-hoc one-off).
+ * Prefer the durable `fromRecurring` flag (stamped at generation, survives template
+ * deletion); fall back to a still-live `recurringTaskId` link so instances created
+ * before the flag column existed are still classified correctly while their
+ * template remains. Both false → genuine one-off (or an orphan whose template was
+ * deleted before the flag shipped, which is unrecoverable).
+ */
+export const isRecurringTask = (t: Task) => t.fromRecurring || t.recurringTaskId !== null;
+
 export interface DashboardStats {
   dueToday: number;
   pending: number;

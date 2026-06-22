@@ -1,5 +1,5 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Combobox from "@/shared/components/ui/Combobox";
@@ -10,12 +10,12 @@ import { addWeeks, formatDate, isoWeekOf, weekEndOf, weekStartOf } from "@/share
 import { WEEK_START } from "../mock/data";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { actualRygFor, computeStats, downlineIds, reportFor } from "../mock/selectors";
+import { actualRygFor, computeStats, downlineIds, isRecurringTask, reportFor } from "../mock/selectors";
 import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import { useReportsToSuffix } from "../components/ReportsToTag";
-import { taskListLink, type RygColour } from "../lib/taskLink";
-import type { Profile, WeeklyPlan } from "../types";
+import { taskListLink, type RygColour, type TaskKind } from "../lib/taskLink";
+import type { AppRole, Profile, Task, WeeklyPlan } from "../types";
 
 const GREEN = "text-[#1f8a4d]";
 const YELLOW = "text-[#B7820E]";
@@ -83,11 +83,14 @@ export default function WeeklyScorecard() {
     () => tasks.filter((t) => t.weekStart === weekStart && t.assignedTo === selectedId),
     [tasks, weekStart, selectedId]
   );
-  const report = useMemo(() => reportFor(weekTasks, selectedId), [weekTasks, selectedId]);
   const actual = useMemo(() => actualRygFor(weekTasks, selectedId, weekStart), [weekTasks, selectedId, weekStart]);
-  const counts = rygCounts(report);
-  const stats = useMemo(() => computeStats(weekTasks), [weekTasks]);
   const hasTasks = actual.total > 0;
+
+  // Split the week's tasks into recurring (generated from a RecurringTask) vs
+  // one-off (ad-hoc), so each can be scored on its own. Personal / Not-Applicable
+  // tasks are dropped inside the score selectors, so they never land in either.
+  const recurringTasks = useMemo(() => weekTasks.filter(isRecurringTask), [weekTasks]);
+  const oneOffTasks = useMemo(() => weekTasks.filter((t) => !isRecurringTask(t)), [weekTasks]);
 
   // Personal (self-tracking) tasks are excluded from every score, so they never
   // show up in the RYG/stat counts above. Surface their own counters here — all
@@ -106,11 +109,12 @@ export default function WeeklyScorecard() {
 
   const { isoYear, isoWeek } = isoWeekOf(weekStart);
 
-  // Deep-link from a number on this card into the role-appropriate task list,
-  // pre-filtered to this person + this week + the matching status/colour.
-  const colourLink = (colour: RygColour) => taskListLink({ role, assignee: selectedId, weekStart, colour, metricOnly: true });
-  const statusLink = (status: "pending" | "in_progress" | "shifted") =>
-    taskListLink({ role, assignee: selectedId, weekStart, statuses: [status], metricOnly: true });
+  // Deep-link from an "Other tasks" counter into the role-appropriate task list,
+  // showing only this person's self-tracking tasks of that status. These are
+  // counted all-time (not week-planned), so the link is week-agnostic and never
+  // metric-only (metric-only would exclude personal tasks entirely).
+  const otherLink = (status: "pending" | "in_progress" | "completed") =>
+    taskListLink({ role, assignee: selectedId, personal: true, statuses: [status] });
 
   return (
     <div className="space-y-5">
@@ -159,39 +163,16 @@ export default function WeeklyScorecard() {
           </div>
         </Card>
 
-        {/* 2. actual score */}
-        <Card className="p-5">
-          <div className="flex items-start justify-between">
-            <div>
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Actual score</h3>
-              <p className="mt-1 text-[26px] font-bold text-navy leading-none tabular-nums">
-                {actual.total} task{actual.total === 1 ? "" : "s"}
-              </p>
-            </div>
-            <Avatar name={selected.name} color={selected.avatarColor} size={32} />
-          </div>
-
-          <div className="mt-4">
-            <RygBar red={actual.red} yellow={actual.yellow} green={actual.green} showLegend={false} />
-            <div className="mt-2 flex items-center justify-between text-[11.5px] font-medium">
-              <Link to={colourLink("green")} className={cn(GREEN, "hover:underline")}>G {hasTasks ? actual.green : 0}%</Link>
-              <Link to={colourLink("yellow")} className={cn(YELLOW, "hover:underline")}>Y {hasTasks ? actual.yellow : 0}%</Link>
-              <Link to={colourLink("red")} className={cn(RED, "hover:underline")}>R {hasTasks ? actual.red : 0}%</Link>
-            </div>
-          </div>
-
-          <div className="mt-4 grid grid-cols-3 text-center">
-            <BigNum tone={GREEN} value={counts.green} label="Green" to={colourLink("green")} />
-            <BigNum tone={YELLOW} value={counts.yellow} label="Yellow" to={colourLink("yellow")} />
-            <BigNum tone={RED} value={counts.red} label="Red" to={colourLink("red")} />
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-1.5">
-            <Pill label="Pending" count={stats.pending} tone="red" to={statusLink("pending")} />
-            <Pill label="In progress" count={stats.inProgress} tone="red" to={statusLink("in_progress")} />
-            <Pill label="Shifted" count={stats.shifted} tone="red" to={statusLink("shifted")} />
-          </div>
-        </Card>
+        {/* 2. actual score — total summary (recurring + one-off combined) */}
+        <ActualScoreBlock
+          title="Actual score — total"
+          subtitle="Recurring + one-off combined"
+          tasks={weekTasks}
+          role={role}
+          assignee={selectedId}
+          weekStart={weekStart}
+          rightSlot={<Avatar name={selected.name} color={selected.avatarColor} size={32} />}
+        />
 
         {/* 3. next week — planned */}
         <Card className="p-5">
@@ -211,22 +192,50 @@ export default function WeeklyScorecard() {
         </Card>
       </div>
 
-      {/* personal tasks — self-tracking, deliberately excluded from the score above */}
+      {/* split analysis: recurring vs one-off, scored independently */}
+      <div>
+        <h3 className="text-[13px] font-bold text-navy">Recurring vs one-off</h3>
+        <p className="text-[11.5px] text-grey-2">Each task type scored on its own; the total above is the two combined.</p>
+        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+          <ActualScoreBlock
+            title="Recurring tasks"
+            subtitle="Generated from a recurring schedule"
+            tasks={recurringTasks}
+            role={role}
+            assignee={selectedId}
+            weekStart={weekStart}
+            kind="recurring"
+            rightSlot={<KindBadge label="Recurring" />}
+          />
+          <ActualScoreBlock
+            title="One-off tasks"
+            subtitle="Ad-hoc, individually assigned"
+            tasks={oneOffTasks}
+            role={role}
+            assignee={selectedId}
+            weekStart={weekStart}
+            kind="oneoff"
+            rightSlot={<KindBadge label="One-off" />}
+          />
+        </div>
+      </div>
+
+      {/* other tasks — self-tracking, deliberately excluded from the score above */}
       <Card className="p-5">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Personal tasks</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Other tasks</h3>
             <p className="mt-1 text-[12px] text-grey-2">Self-tracking · not counted in the score</p>
           </div>
           <p className="text-[26px] font-bold text-navy leading-none tabular-nums">{personalStats.total}</p>
         </div>
         {personalStats.total === 0 ? (
-          <p className="mt-3 text-[13px] text-grey-2 italic">No personal tasks.</p>
+          <p className="mt-3 text-[13px] text-grey-2 italic">No other tasks.</p>
         ) : (
           <div className="mt-4 grid max-w-md grid-cols-3 text-center">
-            <BigNum tone="text-navy" value={personalStats.pending} label="Pending" />
-            <BigNum tone="text-blue" value={personalStats.inProgress} label="In progress" />
-            <BigNum tone={GREEN} value={personalStats.completed} label="Completed" />
+            <BigNum tone="text-navy" value={personalStats.pending} label="Pending" to={otherLink("pending")} />
+            <BigNum tone="text-blue" value={personalStats.inProgress} label="In progress" to={otherLink("in_progress")} />
+            <BigNum tone={GREEN} value={personalStats.completed} label="Completed" to={otherLink("completed")} />
           </div>
         )}
       </Card>
@@ -266,6 +275,81 @@ export default function WeeklyScorecard() {
         </ScrollableTable>
       </Card>
     </div>
+  );
+}
+
+/* ---------- actual-score block (total / recurring / one-off) ---------- */
+
+/**
+ * One "actual score" card for a slice of the week's tasks — the same RYG bar,
+ * percentages, green/yellow/red counts and status pills used for the total, but
+ * driven by whatever task subset is passed in (all, recurring-only, one-off-only).
+ * Every number deep-links into the task list pre-filtered to the same slice via
+ * `kind`, so the drill-down matches the count behind it.
+ */
+function ActualScoreBlock({
+  title, subtitle, tasks, role, assignee, weekStart, kind, rightSlot,
+}: {
+  title: string;
+  subtitle?: string;
+  tasks: Task[];
+  role: AppRole;
+  assignee: string;
+  weekStart: string;
+  kind?: TaskKind;
+  rightSlot?: ReactNode;
+}) {
+  const actual = useMemo(() => actualRygFor(tasks, assignee, weekStart), [tasks, assignee, weekStart]);
+  const counts = useMemo(() => rygCounts(reportFor(tasks, assignee)), [tasks, assignee]);
+  const stats = useMemo(() => computeStats(tasks), [tasks]);
+  const hasTasks = actual.total > 0;
+
+  const colourLink = (colour: RygColour) => taskListLink({ role, assignee, weekStart, colour, kind, metricOnly: true });
+  const statusLink = (status: "pending" | "in_progress" | "shifted") =>
+    taskListLink({ role, assignee, weekStart, statuses: [status], kind, metricOnly: true });
+
+  return (
+    <Card className="p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">{title}</h3>
+          <p className="mt-1 text-[26px] font-bold text-navy leading-none tabular-nums">
+            {actual.total} task{actual.total === 1 ? "" : "s"}
+          </p>
+          {subtitle && <p className="mt-1 text-[11px] text-grey-2">{subtitle}</p>}
+        </div>
+        {rightSlot}
+      </div>
+
+      <div className="mt-4">
+        <RygBar red={actual.red} yellow={actual.yellow} green={actual.green} showLegend={false} />
+        <div className="mt-2 flex items-center justify-between text-[11.5px] font-medium">
+          <Link to={colourLink("green")} className={cn(GREEN, "hover:underline")}>G {hasTasks ? actual.green : 0}%</Link>
+          <Link to={colourLink("yellow")} className={cn(YELLOW, "hover:underline")}>Y {hasTasks ? actual.yellow : 0}%</Link>
+          <Link to={colourLink("red")} className={cn(RED, "hover:underline")}>R {hasTasks ? actual.red : 0}%</Link>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 text-center">
+        <BigNum tone={GREEN} value={counts.green} label="Green" to={colourLink("green")} />
+        <BigNum tone={YELLOW} value={counts.yellow} label="Yellow" to={colourLink("yellow")} />
+        <BigNum tone={RED} value={counts.red} label="Red" to={colourLink("red")} />
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        <Pill label="Pending" count={stats.pending} tone="red" to={statusLink("pending")} />
+        <Pill label="In progress" count={stats.inProgress} tone="red" to={statusLink("in_progress")} />
+        <Pill label="Shifted" count={stats.shifted} tone="red" to={statusLink("shifted")} />
+      </div>
+    </Card>
+  );
+}
+
+function KindBadge({ label }: { label: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-page px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-grey-2 whitespace-nowrap">
+      {label}
+    </span>
   );
 }
 

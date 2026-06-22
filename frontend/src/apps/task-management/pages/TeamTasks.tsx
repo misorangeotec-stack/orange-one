@@ -18,9 +18,11 @@ export default function TeamTasks() {
   const [searchParams] = useSearchParams();
   // Seed filters from a deep-link (e.g. a RYG number on the scorecard). When a
   // specific week is linked, start in "all time" so that historical week isn't
-  // pre-scoped out before TaskBrowser's exact-week filter can apply.
+  // pre-scoped out before TaskBrowser's exact-week filter can apply. The
+  // Other-tasks card links are week-agnostic (those tasks are counted all-time),
+  // so start in "all time" for them too, otherwise the matching task is scoped out.
   const initialFilters = useMemo(() => parseTaskFilters(searchParams), [searchParams]);
-  const [scope, setScope] = useState<Scope>(initialFilters.week ? "all" : "week");
+  const [scope, setScope] = useState<Scope>(initialFilters.week || initialFilters.personal ? "all" : "week");
   // The "Team · last active" panel is collapsed by default so the task list is
   // the focus; the header acts as the expand/collapse toggle.
   const [showActivity, setShowActivity] = useState(false);

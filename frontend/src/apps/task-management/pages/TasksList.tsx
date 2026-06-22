@@ -13,7 +13,7 @@ import { formatDate, isOverdue, isToday } from "@/shared/lib/time";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { countsTowardMetrics } from "../mock/selectors";
+import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
 import { parseTaskFilters } from "../lib/taskLink";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
@@ -40,8 +40,13 @@ export default function TasksList() {
   const initialFilters = useMemo(() => parseTaskFilters(params), [params]);
   const [q, setQ] = useState("");
   const [statuses, setStatuses] = useState<StatusFilter[]>(initialFilters.statuses);
+  // Recurring-vs-one-off scope, seeded from a deep-link (Weekly Scorecard split blocks).
+  const [kind, setKind] = useState<"all" | "recurring" | "oneoff">(initialFilters.kind ?? "all");
   const [relation, setRelation] = useState<Relation>("assigned");
-  const [scope, setScope] = useState<Scope>("week");
+  // Show ONLY "Other" (self-tracking) tasks — set when arriving from the Other-tasks
+  // card on the scorecard, which counts them all-time, so default to all-time scope.
+  const [personalOnly, setPersonalOnly] = useState(initialFilters.personal ?? false);
+  const [scope, setScope] = useState<Scope>(initialFilters.personal ? "all" : "week");
   // A specific ISO-Monday week from a deep-link; when set it overrides the
   // this-week/all-time scope so a historical week's tasks are shown.
   const [exactWeek, setExactWeek] = useState<string | null>(initialFilters.week ?? null);
@@ -68,9 +73,12 @@ export default function TasksList() {
     if (relation === "assigned") list = list.filter((t) => t.assignedTo === user.id);
     else if (relation === "created") list = list.filter((t) => t.createdBy === user.id);
     if (statuses.length) list = list.filter((t) => matchesStatusFilter(t, statuses));
+    if (kind === "recurring") list = list.filter(isRecurringTask);
+    else if (kind === "oneoff") list = list.filter((t) => !isRecurringTask(t) && !t.isPersonal);
+    if (personalOnly) list = list.filter((t) => t.isPersonal);
     if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
-  }, [mine, scope, exactWeek, metricOnly, relation, statuses, q, user.id]);
+  }, [mine, scope, exactWeek, metricOnly, relation, statuses, kind, personalOnly, q, user.id]);
 
   const counts = useMemo(
     () => ({
@@ -98,7 +106,7 @@ export default function TasksList() {
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${sort.key}|${sort.dir}` });
 
   const activeFilters: ActiveFilter[] = [];
   if (exactWeek)
@@ -125,13 +133,27 @@ export default function TasksList() {
       label: `Status: ${STATUS_FILTER_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
       onClear: () => setStatuses([]),
     });
+  if (kind !== "all")
+    activeFilters.push({
+      key: "kind",
+      label: kind === "recurring" ? "Recurring tasks" : "One-off tasks",
+      onClear: () => setKind("all"),
+    });
+  if (personalOnly)
+    activeFilters.push({
+      key: "personal",
+      label: "Other tasks only",
+      onClear: () => setPersonalOnly(false),
+    });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   const clearAll = () => {
     setStatuses([]);
+    setKind("all");
     setQ("");
     setRelation("all");
     setExactWeek(null);
     setMetricOnly(false);
+    setPersonalOnly(false);
   };
 
   return (
@@ -147,7 +169,7 @@ export default function TasksList() {
             className="inline-flex items-center gap-2 bg-white text-navy font-semibold text-sm px-4 py-2.5 rounded-xl border border-line hover:border-orange hover:text-orange transition"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            Add personal task
+            Add other task
           </button>
           {canCreate && (
             <Link
@@ -179,7 +201,7 @@ export default function TasksList() {
               { key: "today", label: "Today", count: counts.today },
               { key: "followup", label: "Follow-ups", count: counts.followup },
               { key: "pending", label: "Pending", count: counts.pending },
-              { key: "personal", label: "Personal", count: counts.personal },
+              { key: "personal", label: "Other", count: counts.personal },
             ]}
             active={view}
             onChange={(k) => setParams(k === "all" ? {} : { view: k }, { replace: true })}
@@ -199,6 +221,17 @@ export default function TasksList() {
               className="w-full sm:w-auto sm:min-w-[150px]"
               align="right"
               options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+            />
+            <Combobox
+              value={kind}
+              onChange={(v) => setKind(v as "all" | "recurring" | "oneoff")}
+              className="w-full sm:w-auto sm:min-w-[140px]"
+              align="right"
+              options={[
+                { value: "all", label: "All task types" },
+                { value: "recurring", label: "Recurring" },
+                { value: "oneoff", label: "One-off" },
+              ]}
             />
             <div className="relative w-full sm:w-auto">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>

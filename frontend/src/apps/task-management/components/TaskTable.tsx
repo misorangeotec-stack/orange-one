@@ -4,6 +4,7 @@ import Avatar from "@/shared/components/ui/Avatar";
 import { dateLabel, isOverdue, todayIso } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
+import { isRecurringTask } from "../mock/selectors";
 import { RECURRENCE_LABEL, type Task } from "../types";
 import StatusChip from "./StatusChip";
 
@@ -116,6 +117,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
             const dept = departmentById(task.departmentId);
             const overdue = isOverdue(task.dueDate) && task.status !== "completed" && task.status !== "shifted";
             const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
+            const recurring = isRecurringTask(task);
             return (
               <tr
                 key={task.id}
@@ -131,14 +133,14 @@ export default function TaskTable({ tasks, sort, onSort }: {
                     <span className="text-[14px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
                     {task.isPersonal && (
                       <span
-                        title="Personal task — for your own tracking; excluded from all scores"
+                        title="Other task — for your own tracking; excluded from all scores"
                         className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-orange bg-[#FFF1E8] rounded-pill px-1.5 py-0.5"
                       >
                         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                        Personal
+                        Other
                       </span>
                     )}
-                    {task.recurringTaskId && (
+                    {recurring && (
                       <span
                         title={recurrence ? `Recurring task · ${RECURRENCE_LABEL[recurrence]}` : "Generated from a recurring task"}
                         className="shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-blue bg-[#EAF1FE] rounded-pill px-1.5 py-0.5"

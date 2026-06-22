@@ -110,6 +110,11 @@ export interface Task {
   shiftedFromTaskId: string | null;
   shiftedToTaskId: string | null;
   recurringTaskId: string | null;
+  // Durable "born from a recurring template" flag, stamped at generation time and
+  // never cleared. recurringTaskId is ON DELETE SET NULL, so it goes null if the
+  // template is deleted; this flag survives that, keeping the task classified as
+  // recurring. Use isRecurringTask() (selectors) rather than reading either alone.
+  fromRecurring: boolean;
   completedAt: string | null; // ISO datetime
   notApplicable: boolean; // "when" instances can be marked N/A for the day → excluded from all report metrics
   notApplicableAt: string | null; // ISO datetime — when N/A was set (null when applicable)

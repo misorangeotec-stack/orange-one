@@ -72,7 +72,7 @@ export default function PersonalTaskModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={editing ? "Edit personal task" : "Add personal task"}
+      title={editing ? "Edit other task" : "Add other task"}
       subtitle="Just for your own tracking — it won't affect any scores or reports."
       footer={
         <>

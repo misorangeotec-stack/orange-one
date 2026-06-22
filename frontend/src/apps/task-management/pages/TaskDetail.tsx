@@ -79,11 +79,11 @@ export default function TaskDetail() {
             <StatusChip status={task.status} notApplicable={na} />
             {personal && (
               <span
-                title="Personal task — for your own tracking; excluded from all scores"
+                title="Other task — for your own tracking; excluded from all scores"
                 className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-orange bg-[#FFF1E8] rounded-pill px-2 py-1"
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-                Personal
+                Other
               </span>
             )}
             {task.recurringTaskId && (
@@ -425,7 +425,7 @@ export default function TaskDetail() {
       <Modal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title="Delete personal task"
+        title="Delete other task"
         subtitle={task.title}
         footer={
           <>
@@ -447,7 +447,7 @@ export default function TaskDetail() {
           </>
         }
       >
-        <p className="text-[13px] text-grey">This permanently removes the personal task. This can't be undone.</p>
+        <p className="text-[13px] text-grey">This permanently removes the other task. This can't be undone.</p>
       </Modal>
     </div>
   );

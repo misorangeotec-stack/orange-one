@@ -12,6 +12,9 @@ import type { AppRole, StatusFilter, TaskStatus } from "../types";
 
 export type RygColour = "green" | "yellow" | "red";
 
+/** Whether a task list link is restricted to recurring-generated or one-off tasks. */
+export type TaskKind = "recurring" | "oneoff";
+
 /**
  * Colour → underlying task statuses, matching `rygCounts` (RygCells.tsx) and
  * `reportFor` (selectors.ts): green = completed, yellow = revised, red =
@@ -42,6 +45,14 @@ export interface TaskLinkParams {
   statuses?: StatusFilter[];
   /** RYG colour, expanded to its statuses; takes precedence over `statuses`. */
   colour?: RygColour;
+  /** Restrict to recurring-generated tasks ("recurring") or one-off tasks ("oneoff"). */
+  kind?: TaskKind;
+  /**
+   * Restrict to "Other" (self-tracking, is_personal) tasks. Mutually exclusive
+   * with metricOnly — the score lists exclude these; the Other-tasks card includes
+   * only these. When set, do NOT also set metricOnly.
+   */
+  personal?: boolean;
   /**
    * Restrict to tasks that count toward scores — i.e. exclude personal
    * (self-tracking) and Not-Applicable tasks. Set this whenever the link comes
@@ -51,7 +62,7 @@ export interface TaskLinkParams {
 }
 
 /** Build a deep-link to the role-appropriate task list, pre-filtered. */
-export function taskListLink({ role, assignee, dept, weekStart, statuses, colour, metricOnly }: TaskLinkParams): string {
+export function taskListLink({ role, assignee, dept, weekStart, statuses, colour, kind, personal, metricOnly }: TaskLinkParams): string {
   const base = taskListRouteForRole(role);
   const sp = new URLSearchParams();
   // Employees only ever see their own tasks and My Tasks has no assignee filter,
@@ -61,6 +72,8 @@ export function taskListLink({ role, assignee, dept, weekStart, statuses, colour
   if (weekStart) sp.set("week", weekStart);
   const resolved = colour ? COLOUR_STATUSES[colour] : statuses;
   if (resolved && resolved.length) sp.set("status", resolved.join(","));
+  if (kind) sp.set("kind", kind);
+  if (personal) sp.set("personal", "1");
   if (metricOnly) sp.set("metric", "1");
   const qs = sp.toString();
   return qs ? `${base}?${qs}` : base;
@@ -71,6 +84,10 @@ export interface ParsedTaskFilters {
   dept?: string;
   week?: string;
   statuses: StatusFilter[];
+  /** Restrict to recurring-generated or one-off tasks (undefined = both). */
+  kind?: TaskKind;
+  /** Restrict to "Other" (self-tracking, is_personal) tasks only. */
+  personal: boolean;
   /** Exclude personal + Not-Applicable tasks, matching the score behind the link. */
   metricOnly: boolean;
 }
@@ -93,5 +110,15 @@ export function parseTaskFilters(params: URLSearchParams): ParsedTaskFilters {
     .split(",")
     .map((s) => s.trim())
     .filter((s): s is StatusFilter => VALID_STATUS.has(s as StatusFilter));
-  return { assignee, dept, week, statuses, metricOnly: params.get("metric") === "1" };
+  const rawKind = params.get("kind");
+  const kind: TaskKind | undefined = rawKind === "recurring" || rawKind === "oneoff" ? rawKind : undefined;
+  return {
+    assignee,
+    dept,
+    week,
+    statuses,
+    kind,
+    personal: params.get("personal") === "1",
+    metricOnly: params.get("metric") === "1",
+  };
 }

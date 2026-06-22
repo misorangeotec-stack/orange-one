@@ -12,7 +12,7 @@ import { matchesSearch } from "@/shared/lib/search";
 import { formatDate } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
 import { useTaskStore } from "../mock/store";
-import { countsTowardMetrics } from "../mock/selectors";
+import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
 import type { Department, Profile, Task } from "../types";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
 import type { ParsedTaskFilters } from "../lib/taskLink";
@@ -48,6 +48,8 @@ export default function TaskBrowser({
   const [creator, setCreator] = useState("all");
   const [dept, setDept] = useState(initialFilters?.dept ?? "all");
   const [statuses, setStatuses] = useState<StatusFilter[]>(initialFilters?.statuses ?? []);
+  // Recurring-vs-one-off scope, seeded from a deep-link (Weekly Scorecard split blocks).
+  const [kind, setKind] = useState<"all" | "recurring" | "oneoff">(initialFilters?.kind ?? "all");
   const [week, setWeek] = useState<"all" | "this" | "next">("all");
   // An exact ISO-Monday week from a deep-link — independent of the all/this/next
   // dropdown, so it can target a historical week even when that dropdown is hidden.
@@ -55,6 +57,9 @@ export default function TaskBrowser({
   // Exclude personal + N/A tasks (set when arriving from a score/RYG number, so
   // the list matches the count behind it). Clearable, like any other filter.
   const [metricOnly, setMetricOnly] = useState(initialFilters?.metricOnly ?? false);
+  // Regular (scored) vs "Other" (self-tracking, is_personal) tasks. Seeded to
+  // "other" when arriving from the Other-tasks card on the scorecard.
+  const [category, setCategory] = useState<"all" | "regular" | "other">(initialFilters?.personal ? "other" : "all");
   const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
@@ -101,6 +106,8 @@ export default function TaskBrowser({
     setCreator("all");
     setDept("all");
     setStatuses([]);
+    setKind("all");
+    setCategory("all");
     setWeek("all");
     setExactWeek(null);
     setMetricOnly(false);
@@ -110,17 +117,21 @@ export default function TaskBrowser({
     const nw = nextWeekStart();
     return tasks.filter((t) => {
       if (metricOnly && !countsTowardMetrics(t)) return false;
+      if (category === "regular" && t.isPersonal) return false;
+      if (category === "other" && !t.isPersonal) return false;
       if (person !== "all" && t.assignedTo !== person) return false;
       if (creator !== "all" && t.createdBy !== creator) return false;
       if (dept !== "all" && t.departmentId !== dept) return false;
       if (statuses.length && !matchesStatusFilter(t, statuses)) return false;
+      if (kind === "recurring" && !isRecurringTask(t)) return false;
+      if (kind === "oneoff" && (isRecurringTask(t) || t.isPersonal)) return false;
       if (exactWeek && t.weekStart !== exactWeek) return false;
       if (week === "this" && t.weekStart !== WEEK_START) return false;
       if (week === "next" && t.weekStart !== nw) return false;
       if (!matchesSearch(q, t.title, t.description)) return false;
       return true;
     });
-  }, [tasks, person, creator, dept, statuses, week, exactWeek, metricOnly, q]);
+  }, [tasks, person, creator, dept, statuses, kind, category, week, exactWeek, metricOnly, q]);
 
   // KPI cards reflect the active filters (not the full list).
   const counts = useMemo(() => {
@@ -139,7 +150,7 @@ export default function TaskBrowser({
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${week}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}` });
+  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${kind}|${category}|${week}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}` });
 
   // Active-filter chips, so it's always visible what's narrowing the list.
   const activeFilters: ActiveFilter[] = [];
@@ -168,6 +179,12 @@ export default function TaskBrowser({
       label: `Status: ${STATUS_FILTER_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
       onClear: () => setStatuses([]),
     });
+  if (kind !== "all")
+    activeFilters.push({
+      key: "kind",
+      label: kind === "recurring" ? "Recurring tasks" : "One-off tasks",
+      onClear: () => setKind("all"),
+    });
   if (week !== "all")
     activeFilters.push({
       key: "week",
@@ -185,6 +202,12 @@ export default function TaskBrowser({
       key: "metric",
       label: "Scored tasks only",
       onClear: () => setMetricOnly(false),
+    });
+  if (category !== "all")
+    activeFilters.push({
+      key: "category",
+      label: category === "regular" ? "Regular tasks" : "Other tasks",
+      onClear: () => setCategory("all"),
     });
 
   return (
@@ -239,6 +262,26 @@ export default function TaskBrowser({
             placeholder="All statuses"
             className="w-full sm:w-auto sm:min-w-[150px]"
             options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+          />
+          <Combobox
+            value={kind}
+            onChange={(v) => setKind(v as "all" | "recurring" | "oneoff")}
+            className="w-full sm:w-auto sm:min-w-[140px]"
+            options={[
+              { value: "all", label: "All task types" },
+              { value: "recurring", label: "Recurring" },
+              { value: "oneoff", label: "One-off" },
+            ]}
+          />
+          <Combobox
+            value={category}
+            onChange={(v) => setCategory(v as "all" | "regular" | "other")}
+            className="w-full sm:w-auto sm:min-w-[140px]"
+            options={[
+              { value: "all", label: "All tasks" },
+              { value: "regular", label: "Regular tasks" },
+              { value: "other", label: "Other tasks" },
+            ]}
           />
           {!hideWeekFilter && (
             <Combobox
