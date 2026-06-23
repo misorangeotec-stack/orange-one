@@ -3,7 +3,7 @@ import { Button } from "@hub/components/ui/button";
 import { Checkbox } from "@hub/components/ui/checkbox";
 import { ChevronDown } from "lucide-react";
 
-const SALE_TYPE_OPTIONS = [
+export const SALE_TYPE_OPTIONS = [
   { value: "ink",         label: "Ink" },
   { value: "spare_parts", label: "Spare Parts" },
   { value: "machine",     label: "Machine" },

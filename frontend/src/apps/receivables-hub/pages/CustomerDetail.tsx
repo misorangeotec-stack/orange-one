@@ -34,7 +34,7 @@ import {
 } from "@hub/components/ui/pagination";
 import { Input } from "@hub/components/ui/input";
 import { Checkbox } from "@hub/components/ui/checkbox";
-import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
+import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData, consolidateByName, consolidateByGroup } from "@hub/lib/useAppData";
 import { utilizationPct } from "@hub/lib/receivables";
@@ -74,6 +74,23 @@ const fmtLDrCr = (n: number) => {
   if (abs >= 100) return `${prefix}₹${(abs / 100).toFixed(2)} Cr`;
   return `${prefix}₹${abs.toFixed(2)} L`;
 };
+
+// Canonicalise the sale-type filter for COMPUTATIONS: when EVERY sale type is
+// selected (or none), it means "no filter" — return "all". The multi-select keeps
+// its raw checked state (so all boxes stay ticked), but every data calculation
+// reads this derived value. The SaleTypeMultiSelect renders "All Sale Types" for
+// both the empty and the all-checked states; useAppData already treats "all types
+// selected" as unfiltered, so without matching that here the headline cards showed
+// the true totals while the trend re-sliced from the sparse open-invoice list —
+// e.g. Sales 6.59 Cr in the KPI vs 1.77 Cr in the trend. Same rule → they reconcile.
+function normalizeSaleType(value: string): string {
+  if (value === "all") return "all";
+  const list = value.split(",").map((t) => t.trim()).filter(Boolean);
+  if (list.length === 0) return "all";
+  const selected = new Set(list);
+  const coversAll = SALE_TYPE_OPTIONS.every((o) => selected.has(o.value));
+  return coversAll ? "all" : list.join(",");
+}
 
 const riskStyle: Record<RiskCategory, string> = {
   critical: "bg-destructive/15 text-destructive border-destructive/30",
@@ -446,6 +463,11 @@ export default function CustomerDetail() {
   const [saleTypeFilter, setSaleTypeFilter] = useState(
     searchParams.get("saleType") ?? "all"
   );
+  // Canonical filter for all COMPUTATIONS: "all types checked" means "no filter".
+  // The raw `saleTypeFilter` is kept as-is so the multi-select stays visually
+  // checked; only the derived value below drives the data so the headline cards
+  // and the trend reconcile. See normalizeSaleType for the why.
+  const effectiveSaleType = normalizeSaleType(saleTypeFilter);
   const [activeTrendKeys, setActiveTrendKeys] = useState<Set<string>>(new Set());
   const [ledgerMonth, setLedgerMonth] = useState<string | null>(null);
   const [trendOpen, setTrendOpen] = useState(true);
@@ -489,7 +511,7 @@ export default function CustomerDetail() {
     lastInitKey.current = "";  // force re-init under the new route
   }, [decoded, isGroupRoute]);
 
-  const { loading, error, customers, allCustomers, customerDetail, customerGroupMap, dashboard } = useAppData({ saleType: saleTypeFilter });
+  const { loading, error, customers, allCustomers, customerDetail, customerGroupMap, dashboard } = useAppData({ saleType: effectiveSaleType });
 
   // Resolve the list of Tally names that belong to this group (only meaningful
   // on the group route). A group's children are: every Tally name `n` such
@@ -564,11 +586,11 @@ export default function CustomerDetail() {
     [customers],
   );
   const projectedActiveEntities = useMemo<Customer[]>(() => {
-    if (saleTypeFilter === "all") return activeEntities;
+    if (effectiveSaleType === "all") return activeEntities;
     return activeEntities
       .map((e) => projectedById.get(e.id))
       .filter((c): c is Customer => Boolean(c));
-  }, [activeEntities, projectedById, saleTypeFilter]);
+  }, [activeEntities, projectedById, effectiveSaleType]);
 
   // Consolidated customer object (aggregated from the projected active entities).
   // - Single-customer route: merge by name (one Tally name; collapses cross-company/location duplicates).
@@ -589,7 +611,7 @@ export default function CustomerDetail() {
       if (ents.length === 1) return ents[0];
       return consolidateByName(ents)[0] ?? null;
     };
-    if (saleTypeFilter === "all") return consolidate(activeEntities);
+    if (effectiveSaleType === "all") return consolidate(activeEntities);
     if (projectedActiveEntities.length > 0) return consolidate(projectedActiveEntities);
     // No exposure in the selected sale type → show the consolidated customer with
     // the typed flows zeroed (the typed value really is ₹0) rather than blank/raw.
@@ -597,7 +619,7 @@ export default function CustomerDetail() {
     return base
       ? { ...base, sales: 0, receipts: 0, creditNotes: 0, outstanding: 0, overdue: 0, maxOverdueDays: 0 }
       : null;
-  }, [activeEntities, projectedActiveEntities, saleTypeFilter, isGroupRoute, groupName]);
+  }, [activeEntities, projectedActiveEntities, effectiveSaleType, isGroupRoute, groupName]);
 
   const isConsolidated = allEntities.length > 1 && activeEntities.length > 1;
 
@@ -748,9 +770,9 @@ export default function CustomerDetail() {
   // Filtering on it makes the ledger reconcile to the headline by construction,
   // since the headline's per-type receipts / credit notes use the exact same tagging.
   const selectedTypes = useMemo<Set<string> | null>(() => {
-    if (saleTypeFilter === "all") return null;
-    return new Set(saleTypeFilter.split(",").filter(Boolean));
-  }, [saleTypeFilter]);
+    if (effectiveSaleType === "all") return null;
+    return new Set(effectiveSaleType.split(",").filter(Boolean));
+  }, [effectiveSaleType]);
 
   // Consolidated monthly trend (sum by month across active entities)
   const trendData = useMemo(() => {
@@ -805,7 +827,13 @@ export default function CustomerDetail() {
         const m = byMonth.get(label);
         if (m) m[key] += amt / 100_000;
       };
-      for (const inv of invoices) add(monthLabel(inv.date), "sales", inv.amount);
+      // Sales: keep only invoices whose own sale type is in the selection. The
+      // `invoices` list spans every type (it is the raw, un-type-filtered bundle),
+      // so without this guard a single-type view would still sum all types' sales.
+      for (const inv of invoices) {
+        if (!selectedTypes.has(inv.voucherType)) continue;
+        add(monthLabel(inv.date), "sales", inv.amount);
+      }
       for (const r of receiptTxns) {
         if (!r.date || !r.saleType || !selectedTypes.has(r.saleType)) continue;
         const isChq = (r.type ?? "").toLowerCase() === "check_return";
@@ -1453,7 +1481,7 @@ export default function CustomerDetail() {
                   Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
                 </p>
               )}
-              {saleTypeFilter !== "all" && (
+              {effectiveSaleType !== "all" && (
                 <p className="text-[11px] text-muted-foreground/80 italic mt-1 max-w-2xl">
                   Sale-type view: Sales, Receipts and Credit Notes are attributed by the sale type of the bill they settle. Opening Balance is the customer's all-types total (opening carries no sale type), so the headline cards won't reconcile against the typed flows; outstanding/overdue are split by sales mix (estimate).
                 </p>
