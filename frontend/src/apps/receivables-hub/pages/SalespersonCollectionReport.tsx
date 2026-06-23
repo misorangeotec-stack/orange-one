@@ -200,6 +200,9 @@ export default function SalespersonCollectionReport() {
   const [locations, setLocations] = useState<string[]>([]);
   const [salesPersons, setSalesPersons] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  // Customer Segment — mirrors the Risk Register / Dashboard filter. "Active" = had any
+  // activity (sales / receipts / credit notes / other payments) in the FY; defaults to Active.
+  const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerSearch, setCustomerSearch] = useState<string>("");
   const [viewMode, setViewMode] = useState<ViewMode>("customer");
@@ -305,6 +308,11 @@ export default function SalespersonCollectionReport() {
       d = d.filter((c) => set.has(spName(c.salesPerson)));
     }
     if (categories.length) d = d.filter((c) => matchesCategory(c, categories));
+    // Customer Segment (same rule as Risk Register / Dashboard): active = any activity in the FY.
+    if (customerSegment === "active")
+      d = d.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
+    else if (customerSegment === "no_activity")
+      d = d.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0 && (c.otherPayments ?? 0) === 0);
     if (saleTypeActive) {
       d = d.filter((c) => {
         const hasInType = saleTypes.some(
@@ -319,7 +327,7 @@ export default function SalespersonCollectionReport() {
     const q = customerSearch.trim().toLowerCase();
     if (q) d = d.filter((c) => c.name.toLowerCase().includes(q));
     return d;
-  }, [allCustomers, companies, locations, salesPersons, categories, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
+  }, [allCustomers, companies, locations, salesPersons, categories, customerSegment, saleTypeActive, saleTypes, saleTypeSet, customerSearch]);
 
   // Customer-ledger lookup for the invoice drill-down (company/location/name per id).
   const customerById = useMemo(() => {
@@ -707,7 +715,7 @@ export default function SalespersonCollectionReport() {
   );
 
   const clearFilters = () => {
-    setCompanies([]); setLocations([]); setSalesPersons([]); setCategories([]); setSaleTypes([]); setCustomerSearch("");
+    setCompanies([]); setLocations([]); setSalesPersons([]); setCategories([]); setCustomerSegment("all"); setSaleTypes([]); setCustomerSearch("");
   };
   const filterChips: FilterChip[] = [
     companies.length > 0 && {
@@ -725,6 +733,10 @@ export default function SalespersonCollectionReport() {
     categories.length > 0 && {
       label: categories.length <= 2 ? `Category: ${categories.join(", ")}` : `${categories.length} categories`,
       onRemove: () => setCategories([]),
+    },
+    customerSegment !== "all" && {
+      label: `Segment: ${customerSegment === "active" ? "Active" : "No Activity"}`,
+      onRemove: () => setCustomerSegment("all"),
     },
     saleTypes.length > 0 && {
       label: saleTypes.length <= 2
@@ -755,6 +767,7 @@ export default function SalespersonCollectionReport() {
     ]);
     aoa.push([
       `Sale Type: ${saleTypes.length ? saleTypes.map((t) => SALE_TYPE_LABELS[t] ?? t).join(", ") : "All"}`,
+      `Segment: ${customerSegment === "all" ? "All Customers" : customerSegment === "active" ? "Active" : "No Activity"}`,
       `Search: ${customerSearch.trim() || "—"}`,
     ]);
     aoa.push([]);
@@ -1004,6 +1017,19 @@ export default function SalespersonCollectionReport() {
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Category</span>
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="w-40 h-9 text-sm rounded-input border-border" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Customer Segment</span>
+              <Select value={customerSegment} onValueChange={(v) => setCustomerSegment(v as "all" | "active" | "no_activity")}>
+                <SelectTrigger className="w-40 rounded-input border-border h-9 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-input">
+                  <SelectItem value="all">All Customers</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="no_activity">No Activity</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
