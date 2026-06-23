@@ -11,6 +11,8 @@ import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
 import { useRefreshJob } from "@hub/lib/useRefreshJob";
 import type { RefreshSourceInfo } from "@hub/lib/types";
+import { MenuPermissions } from "@hub/components/MenuPermissions";
+import { useSession } from "@/core/platform/session";
 
 const STALE_DAYS = 3;
 
@@ -42,6 +44,7 @@ export default function Settings() {
   const { dashboard } = useAppData();
   const { toast } = useToast();
   const refresh = useRefreshJob();
+  const { isAdmin } = useSession();
 
   const meta = dashboard?.refreshMetadata;
   const isRunning = refresh.status === "starting" || refresh.status === "running";
@@ -192,6 +195,9 @@ export default function Settings() {
           </CardContent>
         )}
       </Card>
+
+      {/* ── Menu Permissions (admin only) ─────────────────────────────────── */}
+      {isAdmin && <MenuPermissions />}
     </div>
   );
 }

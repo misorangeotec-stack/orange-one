@@ -179,6 +179,7 @@ export type Database = {
           last_active_at: string | null
           name: string
           phone: string | null
+          receivables_hidden_menus: string[] | null
           receivables_salespersons: string[] | null
           updated_at: string
         }
@@ -192,6 +193,7 @@ export type Database = {
           last_active_at?: string | null
           name?: string
           phone?: string | null
+          receivables_hidden_menus?: string[] | null
           receivables_salespersons?: string[] | null
           updated_at?: string
         }
@@ -205,6 +207,7 @@ export type Database = {
           last_active_at?: string | null
           name?: string
           phone?: string | null
+          receivables_hidden_menus?: string[] | null
           receivables_salespersons?: string[] | null
           updated_at?: string
         }

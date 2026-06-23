@@ -52,7 +52,7 @@ export interface DirectoryValue {
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
   addUser: (input: { name: string; email?: string; mobile: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[]; receivablesSalespersons?: string[] }) => Promise<string>;
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess" | "receivablesSalespersons">>) => Promise<void>;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess" | "receivablesSalespersons" | "receivablesHiddenMenus">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, appIds: string[]) => Promise<void>;
 }
@@ -170,6 +170,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           departmentId: patch.departmentId,
           avatarColor: patch.avatarColor,
           receivablesSalespersons: patch.receivablesSalespersons,
+          receivablesHiddenMenus: patch.receivablesHiddenMenus,
         });
         if (patch.role !== undefined) await setUserRoleWrite(id, patch.role);
         if (patch.hodIds !== undefined) await setUserHodsWrite(id, patch.hodIds);

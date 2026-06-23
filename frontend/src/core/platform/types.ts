@@ -47,6 +47,12 @@ export interface Profile {
    */
   receivablesSalespersons: string[];
   /**
+   * Outstanding Dashboard menu deny-list (profiles.receivables_hidden_menus): the
+   * menu keys this user may NOT see in the receivables app's left nav. Admins ignore
+   * this (see all menus); an empty list means every menu is visible (the default).
+   */
+  receivablesHiddenMenus: string[];
+  /**
    * When the user last opened the portal (profiles.last_active_at, ISO). Stamped on
    * app open / login via the touch_last_active RPC; null if never seen since the
    * feature shipped. Shown to admins (Users/Hierarchy) and HODs (their team).

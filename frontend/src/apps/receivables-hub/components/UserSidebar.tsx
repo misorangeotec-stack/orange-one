@@ -1,6 +1,6 @@
-import { BarChart3, Bell, ShieldAlert, FileText, Bookmark, User, Globe, PackageOpen, UserCheck, HandCoins, Settings as SettingsIcon } from "lucide-react";
 import { NavLink } from "@hub/components/NavLink";
-import { useLocation } from "react-router-dom";
+import { useSession } from "@/core/platform/session";
+import { visibleMenusFor } from "@hub/lib/menus";
 import {
   Sidebar,
   SidebarContent,
@@ -14,27 +14,13 @@ import {
   useSidebar,
 } from "@hub/components/ui/sidebar";
 
-// Base path of this app inside Orange One (see meta.tsx).
-const BASE = "/outstanding-dashboard";
-
-const navItems = [
-  { title: "Dashboard", url: BASE, icon: BarChart3 },
-  { title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
-  { title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck },
-  { title: "Salesperson Collection Report", url: `${BASE}/salesperson-collection`, icon: HandCoins },
-  { title: "Import Data", url: `${BASE}/import`, icon: PackageOpen },
-  { title: "Reports", url: `${BASE}/reports`, icon: FileText },
-  { title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },
-  // Hidden for client demo — restore when ready:
-  // { title: "Alerts", url: `${BASE}/alerts`, icon: Bell },
-  // { title: "Export Import Data", url: `${BASE}/exim`, icon: Globe },
-  // { title: "Saved Views", url: `${BASE}/saved-views`, icon: Bookmark },
-  // { title: "Profile", url: `${BASE}/profile`, icon: User },
-];
-
 export function UserSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const { isAdmin, user } = useSession();
+  // Admins see every menu; a non-admin sees everything not in their deny-list
+  // (profiles.receivables_hidden_menus, set by an admin in Settings → Menu Permissions).
+  const navItems = visibleMenusFor(isAdmin, user.receivablesHiddenMenus ?? []);
 
   return (
     <Sidebar collapsible="icon">
