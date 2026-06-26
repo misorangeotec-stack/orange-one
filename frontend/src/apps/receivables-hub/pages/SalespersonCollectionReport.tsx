@@ -23,13 +23,39 @@ import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { MultiSelect } from "@hub/components/MultiSelect";
+import { GroupByBuilder, type GroupByPreset } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import type { Customer, SaleType } from "@hub/lib/types";
+
+/* ── Group-by dimensions (the Aging-style roll-up builder) ───────────────────── */
+type CDim = "salesperson" | "customer" | "group" | "category" | "company" | "location";
+const C_DIMENSIONS: { key: CDim; label: string }[] = [
+  { key: "salesperson", label: "Salesperson" },
+  { key: "customer",    label: "Customer" },
+  { key: "group",       label: "Customer Group" },
+  { key: "category",    label: "Customer Category" },
+  { key: "company",     label: "Company" },
+  { key: "location",    label: "Location" },
+];
+const C_PRESETS: GroupByPreset<CDim>[] = [
+  { label: "Salesperson → Customer", dims: ["salesperson", "customer"] },
+  { label: "Salesperson → Group",    dims: ["salesperson", "group"] },
+  { label: "Salesperson",            dims: ["salesperson"] },
+  { label: "Customer",               dims: ["customer"] },
+  { label: "Customer Group",         dims: ["group"] },
+  { label: "Customer Category",      dims: ["category"] },
+  { label: "Company",                dims: ["company"] },
+  { label: "Location",               dims: ["location"] },
+];
+/** Composite node metrics — current + previous month, so Collection % (prev) rolls up too. */
+interface CM { m: Metrics; mPrev: Metrics; }
+const KEY_SEP = "|||";
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -168,12 +194,12 @@ const addInto = (t: Metrics, m: Metrics): void => {
 };
 const collectionPct = (m: Metrics): number | null => (m.due > 0 ? (m.received / m.due) * 100 : null);
 
-/** Outstanding to DISPLAY = the START-of-month balance = month-end balance + that month's
- *  receipts (the money already collected this month is added back). This is always ≥ Due
- *  (Due is the portion of that opening balance which had come due), so the report never shows
- *  Due greater than Outstanding. The `m.due` floor guards credit-heavy groups whose net
- *  month-end balance is pushed below the due amount by customers sitting in advance. */
-const startMonthOutstanding = (m: Metrics): number => Math.max(m.outstanding + m.received, m.due);
+/** Outstanding to DISPLAY = the START-of-month balance = month-end (net) balance + that month's
+ *  receipts (the money already collected this month is added back). No floor: the identity
+ *  `Total Outstanding − Received = Outstanding (Today)` holds for EVERY row. Customers sitting
+ *  in advance have a negative net balance and so show a negative Total (a credit position) —
+ *  that is intentional, not an error (Due lives in its own column). */
+const startMonthOutstanding = (m: Metrics): number => m.outstanding + m.received;
 
 const pctStyle = (pct: number | null): string => {
   if (pct === null) return "";
@@ -189,7 +215,7 @@ function sortRows<T extends { m: Metrics; mPrev: Metrics }>(
 ): void {
   arr.sort((a, b) => {
     if (key === "salesperson") return dir * name(a).localeCompare(name(b));
-    // Opening Outstanding sorts by the DISPLAYED opening figure; Outstanding (Today) by m.outstanding.
+    // Total Outstanding sorts by the DISPLAYED total figure; Outstanding (Today) by m.outstanding.
     if (key === "outstanding") return dir * (startMonthOutstanding(a.m) - startMonthOutstanding(b.m));
     if (key === "outstandingNow") return dir * (a.m.outstanding - b.m.outstanding);
     if (key === "collectionPct")
@@ -221,30 +247,28 @@ export default function SalespersonCollectionReport() {
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerSearch, setCustomerSearch] = useState<string>("");
-  const [viewMode, setViewMode] = useState<ViewMode>("customer");
+  // Aging-style group-by: an ordered list of dimensions rolled up with subtotals at
+  // every level. Default mirrors the old Salesperson → Customer view.
+  const [groupBy, setGroupBy] = useState<CDim[]>(["salesperson", "customer"]);
   // Collapsed by default: the Received / Total Pending columns show only their Total; expanding
   // reveals the breakup sub-columns (On Account / Against Invoices, and As-on-today / Till-month-end).
   const [receivedExpanded, setReceivedExpanded] = useState<boolean>(false);
   const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
-  // Frozen "panes" — Excel-style freeze from the left edge through the chosen leading column.
-  // 0 = none, 1 = Salesperson (default), 2 = + Opening Outstanding, 3 = + Outstanding (Today),
-  // 4 = + Due. The user pins a column via the freeze pins in those headers.
-  const [freezeLevel, setFreezeLevel] = useState<0 | 1 | 2 | 3 | 4>(1);
-  // Measured widths of the leading columns, so frozen columns get the right cumulative left offset.
+  // Frozen "pane" — Excel-style freeze of the leading group-label column so the group
+  // name stays visible while scrolling right. 0 = none, 1 = frozen (default).
+  const [freezeLevel, setFreezeLevel] = useState<0 | 1>(1);
+  // Measured widths of the leading (chevron + label) columns for the sticky left offset.
   const chevRef = useRef<HTMLTableCellElement>(null);
   const spHeadRef = useRef<HTMLTableCellElement>(null);
-  const outHeadRef = useRef<HTMLTableCellElement>(null);
-  const nowHeadRef = useRef<HTMLTableCellElement>(null);
-  const [colW, setColW] = useState({ chev: 32, sp: 160, out: 120, now: 120 });
+  const [colW, setColW] = useState({ chev: 32, label: 200 });
+  // Expanded roll-up nodes, keyed by node.key (any depth).
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Expanded group rows (group view): keyed by `${salesperson}::${groupKey}`.
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   // Invoice drill-down popup (current month only).
   const [drill, setDrill] = useState<{ title: string; subtitle: string; rows: InvoiceDrillRow[]; ledgerFigures: Record<string, number> } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("pending");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  // Month-wise panel: null = consolidated (all filtered salespersons)
-  const [selectedSalesperson, setSelectedSalesperson] = useState<string | null>(null);
+  // Month-wise panel: null = consolidated (all filtered rows), else a clicked top-level node.
+  const [selectedNode, setSelectedNode] = useState<{ label: string; ids: string[] } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Default month → as-of month; reset when the FY (and thus month set) changes.
@@ -504,104 +528,91 @@ export default function SalespersonCollectionReport() {
     return map;
   }, [filteredCustomers, prevMonth, metricsForMonth]);
 
-  // Group by salesperson; each salesperson's drill rows are either individual customers
-  // or customers rolled up into customer-groups (View toggle).
-  const spRows = useMemo<SPRow[]>(() => {
-    interface Acc { salesperson: string; customers: CustomerLine[]; m: Metrics; mPrev: Metrics; }
-    const map = new Map<string, Acc>();
-    for (const c of filteredCustomers) {
-      const sp = spName(c.salesPerson);
-      const m = customerMetrics.get(c.id) ?? emptyMetrics();
-      const mPrev = customerMetricsPrev.get(c.id) ?? emptyMetrics();
-      // Skip customers whose (displayed) total outstanding is zero for the selected month.
-      if (Math.round(startMonthOutstanding(m)) === 0) continue;
-      let row = map.get(sp);
-      if (!row) { row = { salesperson: sp, customers: [], m: emptyMetrics(), mPrev: emptyMetrics() }; map.set(sp, row); }
-      row.customers.push({ id: c.id, name: c.name, company: c.company, location: c.location, m, mPrev });
-      addInto(row.m, m);
-      addInto(row.mPrev, mPrev);
-    }
-
-    const dir = sortDir === "asc" ? 1 : -1;
-
-    // Roll a salesperson's customer lines up into customer-groups (mapping sheet);
-    // customers absent from the mapping become their own single-party group.
-    const rollupGroups = (custs: CustomerLine[]): DrillRow[] => {
-      const groups = new Map<string, { lines: CustomerLine[]; m: Metrics; mPrev: Metrics }>();
-      for (const cl of custs) {
-        const gName = customerGroupMap.mapping[cl.name] ?? cl.name;
-        let g = groups.get(gName);
-        if (!g) { g = { lines: [], m: emptyMetrics(), mPrev: emptyMetrics() }; groups.set(gName, g); }
-        g.lines.push(cl);
-        addInto(g.m, cl.m);
-        addInto(g.mPrev, cl.mPrev);
+  // ── Group-by roll-up (Aging-style, N levels) ────────────────────────────────
+  // Bucket value + display label (+ sub-label) for a customer ledger on a dimension.
+  // "customer"/"group" keep per-ledger granularity (name + company + location) so the
+  // same display name never clubs across companies/locations; mapped groups roll up.
+  const dimValue = useCallback((c: Customer, dim: string): { value: string; label: string; sub?: string } => {
+    const perLedger = `${c.name}${KEY_SEP}${c.company}${KEY_SEP}${c.location}`;
+    const ledgerSub = [c.company, c.location].filter(Boolean).join(" · ") || undefined;
+    switch (dim) {
+      case "salesperson": { const v = spName(c.salesPerson); return { value: v, label: v }; }
+      case "customer":    return { value: perLedger, label: c.name || "—", sub: ledgerSub };
+      case "group": {
+        const g = customerGroupMap.mapping[c.name];
+        return g ? { value: `G:${g}`, label: g } : { value: perLedger, label: c.name || "—", sub: ledgerSub };
       }
-      return [...groups.entries()].map(([gName, g]): DrillRow => {
-        const isGroup = g.lines.length > 1;
-        const children: PartyLine[] = g.lines.map((cl) => ({
-          key: cl.id,
-          name: cl.name,
-          sub: `${cl.company} · ${cl.location}`,
-          m: cl.m,
-          mPrev: cl.mPrev,
-        }));
-        sortRows(children, (c) => c.name, sortKey, dir);
-        return {
-          key: `G:${gName}`,
-          name: gName,
-          sub: isGroup ? `${g.lines.length} ledgers` : "",
-          isGroup,
-          children,
-          customerIds: g.lines.map((cl) => cl.id),
-          m: g.m,
-          mPrev: g.mPrev,
-        };
-      });
-    };
+      case "category": { const v = c.category?.trim() || "Uncategorized"; return { value: v, label: v }; }
+      case "company":  { const v = c.company || "—"; return { value: v, label: v }; }
+      case "location": { const v = c.location || "—"; return { value: v, label: v }; }
+      default: return { value: "—", label: "—" };
+    }
+  }, [customerGroupMap]);
 
-    const arr: SPRow[] = [...map.values()].map((acc) => {
-      const rows: DrillRow[] = viewMode === "group"
-        ? rollupGroups(acc.customers)
-        : acc.customers.map((cl) => ({
-            key: cl.id,
-            name: cl.name,
-            sub: `${cl.company} · ${cl.location}`,
-            isGroup: false,
-            children: [],
-            customerIds: [cl.id],
-            m: cl.m,
-            mPrev: cl.mPrev,
-          }));
-      // Sort drill rows by the same active column as the salesperson groups.
-      sortRows(rows, (r) => r.name, sortKey, dir);
-      return { salesperson: acc.salesperson, rows, customerIds: acc.customers.map((cl) => cl.id), m: acc.m, mPrev: acc.mPrev };
-    });
-    sortRows(arr, (r) => r.salesperson, sortKey, dir);
-    return arr;
-  }, [filteredCustomers, customerMetrics, customerMetricsPrev, sortKey, sortDir, viewMode, customerGroupMap]);
+  // Hide only fully-empty ledgers (no balance and no activity). Customers in advance
+  // (negative outstanding) stay so rows tally exactly to the Grand Total.
+  const activeRows = useMemo(
+    () => filteredCustomers.filter((c) => {
+      const m = customerMetrics.get(c.id);
+      return m != null && (Math.round(m.outstanding) !== 0 || Math.round(m.due) !== 0);
+    }),
+    [filteredCustomers, customerMetrics],
+  );
+
+  const tree = useMemo(
+    () => buildGroupTree<Customer, CM>(activeRows, groupBy, {
+      dimValue,
+      idOf: (c) => c.id,
+      metricsOf: (c) => ({
+        m: customerMetrics.get(c.id) ?? emptyMetrics(),
+        mPrev: customerMetricsPrev.get(c.id) ?? emptyMetrics(),
+      }),
+      empty: () => ({ m: emptyMetrics(), mPrev: emptyMetrics() }),
+      add: (acc, x) => { addInto(acc.m, x.m); addInto(acc.mPrev, x.mPrev); },
+    }),
+    [activeRows, groupBy, dimValue, customerMetrics, customerMetricsPrev],
+  );
+
+  // Re-sort every level by the active column (Total Pending desc by default).
+  const sortedRoots = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: GroupNode<CM>, b: GroupNode<CM>): number => {
+      if (sortKey === "salesperson")       return dir * a.label.localeCompare(b.label);
+      if (sortKey === "outstanding")        return dir * (startMonthOutstanding(a.metrics.m) - startMonthOutstanding(b.metrics.m));
+      if (sortKey === "outstandingNow")     return dir * (a.metrics.m.outstanding - b.metrics.m.outstanding);
+      if (sortKey === "collectionPct")      return dir * ((collectionPct(a.metrics.m) ?? -1) - (collectionPct(b.metrics.m) ?? -1));
+      if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
+      return dir * (a.metrics.m[sortKey] - b.metrics.m[sortKey]);
+    };
+    return sortTree(tree.roots, cmp);
+  }, [tree, sortKey, sortDir]);
 
   const totals = useMemo<Metrics>(() => {
     const t = emptyMetrics();
-    for (const r of spRows) addInto(t, r.m);
-    // Use the locked NET convention for the headline outstanding in the current month.
-    // Skip when a sale type is active — sumOutstanding would use the un-projected (full)
-    // balances, diverging from the projected per-row totals shown in the table.
-    if (isCurrentMonth && !saleTypeActive) t.outstanding = sumOutstanding(filteredCustomers);
+    for (const c of activeRows) addInto(t, customerMetrics.get(c.id) ?? emptyMetrics());
+    // Locked NET convention for the headline outstanding in the current month. Skip when a
+    // sale type is active — sumOutstanding uses un-projected balances, diverging from rows.
+    if (isCurrentMonth && !saleTypeActive) t.outstanding = sumOutstanding(activeRows);
     return t;
-  }, [spRows, filteredCustomers, isCurrentMonth, saleTypeActive]);
+  }, [activeRows, customerMetrics, isCurrentMonth, saleTypeActive]);
 
   // Previous-month totals — only Due/Received feed the grand-total Collection % (prev) cell.
   const totalsPrev = useMemo<Metrics>(() => {
     const t = emptyMetrics();
-    for (const r of spRows) addInto(t, r.mPrev);
+    for (const c of activeRows) addInto(t, customerMetricsPrev.get(c.id) ?? emptyMetrics());
     return t;
-  }, [spRows]);
+  }, [activeRows, customerMetricsPrev]);
 
-  /* ── Month-wise series for the panel (selected salesperson, or consolidated) ── */
+  const allCustomerIds = useMemo(() => activeRows.map((c) => c.id), [activeRows]);
+
+  // Reset transient UI when the roll-up shape changes.
+  useEffect(() => { setExpanded(new Set()); setSelectedNode(null); }, [groupBy]);
+
+  /* ── Month-wise series for the panel (selected roll-up node, or consolidated) ── */
   interface MonthRow extends Metrics { month: string; sales: number; }
   const monthlyData = useMemo<MonthRow[]>(() => {
-    const custs = selectedSalesperson
-      ? filteredCustomers.filter((c) => spName(c.salesPerson) === selectedSalesperson)
+    const custs = selectedNode
+      ? (() => { const ids = new Set(selectedNode.ids); return filteredCustomers.filter((c) => ids.has(c.id)); })()
       : filteredCustomers;
     return months.map((m) => {
       const agg: Metrics = emptyMetrics();
@@ -612,22 +623,13 @@ export default function SalespersonCollectionReport() {
       }
       return { month: m, ...agg, sales };
     });
-  }, [selectedSalesperson, filteredCustomers, months, customerDetail, metricsForMonth]);
-
-  // If the selected salesperson is filtered out, revert the panel to consolidated.
-  useEffect(() => {
-    if (selectedSalesperson && !spRows.some((r) => r.salesperson === selectedSalesperson)) {
-      setSelectedSalesperson(null);
-    }
-  }, [spRows, selectedSalesperson]);
+  }, [selectedNode, filteredCustomers, months, customerDetail, metricsForMonth]);
 
   // Measure the leading column widths so frozen columns get the correct sticky left offset.
   const measureCols = useCallback(() => {
     const chev = chevRef.current?.offsetWidth ?? 32;
-    const sp = spHeadRef.current?.offsetWidth ?? 160;
-    const out = outHeadRef.current?.offsetWidth ?? 120;
-    const now = nowHeadRef.current?.offsetWidth ?? 120;
-    setColW((prev) => (prev.chev === chev && prev.sp === sp && prev.out === out && prev.now === now ? prev : { chev, sp, out, now }));
+    const label = spHeadRef.current?.offsetWidth ?? 200;
+    setColW((prev) => (prev.chev === chev && prev.label === label ? prev : { chev, label }));
   }, []);
   useLayoutEffect(measureCols); // re-measure after every render; setState is guarded so it can't loop
   useEffect(() => {
@@ -644,14 +646,8 @@ export default function SalespersonCollectionReport() {
     if (sortKey !== key) return <ArrowUpDown className="h-3 w-3 opacity-30" />;
     return sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />;
   };
-  const toggleExpand = (sp: string) =>
+  const toggleExpand = (key: string) =>
     setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(sp)) next.delete(sp); else next.add(sp);
-      return next;
-    });
-  const toggleGroup = (key: string) =>
-    setExpandedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -727,9 +723,6 @@ export default function SalespersonCollectionReport() {
     [customerById, customerDetail, selectedMonth, customerGroupMap, customerMetrics],
   );
 
-  // All backing ids across the visible salespersons (for the Grand Total drill).
-  const allCustomerIds = useMemo(() => spRows.flatMap((r) => r.customerIds), [spRows]);
-
   /** A figure cell that drills into its invoices — clickable only in the current month.
    *  Plain render fn (not a component) so cells don't remount each render. */
   const drillCell = (
@@ -780,9 +773,12 @@ export default function SalespersonCollectionReport() {
     customerSearch.trim() && { label: `Search: ${customerSearch.trim()}`, onRemove: () => setCustomerSearch("") },
   ].filter(Boolean) as FilterChip[];
 
-  const dueLabel = `Due upto ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
-  // Opening Outstanding = start-of-month balance (this month's collections added back).
-  const openingLabel = `Opening Outstanding${selectedMonth ? ` (${monthStartLong(selectedMonth)})` : ""}`;
+  const dueLabel = `Due by ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
+  // Total Outstanding = the month's full receivable pool = Outstanding (Today) with this month's
+  // collections added back. Because today's balance already includes bills raised during the month,
+  // this expands to (opening balance + new bills this month) — a running total, NOT a frozen
+  // month-start snapshot, so it's labelled by month (e.g. "Jun-26") rather than a 1st-of-month date.
+  const openingLabel = `Total Outstanding${selectedMonth ? ` (${selectedMonth})` : ""}`;
   // Outstanding (Today) = the live net balance as on asOfDate for the current month; for a past
   // month "today" doesn't apply, so it shows that month's closing (month-end) balance.
   const outstandingNowLabel = isCurrentMonth
@@ -810,21 +806,32 @@ export default function SalespersonCollectionReport() {
       `Segment: ${customerSegment === "all" ? "All Customers" : customerSegment === "active" ? "Active" : "No Activity"}`,
       `Search: ${customerSearch.trim() || "—"}`,
     ]);
+    aoa.push([`Group by: ${groupBy.map((d) => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → ")}`]);
     aoa.push([]);
-    aoa.push(["Salesperson", openingLabel, outstandingNowLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
-    for (const r of spRows) {
-      const pct = collectionPct(r.m);
-      aoa.push([r.salesperson, startMonthOutstanding(r.m), r.m.outstanding, r.m.due, r.m.receivedOnAccount, r.m.receivedAgainst, r.m.received, r.m.pending - r.m.dueSoon, r.m.dueSoon, r.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
+    aoa.push(["Group", openingLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, outstandingNowLabel, `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
+    // Pre-order flatten of the roll-up (parents before children), indented by depth.
+    const flat: { depth: number; label: string; m: Metrics }[] = [];
+    const walk = (nodes: GroupNode<CM>[]) => {
+      for (const n of nodes) {
+        flat.push({ depth: n.depth, label: n.sub ? `${n.label} (${n.sub})` : n.label, m: n.metrics.m });
+        if (n.children.length) walk(n.children);
+      }
+    };
+    walk(sortedRoots);
+    for (const d of flat) {
+      const pct = collectionPct(d.m);
+      aoa.push([`${"    ".repeat(d.depth)}${d.label}`, startMonthOutstanding(d.m), d.m.due, d.m.receivedOnAccount, d.m.receivedAgainst, d.m.received, d.m.outstanding, d.m.pending - d.m.dueSoon, d.m.dueSoon, d.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
     }
     const totalPct = collectionPct(totals);
-    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.outstanding, totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
+    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.outstanding, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 28 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
+    ws["!cols"] = [{ wch: 34 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
     ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
-    const firstData = 9; // 1-indexed first salesperson row (8 header rows incl. Sale Type/Search)
-    const lastData = firstData + spRows.length; // includes grand total
+    const headerRow = 9; // 1-indexed column-header row (8 meta rows incl. Sale Type/Search + Group-by)
+    const firstData = headerRow + 1;
+    const lastData = firstData + flat.length; // includes grand total
     for (let row = firstData; row <= lastData; row++) {
       for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J"]) {
         const cell = ws[`${col}${row}`];
@@ -834,9 +841,9 @@ export default function SalespersonCollectionReport() {
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
-    styleRow(ws, 0, 11, HEADER_STYLE);                  // title banner
-    styleRow(ws, 7, 11, HEADER_STYLE);                  // column header row
-    styleRow(ws, 8 + spRows.length, 11, GRAND_TOTAL_STYLE); // Grand Total row
+    styleRow(ws, 0, 11, HEADER_STYLE);                     // title banner
+    styleRow(ws, headerRow - 1, 11, HEADER_STYLE);         // column header row (0-indexed)
+    styleRow(ws, headerRow + flat.length, 11, GRAND_TOTAL_STYLE); // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -868,10 +875,10 @@ export default function SalespersonCollectionReport() {
   }
 
   const kpiCards = [
-    { label: "Opening Outstanding",  value: fmt(startMonthOutstanding(totals)), icon: Wallet, warn: true  },
-    { label: outstandingNowLabel,    value: fmt(totals.outstanding), icon: Wallet,         warn: true  },
+    { label: openingLabel,        value: fmt(startMonthOutstanding(totals)), icon: Wallet, warn: true  },
     { label: dueLabel,            value: fmt(totals.due),         icon: CalendarClock,  warn: false },
     { label: receivedLabel,       value: fmt(totals.received),    icon: Coins,          warn: false },
+    { label: outstandingNowLabel,    value: fmt(totals.outstanding), icon: Wallet,         warn: true  },
     { label: "Due Pending",       value: fmt(totals.pending),     icon: TrendingDown,   warn: true  },
     {
       label: "Collection %",
@@ -883,8 +890,8 @@ export default function SalespersonCollectionReport() {
   const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
     { key: "salesperson",   label: "Salesperson", wrap: true, width: "w-[110px]" },
     { key: "outstanding",   label: openingLabel,        align: "right", wrap: true, width: "w-[150px]" },
-    { key: "outstandingNow", label: outstandingNowLabel, align: "right", wrap: true, width: "w-[110px]" },
     { key: "due",           label: dueLabel,            align: "right", wrap: true, width: "w-[110px]" },
+    { key: "outstandingNow", label: outstandingNowLabel, align: "right", wrap: true, width: "w-[110px]" },
     { key: "receivedOnAccount", label: "On Account",        align: "right" },
     { key: "receivedAgainst",   label: "Against Invoices",  align: "right" },
     { key: "received",          label: "Total",             align: "right" },
@@ -894,7 +901,7 @@ export default function SalespersonCollectionReport() {
   ];
   type Col = (typeof COLS)[number];
   const anyExpanded = receivedExpanded || pendingExpanded;
-  const leadingCols    = COLS.filter((c) => ["salesperson", "outstanding", "outstandingNow", "due"].includes(c.key));
+  const leadingCols    = COLS.filter((c) => ["salesperson", "outstanding", "due"].includes(c.key));
   const collectionCols = COLS.filter((c) => ["collectionPct", "collectionPctPrev"].includes(c.key));
   const onAccountCol = COLS.find((c) => c.key === "receivedOnAccount")!;
   const againstCol   = COLS.find((c) => c.key === "receivedAgainst")!;
@@ -922,39 +929,30 @@ export default function SalespersonCollectionReport() {
     </TableHead>
   );
 
-  /* ── Frozen columns (freeze panes) ─────────────────────────────────────────
-     Excel-style: freeze from the left edge through `freezeLevel`. Each frozen cell
-     is `position: sticky` with a cumulative `left` offset and an OPAQUE background
-     (so scrolled cells pass underneath); the rightmost frozen column carries an edge
-     shadow. Scoped to the leading columns, which are stable across the expand state. */
-  type FreezeId = "chevron" | "salesperson" | "outstanding" | "outstandingNow" | "due";
+  /* ── Frozen column (freeze pane) ───────────────────────────────────────────
+     Excel-style: freeze the leading chevron + group-label column so the group name
+     stays put while scrolling right. Each frozen cell is `position: sticky` with a
+     cumulative `left` offset and an OPAQUE background; the label carries an edge shadow. */
+  type FreezeId = "chevron" | "label";
   type FreezeStick = { className: string; style?: CSSProperties };
-  const freezeLevelOf = (id: FreezeId): 1 | 2 | 3 | 4 =>
-    id === "outstanding" ? 2 : id === "outstandingNow" ? 3 : id === "due" ? 4 : 1; // chevron + salesperson share level 1
-  const leftOf = (id: FreezeId): number =>
-    id === "chevron" ? 0 : id === "salesperson" ? colW.chev
-    : id === "outstanding" ? colW.chev + colW.sp
-    : id === "outstandingNow" ? colW.chev + colW.sp + colW.out
-    : colW.chev + colW.sp + colW.out + colW.now;
-  /** Sticky props for a leading column cell, or empty when it isn't frozen.
+  const leftOf = (id: FreezeId): number => (id === "chevron" ? 0 : colW.chev);
+  /** Sticky props for a leading column cell, or empty when freeze is off.
    *  `bg` is the OPAQUE background to use (defaults: header → muted, body → surface). */
   const freezeStick = (id: FreezeId, opts?: { header?: boolean; bg?: string }): FreezeStick => {
-    if (freezeLevel < freezeLevelOf(id)) return { className: "" };
+    if (freezeLevel < 1) return { className: "" };
     const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
-    // Boundary = the rightmost frozen column (salesperson at level 1, else outstanding/due).
-    const boundary = id !== "chevron" && freezeLevelOf(id) === freezeLevel;
-    const shadow = boundary ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : "";
+    const shadow = id === "label" ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : "";
     return { className: `sticky ${opts?.header ? "z-20" : "z-10"} ${bg} ${shadow}`, style: { left: leftOf(id) } };
   };
-  /** Pin button shown in a freezable header — sets/clears the freeze boundary at this column. */
-  const freezePin = (level: 1 | 2 | 3 | 4) => {
-    const active = freezeLevel >= level;
+  /** Pin button in the label header — toggles the freeze on/off. */
+  const freezePin = () => {
+    const active = freezeLevel >= 1;
     return (
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setFreezeLevel(freezeLevel === level ? (level - 1) as 0 | 1 | 2 | 3 : level); }}
+        onClick={(e) => { e.stopPropagation(); setFreezeLevel(active ? 0 : 1); }}
         className={`ml-1 inline-flex items-center justify-center h-4 w-4 rounded shrink-0 ${active ? "text-primary" : "text-foreground/35 hover:text-foreground/70"}`}
-        title={active ? "Unfreeze this column" : "Freeze columns up to here"}
+        title={active ? "Unfreeze the group column" : "Freeze the group column while scrolling"}
       >
         <Pin className={`h-3 w-3 ${active ? "fill-primary" : ""}`} />
       </button>
@@ -974,6 +972,80 @@ export default function SalespersonCollectionReport() {
   );
   const receivedToggle = makeToggle(receivedExpanded, setReceivedExpanded, "On Account / Against Invoices breakup");
   const pendingToggle  = makeToggle(pendingExpanded, setPendingExpanded, "As-on-today / Till-month-end breakup");
+
+  /** The metric cells for one row (grand total or any roll-up node), in column order.
+   *  `strong` bolds the figures (grand total + depth-0 nodes). */
+  const metricCells = (
+    m: Metrics, mPrev: Metrics, ids: string[], label: string, strong: boolean,
+  ): ReactNode => {
+    const pct = collectionPct(m);
+    const pctPrev = collectionPct(mPrev);
+    const sz = strong ? "text-sm " : "";
+    const bold = strong ? "font-semibold " : "";
+    return (
+      <>
+        {drillCell(ids, "outstanding", label, `${sz}text-right font-mono ${bold}`, fmt(startMonthOutstanding(m)))}
+        {drillCell(ids, "due", label, `${sz}text-right font-mono`, fmt(m.due))}
+        {receivedExpanded && <>
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.receivedOnAccount)}</TableCell>
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.receivedAgainst)}</TableCell>
+        </>}
+        <TableCell className={`${sz}text-right font-mono`}>{fmt(m.received)}</TableCell>
+        <TableCell className={`${sz}text-right font-mono ${bold}border-l border-border`}>{fmt(m.outstanding)}</TableCell>
+        {pendingExpanded && <>
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.pending - m.dueSoon)}</TableCell>
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.dueSoon)}</TableCell>
+        </>}
+        {drillCell(ids, "pending", label, `${sz}text-right font-mono ${bold}${m.pending > 0 ? "text-destructive" : ""}`, fmt(m.pending))}
+        <TableCell className={`${sz}text-right font-mono ${pctStyle(pct)}`}>{pct === null ? "—" : `${pct.toFixed(1)}%`}</TableCell>
+        <TableCell className={`${sz}text-right font-mono ${pctStyle(pctPrev)}`}>{prevMonth == null || pctPrev === null ? "—" : `${pctPrev.toFixed(1)}%`}</TableCell>
+      </>
+    );
+  };
+
+  /** Recursive roll-up rows; pagination/scope is whole-tree. depth-0 click also scopes the panel. */
+  const renderNodes = (nodes: GroupNode<CM>[]): ReactNode =>
+    nodes.map((n) => {
+      const hasChildren = n.children.length > 0;
+      const isOpen = expanded.has(n.key);
+      const tint = n.depth === 0 ? "" : n.depth === 1 ? "bg-muted/20" : "bg-muted/10";
+      const isSelected = n.depth === 0 && selectedNode?.label === n.label;
+      return (
+        <Fragment key={n.key}>
+          <TableRow
+            className={`group transition-colors ${tint} ${isSelected ? "bg-primary/10" : hasChildren ? "cursor-pointer hover:bg-muted/40" : n.depth === 0 ? "cursor-pointer hover:bg-muted/30" : ""}`}
+            onClick={() => {
+              if (hasChildren) toggleExpand(n.key);
+              if (n.depth === 0) setSelectedNode({ label: n.label, ids: n.ids });
+            }}
+          >
+            {(() => { const f = freezeStick("chevron", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
+              <TableCell style={f.style} className={`text-muted-foreground ${f.className}`}>
+                {hasChildren && (isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
+              </TableCell>
+            ); })()}
+            {(() => { const f = freezeStick("label", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
+              <TableCell
+                style={{ ...f.style, paddingLeft: 8 + n.depth * 18 }}
+                className={`whitespace-nowrap ${n.depth === 0 ? "font-medium text-sm" : "text-[13px] text-muted-foreground"} ${f.className}`}
+              >
+                {n.label}
+                {n.sub && <span className="ml-1.5 text-[10px] font-normal opacity-70">{n.sub}</span>}
+                {hasChildren && <span className="ml-1.5 text-[11px] opacity-70">({n.children.length})</span>}
+              </TableCell>
+            ); })()}
+            {metricCells(n.metrics.m, n.metrics.mPrev, n.ids, n.label, n.depth === 0)}
+          </TableRow>
+          {isOpen && hasChildren && renderNodes(n.children)}
+        </Fragment>
+      );
+    });
+
+  // Total column count (for empty-state colSpan): chevron + label + metric columns.
+  const metricColCount = 7 + (receivedExpanded ? 2 : 0) + (pendingExpanded ? 2 : 0);
+  const totalColCount = 2 + metricColCount;
+  // Noun for the top-level row count (the first group-by dimension, e.g. "salesperson").
+  const groupByLabel = (C_DIMENSIONS.find((x) => x.key === groupBy[0])?.label ?? "group").toLowerCase();
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
@@ -996,29 +1068,17 @@ export default function SalespersonCollectionReport() {
         </Button>
       </div>
 
+      {/* Group-by builder */}
+      <Card className="rounded-card border-border bg-surface">
+        <CardContent className="p-4">
+          <GroupByBuilder dimensions={C_DIMENSIONS} presets={C_PRESETS} value={groupBy} onChange={setGroupBy} />
+        </CardContent>
+      </Card>
+
       {/* Filters */}
       <Card className="rounded-card border-border bg-surface">
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">View</span>
-              <div className="inline-flex rounded-input border border-border h-9 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("customer")}
-                  className={`px-3 text-sm font-medium transition-colors ${viewMode === "customer" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted/50"}`}
-                >
-                  Customers
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("group")}
-                  className={`px-3 text-sm font-medium transition-colors border-l border-border ${viewMode === "group" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted/50"}`}
-                >
-                  Groups
-                </button>
-              </div>
-            </div>
             <div className="flex flex-col gap-1">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Month</span>
               <Select value={selectedMonth} onValueChange={setMonthState}>
@@ -1122,16 +1182,16 @@ export default function SalespersonCollectionReport() {
         })}
       </div>
       <p className="text-[11px] text-muted-foreground -mt-3">
-        Opening Outstanding = start-of-month balance ({selectedMonth ? monthStartLong(selectedMonth) : "month start"}, this month's collections added back). {isCurrentMonth ? `Outstanding (Today) = the live net balance as on ${formatDateLong(asOfDate)} (matches the dashboard); Opening − Received = Outstanding (Today).` : `Outstanding (month-end) = the balance as on ${selectedMonth ? monthEndLong(selectedMonth) : "month-end"}.`} Due Pending = "As on {formatDateLong(asOfDate)}" (Overdue — matches the dashboard's overview) + "Till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received. Received = On Account (advance / unallocated) + Against Invoices, and includes manual "other payments". Use the +/− toggles to show or hide each breakup.
+        Total Outstanding ({selectedMonth || "this month"}) = Outstanding (Today) + Received in {selectedMonth || "the month"} — the start-of-month balance (this month's collections added back). Total Outstanding − Received = Outstanding (Today) on every row; a customer sitting in advance shows a negative Total (a credit balance). {isCurrentMonth ? `Outstanding (Today) = the live net balance as on ${formatDateLong(asOfDate)} (matches the dashboard).` : `Outstanding (month-end) = the balance as on ${selectedMonth ? monthEndLong(selectedMonth) : "month-end"}.`} Due Pending = "As on {formatDateLong(asOfDate)}" (Overdue — matches the dashboard's overview) + "Till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received. Received = On Account (advance / unallocated) + Against Invoices, and includes manual "other payments". Use the +/− toggles to show or hide each breakup.
       </p>
 
       {/* Main table */}
       <Card className="rounded-card border-border bg-surface overflow-hidden">
         <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-            {spRows.length} salesperson{spRows.length !== 1 ? "s" : ""}
+            {sortedRoots.length} {groupByLabel}{sortedRoots.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a salesperson to drill into {viewMode === "group" ? "groups" : "customers"}; use the <Pin className="h-3 w-3 inline" /> on a column to freeze it while scrolling</span>
+          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a row to expand; the top level also scopes the Monthly analysis. Use the <Pin className="h-3 w-3 inline" /> on the group column to freeze it while scrolling</span>
         </div>
         <ScrollableTable>
           <Table>
@@ -1145,14 +1205,21 @@ export default function SalespersonCollectionReport() {
                   style={freezeStick("chevron", { header: true }).style}
                   className={`w-8 ${freezeStick("chevron", { header: true }).className}`}
                 />
-                {leadingCols.map((col) => {
-                  const id = col.key as FreezeId; // leadingCols only holds salesperson/outstanding/due
-                  return sortHead(col, anyExpanded ? 2 : 1, {
-                    headRef: id === "salesperson" ? spHeadRef : id === "outstanding" ? outHeadRef : id === "outstandingNow" ? nowHeadRef : undefined,
-                    extra: freezePin(freezeLevelOf(id)),
-                    freeze: freezeStick(id, { header: true }),
-                  });
-                })}
+                <TableHead
+                  ref={spHeadRef}
+                  rowSpan={anyExpanded ? 2 : 1}
+                  style={freezeStick("label", { header: true }).style}
+                  className={`text-xs font-semibold text-foreground/70 align-bottom pb-2 cursor-pointer select-none whitespace-nowrap ${freezeStick("label", { header: true }).className}`}
+                  onClick={() => toggleSort("salesperson")}
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {groupBy.map((d) => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → ")}
+                    {sortIcon("salesperson")}
+                    {freezePin()}
+                  </span>
+                </TableHead>
+                {sortHead(COLS.find((c) => c.key === "outstanding")!, anyExpanded ? 2 : 1)}
+                {sortHead(COLS.find((c) => c.key === "due")!, anyExpanded ? 2 : 1)}
                 {receivedExpanded ? (
                   <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                     <span className="inline-flex items-center justify-center">{receivedLabel}{receivedToggle}</span>
@@ -1166,6 +1233,13 @@ export default function SalespersonCollectionReport() {
                     <span className="inline-flex items-center gap-1 justify-end w-full">{receivedLabel}{sortIcon("received")}{receivedToggle}</span>
                   </TableHead>
                 )}
+                <TableHead
+                  rowSpan={anyExpanded ? 2 : 1}
+                  className="text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none w-[110px] text-right border-l border-border"
+                  onClick={() => toggleSort("outstandingNow")}
+                >
+                  <span className="inline-flex items-center gap-1 justify-end w-full">{outstandingNowLabel}{sortIcon("outstandingNow")}</span>
+                </TableHead>
                 {pendingExpanded ? (
                   <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                     <span className="inline-flex items-center justify-center">{pendingCol.label}{pendingToggle}</span>
@@ -1208,10 +1282,10 @@ export default function SalespersonCollectionReport() {
               )}
             </TableHeader>
             <TableBody>
-              {spRows.length === 0 ? (
+              {sortedRoots.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={COLS.length + 1} className="text-center py-12 text-muted-foreground">
-                    No salespersons match your filters.
+                  <TableCell colSpan={totalColCount} className="text-center py-12 text-muted-foreground">
+                    No rows match your filters.
                   </TableCell>
                 </TableRow>
               ) : (
@@ -1219,163 +1293,10 @@ export default function SalespersonCollectionReport() {
                   {/* Grand total row */}
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
                     <TableCell style={freezeStick("chevron", { bg: "bg-muted" }).style} className={freezeStick("chevron", { bg: "bg-muted" }).className} />
-                    <TableCell style={freezeStick("salesperson", { bg: "bg-muted" }).style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${freezeStick("salesperson", { bg: "bg-muted" }).className}`}>Grand Total</TableCell>
-                    {drillCell(allCustomerIds, "outstanding", "Grand Total", "text-sm text-right font-mono", fmt(startMonthOutstanding(totals)), freezeStick("outstanding", { bg: "bg-muted" }))}
-                    {(() => { const f = freezeStick("outstandingNow", { bg: "bg-muted" }); return (
-                      <TableCell style={f.style} className={`text-sm text-right font-mono ${f.className}`}>{fmt(totals.outstanding)}</TableCell>
-                    ); })()}
-                    {drillCell(allCustomerIds, "due", "Grand Total", "text-sm text-right font-mono", fmt(totals.due), freezeStick("due", { bg: "bg-muted" }))}
-                    {receivedExpanded && <>
-                      <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.receivedOnAccount)}</TableCell>
-                      <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.receivedAgainst)}</TableCell>
-                    </>}
-                    <TableCell className="text-sm text-right font-mono">{fmt(totals.received)}</TableCell>
-                    {pendingExpanded && <>
-                      <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(totals.pending - totals.dueSoon)}</TableCell>
-                      <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(totals.dueSoon)}</TableCell>
-                    </>}
-                    {drillCell(allCustomerIds, "pending", "Grand Total", `text-sm text-right font-mono ${totals.pending > 0 ? "text-destructive" : ""}`, fmt(totals.pending))}
-                    <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totals))}`}>
-                      {collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`}
-                    </TableCell>
-                    <TableCell className={`text-sm text-right font-mono ${pctStyle(collectionPct(totalsPrev))}`}>
-                      {prevMonth == null || collectionPct(totalsPrev) === null ? "—" : `${(collectionPct(totalsPrev) as number).toFixed(1)}%`}
-                    </TableCell>
+                    <TableCell style={freezeStick("label", { bg: "bg-muted" }).style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${freezeStick("label", { bg: "bg-muted" }).className}`}>Grand Total</TableCell>
+                    {metricCells(totals, totalsPrev, allCustomerIds, "Grand Total", true)}
                   </TableRow>
-
-                  {spRows.map((row) => {
-                    const isOpen = expanded.has(row.salesperson);
-                    const isSelected = selectedSalesperson === row.salesperson;
-                    const pct = collectionPct(row.m);
-                    const pctPrev = collectionPct(row.mPrev);
-                    return (
-                      <Fragment key={row.salesperson}>
-                        <TableRow
-                          className={`group transition-colors cursor-pointer ${isSelected ? "bg-primary/10" : isOpen ? "bg-primary/5" : "hover:bg-muted/30"}`}
-                          onClick={() => { toggleExpand(row.salesperson); setSelectedSalesperson(row.salesperson); }}
-                        >
-                          {(() => { const f = freezeStick("chevron", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
-                            <TableCell style={f.style} className={`text-muted-foreground ${f.className}`}>
-                              {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                            </TableCell>
-                          ); })()}
-                          {(() => { const f = freezeStick("salesperson", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
-                            <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>
-                              {row.salesperson}
-                              <span className="ml-1.5 text-[11px] text-muted-foreground">({row.rows.length})</span>
-                            </TableCell>
-                          ); })()}
-                          {drillCell(row.customerIds, "outstanding", row.salesperson, "text-sm text-right font-mono font-semibold", fmt(startMonthOutstanding(row.m)), freezeStick("outstanding", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }))}
-                          {(() => { const f = freezeStick("outstandingNow", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
-                            <TableCell style={f.style} className={`text-sm text-right font-mono font-semibold ${f.className}`}>{fmt(row.m.outstanding)}</TableCell>
-                          ); })()}
-                          {drillCell(row.customerIds, "due", row.salesperson, "text-sm text-right font-mono", fmt(row.m.due), freezeStick("due", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }))}
-                          {receivedExpanded && <>
-                            <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.receivedOnAccount)}</TableCell>
-                            <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.receivedAgainst)}</TableCell>
-                          </>}
-                          <TableCell className="text-sm text-right font-mono">{fmt(row.m.received)}</TableCell>
-                          {pendingExpanded && <>
-                            <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(row.m.pending - row.m.dueSoon)}</TableCell>
-                            <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(row.m.dueSoon)}</TableCell>
-                          </>}
-                          {drillCell(row.customerIds, "pending", row.salesperson, `text-sm text-right font-mono font-semibold ${row.m.pending > 0 ? "text-destructive" : ""}`, fmt(row.m.pending))}
-                          <TableCell className={`text-sm text-right font-mono ${pctStyle(pct)}`}>
-                            {pct === null ? "—" : `${pct.toFixed(1)}%`}
-                          </TableCell>
-                          <TableCell className={`text-sm text-right font-mono ${pctStyle(pctPrev)}`}>
-                            {prevMonth == null || pctPrev === null ? "—" : `${pctPrev.toFixed(1)}%`}
-                          </TableCell>
-                        </TableRow>
-
-                        {isOpen && row.rows.map((drill) => {
-                          const cpct = collectionPct(drill.m);
-                          const cpctPrev = collectionPct(drill.mPrev);
-                          const groupKey = `${row.salesperson}::${drill.key}`;
-                          const canExpand = drill.isGroup && drill.children.length > 0;
-                          const groupOpen = canExpand && expandedGroups.has(groupKey);
-                          return (
-                            <Fragment key={`${row.salesperson}-${drill.key}`}>
-                              <TableRow
-                                className={`bg-muted/20 transition-colors text-[13px] ${canExpand ? "cursor-pointer hover:bg-muted/40" : ""}`}
-                                onClick={canExpand ? () => toggleGroup(groupKey) : undefined}
-                              >
-                                {(() => { const f = freezeStick("chevron", { bg: "bg-surface" }); return (
-                                  <TableCell style={f.style} className={`text-muted-foreground pl-4 ${f.className}`}>
-                                    {canExpand && (groupOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />)}
-                                  </TableCell>
-                                ); })()}
-                                {(() => { const f = freezeStick("salesperson", { bg: "bg-surface" }); return (
-                                  <TableCell style={f.style} className={`whitespace-nowrap pl-6 text-muted-foreground ${f.className}`}>
-                                    {drill.name}
-                                    {drill.sub && <span className="ml-1.5 text-[10px] opacity-70">{drill.sub}</span>}
-                                  </TableCell>
-                                ); })()}
-                                {drillCell(drill.customerIds, "outstanding", drill.name, "text-right font-mono", fmt(startMonthOutstanding(drill.m)), freezeStick("outstanding", { bg: "bg-surface" }))}
-                                {(() => { const f = freezeStick("outstandingNow", { bg: "bg-surface" }); return (
-                                  <TableCell style={f.style} className={`text-right font-mono ${f.className}`}>{fmt(drill.m.outstanding)}</TableCell>
-                                ); })()}
-                                {drillCell(drill.customerIds, "due", drill.name, "text-right font-mono", fmt(drill.m.due), freezeStick("due", { bg: "bg-surface" }))}
-                                {receivedExpanded && <>
-                                  <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.receivedOnAccount)}</TableCell>
-                                  <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.receivedAgainst)}</TableCell>
-                                </>}
-                                <TableCell className="text-right font-mono">{fmt(drill.m.received)}</TableCell>
-                                {pendingExpanded && <>
-                                  <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(drill.m.pending - drill.m.dueSoon)}</TableCell>
-                                  <TableCell className="text-right font-mono text-muted-foreground">{fmt(drill.m.dueSoon)}</TableCell>
-                                </>}
-                                {drillCell(drill.customerIds, "pending", drill.name, `text-right font-mono ${drill.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(drill.m.pending))}
-                                <TableCell className={`text-right font-mono ${pctStyle(cpct)}`}>
-                                  {cpct === null ? "—" : `${cpct.toFixed(1)}%`}
-                                </TableCell>
-                                <TableCell className={`text-right font-mono ${pctStyle(cpctPrev)}`}>
-                                  {prevMonth == null || cpctPrev === null ? "—" : `${cpctPrev.toFixed(1)}%`}
-                                </TableCell>
-                              </TableRow>
-
-                              {groupOpen && drill.children.map((party) => {
-                                const ppct = collectionPct(party.m);
-                                const ppctPrev = collectionPct(party.mPrev);
-                                return (
-                                  <TableRow key={`${groupKey}-${party.key}`} className="bg-muted/10 text-[12px]">
-                                    <TableCell style={freezeStick("chevron", { bg: "bg-surface" }).style} className={freezeStick("chevron", { bg: "bg-surface" }).className} />
-                                    {(() => { const f = freezeStick("salesperson", { bg: "bg-surface" }); return (
-                                      <TableCell style={f.style} className={`whitespace-nowrap pl-12 text-muted-foreground ${f.className}`}>
-                                        {party.name}
-                                        <span className="ml-1.5 text-[10px] opacity-70">{party.sub}</span>
-                                      </TableCell>
-                                    ); })()}
-                                    {drillCell([party.key], "outstanding", party.name, "text-right font-mono", fmt(startMonthOutstanding(party.m)), freezeStick("outstanding", { bg: "bg-surface" }))}
-                                    {(() => { const f = freezeStick("outstandingNow", { bg: "bg-surface" }); return (
-                                      <TableCell style={f.style} className={`text-right font-mono ${f.className}`}>{fmt(party.m.outstanding)}</TableCell>
-                                    ); })()}
-                                    {drillCell([party.key], "due", party.name, "text-right font-mono", fmt(party.m.due), freezeStick("due", { bg: "bg-surface" }))}
-                                    {receivedExpanded && <>
-                                      <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.receivedOnAccount)}</TableCell>
-                                      <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.receivedAgainst)}</TableCell>
-                                    </>}
-                                    <TableCell className="text-right font-mono">{fmt(party.m.received)}</TableCell>
-                                    {pendingExpanded && <>
-                                      <TableCell className="text-right font-mono text-muted-foreground border-l border-border/60">{fmt(party.m.pending - party.m.dueSoon)}</TableCell>
-                                      <TableCell className="text-right font-mono text-muted-foreground">{fmt(party.m.dueSoon)}</TableCell>
-                                    </>}
-                                    {drillCell([party.key], "pending", party.name, `text-right font-mono ${party.m.pending > 0 ? "text-destructive/80" : ""}`, fmt(party.m.pending))}
-                                    <TableCell className={`text-right font-mono ${pctStyle(ppct)}`}>
-                                      {ppct === null ? "—" : `${ppct.toFixed(1)}%`}
-                                    </TableCell>
-                                    <TableCell className={`text-right font-mono ${pctStyle(ppctPrev)}`}>
-                                      {prevMonth == null || ppctPrev === null ? "—" : `${ppctPrev.toFixed(1)}%`}
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </Fragment>
-                          );
-                        })}
-                      </Fragment>
-                    );
-                  })}
+                  {renderNodes(sortedRoots)}
                 </>
               )}
             </TableBody>
@@ -1383,9 +1304,9 @@ export default function SalespersonCollectionReport() {
         </ScrollableTable>
       </Card>
 
-      {/* Month-wise analysis panel — consolidated by default, or per selected salesperson */}
+      {/* Month-wise analysis panel — consolidated by default, or per selected top-level node */}
       {(() => {
-        const scopeLabel = selectedSalesperson ?? "All salespersons";
+        const scopeLabel = selectedNode?.label ?? "All rows";
         // Received is a FLOW → summable across months (= total collected over the period).
         // Outstanding / Due / Pending are point-in-time STOCKS → not summable; show the latest
         // (current) month. (Summing them would double-count the same open balance every month.)
@@ -1410,11 +1331,11 @@ export default function SalespersonCollectionReport() {
                   Monthly analysis — {scopeLabel}
                 </span>
               </div>
-              {selectedSalesperson && (
+              {selectedNode && (
                 <Button
                   variant="ghost" size="sm"
                   className="h-7 px-2 text-xs rounded-button text-muted-foreground hover:text-foreground shrink-0"
-                  onClick={() => setSelectedSalesperson(null)}
+                  onClick={() => setSelectedNode(null)}
                 >
                   <X className="h-3.5 w-3.5 mr-1" /> Show all
                 </Button>

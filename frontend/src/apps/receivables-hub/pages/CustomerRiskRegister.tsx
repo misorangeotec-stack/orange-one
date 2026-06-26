@@ -46,6 +46,7 @@ import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/Cu
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
+import { GroupByBuilder, type GroupByPreset } from "@hub/components/GroupByBuilder";
 import type { AgingBuckets, Customer, ConsolidatedCustomer, GroupedCustomer, ProposedCreditLimitReason, ProposedConstituent } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
@@ -566,6 +567,42 @@ const HIDDEN_BY_DEFAULT: SortKey[] = ["companies", "locations", "proposedCreditL
 const DEFAULT_VISIBLE_COL_KEYS = ALL_COL_KEYS.filter((k) => !HIDDEN_BY_DEFAULT.includes(k));
 const COL_STORAGE_KEY = "riskRegister.visibleColumns";
 
+/* ── Group-by dimensions (Aging-style multi-level roll-up) ───────────────────── */
+type RDim = "customer" | "group" | "salesperson" | "category" | "company" | "location";
+const R_DIMENSIONS: { key: RDim; label: string }[] = [
+  { key: "customer",    label: "Customer" },
+  { key: "group",       label: "Customer Group" },
+  { key: "salesperson", label: "Salesperson" },
+  { key: "category",    label: "Customer Category" },
+  { key: "company",     label: "Company" },
+  { key: "location",    label: "Location" },
+];
+const R_PRESETS: GroupByPreset<RDim>[] = [
+  { label: "Customer",                     dims: ["customer"] },
+  { label: "Customer Group",               dims: ["group"] },
+  { label: "Salesperson → Customer",       dims: ["salesperson", "customer"] },
+  { label: "Customer Category → Customer", dims: ["category", "customer"] },
+  { label: "Company → Customer",           dims: ["company", "customer"] },
+  { label: "Salesperson",                  dims: ["salesperson"] },
+  { label: "Customer Category",            dims: ["category"] },
+];
+
+/** A roll-up node: a leaf (one customer) or a group header with summed money columns. */
+interface RNode { key: string; depth: number; label: string; header: CustomerRow; children: RNode[]; isLeaf: boolean; count: number; }
+const RISK_ORDER: RiskCategory[] = ["critical", "high", "medium", "low"];
+
+/** Single display value for a consolidated row on a dimension (multi-valued → "Multiple"). */
+function rdimValue(r: CustomerRow, dim: RDim, nameToGroup: Record<string, string>): string {
+  switch (dim) {
+    case "customer": return r.name;
+    case "group":    return nameToGroup[r.name] ?? r.name;
+    case "salesperson": { const xs = r.salesPersons?.length ? r.salesPersons : (r.salesPerson ? [r.salesPerson] : []); return xs.length === 0 ? "Unassigned" : xs.length === 1 ? xs[0] : "Multiple"; }
+    case "category":    { const xs = r.categories?.length ? r.categories : (r.category ? [r.category] : []); return xs.length === 0 ? "Uncategorized" : xs.length === 1 ? xs[0] : "Multiple"; }
+    case "company":     { const xs = r.companies ?? []; return xs.length === 0 ? "—" : xs.length === 1 ? xs[0] : "Multiple"; }
+    case "location":    { const xs = r.locations ?? []; return xs.length === 0 ? "—" : xs.length === 1 ? xs[0] : "Multiple"; }
+  }
+}
+
 /* ── Component ─────────────────────────────────────────── */
 
 export default function CustomerRiskRegister() {
@@ -614,9 +651,12 @@ export default function CustomerRiskRegister() {
   }, [pageSize]);
   const [activeTrendKeys, setActiveTrendKeys] = useState<Set<string>>(new Set());
   const [showTrend, setShowTrend] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>(
-    searchParams.get("view") === "group" ? "group" : "customer",
+  // Aging-style group-by: an ordered list of dimensions rolled up with subtotals.
+  // Legacy ?view=group deep-links open the one-level Customer-Group roll-up.
+  const [groupBy, setGroupBy] = useState<RDim[]>(
+    searchParams.get("view") === "group" ? ["group"] : ["customer"],
   );
+  // Expanded roll-up nodes, keyed by node.key (any depth).
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [visibleCols, setVisibleCols] = useState<Set<SortKey>>(() => {
     try {
@@ -685,7 +725,19 @@ export default function CustomerRiskRegister() {
     company:  companyFilters.length  === 0 ? undefined : companyFilters.join(","),
     location: locationFilters.length === 0 ? undefined : locationFilters.join(","),
   });
-  const allData: CustomerRow[] = (viewMode === "group" ? groupedCustomers : consolidatedCustomers) as CustomerRow[];
+  // Leaves are always the consolidated (per-name) customers; the group-by builder
+  // rolls them up into headers. (The precomputed groupedCustomers are used only to
+  // derive the customer-name → customer-group mapping for the "group" dimension.)
+  const allData: CustomerRow[] = consolidatedCustomers as CustomerRow[];
+  const nameToGroup = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const g of groupedCustomers as GroupedCustomer[]) {
+      if ((g.isGroup ?? (g.childNames?.length ?? 0) > 1) && g.childNames) {
+        for (const n of g.childNames) m[n] = g.name;
+      }
+    }
+    return m;
+  }, [groupedCustomers]);
 
   // Company / Location filter options — dependent (each list narrows by the other
   // selection) and sourced from the unfiltered, salesperson-scoped customer set so
@@ -745,15 +797,15 @@ export default function CustomerRiskRegister() {
     return ledgers.length > 1 ? ledgers : [child];
   };
 
-  // Persist view mode in the URL so deep links/refreshes preserve it.
+  // Persist the legacy ?view=group flag (one-level Customer-Group roll-up) and reset
+  // expansion whenever the roll-up shape changes.
   useEffect(() => {
     const params = new URLSearchParams(searchParams);
-    if (viewMode === "group") params.set("view", "group");
-    else                       params.delete("view");
+    if (groupBy.length === 1 && groupBy[0] === "group") params.set("view", "group");
+    else                                                params.delete("view");
     setSearchParams(params, { replace: true });
-    // Reset expanded groups when leaving group view
-    if (viewMode === "customer") setExpandedGroups(new Set());
-  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+    setExpandedGroups(new Set());
+  }, [groupBy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize filters from URL query params
   useEffect(() => {
@@ -882,12 +934,7 @@ export default function CustomerRiskRegister() {
     const bucketKeys: (keyof AgingBuckets)[] =
       agingFilters.map((a) => bkMap[a]).filter(Boolean) as (keyof AgingBuckets)[];
     if (search) {
-      // In group mode, also match by underlying Tally child name.
-      d = d.filter((r) => {
-        if (matchesSearch(search, r.name, r.id)) return true;
-        if (viewMode === "group" && r.childNames?.some((n) => matchesSearch(search, n))) return true;
-        return false;
-      });
+      d = d.filter((r) => matchesSearch(search, r.name, r.id));
     }
     if (riskLevels.length > 0) {
       d = d.filter((r) => riskLevels.includes(r.risk));
@@ -906,21 +953,6 @@ export default function CustomerRiskRegister() {
     if (categories.length > 0) {
       d = d.filter((r) => matchesCategory(r, categories));
     }
-    // Refine expandable groups by the visible-child count: a group with zero
-    // surviving children is dropped, and a group with only one is degraded
-    // to a plain customer row (no tree, no expand chevron, no badge) so it
-    // truly behaves like a single customer in both rendering and counts.
-    if (viewMode === "group") {
-      d = d.flatMap<CustomerRow>((r) => {
-        if (!(r.isGroup ?? false)) return [r];
-        const visible = (r.childNames ?? [])
-          .map((n) => customerByName.get(n) as CustomerRow | undefined)
-          .filter((c): c is CustomerRow => !!c && childPassesFilters(c));
-        if (visible.length === 0) return [];
-        if (visible.length === 1) return [{ ...visible[0], isGroup: false, childNames: undefined }];
-        return [{ ...r, childNames: visible.map((c) => c.name) }];
-      });
-    }
     if (sortKey && sortDir) {
       // For the Overdue column, sort by the value actually shown: the selected
       // aging bucket's amount when a bucket filter is active, else total overdue.
@@ -936,7 +968,7 @@ export default function CustomerRiskRegister() {
       });
     }
     return d;
-  }, [allData, search, riskLevels, agingFilters, specialFilter, blockedFilter, categories, sortKey, sortDir, viewMode, customerByName, childPassesFilters]);
+  }, [allData, search, riskLevels, agingFilters, specialFilter, blockedFilter, categories, sortKey, sortDir]);
 
   // When an aging bucket filter is active, sum only that specific bucket's overdue
   // rather than the customer's total overdue — otherwise customers with e.g. 180+ day
@@ -1071,37 +1103,268 @@ export default function CustomerRiskRegister() {
     ? trendAllLines
     : trendAllLines.filter((t) => activeTrendKeys.has(t.key));
 
-  // Auto-expand groups whose child Tally names match the current search.
-  useEffect(() => {
-    if (viewMode !== "group" || !search) return;
-    const toExpand = new Set<string>();
-    for (const r of allData) {
-      if (r.childNames && (r.isGroup ?? r.childNames.length > 1)
-          && r.childNames.some((n) => matchesSearch(search, n))) {
-        toExpand.add(r.name);
+  // ── Group-by roll-up (Aging-style, N levels) ────────────────────────────────
+  // Leaves are the filtered+sorted consolidated customers (`rows`); internal nodes are
+  // group headers whose money columns are SUBTOTALS of their members. Non-additive
+  // columns (Util %, Credit Period, Blocked) are blanked at headers; Risk shows the
+  // worst-case band, Max OD the largest. A terminal non-customer dimension (e.g. group
+  // by Salesperson only) yields header rows with no children — exactly like the Aging Report.
+  const groupTree = useMemo<RNode[]>(() => {
+    const uniqStr = (xss: string[][]) => [...new Set(xss.flat().filter(Boolean))];
+    const aggregate = (rs: CustomerRow[], key: string, label: string): CustomerRow => {
+      const sum = (f: keyof CustomerRow) => rs.reduce((s, r) => s + (Number(r[f]) || 0), 0);
+      const buckets: AgingBuckets = { "0_30": 0, "31_60": 0, "61_90": 0, "91_120": 0, "121_180": 0, "180_plus": 0 };
+      for (const r of rs) for (const k of Object.keys(buckets) as (keyof AgingBuckets)[]) buckets[k] += r.agingBuckets?.[k] ?? 0;
+      const worst = RISK_ORDER.find((lv) => rs.some((r) => r.risk === lv)) ?? "low";
+      return {
+        id: `__grp__${key}`,
+        name: label,
+        salesPerson: "",
+        salesPersons: uniqStr(rs.map((r) => r.salesPersons ?? (r.salesPerson ? [r.salesPerson] : []))),
+        category: "",
+        categories: uniqStr(rs.map((r) => r.categories ?? (r.category ? [r.category] : []))),
+        companies: uniqStr(rs.map((r) => r.companies ?? [])),
+        locations: uniqStr(rs.map((r) => r.locations ?? [])),
+        openingBalance: sum("openingBalance"),
+        sales: sum("sales"),
+        receipts: sum("receipts"),
+        creditNotes: sum("creditNotes"),
+        debitNotes: sum("debitNotes"),
+        journalAdjustments: sum("journalAdjustments"),
+        checkReturns: sum("checkReturns"),
+        outstanding: sumOutstanding(rs),
+        overdue: rs.reduce((s, r) => s + overdueForRow(r), 0),
+        maxOverdueDays: rs.reduce((m, r) => Math.max(m, r.maxOverdueDays), 0),
+        creditPeriod: 0,
+        creditLimit: sum("creditLimit"),
+        utilization: 0,
+        risk: worst,
+        blocked: false,
+        agingBuckets: buckets,
+        proposedCreditLimit3M: sum("proposedCreditLimit3M"),
+        proposedCreditLimit3MDeltaPct: null,
+        proposedCreditLimitAI: sum("proposedCreditLimitAI"),
+        proposedCreditLimitAIDeltaPct: null,
+        constituentIds: rs.flatMap((r) => r.constituentIds ?? [r.id]),
+      } as CustomerRow;
+    };
+    const valueFor = (r: CustomerRow): number | string =>
+      sortKey === "overdue" && agingBucketKeys.length > 0
+        ? agingBucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0)
+        : (r[(sortKey ?? "name") as keyof CustomerRow] as number | string);
+    const cmp = (a: CustomerRow, b: CustomerRow): number => {
+      if (!sortKey || !sortDir) return 0;
+      const av = valueFor(a), bv = valueFor(b);
+      if (typeof av === "number" && typeof bv === "number") return sortDir === "asc" ? av - bv : bv - av;
+      return sortDir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+    };
+    const build = (rs: CustomerRow[], dims: RDim[], depth: number, prefix: string): RNode[] => {
+      if (dims.length === 0) return [];
+      const dim = dims[0];
+      const rest = dims.slice(1);
+      if (dim === "customer") {
+        return rs.map((r) => ({ key: `${prefix}/c:${r.id}`, depth, label: r.name, header: r, children: [], isLeaf: true, count: 1 }));
       }
-    }
-    if (toExpand.size > 0) {
-      setExpandedGroups((prev) => {
-        const next = new Set(prev);
-        for (const g of toExpand) next.add(g);
-        return next;
+      const order: string[] = [];
+      const buckets = new Map<string, CustomerRow[]>();
+      for (const r of rs) {
+        const v = rdimValue(r, dim, nameToGroup);
+        let arr = buckets.get(v);
+        if (!arr) { arr = []; buckets.set(v, arr); order.push(v); }
+        arr.push(r);
+      }
+      const nodes = order.map((v): RNode => {
+        const brs = buckets.get(v)!;
+        const key = `${prefix}/${dim}:${v}`;
+        return { key, depth, label: v, header: aggregate(brs, key, v), children: rest.length ? build(brs, rest, depth + 1, key) : [], isLeaf: false, count: brs.length };
       });
-    }
-  }, [search, viewMode, allData]);
+      nodes.sort((a, b) => cmp(a.header, b.header));
+      return nodes;
+    };
+    return build(rows, groupBy, 0, "");
+  }, [rows, groupBy, nameToGroup, sortKey, sortDir, agingBucketKeys]);
 
-  // Reset to page 1 whenever filters, sort, or page size changes
+  // Reset to page 1 whenever filters, sort, page size, or grouping changes.
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, riskLevels, agingFilters, blockedFilter, companyFilters, locationFilters, sortKey, sortDir, viewMode, pageSize]);
+  }, [search, riskLevels, agingFilters, blockedFilter, companyFilters, locationFilters, sortKey, sortDir, groupBy, pageSize]);
 
-  const effectivePageSize = pageSize === "all" ? Math.max(rows.length, 1) : pageSize;
-  const totalPages = Math.max(1, Math.ceil(rows.length / effectivePageSize));
-  const paginatedRows = pageSize === "all"
-    ? rows
-    : rows.slice((currentPage - 1) * effectivePageSize, currentPage * effectivePageSize);
-  const rangeStart = rows.length === 0 ? 0 : (currentPage - 1) * effectivePageSize + 1;
-  const rangeEnd = Math.min(currentPage * effectivePageSize, rows.length);
+  // Pagination applies to TOP-LEVEL roll-up nodes.
+  const effectivePageSize = pageSize === "all" ? Math.max(groupTree.length, 1) : pageSize;
+  const totalPages = Math.max(1, Math.ceil(groupTree.length / effectivePageSize));
+  const paginatedNodes = pageSize === "all"
+    ? groupTree
+    : groupTree.slice((currentPage - 1) * effectivePageSize, currentPage * effectivePageSize);
+  const rangeStart = groupTree.length === 0 ? 0 : (currentPage - 1) * effectivePageSize + 1;
+  const rangeEnd = Math.min(currentPage * effectivePageSize, groupTree.length);
+  // Noun for the top-level row count (the first group-by dimension, e.g. "salesperson").
+  const groupByNoun = (R_DIMENSIONS.find((x) => x.key === groupBy[0])?.label ?? "row").toLowerCase();
+
+  /** One table row for a customer (leaf) or a group header. Header rows blank the
+   *  non-additive columns (Util %, Credit Period, Blocked) and drop the per-row
+   *  tooltips; Risk shows the worst-case band. */
+  const renderRow = (
+    r: CustomerRow,
+    opts: { key: string; depth: number; isHeader?: boolean; onClick?: () => void; leadCell: ReactNode },
+  ): ReactNode => {
+    const isHeader = !!opts.isHeader;
+    const bg = "bg-surface group-hover:bg-[hsl(var(--muted))]";
+    const tint = isHeader ? (opts.depth === 0 ? "" : "bg-muted/20") : (opts.depth > 0 ? "bg-muted/10" : "");
+    return (
+      <TableRow key={opts.key} className={`group hover:bg-muted/30 transition-colors ${opts.onClick ? "cursor-pointer" : ""} ${tint}`} onClick={opts.onClick}>
+        {visibleCols.has("name") && (() => { const f = freezeStick("name", { bg }); return (
+          <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>{opts.leadCell}</TableCell>
+        ); })()}
+        {visibleCols.has("salesPerson") && (() => { const f = freezeStick("salesPerson", { bg }); return (
+          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`}>{r.salesPersons?.length ? (r.salesPersons.length === 1 ? r.salesPersons[0] : "Multiple") : r.salesPerson}</TableCell>
+        ); })()}
+        {visibleCols.has("companies") && (() => { const f = freezeStick("companies", { bg }); return (
+          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.companies?.join(", ")}>{showList(r.companies)}</TableCell>
+        ); })()}
+        {visibleCols.has("locations") && (() => { const f = freezeStick("locations", { bg }); return (
+          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.locations?.join(", ")}>{showList(r.locations)}</TableCell>
+        ); })()}
+        {visibleCols.has("openingBalance") && <TableCell className="text-sm text-right font-mono">{fmt(r.openingBalance)}</TableCell>}
+        {visibleCols.has("sales") && <TableCell className="text-sm text-right font-mono">{fmt(r.sales)}</TableCell>}
+        {visibleCols.has("receipts") && <TableCell className="text-sm text-right font-mono">{fmt(r.receipts)}</TableCell>}
+        {visibleCols.has("creditNotes") && <TableCell className="text-sm text-right font-mono">{fmt(r.creditNotes)}</TableCell>}
+        {visibleCols.has("debitNotes") && <TableCell className="text-sm text-right font-mono">{fmtINRMoney(r.debitNotes ?? 0)}</TableCell>}
+        {visibleCols.has("journalAdjustments") && (
+          <TableCell className={`text-sm text-right font-mono ${(r.journalAdjustments ?? 0) > 0 ? "text-destructive" : (r.journalAdjustments ?? 0) < 0 ? "text-emerald-700" : ""}`}>{fmtINRDrCr(r.journalAdjustments ?? 0)}</TableCell>
+        )}
+        {visibleCols.has("outstanding") && (
+          <TableCell className={`text-sm text-right font-mono font-semibold ${r.outstanding < 0 ? "text-emerald-600" : ""}`}>
+            {fmt(Math.abs(r.outstanding))}{r.outstanding < 0 && <span className="text-[10px] font-normal ml-0.5">(Cr)</span>}
+          </TableCell>
+        )}
+        {visibleCols.has("overdue") && (
+          <TableCell className={`text-sm text-right font-mono ${overdueForRow(r) > 0 ? "text-destructive font-semibold" : ""}`}>{fmt(overdueForRow(r))}</TableCell>
+        )}
+        {visibleCols.has("maxOverdueDays") && (
+          <TableCell className={`text-sm text-right font-mono ${r.maxOverdueDays > 180 ? "text-destructive font-semibold" : r.maxOverdueDays > 90 ? "text-primary font-semibold" : ""}`}>{r.maxOverdueDays}</TableCell>
+        )}
+        {visibleCols.has("creditPeriod") && <TableCell className="text-sm text-right">{isHeader ? "" : `${r.creditPeriod}d`}</TableCell>}
+        {visibleCols.has("creditLimit") && <TableCell className="text-sm text-right font-mono">{fmt(r.creditLimit)}</TableCell>}
+        {visibleCols.has("proposedCreditLimit3M") && (
+          <TableCell className="text-sm text-right font-mono whitespace-nowrap">
+            {isHeader ? fmt(r.proposedCreditLimit3M ?? 0) : (
+              <UITooltip delayDuration={150}>
+                <UITooltipTrigger asChild>
+                  <span className="inline-flex items-center cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-2" onClick={(e) => e.stopPropagation()}>
+                    {fmt(r.proposedCreditLimit3M ?? 0)}
+                    <DeltaBadge pct={r.proposedCreditLimit3MDeltaPct ?? null} />
+                  </span>
+                </UITooltipTrigger>
+                <UITooltipContent side="left" className="w-[22rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words" onClick={(e) => e.stopPropagation()}>
+                  <ThreeMProposedReason row={r} />
+                </UITooltipContent>
+              </UITooltip>
+            )}
+          </TableCell>
+        )}
+        {visibleCols.has("proposedCreditLimitAI") && (
+          <TableCell className="text-sm text-right font-mono whitespace-nowrap">
+            {isHeader ? fmt(r.proposedCreditLimitAI ?? 0) : (
+              <UITooltip delayDuration={150}>
+                <UITooltipTrigger asChild>
+                  <span className="inline-flex items-center cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-2" onClick={(e) => e.stopPropagation()}>
+                    {fmt(r.proposedCreditLimitAI ?? 0)}
+                    <DeltaBadge pct={r.proposedCreditLimitAIDeltaPct ?? null} />
+                  </span>
+                </UITooltipTrigger>
+                <UITooltipContent side="left" className="w-[22rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words" onClick={(e) => e.stopPropagation()}>
+                  <AIProposedReason row={r} />
+                </UITooltipContent>
+              </UITooltip>
+            )}
+          </TableCell>
+        )}
+        {visibleCols.has("utilization") && (
+          <TableCell className={`text-sm text-right font-mono font-semibold ${isHeader ? "text-muted-foreground" : r.blocked ? "text-muted-foreground" : r.utilization > 100 ? "text-destructive" : r.utilization > 80 ? "text-primary" : ""}`}>
+            {isHeader ? "—" : r.blocked ? "—" : `${r.utilization}%`}
+          </TableCell>
+        )}
+        {visibleCols.has("risk") && (
+          <TableCell>
+            {isHeader ? (
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-button capitalize ${riskStyle[r.risk]}`} title="Worst risk band in this group">{r.risk}</Badge>
+            ) : (
+              <UITooltip delayDuration={150}>
+                <UITooltipTrigger asChild>
+                  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 rounded-button capitalize cursor-help ${riskStyle[r.risk]}`} onClick={(e) => e.stopPropagation()}>{r.risk}</Badge>
+                </UITooltipTrigger>
+                <UITooltipContent side="left" className="w-[20rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words" onClick={(e) => e.stopPropagation()}>
+                  <RiskReason row={r} />
+                </UITooltipContent>
+              </UITooltip>
+            )}
+          </TableCell>
+        )}
+        {visibleCols.has("blocked") && (
+          <TableCell>
+            {isHeader ? <span className="text-[10px] text-muted-foreground">—</span> : r.blocked ? (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30">Blocked</Badge>
+            ) : (
+              <span className="text-[10px] text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )}
+        <TableCell>
+          {!isHeader && (
+            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); opts.onClick?.(); }} className="h-7 w-7 p-0 rounded-button text-muted-foreground hover:text-primary">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  };
+
+  /** Render a roll-up node (and, when expanded, its descendants). */
+  const renderNode = (n: RNode): ReactNode[] => {
+    if (n.isLeaf) {
+      const r = n.header;
+      return [renderRow(r, {
+        key: n.key, depth: n.depth,
+        onClick: () => openInNewTab(withSaleType(`/outstanding-dashboard/customer/${encodeURIComponent(r.name)}`)),
+        leadCell: (
+          <span className="inline-flex items-center gap-2" style={{ paddingLeft: n.depth * 18 }}>
+            {n.depth > 0 && <span className="text-xs text-muted-foreground shrink-0">↳</span>}
+            <span>{r.name}</span>
+            {r.sales === 0 && r.receipts === 0 && r.creditNotes === 0 && (
+              <Badge className="text-[9px] px-1 py-0 bg-amber-50 text-amber-700 border border-amber-200 rounded font-normal shrink-0">No Activity</Badge>
+            )}
+          </span>
+        ),
+      })];
+    }
+    const isOpen = expandedGroups.has(n.key);
+    const canExpand = n.children.length > 0;
+    const toggle = () => setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(n.key)) next.delete(n.key); else next.add(n.key);
+      return next;
+    });
+    const out: ReactNode[] = [renderRow(n.header, {
+      key: n.key, depth: n.depth, isHeader: true,
+      onClick: canExpand ? toggle : undefined,
+      leadCell: (
+        <span className="inline-flex items-center gap-2" style={{ paddingLeft: n.depth * 18 }}>
+          {canExpand ? (
+            <button type="button" onClick={(e) => { e.stopPropagation(); toggle(); }} className="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-muted/50 shrink-0" aria-label={isOpen ? "Collapse" : "Expand"}>
+              {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+            </button>
+          ) : <span className="w-5 shrink-0" />}
+          <span className="font-semibold">{n.label}</span>
+          <Badge variant="outline" className="text-[9px] px-1 py-0 rounded font-normal text-muted-foreground border-border shrink-0">
+            {n.count} {n.count === 1 ? "customer" : "customers"}
+          </Badge>
+        </span>
+      ),
+    })];
+    if (isOpen) for (const c of n.children) out.push(...renderNode(c));
+    return out;
+  };
 
   const handleExport = () => {
     if (rows.length === 0) {
@@ -1229,9 +1492,10 @@ export default function CustomerRiskRegister() {
             <h1 className="text-2xl font-bold text-foreground">Customer Risk Register</h1>
             <p className="text-sm text-muted-foreground">
               {(() => {
-                const unit = viewMode === "group" ? "group" : "customer";
-                if (rows.length === 0) return `0 of ${allData.length} ${unit}s`;
-                return `Showing ${rangeStart}–${rangeEnd} of ${rows.length} ${unit}${rows.length !== 1 ? "s" : ""}`;
+                if (groupTree.length === 0) return `0 of ${allData.length} customers`;
+                const isFlat = groupBy.length === 1 && groupBy[0] === "customer";
+                const noun = isFlat ? "customer" : groupByNoun;
+                return `Showing ${rangeStart}–${rangeEnd} of ${groupTree.length} ${noun}${groupTree.length !== 1 ? "s" : ""}${isFlat ? "" : ` · ${rows.length} customers`}`;
               })()}
             </p>
             <p className="text-[11px] text-muted-foreground/80 italic mt-0.5">
@@ -1279,29 +1543,17 @@ export default function CustomerRiskRegister() {
         </div>
       </div>
 
+      {/* Group-by builder */}
+      <Card className="rounded-card border-border bg-surface">
+        <CardContent className="p-4">
+          <GroupByBuilder dimensions={R_DIMENSIONS} presets={R_PRESETS} value={groupBy} onChange={setGroupBy} />
+        </CardContent>
+      </Card>
+
       {/* Filters */}
       <Card className="rounded-card border-border bg-surface">
         <CardContent className="p-4">
           <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">View</span>
-              <div className="inline-flex rounded-input border border-border h-9 overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("customer")}
-                  className={`px-3 text-sm font-medium transition-colors ${viewMode === "customer" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted/50"}`}
-                >
-                  Customers
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("group")}
-                  className={`px-3 text-sm font-medium transition-colors border-l border-border ${viewMode === "group" ? "bg-primary text-primary-foreground" : "bg-transparent text-foreground hover:bg-muted/50"}`}
-                >
-                  Groups
-                </button>
-              </div>
-            </div>
             <div className="flex flex-col gap-1 flex-1 min-w-[200px] max-w-xs">
               <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Search</span>
               <div className="relative">
@@ -1622,271 +1874,14 @@ export default function CustomerRiskRegister() {
                   <TableCell className="w-8" />
                 </TableRow>
               )}
-              {paginatedRows.length === 0 ? (
+              {paginatedNodes.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={visibleCols.size + 1} className="text-center py-12 text-muted-foreground">
-                    No {viewMode === "group" ? "groups" : "customers"} match your filters.
+                    No {groupByNoun}s match your filters.
                   </TableCell>
                 </TableRow>
               ) : (
-                paginatedRows.flatMap((row) => {
-                  const isExpandableGroup = viewMode === "group" && (row.isGroup ?? false);
-                  const isExpanded        = isExpandableGroup && expandedGroups.has(row.name);
-                  const navTarget = withSaleType(isExpandableGroup
-                    ? `/outstanding-dashboard/group/${encodeURIComponent(row.name)}`
-                    : `/outstanding-dashboard/customer/${encodeURIComponent(row.name)}`);
-                  // `rows` has already pruned childNames to those that pass the
-                  // active filters (and degraded single-child groups to plain
-                  // rows), so this lookup is straightforward.
-                  const visibleChildren: CustomerRow[] = isExpandableGroup
-                    ? (row.childNames ?? [])
-                        .map((n) => customerByName.get(n) as CustomerRow | undefined)
-                        .filter((c): c is CustomerRow => !!c)
-                    : [];
-                  // Split each consolidated child into its per-ledger rows so a
-                  // multi-company customer shows once per company/location.
-                  const visibleLedgerChildren: CustomerRow[] = isExpandableGroup
-                    ? visibleChildren.flatMap(ledgerRowsOf)
-                    : [];
-
-                  const renderRow = (
-                    r: CustomerRow,
-                    opts: { isChild?: boolean; key: string; onClick: () => void; leadCell: ReactNode },
-                  ) => (
-                    <TableRow
-                      key={opts.key}
-                      className={`group hover:bg-muted/30 transition-colors cursor-pointer ${opts.isChild ? "bg-muted/10" : ""}`}
-                      onClick={opts.onClick}
-                    >
-                      {visibleCols.has("name") && (() => {
-                        const f = freezeStick("name", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
-                        return (
-                          <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>
-                            {opts.leadCell}
-                          </TableCell>
-                        );
-                      })()}
-                      {visibleCols.has("salesPerson") && (() => {
-                        const f = freezeStick("salesPerson", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
-                        return (
-                          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`}>{r.salesPersons?.join(", ") ?? r.salesPerson}</TableCell>
-                        );
-                      })()}
-                      {visibleCols.has("companies") && (() => {
-                        const f = freezeStick("companies", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
-                        return (
-                          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.companies?.join(", ")}>{showList(r.companies)}</TableCell>
-                        );
-                      })()}
-                      {visibleCols.has("locations") && (() => {
-                        const f = freezeStick("locations", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" });
-                        return (
-                          <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.locations?.join(", ")}>{showList(r.locations)}</TableCell>
-                        );
-                      })()}
-                      {visibleCols.has("openingBalance") && (
-                        <TableCell className="text-sm text-right font-mono">{fmt(r.openingBalance)}</TableCell>
-                      )}
-                      {visibleCols.has("sales") && (
-                        <TableCell className="text-sm text-right font-mono">{fmt(r.sales)}</TableCell>
-                      )}
-                      {visibleCols.has("receipts") && (
-                        <TableCell className="text-sm text-right font-mono">{fmt(r.receipts)}</TableCell>
-                      )}
-                      {visibleCols.has("creditNotes") && (
-                        <TableCell className="text-sm text-right font-mono">{fmt(r.creditNotes)}</TableCell>
-                      )}
-                      {visibleCols.has("debitNotes") && (
-                        <TableCell className="text-sm text-right font-mono">{fmtINRMoney(r.debitNotes ?? 0)}</TableCell>
-                      )}
-                      {visibleCols.has("journalAdjustments") && (
-                        <TableCell className={`text-sm text-right font-mono ${(r.journalAdjustments ?? 0) > 0 ? "text-destructive" : (r.journalAdjustments ?? 0) < 0 ? "text-emerald-700" : ""}`}>
-                          {fmtINRDrCr(r.journalAdjustments ?? 0)}
-                        </TableCell>
-                      )}
-                      {visibleCols.has("outstanding") && (
-                        <TableCell className={`text-sm text-right font-mono font-semibold ${r.outstanding < 0 ? "text-emerald-600" : ""}`}>
-                          {fmt(Math.abs(r.outstanding))}
-                          {r.outstanding < 0 && <span className="text-[10px] font-normal ml-0.5">(Cr)</span>}
-                        </TableCell>
-                      )}
-                      {visibleCols.has("overdue") && (
-                        <TableCell className={`text-sm text-right font-mono ${overdueForRow(r) > 0 ? "text-destructive font-semibold" : ""}`}>
-                          {fmt(overdueForRow(r))}
-                        </TableCell>
-                      )}
-                      {visibleCols.has("maxOverdueDays") && (
-                        <TableCell className={`text-sm text-right font-mono ${r.maxOverdueDays > 180 ? "text-destructive font-semibold" : r.maxOverdueDays > 90 ? "text-primary font-semibold" : ""}`}>
-                          {r.maxOverdueDays}
-                        </TableCell>
-                      )}
-                      {visibleCols.has("creditPeriod") && (
-                        <TableCell className="text-sm text-right">{r.creditPeriod}d</TableCell>
-                      )}
-                      {visibleCols.has("creditLimit") && (
-                        <TableCell className="text-sm text-right font-mono">{fmt(r.creditLimit)}</TableCell>
-                      )}
-                      {visibleCols.has("proposedCreditLimit3M") && (
-                        <TableCell className="text-sm text-right font-mono whitespace-nowrap">
-                          <UITooltip delayDuration={150}>
-                            <UITooltipTrigger asChild>
-                              <span
-                                className="inline-flex items-center cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-2"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {fmt(r.proposedCreditLimit3M ?? 0)}
-                                <DeltaBadge pct={r.proposedCreditLimit3MDeltaPct ?? null} />
-                              </span>
-                            </UITooltipTrigger>
-                            <UITooltipContent
-                              side="left"
-                              className="w-[22rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <ThreeMProposedReason row={r} />
-                            </UITooltipContent>
-                          </UITooltip>
-                        </TableCell>
-                      )}
-                      {visibleCols.has("proposedCreditLimitAI") && (
-                        <TableCell className="text-sm text-right font-mono whitespace-nowrap">
-                          <UITooltip delayDuration={150}>
-                            <UITooltipTrigger asChild>
-                              <span
-                                className="inline-flex items-center cursor-help underline decoration-dotted decoration-muted-foreground/40 underline-offset-2"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {fmt(r.proposedCreditLimitAI ?? 0)}
-                                <DeltaBadge pct={r.proposedCreditLimitAIDeltaPct ?? null} />
-                              </span>
-                            </UITooltipTrigger>
-                            <UITooltipContent
-                              side="left"
-                              className="w-[22rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <AIProposedReason
-                                row={r}
-                              />
-                            </UITooltipContent>
-                          </UITooltip>
-                        </TableCell>
-                      )}
-                      {visibleCols.has("utilization") && (
-                        <TableCell className={`text-sm text-right font-mono font-semibold ${r.blocked ? "text-muted-foreground" : r.utilization > 100 ? "text-destructive" : r.utilization > 80 ? "text-primary" : ""}`}>
-                          {r.blocked ? "—" : `${r.utilization}%`}
-                        </TableCell>
-                      )}
-                      {visibleCols.has("risk") && (
-                        <TableCell>
-                          <UITooltip delayDuration={150}>
-                            <UITooltipTrigger asChild>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] px-1.5 py-0 rounded-button capitalize cursor-help ${riskStyle[r.risk]}`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {r.risk}
-                              </Badge>
-                            </UITooltipTrigger>
-                            <UITooltipContent
-                              side="left"
-                              className="w-[20rem] max-w-[calc(100vw-2rem)] p-3 text-xs leading-relaxed whitespace-normal break-words"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <RiskReason row={r} />
-                            </UITooltipContent>
-                          </UITooltip>
-                        </TableCell>
-                      )}
-                      {visibleCols.has("blocked") && (
-                        <TableCell>
-                          {r.blocked ? (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30">
-                              Blocked
-                            </Badge>
-                          ) : (
-                            <span className="text-[10px] text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      )}
-                      <TableCell>
-                        <Button
-                          variant="ghost" size="sm"
-                          onClick={(e) => { e.stopPropagation(); opts.onClick(); }}
-                          className="h-7 w-7 p-0 rounded-button text-muted-foreground hover:text-primary"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-
-                  const parentLead = (
-                    <span className="inline-flex items-center gap-2">
-                      {isExpandableGroup ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedGroups((prev) => {
-                              const next = new Set(prev);
-                              if (next.has(row.name)) next.delete(row.name);
-                              else                     next.add(row.name);
-                              return next;
-                            });
-                          }}
-                          className="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-muted/50 shrink-0"
-                          aria-label={isExpanded ? "Collapse group" : "Expand group"}
-                        >
-                          {isExpanded
-                            ? <ChevronDown  className="h-3.5 w-3.5" />
-                            : <ChevronRight className="h-3.5 w-3.5" />}
-                        </button>
-                      ) : (
-                        <span className="w-5 shrink-0" />
-                      )}
-                      {row.name}
-                      {isExpandableGroup && (
-                        <Badge variant="outline" className="text-[9px] px-1 py-0 rounded font-normal text-muted-foreground border-border shrink-0">
-                          {visibleLedgerChildren.length} ledgers
-                        </Badge>
-                      )}
-                      {row.sales === 0 && row.receipts === 0 && row.creditNotes === 0 && (
-                        <Badge className="text-[9px] px-1 py-0 bg-amber-50 text-amber-700 border border-amber-200 rounded font-normal shrink-0">
-                          No Activity
-                        </Badge>
-                      )}
-                    </span>
-                  );
-
-                  const out: ReactNode[] = [];
-                  out.push(renderRow(row, {
-                    key: row.id,
-                    onClick: () => openInNewTab(navTarget),
-                    leadCell: parentLead,
-                  }));
-
-                  if (isExpanded) {
-                    for (const child of visibleLedgerChildren) {
-                      const ledgerTag = [child.companies?.[0], child.locations?.[0]].filter(Boolean).join(" · ");
-                      out.push(renderRow(child, {
-                        key: `${row.id}::${child.id}`,
-                        isChild: true,
-                        onClick: () => openInNewTab(withSaleType(`/outstanding-dashboard/customer/${encodeURIComponent(child.name)}`)),
-                        leadCell: (
-                          <span className="inline-flex items-center gap-2 pl-7 text-muted-foreground">
-                            <span className="text-xs">↳</span>
-                            <span className="text-foreground">{child.name}</span>
-                            {ledgerTag && <span className="text-[11px] text-muted-foreground">{ledgerTag}</span>}
-                          </span>
-                        ),
-                      }));
-                    }
-                  }
-
-                  return out;
-                })
+                paginatedNodes.flatMap((n) => renderNode(n))
               )}
             </TableBody>
           </Table>
@@ -1914,7 +1909,7 @@ export default function CustomerRiskRegister() {
               </SelectContent>
             </Select>
             <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {rangeStart}–{rangeEnd} of {rows.length}
+              {rangeStart}–{rangeEnd} of {groupTree.length}
             </span>
           </div>
           {totalPages > 1 && (
