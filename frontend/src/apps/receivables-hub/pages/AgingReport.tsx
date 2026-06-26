@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fra
 import { Link } from "react-router-dom";
 import {
   CalendarClock, ChevronRight, ChevronDown, Download, Plus, X, ArrowLeft, Info, Pin,
-  ArrowUpDown, ArrowUp, ArrowDown,
+  ArrowUpDown, ArrowUp, ArrowDown, Search,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -23,7 +23,7 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import {
-  enumerateBills, buildAgingTree, billMatchesPath, billMatchesColumn,
+  enumerateBills, ledgerAdjBill, buildAgingTree, billMatchesPath, billMatchesColumn,
   AGING_COLUMNS, DIMENSION_LABELS, DIMENSION_ORDER,
   type AgingDimension, type AgingNode, type AgingColumn, type EnrichedBill, type MetricKey,
 } from "@hub/lib/agingReport";
@@ -59,9 +59,11 @@ const PRESETS: { label: string; dims: AgingDimension[] }[] = [
   { label: "Customer", dims: ["customer"] },
   { label: "Customer Group", dims: ["group"] },
   { label: "Salesperson", dims: ["salesperson"] },
+  { label: "Customer Category", dims: ["category"] },
   { label: "Sale Type → Customer", dims: ["saleType", "customer"] },
   { label: "Salesperson → Customer", dims: ["salesperson", "customer"] },
   { label: "Customer Group → Customer", dims: ["group", "customer"] },
+  { label: "Customer Category → Customer", dims: ["category", "customer"] },
 ];
 
 export default function AgingReport() {
@@ -73,8 +75,19 @@ export default function AgingReport() {
   const [locations, setLocations] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  // Customer Segment — mirrors the Dashboard / Risk Register / Collection Report filter.
+  // "Active" = had any activity (sales / receipts / credit notes / other payments) in the FY,
+  // judged on the customer's COMBINED (consolidate-by-name) totals. Defaults to Active so this
+  // report's Total Outstanding lines up with the Collection Report's Outstanding (Today), which
+  // is also Active-by-default. (A residual gap remains: this report is bill-wise gross, the
+  // Collection Report's figure is net ledger balance — a known pipeline-basis difference.)
+  const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [customerNames, setCustomerNames] = useState<string[]>([]);
+  // Free-text search across the rows below — matches any group / customer / sale-type
+  // label (or its sub-label) at any level of the roll-up. Space-separated tokens are
+  // AND-ed against the node's path text, so "ink mumbai" finds Mumbai rows under Ink.
+  const [search, setSearch] = useState("");
 
   const companyOptions = useMemo(
     () => [...new Set(customers.map((c) => c.company).filter(Boolean))].sort(),
@@ -161,7 +174,7 @@ export default function AgingReport() {
   useEffect(() => {
     setExpanded(new Set());
     setPage(1);
-  }, [groupBy, companies, locations, salespersons, categories, saleTypes, customerNames]);
+  }, [groupBy, companies, locations, salespersons, categories, customerSegment, saleTypes, customerNames, search]);
 
   const toggle = (key: string) =>
     setExpanded((prev) => {
@@ -171,22 +184,67 @@ export default function AgingReport() {
       return next;
     });
 
+  // ── Scope the customer set (category + Customer Segment) ─────────────────────
+  // The company / location / salesperson / customer-name filters are applied inside
+  // enumerateBills (via `filters`); here we narrow the customer universe by category
+  // and the Customer Segment. Segment is judged on each customer's COMBINED (consolidate-
+  // by-name) activity over the same dimension-filtered set the Collection Report uses, so
+  // an opening-balance-only ledger of a customer who is active elsewhere stays in "Active"
+  // and the two reports reconcile. (Mirrors SalespersonCollectionReport's segment logic.)
+  const scopedCustomers = useMemo(() => {
+    let d = customers.filter((c) => matchesCategory(c, categories));
+    if (companies.length > 0) { const s = new Set(companies); d = d.filter((c) => s.has(c.company)); }
+    if (locations.length > 0) { const s = new Set(locations); d = d.filter((c) => s.has(c.location)); }
+    if (salespersons.length > 0) { const s = new Set(salespersons); d = d.filter((c) => s.has(c.salesPerson)); }
+    if (customerNames.length > 0) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
+    if (customerSegment !== "all") {
+      const act = new Map<string, number>();
+      for (const c of d) {
+        const a = c.sales + c.receipts + c.creditNotes + (c.otherPayments ?? 0);
+        act.set(c.name, (act.get(c.name) ?? 0) + a);
+      }
+      d = d.filter((c) =>
+        customerSegment === "active" ? (act.get(c.name) ?? 0) > 0 : (act.get(c.name) ?? 0) <= 0,
+      );
+    }
+    return d;
+  }, [customers, categories, companies, locations, salespersons, customerNames, customerSegment]);
+
   // ── Build the bill list + tree ───────────────────────────────────────────────
   const filters = useMemo(
     () => ({ companies, locations, salespersons, saleTypes: saleTypes as SaleType[], customerNames }),
     [companies, locations, salespersons, saleTypes, customerNames],
   );
-  const bills = useMemo(
+  const baseBills = useMemo(
     () =>
       enumerateBills(
-        customers.filter((c) => matchesCategory(c, categories)),
+        scopedCustomers,
         customerDetail,
         asOfDate,
         filters,
         customerGroupMap.mapping,
       ),
-    [customers, customerDetail, asOfDate, filters, customerGroupMap, categories],
+    [scopedCustomers, customerDetail, asOfDate, filters, customerGroupMap],
   );
+  // Anchor each customer's Total Outstanding to its NET ledger balance (c.outstanding) — the
+  // SAME figure the dashboard / Salesperson Collection Report show — by injecting one synthetic
+  // "ledger adjustment" line per customer carrying (c.outstanding − Σ that customer's real bills).
+  // It lands in the dedicated "Unbilled Adj." column, so the age / on-account / overdue buckets
+  // stay bill-wise while the grand total ties EXACTLY to Outstanding (Today). Skipped under a
+  // sale-type FILTER: c.outstanding isn't split by type, so we can't anchor per-type there and
+  // fall back to pure bill-wise (matching the Collection Report, which also estimates by type).
+  const bills = useMemo(() => {
+    const stActive = saleTypes.length > 0 && saleTypes.length < 5;
+    if (stActive) return baseBills;
+    const billNet = new Map<string, number>();
+    for (const b of baseBills) billNet.set(b.cust.id, (billNet.get(b.cust.id) ?? 0) + b.inv.pending);
+    const extra: EnrichedBill[] = [];
+    for (const c of scopedCustomers) {
+      const adj = c.outstanding - (billNet.get(c.id) ?? 0);
+      if (Math.abs(adj) >= 0.5) extra.push(ledgerAdjBill(c, adj, customerGroupMap.mapping));
+    }
+    return extra.length ? [...baseBills, ...extra] : baseBills;
+  }, [baseBills, scopedCustomers, customerGroupMap, saleTypes]);
   const tree = useMemo(() => buildAgingTree(bills, groupBy, asOfDate), [bills, groupBy, asOfDate]);
 
   // Re-sort every level of the roll-up by the active column (the tree builder seeds
@@ -204,6 +262,28 @@ export default function AgingReport() {
     return sortNodes(tree.roots);
   }, [tree.roots, sortKey, sortDir]);
 
+  // ── Free-text search ─────────────────────────────────────────────────────────
+  // Filter the roll-up to rows that match the query. A node is kept if its own
+  // label/sub matches (its whole subtree comes along), or if any descendant matches
+  // (the node is kept as a path to that match, with only matching children). Tokens
+  // are matched against the node's text combined with its ancestors', so a search can
+  // span levels (e.g. parent sale type + child customer). Matches auto-expand below.
+  const searchActive = search.trim().length > 0;
+  const filteredRoots = useMemo(() => {
+    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return sortedRoots;
+    const nodeText = (n: AgingNode) => `${n.label} ${n.sub ?? ""}`.toLowerCase();
+    const filter = (nodes: AgingNode[], ancestorText: string): AgingNode[] =>
+      nodes.reduce<AgingNode[]>((acc, n) => {
+        const text = `${ancestorText} ${nodeText(n)}`;
+        if (tokens.every((t) => text.includes(t))) { acc.push(n); return acc; } // self/path match → keep subtree
+        const kids = n.children.length ? filter(n.children, text) : [];
+        if (kids.length) acc.push({ ...n, children: kids });
+        return acc;
+      }, []);
+    return filter(sortedRoots, "");
+  }, [sortedRoots, search]);
+
   // ── Invoice drill-down ───────────────────────────────────────────────────────
   const [drill, setDrill] = useState<{ open: boolean; title: string; subtitle: string; rows: InvoiceDrillRow[] }>({
     open: false,
@@ -212,16 +292,13 @@ export default function AgingReport() {
     rows: [],
   });
 
-  // Drill rules mirror the row split: grand total = all bills (net); a normal
-  // group row = its positive bills; the On Account row = the negative credits.
+  // Drill matches the clicked column directly (billMatchesColumn handles sign):
+  // the age buckets → positive bills, On Account → negative credits, Total → all (net).
   const openDrillFor = (node: AgingNode | null, col: AgingColumn) => {
     let matched: EnrichedBill[];
     let scopeLabel: string;
-    if (node?.isOnAccount) {
-      matched = bills.filter((b) => b.inv.pending < 0 && billMatchesColumn(b, col.key));
-      scopeLabel = node.label;
-    } else if (node) {
-      matched = bills.filter((b) => b.inv.pending > 0 && billMatchesPath(b, node.path) && billMatchesColumn(b, col.key));
+    if (node) {
+      matched = bills.filter((b) => billMatchesPath(b, node.path) && billMatchesColumn(b, col.key));
       scopeLabel = node.sub ? `${node.label} · ${node.sub}` : node.label;
     } else {
       matched = bills.filter((b) => billMatchesColumn(b, col.key));
@@ -233,17 +310,22 @@ export default function AgingReport() {
     setDrill({ open: true, title: `${lens} · ${col.label}`, subtitle: scopeLabel, rows });
   };
 
-  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(sortedRoots.length / pageSize));
+  const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(filteredRoots.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const pagedRoots =
-    pageSize === "all" ? sortedRoots : sortedRoots.slice((safePage - 1) * pageSize, safePage * pageSize);
+    pageSize === "all" ? filteredRoots : filteredRoots.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   // ── Filter chips ─────────────────────────────────────────────────────────────
   const chips: FilterChip[] = [
+    searchActive && { label: `Search: “${search.trim()}”`, onRemove: () => setSearch("") },
     companies.length > 0 && { label: `Company: ${companies.join(", ")}`, onRemove: () => setCompanies([]) },
     locations.length > 0 && { label: `Location: ${locations.join(", ")}`, onRemove: () => setLocations([]) },
     salespersons.length > 0 && { label: `Salesperson: ${salespersons.length} sel.`, onRemove: () => setSalespersons([]) },
     categories.length > 0 && { label: `Category: ${categories.join(", ")}`, onRemove: () => setCategories([]) },
+    customerSegment !== "all" && {
+      label: `Segment: ${customerSegment === "active" ? "Active" : "No Activity"}`,
+      onRemove: () => setCustomerSegment("all"),
+    },
     saleTypes.length > 0 && { label: `Sale Type: ${saleTypes.length} sel.`, onRemove: () => setSaleTypes([]) },
     customerNames.length > 0 && {
       label: customerNames.length <= 2 ? `Customer: ${customerNames.join(", ")}` : `Customer: ${customerNames.length} sel.`,
@@ -252,10 +334,12 @@ export default function AgingReport() {
   ].filter(Boolean) as FilterChip[];
 
   const clearFilters = () => {
+    setSearch("");
     setCompanies([]);
     setLocations([]);
     setSalespersons([]);
     setCategories([]);
+    setCustomerSegment("all");
     setSaleTypes([]);
     setCustomerNames([]);
   };
@@ -266,6 +350,7 @@ export default function AgingReport() {
     if (locations.length) filterSummary.push(`Location: ${locations.join(", ")}`);
     if (salespersons.length) filterSummary.push(`Salesperson: ${salespersons.join(", ")}`);
     if (categories.length) filterSummary.push(`Category: ${categories.join(", ")}`);
+    if (customerSegment !== "all") filterSummary.push(`Segment: ${customerSegment === "active" ? "Active" : "No Activity"}`);
     if (saleTypes.length) filterSummary.push(`Sale Type: ${saleTypes.join(", ")}`);
     if (customerNames.length) filterSummary.push(`Customer: ${customerNames.join(", ")}`);
     exportAgingReportXlsx(tree, { groupBy, asOfDate, filterSummary });
@@ -328,7 +413,8 @@ export default function AgingReport() {
   const renderNodes = (nodes: AgingNode[]): ReactNode =>
     nodes.map((n) => {
       const hasChildren = n.children.length > 0;
-      const isOpen = expanded.has(n.key);
+      // While searching, force every matched branch open so nested hits are visible.
+      const isOpen = searchActive || expanded.has(n.key);
       const tint = n.depth === 0 ? "" : n.depth === 1 ? "bg-muted/20" : "bg-muted/10";
       return (
         <Fragment key={n.key}>
@@ -440,11 +526,41 @@ export default function AgingReport() {
           <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/60">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">Filters</span>
             <div className="pt-2 flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, sale type…"
+                  className="h-8 w-48 pl-7 pr-6 text-xs rounded-input border border-border bg-surface text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                />
+                {search && (
+                  <button
+                    type="button"
+                    onClick={() => setSearch("")}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    title="Clear search"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
               <MultiSelect options={customerOptions} value={customerNames} onChange={setCustomerNames} allLabel="All Customers" noun="customers" triggerClassName="h-8 w-48 text-xs rounded-input" />
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              <Select value={customerSegment} onValueChange={(v) => setCustomerSegment(v as "all" | "active" | "no_activity")}>
+                <SelectTrigger className="h-8 w-40 rounded-input border-border text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Customers</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="no_activity">No Activity</SelectItem>
+                </SelectContent>
+              </Select>
               <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="h-8 w-40 text-xs rounded-input" />
             </div>
           </div>
@@ -455,7 +571,7 @@ export default function AgingReport() {
       {/* Basis note */}
       <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
         <Info className="h-3.5 w-3.5 shrink-0" />
-        Bill-wise (gross) basis — sums open-bill pending, like the source workbook. May differ slightly from the dashboard's net outstanding. Overdue ⊆ Outstanding.
+        Total Outstanding = Out&lt;180 + Out&gt;180 + On Account + Unbilled Adj, and is anchored to the NET ledger balance — so it ties exactly to the Dashboard / Salesperson Collection Report's "Outstanding (Today)". The age buckets &amp; On Account are bill-wise; "Unbilled Adj." is the part of the net balance not on any bill (advances w/o a bill, cheque returns, opening residue, sync gaps). Overdue buckets remain bill-wise. Under a Sale Type filter the total falls back to bill-wise (the net balance isn't split by type).
         <span className="inline-flex items-center gap-1">· use the <Pin className="h-3 w-3 inline" /> on the group column to freeze it while scrolling.</span>
       </p>
 
@@ -519,6 +635,12 @@ export default function AgingReport() {
                   No open bills match your filters.
                 </TableCell>
               </TableRow>
+            ) : filteredRoots.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={visibleColumns.length + 2} className="text-center py-12 text-muted-foreground">
+                  No rows match “{search.trim()}”.
+                </TableCell>
+              </TableRow>
             ) : (
               <>
                 {/* Grand total */}
@@ -528,16 +650,6 @@ export default function AgingReport() {
                   {metricCells(null, true)}
                 </TableRow>
                 {renderNodes(pagedRoots)}
-                {tree.onAccount && (
-                  <TableRow className="bg-amber-50/70 border-t-2 border-border/50">
-                    <TableCell style={freezeStick("chevron", { bg: "bg-amber-50" }).style} className={freezeStick("chevron", { bg: "bg-amber-50" }).className} />
-                    <TableCell style={freezeStick("label", { bg: "bg-amber-50" }).style} className={`text-[13px] whitespace-nowrap text-foreground/70 italic ${freezeStick("label", { bg: "bg-amber-50" }).className}`}>
-                      {tree.onAccount.label}
-                      <span className="ml-1.5 text-[10px] not-italic opacity-70">advances / unallocated receipts (credit)</span>
-                    </TableCell>
-                    {metricCells(tree.onAccount, false)}
-                  </TableRow>
-                )}
               </>
             )}
           </TableBody>
@@ -545,7 +657,7 @@ export default function AgingReport() {
       </ScrollableTable>
 
       {/* Pagination */}
-      {tree.roots.length > 0 && (
+      {filteredRoots.length > 0 && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span>Rows per page</span>
@@ -563,7 +675,8 @@ export default function AgingReport() {
               </SelectContent>
             </Select>
             <span>
-              {tree.roots.length} top-level {tree.roots.length === 1 ? "group" : "groups"}
+              {filteredRoots.length} top-level {filteredRoots.length === 1 ? "group" : "groups"}
+              {searchActive && <span className="opacity-70"> · matching “{search.trim()}”</span>}
             </span>
           </div>
           {pageSize !== "all" && totalPages > 1 && (

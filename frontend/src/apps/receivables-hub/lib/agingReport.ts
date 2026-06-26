@@ -28,13 +28,14 @@ import type { Customer, CustomerDetail, Invoice, SaleType } from "./types";
 
 /* ── Dimensions ────────────────────────────────────────────────────────────── */
 
-export type AgingDimension = "saleType" | "customer" | "group" | "salesperson" | "company" | "location";
+export type AgingDimension = "saleType" | "customer" | "group" | "salesperson" | "category" | "company" | "location";
 
 export const DIMENSION_LABELS: Record<AgingDimension, string> = {
   saleType: "Sale Type",
   customer: "Customer",
   group: "Customer Group",
   salesperson: "Salesperson",
+  category: "Customer Category",
   company: "Company",
   location: "Location",
 };
@@ -45,6 +46,7 @@ export const DIMENSION_ORDER: AgingDimension[] = [
   "customer",
   "group",
   "salesperson",
+  "category",
   "company",
   "location",
 ];
@@ -57,14 +59,26 @@ const SALE_TYPE_LABEL: Record<SaleType, string> = {
   other: "Other",
 };
 
+/** Single-value customer-category label for the group-by (blank → Uncategorized). */
+function categoryLabel(category: string): string {
+  return category && category.trim() ? category : "Uncategorized";
+}
+
 /* ── Metrics & columns ─────────────────────────────────────────────────────── */
 
 export interface AgingMetrics {
-  /** Outstanding, invoice age < 180 days. */
+  /** Outstanding POSITIVE bills, invoice age < 180 days. */
   outLt180: number;
-  /** Outstanding, invoice age ≥ 180 days. */
+  /** Outstanding POSITIVE bills, invoice age ≥ 180 days. */
   outGe180: number;
-  /** Total outstanding (= outLt180 + outGe180 = sum of bill pending). */
+  /** On-account / advance credits (sum of NEGATIVE-pending bills) — a credit, so ≤ 0. */
+  onAccount: number;
+  /** Ledger reconciliation — the part of the NET ledger balance NOT carried by any real
+   *  bill (advances with no bill line, cheque returns not re-opened, opening residue,
+   *  bill-wise sync gaps). Makes the row tie to the net ledger; ≈ 0 for clean customers. */
+  unbilledAdj: number;
+  /** Total outstanding (NET ledger = outLt180 + outGe180 + onAccount + unbilledAdj). Ties to
+   *  the dashboard / Salesperson Collection Report's "Outstanding (Today)". */
   totalOutstanding: number;
   od_0_30: number;
   od_31_60: number;
@@ -85,6 +99,8 @@ export interface AgingMetrics {
 export type MetricKey =
   | "outLt180"
   | "outGe180"
+  | "onAccount"
+  | "unbilledAdj"
   | "totalOutstanding"
   | "od_0_30"
   | "od_31_60"
@@ -110,6 +126,8 @@ export interface AgingColumn {
 export const AGING_COLUMNS: AgingColumn[] = [
   { key: "outLt180", label: "Out < 180", group: "outstanding" },
   { key: "outGe180", label: "Out > 180", group: "outstanding" },
+  { key: "onAccount", label: "On Account", group: "outstanding" },
+  { key: "unbilledAdj", label: "Unbilled Adj.", group: "outstanding" },
   { key: "totalOutstanding", label: "Total Outstanding", group: "outstanding", total: true, grand: true },
   { key: "od_0_30", label: "0-30", group: "overdue" },
   { key: "od_31_60", label: "31-60", group: "overdue" },
@@ -126,6 +144,8 @@ function emptyMetrics(): AgingMetrics {
   return {
     outLt180: 0,
     outGe180: 0,
+    onAccount: 0,
+    unbilledAdj: 0,
     totalOutstanding: 0,
     od_0_30: 0,
     od_31_60: 0,
@@ -189,6 +209,10 @@ export interface EnrichedBill {
   ageGe180: boolean;
   overdueKey: OverdueKey | null;
   dims: Record<AgingDimension, string>;
+  /** True for a synthetic ledger-reconciliation line (see ledgerAdjBill) — the part of
+   *  the customer's NET ledger balance not carried by any real bill. Routed to the
+   *  "Unbilled Adj." column, never the age / on-account / overdue buckets. */
+  isLedgerAdj?: boolean;
 }
 
 export interface AgingFilters {
@@ -219,6 +243,7 @@ function dimsForCustomer(
     // names fall back to the per-ledger key so same-name ledgers stay split.
     group: groupMapping[c.name] || perLedger,
     salesperson: c.salesPerson || "Unassigned",
+    category: categoryLabel(c.category),
     company: c.company || "—",
     location: c.location || "—",
   };
@@ -282,6 +307,53 @@ export function enumerateBills(
   return bills;
 }
 
+/**
+ * Synthesize a LEDGER-RECONCILIATION line for a customer, carrying `amount` = the part of
+ * their NET ledger balance (customer.outstanding) NOT represented by any real bill:
+ *   amount = c.outstanding − Σ(that customer's real bill pending)
+ *
+ * Adding one per customer makes every row's Total Outstanding equal the net ledger balance —
+ * so the Aging Report ties EXACTLY to the dashboard / Salesperson Collection Report's
+ * "Outstanding (Today)". It absorbs everything the bill-wise list can't represent: advances
+ * with no bill line, cheque returns that didn't re-open a bill, opening-balance residue, and
+ * bill-wise sync gaps / duplicates. Routed to the dedicated "Unbilled Adj." column (flagged
+ * isLedgerAdj) so it never distorts the age / on-account / overdue buckets. Sale type "other"
+ * (a net adjustment belongs to no product).
+ */
+export function ledgerAdjBill(
+  c: Customer,
+  amount: number,
+  groupMapping: Record<string, string> = {},
+): EnrichedBill {
+  const inv: Invoice = {
+    id: `__ledgeradj__${c.id}`,
+    number: "Net ledger balance not on any open bill",
+    billRefName: "",
+    billType: "",
+    date: "",
+    amount: 0,
+    receiptAdj: 0,
+    creditNoteAdj: 0,
+    debitNoteAdj: 0,
+    journalAdj: 0,
+    otherPaymentAdj: 0,
+    pending: amount, // + (receivable not on a bill) or − (credit not on a bill)
+    dueDate: "",
+    overdueDays: 0,
+    status: "pending",
+    voucherType: "other",
+    isCarryforward: false,
+  };
+  return {
+    inv,
+    cust: c,
+    ageGe180: false,
+    overdueKey: null,
+    isLedgerAdj: true,
+    dims: dimsForCustomer(c, "other", groupMapping),
+  };
+}
+
 /* ── Drill-down matchers ───────────────────────────────────────────────────── */
 
 export interface PathSegment {
@@ -298,9 +370,13 @@ export function billMatchesPath(b: EnrichedBill, path: PathSegment[]): boolean {
 export function billMatchesColumn(b: EnrichedBill, col: MetricKey): boolean {
   switch (col) {
     case "outLt180":
-      return !b.ageGe180;
+      return !b.isLedgerAdj && b.inv.pending > 0 && !b.ageGe180;
     case "outGe180":
-      return b.ageGe180;
+      return !b.isLedgerAdj && b.inv.pending > 0 && b.ageGe180;
+    case "onAccount":
+      return !b.isLedgerAdj && b.inv.pending < 0;
+    case "unbilledAdj":
+      return b.isLedgerAdj === true;
     case "totalOutstanding":
       return true;
     case "totalOverdue":
@@ -356,16 +432,27 @@ export interface AgingTree {
 
 function addBill(m: AgingMetrics, b: EnrichedBill): void {
   const p = b.inv.pending;
-  if (b.ageGe180) m.outGe180 += p;
-  else m.outLt180 += p;
+  // Ledger-reconciliation lines go to their own column (not a real bill, no age/overdue).
+  // Otherwise positive bills bucket by invoice age, and on-account / advance credits
+  // (negative pending) go to the On Account column — so a row nets to its true Total
+  // Outstanding (= Out<180 + Out>180 + On Account + Unbilled Adj) without a separate row.
+  if (b.isLedgerAdj) {
+    m.unbilledAdj += p;
+  } else if (p < 0) {
+    m.onAccount += p;
+  } else if (b.ageGe180) {
+    m.outGe180 += p;
+  } else {
+    m.outLt180 += p;
+  }
   m.totalOutstanding += p;
-  if (b.overdueKey) {
+  if (!b.isLedgerAdj && p > 0 && b.overdueKey) {
     m[b.overdueKey] += p;
     m.totalOverdue += p;
     if (b.overdueKey !== "od_121_180" && b.overdueKey !== "od_180_plus") m.od_0_120 += p;
     else m.od_120_plus += p; // 121-180 and 180+
   }
-  m.billCount += 1;
+  if (!b.isLedgerAdj) m.billCount += 1;
 }
 
 /**
@@ -386,37 +473,13 @@ export function buildAgingTree(
     totalIds.add(b.cust.id);
   }
 
-  // Split by sign: on-account / advance credits (negative pending) are pulled out
-  // of the normal grouping so no sale-type / customer / salesperson row goes
-  // negative — they roll into one dedicated "On Account" line instead.
-  const positives: EnrichedBill[] = [];
-  const negatives: EnrichedBill[] = [];
-  for (const b of bills) (b.inv.pending > 0 ? positives : negatives).push(b);
-
+  // On-account / advance credits (negative pending) now live in their own column
+  // (AgingMetrics.onAccount), so every row carries both its positive bills and its
+  // advances and nets to its true Total Outstanding — no separate On Account row.
   const dims = groupBy.length > 0 ? groupBy : (["saleType"] as AgingDimension[]);
-  const roots = groupBills(positives, dims, 0, "", []);
+  const roots = groupBills(bills, dims, 0, "", []);
 
-  let onAccount: AgingNode | null = null;
-  if (negatives.length > 0) {
-    const metrics = emptyMetrics();
-    const ids = new Set<string>();
-    for (const b of negatives) {
-      addBill(metrics, b);
-      ids.add(b.cust.id);
-    }
-    onAccount = {
-      key: "__on_account__",
-      label: "On Account (advances)",
-      depth: 0,
-      path: [],
-      metrics,
-      children: [],
-      customerIds: [...ids],
-      isOnAccount: true,
-    };
-  }
-
-  return { roots, onAccount, total, totalCustomerIds: [...totalIds], asOfDate };
+  return { roots, onAccount: null, total, totalCustomerIds: [...totalIds], asOfDate };
 }
 
 function groupBills(
