@@ -83,6 +83,7 @@ interface CustomerRow {
   sales_by_type: any; receipts_by_type: any; credit_notes_by_type: any;
   debit_notes_by_type: any; journal_by_type: any;
   outstanding_by_type: any; overdue_by_type: any;
+  opening_balance_by_type: any;
 }
 
 function toCustomer(r: CustomerRow): Customer {
@@ -132,6 +133,7 @@ function toCustomer(r: CustomerRow): Customer {
     journalByType: r.journal_by_type ?? {},
     outstandingByType: r.outstanding_by_type ?? {},
     overdueByType: r.overdue_by_type ?? {},
+    openingBalanceByType: r.opening_balance_by_type ?? {},
     lastReceiptDate: null,
     daysSinceLastReceipt: null,
     consecutiveNoPaymentMonths: 0,

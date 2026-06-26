@@ -65,7 +65,7 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
     }, {} as AgingBuckets);
 
     const sumByType = (
-      field: "salesByType" | "receiptsByType" | "creditNotesByType" | "outstandingByType" | "overdueByType"
+      field: "salesByType" | "receiptsByType" | "creditNotesByType" | "outstandingByType" | "overdueByType" | "openingBalanceByType"
     ) =>
       entries.reduce((acc, c) => {
         for (const t of Object.keys(c[field] ?? {}))
@@ -121,6 +121,7 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
       creditNotesByType:  sumByType("creditNotesByType")  as Customer["creditNotesByType"],
       outstandingByType:  sumByType("outstandingByType")  as Customer["outstandingByType"],
       overdueByType:      sumByType("overdueByType")      as Customer["overdueByType"],
+      openingBalanceByType: sumByType("openingBalanceByType") as Customer["openingBalanceByType"],
       companies:               [...new Set(entries.map((c) => c.company))].sort(),
       locations:               [...new Set(entries.map((c) => c.location))].sort(),
       constituentIds:          entries.map((c) => c.id),
@@ -184,7 +185,7 @@ export function consolidateByGroup(
     }, {} as AgingBuckets);
 
     const sumByType = (
-      field: "salesByType" | "receiptsByType" | "creditNotesByType" | "outstandingByType" | "overdueByType"
+      field: "salesByType" | "receiptsByType" | "creditNotesByType" | "outstandingByType" | "overdueByType" | "openingBalanceByType"
     ) =>
       children.reduce((acc, c) => {
         for (const t of Object.keys(c[field] ?? {}))
@@ -259,6 +260,7 @@ export function consolidateByGroup(
       creditNotesByType:  sumByType("creditNotesByType")  as Customer["creditNotesByType"],
       outstandingByType:  sumByType("outstandingByType")  as Customer["outstandingByType"],
       overdueByType:      sumByType("overdueByType")      as Customer["overdueByType"],
+      openingBalanceByType: sumByType("openingBalanceByType") as Customer["openingBalanceByType"],
       companies,
       locations,
       constituentIds,
@@ -593,9 +595,13 @@ export function useAppData(filters: Filters = {}): AppData {
           receipts:       saleTypeList.reduce((s, t) => s + (c.receiptsByType?.[t] ?? 0), 0),
           creditNotes:    saleTypeList.reduce((s, t) => s + (c.creditNotesByType?.[t] ?? 0), 0),
           // Outstanding & overdue keep the sales-mix projection: their untyped
-          // remainder is the opening balance, which has no bill-level sale type.
+          // remainder (advances / unallocated) has no bill-level sale type.
           outstanding:    project(c.outstanding,  c.outstandingByType),
           overdue:        project(c.overdue,      c.overdueByType),
+          // Opening balance is now source-true per sale type (1wM3 split): its
+          // openingBalanceByType sums to openingBalance, so project() carries zero
+          // residual and returns the exact selected-type opening (no smear).
+          openingBalance: project(c.openingBalance, c.openingBalanceByType),
           maxOverdueDays: typeMaxOD,
           agingBuckets:   projectedAgingBuckets,
         };

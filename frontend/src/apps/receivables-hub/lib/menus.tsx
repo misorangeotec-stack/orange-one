@@ -31,6 +31,8 @@ export interface ReceivablesMenu {
   title: string;
   url: string;
   icon: LucideIcon;
+  /** Admin-only menu: never shown to non-admins and excluded from the permission matrix. */
+  adminOnly?: boolean;
 }
 
 export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
@@ -38,17 +40,24 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
   { key: "salesperson-analysis", title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck },
   { key: "salesperson-collection", title: "Salesperson Collection Report", url: `${BASE}/salesperson-collection`, icon: HandCoins },
+  // Hidden for now (avoids confusion with the main Salesperson Collection Report). The page,
+  // route (ReceivablesHubApp.tsx → /monthly-collection) and snapshot capture remain intact —
+  // re-enable by un-commenting this line.
+  // { key: "monthly-collection", title: "Collection Report (v2)", url: `${BASE}/monthly-collection`, icon: HandCoins, adminOnly: true },
   { key: "import", title: "Import Data", url: `${BASE}/import`, icon: PackageOpen },
   { key: "reports", title: "Reports", url: `${BASE}/reports`, icon: FileText },
   { key: "settings", title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },
 ];
 
 /**
- * Menus a given user may see. Admins see all; a non-admin sees everything not in
- * their deny-list. Pure helper so the sidebar and any guard share one rule.
+ * Menus a given user may see. Admins see all; a non-admin sees every non-admin-only menu
+ * not in their deny-list. Pure helper so the sidebar and any guard share one rule.
  */
 export function visibleMenusFor(isAdmin: boolean, hiddenKeys: string[]): ReceivablesMenu[] {
   if (isAdmin) return RECEIVABLES_MENUS;
   const hidden = new Set(hiddenKeys);
-  return RECEIVABLES_MENUS.filter((m) => !hidden.has(m.key));
+  return RECEIVABLES_MENUS.filter((m) => !m.adminOnly && !hidden.has(m.key));
 }
+
+/** Menus eligible for the per-user permission matrix (admin-only menus are excluded). */
+export const PERMISSION_MENUS: ReceivablesMenu[] = RECEIVABLES_MENUS.filter((m) => !m.adminOnly);

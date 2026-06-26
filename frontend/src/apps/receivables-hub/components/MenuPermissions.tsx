@@ -7,7 +7,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
 import { useToast } from "@hub/hooks/use-toast";
-import { RECEIVABLES_MENUS } from "@hub/lib/menus";
+import { PERMISSION_MENUS } from "@hub/lib/menus";
 import { useDirectory } from "@/core/platform/store";
 import type { Profile } from "@/core/platform/types";
 
@@ -97,7 +97,7 @@ export function MenuPermissions() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="sticky left-0 bg-card z-10 min-w-40">User</TableHead>
-                  {RECEIVABLES_MENUS.map((m) => (
+                  {PERMISSION_MENUS.map((m) => (
                     <TableHead key={m.key} className="text-center whitespace-nowrap">
                       {m.title}
                     </TableHead>
@@ -114,7 +114,7 @@ export function MenuPermissions() {
                       <TableCell className="sticky left-0 bg-card z-10 font-medium whitespace-nowrap">
                         {u.name}
                       </TableCell>
-                      {RECEIVABLES_MENUS.map((m) => {
+                      {PERMISSION_MENUS.map((m) => {
                         const canSee = !hidden.includes(m.key);
                         return (
                           <TableCell key={m.key} className="text-center">

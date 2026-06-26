@@ -221,6 +221,51 @@ export type Database = {
           },
         ]
       }
+      receivables_due_snapshot: {
+        Row: {
+          captured_at: string
+          captured_by: string | null
+          company: string | null
+          customer_id: string
+          customer_name: string | null
+          due_soon: number
+          due_upto: number
+          id: number
+          location: string | null
+          month: string
+          opening_outstanding: number
+          salesperson: string | null
+        }
+        Insert: {
+          captured_at?: string
+          captured_by?: string | null
+          company?: string | null
+          customer_id: string
+          customer_name?: string | null
+          due_soon?: number
+          due_upto?: number
+          id?: number
+          location?: string | null
+          month: string
+          opening_outstanding?: number
+          salesperson?: string | null
+        }
+        Update: {
+          captured_at?: string
+          captured_by?: string | null
+          company?: string | null
+          customer_id?: string
+          customer_name?: string | null
+          due_soon?: number
+          due_upto?: number
+          id?: number
+          location?: string | null
+          month?: string
+          opening_outstanding?: number
+          salesperson?: string | null
+        }
+        Relationships: []
+      }
       recurring_task_locations: {
         Row: {
           created_at: string

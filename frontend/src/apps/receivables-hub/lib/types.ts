@@ -78,6 +78,10 @@ export interface Customer {
   journalByType?:     Partial<Record<SaleType, number>>;
   outstandingByType:  Record<SaleType, number>;
   overdueByType:      Record<SaleType, number>;
+  /** Gross opening balance split by sale type (source-true from the 1wM3 bill-wise
+   *  snapshot). Σ over types == openingBalance, so the per-type opening is an exact
+   *  lookup, not a sales-mix estimate. */
+  openingBalanceByType: Record<SaleType, number>;
   obReceiptsApplied:    number;
   obCreditNotesApplied: number;
   lastReceiptDate:             string | null;
