@@ -9,7 +9,6 @@ import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import SalespersonAnalysis from "@hub/pages/SalespersonAnalysis";
 import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport";
-import MonthlyCollectionReport from "@hub/pages/MonthlyCollectionReport";
 import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
@@ -45,7 +44,6 @@ export default function ReceivablesHubApp() {
               <Route path="risk-register" element={<CustomerRiskRegister />} />
               <Route path="salesperson-analysis" element={<SalespersonAnalysis />} />
               <Route path="salesperson-collection" element={<SalespersonCollectionReport />} />
-              <Route path="monthly-collection" element={<MonthlyCollectionReport />} />
               <Route path="customer/:id" element={<CustomerDetail />} />
               <Route path="group/:id" element={<CustomerDetail />} />
               <Route path="import" element={<ImportDashboard />} />
