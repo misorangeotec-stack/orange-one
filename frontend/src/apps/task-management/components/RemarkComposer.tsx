@@ -10,7 +10,7 @@ import { useTaskStore } from "../mock/store";
  * notification row per mentioned user.
  */
 export default function RemarkComposer({ taskId }: { taskId: string }) {
-  const { addRemark, profiles, canRemark } = useTaskStore();
+  const { addRemark, mentionablePeople, canRemark } = useTaskStore();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -24,8 +24,8 @@ export default function RemarkComposer({ taskId }: { taskId: string }) {
 
   const suggestions = useMemo(() => {
     if (query === null) return [];
-    return profiles.filter((p) => p.name.toLowerCase().includes(query)).slice(0, 5);
-  }, [query]);
+    return mentionablePeople.filter((p) => p.name.toLowerCase().includes(query)).slice(0, 5);
+  }, [query, mentionablePeople]);
 
   const pick = (name: string) => {
     setText((t) => t.replace(/@[\p{L}]*$/u, `@${name} `));
@@ -35,7 +35,7 @@ export default function RemarkComposer({ taskId }: { taskId: string }) {
   const post = async () => {
     const body = text.trim();
     if (!body || busy) return;
-    const mentioned = profiles.filter((p) => body.includes(`@${p.name}`)).map((p) => p.id);
+    const mentioned = mentionablePeople.filter((p) => body.includes(`@${p.name}`)).map((p) => p.id);
     setBusy(true);
     setError("");
     try {

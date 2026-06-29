@@ -5,6 +5,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { AppRole, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, TaskLocation, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
+import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
 import { fetchTaskData, type TaskData } from "../data/fetchTaskData";
@@ -118,6 +119,13 @@ interface TaskStoreValue {
 
   // directory (people + departments) — re-exposed from the portal core
   profiles: Profile[];
+  /**
+   * Org-wide, name-only people list for @mention pickers (every user, not just
+   * the RLS-visible downline/same-dept set) so a HOD can tag a senior in another
+   * department or any cross-department colleague. No phone/email (phone = login
+   * password). Falls back to `profiles` until the org list loads.
+   */
+  mentionablePeople: OrgPerson[];
   departments: Department[];
   profileById: (id: string | null) => Profile | undefined;
   departmentById: (id: string | null) => Department | undefined;
@@ -199,6 +207,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     queryKey: ["taskData", user?.id ?? null],
     queryFn: fetchTaskData,
     enabled: !!user,
+  });
+  // Org-wide people list for @mention pickers (see mentionablePeople). Cached
+  // for 5 min; safe to share across the app since it carries no sensitive fields.
+  const { data: orgPeople } = useQuery({
+    queryKey: ["orgPeople"],
+    queryFn: fetchOrgPeople,
+    enabled: !!user,
+    staleTime: 5 * 60 * 1000,
   });
 
   const tasks = data?.tasks ?? [];
@@ -471,6 +487,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
       // ---- directory (delegated to the portal core) ----
       profiles: dir.profiles,
+      // Org-wide @mention list — every user, falling back to the RLS-scoped
+      // directory until list_org_people() resolves.
+      mentionablePeople:
+        orgPeople && orgPeople.length
+          ? orgPeople
+          : dir.profiles.map((p) => ({
+              id: p.id,
+              name: p.name,
+              designation: p.designation,
+              departmentId: p.departmentId,
+              avatarColor: p.avatarColor,
+              role: p.role,
+            })),
       departments: dir.departments,
       profileById: dir.profileById,
       departmentById: dir.departmentById,
@@ -525,7 +554,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       canRecurring: true,
       canWeeklyPlan: true,
     };
-  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, dir, user, role, queryClient]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, orgPeople, dir, user, role, queryClient]);
 
   // Realtime: push the bell + task data when one of my notifications changes
   // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also

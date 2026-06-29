@@ -1069,6 +1069,17 @@ export type Database = {
         Returns: boolean
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
+      list_org_people: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          id: string
+          name: string
+          designation: string | null
+          department_id: string | null
+          avatar_color: string | null
+          role: string
+        }[]
+      }
       touch_last_active: { Args: Record<PropertyKey, never>; Returns: undefined }
       is_hod_of: { Args: { _employee: string; _hod: string }; Returns: boolean }
       is_in_subtree: {
