@@ -1102,6 +1102,7 @@ export type Database = {
         | "shifted"
         | "started"
         | "remark"
+        | "reopened"
       app_role: "admin" | "hod" | "employee" | "sub_hod"
       notification_type: "mention"
       recurrence_type: "daily" | "weekly" | "monthly" | "when" | "quarterly"
@@ -1247,6 +1248,7 @@ export const Constants = {
         "completed",
         "shifted",
         "started",
+        "reopened",
         "remark",
       ],
       app_role: ["admin", "hod", "employee", "sub_hod"],

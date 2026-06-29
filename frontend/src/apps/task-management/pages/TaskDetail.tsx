@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Modal from "@/shared/components/ui/Modal";
-import { dateLabel, timeAgo, formatDateTime } from "@/shared/lib/time";
+import { dateLabel, timeAgo, formatDateTime, weekStartOf, todayIso } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
 import { locationLabel, RECURRENCE_LABEL, type ActivityType } from "../types";
@@ -20,9 +20,10 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask } = useTaskStore();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
+  const [reopening, setReopening] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
   const [togglingNa, setTogglingNa] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -46,6 +47,12 @@ export default function TaskDetail() {
   const info = revisionInfo(task);
   const closed = task.status === "completed" || task.status === "shifted";
   const acts = activityFor(task.id);
+
+  // Reopen: a completed task can be put back to In Progress, but only while it's still
+  // in the CURRENT week — reopening a past week would retroactively change an already
+  // reported scorecard. Gate on `completed` specifically (a `shifted` task isn't reopenable).
+  const isCurrentWeek = task.weekStart === weekStartOf(todayIso());
+  const canReopen = task.status === "completed" && isCurrentWeek && canStatusActions;
 
   // "When" instances can be parked as Not Applicable for the day (reversible).
   // While N/A the normal status actions are hidden and the task is excluded from reports.
@@ -209,6 +216,27 @@ export default function TaskDetail() {
               </Button>
             </span>
           </div>
+        )}
+
+        {/* Closed (completed) task: offer to reopen it back to In Progress.
+            Only for current-week tasks (see canReopen) so past scorecards stay frozen. */}
+        {canReopen && (
+          <Button
+            variant="progress"
+            size="sm"
+            disabled={reopening}
+            onClick={async () => {
+              setReopening(true);
+              try {
+                await reopenTask(task.id);
+              } finally {
+                setReopening(false);
+              }
+            }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v6h6" /><path d="M3 13a9 9 0 1 0 3-7.7L3 8" /></svg>
+            {reopening ? "Reopening…" : "Reopen task"}
+          </Button>
         )}
       </div>
 
@@ -535,7 +563,7 @@ const ICONS = {
 };
 function actIcon(t: ActivityType) {
   if (t === "completed") return ICONS.check;
-  if (t === "revised") return ICONS.revise;
+  if (t === "revised" || t === "reopened") return ICONS.revise;
   if (t === "shifted") return ICONS.shift;
   if (t === "followup") return ICONS.flag;
   if (t === "assigned" || t === "created") return ICONS.user;
@@ -551,6 +579,7 @@ function actVerb(t: ActivityType) {
     completed: "marked it complete",
     shifted: "shifted it to next week",
     started: "started working on it",
+    reopened: "reopened this task",
     remark: "commented",
   }[t];
 }

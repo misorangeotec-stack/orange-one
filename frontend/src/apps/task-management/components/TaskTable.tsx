@@ -1,7 +1,7 @@
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
-import { dateLabel, isOverdue, todayIso } from "@/shared/lib/time";
+import { dateLabel, isOverdue, isToday, todayIso } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
 import { isRecurringTask } from "../mock/selectors";
@@ -158,7 +158,20 @@ export default function TaskTable({ tasks, sort, onSort }: {
                   )}
                   <div className="text-[11.5px] text-grey-2 mt-0.5 truncate">
                     {dept?.name ?? "—"}
-                    {task.followUpDate ? ` · follow-up ${dateLabel(task.followUpDate)}` : ""}
+                    {task.followUpDate && (
+                      <span
+                        className={cn(
+                          isOverdue(task.followUpDate)
+                            ? "text-[#d4493f] font-medium"
+                            : isToday(task.followUpDate)
+                              ? "text-orange font-medium"
+                              : "",
+                        )}
+                      >
+                        {` · follow-up ${dateLabel(task.followUpDate)}`}
+                        {isOverdue(task.followUpDate) ? " (overdue)" : isToday(task.followUpDate) ? " (today)" : ""}
+                      </span>
+                    )}
                   </div>
                 </td>
 

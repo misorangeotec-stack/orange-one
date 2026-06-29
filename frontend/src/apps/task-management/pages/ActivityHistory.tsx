@@ -15,10 +15,12 @@ import type { ActivityType } from "../types";
 const TYPE_LABELS: Record<ActivityType, string> = {
   created: "Created", assigned: "Assigned", started: "Started", revised: "Revised",
   followup: "Follow-up", completed: "Completed", shifted: "Shifted", remark: "Remark",
+  reopened: "Reopened",
 };
 const VERB: Record<ActivityType, string> = {
   created: "created", assigned: "assigned", started: "started", revised: "revised",
   followup: "set a follow-up on", completed: "completed", shifted: "shifted", remark: "commented on",
+  reopened: "reopened",
 };
 
 /** Filterable, workspace/team activity audit trail. */

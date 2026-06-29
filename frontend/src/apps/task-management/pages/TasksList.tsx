@@ -9,7 +9,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
-import { formatDate, isOverdue, isToday } from "@/shared/lib/time";
+import { formatDate, isToday } from "@/shared/lib/time";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -84,7 +84,7 @@ export default function TasksList() {
     () => ({
       all: base.length,
       today: base.filter((t) => isToday(t.dueDate) && t.status !== "completed").length,
-      followup: base.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed").length,
+      followup: base.filter((t) => t.followUpDate && t.status !== "completed").length,
       pending: base.filter((t) => !t.notApplicable && (t.status === "pending" || t.status === "in_progress")).length,
       personal: base.filter((t) => t.isPersonal).length,
     }),
@@ -95,15 +95,22 @@ export default function TasksList() {
     let list = base;
     if (view === "today") list = list.filter((t) => isToday(t.dueDate) && t.status !== "completed");
     else if (view === "followup")
-      list = list.filter((t) => t.followUpDate && (isToday(t.followUpDate) || isOverdue(t.followUpDate)) && t.status !== "completed");
+      // Every open task with a follow-up set — including future ones. Overdue/today
+      // are highlighted in the row; ordering (below) puts overdue first.
+      list = list.filter((t) => t.followUpDate && t.status !== "completed");
     else if (view === "pending") list = list.filter((t) => !t.notApplicable && (t.status === "pending" || t.status === "in_progress"));
     else if (view === "personal") list = list.filter((t) => t.isPersonal);
     return list;
   }, [base, view]);
 
   const sorted = useMemo(
-    () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
-    [filtered, sort, profileById],
+    () =>
+      // The Follow-ups tab is about the follow-up date, so order by it ascending
+      // (overdue first, then today, then upcoming). Other tabs use the column sort.
+      view === "followup"
+        ? [...filtered].sort((a, b) => (a.followUpDate ?? "9999").localeCompare(b.followUpDate ?? "9999"))
+        : sortTasks(filtered, sort, (id) => profileById(id)?.name),
+    [filtered, sort, profileById, view],
   );
 
   const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${sort.key}|${sort.dir}` });

@@ -189,6 +189,24 @@ export async function completeTask(taskId: string, actorId: string, note?: strin
 }
 
 /**
+ * Reopen a completed task: back to in_progress and clear the completion timestamp.
+ * The DB trigger only auto-logs completed/revised/shifted, so we insert the 'reopened'
+ * activity row ourselves (RLS: actor_id = auth.uid()). Location checklist rows keep their
+ * historical timestamps as an audit trail; the location gate re-applies on re-completion.
+ */
+export async function reopenTask(taskId: string, actorId: string): Promise<void> {
+  const { error } = await supabase
+    .from("tasks")
+    .update({ status: "in_progress", completed_at: null })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+  const { error: actErr } = await supabase
+    .from("task_activity")
+    .insert({ task_id: taskId, type: "reopened", actor_id: actorId });
+  if (actErr) throw new Error(actErr.message);
+}
+
+/**
  * Mark a "when" task instance Not Applicable for its day (or back to applicable).
  * Reversible: only the not_applicable flag changes, the underlying status is kept.
  * A plain column update under the existing task UPDATE RLS (assignee/creator/admin/
@@ -204,10 +222,17 @@ export async function setTaskNotApplicable(taskId: string, value: boolean): Prom
 }
 
 /**
- * Revise a task: bump the revision count, stamp last_revised_at, and set the
- * follow-up date. The trigger auto-logs both 'revised' and 'followup', so we only
- * add the optional reason as a 'remark'. The 2-per-week limit is enforced in the
- * store before this is called (and the UI disables the control at the limit).
+ * In-week revise: bump the revision count, stamp last_revised_at, set the
+ * follow-up date, and move the deadline to it (due_date = follow-up, week_start =
+ * that date's Monday — the same week, since the store only routes here when the
+ * follow-up is in the current/earlier week). A later-week follow-up is a *shift*,
+ * not a revision, and is handled in the store via rescheduleTask instead.
+ * Keeping due_date in sync means a revised task isn't flagged overdue before its
+ * follow-up arrives.
+ *
+ * The trigger auto-logs both 'revised' and 'followup', so we only add the optional
+ * reason as a 'remark'. The 2-per-week limit is enforced in the store before this
+ * is called (and the UI disables the control at the limit).
  */
 export async function reviseTask(
   taskId: string,
@@ -221,6 +246,8 @@ export async function reviseTask(
       revision_count: args.currentRevisionCount + 1,
       last_revised_at: new Date().toISOString(),
       follow_up_date: args.followUpDate,
+      due_date: args.followUpDate,
+      week_start: mondayOf(args.followUpDate),
     })
     .eq("id", taskId);
   if (error) throw new Error(error.message);

@@ -368,5 +368,6 @@ function actVerb(t: ActivityType) {
     shifted: "shifted to next week",
     started: "started",
     remark: "commented on",
+    reopened: "reopened",
   }[t];
 }

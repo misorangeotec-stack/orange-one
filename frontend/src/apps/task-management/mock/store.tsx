@@ -7,7 +7,7 @@ import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
-import { isoWeekOf, weekEndOf } from "@/shared/lib/time";
+import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
 import { fetchTaskData, type TaskData } from "../data/fetchTaskData";
 import {
   insertTask,
@@ -15,6 +15,7 @@ import {
   deletePersonalTask as deletePersonalTaskWrite,
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
+  reopenTask as reopenTaskWrite,
   setTaskNotApplicable as setTaskNotApplicableWrite,
   reviseTask as reviseTaskWrite,
   rescheduleTask as rescheduleTaskWrite,
@@ -81,11 +82,18 @@ interface TaskStoreValue {
   deletePersonalTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
+  reopenTask: (id: string) => Promise<void>;
   /** Mark a "when" task instance Not Applicable for its day, or back to applicable. Reversible. */
   setTaskNotApplicable: (id: string, value: boolean) => Promise<void>;
   /** True when this task was generated from a "when" recurring template (so N/A is offered). */
   isWhenTask: (task: Task) => boolean;
-  reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<void>;
+  /**
+   * Revise with a follow-up date. A follow-up in a LATER week is treated as a
+   * shift (original → 'shifted', a continuation task opens in that week) and
+   * returns the new task's id; a same/earlier-week follow-up is a true in-week
+   * revision (capped 2/week) and returns null.
+   */
+  reviseTask: (id: string, args: { followUpDate: string; note?: string }) => Promise<string | null>;
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
   addRemark: (id: string, note: string, mentionedIds: string[]) => Promise<void>;
   markNotificationsRead: (ids: string[]) => Promise<void>;
@@ -298,6 +306,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await completeTaskWrite(id, user.id, note);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
+      // reopenTask: LIVE. Reverses a completion (current-week only, gated in the UI):
+      // status → in_progress, completed_at cleared, and a 'reopened' activity logged.
+      reopenTask: async (id) => {
+        await reopenTaskWrite(id, user.id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
       // task UPDATE RLS (same path as complete). Reversible; excluded from reports
       // in the selectors. Only offered for "when" instances (see isWhenTask).
@@ -311,9 +325,24 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       },
       reviseTask: async (id, args) => {
         const task = tasks.find((t) => t.id === id);
-        if (!task || !revisionInfo(task).allowed) return; // weekly limit / closed guard
+        if (!task) return null;
+        // A follow-up date in a LATER week is a shift, not a revision: route it
+        // through the continuation mechanism (original → 'shifted', a fresh task
+        // opens in the new week) so the move is visible as a shift, and it's
+        // allowed even when the weekly revision limit is reached. Same-week (or
+        // earlier) follow-ups are true in-week revisions, capped at 2/week.
+        const targetWeek = weekStartOf(args.followUpDate);
+        const currentWeek = task.weekStart ?? weekStartOf(todayIso());
+        if (targetWeek > currentWeek) {
+          const newId = await rescheduleTaskWrite(task, args.followUpDate);
+          if (args.note && newId) await addRemarkWrite(newId, args.note, []);
+          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          return newId;
+        }
+        if (!revisionInfo(task).allowed) return null; // weekly revision limit / closed guard
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        return null;
       },
       // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
       // create a linked continuation task + mark the original shifted. Trigger logs

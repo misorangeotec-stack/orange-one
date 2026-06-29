@@ -1,18 +1,30 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { weekStartOf, todayIso } from "@/shared/lib/time";
 import { useTaskStore } from "../mock/store";
 import type { Task } from "../types";
 
-/** Revise a task with a follow-up date. Blocked once the weekly revision limit is hit. */
+/**
+ * Revise a task with a follow-up date. If the follow-up lands in a LATER week the
+ * action becomes a shift (the task is marked Shifted and a fresh copy opens in
+ * that week) — allowed even once the weekly revision limit is hit. A same-week
+ * follow-up is a true in-week revision and is blocked at the limit.
+ */
 export default function ReviseModal({ task, open, onClose }: { task: Task; open: boolean; onClose: () => void }) {
   const { reviseTask, revisionInfo } = useTaskStore();
+  const navigate = useNavigate();
   const info = revisionInfo(task);
   const [followUpDate, setFollowUpDate] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // A follow-up in a later week than the task's current week is a shift, not a
+  // revision (so it doesn't consume a revision and isn't blocked at the limit).
+  const isShift = !!followUpDate && weekStartOf(followUpDate) > (task.weekStart ?? weekStartOf(todayIso()));
 
   // The modal stays mounted (rendered with open=false), so reset its fields each
   // time it opens — otherwise a prior revision's note/date would silently re-post.
@@ -33,8 +45,10 @@ export default function ReviseModal({ task, open, onClose }: { task: Task; open:
     setBusy(true);
     setError("");
     try {
-      await reviseTask(task.id, { followUpDate, note: note.trim() || undefined });
+      const shiftedToId = await reviseTask(task.id, { followUpDate, note: note.trim() || undefined });
       onClose();
+      // Shifted to a later week → jump to the continuation task that opened there.
+      if (shiftedToId) navigate(`/task-management/tasks/${shiftedToId}`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -51,7 +65,9 @@ export default function ReviseModal({ task, open, onClose }: { task: Task; open:
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={submit} disabled={!info.allowed || busy}>{busy ? "Saving…" : "Submit revision"}</Button>
+          <Button onClick={submit} disabled={busy || !followUpDate || (!isShift && !info.allowed)}>
+            {busy ? "Saving…" : isShift ? "Shift to that week" : "Submit revision"}
+          </Button>
         </>
       }
     >
@@ -65,16 +81,20 @@ export default function ReviseModal({ task, open, onClose }: { task: Task; open:
           {info.allowed ? (
             <>Revisions used this week: <b>{info.usedThisWeek}/{info.max}</b> · {info.remaining} remaining</>
           ) : (
-            <>Revision limit reached ({info.max}/week). This task can only be completed, kept pending, or shifted to next week.</>
+            <>Revision limit reached ({info.max}/week). This task can only be completed, kept pending, or shifted — pick a follow-up date in a later week to shift it.</>
           )}
         </div>
 
-        <FieldLabel label="Follow-up date" required>
-          <TextInput type="date" value={followUpDate} onChange={(e) => { setFollowUpDate(e.target.value); setError(""); }} disabled={!info.allowed} />
+        <FieldLabel
+          label="Follow-up date"
+          required
+          hint={isShift ? "later week → the task is marked Shifted and a fresh copy opens there (no revision used)" : "due date moves to this date (uses one revision)"}
+        >
+          <TextInput type="date" value={followUpDate} onChange={(e) => { setFollowUpDate(e.target.value); setError(""); }} />
         </FieldLabel>
 
         <FieldLabel label="Reason / note" hint="optional">
-          <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} disabled={!info.allowed} placeholder="Why is this being revised? What's the new plan?" />
+          <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why is this being revised / shifted? What's the new plan?" />
         </FieldLabel>
 
         {error && <p className="text-[13px] text-[#d4493f]">{error}</p>}

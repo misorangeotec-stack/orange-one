@@ -60,6 +60,7 @@ export type ActivityType =
   | "completed"
   | "shifted"
   | "started"
+  | "reopened"
   | "remark";
 
 /** A location is a company + place pair (e.g. Otec · Surat), or the special General entry. */
