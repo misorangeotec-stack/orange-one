@@ -13,6 +13,7 @@ import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
   deletePersonalTask as deletePersonalTaskWrite,
+  deleteTask as deleteTaskWrite,
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
   reopenTask as reopenTaskWrite,
@@ -80,6 +81,7 @@ interface TaskStoreValue {
   updatePersonalTask: (id: string, patch: { title: string; description?: string; dueDate: string | null }) => Promise<void>;
   /** Delete a personal task (creator only, RLS-enforced). */
   deletePersonalTask: (id: string) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
   reopenTask: (id: string) => Promise<void>;
@@ -294,6 +296,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       },
       deletePersonalTask: async (id) => {
         await deletePersonalTaskWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      deleteTask: async (id) => {
+        await deleteTaskWrite(id);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the

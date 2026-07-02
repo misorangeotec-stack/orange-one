@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
+import Button from "@/shared/components/ui/Button";
+import Modal from "@/shared/components/ui/Modal";
 import { dateLabel, isOverdue, isToday, todayIso } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
+import { useSession } from "../mock/session";
 import { isRecurringTask } from "../mock/selectors";
 import { RECURRENCE_LABEL, type Task } from "../types";
 import StatusChip from "./StatusChip";
@@ -93,10 +97,27 @@ export default function TaskTable({ tasks, sort, onSort }: {
   sort: TaskSort;
   onSort: (k: TaskSortKey) => void;
 }) {
-  const { profileById, departmentById, getRecurring } = useTaskStore();
+  const { profileById, departmentById, getRecurring, canStatusActions, deleteTask } = useTaskStore();
+  const { user, role } = useSession();
   const navigate = useNavigate();
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // Same guard as the detail page: a genuine one-off (not personal, not recurring)
+  // may be deleted only while PENDING, and only by its creator, assignee, or an
+  // admin. RLS (tasks_delete_pending) enforces it server-side too.
+  const canDeleteRow = (t: Task) =>
+    !t.isPersonal &&
+    !t.recurringTaskId &&
+    !t.fromRecurring &&
+    t.status === "pending" &&
+    canStatusActions &&
+    (t.createdBy === user.id || t.assignedTo === user.id || role === "admin");
+
+  const confirmTask = confirmId ? tasks.find((t) => t.id === confirmId) : undefined;
 
   return (
+    <>
     <ScrollableTable>
       <table className="w-full min-w-[930px] text-[13px] border-collapse table-fixed">
         <thead>
@@ -107,7 +128,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
             <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[110px]" />
             <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[110px]" />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" />
-            <th className="w-[40px]" />
+            <th className="w-[70px]" />
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -206,9 +227,22 @@ export default function TaskTable({ tasks, sort, onSort }: {
                   <StatusChip status={task.status} notApplicable={task.notApplicable} />
                 </td>
 
-                {/* Chevron */}
-                <td className="px-2 py-3 align-middle text-right">
-                  <svg className="inline text-grey-2 group-hover:text-orange transition" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                {/* Delete (pending one-offs only) + chevron */}
+                <td className="px-2 py-3 align-middle text-right whitespace-nowrap">
+                  {canDeleteRow(task) && (
+                    <button
+                      type="button"
+                      title="Delete this pending task"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setConfirmId(task.id);
+                      }}
+                      className="align-middle text-grey-2 hover:text-[#d4493f] transition p-1 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                    </button>
+                  )}
+                  <svg className="inline align-middle ml-1 text-grey-2 group-hover:text-orange transition" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </td>
               </tr>
             );
@@ -216,5 +250,37 @@ export default function TaskTable({ tasks, sort, onSort }: {
         </tbody>
       </table>
     </ScrollableTable>
+
+    <Modal
+      open={!!confirmId}
+      onClose={() => setConfirmId(null)}
+      title="Delete task"
+      subtitle={confirmTask?.title}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => setConfirmId(null)} disabled={deleting}>Cancel</Button>
+          <Button
+            className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+            disabled={deleting || !confirmId}
+            onClick={async () => {
+              if (!confirmId) return;
+              setDeleting(true);
+              try {
+                await deleteTask(confirmId);
+                setConfirmId(null);
+              } finally {
+                setDeleting(false);
+              }
+            }}
+          >
+            {deleting ? "Deleting…" : "Delete"}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[13px] text-grey">This permanently removes this pending task. This can't be undone.</p>
+    </Modal>
+    </>
   );
 }

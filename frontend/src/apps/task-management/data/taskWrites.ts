@@ -110,6 +110,17 @@ export async function deletePersonalTask(taskId: string): Promise<void> {
 }
 
 /**
+ * Delete a pending one-off task. RLS (policy `tasks_delete_pending`) enforces the
+ * guard set — status='pending', non-personal, non-recurring, and the caller is the
+ * creator, assignee, or an admin — so a started/completed task (or someone with no
+ * claim on it) can't be deleted this way even if the id is passed.
+ */
+export async function deleteTask(taskId: string): Promise<void> {
+  const { error } = await supabase.from("tasks").delete().eq("id", taskId);
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Tick (or untick) a single location on a task's checklist. Sets completed_at +
  * completed_by (or clears them). Marking done also clears any N/A flag on the row
  * (done and N/A are mutually exclusive). RLS limits this to people who can act on

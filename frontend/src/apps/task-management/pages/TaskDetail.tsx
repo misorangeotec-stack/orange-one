@@ -8,6 +8,7 @@ import Modal from "@/shared/components/ui/Modal";
 import { dateLabel, timeAgo, formatDateTime, weekStartOf, todayIso } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
+import { useSession } from "../mock/session";
 import { locationLabel, RECURRENCE_LABEL, type ActivityType } from "../types";
 import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
@@ -20,7 +21,8 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask } = useTaskStore();
+  const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [reopening, setReopening] = useState(false);
@@ -60,6 +62,17 @@ export default function TaskDetail() {
   const na = task.notApplicable;
   const personal = task.isPersonal;
   const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
+
+  // Delete gate — a genuine one-off (not personal, not recurring-generated) may be
+  // deleted only while still PENDING, and only by its creator, its assignee, or an
+  // admin. Once started/completed/revised/shifted it must stay. RLS enforces the
+  // same guard server-side (policy tasks_delete_pending); this is the UI mirror.
+  const isOneOff = !personal && !task.recurringTaskId && !task.fromRecurring;
+  const canDeleteOneOff =
+    isOneOff &&
+    task.status === "pending" &&
+    canStatusActions &&
+    (task.createdBy === user.id || task.assignedTo === user.id || role === "admin");
 
   // Location checklist + completion gate. A task with locations can't be completed
   // until every one is RESOLVED — ticked done OR marked Not Applicable (the DB
@@ -215,6 +228,12 @@ export default function TaskDetail() {
                 Mark complete{completeBlocked ? ` (${pendingLocations} left)` : ""}
               </Button>
             </span>
+            {canDeleteOneOff && (
+              <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} title="Delete this pending task">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
+                Delete
+              </Button>
+            )}
           </div>
         )}
 
@@ -453,7 +472,7 @@ export default function TaskDetail() {
       <Modal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}
-        title="Delete other task"
+        title={personal ? "Delete other task" : "Delete task"}
         subtitle={task.title}
         footer={
           <>
@@ -462,7 +481,8 @@ export default function TaskDetail() {
               onClick={async () => {
                 setDeleting(true);
                 try {
-                  await deletePersonalTask(task.id);
+                  if (personal) await deletePersonalTask(task.id);
+                  else await deleteTask(task.id);
                   navigate("/task-management/tasks");
                 } finally {
                   setDeleting(false);
@@ -475,7 +495,11 @@ export default function TaskDetail() {
           </>
         }
       >
-        <p className="text-[13px] text-grey">This permanently removes the other task. This can't be undone.</p>
+        <p className="text-[13px] text-grey">
+          {personal
+            ? "This permanently removes the other task. This can't be undone."
+            : "This permanently removes this pending task. This can't be undone."}
+        </p>
       </Modal>
     </div>
   );
