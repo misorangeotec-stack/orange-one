@@ -9,12 +9,21 @@ import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
 import { matchesSearch } from "@/shared/lib/search";
-import { formatDate } from "@/shared/lib/time";
+import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
 import { useTaskStore } from "../mock/store";
 import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
-import type { Department, Profile, Task } from "../types";
-import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
+import type { Department, Profile, Task, TaskStatus } from "../types";
+import { STATUS_FILTER_OPTIONS, RECURRENCE_LABEL, matchesStatusFilter, type StatusFilter } from "../types";
+import { exportTasksToXlsx, type TaskExportRow } from "../lib/exportTasks";
+
+const STATUS_LABEL: Record<TaskStatus, string> = {
+  pending: "Pending",
+  in_progress: "In Progress",
+  completed: "Completed",
+  revised: "Revised",
+  shifted: "Shifted",
+};
 import type { ParsedTaskFilters } from "../lib/taskLink";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "./TaskTable";
 
@@ -32,6 +41,8 @@ export default function TaskBrowser({
   emptyMessage = "No tasks match these filters.",
   hideWeekFilter = false,
   initialFilters,
+  enableExport = false,
+  exportSubtitle,
 }: {
   tasks: Task[];
   people: Profile[];
@@ -41,8 +52,12 @@ export default function TaskBrowser({
   hideWeekFilter?: boolean;
   /** Seed the filters from a deep-link (e.g. clicking a RYG number on the scorecard). */
   initialFilters?: ParsedTaskFilters;
+  /** Show an "Export" button that downloads the full filtered set to .xlsx (All Tasks / admin). */
+  enableExport?: boolean;
+  /** Context line recorded on the export's Filters sheet (e.g. the week/all-time scope). */
+  exportSubtitle?: string;
 }) {
-  const { profileById } = useTaskStore();
+  const { profileById, departmentById, getRecurring } = useTaskStore();
   const [q, setQ] = useState("");
   const [person, setPerson] = useState(initialFilters?.assignee ?? "all");
   const [creator, setCreator] = useState("all");
@@ -210,6 +225,31 @@ export default function TaskBrowser({
       onClear: () => setCategory("all"),
     });
 
+  // Export the FULL filtered + sorted set (every page, not just the current one),
+  // so the file matches exactly what the active filters describe.
+  const handleExport = () => {
+    const rows: TaskExportRow[] = sorted.map((t) => {
+      const rec = t.recurringTaskId ? getRecurring(t.recurringTaskId)?.recurrenceType : undefined;
+      return {
+        title: t.title,
+        description: t.description ?? "",
+        department: departmentById(t.departmentId)?.name ?? "",
+        createdBy: profileById(t.createdBy)?.name ?? "",
+        assignedTo: profileById(t.assignedTo)?.name ?? "",
+        type: t.isPersonal ? "Other" : isRecurringTask(t) ? "Recurring" : "One-off",
+        recurrence: rec ? RECURRENCE_LABEL[rec] : "",
+        status: t.notApplicable ? "Not Applicable" : STATUS_LABEL[t.status],
+        assignedOn: formatDate(t.createdAt),
+        dueDate: formatDate(t.dueDate),
+        followUp: formatDate(t.followUpDate),
+        revisions: t.revisionCount,
+        completedOn: formatDate(t.completedAt),
+        lastUpdated: formatDateTime(t.updatedAt),
+      };
+    });
+    exportTasksToXlsx(rows, activeFilters.map((f) => f.label), exportSubtitle);
+  };
+
   return (
     <div className="space-y-4">
       {/* stats strip */}
@@ -220,6 +260,21 @@ export default function TaskBrowser({
         <Stat label="Revised" value={counts.revised} tone="text-[#B7820E]" />
         <Stat label="Shifted" value={counts.shifted} tone="text-orange" />
       </div>
+
+      {enableExport && (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={filtered.length === 0}
+            title={filtered.length === 0 ? "Nothing to export" : "Download the filtered tasks as an Excel file"}
+            className="inline-flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2 text-[13px] font-semibold text-navy hover:border-orange hover:text-orange transition disabled:opacity-50 disabled:hover:border-line disabled:hover:text-navy"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+            Export{filtered.length > 0 ? ` (${filtered.length})` : ""}
+          </button>
+        </div>
+      )}
 
       <Card className="overflow-hidden">
         {/* filter bar */}
