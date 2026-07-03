@@ -1,0 +1,66 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import Card from "@/shared/components/ui/Card";
+import { formatDate } from "@/shared/lib/time";
+import { useProcurementStore } from "../../store";
+import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
+import ApprovalModal from "../../components/ApprovalModal";
+import DueCell, { overdueRowClass } from "../../components/DueCell";
+import QueueTable, { type QueueColumn } from "../../components/QueueTable";
+import type { RequestItem } from "../../types";
+
+/** Approvals Queue — lines routed to me (or, for admins, all lines awaiting approval). */
+export default function ApprovalsQueue() {
+  const s = useProcurementStore();
+  const [approving, setApproving] = useState<RequestItem | null>(null);
+
+  const requestNo = (l: RequestItem) => s.requestById(l.requestId)?.requestNo ?? "—";
+  const vendorName = (l: RequestItem) => s.vendorById(l.finalVendorId)?.name ?? "—";
+  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
+
+  const columns: QueueColumn<RequestItem>[] = [
+    {
+      key: "request", header: "Request", sortValue: (l) => requestNo(l), filter: { kind: "text", get: (l) => requestNo(l) }, tdClassName: "whitespace-nowrap",
+      cell: (l) => {
+        const req = s.requestById(l.requestId);
+        return req ? <Link to={`/procurement/requests/${req.id}`} className="font-semibold text-navy hover:text-orange">{req.requestNo}</Link> : "—";
+      },
+    },
+    { key: "item", header: "Item", cell: (l) => <span className="font-medium text-navy">{s.itemLabel(l.itemId)}</span>, sortValue: (l) => s.itemLabel(l.itemId), filter: { kind: "text", get: (l) => s.itemLabel(l.itemId) } },
+    { key: "vendor", header: "Recommended Vendor", cell: (l) => vendorName(l), sortValue: (l) => vendorName(l), filter: { kind: "select", get: (l) => vendorName(l) }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Line Value", cell: (l) => <span className="font-semibold text-navy">{inr(l.lineValue)}</span>, sortValue: (l) => l.lineValue ?? 0, filter: { kind: "number", get: (l) => l.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
+    { key: "status", header: "Status", cell: (l) => <span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span>, sortValue: (l) => LINE_STATUS_LABEL[l.status], filter: { kind: "select", get: (l) => LINE_STATUS_LABEL[l.status] } },
+    { key: "created", header: "Created", cell: (l) => formatDate(l.createdAt), sortValue: (l) => l.createdAt, filter: { kind: "date", get: (l) => l.createdAt }, tdClassName: "whitespace-nowrap" },
+    { key: "due", header: "Due", cell: (l) => <DueCell createdAt={l.createdAt} step="approval" />, tdClassName: "whitespace-nowrap" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-[22px] font-bold text-navy">Approvals Queue</h1>
+        <p className="text-[13.5px] text-grey-2 mt-1">Sourced lines awaiting your vendor-price approval.</p>
+      </div>
+
+      <Card className="p-4">
+        <QueueTable
+          rows={s.approvalQueue}
+          rowKey={(l) => l.id}
+          columns={columns}
+          companyIdOf={companyOf}
+          companyNameOf={companyName}
+          rowClassName={(l) => overdueRowClass(l.createdAt, "approval")}
+          rowsLabel="lines"
+          emptyTitle="Nothing to approve"
+          emptyMessage="Lines routed to you will appear here."
+          initialSort={{ key: "value", dir: "desc" }}
+          actions={(l) => (
+            <button onClick={() => setApproving(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+          )}
+        />
+      </Card>
+
+      <ApprovalModal line={approving} open={approving !== null} onClose={() => setApproving(null)} />
+    </div>
+  );
+}

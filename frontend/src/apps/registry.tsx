@@ -1,7 +1,10 @@
 import type { AppManifest } from "./types";
 import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
-import { purchaseFmsApp } from "./purchase-fms/meta";
+import { procurementApp } from "./procurement/meta";
+// Legacy `purchase-fms` (the older linear prototype) is retired from the portal —
+// the newer `procurement` app (also named "Purchase FMS") replaces it. Its folder
+// is kept as dead code; re-add `purchaseFmsApp` here to bring it back.
 
 /**
  * Central registry of all Orange One apps.
@@ -19,7 +22,7 @@ const comingSoon = (
 export const apps: AppManifest[] = [
   taskManagementApp,
   receivablesHubApp,
-  purchaseFmsApp,
+  procurementApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);

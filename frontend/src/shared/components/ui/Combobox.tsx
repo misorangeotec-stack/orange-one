@@ -31,6 +31,7 @@ export default function Combobox({
   align = "left",
   onCreate,
   createLabel = (q) => `Add “${q}”`,
+  autoAdvance = false,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -41,6 +42,11 @@ export default function Combobox({
   searchable?: boolean;
   className?: string;
   align?: "left" | "right";
+  /**
+   * After a selection, move focus to the next form field (so keyboard users can
+   * chain ↓ + Enter → next input). Opt-in — leave off for filter dropdowns.
+   */
+  autoAdvance?: boolean;
   /**
    * When provided, an "Add …" row appears for a search term that doesn't exactly
    * match an existing option. Should create the option and return its value so it
@@ -119,6 +125,39 @@ export default function Combobox({
     setQ("");
   };
 
+  // Move focus to the next form control after a selection so keyboard users can
+  // chain ↓ + Enter → next field. Scoped to the enclosing dialog/form (falls back
+  // to the document), skipping this combobox's own controls.
+  const advanceFocus = () => {
+    const container = ref.current;
+    if (!container) return;
+    const scope = container.closest<HTMLElement>('[role="dialog"], form') ?? document.body;
+    const focusables = Array.from(
+      scope.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => el.offsetParent !== null);
+    const trigger = container.querySelector<HTMLElement>("button");
+    const start = trigger ? focusables.indexOf(trigger) : -1;
+    for (let i = start + 1; i < focusables.length; i++) {
+      const el = focusables[i];
+      if (container.contains(el)) continue; // skip our own trigger/remove buttons
+      el.focus();
+      const inp = el as HTMLInputElement;
+      if ((inp.tagName === "INPUT" || inp.tagName === "TEXTAREA") && typeof inp.select === "function") {
+        try { inp.select(); } catch { /* some number inputs disallow select() */ }
+      }
+      break;
+    }
+  };
+
+  const commit = (v: string) => {
+    onChange(v);
+    setOpen(false);
+    setQ("");
+    if (autoAdvance) setTimeout(advanceFocus, 0);
+  };
+
   // Keyboard navigation. Selectable rows = the filtered options, plus a trailing
   // "create" row when one is offered.
   const rowCount = filtered.length + (canCreate ? 1 : 0);
@@ -150,7 +189,7 @@ export default function Combobox({
       e.preventDefault();
       if (active < filtered.length) {
         const o = filtered[active];
-        if (o) { onChange(o.value); setOpen(false); setQ(""); }
+        if (o) commit(o.value);
       } else if (canCreate) {
         create();
       }
@@ -225,11 +264,7 @@ export default function Combobox({
                       type="button"
                       data-idx={idx}
                       onMouseEnter={() => setActive(idx)}
-                      onClick={() => {
-                        onChange(o.value);
-                        setOpen(false);
-                        setQ("");
-                      }}
+                      onClick={() => commit(o.value)}
                       className={cn(
                         "w-full flex items-center gap-2.5 px-3 py-2 text-left transition",
                         on ? "bg-orange-soft/60" : idx === active ? "bg-page" : "hover:bg-page"

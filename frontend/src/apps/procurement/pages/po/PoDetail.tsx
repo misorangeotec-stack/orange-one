@@ -1,0 +1,358 @@
+import { useState } from "react";
+import { FileText, Image } from "lucide-react";
+import { Link, useParams } from "react-router-dom";
+import Card from "@/shared/components/ui/Card";
+import Button from "@/shared/components/ui/Button";
+import Tabs from "@/shared/components/ui/Tabs";
+import EmptyState from "@/shared/components/ui/EmptyState";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
+import { formatDate } from "@/shared/lib/time";
+import { useProcurementStore } from "../../store";
+import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
+import PoStepper from "../../components/PoStepper";
+import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
+import ActivityTimeline from "../../components/ActivityTimeline";
+import type { Pi, PurchaseOrder, Grn, TallyBooking } from "../../types";
+
+/** PO Detail — header + lifecycle stepper + action bar + PIs / GRNs / Payments tabs. */
+export default function PoDetail() {
+  const { id } = useParams();
+  const s = useProcurementStore();
+  const [tab, setTab] = useState("items");
+  const [modal, setModal] = useState<"share" | "pi" | "payment" | "grn" | "tally" | null>(null);
+  const [followPi, setFollowPi] = useState<Pi | null>(null);
+  // Advance / balance recorded against a specific PI (not the whole PO).
+  const [payPi, setPayPi] = useState<{ pi: Pi; kind: "advance" | "installment" } | null>(null);
+
+  const po = s.poById(id ?? null);
+  if (!po) {
+    return <EmptyState title="PO not found" message="It may have been removed." actionLabel="Back to POs" actionTo="/procurement/pos" />;
+  }
+  const co = s.companyById(po.companyId);
+  const items = s.poItemsForPo(po.id);
+  const pis = s.pisForPo(po.id);
+  const grns = s.grnsForPo(po.id);
+  const payments = s.paymentsForPo(po.id);
+  const tally = s.tallyForPo(po.id);
+  const pending = s.pendingAmount(po);
+  const open = po.currentStage !== "closed" && po.currentStage !== "cancelled";
+  // Goods fully received → GRN step done (hide "Record GRN"); a Tally booking
+  // exists → Tally step done (hide "Book in Tally"). Mirrors how Share PO / Add
+  // PI already self-hide once their step is complete.
+  const allReceived = items.length > 0 && items.every((it) => it.receivedQty >= it.qty);
+  const tallyBooked = tally.length > 0;
+
+  // Comma-separated names of the items a PI covers (via its PI items → PO lines).
+  const piItemNames = (p: (typeof pis)[number]): string =>
+    s
+      .piItemsForPi(p.id)
+      .map((x) => {
+        const poItem = items.find((it) => it.id === x.poItemId);
+        const line = poItem ? s.lineById(poItem.requestItemId) : undefined;
+        return line ? s.itemById(line.itemId)?.name ?? s.itemLabel(line.itemId) : null;
+      })
+      .filter(Boolean)
+      .join(", ");
+
+  // Every PO line fully covered by PI(s)? → PI collection is complete (hide "Add PI").
+  const piCovered = new Map<string, number>();
+  for (const p of pis) for (const x of s.piItemsForPi(p.id)) piCovered.set(x.poItemId, (piCovered.get(x.poItemId) ?? 0) + x.qty);
+  const piFullyCollected = items.length > 0 && items.every((it) => (piCovered.get(it.id) ?? 0) >= it.qty);
+
+  // Activity for the PO + its PIs, newest first.
+  const piIds = new Set(pis.map((p) => p.id));
+  const activity = s.activity
+    .filter((a) => (a.entityType === "po" && a.entityId === po.id) || (a.entityType === "pi" && piIds.has(a.entityId)))
+    .slice()
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  const tabs = [
+    { key: "items", label: "Items", count: items.length },
+    { key: "pis", label: "PIs", count: pis.length },
+    { key: "grns", label: "GRNs", count: grns.length },
+    { key: "payments", label: "Payments", count: payments.length },
+    { key: "activity", label: "Activity", count: activity.length },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <Link to="/procurement/pos" className="text-[12.5px] text-grey hover:text-navy">← Purchase Orders</Link>
+
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">{po.poNo}</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1">
+            {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {formatDate(po.createdAt)}
+            {po.tallyPoNo ? <> · Tally PO: <span className="font-medium text-navy">{po.tallyPoNo}</span></> : null}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {po.documentPath && <PoDocLink po={po} />}
+          <span className={poStageBadge(po.currentStage)}>{PO_STAGE_LABEL[po.currentStage] ?? po.currentStage}</span>
+        </div>
+      </div>
+
+      <Card className="px-4 py-4"><PoStepper po={po} /></Card>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Stat label="Value" value={inr(po.totalValue)} />
+        <Stat label="Advance / Paid" value={inr(po.advancePaid)} />
+        <Stat label="Pending" value={inr(pending)} />
+        <Stat label="Items" value={String(items.length)} />
+      </div>
+
+      {/* Action bar */}
+      {open && (
+        <div className="flex flex-wrap gap-2">
+          {s.canSharePo && po.currentStage === "share_po" && <Button size="sm" variant="ghost" onClick={() => setModal("share")}>Share PO</Button>}
+          {s.canCollectPi && po.currentStage !== "share_po" && !piFullyCollected && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Add PI</Button>}
+          {s.canInward && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
+          {s.canTally && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
+          {s.canRecordPayment && pending > 0 && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
+        </div>
+      )}
+
+      <Card className="overflow-hidden">
+        <div className="px-4 pt-3"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
+
+        {tab === "items" && (
+          <ScrollableTable>
+            <table className="w-full text-[13.5px]">
+              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Item</th><th className="font-medium px-4 py-3">Source Request</th><th className="font-medium px-4 py-3">Qty</th><th className="font-medium px-4 py-3">Received</th><th className="font-medium px-4 py-3">Rate</th><th className="font-medium px-4 py-3">Line Value</th></tr></thead>
+              <tbody>
+                {items.map((pi) => {
+                  const line = s.lineById(pi.requestItemId);
+                  const req = line ? s.requestById(line.requestId) : undefined;
+                  return (
+                    <tr key={pi.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                      <td className="px-4 py-3 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{req ? <Link to={`/procurement/requests/${req.id}`} className="text-orange hover:underline">{req.requestNo}</Link> : "—"}</td>
+                      <td className="px-4 py-3">{pi.qty}</td>
+                      <td className="px-4 py-3">{pi.receivedQty}{pi.receivedQty >= pi.qty ? " ✓" : ""}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{inr(pi.rate)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{inr(pi.lineValue)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </ScrollableTable>
+        )}
+
+        {tab === "pis" && (
+          pis.length === 0 ? <EmptyState title="No PIs yet" message="Add a PI from the action bar." /> : (
+            <ScrollableTable>
+              <table className="w-full text-[13.5px]">
+                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Vendor PI No.</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Terms</th><th className="font-medium px-4 py-3">Value</th><th className="font-medium px-4 py-3">Paid</th><th className="font-medium px-4 py-3">Pending</th><th className="font-medium px-4 py-3">Dispatch</th><th className="font-medium px-4 py-3">Status</th><th className="font-medium px-4 py-3">Document</th><th className="font-medium px-4 py-3 text-right">Actions</th></tr></thead>
+                <tbody>
+                  {pis.map((p) => {
+                    const piPaid = s.paidForPi(p);
+                    const piPending = s.pendingForPi(p);
+                    const hasAdvance = s.paymentsForPi(p.id).some((pay) => pay.kind === "advance");
+                    return (
+                    <tr key={p.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                      <td className="px-4 py-3 font-medium text-navy">{p.vendorPiNo}</td>
+                      <td className="px-4 py-3 text-navy min-w-[150px] max-w-[260px]"><span title={piItemNames(p)}>{piItemNames(p) || "—"}</span></td>
+                      <td className="px-4 py-3 whitespace-nowrap">{p.paymentTerms.replace("_", " ")}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{inr(p.piValue)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{inr(piPaid)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{inr(piPending)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{p.dispatchStatus}{p.actualDispatchDate ? ` · ${formatDate(p.actualDispatchDate)}` : p.dispatchDate ? ` · plan ${formatDate(p.dispatchDate)}` : ""}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{p.status.replace("_", " ")}</td>
+                      <td className="px-4 py-3 whitespace-nowrap"><PiDocLink pi={p} /></td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-3">
+                          {s.canRecordPayment && open && piPending > 0 && (
+                            <button onClick={() => setPayPi({ pi: p, kind: hasAdvance ? "installment" : "advance" })} className="text-[12.5px] font-semibold text-navy hover:text-orange hover:underline">{hasAdvance ? "Record Payment" : "Record Advance"}</button>
+                          )}
+                          {s.canFollowup && open && <button onClick={() => setFollowPi(p)} className="text-[12.5px] font-semibold text-orange hover:underline">Follow-up</button>}
+                        </div>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </ScrollableTable>
+          )
+        )}
+
+        {tab === "grns" && (
+          grns.length === 0 ? <EmptyState title="No receipts yet" message="Record a GRN from the action bar." /> : (
+            <ScrollableTable>
+              <table className="w-full text-[13.5px]">
+                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Gate Reg No.</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Condition</th><th className="font-medium px-4 py-3">Photo</th></tr></thead>
+                <tbody>
+                  {grns.map((g) => {
+                    const gi = s.grnItemsForGrn(g.id);
+                    return (
+                      <tr key={g.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                        <td className="px-4 py-3 font-medium text-navy">{g.gateRegisterNo || "—"}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{formatDate(g.createdAt)}</td>
+                        <td className="px-4 py-3">{gi.map((x) => { const l = s.lineById(s.poItemsForPo(po.id).find((p) => p.id === x.poItemId)?.requestItemId ?? null); return l ? `${s.itemLabel(l.itemId)} ×${x.receivedQty}` : `×${x.receivedQty}`; }).join(", ")}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{g.condition.replace("_", " ")}</td>
+                        <td className="px-4 py-3 whitespace-nowrap"><GrnPhotoLink grn={g} /></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </ScrollableTable>
+          )
+        )}
+
+        {tab === "payments" && (
+          payments.length === 0 ? <EmptyState title="No payments yet" message="Record advance or installments from the action bar." /> : (
+            <ScrollableTable>
+              <table className="w-full text-[13.5px]">
+                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Kind</th><th className="font-medium px-4 py-3">Against PI</th><th className="font-medium px-4 py-3">Amount</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">UTR / Ref</th></tr></thead>
+                <tbody>
+                  {payments.map((p) => (
+                    <tr key={p.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                      <td className="px-4 py-3 capitalize">{p.kind}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{pis.find((x) => x.id === p.piId)?.vendorPiNo ?? "—"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap font-medium text-navy">{inr(p.amount)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{formatDate(p.paidOn)}</td>
+                      <td className="px-4 py-3">{p.utrRef || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </ScrollableTable>
+          )
+        )}
+
+        {tab === "activity" && <div className="px-4 py-4"><ActivityTimeline rows={activity} /></div>}
+      </Card>
+
+      {tally.length > 0 && (
+        <Card className="px-4 py-3 text-[13px] text-grey space-y-1.5">
+          {tally.map((t) => (
+            <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span><span className="font-medium text-navy">Tally invoice:</span> {t.tallyPiNo}</span>
+              {t.remarks && <span className="text-grey-2">· {t.remarks}</span>}
+              {t.documentPath && <TallyDocLink booking={t} />}
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <SharePoModal po={po} open={modal === "share"} onClose={() => setModal(null)} />
+      <AddPiModal po={po} open={modal === "pi"} onClose={() => setModal(null)} />
+      <PaymentModal po={po} open={modal === "payment"} onClose={() => setModal(null)} kind="installment" />
+      {payPi && <PaymentModal po={po} pi={payPi.pi} open onClose={() => setPayPi(null)} kind={payPi.kind} />}
+      <GrnModal po={po} open={modal === "grn"} onClose={() => setModal(null)} />
+      <TallyModal po={po} open={modal === "tally"} onClose={() => setModal(null)} />
+      <FollowupModal pi={followPi} open={followPi !== null} onClose={() => setFollowPi(null)} />
+    </div>
+  );
+}
+
+/** Opens the stored Vendor PI document via a fresh short-lived signed URL. */
+function PiDocLink({ pi }: { pi: Pi }) {
+  const s = useProcurementStore();
+  const [busy, setBusy] = useState(false);
+  if (!pi.documentPath) return <span className="text-grey-2">—</span>;
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const url = await s.piDocumentUrl(pi.documentPath!);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      /* surfaced by the store; keep the row quiet */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={open} disabled={busy} className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
+      <FileText className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{busy ? "Opening…" : pi.documentName || "View document"}</span>
+    </button>
+  );
+}
+
+/** Opens the stored GRN photo (e.g. damaged goods) via a short-lived signed URL. */
+function GrnPhotoLink({ grn }: { grn: Grn }) {
+  const s = useProcurementStore();
+  const [busy, setBusy] = useState(false);
+  if (!grn.photoPath) return <span className="text-grey-2">—</span>;
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const url = await s.grnPhotoUrl(grn.photoPath!);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      /* surfaced by the store; keep the row quiet */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={open} disabled={busy} className="inline-flex max-w-[200px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
+      <Image className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{busy ? "Opening…" : grn.photoName || "View photo"}</span>
+    </button>
+  );
+}
+
+/** Opens the stored Tally invoice document via a fresh short-lived signed URL. */
+function TallyDocLink({ booking }: { booking: TallyBooking }) {
+  const s = useProcurementStore();
+  const [busy, setBusy] = useState(false);
+  if (!booking.documentPath) return null;
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const url = await s.tallyDocumentUrl(booking.documentPath!);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      /* surfaced by the store; keep the card quiet */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={open} disabled={busy} className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
+      <FileText className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{busy ? "Opening…" : booking.documentName || "View invoice"}</span>
+    </button>
+  );
+}
+
+/** Opens the stored PO PDF via a fresh short-lived signed URL. */
+function PoDocLink({ po }: { po: PurchaseOrder }) {
+  const s = useProcurementStore();
+  const [busy, setBusy] = useState(false);
+  if (!po.documentPath) return null;
+  const open = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const url = await s.poDocumentUrl(po.documentPath!);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      /* surfaced by the store; keep the header quiet */
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button onClick={open} disabled={busy} className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
+      <FileText className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">{busy ? "Opening…" : "PO PDF"}</span>
+    </button>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="px-4 py-3">
+      <div className="text-[11px] text-grey-2">{label}</div>
+      <div className="text-[16px] font-bold text-navy">{value}</div>
+    </Card>
+  );
+}
