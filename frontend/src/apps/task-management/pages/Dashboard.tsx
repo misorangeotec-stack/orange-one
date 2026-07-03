@@ -252,7 +252,7 @@ function StatusBreakdownCard({ stats, role, weekly }: { stats: ReturnType<typeof
 
 /* ---------------- Recent activity ---------------- */
 function RecentActivityCard({ list }: { list: Task[] }) {
-  const { activity, getTask, profileById } = useTaskStore();
+  const { activity, getTask, actorById } = useTaskStore();
   const ids = new Set(list.map((t) => t.id));
   const items = activity.filter((a) => ids.has(a.taskId)).slice(0, 6);
   return (
@@ -262,7 +262,7 @@ function RecentActivityCard({ list }: { list: Task[] }) {
       ) : (
         <ul className="space-y-3">
           {items.map((a) => {
-            const actor = profileById(a.actorId);
+            const actor = actorById(a.actorId);
             const task = getTask(a.taskId);
             return (
               <li key={a.id} className="flex gap-2.5 text-[12.5px]">
@@ -283,9 +283,9 @@ function RecentActivityCard({ list }: { list: Task[] }) {
 
 /* ---------------- small shared bits ---------------- */
 function TaskRow({ task }: { task: Task }) {
-  const { profileById, departmentById } = useTaskStore();
+  const { profileById, actorById, departmentById } = useTaskStore();
   const assignee = profileById(task.assignedTo);
-  const creator = profileById(task.createdBy);
+  const creator = actorById(task.createdBy);
   const dept = departmentById(task.departmentId);
   return (
     <li>

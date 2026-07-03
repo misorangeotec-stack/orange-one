@@ -10,12 +10,12 @@ const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.lab
 /** Wires the session + live task data into the generic AppShell, then renders routes. */
 export default function TaskLayout() {
   const { user, role } = useSession();
-  const { notifications, getTask, profileById, markNotificationsRead } = useTaskStore();
+  const { notifications, getTask, actorById, markNotificationsRead } = useTaskStore();
 
   const notifItems: NotificationItem[] = notifications
     .filter((n) => n.userId === user.id)
     .map((n) => {
-      const actor = profileById(n.actorId)?.name ?? "Someone";
+      const actor = actorById(n.actorId)?.name ?? "Someone";
       const task = getTask(n.taskId ?? "");
       return {
         id: n.id,

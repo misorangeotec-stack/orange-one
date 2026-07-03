@@ -110,6 +110,7 @@ const mapRecurring = (r: any): RecurringTask => ({
   createdBy: r.created_by,
   departmentId: r.department_id,
   active: r.active,
+  createdAt: r.created_at,
   locationIds: [], // attached after the fetch from recurring_task_locations
 });
 

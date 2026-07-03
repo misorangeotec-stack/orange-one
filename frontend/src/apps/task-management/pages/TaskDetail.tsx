@@ -21,7 +21,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask } = useTaskStore();
   const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
@@ -44,7 +44,10 @@ export default function TaskDetail() {
   };
 
   const owner = profileById(task.assignedTo);
-  const creator = profileById(task.createdBy);
+  // actorById (not profileById) so a cross-department creator/assigner — e.g. a
+  // Director in another dept who set up a recurring task — resolves to a name
+  // instead of "—"/"Someone" for viewers outside their RLS-scoped directory.
+  const creator = actorById(task.createdBy);
   const dept = departmentById(task.departmentId);
   const info = revisionInfo(task);
   const closed = task.status === "completed" || task.status === "shifted";
@@ -384,7 +387,7 @@ export default function TaskDetail() {
             <RemarkComposer taskId={task.id} />
             <ol className="mt-5 space-y-4 relative before:absolute before:left-[13px] before:top-1 before:bottom-1 before:w-px before:bg-line">
               {acts.map((a) => {
-                const actor = profileById(a.actorId);
+                const actor = actorById(a.actorId);
                 const isRemark = a.type === "remark";
                 return (
                   <li key={a.id} className="relative pl-9">

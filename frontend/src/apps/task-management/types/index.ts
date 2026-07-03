@@ -139,6 +139,7 @@ export interface RecurringTask {
   createdBy: string;
   departmentId: string | null;
   active: boolean;
+  createdAt: string; // when this recurring template was set up (recurring_tasks.created_at)
   locationIds: string[]; // locations each generated task is tagged with
 }
 

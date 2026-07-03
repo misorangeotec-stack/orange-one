@@ -26,7 +26,7 @@ const VERB: Record<ActivityType, string> = {
 /** Filterable, workspace/team activity audit trail. */
 export default function ActivityHistory() {
   const { user, role } = useSession();
-  const { activity, getTask, tasks, profiles, profileById, visibleTasks } = useTaskStore();
+  const { activity, getTask, tasks, mentionablePeople, actorById, visibleTasks } = useTaskStore();
   const [type, setType] = useState<ActivityType | "all">("all");
   const [actor, setActor] = useState("all");
 
@@ -42,11 +42,13 @@ export default function ActivityHistory() {
     [activity, ids, type, actor]
   );
 
-  // people who appear as actors (for the filter)
+  // people who appear as actors (for the filter). Draw names from the org-wide
+  // list, not the RLS-scoped directory, so a cross-department actor (e.g. a
+  // Director who set up a recurring task) still shows a name instead of dropping.
   const actors = useMemo(() => {
     const set = new Set(activity.filter((a) => ids.has(a.taskId)).map((a) => a.actorId).filter(Boolean) as string[]);
-    return profiles.filter((p) => set.has(p.id));
-  }, [activity, ids]);
+    return mentionablePeople.filter((p) => set.has(p.id));
+  }, [activity, ids, mentionablePeople]);
 
   const pg = usePagination(items, { resetKey: `${type}|${actor}` });
 
@@ -56,7 +58,7 @@ export default function ActivityHistory() {
   if (actor !== "all")
     activeFilters.push({
       key: "actor",
-      label: `Person: ${profileById(actor)?.name ?? actor}`,
+      label: `Person: ${actorById(actor)?.name ?? actor}`,
       onClear: () => setActor("all"),
     });
   const clearAll = () => {
@@ -95,7 +97,7 @@ export default function ActivityHistory() {
           <>
           <ol className="space-y-4 relative p-5 before:absolute before:left-[35px] before:top-6 before:bottom-6 before:w-px before:bg-line">
             {pg.pageItems.map((a) => {
-              const actorP = profileById(a.actorId);
+              const actorP = actorById(a.actorId);
               const task = getTask(a.taskId);
               return (
                 <li key={a.id} className="relative pl-11">

@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import type { AppRole, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, TaskLocation, WeeklyPlan, WorkspaceSettings } from "../types";
+import type { AppRole, AvatarColor, Department, Location, Notification, Profile, RecurringTask, Task, TaskActivity, TaskLocation, WeeklyPlan, WorkspaceSettings } from "../types";
 import { useSession } from "./session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
@@ -102,8 +102,8 @@ interface TaskStoreValue {
 
   recurringTasks: RecurringTask[];
   getRecurring: (id: string) => RecurringTask | undefined;
-  createRecurring: (input: Omit<RecurringTask, "id">) => Promise<string>;
-  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id">>) => Promise<void>;
+  createRecurring: (input: Omit<RecurringTask, "id" | "createdAt">) => Promise<string>;
+  updateRecurring: (id: string, patch: Partial<Omit<RecurringTask, "id" | "createdAt">>) => Promise<void>;
   toggleRecurring: (id: string) => Promise<void>;
   /** Force-generate today's task instance for a template (manual "Generate now"); returns the task id. */
   generateRecurringNow: (id: string) => Promise<string | null>;
@@ -138,6 +138,13 @@ interface TaskStoreValue {
   mentionablePeople: OrgPerson[];
   departments: Department[];
   profileById: (id: string | null) => Profile | undefined;
+  /**
+   * Resolve an activity/actor id to a display name + avatar color, falling back
+   * to the org-wide people list when the RLS-scoped directory can't see them
+   * (e.g. a cross-department assigner). Use this for activity/creator display so
+   * out-of-scope actors don't render as "Someone".
+   */
+  actorById: (id: string | null) => { id: string; name: string; avatarColor: AvatarColor | string } | undefined;
   departmentById: (id: string | null) => Department | undefined;
   directReportIds: (hodId: string) => string[];
   downlineIds: (rootId: string) => string[];
@@ -237,6 +244,20 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<TaskStoreValue>(() => {
     const { downlineIds } = dir;
+
+    // Org-wide id → person map (name + avatar only) so activity actors can be
+    // named even when they fall outside the viewer's RLS-scoped directory — e.g.
+    // a Director in another department who assigned a recurring task. Without
+    // this, profileById misses them and the UI renders "Someone".
+    const orgPeopleById = new Map((orgPeople ?? []).map((p) => [p.id, p] as const));
+    const actorById: TaskStoreValue["actorById"] = (id) => {
+      if (!id) return undefined;
+      const p = dir.profileById(id);
+      if (p) return { id: p.id, name: p.name, avatarColor: p.avatarColor };
+      const o = orgPeopleById.get(id);
+      if (o) return { id: o.id, name: o.name, avatarColor: o.avatarColor };
+      return undefined;
+    };
 
     const visibleTasks = (role: AppRole, userId: string): Task[] => {
       if (role === "admin") return tasks;
@@ -537,6 +558,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
             })),
       departments: dir.departments,
       profileById: dir.profileById,
+      actorById,
       departmentById: dir.departmentById,
       directReportIds: dir.directReportIds,
       downlineIds: dir.downlineIds,

@@ -12,6 +12,7 @@ import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveF
 import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { matchesSearch } from "@/shared/lib/search";
+import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { MONTH_LAST_DAY, RECURRENCE_LABEL, type RecurringTask } from "../types";
@@ -45,7 +46,7 @@ export function frequencyText(r: RecurringTask) {
 /** Manage recurring task templates (daily / weekly / monthly). HOD + admin. */
 export default function RecurringList() {
   const { user, role } = useSession();
-  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, canRecurring } = useTaskStore();
+  const { recurringTasks, toggleRecurring, generateRecurringNow, deleteRecurring, downlineIds, profileById, actorById, canRecurring } = useTaskStore();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -56,6 +57,7 @@ export default function RecurringList() {
   const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly" | "when" | "quarterly">("all");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "paused">("all");
   const [person, setPerson] = useState("all");
+  const [assigner, setAssigner] = useState("all");
   const [sort, setSort] = useState<"title-asc" | "title-desc" | "status">("title-asc");
 
   const visible = useMemo(() => {
@@ -75,12 +77,25 @@ export default function RecurringList() {
     return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
   }, [visible, profileById]);
 
+  // Assigner (creator) options — resolved via the org-wide actorById so a
+  // cross-department Director still shows a name in the filter, not a raw id.
+  const assignerOptions = useMemo(() => {
+    const seen = new Map<string, { value: string; label: string; avatarColor?: string }>();
+    for (const r of visible) {
+      if (!r.createdBy || seen.has(r.createdBy)) continue;
+      const p = actorById(r.createdBy);
+      if (p) seen.set(p.id, { value: p.id, label: p.name, avatarColor: p.avatarColor });
+    }
+    return [...seen.values()].sort((a, b) => a.label.localeCompare(b.label));
+  }, [visible, actorById]);
+
   const filtered = useMemo(() => {
     const out = visible.filter((r) => {
       if (type !== "all" && r.recurrenceType !== type) return false;
       if (activeFilter === "active" && !r.active) return false;
       if (activeFilter === "paused" && r.active) return false;
       if (person !== "all" && r.assignedTo !== person) return false;
+      if (assigner !== "all" && r.createdBy !== assigner) return false;
       if (q.trim() && !matchesSearch(q, r.title, r.description)) return false;
       return true;
     });
@@ -90,22 +105,24 @@ export default function RecurringList() {
       return a.title.localeCompare(b.title);
     });
     return out;
-  }, [visible, type, activeFilter, person, q, sort]);
+  }, [visible, type, activeFilter, person, assigner, q, sort]);
 
   const target = recurringTasks.find((r) => r.id === confirmId);
-  const pg = usePagination(filtered, { resetKey: `${q}|${type}|${activeFilter}|${person}|${sort}` });
+  const pg = usePagination(filtered, { resetKey: `${q}|${type}|${activeFilter}|${person}|${assigner}|${sort}` });
 
   // active-filter chips
   const chips: ActiveFilter[] = [];
   if (q.trim()) chips.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   if (type !== "all") chips.push({ key: "type", label: `Type: ${type[0].toUpperCase()}${type.slice(1)}`, onClear: () => setType("all") });
   if (activeFilter !== "all") chips.push({ key: "status", label: activeFilter === "active" ? "Active" : "Paused", onClear: () => setActiveFilter("all") });
-  if (person !== "all") chips.push({ key: "person", label: `Person: ${profileById(person)?.name ?? person}`, onClear: () => setPerson("all") });
+  if (assigner !== "all") chips.push({ key: "assigner", label: `Assigned by: ${actorById(assigner)?.name ?? assigner}`, onClear: () => setAssigner("all") });
+  if (person !== "all") chips.push({ key: "person", label: `Assigned to: ${profileById(person)?.name ?? person}`, onClear: () => setPerson("all") });
   const clearAll = () => {
     setQ("");
     setType("all");
     setActiveFilter("all");
     setPerson("all");
+    setAssigner("all");
   };
 
   return (
@@ -165,13 +182,28 @@ export default function RecurringList() {
                   { value: "paused", label: "Paused" },
                 ]}
               />
+              {assignerOptions.length > 0 && (
+                <Combobox
+                  value={assigner}
+                  onChange={setAssigner}
+                  className="w-full sm:w-auto sm:min-w-[160px]"
+                  options={[
+                    { value: "all", label: "Assigned by: all" },
+                    ...assignerOptions.map((p) => ({
+                      value: p.value,
+                      label: p.label,
+                      icon: <Avatar name={p.label} color={p.avatarColor} size={22} />,
+                    })),
+                  ]}
+                />
+              )}
               {assigneeOptions.length > 0 && (
                 <Combobox
                   value={person}
                   onChange={setPerson}
                   className="w-full sm:w-auto sm:min-w-[160px]"
                   options={[
-                    { value: "all", label: "All people" },
+                    { value: "all", label: "Assigned to: all" },
                     ...assigneeOptions.map((p) => ({
                       value: p.value,
                       label: p.label,
@@ -204,6 +236,10 @@ export default function RecurringList() {
           <ul className="divide-y divide-line">
             {pg.pageItems.map((r) => {
               const assignee = profileById(r.assignedTo);
+              // actorById (org-wide fallback) so a cross-department creator — e.g.
+              // a Director who set up this template — resolves to a name instead
+              // of being invisible to viewers outside their RLS-scoped directory.
+              const creator = actorById(r.createdBy);
               return (
                 <li key={r.id} className="flex items-center gap-4 px-4 py-4">
                   <span className={cn("w-9 h-9 rounded-card flex items-center justify-center shrink-0", r.active ? "bg-orange-soft text-orange" : "bg-page text-grey-2")}>
@@ -223,12 +259,37 @@ export default function RecurringList() {
                     <div className="text-[11.5px] text-grey-2 mt-0.5 truncate">{frequencyText(r)}</div>
                   </div>
 
-                  {assignee && (
-                    <span className="hidden sm:inline-flex items-center gap-2 shrink-0">
-                      <Avatar name={assignee.name} color={assignee.avatarColor} size={26} />
-                      <span className="text-[12.5px] text-navy">{assignee.name}</span>
-                    </span>
-                  )}
+                  {/* Assigned by (creator) column */}
+                  <span className="hidden lg:flex flex-col items-start shrink-0 w-[140px]">
+                    <span className="text-[10px] uppercase tracking-wide text-grey-2">Assigned by</span>
+                    {creator ? (
+                      <span className="inline-flex items-center gap-1.5 mt-0.5 min-w-0">
+                        <Avatar name={creator.name} color={creator.avatarColor} size={22} />
+                        <span className="text-[12.5px] text-navy truncate">{creator.name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[12.5px] text-grey-2 mt-0.5">—</span>
+                    )}
+                  </span>
+
+                  {/* Assigned to (assignee) column */}
+                  <span className="hidden sm:flex flex-col items-start shrink-0 w-[140px]">
+                    <span className="text-[10px] uppercase tracking-wide text-grey-2">Assigned to</span>
+                    {assignee ? (
+                      <span className="inline-flex items-center gap-1.5 mt-0.5 min-w-0">
+                        <Avatar name={assignee.name} color={assignee.avatarColor} size={22} />
+                        <span className="text-[12.5px] text-navy truncate">{assignee.name}</span>
+                      </span>
+                    ) : (
+                      <span className="text-[12.5px] text-grey-2 mt-0.5">—</span>
+                    )}
+                  </span>
+
+                  {/* Created (when this template was set up) column */}
+                  <span className="hidden md:flex flex-col items-start shrink-0 w-[100px]">
+                    <span className="text-[10px] uppercase tracking-wide text-grey-2">Created</span>
+                    <span className="text-[12.5px] text-navy mt-0.5" title={formatDateTime(r.createdAt)}>{formatDate(r.createdAt)}</span>
+                  </span>
 
                   <button
                     onClick={async () => {
