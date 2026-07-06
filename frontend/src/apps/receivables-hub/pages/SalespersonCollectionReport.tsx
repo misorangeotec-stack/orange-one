@@ -130,7 +130,7 @@ function isAgainstInvoice(type: string | null | undefined, refInvoice: string | 
   return !!(refInvoice && refInvoice.trim());
 }
 
-type SortKey = "salesperson" | "outstanding" | "outstandingNow" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
+type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 type ViewMode = "customer" | "group";
 
@@ -141,7 +141,14 @@ const SALE_TYPE_LABELS: Record<string, string> = {
 };
 
 interface Metrics {
+  /** Sales raised this month (rupees). Sale-type-filterable via trend.salesByType. */
+  sales: number;
   outstanding: number;
+  /** Portion of `outstanding` from parties with a net DEBIT balance (they owe → positive). */
+  outstandingDebit: number;
+  /** Portion of `outstanding` from parties in net CREDIT / advance, as a positive magnitude.
+   *  outstanding = outstandingDebit − outstandingCredit (exact per-party partition). */
+  outstandingCredit: number;
   due: number;
   /** Total collected in the month = receivedOnAccount + receivedAgainst (kept whole; the
    *  split is a best-effort apportioning of this total — see receivedSplitByCustomerMonth). */
@@ -181,10 +188,13 @@ const spName = (s: string | undefined): string => {
 };
 
 const emptyMetrics = (): Metrics => ({
-  outstanding: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, pending: 0, dueSoon: 0,
+  sales: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, pending: 0, dueSoon: 0,
 });
 const addInto = (t: Metrics, m: Metrics): void => {
+  t.sales             += m.sales;
   t.outstanding       += m.outstanding;
+  t.outstandingDebit  += m.outstandingDebit;
+  t.outstandingCredit += m.outstandingCredit;
   t.due               += m.due;
   t.received          += m.received;
   t.receivedOnAccount += m.receivedOnAccount;
@@ -194,11 +204,9 @@ const addInto = (t: Metrics, m: Metrics): void => {
 };
 const collectionPct = (m: Metrics): number | null => (m.due > 0 ? (m.received / m.due) * 100 : null);
 
-/** Outstanding to DISPLAY = the START-of-month balance = month-end (net) balance + that month's
- *  receipts (the money already collected this month is added back). No floor: the identity
- *  `Total Outstanding − Received = Outstanding (Today)` holds for EVERY row. Customers sitting
- *  in advance have a negative net balance and so show a negative Total (a credit position) —
- *  that is intentional, not an error (Due lives in its own column). */
+/** Start-of-month receivable pool = month-end (net) balance + that month's receipts (money
+ *  already collected this month added back). Used by the invoice drill-down and the month-wise
+ *  analysis panel (the main table no longer shows a Total Outstanding column). */
 const startMonthOutstanding = (m: Metrics): number => m.outstanding + m.received;
 
 const pctStyle = (pct: number | null): string => {
@@ -215,8 +223,8 @@ function sortRows<T extends { m: Metrics; mPrev: Metrics }>(
 ): void {
   arr.sort((a, b) => {
     if (key === "salesperson") return dir * name(a).localeCompare(name(b));
-    // Total Outstanding sorts by the DISPLAYED total figure; Outstanding (Today) by m.outstanding.
-    if (key === "outstanding") return dir * (startMonthOutstanding(a.m) - startMonthOutstanding(b.m));
+    // Previous-month Sales sorts by mPrev; every other numeric key falls through to a.m[key].
+    if (key === "salesPrev") return dir * (a.mPrev.sales - b.mPrev.sales);
     if (key === "outstandingNow") return dir * (a.m.outstanding - b.m.outstanding);
     if (key === "collectionPct")
       return dir * ((collectionPct(a.m) ?? -1) - (collectionPct(b.m) ?? -1));
@@ -254,6 +262,8 @@ export default function SalespersonCollectionReport() {
   // reveals the breakup sub-columns (On Account / Against Invoices, and As-on-today / Till-month-end).
   const [receivedExpanded, setReceivedExpanded] = useState<boolean>(false);
   const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
+  // Outstanding (Today) collapsed by default → Total only; expanding reveals Net Debit / Net Credit.
+  const [outstandingExpanded, setOutstandingExpanded] = useState<boolean>(false);
   // Frozen "pane" — Excel-style freeze of the leading group-label column so the group
   // name stays visible while scrolling right. 0 = none, 1 = frozen (default).
   const [freezeLevel, setFreezeLevel] = useState<0 | 1>(1);
@@ -470,6 +480,14 @@ export default function SalespersonCollectionReport() {
         ? saleTypes.reduce((s, t) => s + (mt.receiptsByType?.[t as SaleType] ?? 0), 0) * 100_000
         : projectAmt((mt?.receipts ?? 0) * 100_000, undefined, share); // fallback: pre-tagging snapshot
     const received = tallyReceipts + projectAmt(opForMonth, undefined, share);
+    // Sales this month, sale-type-filterable the SAME way as receipts: read the real
+    // per-type monthly sales (trend.salesByType, lakhs) under a sale-type filter;
+    // pre-tagging snapshots fall back to the sales-mix estimate.
+    const sales = !saleTypeActive
+      ? (mt?.sales ?? 0) * 100_000
+      : mt?.salesByType
+        ? saleTypes.reduce((s, t) => s + (mt.salesByType?.[t as SaleType] ?? 0), 0) * 100_000
+        : projectAmt((mt?.sales ?? 0) * 100_000, undefined, share); // fallback: pre-tagging snapshot
     let outstanding: number;
     let openDue: number;
     let dueSoon = 0; // not-yet-overdue bills coming due by month-end (current month only)
@@ -511,7 +529,11 @@ export default function SalespersonCollectionReport() {
     const rawTotal = rawOn + (split?.against ?? 0);
     const receivedOnAccount = rawTotal > 1e-9 ? received * (rawOn / rawTotal) : 0;
     const receivedAgainst = received - receivedOnAccount;
-    return { outstanding, due: openDue + received, received, receivedOnAccount, receivedAgainst, pending: openDue, dueSoon };
+    // Partition the net balance onto exactly one side (debit if owing, credit if in advance).
+    // `outstanding` is sign-preserving in every branch, so these roll up the tree via addInto.
+    const outstandingDebit = outstanding > 0 ? outstanding : 0;
+    const outstandingCredit = outstanding < 0 ? -outstanding : 0;
+    return { sales, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, pending: openDue, dueSoon };
   }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, receivedSplitByCustomerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
@@ -578,7 +600,8 @@ export default function SalespersonCollectionReport() {
     const dir = sortDir === "asc" ? 1 : -1;
     const cmp = (a: GroupNode<CM>, b: GroupNode<CM>): number => {
       if (sortKey === "salesperson")       return dir * a.label.localeCompare(b.label);
-      if (sortKey === "outstanding")        return dir * (startMonthOutstanding(a.metrics.m) - startMonthOutstanding(b.metrics.m));
+      if (sortKey === "sales")              return dir * (a.metrics.m.sales - b.metrics.m.sales);
+      if (sortKey === "salesPrev")          return dir * (a.metrics.mPrev.sales - b.metrics.mPrev.sales);
       if (sortKey === "outstandingNow")     return dir * (a.metrics.m.outstanding - b.metrics.m.outstanding);
       if (sortKey === "collectionPct")      return dir * ((collectionPct(a.metrics.m) ?? -1) - (collectionPct(b.metrics.m) ?? -1));
       if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
@@ -592,7 +615,12 @@ export default function SalespersonCollectionReport() {
     for (const c of activeRows) addInto(t, customerMetrics.get(c.id) ?? emptyMetrics());
     // Locked NET convention for the headline outstanding in the current month. Skip when a
     // sale type is active — sumOutstanding uses un-projected balances, diverging from rows.
-    if (isCurrentMonth && !saleTypeActive) t.outstanding = sumOutstanding(activeRows);
+    if (isCurrentMonth && !saleTypeActive) {
+      t.outstanding = sumOutstanding(activeRows);
+      // Keep the Debit/Credit split partitioned off the same raw balances as the headline.
+      t.outstandingDebit = activeRows.reduce((s, c) => s + (c.outstanding > 0 ? c.outstanding : 0), 0);
+      t.outstandingCredit = activeRows.reduce((s, c) => s + (c.outstanding < 0 ? -c.outstanding : 0), 0);
+    }
     return t;
   }, [activeRows, customerMetrics, isCurrentMonth, saleTypeActive]);
 
@@ -774,11 +802,10 @@ export default function SalespersonCollectionReport() {
   ].filter(Boolean) as FilterChip[];
 
   const dueLabel = `Due by ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
-  // Total Outstanding = the month's full receivable pool = Outstanding (Today) with this month's
-  // collections added back. Because today's balance already includes bills raised during the month,
-  // this expands to (opening balance + new bills this month) — a running total, NOT a frozen
-  // month-start snapshot, so it's labelled by month (e.g. "Jun-26") rather than a 1st-of-month date.
-  const openingLabel = `Total Outstanding${selectedMonth ? ` (${selectedMonth})` : ""}`;
+  // Sales raised in the selected month and the month before it. Both respect the Sale Type
+  // filter exactly (via trend.salesByType), the same way Outstanding/Received do.
+  const salesLabel = `Sales (${selectedMonth || "—"})`;
+  const salesPrevLabel = prevMonth ? `Sales (${prevMonth})` : "Sales (prev)";
   // Outstanding (Today) = the live net balance as on asOfDate for the current month; for a past
   // month "today" doesn't apply, so it shows that month's closing (month-end) balance.
   const outstandingNowLabel = isCurrentMonth
@@ -808,42 +835,43 @@ export default function SalespersonCollectionReport() {
     ]);
     aoa.push([`Group by: ${groupBy.map((d) => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → ")}`]);
     aoa.push([]);
-    aoa.push(["Group", openingLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, outstandingNowLabel, `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
+    aoa.push(["Group", salesLabel, salesPrevLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, "Net Debit", "Net Credit", outstandingNowLabel, `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
     // Pre-order flatten of the roll-up (parents before children), indented by depth.
-    const flat: { depth: number; label: string; m: Metrics }[] = [];
+    // mPrev is carried so the previous-month Sales column can be exported per row.
+    const flat: { depth: number; label: string; m: Metrics; mPrev: Metrics }[] = [];
     const walk = (nodes: GroupNode<CM>[]) => {
       for (const n of nodes) {
-        flat.push({ depth: n.depth, label: n.sub ? `${n.label} (${n.sub})` : n.label, m: n.metrics.m });
+        flat.push({ depth: n.depth, label: n.sub ? `${n.label} (${n.sub})` : n.label, m: n.metrics.m, mPrev: n.metrics.mPrev });
         if (n.children.length) walk(n.children);
       }
     };
     walk(sortedRoots);
     for (const d of flat) {
       const pct = collectionPct(d.m);
-      aoa.push([`${"    ".repeat(d.depth)}${d.label}`, startMonthOutstanding(d.m), d.m.due, d.m.receivedOnAccount, d.m.receivedAgainst, d.m.received, d.m.outstanding, d.m.pending - d.m.dueSoon, d.m.dueSoon, d.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
+      aoa.push([`${"    ".repeat(d.depth)}${d.label}`, d.m.sales, d.mPrev.sales, d.m.due, d.m.receivedOnAccount, d.m.receivedAgainst, d.m.received, d.m.outstandingDebit, d.m.outstandingCredit, d.m.outstanding, d.m.pending - d.m.dueSoon, d.m.dueSoon, d.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
     }
     const totalPct = collectionPct(totals);
-    aoa.push(["Grand Total", startMonthOutstanding(totals), totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.outstanding, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
+    aoa.push(["Grand Total", totals.sales, totalsPrev.sales, totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.outstandingDebit, totals.outstandingCredit, totals.outstanding, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 34 }, { wch: 20 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 10 } }];
+    ws["!cols"] = [{ wch: 34 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 13 } }];
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
     const headerRow = 9; // 1-indexed column-header row (8 meta rows incl. Sale Type/Search + Group-by)
     const firstData = headerRow + 1;
     const lastData = firstData + flat.length; // includes grand total
     for (let row = firstData; row <= lastData; row++) {
-      for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J"]) {
+      for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"]) {
         const cell = ws[`${col}${row}`];
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
-      const pctCell = ws[`K${row}`];
+      const pctCell = ws[`N${row}`];
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
-    styleRow(ws, 0, 11, HEADER_STYLE);                     // title banner
-    styleRow(ws, headerRow - 1, 11, HEADER_STYLE);         // column header row (0-indexed)
-    styleRow(ws, headerRow + flat.length, 11, GRAND_TOTAL_STYLE); // Grand Total row
+    styleRow(ws, 0, 14, HEADER_STYLE);                     // title banner
+    styleRow(ws, headerRow - 1, 14, HEADER_STYLE);         // column header row (0-indexed)
+    styleRow(ws, headerRow + flat.length, 14, GRAND_TOTAL_STYLE); // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -874,11 +902,13 @@ export default function SalespersonCollectionReport() {
     );
   }
 
-  const kpiCards = [
-    { label: openingLabel,        value: fmt(startMonthOutstanding(totals)), icon: Wallet, warn: true  },
+  const kpiCards: { label: string; value: string; icon: typeof Coins; warn: boolean; sub?: string }[] = [
+    { label: salesLabel,          value: fmt(totals.sales),       icon: Coins,          warn: false },
+    { label: salesPrevLabel,      value: fmt(totalsPrev.sales),   icon: Coins,          warn: false },
     { label: dueLabel,            value: fmt(totals.due),         icon: CalendarClock,  warn: false },
     { label: receivedLabel,       value: fmt(totals.received),    icon: Coins,          warn: false },
-    { label: outstandingNowLabel,    value: fmt(totals.outstanding), icon: Wallet,         warn: true  },
+    { label: outstandingNowLabel,    value: fmt(totals.outstanding), icon: Wallet,         warn: true,
+      sub: `Dr ${fmt(totals.outstandingDebit)} · Cr ${fmt(totals.outstandingCredit)}` },
     { label: "Due Pending",       value: fmt(totals.pending),     icon: TrendingDown,   warn: true  },
     {
       label: "Collection %",
@@ -889,9 +919,12 @@ export default function SalespersonCollectionReport() {
 
   const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
     { key: "salesperson",   label: "Salesperson", wrap: true, width: "w-[110px]" },
-    { key: "outstanding",   label: openingLabel,        align: "right", wrap: true, width: "w-[150px]" },
+    { key: "sales",         label: salesLabel,          align: "right", wrap: true, width: "w-[110px]" },
+    { key: "salesPrev",     label: salesPrevLabel,      align: "right", wrap: true, width: "w-[110px]" },
     { key: "due",           label: dueLabel,            align: "right", wrap: true, width: "w-[110px]" },
     { key: "outstandingNow", label: outstandingNowLabel, align: "right", wrap: true, width: "w-[110px]" },
+    { key: "outstandingDebit",  label: "Net Debit",         align: "right" },
+    { key: "outstandingCredit", label: "Net Credit",        align: "right" },
     { key: "receivedOnAccount", label: "On Account",        align: "right" },
     { key: "receivedAgainst",   label: "Against Invoices",  align: "right" },
     { key: "received",          label: "Total",             align: "right" },
@@ -900,9 +933,11 @@ export default function SalespersonCollectionReport() {
     { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right", width: "w-[95px]", wrap: true },
   ];
   type Col = (typeof COLS)[number];
-  const anyExpanded = receivedExpanded || pendingExpanded;
-  const leadingCols    = COLS.filter((c) => ["salesperson", "outstanding", "due"].includes(c.key));
+  const anyExpanded = receivedExpanded || pendingExpanded || outstandingExpanded;
+  const leadingCols    = COLS.filter((c) => ["salesperson", "sales", "salesPrev", "due"].includes(c.key));
   const collectionCols = COLS.filter((c) => ["collectionPct", "collectionPctPrev"].includes(c.key));
+  const debitCol     = COLS.find((c) => c.key === "outstandingDebit")!;
+  const creditCol    = COLS.find((c) => c.key === "outstandingCredit")!;
   const onAccountCol = COLS.find((c) => c.key === "receivedOnAccount")!;
   const againstCol   = COLS.find((c) => c.key === "receivedAgainst")!;
   const totalCol     = COLS.find((c) => c.key === "received")!;
@@ -972,6 +1007,7 @@ export default function SalespersonCollectionReport() {
   );
   const receivedToggle = makeToggle(receivedExpanded, setReceivedExpanded, "On Account / Against Invoices breakup");
   const pendingToggle  = makeToggle(pendingExpanded, setPendingExpanded, "As-on-today / Till-month-end breakup");
+  const outstandingToggle = makeToggle(outstandingExpanded, setOutstandingExpanded, "Net Debit / Net Credit breakup");
 
   /** The metric cells for one row (grand total or any roll-up node), in column order.
    *  `strong` bolds the figures (grand total + depth-0 nodes). */
@@ -984,14 +1020,19 @@ export default function SalespersonCollectionReport() {
     const bold = strong ? "font-semibold " : "";
     return (
       <>
-        {drillCell(ids, "outstanding", label, `${sz}text-right font-mono ${bold}`, fmt(startMonthOutstanding(m)))}
+        <TableCell className={`${sz}text-right font-mono ${bold}`}>{fmt(m.sales)}</TableCell>
+        <TableCell className={`${sz}text-right font-mono`}>{fmt(mPrev.sales)}</TableCell>
         {drillCell(ids, "due", label, `${sz}text-right font-mono`, fmt(m.due))}
         {receivedExpanded && <>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.receivedOnAccount)}</TableCell>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.receivedAgainst)}</TableCell>
         </>}
         <TableCell className={`${sz}text-right font-mono`}>{fmt(m.received)}</TableCell>
-        <TableCell className={`${sz}text-right font-mono ${bold}border-l border-border`}>{fmt(m.outstanding)}</TableCell>
+        {outstandingExpanded && <>
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border`}>{fmt(m.outstandingDebit)}</TableCell>
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.outstandingCredit)}</TableCell>
+        </>}
+        <TableCell className={`${sz}text-right font-mono ${bold}${outstandingExpanded ? "" : "border-l border-border"}`}>{fmt(m.outstanding)}</TableCell>
         {pendingExpanded && <>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.pending - m.dueSoon)}</TableCell>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.dueSoon)}</TableCell>
@@ -1042,7 +1083,8 @@ export default function SalespersonCollectionReport() {
     });
 
   // Total column count (for empty-state colSpan): chevron + label + metric columns.
-  const metricColCount = 7 + (receivedExpanded ? 2 : 0) + (pendingExpanded ? 2 : 0);
+  // Metric columns: sales, salesPrev, due, received, outstandingNow, pending, collectionPct, collectionPctPrev = 8.
+  const metricColCount = 8 + (receivedExpanded ? 2 : 0) + (outstandingExpanded ? 2 : 0) + (pendingExpanded ? 2 : 0);
   const totalColCount = 2 + metricColCount;
   // Noun for the top-level row count (the first group-by dimension, e.g. "salesperson").
   const groupByLabel = (C_DIMENSIONS.find((x) => x.key === groupBy[0])?.label ?? "group").toLowerCase();
@@ -1162,6 +1204,12 @@ export default function SalespersonCollectionReport() {
         </CardContent>
       </Card>
 
+      {/* Reader remarks — how to read the Sales figures on this report */}
+      <div className="rounded-card border border-amber-300/60 bg-amber-50/70 dark:bg-amber-950/20 px-3 py-2 text-[11px] leading-snug text-amber-900 dark:text-amber-200 space-y-0.5">
+        <p><span className="font-semibold">Sales are inclusive of GST</span> — figures are the full invoice value the customer owes, not the taxable-only amount.</p>
+        <p><span className="font-semibold">No outstanding = not listed</span> — only parties carrying an outstanding or due balance appear here. Fully-settled parties (and their sales) are excluded, so the Sales total is <span className="font-semibold">not</span> the company's total sales.</p>
+      </div>
+
       {/* KPI cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         {kpiCards.map((kpi) => {
@@ -1176,14 +1224,27 @@ export default function SalespersonCollectionReport() {
                 <p className={`text-sm font-bold ${kpi.warn ? "text-destructive" : "text-foreground"}`}>
                   {kpi.value}
                 </p>
+                {kpi.sub && <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{kpi.sub}</p>}
               </CardContent>
             </Card>
           );
         })}
       </div>
-      <p className="text-[11px] text-muted-foreground -mt-3">
-        Total Outstanding ({selectedMonth || "this month"}) = Outstanding (Today) + Received in {selectedMonth || "the month"} — the start-of-month balance (this month's collections added back). Total Outstanding − Received = Outstanding (Today) on every row; a customer sitting in advance shows a negative Total (a credit balance). {isCurrentMonth ? `Outstanding (Today) = the live net balance as on ${formatDateLong(asOfDate)} (matches the dashboard).` : `Outstanding (month-end) = the balance as on ${selectedMonth ? monthEndLong(selectedMonth) : "month-end"}.`} Due Pending = "As on {formatDateLong(asOfDate)}" (Overdue — matches the dashboard's overview) + "Till month-end" (bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}). Due = Pending + Received. Received = On Account (advance / unallocated) + Against Invoices, and includes manual "other payments". Use the +/− toggles to show or hide each breakup.
-      </p>
+      <details className="group -mt-3 text-[11px] text-muted-foreground">
+        <summary className="flex items-center gap-1 cursor-pointer select-none list-none w-fit font-medium hover:text-foreground">
+          <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+          How to read this report
+        </summary>
+        <ul className="mt-1.5 ml-4 space-y-1 list-disc leading-snug">
+          <li><span className="font-medium">Total Outstanding ({selectedMonth || "this month"})</span> = the start-of-month balance = Outstanding (Today) + Received in {selectedMonth || "the month"} (this month's collections added back).</li>
+          <li><span className="font-medium">Outstanding (Today)</span> = {isCurrentMonth ? `the live net balance as on ${formatDateLong(asOfDate)} — matches the dashboard.` : `the balance as on ${selectedMonth ? monthEndLong(selectedMonth) : "month-end"}.`}</li>
+          <li>A <span className="font-medium">negative Total</span> just means that customer is sitting in advance (a credit balance) — not an error.</li>
+          <li><span className="font-medium">Outstanding</span> = Net Debit (parties who owe) − Net Credit (parties sitting in advance).</li>
+          <li><span className="font-medium">Due Pending</span> = overdue as on {formatDateLong(asOfDate)} (matches the dashboard) + bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}. Due = Pending + Received.</li>
+          <li><span className="font-medium">Received</span> = On Account (advance / unallocated) + Against Invoices; includes manual "other payments".</li>
+          <li>Use the +/− toggles to show or hide each breakup.</li>
+        </ul>
+      </details>
 
       {/* Main table */}
       <Card className="rounded-card border-border bg-surface overflow-hidden">
@@ -1218,7 +1279,8 @@ export default function SalespersonCollectionReport() {
                     {freezePin()}
                   </span>
                 </TableHead>
-                {sortHead(COLS.find((c) => c.key === "outstanding")!, anyExpanded ? 2 : 1)}
+                {sortHead(COLS.find((c) => c.key === "sales")!, anyExpanded ? 2 : 1)}
+                {sortHead(COLS.find((c) => c.key === "salesPrev")!, anyExpanded ? 2 : 1)}
                 {sortHead(COLS.find((c) => c.key === "due")!, anyExpanded ? 2 : 1)}
                 {receivedExpanded ? (
                   <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
@@ -1233,13 +1295,19 @@ export default function SalespersonCollectionReport() {
                     <span className="inline-flex items-center gap-1 justify-end w-full">{receivedLabel}{sortIcon("received")}{receivedToggle}</span>
                   </TableHead>
                 )}
-                <TableHead
-                  rowSpan={anyExpanded ? 2 : 1}
-                  className="text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none w-[110px] text-right border-l border-border"
-                  onClick={() => toggleSort("outstandingNow")}
-                >
-                  <span className="inline-flex items-center gap-1 justify-end w-full">{outstandingNowLabel}{sortIcon("outstandingNow")}</span>
-                </TableHead>
+                {outstandingExpanded ? (
+                  <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
+                    <span className="inline-flex items-center justify-center">{outstandingNowLabel}{outstandingToggle}</span>
+                  </TableHead>
+                ) : (
+                  <TableHead
+                    rowSpan={anyExpanded ? 2 : 1}
+                    className="text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none w-[110px] text-right border-l border-border"
+                    onClick={() => toggleSort("outstandingNow")}
+                  >
+                    <span className="inline-flex items-center gap-1 justify-end w-full">{outstandingNowLabel}{sortIcon("outstandingNow")}{outstandingToggle}</span>
+                  </TableHead>
+                )}
                 {pendingExpanded ? (
                   <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                     <span className="inline-flex items-center justify-center">{pendingCol.label}{pendingToggle}</span>
@@ -1266,6 +1334,25 @@ export default function SalespersonCollectionReport() {
                       <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
                     </TableHead>
                   ))}
+                  {outstandingExpanded && (
+                    <>
+                      {[debitCol, creditCol].map((col) => (
+                        <TableHead
+                          key={col.key}
+                          className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "outstandingDebit" ? "border-l border-border" : ""}`}
+                          onClick={() => toggleSort(col.key)}
+                        >
+                          <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
+                        </TableHead>
+                      ))}
+                      <TableHead
+                        className="text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right"
+                        onClick={() => toggleSort("outstandingNow")}
+                      >
+                        <span className="inline-flex items-center gap-1 justify-end w-full">Total{sortIcon("outstandingNow")}</span>
+                      </TableHead>
+                    </>
+                  )}
                   {pendingExpanded && (
                     <>
                       <TableHead className="text-xs font-medium text-foreground/60 whitespace-nowrap text-right border-l border-border">{pendingNowLabel}</TableHead>

@@ -311,6 +311,7 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
       outstandingByType: r.outstanding_by_type ?? {},
       maxOverdueDaysByType: r.max_overdue_days_by_type ?? {},
       receiptsByType: r.receipts_by_type ?? {},
+      salesByType: r.sales_by_type ?? {},
     } as MonthlyTrend);
   }
   for (const r of rcpts) {

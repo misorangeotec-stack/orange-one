@@ -247,6 +247,10 @@ export interface MonthlyTrend {
    *  (lakhs, like the other trend amounts). Σ months == the customer's yearly
    *  receiptsByType. Absent on pre-tagging snapshots. */
   receiptsByType?: Partial<Record<SaleType, number>>;
+  /** Sales this month split by the sale type of the voucher (lakhs, like the other
+   *  trend amounts). Σ per-type == this month's `sales`. Absent on pre-tagging
+   *  snapshots — callers fall back to the plain `sales` total. */
+  salesByType?: Partial<Record<SaleType, number>>;
 }
 
 export interface ReceiptTransaction {
