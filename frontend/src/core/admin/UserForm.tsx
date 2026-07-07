@@ -7,7 +7,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
-import { apps } from "@/apps/registry";
+import { grantableModules } from "@/apps/registry";
 import type { AppRole } from "@/core/platform/types";
 import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
 import ShareLoginModal from "./ShareLoginModal";
@@ -231,7 +231,7 @@ export default function UserForm() {
               <p className="text-[12.5px] text-grey-2">Admins have full access to all current and future apps.</p>
             ) : (
               <div className="grid sm:grid-cols-2 gap-2">
-                {apps.map((a) => {
+                {grantableModules.map((a) => {
                   const on = moduleAccess.includes(a.id);
                   const soon = a.status !== "live";
                   return (

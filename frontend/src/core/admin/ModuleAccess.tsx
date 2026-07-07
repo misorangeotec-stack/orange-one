@@ -5,7 +5,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
-import { apps } from "@/apps/registry";
+import { grantableModules } from "@/apps/registry";
 
 /**
  * Per-user module access matrix. Each cell grants/revokes one app for one user
@@ -30,7 +30,7 @@ export default function ModuleAccess() {
           <thead>
             <tr className="border-b border-line">
               <th className="text-left text-[12px] font-semibold text-grey-2 uppercase tracking-wide px-4 py-3 sticky left-0 bg-white">User</th>
-              {apps.map((a) => (
+              {grantableModules.map((a) => (
                 <th key={a.id} className="text-center text-[12px] font-semibold text-navy px-4 py-3 whitespace-nowrap">
                   {a.name}
                   {a.status !== "live" && <span className="block text-[10px] font-normal text-grey-2">coming soon</span>}
@@ -52,7 +52,7 @@ export default function ModuleAccess() {
                       </div>
                     </div>
                   </td>
-                  {apps.map((a) => {
+                  {grantableModules.map((a) => {
                     const on = isAdmin || u.moduleAccess.includes(a.id);
                     const locked = isAdmin || !canManageModules;
                     return (

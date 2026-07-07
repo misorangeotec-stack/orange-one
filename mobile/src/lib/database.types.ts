@@ -14,6 +14,136 @@ export type Database = {
   }
   public: {
     Tables: {
+      // Added for the Leads mobile app (migration 20260703140000_add_app_leads.sql).
+      // Not present in the web app's copy of this file — keep in sync manually.
+      app_leads: {
+        Row: {
+          captured_on: string | null
+          company_name: string | null
+          created_at: string
+          deleted: boolean
+          follow_up_action_id: string | null
+          google_media: Json
+          google_synced_at: string | null
+          id: string
+          interest_level_id: string | null
+          payload: Json
+          person_name: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          captured_on?: string | null
+          company_name?: string | null
+          created_at?: string
+          deleted?: boolean
+          follow_up_action_id?: string | null
+          google_media?: Json
+          google_synced_at?: string | null
+          id: string
+          interest_level_id?: string | null
+          payload?: Json
+          person_name?: string | null
+          updated_at: string
+          user_id?: string
+        }
+        Update: {
+          captured_on?: string | null
+          company_name?: string | null
+          created_at?: string
+          deleted?: boolean
+          follow_up_action_id?: string | null
+          google_media?: Json
+          google_synced_at?: string | null
+          id?: string
+          interest_level_id?: string | null
+          payload?: Json
+          person_name?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      app_lead_masters: {
+        Row: {
+          masters: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          masters?: Json
+          updated_at: string
+          user_id?: string
+        }
+        Update: {
+          masters?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      // Added for admin-managed global masters (migration
+      // 20260707120000_add_global_masters_and_mobile_access.sql). Org-wide, admin-
+      // writable, all-readable. The mobile app reads this read-only.
+      app_lead_masters_global: {
+        Row: {
+          id: string
+          masters: Json
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          masters?: Json
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          masters?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      // Added for the mobile app (migration 20260703120000_add_app_mobile_core.sql).
+      // Not present in the web app's copy of this file — keep in sync manually.
+      app_devices: {
+        Row: {
+          app_version: string | null
+          created_at: string
+          device_id: string
+          id: string
+          last_seen_at: string
+          model: string | null
+          platform: string | null
+          push_token: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string
+          device_id: string
+          id?: string
+          last_seen_at?: string
+          model?: string | null
+          platform?: string | null
+          push_token?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string
+          device_id?: string
+          id?: string
+          last_seen_at?: string
+          model?: string | null
+          platform?: string | null
+          push_token?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       app_access: {
         Row: {
           app_id: string
@@ -42,24 +172,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      app_lead_masters_global: {
-        Row: {
-          id: string
-          masters: Json
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          masters?: Json
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          masters?: Json
-          updated_at?: string
-        }
-        Relationships: []
       }
       departments: {
         Row: {

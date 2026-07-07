@@ -6,6 +6,7 @@ import Users from "./Users";
 import UserForm from "./UserForm";
 import Hierarchy from "./Hierarchy";
 import ModuleAccess from "./ModuleAccess";
+import Masters from "./Masters";
 import Backup from "./Backup";
 
 /**
@@ -24,6 +25,7 @@ export default function AdminApp() {
         <Route path="users/:id/edit" element={<UserForm />} />
         <Route path="hierarchy" element={<Hierarchy />} />
         <Route path="access" element={<ModuleAccess />} />
+        <Route path="masters" element={<Masters />} />
         <Route path="backup" element={<Backup />} />
         <Route path="*" element={<Navigate to="/admin" replace />} />
       </Route>
