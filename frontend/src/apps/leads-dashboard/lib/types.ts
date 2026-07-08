@@ -11,7 +11,7 @@ export interface MasterItem {
   order?: number;
 }
 
-export type MasterType = "categories" | "interestLevels" | "askedAbout" | "followUpActions";
+export type MasterType = "source" | "categories" | "interestLevels" | "askedAbout" | "followUpActions";
 export type Masters = Record<MasterType, MasterItem[]>;
 
 export interface PersonInfo {
@@ -38,6 +38,7 @@ export interface LeadPayload {
   person?: PersonInfo;
   additionalPeople?: PersonInfo[];
   company?: { name?: string; mobiles?: string[]; emails?: string[]; websites?: string[]; addresses?: string[] };
+  sourceId?: string | null;
   categoryIds?: string[];
   interestLevelId?: string | null;
   askedAboutIds?: string[];
@@ -59,6 +60,7 @@ export interface Lead {
   personName: string;
   jobTitle: string; // primary person's first job title
   companyName: string;
+  sourceId: string | null;
   interestLevelId: string | null;
   followUpActionId: string | null;
   categoryIds: string[];

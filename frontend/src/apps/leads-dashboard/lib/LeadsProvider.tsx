@@ -30,6 +30,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
     let n = 0;
     if (filters.from || filters.to) n++;
     n += filters.salespeople.length ? 1 : 0;
+    n += filters.sources.length ? 1 : 0;
     n += filters.categories.length ? 1 : 0;
     n += filters.interests.length ? 1 : 0;
     n += filters.askedAbout.length ? 1 : 0;

@@ -75,6 +75,7 @@ export default function FilterBar({
       {/* Multi-select filters */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-2.5">
         <Field label="Salesperson"><MultiSelect values={filters.salespeople} onChange={(v) => set({ salespeople: v })} options={salesOptions} placeholder="All" /></Field>
+        <Field label="Source"><MultiSelect values={filters.sources} onChange={(v) => set({ sources: v })} options={opts(masters, "source")} placeholder="Any" /></Field>
         <Field label="Interest"><MultiSelect values={filters.interests} onChange={(v) => set({ interests: v })} options={opts(masters, "interestLevels")} placeholder="Any" /></Field>
         <Field label="Category"><MultiSelect values={filters.categories} onChange={(v) => set({ categories: v })} options={opts(masters, "categories")} placeholder="Any" /></Field>
         <Field label="Asked about"><MultiSelect values={filters.askedAbout} onChange={(v) => set({ askedAbout: v })} options={opts(masters, "askedAbout")} placeholder="Any" /></Field>

@@ -29,6 +29,7 @@ export interface LeadFilters {
   from: string | null; // yyyy-mm-dd inclusive (captured date)
   to: string | null; // yyyy-mm-dd inclusive
   salespeople: string[]; // userIds
+  sources: string[]; // source master ids (e.g. exhibition)
   categories: string[];
   interests: string[];
   askedAbout: string[];
@@ -39,7 +40,7 @@ export interface LeadFilters {
 }
 
 export const emptyFilters = (): LeadFilters => ({
-  from: null, to: null, salespeople: [], categories: [], interests: [], askedAbout: [], followUps: [], hasVoice: "", company: "", locations: [],
+  from: null, to: null, salespeople: [], sources: [], categories: [], interests: [], askedAbout: [], followUps: [], hasVoice: "", company: "", locations: [],
 });
 
 /** A filter key string so usePagination resets to page 1 when filters change. */
@@ -50,6 +51,7 @@ export function describeFilters(f: LeadFilters, masters: Masters, salesName: (id
   const out: string[] = [];
   if (f.from || f.to) out.push(`Captured: ${f.from ?? "…"} → ${f.to ?? "…"}`);
   if (f.salespeople.length) out.push(`Salesperson: ${f.salespeople.map(salesName).join(", ")}`);
+  if (f.sources.length) out.push(`Source: ${f.sources.map((id) => labelOf(masters, "source", id)).join(", ")}`);
   if (f.interests.length) out.push(`Interest: ${f.interests.map((id) => labelOf(masters, "interestLevels", id)).join(", ")}`);
   if (f.categories.length) out.push(`Category: ${f.categories.map((id) => labelOf(masters, "categories", id)).join(", ")}`);
   if (f.askedAbout.length) out.push(`Asked about: ${f.askedAbout.map((id) => labelOf(masters, "askedAbout", id)).join(", ")}`);
@@ -69,6 +71,7 @@ export function applyFilters(leads: Lead[], f: LeadFilters): Lead[] {
     if (f.from && (!dk || dk < f.from)) return false;
     if (f.to && (!dk || dk > f.to)) return false;
     if (f.salespeople.length && !f.salespeople.includes(l.userId)) return false;
+    if (f.sources.length && !(l.sourceId && f.sources.includes(l.sourceId))) return false;
     if (f.categories.length && !intersects(l.categoryIds, f.categories)) return false;
     if (f.interests.length && !(l.interestLevelId && f.interests.includes(l.interestLevelId))) return false;
     if (f.askedAbout.length && !intersects(l.askedAboutIds, f.askedAbout)) return false;

@@ -17,6 +17,7 @@ const COLUMNS: { header: string; width: number; get: (l: Lead, m: Masters) => st
   { header: "Job Title", width: 20, get: (l) => l.jobTitle },
   { header: "Other Contacts", width: 26, get: (l) => l.people.slice(1).join(", ") },
   { header: "Salesperson", width: 20, get: (l) => l.salesperson },
+  { header: "Source", width: 20, get: (l, m) => labelOf(m, "source", l.sourceId) },
   { header: "Mobiles", width: 26, get: (l) => l.mobiles.join(", ") },
   { header: "Emails", width: 28, get: (l) => l.emails.join(", ") },
   { header: "Interest", width: 16, get: (l, m) => labelOf(m, "interestLevels", l.interestLevelId) },

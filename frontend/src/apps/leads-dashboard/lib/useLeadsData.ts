@@ -11,7 +11,7 @@ import { supabase } from "@/core/platform/supabase";
 import { useDirectory } from "@/core/platform/store";
 import type { Lead, LeadPayload, MasterItem, Masters, PersonInfo } from "./types";
 
-const EMPTY_MASTERS: Masters = { categories: [], interestLevels: [], askedAbout: [], followUpActions: [] };
+const EMPTY_MASTERS: Masters = { source: [], categories: [], interestLevels: [], askedAbout: [], followUpActions: [] };
 
 const strArr = (v: unknown): string[] =>
   Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim()) : [];
@@ -27,6 +27,7 @@ function parseMasters(raw: unknown): Masters {
           .filter((i) => i.id)
       : [];
   return {
+    source: pick("source"),
     categories: pick("categories"),
     interestLevels: pick("interestLevels"),
     askedAbout: pick("askedAbout"),
@@ -123,6 +124,7 @@ export function useLeadsData(): LeadsData {
         jobTitle: (p.person?.jobTitles ?? []).find(Boolean) ?? "",
         people: names.length ? names : primaryName ? [primaryName] : [],
         companyName: r.company_name || p.company?.name || "",
+        sourceId: p.sourceId ?? null,
         interestLevelId: r.interest_level_id ?? p.interestLevelId ?? null,
         followUpActionId: r.follow_up_action_id ?? p.followUpActionId ?? null,
         categoryIds: strArr(p.categoryIds),

@@ -50,12 +50,13 @@ export default function LeadsTable() {
         ) : (
           <>
             <ScrollableTable className="rounded-t-card" maxHeight="max-h-[62vh]">
-              <table className="w-full text-left border-collapse min-w-[960px]">
+              <table className="w-full text-left border-collapse min-w-[1060px]">
                 <thead className="sticky top-0 z-10 bg-page">
                   <tr className="text-[11.5px] uppercase tracking-wide text-grey-2">
                     <Th>Company</Th>
                     <Th>Contact</Th>
                     <Th>Salesperson</Th>
+                    <Th>Source</Th>
                     <Th>Interest</Th>
                     <Th>Follow-up</Th>
                     <Th>Categories</Th>
@@ -66,6 +67,7 @@ export default function LeadsTable() {
                 </thead>
                 <tbody>
                   {pg.pageItems.map((l) => {
+                    const source = labelOf(masters, "source", l.sourceId);
                     const interest = labelOf(masters, "interestLevels", l.interestLevelId);
                     const interestColor = colorOf(masters, "interestLevels", l.interestLevelId);
                     const follow = labelOf(masters, "followUpActions", l.followUpActionId);
@@ -86,6 +88,7 @@ export default function LeadsTable() {
                           </div>
                         </Td>
                         <Td><span className="text-navy">{l.salesperson}</span></Td>
+                        <Td><span className="text-[12.5px] text-navy">{source || <span className="text-grey-2">—</span>}</span></Td>
                         <Td>
                           {interest ? (
                             <span className="inline-flex items-center gap-1.5 text-[12.5px] text-navy">
