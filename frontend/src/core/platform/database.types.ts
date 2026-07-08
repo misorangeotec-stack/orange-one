@@ -61,6 +61,54 @@ export type Database = {
         }
         Relationships: []
       }
+      app_leads: {
+        Row: {
+          id: string
+          user_id: string
+          person_name: string | null
+          company_name: string | null
+          interest_level_id: string | null
+          follow_up_action_id: string | null
+          captured_on: string | null
+          payload: Json
+          deleted: boolean
+          updated_at: string
+          created_at: string
+          google_synced_at: string | null
+          google_media: Json | null
+        }
+        Insert: {
+          id: string
+          user_id?: string
+          person_name?: string | null
+          company_name?: string | null
+          interest_level_id?: string | null
+          follow_up_action_id?: string | null
+          captured_on?: string | null
+          payload?: Json
+          deleted?: boolean
+          updated_at: string
+          created_at?: string
+          google_synced_at?: string | null
+          google_media?: Json | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          person_name?: string | null
+          company_name?: string | null
+          interest_level_id?: string | null
+          follow_up_action_id?: string | null
+          captured_on?: string | null
+          payload?: Json
+          deleted?: boolean
+          updated_at?: string
+          created_at?: string
+          google_synced_at?: string | null
+          google_media?: Json | null
+        }
+        Relationships: []
+      }
       departments: {
         Row: {
           created_at: string
@@ -2199,6 +2247,11 @@ export type Database = {
         Returns: string
       }
       app_mobile_has_access: { Args: Record<PropertyKey, never>; Returns: boolean }
+      leads_dashboard_can_read: { Args: Record<PropertyKey, never>; Returns: boolean }
+      leads_dashboard_salespeople: {
+        Args: Record<PropertyKey, never>
+        Returns: { id: string; name: string | null; email: string | null }[]
+      }
       fms_complete_stage: {
         Args: {
           p_entry_id: string
