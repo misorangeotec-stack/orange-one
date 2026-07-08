@@ -6,13 +6,13 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ImageLightbox } from '@/components/leads/ImageLightbox';
+import { MediaImage } from '@/components/leads/MediaImage';
 import { SegmentedTabs } from '@/components/leads/SegmentedTabs';
 import { VoicePlayer } from '@/components/leads/VoicePlayer';
 import { VoiceRecorder, type RecordedVoice } from '@/components/leads/VoiceRecorder';
@@ -89,6 +89,7 @@ export default function ViewCardScreen() {
     ]);
   };
 
+  const source = masters.source.find((s) => s.id === contact.sourceId);
   const categories = masters.categories.filter((c) => contact.categoryIds.includes(c.id));
   const interest = masters.interestLevels.find((i) => i.id === contact.interestLevelId);
   const asked = masters.askedAbout.filter((a) => contact.askedAboutIds.includes(a.id));
@@ -129,6 +130,7 @@ export default function ViewCardScreen() {
               ))}
               <Row icon="business-outline" value={contact.company.name} />
 
+              {source ? <Row icon="megaphone-outline" value={`Source: ${source.label}`} /> : null}
               {categories.length ? (
                 <View style={styles.chipRow}>
                   {categories.map((c) => <Chip key={c.id} label={c.label} selected />)}
@@ -187,6 +189,38 @@ export default function ViewCardScreen() {
                   <Ionicons name="chevron-forward" size={18} color={theme.textSecondary} />
                 </Pressable>
               ))}
+
+              {/* Other people printed on the same card */}
+              {contact.additionalPeople && contact.additionalPeople.length ? (
+                <View style={styles.alsoWrap}>
+                  <ThemedText type="smallBold" style={styles.alsoTitle}>Also on this card</ThemedText>
+                  {contact.additionalPeople.map((ap, idx) => (
+                    <View key={idx} style={[styles.alsoPerson, { borderColor: theme.border }]}>
+                      <Row icon="person-outline" value={ap.name || 'Unnamed'} strong />
+                      {ap.jobTitles.filter(Boolean).map((t, i) => (
+                        <Row key={`t${i}`} icon="briefcase-outline" value={t} />
+                      ))}
+                      {ap.mobiles.filter(Boolean).map((m, i) => (
+                        <View key={`m${i}`} style={styles.contactRow}>
+                          <Pressable style={styles.contactMain} onPress={() => Linking.openURL(`tel:${m.replace(/\s/g, '')}`)}>
+                            <View style={[styles.iconTile, { backgroundColor: '#27AE6022' }]}><Ionicons name="call" size={18} color="#27AE60" /></View>
+                            <ThemedText style={{ flex: 1 }}>{m}</ThemedText>
+                          </Pressable>
+                          <Pressable onPress={() => Linking.openURL(`https://wa.me/${m.replace(/[^\d]/g, '')}`)} hitSlop={6} style={styles.waBtn}>
+                            <Ionicons name="logo-whatsapp" size={20} color="#25D366" />
+                          </Pressable>
+                        </View>
+                      ))}
+                      {ap.emails.filter(Boolean).map((e, i) => (
+                        <Pressable key={`e${i}`} style={styles.contactRow} onPress={() => Linking.openURL(`mailto:${e}`)}>
+                          <View style={[styles.iconTile, { backgroundColor: Brand.orangeSoft }]}><Ionicons name="mail" size={18} color={Brand.orange} /></View>
+                          <ThemedText style={{ flex: 1 }} numberOfLines={1}>{e}</ThemedText>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ))}
+                </View>
+              ) : null}
             </View>
           ) : (
             <View style={[styles.card, { borderColor: Brand.navy, backgroundColor: theme.backgroundElement }]}>
@@ -215,7 +249,7 @@ export default function ViewCardScreen() {
                 <View style={styles.cardImages}>
                   {cardImages.map((uri) => (
                     <Pressable key={uri} onPress={() => setZoomUri(uri)}>
-                      <Image source={{ uri }} style={styles.cardImage} contentFit="cover" />
+                      <MediaImage uri={uri} style={styles.cardImage} contentFit="cover" />
                       <View style={styles.zoomHint}>
                         <Ionicons name="expand-outline" size={14} color="#ffffff" />
                       </View>
@@ -262,7 +296,7 @@ function Row({ icon, value, strong, photo, onZoom }: { icon: keyof typeof Ionico
     <View style={styles.row}>
       {photo ? (
         <Pressable onPress={() => onZoom?.(photo)}>
-          <Image source={{ uri: photo }} style={styles.rowPhoto} contentFit="cover" />
+          <MediaImage uri={photo} style={styles.rowPhoto} contentFit="cover" />
         </Pressable>
       ) : (
         <View style={[styles.iconTile, { backgroundColor: Brand.orangeSoft }]}>
@@ -294,6 +328,9 @@ const styles = StyleSheet.create({
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
   contactMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   waBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#25D36618', alignItems: 'center', justifyContent: 'center' },
+  alsoWrap: { gap: Spacing.two, marginTop: Spacing.one },
+  alsoTitle: { fontSize: 14 },
+  alsoPerson: { borderWidth: 1, borderRadius: Spacing.two + 2, padding: Spacing.three, gap: Spacing.two },
   insights: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.three, borderRadius: Spacing.two },
   cardImages: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   cardImage: { width: 140, height: 88, borderRadius: Spacing.two },

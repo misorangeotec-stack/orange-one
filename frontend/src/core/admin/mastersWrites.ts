@@ -8,7 +8,7 @@ import { supabase } from "@/core/platform/supabase";
  * the mobile app's MasterItem / Masters (mobile/src/lib/leads/types.ts).
  */
 
-export type MasterType = "categories" | "interestLevels" | "askedAbout" | "followUpActions";
+export type MasterType = "source" | "categories" | "interestLevels" | "askedAbout" | "followUpActions";
 
 export interface MasterItem {
   id: string;
@@ -22,13 +22,14 @@ export interface MasterItem {
 export type Masters = Record<MasterType, MasterItem[]>;
 
 export const MASTER_META: { type: MasterType; label: string; hasColor: boolean; hint: string }[] = [
+  { type: "source", label: "Source", hasColor: false, hint: "Where the lead came from — e.g. the exhibition name" },
   { type: "categories", label: "Categories", hasColor: false, hint: "Business type tags on a lead" },
   { type: "interestLevels", label: "Interest levels", hasColor: true, hint: "How warm the lead is (shown as a colored dot)" },
   { type: "askedAbout", label: "What they asked about", hasColor: false, hint: "What the lead enquired about" },
   { type: "followUpActions", label: "Follow-up actions", hasColor: false, hint: "The next step for this lead" },
 ];
 
-const EMPTY: Masters = { categories: [], interestLevels: [], askedAbout: [], followUpActions: [] };
+const EMPTY: Masters = { source: [], categories: [], interestLevels: [], askedAbout: [], followUpActions: [] };
 
 /** Coerce a raw jsonb blob into a well-formed Masters (missing lists → empty). */
 function normalize(raw: unknown): Masters {
@@ -40,6 +41,7 @@ function normalize(raw: unknown): Masters {
           .map((x, i) => ({ id: x.id, label: String(x.label ?? ""), color: x.color, order: typeof x.order === "number" ? x.order : i + 1 }))
       : [];
   return {
+    source: list(m.source),
     categories: list(m.categories),
     interestLevels: list(m.interestLevels),
     askedAbout: list(m.askedAbout),

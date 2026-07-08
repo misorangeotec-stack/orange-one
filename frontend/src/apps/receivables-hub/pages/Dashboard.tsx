@@ -18,6 +18,7 @@ import {
 } from "@hub/components/ui/select";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
+import { useHubBase } from "@hub/lib/sourceContext";
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY, formatDateTimeDMY } from "@hub/lib/utils";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { ActivityLegendPopover } from "@hub/components/ActivityLegendPopover";
@@ -58,6 +59,11 @@ export default function Dashboard() {
   const { toast } = useToast();
   const navigate  = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  // Base path this screen's internal links are relative to ("/outstanding-dashboard" for the
+  // default source, "/outstanding-dashboard/live" for the Live/Tally set) — keeps drill-through
+  // inside whichever set the user is viewing.
+  const hubBase = useHubBase();
+  const rebase = (p: string) => p.replace(/^\/outstanding-dashboard/, hubBase);
 
   const [riskLevels,      setRiskLevels]      = useState<string[]>([]);
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
@@ -228,13 +234,13 @@ export default function Dashboard() {
   };
 
   /* ── Helper: build Risk Register URL carrying current dashboard filters ─*/
-  const buildRRUrl = (base: string): string => {
-    const [path, existing] = base.split("?");
+  const buildRRUrl = (url: string): string => {
+    const [path, existing] = url.split("?");
     const params = new URLSearchParams(existing ?? "");
     params.set("segment", customerSegment);
     if (isGroupMode)               params.set("view", "group");
     const qs = params.toString();
-    return qs ? `${path}?${qs}` : path;
+    return rebase(qs ? `${path}?${qs}` : path);
   };
 
   /* ── KPI cards ──────────────────────────────────────────*/
@@ -711,9 +717,9 @@ export default function Dashboard() {
                   const riskLabel = c.risk.charAt(0).toUpperCase() + c.risk.slice(1);
                   // In group mode, expandable groups (multi-child) navigate to /group/:name;
                   // single-child groups go to the underlying customer detail.
-                  const target = isGroupMode && c.isGroup
+                  const target = rebase(isGroupMode && c.isGroup
                     ? `/outstanding-dashboard/group/${encodeURIComponent(c.name)}`
-                    : `/outstanding-dashboard/customer/${encodeURIComponent(c.name)}`;
+                    : `/outstanding-dashboard/customer/${encodeURIComponent(c.name)}`);
                   return (
                     <div
                       key={c.id}

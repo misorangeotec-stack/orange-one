@@ -1,9 +1,11 @@
 import { Outlet } from "react-router-dom";
+import { Radio } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@hub/components/ui/sidebar";
 import { UserSidebar } from "@hub/components/UserSidebar";
 import { useAppData } from "@hub/lib/useAppData";
 import { FYMultiSelect } from "@hub/components/FYMultiSelect";
 import { useFY } from "@hub/lib/fyContext";
+import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
 import { useSession } from "@/core/platform/session";
 import type { AppRole } from "@/core/platform/types";
@@ -47,17 +49,40 @@ export default function UserLayout() {
   const { dashboard } = useAppData({});
   const { label: fyLabel } = useFY();
   const { user, role } = useSession();
+  const { liveMode, setLiveMode, canUseLive } = useLiveMode();
 
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-surface-alt">
         <UserSidebar />
         <div className="flex-1 flex flex-col min-w-0">
-          <header className="h-14 flex items-center gap-3 border-b border-border bg-surface px-4">
+          <header className={`h-14 flex items-center gap-3 border-b px-4 ${liveMode ? "border-emerald-300 bg-emerald-50/60" : "border-border bg-surface"}`}>
             <SidebarTrigger className="text-foreground" />
             <span className="text-sm font-semibold text-foreground">Dashboard</span>
+            {liveMode && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1.5 py-0.5">
+                Live · Tally
+              </span>
+            )}
             <span className="text-xs text-muted-foreground hidden sm:inline">· {fyLabel}</span>
             <div className="ml-auto flex items-center gap-3">
+              {/* Admin-only: flip the WHOLE hub between the pipeline source and the ConnectWave
+                  live-Tally snapshot. One switch instead of duplicating every menu (see lib/liveMode). */}
+              {canUseLive && (
+                <button
+                  type="button"
+                  onClick={() => setLiveMode(!liveMode)}
+                  title={liveMode ? "Showing live Tally data — click to return to the standard view" : "Switch to live Tally data"}
+                  className={`inline-flex items-center gap-1.5 h-8 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                    liveMode
+                      ? "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-transparent border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                  }`}
+                >
+                  <Radio className={`h-3.5 w-3.5 ${liveMode ? "animate-pulse" : ""}`} />
+                  {liveMode ? "Live (Tally) ON" : "Live (Tally)"}
+                </button>
+              )}
               {(dashboard?.lastUpdated || dashboard?.asOfDate) && (
                 <span className="text-xs text-muted-foreground hidden md:inline whitespace-nowrap">
                   Data updated as of{" "}

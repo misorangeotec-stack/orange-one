@@ -101,13 +101,14 @@ export default function ReviewCardScreen() {
 
   const sheetConfig = useMemo(() => {
     const map: Record<Exclude<SheetKind, null>, { title: string; multi: boolean; ids: string[]; set: (ids: string[]) => void }> = {
+      source: { title: 'Source', multi: false, ids: draft.sourceId ? [draft.sourceId] : [], set: (ids) => setDraft((d) => ({ ...d, sourceId: ids[0] ?? null })) },
       categories: { title: 'Categories', multi: true, ids: draft.categoryIds, set: (ids) => setDraft((d) => ({ ...d, categoryIds: ids })) },
       interestLevels: { title: 'Interest level', multi: false, ids: draft.interestLevelId ? [draft.interestLevelId] : [], set: (ids) => setDraft((d) => ({ ...d, interestLevelId: ids[0] ?? null })) },
       askedAbout: { title: 'What they asked about', multi: true, ids: draft.askedAboutIds, set: (ids) => setDraft((d) => ({ ...d, askedAboutIds: ids })) },
       followUpActions: { title: 'Follow-up action', multi: false, ids: draft.followUpActionId ? [draft.followUpActionId] : [], set: (ids) => setDraft((d) => ({ ...d, followUpActionId: ids[0] ?? null })) },
     };
     return map;
-  }, [draft.categoryIds, draft.interestLevelId, draft.askedAboutIds, draft.followUpActionId]);
+  }, [draft.sourceId, draft.categoryIds, draft.interestLevelId, draft.askedAboutIds, draft.followUpActionId]);
 
   const chipsFor = (type: MasterType, ids: string[]) => masters[type].filter((m) => ids.includes(m.id));
 
@@ -172,6 +173,7 @@ export default function ReviewCardScreen() {
             </View>
 
             {/* Enrichment fields */}
+            <SelectRow label="Source" onPress={() => setSheet('source')} chips={chipsFor('source', draft.sourceId ? [draft.sourceId] : [])} />
             <SelectRow label="Categories" onPress={() => setSheet('categories')} chips={chipsFor('categories', draft.categoryIds)} />
 
             {/* Notes */}
@@ -205,7 +207,6 @@ export default function ReviewCardScreen() {
             <SelectRow label="What they asked about" onPress={() => setSheet('askedAbout')} chips={chipsFor('askedAbout', draft.askedAboutIds)} />
             <LabeledInput label="Quantity needed" value={draft.quantityNeeded ?? ''} onChangeText={(t) => setDraft((d) => ({ ...d, quantityNeeded: t }))} keyboardType="numeric" />
             <SelectRow label="Follow-up action" onPress={() => setSheet('followUpActions')} chips={chipsFor('followUpActions', draft.followUpActionId ? [draft.followUpActionId] : [])} />
-            <LabeledInput label="Team size" value={draft.teamSize ?? ''} onChangeText={(t) => setDraft((d) => ({ ...d, teamSize: t }))} keyboardType="numeric" />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

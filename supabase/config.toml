@@ -5,3 +5,18 @@ project_id = "orange-one"
 
 [functions.admin-users]
 verify_jwt = true
+
+# Business-card OCR/extraction (Claude vision). Called by the mobile Leads app
+# with the anon apikey; no user login yet, so JWT verification is off.
+[functions.extract-card]
+verify_jwt = false
+
+# Voice-note transcription (Deepgram nova-3) + Claude translate/analyze.
+[functions.transcribe-voice]
+verify_jwt = false
+
+# Mirror a synced lead into the "Leads DB" Google Sheet + Drive folders. Fired by a
+# Postgres trigger on app_leads via pg_net; authed with an x-push-secret header
+# (PUSH_GOOGLE_SECRET), so JWT verification is off.
+[functions.push-to-google]
+verify_jwt = false

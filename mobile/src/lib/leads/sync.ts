@@ -20,7 +20,7 @@ import { File } from 'expo-file-system';
 
 import type { Database } from '@/lib/database.types';
 import { supabase } from '@/lib/supabase';
-import type { Contact, Masters } from './types';
+import type { Contact, Masters, MasterItem, MasterType } from './types';
 
 type LeadRow = Database['public']['Tables']['app_leads']['Row'];
 type LeadInsert = Database['public']['Tables']['app_leads']['Insert'];
@@ -97,6 +97,21 @@ export async function loadOutbox(userId: string): Promise<Outbox> {
 export const saveOutbox = (userId: string, o: Outbox) =>
   AsyncStorage.setItem(keys(userId).outbox, JSON.stringify(o)).catch(() => {});
 
+// ---- Masters normalization -------------------------------------------------
+
+// Every MasterType must resolve to an array, even if the server's jsonb (or an
+// old local cache) is missing a newer list like `source` — otherwise the UI's
+// `masters[type]` is undefined and the dropdown crashes. Fill missing keys with
+// [] while preserving whatever is present, so the app is robust whether or not
+// the `source` migration has been applied yet.
+const MASTER_TYPES: MasterType[] = ['source', 'categories', 'interestLevels', 'askedAbout', 'followUpActions'];
+export function normalizeMasters(raw: unknown): Masters {
+  const m = (raw ?? {}) as Partial<Record<MasterType, unknown>>;
+  const out = {} as Masters;
+  for (const t of MASTER_TYPES) out[t] = Array.isArray(m[t]) ? (m[t] as MasterItem[]) : [];
+  return out;
+}
+
 // ---- Cache -----------------------------------------------------------------
 
 export type CacheBundle = { contacts: Contact[]; masters: Masters | null; mastersUpdatedAt: string; cursor: string };
@@ -112,7 +127,7 @@ export async function loadCache(userId: string): Promise<CacheBundle | null> {
     const mRaw = await AsyncStorage.getItem(k.masters);
     if (mRaw) {
       const m = JSON.parse(mRaw) as { masters?: Masters; updatedAt?: string };
-      masters = m.masters ?? null;
+      masters = m.masters ? normalizeMasters(m.masters) : null;
       mastersUpdatedAt = m.updatedAt ?? EPOCH;
     }
     const cursor = (await AsyncStorage.getItem(k.cursor)) ?? EPOCH;
@@ -292,7 +307,19 @@ export async function flush(
 ): Promise<FlushResult> {
   // Masters are admin-managed globally now — the mobile app only reads them, never
   // pushes. So flush only ever uploads lead rows + media.
-  const next: Outbox = { contactIds: [...outbox.contactIds], deletes: { ...outbox.deletes }, masters: false };
+  //
+  // A held duplicate (or a contact deleted meanwhile) is dropped from the outbox up
+  // front: it is intentionally NOT pushed, so leaving its id here would keep
+  // pendingCount > 0 forever and make the sync machinery churn ("Syncing…" that
+  // never settles). It stays visible in Drafts via its `duplicateOf` flag, not the outbox.
+  const next: Outbox = {
+    contactIds: outbox.contactIds.filter((id) => {
+      const c = contactsById.get(id);
+      return !!c && !c.duplicateOf;
+    }),
+    deletes: { ...outbox.deletes },
+    masters: false,
+  };
   let error: string | null = null;
 
   // 1) Push the lead ROWS first — plain JSON, small, fast, reliable. Media may
@@ -304,6 +331,9 @@ export async function flush(
   for (const id of outbox.contactIds) {
     const c = contactsById.get(id);
     if (!c) continue; // deleted meanwhile
+    // A held duplicate is not a real contact yet — don't push it until the user
+    // resolves it (Continue anyway clears the flag; Yes-duplicate deletes it).
+    if (c.duplicateOf) continue;
     rows.push(contactToRow(userId, c, false));
   }
   for (const tomb of Object.values(outbox.deletes)) rows.push(contactToRow(userId, tomb, true));
@@ -332,6 +362,7 @@ export async function flush(
     for (const id of outbox.contactIds) {
       const c = contactsById.get(id);
       if (!c) continue;
+      if (c.duplicateOf) continue; // held duplicate — not pushed until resolved
       const withMedia = await prepareForUpload(userId, c, map); // non-throwing
       if (JSON.stringify(withMedia) !== JSON.stringify(c)) {
         await withTimeout(
@@ -352,9 +383,17 @@ export async function flush(
 
 export type PullResult = { rows: LeadRow[]; masters: Masters | null; mastersUpdatedAt: string | null; cursor: string };
 
-export async function pull(since: string): Promise<PullResult> {
+export async function pull(userId: string, since: string): Promise<PullResult> {
+  // Scope to the current user explicitly. The mobile app is a single-user capture
+  // tool, so it must only ever pull its OWN leads. We can't rely on RLS to scope
+  // this: an ADMIN also carries the cross-user `app_leads_select_dashboard` READ
+  // policy (for the web Leads Dashboard), which would otherwise pull EVERY user's
+  // leads onto the admin's phone — and the next flush would try to write those
+  // back, tripping "new row violates row-level security policy for table app_leads"
+  // (there is deliberately no cross-user WRITE policy). Cross-user visibility lives
+  // on the web dashboard, never here.
   const { data: rows, error } = await withTimeout(
-    supabase.from('app_leads').select('*').gt('updated_at', since),
+    supabase.from('app_leads').select('*').eq('user_id', userId).gt('updated_at', since),
     30000,
     'pull leads'
   );
@@ -378,7 +417,7 @@ export async function pull(since: string): Promise<PullResult> {
 
   return {
     rows: ((rows as LeadRow[] | null) ?? []),
-    masters: (mRow?.masters as unknown as Masters) ?? null,
+    masters: mRow ? normalizeMasters(mRow.masters) : null,
     mastersUpdatedAt: mRow?.updated_at ?? null,
     cursor,
   };

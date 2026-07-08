@@ -1,7 +1,9 @@
 /**
- * Settings — masters management (functional) plus account/preferences/general
- * rows (Phase 1 placeholders where noted). No subscription/scan-limit: this is
- * an internal app with full access.
+ * Settings — trimmed to the essentials at the client's request: just the ACCOUNT
+ * section and a Version row under GENERAL. The MASTERS / MANAGE / PREFERENCES
+ * sections (and the GENERAL help rows) are kept in this file but hidden behind the
+ * SHOW_* flags below, so any of them can be shown again by flipping a flag to true
+ * once we're told what's needed. Nothing is deleted — only hidden.
  */
 
 import { Alert, ScrollView, StyleSheet, View } from 'react-native';
@@ -15,6 +17,13 @@ import { useTheme } from '@/hooks/use-theme';
 import { MASTER_LABELS } from '@/lib/leads/masters';
 import { useLeads } from '@/lib/leads/store';
 import type { MasterType } from '@/lib/leads/types';
+
+// Hidden for now — flip to true to bring a section back. Typed `boolean` so the
+// kept-but-hidden JSX stays type-checked and ready to restore.
+const SHOW_MASTERS: boolean = false;
+const SHOW_MANAGE: boolean = false;
+const SHOW_PREFERENCES: boolean = false;
+const SHOW_HELP: boolean = false; // "Contact support" + "Help center" under GENERAL
 
 export default function SettingsScreen() {
   const theme = useTheme();
@@ -49,37 +58,47 @@ export default function SettingsScreen() {
           <ListRow icon="log-out-outline" label="Sign out" onPress={confirmSignOut} last />
         </Section>
 
-        <Section title="MASTERS">
-          {masterTypes.map((t, i) => (
-            <ListRow
-              key={t}
-              icon="pricetags-outline"
-              label={MASTER_LABELS[t]}
-              value={`${masters[t].length}`}
-              last={i === masterTypes.length - 1}
-            />
-          ))}
-          <ThemedText type="small" themeColor="textSecondary" style={styles.mastersNote}>
-            Managed by your admin in the Orange One portal.
-          </ThemedText>
-        </Section>
+        {SHOW_MASTERS && (
+          <Section title="MASTERS">
+            {masterTypes.map((t, i) => (
+              <ListRow
+                key={t}
+                icon="pricetags-outline"
+                label={MASTER_LABELS[t]}
+                value={`${masters[t].length}`}
+                last={i === masterTypes.length - 1}
+              />
+            ))}
+            <ThemedText type="small" themeColor="textSecondary" style={styles.mastersNote}>
+              Managed by your admin in the Orange One portal.
+            </ThemedText>
+          </Section>
+        )}
 
-        <Section title="MANAGE">
-          <ListRow icon="git-network-outline" label="Manage intent signals" onPress={soon} />
-          <ListRow icon="logo-whatsapp" label="WhatsApp templates" onPress={soon} />
-          <ListRow icon="mail-outline" label="Email templates" onPress={soon} />
-          <ListRow icon="link-outline" label="Integrations" onPress={soon} last />
-        </Section>
+        {SHOW_MANAGE && (
+          <Section title="MANAGE">
+            <ListRow icon="git-network-outline" label="Manage intent signals" onPress={soon} />
+            <ListRow icon="logo-whatsapp" label="WhatsApp templates" onPress={soon} />
+            <ListRow icon="mail-outline" label="Email templates" onPress={soon} />
+            <ListRow icon="link-outline" label="Integrations" onPress={soon} last />
+          </Section>
+        )}
 
-        <Section title="PREFERENCES">
-          <ListRow icon="lock-closed-outline" label="Permissions" onPress={soon} />
-          <ListRow icon="notifications-outline" label="Notifications" onPress={soon} />
-          <ListRow icon="language-outline" label="Language" value="English" onPress={soon} last />
-        </Section>
+        {SHOW_PREFERENCES && (
+          <Section title="PREFERENCES">
+            <ListRow icon="lock-closed-outline" label="Permissions" onPress={soon} />
+            <ListRow icon="notifications-outline" label="Notifications" onPress={soon} />
+            <ListRow icon="language-outline" label="Language" value="English" onPress={soon} last />
+          </Section>
+        )}
 
         <Section title="GENERAL">
-          <ListRow icon="chatbubble-ellipses-outline" label="Contact support" onPress={soon} />
-          <ListRow icon="help-circle-outline" label="Help center" onPress={soon} />
+          {SHOW_HELP && (
+            <>
+              <ListRow icon="chatbubble-ellipses-outline" label="Contact support" onPress={soon} />
+              <ListRow icon="help-circle-outline" label="Help center" onPress={soon} />
+            </>
+          )}
           <ListRow icon="information-circle-outline" label="Version" value="0.1.0 (Phase 1)" last />
         </Section>
       </View>

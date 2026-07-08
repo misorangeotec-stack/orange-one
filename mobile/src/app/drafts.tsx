@@ -11,10 +11,12 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ContactCard } from '@/components/leads/ContactCard';
+import { MediaImage } from '@/components/leads/MediaImage';
 import { ThemedText } from '@/components/themed-text';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useLeads } from '@/lib/leads/store';
+import type { Contact } from '@/lib/leads/types';
 
 export default function DraftsScreen() {
   const theme = useTheme();
@@ -57,15 +59,44 @@ export default function DraftsScreen() {
                 </ThemedText>
               </View>
               <View style={styles.list}>
-                {drafts.map((c) => (
-                  <ContactCard key={c.id} contact={c} />
-                ))}
+                {drafts.map((c) =>
+                  c.duplicateOf ? <DuplicateRow key={c.id} contact={c} /> : <ContactCard key={c.id} contact={c} />
+                )}
               </View>
             </>
           )}
         </View>
       </ScrollView>
     </View>
+  );
+}
+
+/** A draft flagged as a possible duplicate — taps into the Duplicate card screen. */
+function DuplicateRow({ contact }: { contact: Contact }) {
+  const theme = useTheme();
+  const router = useRouter();
+  const uri = contact.cardImages.front || contact.cardImages.back || null;
+  return (
+    <Pressable
+      onPress={() => router.push({ pathname: '/contact/duplicate', params: { id: contact.id } })}
+      style={({ pressed }) => [styles.dupCard, { backgroundColor: theme.backgroundElement, borderColor: '#E5484D55' }, pressed && { opacity: 0.85 }]}>
+      {uri ? (
+        <MediaImage uri={uri} style={styles.dupThumb} contentFit="cover" />
+      ) : (
+        <View style={[styles.dupThumb, styles.dupThumbEmpty]}>
+          <Ionicons name="id-card-outline" size={22} color={theme.textSecondary} />
+        </View>
+      )}
+      <View style={{ flex: 1, gap: 2 }}>
+        <View style={styles.dupHead}>
+          <Ionicons name="copy-outline" size={16} color="#E5484D" />
+          <ThemedText type="smallBold" style={{ color: '#E5484D' }}>Duplicate card found</ThemedText>
+        </View>
+        <ThemedText type="small">Tap to review card</ThemedText>
+        <ThemedText type="small" themeColor="textSecondary">This card matches an existing contact.</ThemedText>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={theme.textSecondary} />
+    </Pressable>
   );
 }
 
@@ -134,6 +165,10 @@ const styles = StyleSheet.create({
   inner: { width: '100%', maxWidth: MaxContentWidth, gap: Spacing.three },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: 1, borderRadius: Spacing.two + 2, padding: Spacing.three },
   list: { gap: Spacing.three },
+  dupCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, borderWidth: 1, borderRadius: Spacing.three, padding: Spacing.three },
+  dupThumb: { width: 56, height: 40, borderRadius: Spacing.one, borderWidth: 1, borderColor: 'rgba(100,116,139,0.25)' },
+  dupThumbEmpty: { alignItems: 'center', justifyContent: 'center' },
+  dupHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.one },
   empty: { alignItems: 'center', gap: Spacing.three, paddingTop: Spacing.six },
   hero: { width: 180, height: 180, borderRadius: 90, alignItems: 'center', justifyContent: 'center' },
   heroBadge: { position: 'absolute', top: 30, right: 44, width: 40, height: 40, borderRadius: 20, backgroundColor: Brand.orange, alignItems: 'center', justifyContent: 'center' },

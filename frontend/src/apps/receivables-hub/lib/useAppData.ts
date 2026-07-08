@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { useFY } from "./fyContext";
 import { useReceivablesScope } from "./scope";
+import { useReceivablesSource } from "./sourceContext";
 import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } from "./receivables";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -395,6 +396,11 @@ async function loadFromSupabase(fySuffix: string): Promise<RawAppData> {
   return { dash, cust, inv, grp };
 }
 
+async function loadFromConnectwaveSource(): Promise<RawAppData> {
+  const { loadFromConnectwave } = await import("./connectwaveFetcher");
+  return loadFromConnectwave();
+}
+
 const EMPTY_GROUP_MAP: CustomerGroupMap = { mapping: {}, groups: {} };
 
 /**
@@ -422,6 +428,7 @@ export function useAppData(filters: Filters = {}): AppData {
   // Per-salesperson scope (UI-level): null = unrestricted (admin); otherwise only
   // these salesperson names are visible — an empty array means "nothing".
   const { restrictToSalespersons } = useReceivablesScope();
+  const source = useReceivablesSource();
   const allowedSalespersonSet = useMemo(
     () => (restrictToSalespersons !== null ? new Set(restrictToSalespersons) : null),
     [restrictToSalespersons],
@@ -431,10 +438,13 @@ export function useAppData(filters: Filters = {}): AppData {
   // in App.tsx), so navigating between pages no longer triggers a refetch — the
   // second mount returns the cached result instantly.
   const { data: raw, isLoading, error: queryError } = useQuery<RawAppData>({
-    queryKey: ["appData", fySuffix],
+    // ConnectWave is a distinct backend (live Tally snapshot) → its own cache key,
+    // and FY-agnostic (the snapshot is current-period only), so key by source.
+    queryKey: source === "connectwave" ? ["appData", "connectwave"] : ["appData", fySuffix],
     queryFn: () => {
-      const source = (import.meta.env.VITE_DATA_SOURCE ?? "local").toLowerCase();
-      return source === "supabase" ? loadFromSupabase(fySuffix) : loadFromJson(fySuffix);
+      if (source === "connectwave") return loadFromConnectwaveSource();
+      const ds = (import.meta.env.VITE_DATA_SOURCE ?? "local").toLowerCase();
+      return ds === "supabase" ? loadFromSupabase(fySuffix) : loadFromJson(fySuffix);
     },
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,

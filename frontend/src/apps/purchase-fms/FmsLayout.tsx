@@ -2,9 +2,10 @@ import { useMemo, useState } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
 import { useSession, ALL_ROLES } from "@/core/platform/session";
+import { useDirectory } from "@/core/platform/store";
 import { useFmsStore, activeStage, entryStatus } from "./mock/store";
-import { stageByKey } from "./config/stages";
 import { isOwner } from "./lib/owner";
+import { nextOwnerNotice } from "./lib/notify";
 import { fmsNav } from "./nav";
 import { dateLabel } from "@/shared/lib/time";
 
@@ -17,6 +18,7 @@ const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.lab
  */
 export default function FmsLayout() {
   const { user, role, isAdmin } = useSession();
+  const { profileById } = useDirectory();
   const { entries, ownerForStep } = useFmsStore();
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
@@ -28,22 +30,23 @@ export default function FmsLayout() {
         return active && (isAdmin || isOwner(ownerForStep(active.key), user.id));
       })
       .map((e) => {
-        const active = activeStage(e);
-        const def = active ? stageByKey(active.key) : undefined;
+        // Same recipient/message source the Test Mode handoff preview uses, so the
+        // two can't drift. Non-null here: in-progress entries always have an active stage.
+        const notice = nextOwnerNotice(e, ownerForStep, profileById)!;
         return {
           id: e.id,
           text: (
             <span>
               <b className="font-semibold text-navy">{e.code}</b> is awaiting{" "}
-              <b className="font-semibold text-navy">{def?.title ?? "the next step"}</b>
+              <b className="font-semibold text-navy">{notice.stageTitle}</b>
             </span>
           ),
-          time: active?.plannedDate ? `Planned ${dateLabel(active.plannedDate)}` : "",
+          time: notice.plannedDate ? `Planned ${dateLabel(notice.plannedDate)}` : "",
           unread: !readIds.has(e.id),
           to: `/purchase-fms/entries/${e.id}`,
         };
       });
-  }, [entries, isAdmin, ownerForStep, user.id, readIds]);
+  }, [entries, isAdmin, ownerForStep, profileById, user.id, readIds]);
 
   return (
     <AppShell

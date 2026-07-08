@@ -16,6 +16,7 @@ import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ColumnPicker } from "@hub/components/ColumnPicker";
 import { formatDateDMY } from "@hub/lib/utils";
+import { useToast } from "@hub/hooks/use-toast";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import type { InvoiceStatus, SaleType } from "@hub/lib/types";
 
@@ -110,6 +111,7 @@ const exportVal = (key: ColKey, r: InvoiceDrillRow): string | number => {
 };
 
 export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, rows, asOfDate, ledgerFigures }: Props) {
+  const { toast } = useToast();
   const [customerNames, setCustomerNames] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
@@ -526,8 +528,37 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     saveAs(blob, filename);
   };
 
-  const shareSubject = `${title} — as on ${formatDateDMY(asOfDate)}`;
-  const shareText = (filename: string) => `${subtitle}\n\nReceivables export: ${filename}`;
+  // Clean, human-readable share message. Figures come from the live totals; the heading
+  // adapts to the drill category ("Total Pending" / "Total Outstanding" / "Due upto …").
+  // The Excel file carries the per-invoice detail and is attached separately.
+  const headlineLabel = title.replace(/\s*—\s*open invoices\s*$/i, "").trim();
+  const shareSubject = `Receivables Statement — ${subtitle} (as on ${formatDateDMY(asOfDate)})`;
+  const emailBody =
+    `Dear Sir/Madam,\n\n` +
+    `Please find the receivables statement for ${subtitle}, as on ${formatDateDMY(asOfDate)}.\n\n` +
+    `Summary\n` +
+    `• ${headlineLabel}: ${fmt(totals.pending)}\n` +
+    `• Total Invoice Value: ${fmt(totals.amount)}\n` +
+    `• Received: ${fmt(totals.received)}\n\n` +
+    `The detailed invoice-wise report is attached for your reference.\n\n` +
+    `Regards,\n` +
+    `Orange O Tec`;
+  const whatsappText =
+    `*Receivables Statement — ${subtitle}*\n` +
+    `As on ${formatDateDMY(asOfDate)}\n\n` +
+    `${headlineLabel}: ${fmt(totals.pending)}\n` +
+    `Invoice Value: ${fmt(totals.amount)}\n` +
+    `Received: ${fmt(totals.received)}\n\n` +
+    `📎 The detailed invoice-wise report is attached for your reference.\n\n` +
+    `Regards,\n` +
+    `Orange O Tec`;
+  // mailto / wa.me links cannot auto-attach a file, so we download it and remind the
+  // sender to attach it — keeping the filename out of the message itself.
+  const notifyAttach = () =>
+    toast({
+      title: "Report downloaded",
+      description: "Please attach the downloaded Excel file to your message before sending.",
+    });
   const canShareFiles = (() => {
     const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
     try {
@@ -544,29 +575,30 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const nav = navigator as Navigator & { canShare?: (d?: ShareData) => boolean };
     if (nav.canShare && nav.canShare({ files: [file] })) {
       try {
-        await nav.share({ files: [file], title: shareSubject, text: shareText(filename) });
-        return;
+        await nav.share({ files: [file], title: shareSubject, text: whatsappText });
+        return; // file rides along natively — no attach reminder needed
       } catch (err) {
         if ((err as DOMException)?.name === "AbortError") return; // user dismissed the sheet
       }
     }
     saveAs(blob, filename); // last resort: at least save the file
+    notifyAttach();
   };
 
   /** Email — download the file + open the mail client (mailto cannot carry attachments). */
   const handleShareEmail = () => {
     const { blob, filename } = buildExport();
     saveAs(blob, filename);
-    const body = `${shareText(filename)}\n\n(The file "${filename}" was just downloaded — please attach it to this email.)`;
-    window.location.href = `mailto:?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = `mailto:?subject=${encodeURIComponent(shareSubject)}&body=${encodeURIComponent(emailBody)}`;
+    notifyAttach();
   };
 
   /** WhatsApp — download the file + open WhatsApp with the message (attach the file manually). */
   const handleShareWhatsApp = () => {
     const { blob, filename } = buildExport();
     saveAs(blob, filename);
-    const text = `*${shareSubject}*\n\n${shareText(filename)}\n\n(File "${filename}" downloaded — please attach it.)`;
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
+    window.open(`https://wa.me/?text=${encodeURIComponent(whatsappText)}`, "_blank");
+    notifyAttach();
   };
 
   return (

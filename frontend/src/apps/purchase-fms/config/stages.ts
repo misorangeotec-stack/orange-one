@@ -63,6 +63,8 @@ export const PURCHASE_STAGES: StageDef[] = [
     fields: [
       { key: "status", label: "PO Status", type: "select", options: STATUS_OPTS, required: true, half: true },
       { key: "systemPoNo", label: "System-generated PO No.", type: "text", half: true },
+      { key: "tallyPoNo", label: "Tally PO No.", type: "text", half: true },
+      { key: "poPdf", label: "PO PDF (from Tally)", type: "file", accept: "application/pdf", half: true },
       { key: "poRemarks", label: "Remarks (if any in PO)", type: "textarea" },
     ],
   },

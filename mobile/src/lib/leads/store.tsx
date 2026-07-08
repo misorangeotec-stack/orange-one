@@ -10,7 +10,6 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import { File } from 'expo-file-system';
 import {
   createContext,
   useCallback,
@@ -24,7 +23,9 @@ import {
 
 import { useAuth } from '@/hooks/use-auth';
 import { useSync } from '@/hooks/use-sync';
+import { findDuplicates } from './dedupe';
 import { extractCardDraft } from './extractCard';
+import { bytesBase64FromUri } from './media';
 import { defaultMasters } from './masters';
 import { autofillFromVoice } from './suggestions';
 import { transcribeVoice } from './transcribe';
@@ -111,7 +112,9 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
     let ai = 0;
     for (const c of contactsRef.current) {
       const pv = c.voiceNotes.filter((v) => v.status === 'pending').length;
-      if (c.pendingExtract || pv > 0) ids.add(c.id);
+      // Draft (shown in Drafts, hidden from Home) if it owes AI, is a held
+      // duplicate awaiting a decision, or is otherwise unsynced.
+      if (c.pendingExtract || pv > 0 || c.duplicateOf) ids.add(c.id);
       ai += (c.pendingExtract ? 1 : 0) + pv;
     }
     setPendingAiCount(ai);
@@ -296,7 +299,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
 
       // 3) Pull remote changes + merge.
       setSyncStep('Downloading');
-      const res = await pull(cursorRef.current);
+      const res = await pull(userId, cursorRef.current);
       if (res.rows.length) {
         const merged = mergeContacts(contactsRef.current, res.rows);
         setContacts(merged);
@@ -321,7 +324,11 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
   }, [userId, persistOutbox, recomputePending]);
 
   runSyncRef.current = runSync;
-  useSync(userId ?? null, ready, () => runSyncRef.current?.('trigger'));
+  // Stable trigger: a fresh arrow here would change useSync's effect deps every
+  // render, re-firing the "sync on start" effect in a loop (network churn +
+  // "Syncing…" that never settles). The ref keeps it pointing at the latest runSync.
+  const triggerSync = useCallback(() => runSyncRef.current?.('trigger'), []);
+  useSync(userId ?? null, ready, triggerSync);
 
   const isPending = useCallback((id: string) => pendingIds.includes(id), [pendingIds]);
 
@@ -385,20 +392,26 @@ function fillFromExtract(c: Contact, ex: ContactDraft): Contact {
   if (allEmpty(company.emails) && ex.company.emails.filter(Boolean).length) company.emails = ex.company.emails;
   if (allEmpty(company.websites) && ex.company.websites.filter(Boolean).length) company.websites = ex.company.websites;
   if (allEmpty(company.addresses) && ex.company.addresses.filter(Boolean).length) company.addresses = ex.company.addresses;
-  return { ...c, person, company };
+  // Extra people printed on the card — only fill when the contact has none yet.
+  const additionalPeople =
+    c.additionalPeople && c.additionalPeople.length ? c.additionalPeople : ex.additionalPeople;
+  return { ...c, person, company, additionalPeople };
 }
 
-async function base64Of(uri: string): Promise<string | null> {
-  try {
-    return await new File(uri).base64();
-  } catch {
-    return null;
-  }
-}
+// Reads a local file OR a Supabase storage path (lead-media/...). The storage-path
+// case is what lets card extraction run on a device that pulled the lead and has
+// no local copy of the image (see bytesBase64FromUri).
+const base64Of = (uri: string): Promise<string | null> => bytesBase64FromUri(uri);
+
+// Give up on a card read / voice transcription after this many failed online
+// attempts so an unreadable card/audio can never wedge the card on "Processing…"
+// forever. Attempts only tick on real sync cycles, so this spans several tries.
+const MAX_AI_ATTEMPTS = 5;
 
 /**
  * Process cards/voice captured offline. Only runs when online; each item is
- * independent and keyed by id, so failures simply stay pending for next time.
+ * independent and keyed by id, so failures simply stay pending for next time
+ * (up to MAX_AI_ATTEMPTS, after which it stops retrying and leaves "Processing…").
  */
 async function processDeferredAI(
   list: Contact[],
@@ -418,16 +431,31 @@ async function processDeferredAI(
 
     // Deferred card extraction.
     if (c.pendingExtract && (c.cardImages.front || c.cardImages.back)) {
+      let extracted = false;
       try {
         const front = c.cardImages.front ? { uri: c.cardImages.front, base64: await base64Of(c.cardImages.front) } : null;
         const back = c.cardImages.back ? { uri: c.cardImages.back, base64: await base64Of(c.cardImages.back) } : null;
         const res = await extractCardDraft(front, back);
         if (res.ok) {
-          c = { ...fillFromExtract(c, res.draft), pendingExtract: false };
+          c = { ...fillFromExtract(c, res.draft), pendingExtract: false, extractAttempts: undefined };
           touched = true;
+          extracted = true;
+          // Now that the card is read, check whether it duplicates an existing
+          // contact (by phone/email). Compare against everyone EXCEPT this draft
+          // and any other still-held duplicate. If matched, hold it for the user
+          // to resolve on the Duplicate card screen (see sync.flush skip).
+          const others = out.filter((o) => o.id !== c.id && !o.duplicateOf);
+          const dup = findDuplicates(c, others)[0];
+          if (dup) c = { ...c, duplicateOf: dup.id };
         }
       } catch {
-        /* keep pending */
+        /* handled below */
+      }
+      if (!extracted) {
+        // Count the failed attempt; give up (stop showing "Processing…") after the cap.
+        const n = (c.extractAttempts ?? 0) + 1;
+        c = { ...c, extractAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { pendingExtract: false } : {}) };
+        touched = true;
       }
     }
 
@@ -464,7 +492,11 @@ async function processDeferredAI(
             notes: fill.noteText ? [{ id: newId('n'), text: fill.noteText, createdAt: nowIso() }] : c.notes,
           };
         } else {
-          notes.push(v); // keep pending
+          // Count the failed attempt; mark 'failed' (terminal, no longer "pending"
+          // → card leaves "Processing…") once the cap is hit. Persisted via touched.
+          const n = (v.transcribeAttempts ?? 0) + 1;
+          notes.push({ ...v, transcribeAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { status: 'failed' as const } : {}) });
+          touched = true;
         }
       }
       c = { ...c, voiceNotes: notes };

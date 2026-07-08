@@ -15,6 +15,7 @@ const item = (label: string, color?: string): MasterItem => ({
 });
 
 export const MASTER_LABELS: Record<keyof Masters, string> = {
+  source: 'Source',
   categories: 'Categories',
   interestLevels: 'Interest levels',
   askedAbout: 'What they asked about',
@@ -50,6 +51,14 @@ export function defaultMasters(): Masters {
       item('Book a demo'),
       item('Share catalogue'),
       item('No action'),
+    ],
+    // Kept LAST so the ids above stay m1..m19 (referenced by seed.ts); source → m20+.
+    // These are only offline first-launch defaults — the live list is admin-managed
+    // in the web portal (exhibition names). Placeholder examples the admin replaces.
+    source: [
+      item('Exhibition 2026'),
+      item('Trade Show'),
+      item('Walk-in'),
     ],
   };
 }

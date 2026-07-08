@@ -10,7 +10,56 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Dimensions } from 'react-native';
 
+import { resolveMediaUrl } from './sync';
 import type { CapturedAt } from './types';
+
+// ---- Base64 from any media uri --------------------------------------------
+
+const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+
+/** Pure-JS Uint8Array → base64 (Hermes has no reliable btoa). */
+function bytesToBase64(bytes: Uint8Array): string {
+  const len = bytes.length;
+  let out = '';
+  for (let i = 0; i < len; i += 3) {
+    const b0 = bytes[i];
+    const b1 = i + 1 < len ? bytes[i + 1] : 0;
+    const b2 = i + 2 < len ? bytes[i + 2] : 0;
+    out += B64_ALPHABET[b0 >> 2];
+    out += B64_ALPHABET[((b0 & 3) << 4) | (b1 >> 4)];
+    out += i + 1 < len ? B64_ALPHABET[((b1 & 15) << 2) | (b2 >> 6)] : '=';
+    out += i + 2 < len ? B64_ALPHABET[b2 & 63] : '=';
+  }
+  return out;
+}
+
+/**
+ * Read ANY media uri to base64 — whether it's a LOCAL file (`file://` /
+ * `content://` / the app documents dir) or a Supabase STORAGE PATH
+ * (`lead-media/...`) that only exists remotely (the case on another device / user
+ * / fresh install, where the lead was pulled from Supabase with no local copy).
+ * Storage paths are signed + fetched; local files are read directly. Returns null
+ * on any failure. This is what lets the deferred AI (card extraction + voice
+ * transcription) run from a device that has no local copy of the media, instead
+ * of failing forever and wedging the card on "Processing…".
+ */
+export async function bytesBase64FromUri(uri?: string | null): Promise<string | null> {
+  if (!uri) return null;
+  try {
+    // Remote: a Supabase storage path (needs a signed url) or a plain http(s) url.
+    if (uri.startsWith('lead-media/') || uri.startsWith('http')) {
+      const url = await resolveMediaUrl(uri); // storage path → signed url; http passes through
+      if (!url) return null;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      return bytesToBase64(new Uint8Array(await res.arrayBuffer()));
+    }
+    // Local file (file:// / content:// / app documents dir).
+    return await new File(uri).base64();
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Card-alignment frame geometry, shared between the camera overlay (camera.tsx)

@@ -4,6 +4,7 @@ import { RefreshCw, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@hub/components/ui/card";
 import { Progress } from "@hub/components/ui/progress";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@hub/components/ui/tabs";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@hub/components/ui/table";
@@ -12,6 +13,7 @@ import { useAppData } from "@hub/lib/useAppData";
 import { useRefreshJob } from "@hub/lib/useRefreshJob";
 import type { RefreshSourceInfo } from "@hub/lib/types";
 import { MenuPermissions } from "@hub/components/MenuPermissions";
+import { MusterPanel } from "@hub/pages/MusterEditor";
 import { useSession } from "@/core/platform/session";
 
 const STALE_DAYS = 3;
@@ -68,14 +70,22 @@ export default function Settings() {
   }, [refresh.status, refresh.error, toast]);
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Manage data refresh and view source freshness
+          Manage data refresh, masters, and menu access
         </p>
       </div>
 
+      <Tabs defaultValue="refresh">
+        <TabsList>
+          <TabsTrigger value="refresh">Data Refresh</TabsTrigger>
+          {isAdmin && <TabsTrigger value="masters">Masters</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="menu">Menu Permissions</TabsTrigger>}
+        </TabsList>
+
+        <TabsContent value="refresh" className="space-y-6 mt-4 max-w-5xl">
       {/* ── Data Refresh card ─────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
@@ -196,8 +206,22 @@ export default function Settings() {
         )}
       </Card>
 
-      {/* ── Menu Permissions (admin only) ─────────────────────────────────── */}
-      {isAdmin && <MenuPermissions />}
+        </TabsContent>
+
+        {/* ── Masters (admin only) ──────────────────────────────────────────── */}
+        {isAdmin && (
+          <TabsContent value="masters" className="mt-4">
+            <MusterPanel />
+          </TabsContent>
+        )}
+
+        {/* ── Menu Permissions (admin only) ─────────────────────────────────── */}
+        {isAdmin && (
+          <TabsContent value="menu" className="mt-4 max-w-5xl">
+            <MenuPermissions />
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 }

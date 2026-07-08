@@ -27,6 +27,7 @@ export default function RootLayout() {
                   <Stack.Screen name="contact/new" options={{ headerShown: false, presentation: 'modal' }} />
                   <Stack.Screen name="contact/review" options={{ headerShown: false }} />
                   <Stack.Screen name="contact/[id]" options={{ headerShown: false }} />
+                  <Stack.Screen name="contact/duplicate" options={{ headerShown: false }} />
                 </Stack>
               </LeadsProvider>
             </AuthGate>

@@ -7,7 +7,7 @@
  * card image) plus ok:false, so the caller can fall back to manual entry.
  */
 
-import { emptyDraft, type ContactDraft } from './types';
+import { emptyDraft, type ContactDraft, type PersonInfo } from './types';
 
 export type CapturedImage = { uri: string; base64?: string | null };
 
@@ -53,17 +53,32 @@ export async function extractCardDraft(front?: CapturedImage | null, back?: Capt
       return { draft: base, ok: false, error: body?.error ?? `HTTP ${res.status}` };
     }
 
-    const p = body.person ?? {};
+    // New shape: people[] (every person on the card). Fall back to a legacy single
+    // `person` for safety if an older function version is still deployed.
+    const peopleRaw: unknown[] = Array.isArray(body.people)
+      ? body.people
+      : body.person && typeof body.person === 'object'
+        ? [body.person]
+        : [];
+    const people: PersonInfo[] = peopleRaw
+      .map((raw): PersonInfo => {
+        const p = (raw ?? {}) as Record<string, unknown>;
+        return {
+          name: typeof p.name === 'string' ? p.name : '',
+          photoUri: null,
+          mobiles: arr(p.mobiles),
+          emails: arr(p.emails),
+          jobTitles: arr(p.jobTitles),
+        };
+      })
+      .filter((p) => p.name || p.mobiles.length || p.emails.length || p.jobTitles.length);
+
+    const [primary, ...extra] = people;
     const c = body.company ?? {};
     const draft: ContactDraft = {
       ...base,
-      person: {
-        name: typeof p.name === 'string' ? p.name : '',
-        photoUri: null,
-        mobiles: arr(p.mobiles),
-        emails: arr(p.emails),
-        jobTitles: arr(p.jobTitles),
-      },
+      person: primary ?? base.person,
+      additionalPeople: extra.length ? extra : undefined,
       company: {
         name: typeof c.name === 'string' ? c.name : '',
         logoUri: null,

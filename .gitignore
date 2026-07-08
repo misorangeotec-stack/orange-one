@@ -5,6 +5,11 @@ token.json
 *.pem
 *.key
 
+# Leads → Google export (leads_export/) — Google OAuth secrets + local env
+leads_export/credentials.json
+leads_export/token*.json
+leads_export/.env
+
 # Temporary / regenerable files
 .tmp/
 *.log
@@ -21,6 +26,16 @@ frontend/dist/
 frontend/.env.local
 frontend/*.local
 .vite/
+
+# Mobile app (Expo / React Native)
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/.env
+mobile/*.local
+mobile/expo-env.d.ts
+*.tsbuildinfo
 
 # Python
 __pycache__/

@@ -13,8 +13,12 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useMediaUrl } from '@/hooks/use-media-url';
+
 export function ImageLightbox({ uri, onClose }: { uri: string | null; onClose: () => void }) {
   const insets = useSafeAreaInsets();
+  // Callers pass the raw stored uri (often a lead-media/... storage path); sign it.
+  const resolved = useMediaUrl(uri);
 
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -80,7 +84,7 @@ export function ImageLightbox({ uri, onClose }: { uri: string | null; onClose: (
       <View style={styles.backdrop}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={[styles.fill, imgStyle]}>
-            {uri ? <Image source={{ uri }} style={styles.image} contentFit="contain" /> : null}
+            {resolved ? <Image source={{ uri: resolved }} style={styles.image} contentFit="contain" /> : null}
           </Animated.View>
         </GestureDetector>
 

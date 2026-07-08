@@ -21,38 +21,14 @@ import { ThemedText } from '@/components/themed-text';
 import { Chip } from '@/components/ui/Chip';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { findDuplicate } from '@/lib/leads/dedupe';
 import { captureLocation } from '@/lib/leads/media';
 import { consumePendingScan } from '@/lib/leads/pendingScan';
 import { autofillFromVoice } from '@/lib/leads/suggestions';
 import { newId, useLeads } from '@/lib/leads/store';
-import { emptyDraft, type ContactDraft, type MasterType, type PersonInfo, type CompanyInfo, type VoiceNote } from '@/lib/leads/types';
+import { emptyDraft, emptyPerson, type ContactDraft, type MasterType, type PersonInfo, type CompanyInfo, type VoiceNote } from '@/lib/leads/types';
 
 type SheetKind = MasterType | null;
-
-// Normalize a phone to its last 10 digits so "+91 98…", "098…", "98…" all match.
-const normalizePhone = (s: string) => s.replace(/\D/g, '').slice(-10);
-const normalizeEmail = (s: string) => s.trim().toLowerCase();
-
-type MatchContact = { id: string; person: PersonInfo; company: CompanyInfo };
-
-/** First existing contact that shares a phone number OR email with the draft, or null. */
-function findDuplicate(draft: ContactDraft, contacts: MatchContact[]): MatchContact | null {
-  const draftPhones = new Set(
-    [...draft.person.mobiles, ...draft.company.mobiles].map(normalizePhone).filter((p) => p.length >= 7)
-  );
-  const draftEmails = new Set(
-    [...draft.person.emails, ...draft.company.emails].map(normalizeEmail).filter(Boolean)
-  );
-  if (draftPhones.size === 0 && draftEmails.size === 0) return null;
-
-  for (const c of contacts) {
-    const phones = [...(c.person?.mobiles ?? []), ...(c.company?.mobiles ?? [])].map(normalizePhone);
-    if (phones.some((p) => p.length >= 7 && draftPhones.has(p))) return c;
-    const emails = [...(c.person?.emails ?? []), ...(c.company?.emails ?? [])].map(normalizeEmail);
-    if (emails.some((e) => e && draftEmails.has(e))) return c;
-  }
-  return null;
-}
 
 export default function UploadContactScreen() {
   const theme = useTheme();
@@ -78,6 +54,19 @@ export default function UploadContactScreen() {
   const setPerson = (patch: Partial<PersonInfo>) => setDraft((d) => ({ ...d, person: { ...d.person, ...patch } }));
   const setCompany = (patch: Partial<CompanyInfo>) => setDraft((d) => ({ ...d, company: { ...d.company, ...patch } }));
 
+  // Extra people printed on the same card.
+  const additionalPeople = draft.additionalPeople ?? [];
+  const setAdditionalPerson = (i: number, patch: Partial<PersonInfo>) =>
+    setDraft((d) => {
+      const list = [...(d.additionalPeople ?? [])];
+      list[i] = { ...list[i], ...patch };
+      return { ...d, additionalPeople: list };
+    });
+  const addAdditionalPerson = () =>
+    setDraft((d) => ({ ...d, additionalPeople: [...(d.additionalPeople ?? []), emptyPerson()] }));
+  const removeAdditionalPerson = (i: number) =>
+    setDraft((d) => ({ ...d, additionalPeople: (d.additionalPeople ?? []).filter((_, idx) => idx !== i) }));
+
   const clean = (arr: string[]) => arr.map((s) => s.trim()).filter(Boolean);
 
   const save = async () => {
@@ -99,6 +88,12 @@ export default function UploadContactScreen() {
         websites: clean(draft.company.websites),
         addresses: clean(draft.company.addresses),
       },
+      additionalPeople: (() => {
+        const kept = (draft.additionalPeople ?? [])
+          .map((p) => ({ ...p, name: p.name.trim(), mobiles: clean(p.mobiles), emails: clean(p.emails), jobTitles: clean(p.jobTitles) }))
+          .filter((p) => p.name || p.mobiles.length || p.emails.length || p.jobTitles.length);
+        return kept.length ? kept : undefined;
+      })(),
       capturedAt,
     };
     if (editingId) {
@@ -170,13 +165,14 @@ export default function UploadContactScreen() {
 
   const sheetConfig = useMemo(() => {
     const map: Record<Exclude<SheetKind, null>, { title: string; multi: boolean; ids: string[]; set: (ids: string[]) => void }> = {
+      source: { title: 'Source', multi: false, ids: draft.sourceId ? [draft.sourceId] : [], set: (ids) => setDraft((d) => ({ ...d, sourceId: ids[0] ?? null })) },
       categories: { title: 'Categories', multi: true, ids: draft.categoryIds, set: (ids) => setDraft((d) => ({ ...d, categoryIds: ids })) },
       interestLevels: { title: 'Interest level', multi: false, ids: draft.interestLevelId ? [draft.interestLevelId] : [], set: (ids) => setDraft((d) => ({ ...d, interestLevelId: ids[0] ?? null })) },
       askedAbout: { title: 'What they asked about', multi: true, ids: draft.askedAboutIds, set: (ids) => setDraft((d) => ({ ...d, askedAboutIds: ids })) },
       followUpActions: { title: 'Follow-up action', multi: false, ids: draft.followUpActionId ? [draft.followUpActionId] : [], set: (ids) => setDraft((d) => ({ ...d, followUpActionId: ids[0] ?? null })) },
     };
     return map;
-  }, [draft.categoryIds, draft.interestLevelId, draft.askedAboutIds, draft.followUpActionId]);
+  }, [draft.sourceId, draft.categoryIds, draft.interestLevelId, draft.askedAboutIds, draft.followUpActionId]);
 
   const chipsFor = (type: MasterType, ids: string[]) =>
     masters[type].filter((m) => ids.includes(m.id));
@@ -224,6 +220,7 @@ export default function UploadContactScreen() {
               <FieldRepeater values={draft.person.emails} onChange={(v) => setPerson({ emails: v })} placeholder="Email" keyboardType="email-address" />
               <FieldRepeater values={draft.person.jobTitles} onChange={(v) => setPerson({ jobTitles: v })} placeholder="Job title" />
 
+              <SelectRow label="Source" onPress={() => setSheet('source')} chips={chipsFor('source', draft.sourceId ? [draft.sourceId] : [])} />
               <SelectRow label="Categories" onPress={() => setSheet('categories')} chips={chipsFor('categories', draft.categoryIds)} />
 
               <PhotoField label="Person photo" photos={draft.person.photoUri ? [draft.person.photoUri] : []} onChange={(p) => setPerson({ photoUri: p[0] ?? null })} max={1} />
@@ -254,6 +251,33 @@ export default function UploadContactScreen() {
 
               <SelectRow label="Interest level" onPress={() => setSheet('interestLevels')} chips={chipsFor('interestLevels', draft.interestLevelId ? [draft.interestLevelId] : [])} />
               <SelectRow label="What they asked about" onPress={() => setSheet('askedAbout')} chips={chipsFor('askedAbout', draft.askedAboutIds)} />
+            </SectionCard>
+
+            {/* Additional contacts — a card may list more than one person */}
+            <SectionCard title="Additional contacts">
+              {additionalPeople.length === 0 ? (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.fieldLabel}>
+                  Add anyone else printed on the same card.
+                </ThemedText>
+              ) : null}
+              {additionalPeople.map((ap, i) => (
+                <View key={i} style={[styles.personBlock, { borderColor: theme.border }]}>
+                  <View style={styles.personHead}>
+                    <ThemedText type="smallBold">Person {i + 2}</ThemedText>
+                    <Pressable onPress={() => removeAdditionalPerson(i)} hitSlop={6}>
+                      <Ionicons name="trash-outline" size={20} color="#E5484D" />
+                    </Pressable>
+                  </View>
+                  <FieldRepeater values={[ap.name]} onChange={(v) => setAdditionalPerson(i, { name: v[0] ?? '' })} placeholder="Person name" repeatable={false} />
+                  <FieldRepeater values={ap.mobiles} onChange={(v) => setAdditionalPerson(i, { mobiles: v })} placeholder="Mobile number" keyboardType="phone-pad" />
+                  <FieldRepeater values={ap.emails} onChange={(v) => setAdditionalPerson(i, { emails: v })} placeholder="Email" keyboardType="email-address" />
+                  <FieldRepeater values={ap.jobTitles} onChange={(v) => setAdditionalPerson(i, { jobTitles: v })} placeholder="Job title" />
+                </View>
+              ))}
+              <Pressable onPress={addAdditionalPerson} style={styles.addPersonRow}>
+                <Ionicons name="person-add-outline" size={20} color={Brand.orange} />
+                <ThemedText style={{ color: Brand.orange, fontWeight: '700' }}>Add person</ThemedText>
+              </Pressable>
             </SectionCard>
 
             {/* Company info */}
@@ -353,4 +377,7 @@ const styles = StyleSheet.create({
   textarea: { borderWidth: 1, borderRadius: Spacing.two + 2, padding: Spacing.three, fontSize: 15, minHeight: 80, textAlignVertical: 'top' },
   selectRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two, borderWidth: 1, borderRadius: Spacing.two + 2, paddingVertical: Spacing.three, paddingHorizontal: Spacing.three, minHeight: 52 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.one, flex: 1 },
+  personBlock: { borderWidth: 1, borderRadius: Spacing.two + 2, padding: Spacing.three, gap: Spacing.two },
+  personHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  addPersonRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.one },
 });

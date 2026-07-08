@@ -35,6 +35,8 @@ interface FmsStoreValue {
   createEntry: (input: NewOrderInput) => Promise<string>;
   /** Complete the entry's active stage with the captured values; advances the pipeline. */
   completeStage: (entryId: string, values: Record<string, string | number | null>) => Promise<void>;
+  /** Upload a document for an entry (e.g. the PO PDF); returns the storage path to persist. */
+  uploadDocument: (entryId: string, file: File) => Promise<string>;
 
   updateStepOwner: (stepKey: string, patch: Partial<Omit<StepOwner, "stepKey">>) => Promise<void>;
 
@@ -99,6 +101,15 @@ export function FmsStoreProvider({ children }: { children: ReactNode }) {
     [entries, invalidate]
   );
 
+  const uploadDocument = useCallback<FmsStoreValue["uploadDocument"]>(
+    async (entryId, file) => {
+      const entry = entries.find((e) => e.id === entryId);
+      if (!entry) throw new Error("Entry not found");
+      return writes.uploadDocument(entry, file);
+    },
+    [entries]
+  );
+
   const updateStepOwner = useCallback<FmsStoreValue["updateStepOwner"]>(
     async (stepKey, patch) => {
       await writes.updateStepOwner({ workflowId, stepKey, patch });
@@ -161,6 +172,7 @@ export function FmsStoreProvider({ children }: { children: ReactNode }) {
       ownerForStep,
       createEntry,
       completeStage,
+      uploadDocument,
       updateStepOwner,
       addCategory,
       updateCategory,
@@ -169,7 +181,7 @@ export function FmsStoreProvider({ children }: { children: ReactNode }) {
       updateDesignation,
       deleteDesignation,
     }),
-    [entries, categories, designations, stepOwners, getEntry, ownerForStep, createEntry, completeStage, updateStepOwner, addCategory, updateCategory, deleteCategory, addDesignation, updateDesignation, deleteDesignation]
+    [entries, categories, designations, stepOwners, getEntry, ownerForStep, createEntry, completeStage, uploadDocument, updateStepOwner, addCategory, updateCategory, deleteCategory, addDesignation, updateDesignation, deleteDesignation]
   );
 
   if (isLoading) {

@@ -25,6 +25,10 @@ const ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typ
 const LEFT = ['index', 'reminders'];
 const RIGHT = ['scan', 'settings'];
 
+// Tabs that are shipped but not enabled yet: shown grayscale + a lock badge and
+// not tappable. Remove a name here to turn the tab back on.
+const LOCKED = new Set(['reminders']);
+
 export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -36,6 +40,24 @@ export function BottomTabBar({ state, navigation }: BottomTabBarProps) {
     const meta = ICONS[name];
     if (!meta) return <View key={name} style={styles.tab} />;
     const focused = activeName === name;
+
+    // Locked tab: grayscale, a small lock badge, and no navigation on tap.
+    if (LOCKED.has(name)) {
+      return (
+        <View key={name} style={[styles.tab, styles.locked]} accessibilityState={{ disabled: true }}>
+          <View>
+            <Ionicons name={meta.off} size={24} color={theme.textSecondary} />
+            <View style={[styles.lockBadge, { backgroundColor: theme.backgroundElement }]}>
+              <Ionicons name="lock-closed" size={11} color={theme.textSecondary} />
+            </View>
+          </View>
+          <ThemedText type="small" style={{ color: theme.textSecondary, fontSize: 11 }}>
+            {meta.label}
+          </ThemedText>
+        </View>
+      );
+    }
+
     return (
       <Pressable
         key={name}
@@ -78,6 +100,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.two,
   },
   tab: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  locked: { opacity: 0.4 },
+  lockBadge: {
+    position: 'absolute',
+    right: -6,
+    top: -4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   fabSlot: { width: 72, alignItems: 'center', justifyContent: 'center' },
   fab: {
     width: 60,

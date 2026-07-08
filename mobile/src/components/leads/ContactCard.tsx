@@ -4,10 +4,10 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { ActivityIndicator, Linking, Pressable, StyleSheet, View } from 'react-native';
 
+import { MediaImage } from '@/components/leads/MediaImage';
 import { ThemedText } from '@/components/themed-text';
 import { Brand, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -59,7 +59,7 @@ export function ContactCard({ contact }: { contact: Contact }) {
       <View style={styles.body}>
         <View style={styles.avatar}>
           {contact.person.photoUri ? (
-            <Image source={{ uri: contact.person.photoUri }} style={styles.avatarImg} contentFit="cover" />
+            <MediaImage uri={contact.person.photoUri} style={styles.avatarImg} contentFit="cover" />
           ) : (
             <Ionicons name="person" size={20} color={theme.textSecondary} />
           )}

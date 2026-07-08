@@ -47,6 +47,7 @@ export function VoicePlayer({ note, onDelete }: { note: VoiceNote; onDelete?: ()
           {formatDuration(note.durationMs || 0)}
         </ThemedText>
         {note.status === 'pending' ? <Ionicons name="cloud-offline-outline" size={16} color={theme.textSecondary} /> : null}
+        {note.status === 'failed' ? <Ionicons name="alert-circle-outline" size={16} color="#E5A400" /> : null}
         <Pressable onPress={() => setShowTranscript((s) => !s)} hitSlop={6} style={styles.ccBtn}>
           <ThemedText type="small" style={{ color: showTranscript ? Brand.orange : theme.textSecondary, fontWeight: '700' }}>
             CC

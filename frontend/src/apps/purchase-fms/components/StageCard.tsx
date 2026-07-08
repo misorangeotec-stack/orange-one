@@ -1,6 +1,7 @@
 import type { StageDef, StageState } from "../types";
 import StageStatusChip from "./StageStatusChip";
 import StageForm from "./StageForm";
+import AttachmentLink from "./AttachmentLink";
 import { formatDate } from "@/shared/lib/time";
 import { cn } from "@/shared/lib/cn";
 
@@ -27,6 +28,7 @@ export default function StageCard({
   highlight,
   anchorId,
   onComplete,
+  onUploadFile,
 }: {
   def: StageDef;
   state: StageState;
@@ -36,6 +38,7 @@ export default function StageCard({
   highlight?: boolean;
   anchorId?: string;
   onComplete: (values: Record<string, string | number | null>) => void;
+  onUploadFile?: (file: File) => Promise<string>;
 }) {
   const { status } = state;
   const filledValues = def.fields.filter((f) => {
@@ -96,7 +99,11 @@ export default function StageCard({
               filledValues.map((f) => (
                 <div key={f.key} className="flex justify-between gap-3 text-[12.5px]">
                   <span className="text-grey-2">{f.label}</span>
-                  <span className="text-navy font-medium text-right">{displayValue(def, f.key, state.values[f.key] ?? null)}</span>
+                  {f.type === "file" ? (
+                    <AttachmentLink value={String(state.values[f.key])} />
+                  ) : (
+                    <span className="text-navy font-medium text-right">{displayValue(def, f.key, state.values[f.key] ?? null)}</span>
+                  )}
                 </div>
               ))
             )}
@@ -106,7 +113,7 @@ export default function StageCard({
         {status === "active" && (
           <div className="mt-3 border-t border-line pt-4">
             {canAct ? (
-              <StageForm fields={def.fields} initial={state.values} onSubmit={onComplete} />
+              <StageForm fields={def.fields} initial={state.values} onSubmit={onComplete} onUploadFile={onUploadFile} />
             ) : (
               <div className="flex items-center gap-2 text-[12.5px] text-grey">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>

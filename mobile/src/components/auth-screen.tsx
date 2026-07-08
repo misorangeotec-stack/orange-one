@@ -4,6 +4,7 @@
  * the web portal (a user's mobile number is their initial password).
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -30,6 +31,7 @@ export function AuthScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -83,19 +85,28 @@ export function AuthScreen() {
               textContentType="emailAddress"
               editable={!busy}
             />
-            <TextInput
-              style={[styles.input, { backgroundColor: theme.backgroundElement, color: theme.text }]}
-              placeholder="Password"
-              placeholderTextColor={theme.textSecondary}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              autoCapitalize="none"
-              textContentType="password"
-              editable={!busy}
-              onSubmitEditing={submit}
-              returnKeyType="go"
-            />
+            <View style={styles.passwordWrap}>
+              <TextInput
+                style={[styles.input, styles.passwordInput, { backgroundColor: theme.backgroundElement, color: theme.text }]}
+                placeholder="Password"
+                placeholderTextColor={theme.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                textContentType="password"
+                editable={!busy}
+                onSubmitEditing={submit}
+                returnKeyType="go"
+              />
+              <Pressable
+                onPress={() => setShowPassword((s) => !s)}
+                hitSlop={8}
+                style={styles.eyeBtn}
+                accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
+                <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={22} color={theme.textSecondary} />
+              </Pressable>
+            </View>
 
             {error && (
               <ThemedText type="small" style={[styles.error, { color: '#E5484D' }]}>
@@ -153,6 +164,9 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     fontSize: 16,
   },
+  passwordWrap: { width: '100%', position: 'relative', justifyContent: 'center' },
+  passwordInput: { paddingRight: 52 },
+  eyeBtn: { position: 'absolute', right: 8, top: 0, bottom: 0, paddingHorizontal: Spacing.two, alignItems: 'center', justifyContent: 'center' },
   error: { paddingHorizontal: Spacing.one },
   button: {
     width: '100%',

@@ -5,7 +5,7 @@
  * Fails soft: returns ok:false so the note is still saved (just without text).
  */
 
-import { File } from 'expo-file-system';
+import { bytesBase64FromUri } from './media';
 
 export type VoiceAnalysis = {
   transcript: string;
@@ -34,7 +34,10 @@ export async function transcribeVoice(uri: string): Promise<Result> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 60000); // STT + Claude can be slow, but never hang forever
   try {
-    const base64 = await new File(uri).base64();
+    // Reads a local file OR a Supabase storage path (lead-media/...) — the latter
+    // is the case on a device that pulled the lead and has no local audio copy.
+    const base64 = await bytesBase64FromUri(uri);
+    if (!base64) return { ok: false, error: 'Could not read audio.' };
     const res = await fetch(FN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: ANON, Authorization: `Bearer ${ANON}` },

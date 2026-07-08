@@ -61,6 +61,7 @@ export default function Masters() {
     if (!masters || saving) return;
     // Drop blank rows so we never persist empty labels.
     const cleaned: Masters = {
+      source: masters.source.filter((i) => i.label.trim()),
       categories: masters.categories.filter((i) => i.label.trim()),
       interestLevels: masters.interestLevels.filter((i) => i.label.trim()),
       askedAbout: masters.askedAbout.filter((i) => i.label.trim()),

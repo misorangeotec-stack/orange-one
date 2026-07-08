@@ -39,6 +39,7 @@ import { HEADER_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import { saveAs } from "file-saver";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
+import { useHubBase } from "@hub/lib/sourceContext";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
@@ -610,8 +611,10 @@ export default function CustomerRiskRegister() {
   // Party rows open the Customer/Group Detail page in a NEW tab so the filtered
   // Risk Register stays intact in the original tab (filters live in component
   // state and don't survive a same-tab Back navigation).
+  // Keep drill-through inside the current set (default vs Live/Tally): rebase the app prefix.
+  const hubBase = useHubBase();
   const openInNewTab = (path: string) =>
-    window.open(path, "_blank", "noopener,noreferrer");
+    window.open(path.replace(/^\/outstanding-dashboard/, hubBase), "_blank", "noopener,noreferrer");
   // Carry the active Sale Type filter into the Customer/Group Detail page so the
   // detail view opens pre-filtered to the same type(s) (it reads ?saleType).
   const withSaleType = (path: string) =>

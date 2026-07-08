@@ -4,11 +4,14 @@ import { Toaster } from "@hub/components/ui/toaster";
 import { TooltipProvider } from "@hub/components/ui/tooltip";
 import { FYProvider } from "@hub/lib/fyContext";
 import { ReceivablesScopeProvider } from "@hub/lib/scope";
+import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
+import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
 import UserLayout from "@hub/layouts/UserLayout";
 import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import SalespersonAnalysis from "@hub/pages/SalespersonAnalysis";
 import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport";
+import CollectionReportLive from "@hub/pages/CollectionReportLive";
 import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
@@ -27,38 +30,54 @@ import Settings from "@hub/pages/Settings";
  *
  * Orange One's root already provides BrowserRouter + QueryClientProvider, so we
  * only add the Hub-local providers here. The `.hub-root` wrapper scopes the
- * Hub's design tokens (see src/index.css). Chat + admin are out of scope for
- * phase 1; EXIM / Alerts are deferred.
+ * Hub's design tokens (see src/index.css).
+ *
+ * LIVE (TALLY) MODE: rather than duplicate every screen/menu with a "Live …" copy, an
+ * admin-only topbar switch (see UserLayout + lib/liveMode) flips the WHOLE hub's data source to
+ * the ConnectWave live-Tally snapshot. Same routes/URLs, different backend — so `HubRoutes`
+ * wraps the router in a single <ReceivablesSourceProvider> whose value follows the toggle.
  */
+function HubRoutes() {
+  const { liveMode } = useLiveMode();
+  return (
+    <ReceivablesSourceProvider value={liveMode ? "connectwave" : "default"}>
+      <Routes>
+        <Route element={<UserLayout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="risk-register" element={<CustomerRiskRegister />} />
+          <Route path="salesperson-analysis" element={<SalespersonAnalysis />} />
+          <Route path="salesperson-collection" element={<SalespersonCollectionReport />} />
+          <Route path="collection-live" element={<CollectionReportLive />} />
+          <Route path="customer/:id" element={<CustomerDetail />} />
+          <Route path="group/:id" element={<CustomerDetail />} />
+          <Route path="import" element={<ImportDashboard />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="reports/aging" element={<AgingReport />} />
+          <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
+          <Route path="saved-views" element={<SavedViews />} />
+          <Route path="profile" element={<Profile />} />
+          <Route path="settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/outstanding-dashboard" replace />} />
+        </Route>
+      </Routes>
+    </ReceivablesSourceProvider>
+  );
+}
+
 export default function ReceivablesHubApp() {
   return (
     <div className="hub-root">
-      <ReceivablesScopeProvider>
-      <FYProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <Routes>
-            <Route element={<UserLayout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="risk-register" element={<CustomerRiskRegister />} />
-              <Route path="salesperson-analysis" element={<SalespersonAnalysis />} />
-              <Route path="salesperson-collection" element={<SalespersonCollectionReport />} />
-              <Route path="customer/:id" element={<CustomerDetail />} />
-              <Route path="group/:id" element={<CustomerDetail />} />
-              <Route path="import" element={<ImportDashboard />} />
-              <Route path="reports" element={<Reports />} />
-              <Route path="reports/aging" element={<AgingReport />} />
-              <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
-              <Route path="saved-views" element={<SavedViews />} />
-              <Route path="profile" element={<Profile />} />
-              <Route path="settings" element={<Settings />} />
-              <Route path="*" element={<Navigate to="/outstanding-dashboard" replace />} />
-            </Route>
-          </Routes>
-        </TooltipProvider>
-      </FYProvider>
-      </ReceivablesScopeProvider>
+      <LiveModeProvider>
+        <ReceivablesScopeProvider>
+          <FYProvider>
+            <TooltipProvider>
+              <Toaster />
+              <Sonner />
+              <HubRoutes />
+            </TooltipProvider>
+          </FYProvider>
+        </ReceivablesScopeProvider>
+      </LiveModeProvider>
     </div>
   );
 }

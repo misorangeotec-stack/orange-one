@@ -1,6 +1,7 @@
 import type { Profile } from "@/core/platform/types";
 import type { PurchaseEntry, StepOwner } from "../types";
 import { PURCHASE_STAGES } from "../config/stages";
+import { useFmsStore } from "../mock/store";
 import StageCard from "./StageCard";
 import { isOwner, ownerLabel } from "../lib/owner";
 
@@ -26,6 +27,8 @@ export default function StageTimeline({
   selectedKey?: string;
   onComplete: (values: Record<string, string | number | null>) => void;
 }) {
+  const { uploadDocument } = useFmsStore();
+  const onUploadFile = (file: File) => uploadDocument(entry.id, file);
   return (
     <div>
       {PURCHASE_STAGES.map((def, i) => {
@@ -44,6 +47,7 @@ export default function StageTimeline({
             highlight={selectedKey ? selectedKey === def.key : state.status === "active"}
             anchorId={`fms-stage-${def.key}`}
             onComplete={onComplete}
+            onUploadFile={onUploadFile}
           />
         );
       })}

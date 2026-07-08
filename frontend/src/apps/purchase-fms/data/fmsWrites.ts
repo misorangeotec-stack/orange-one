@@ -22,6 +22,30 @@ export interface NewOrderInput {
   remarks: string;
 }
 
+/**
+ * Private storage bucket for Purchase FMS documents (PO PDFs, etc.). Reuses the
+ * bucket + authenticated RLS policies created in
+ * supabase/migrations/20260701120000_add_fms_purchase_pi_document.sql.
+ */
+export const FMS_DOCS_BUCKET = "fms-purchase-docs";
+
+/**
+ * Upload a stage document (e.g. the PO PDF exported from Tally) to the private
+ * FMS bucket and return the storage PATH (not a URL). The path is what gets
+ * persisted in the stage's `values` JSONB; a signed URL is minted on demand when
+ * someone opens it (see components/AttachmentLink). Filenames are sanitised and
+ * namespaced under the entry code so an entry's files stay together.
+ */
+export async function uploadDocument(entry: PurchaseEntry, file: File): Promise<string> {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").replace(/^_+|_+$/g, "") || "file";
+  const path = `${entry.code}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(FMS_DOCS_BUCKET)
+    .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+  if (error) throw new Error(error.message);
+  return path;
+}
+
 const ORIGIN_NEXT_INDEX = 1; // stage after Generate Order (Approval)
 
 function codeNumber(code: string): number {

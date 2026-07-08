@@ -14,7 +14,7 @@ export type MasterItem = {
   order: number;
 };
 
-export type MasterType = 'categories' | 'interestLevels' | 'askedAbout' | 'followUpActions';
+export type MasterType = 'source' | 'categories' | 'interestLevels' | 'askedAbout' | 'followUpActions';
 
 export type Masters = Record<MasterType, MasterItem[]>;
 
@@ -36,6 +36,8 @@ export type VoiceNote = {
   followUps?: string[];
   /** Transcription lifecycle: pending = queued (offline), waiting for network. */
   status?: 'pending' | 'processing' | 'done' | 'failed';
+  /** Failed online transcription attempts; at MAX_AI_ATTEMPTS the note goes 'failed'. */
+  transcribeAttempts?: number;
   createdAt: string; // ISO
 };
 
@@ -65,7 +67,12 @@ export type CapturedAt = {
 export type Contact = {
   id: string;
   person: PersonInfo;
+  /** Extra people printed on the same card (a card can list multiple contacts).
+   *  The primary is `person`; these are everyone else. Unbounded. */
+  additionalPeople?: PersonInfo[];
   company: CompanyInfo;
+  /** Where the lead came from — e.g. the exhibition name. Single master item. */
+  sourceId?: string | null;
   categoryIds: string[];
   interestLevelId?: string | null;
   askedAboutIds: string[];
@@ -81,6 +88,16 @@ export type Contact = {
   capturedAt?: CapturedAt | null;
   /** True when a card was captured offline and still needs AI extraction. */
   pendingExtract?: boolean;
+  /** Failed online extraction attempts; at MAX_AI_ATTEMPTS we stop retrying. */
+  extractAttempts?: number;
+  /**
+   * Set by the background read when this freshly-scanned card matches an existing
+   * contact (by phone/email): the id of that existing contact. While set, the
+   * draft is held out of Home + the server, awaiting the user's decision on the
+   * Duplicate card screen. Cleared ("Continue anyway") or the draft is deleted
+   * ("Yes, it's a duplicate").
+   */
+  duplicateOf?: string | null;
   capturedOn: string; // ISO
   updatedAt: string; // ISO
 };
@@ -110,6 +127,7 @@ export const emptyCompany = (): CompanyInfo => ({
 export const emptyDraft = (): ContactDraft => ({
   person: emptyPerson(),
   company: emptyCompany(),
+  sourceId: null,
   categoryIds: [],
   interestLevelId: null,
   askedAboutIds: [],

@@ -13,7 +13,7 @@
 export type StageStatus = "pending" | "active" | "done";
 
 /** Field input kinds a stage can capture. */
-export type FieldType = "text" | "number" | "textarea" | "date" | "select";
+export type FieldType = "text" | "number" | "textarea" | "date" | "select" | "file";
 
 /** One captured field in a stage's data-entry form. */
 export interface StageFieldDef {
@@ -26,6 +26,8 @@ export interface StageFieldDef {
   placeholder?: string;
   /** Render hint: half-width on wider screens (so two fields share a row). */
   half?: boolean;
+  /** Accept filter for `type: "file"` (e.g. "application/pdf"). */
+  accept?: string;
 }
 
 /** Static definition of one workflow stage (see config/stages.ts). */

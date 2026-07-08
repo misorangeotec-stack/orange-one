@@ -37,6 +37,8 @@ import { Checkbox } from "@hub/components/ui/checkbox";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData, consolidateByName, consolidateByGroup } from "@hub/lib/useAppData";
+import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
+import { useQuery } from "@tanstack/react-query";
 import { utilizationPct } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
@@ -450,10 +452,15 @@ export default function CustomerDetail() {
   const { id: nameEncoded } = useParams<{ id: string }>();
   const decoded = decodeURIComponent(nameEncoded ?? "");
   const location = useLocation();
-  const isGroupRoute = location.pathname.includes("/outstanding-dashboard/group/");
+  // Base-agnostic: matches both "/outstanding-dashboard/group/" and the Live ".../live/group/".
+  const isGroupRoute = location.pathname.includes("/group/");
   const customerName = decoded;  // for single-customer route, this is the Tally name
   const groupName    = decoded;  // for group route, this is the group name
   const navigate = useNavigate();
+  // Keep drill-through inside the current set (default vs Live/Tally).
+  const hubBase = useHubBase();
+  const rebase = (p: string) => p.replace(/^\/outstanding-dashboard/, hubBase);
+  const source = useReceivablesSource();
   const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
   // Voucher-type and status filters are multi-select. An empty set means "all"
@@ -511,7 +518,7 @@ export default function CustomerDetail() {
     lastInitKey.current = "";  // force re-init under the new route
   }, [decoded, isGroupRoute]);
 
-  const { loading, error, customers, allCustomers, customerDetail, customerGroupMap, dashboard } = useAppData({ saleType: effectiveSaleType });
+  const { loading, error, customers, allCustomers, customerDetail: baseCustomerDetail, customerGroupMap, dashboard } = useAppData({ saleType: effectiveSaleType });
 
   // Resolve the list of Tally names that belong to this group (only meaningful
   // on the group route). A group's children are: every Tally name `n` such
@@ -544,6 +551,26 @@ export default function CustomerDetail() {
     }
     return allCustomers.filter((c) => c.name === customerName);
   }, [allCustomers, customerName, isGroupRoute, groupChildNames]);
+
+  // ── Live (Tally) source: lazily fetch the shown ledgers' transaction history ────────────────
+  // The ConnectWave snapshot omits per-customer transaction lists (kept lean — they're only ever
+  // viewed one customer at a time). Fetch them on demand for this customer's constituent ledgers
+  // and merge into the detail map the transaction tabs read. No-op on the default source.
+  const entityIds = useMemo(() => [...allEntities.map((e) => e.id)].sort(), [allEntities]);
+  const { data: liveTxns } = useQuery({
+    queryKey: ["cwLedgerTxns", entityIds],
+    queryFn: () => import("@hub/lib/connectwaveFetcher").then((m) => m.fetchConnectwaveLedgerTxns(entityIds)),
+    enabled: source === "connectwave" && entityIds.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+  const customerDetail = useMemo(() => {
+    if (source !== "connectwave" || !liveTxns) return baseCustomerDetail;
+    const merged: typeof baseCustomerDetail = { ...baseCustomerDetail };
+    for (const [id, lists] of Object.entries(liveTxns)) {
+      merged[id] = { ...(baseCustomerDetail[id] ?? { invoices: [], trend: [], receiptTransactions: [] }), ...lists };
+    }
+    return merged;
+  }, [source, liveTxns, baseCustomerDetail]);
 
   // Available companies and locations for the entity filter dropdowns.
   // Each list is filtered by the OTHER selection so users can't pick a
@@ -1415,7 +1442,7 @@ export default function CustomerDetail() {
               if (saleTypeFilter !== "all") params.set("saleType", saleTypeFilter);
               if (isGroupRoute)               params.set("view", "group");
               const qs = params.toString();
-              navigate(qs ? `/outstanding-dashboard/risk-register?${qs}` : "/outstanding-dashboard/risk-register");
+              navigate(rebase(qs ? `/outstanding-dashboard/risk-register?${qs}` : "/outstanding-dashboard/risk-register"));
             }}
             className="rounded-button text-muted-foreground hover:text-foreground hover:bg-transparent active:bg-transparent -ml-2"
           >
