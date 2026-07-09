@@ -4,14 +4,15 @@
  * All wrapped so a denied permission degrades gracefully instead of throwing.
  */
 
+import NetInfo from '@react-native-community/netinfo';
 import { Directory, File, Paths } from 'expo-file-system';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { Dimensions } from 'react-native';
 
-import { resolveMediaUrl } from './sync';
-import type { CapturedAt } from './types';
+import { resolveMediaUrl, withTimeout } from './sync';
+import type { CapturedAt, Contact, ContactDraft } from './types';
 
 // ---- Base64 from any media uri --------------------------------------------
 
@@ -187,27 +188,127 @@ export async function pickImageData(): Promise<{ uri: string; base64: string | n
   return { uri: persistMedia(a.uri, 'card'), base64: a.base64 ?? null };
 }
 
-/** Best-effort current location → reverse-geocoded address. Never throws. */
-export async function captureLocation(): Promise<CapturedAt | null> {
+// ---- Location ---------------------------------------------------------------
+//
+// Saving a lead must NEVER wait on the GPS. `getCurrentPositionAsync` forces a
+// fresh satellite fix, and offline — no cell/wifi trilateration, no A-GPS
+// ephemeris — that cold fix takes 30-120s. So: keep the last fix in memory for
+// TTL, warm it in the background while the camera/review screen is open, and let
+// `save()` read it synchronously via peekLocation(). Leads captured at one
+// exhibition are metres apart, so reusing a few-minute-old fix is accurate enough.
+
+const LOCATION_TTL_MS = 10 * 60 * 1000;
+
+let lastFix: { value: CapturedAt; at: number } | null = null;
+let warming: Promise<CapturedAt | null> | null = null;
+
+/** A bare "lat, lng" address — what we store when the geocoder was unreachable. */
+const COORD_ADDRESS = /^-?\d+\.\d+, *-?\d+\.\d+$/;
+export const isCoordAddress = (address?: string | null): boolean => !!address && COORD_ADDRESS.test(address);
+
+const coordAddress = (lat: number, lng: number) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+async function isOnline(): Promise<boolean> {
   try {
-    const perm = await Location.requestForegroundPermissionsAsync();
-    if (!perm.granted) return null;
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    const { latitude, longitude } = pos.coords;
-    let address = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-    try {
-      const places = await Location.reverseGeocodeAsync({ latitude, longitude });
-      if (places.length) {
-        const p = places[0];
-        address = [p.name, p.street, p.city, p.region, p.postalCode, p.country]
-          .filter(Boolean)
-          .join(', ');
-      }
-    } catch {
-      /* keep coord string */
-    }
-    return { lat: latitude, lng: longitude, address };
+    const net = await NetInfo.fetch();
+    return net.isConnected !== false && net.isInternetReachable !== false;
+  } catch {
+    return false;
+  }
+}
+
+/** Coords → human address. Needs the network; returns null when it can't resolve. */
+export async function reverseGeocode(lat: number, lng: number): Promise<string | null> {
+  try {
+    const places = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+    if (!places.length) return null;
+    const p = places[0];
+    const address = [p.name, p.street, p.city, p.region, p.postalCode, p.country].filter(Boolean).join(', ');
+    return address || null;
   } catch {
     return null;
   }
 }
+
+/** The cached fix, if it is still fresh. Synchronous — safe to call from a tap handler. */
+export function peekLocation(): CapturedAt | null {
+  if (!lastFix) return null;
+  return Date.now() - lastFix.at < LOCATION_TTL_MS ? lastFix.value : null;
+}
+
+/**
+ * Acquire a location, bounded. Prefers the OS's last-known fix (instant); only
+ * then waits — briefly — on a real fix. Reverse-geocoding is skipped when
+ * offline, leaving a coord-string address that a later sync backfills.
+ * Never throws, never hangs.
+ */
+export async function captureLocationFast(): Promise<CapturedAt | null> {
+  try {
+    let perm = await Location.getForegroundPermissionsAsync();
+    if (!perm.granted && perm.canAskAgain) perm = await Location.requestForegroundPermissionsAsync();
+    if (!perm.granted) return null;
+
+    let coords = (await Location.getLastKnownPositionAsync())?.coords ?? null;
+    if (!coords) {
+      const pos = await withTimeout(
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        5000,
+        'gps fix'
+      ).catch(() => null);
+      coords = pos?.coords ?? null;
+    }
+    if (!coords) return null;
+
+    const { latitude, longitude } = coords;
+    let address = coordAddress(latitude, longitude);
+    if (await isOnline()) address = (await reverseGeocode(latitude, longitude)) ?? address;
+
+    const value: CapturedAt = { lat: latitude, lng: longitude, address };
+    lastFix = { value, at: Date.now() };
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/** A fix, coalescing concurrent callers onto one acquisition. */
+function acquireLocation(): Promise<CapturedAt | null> {
+  const fresh = peekLocation();
+  if (fresh) return Promise.resolve(fresh);
+  if (!warming) {
+    warming = captureLocationFast().finally(() => {
+      warming = null;
+    });
+  }
+  return warming;
+}
+
+/**
+ * Fire-and-forget: get a fix warm so the next `peekLocation()` hits. Call it when
+ * a capture screen mounts — by the time the user taps Save it has usually landed.
+ */
+export function warmLocation(): void {
+  void acquireLocation();
+}
+
+/**
+ * Cold-start fallback: the lead was saved with no fix at all (nothing was warm
+ * yet). Acquire one in the background and patch the saved contact. Re-reads the
+ * contact when the fix lands, so a concurrent sync enrichment isn't clobbered.
+ */
+export function backfillLocation(
+  id: string,
+  getContact: (id: string) => Contact | undefined,
+  updateContact: (id: string, draft: ContactDraft) => void
+): void {
+  acquireLocation()
+    .then((loc) => {
+      if (!loc) return;
+      const current = getContact(id);
+      if (current && !current.capturedAt) updateContact(id, { ...current, capturedAt: loc });
+    })
+    .catch(() => {});
+}
+
+/** @deprecated Blocks the caller. Prefer peekLocation() + warmLocation(). */
+export const captureLocation = captureLocationFast;

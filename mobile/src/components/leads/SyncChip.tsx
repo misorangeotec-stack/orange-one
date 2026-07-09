@@ -13,8 +13,8 @@ import { useLeads } from '@/lib/leads/store';
 
 export function SyncChip() {
   const theme = useTheme();
-  const { syncing, pendingCount, pendingAiCount, syncNow } = useLeads();
-  const pending = pendingCount + pendingAiCount;
+  const { syncing, pendingCount, syncNow } = useLeads();
+  const pending = pendingCount;
 
   // Only look "busy" when there is real work to push. A quiet background pull
   // (nothing pending) stays "Synced" so the chip isn't constantly churning.

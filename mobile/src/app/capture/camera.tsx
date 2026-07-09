@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,7 +17,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/Button';
 import { Spacing } from '@/constants/theme';
 import type { CapturedImage } from '@/lib/leads/extractCard';
-import { cropToFrame, FRAME_ASPECT, FRAME_WIDTH_RATIO, pickImageData } from '@/lib/leads/media';
+import { cropToFrame, FRAME_ASPECT, FRAME_WIDTH_RATIO, pickImageData, warmLocation } from '@/lib/leads/media';
 import { setPendingScan } from '@/lib/leads/pendingScan';
 import { emptyDraft } from '@/lib/leads/types';
 
@@ -33,6 +33,10 @@ export default function CameraScreen() {
   const [side, setSide] = useState<'front' | 'back'>('front');
   const [front, setFront] = useState<CapturedImage | null>(null);
   const [back, setBack] = useState<CapturedImage | null>(null);
+
+  // The camera is on screen for a few seconds before Review renders — the cheapest
+  // moment to get a location fix warm, so saving never has to wait for one.
+  useEffect(() => warmLocation(), []);
 
   const goManual = () => router.replace('/contact/new');
 

@@ -7,7 +7,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -22,7 +22,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { findDuplicate } from '@/lib/leads/dedupe';
-import { captureLocation } from '@/lib/leads/media';
+import { backfillLocation, peekLocation, warmLocation } from '@/lib/leads/media';
 import { consumePendingScan } from '@/lib/leads/pendingScan';
 import { autofillFromVoice } from '@/lib/leads/suggestions';
 import { newId, useLeads } from '@/lib/leads/store';
@@ -67,12 +67,18 @@ export default function UploadContactScreen() {
   const removeAdditionalPerson = (i: number) =>
     setDraft((d) => ({ ...d, additionalPeople: (d.additionalPeople ?? []).filter((_, idx) => idx !== i) }));
 
+  // Warm a location fix while the form is filled in — see media.ts. Editing an
+  // existing lead never re-tags it, so only bother on create.
+  useEffect(() => {
+    if (!editingId) warmLocation();
+  }, [editingId]);
+
   const clean = (arr: string[]) => arr.map((s) => s.trim()).filter(Boolean);
 
-  const save = async () => {
+  const save = () => {
     setSaving(true);
     let capturedAt = draft.capturedAt ?? null;
-    if (!editingId && !capturedAt) capturedAt = await captureLocation();
+    if (!editingId && !capturedAt) capturedAt = peekLocation();
     const cleaned: ContactDraft = {
       ...draft,
       person: {
@@ -105,6 +111,7 @@ export default function UploadContactScreen() {
 
     const commit = () => {
       const created = addContact(cleaned);
+      if (!capturedAt) backfillLocation(created.id, getContact, updateContact);
       setSaving(false);
       router.replace({ pathname: '/contact/[id]', params: { id: created.id } });
     };

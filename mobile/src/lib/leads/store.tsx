@@ -25,7 +25,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { useSync } from '@/hooks/use-sync';
 import { findDuplicates } from './dedupe';
 import { extractCardDraft } from './extractCard';
-import { bytesBase64FromUri } from './media';
+import { bytesBase64FromUri, isCoordAddress, reverseGeocode } from './media';
 import { defaultMasters } from './masters';
 import { autofillFromVoice } from './suggestions';
 import { transcribeVoice } from './transcribe';
@@ -37,6 +37,7 @@ import {
   flush,
   loadCache,
   loadOutbox,
+  mapPool,
   mergeContacts,
   type Outbox,
   pull,
@@ -66,8 +67,8 @@ type LeadsContextValue = {
   labelOf: (type: MasterType, id?: string | null) => string;
   // Sync surface
   syncing: boolean;
-  pendingCount: number; // records not yet pushed (outbox)
-  pendingAiCount: number; // cards/voice awaiting network AI
+  pendingCount: number; // distinct records still owing work — matches the Drafts count
+  pendingAiCount: number; // units of AI work owed (a card may owe several); informational
   lastSyncedAt: string | null;
   syncStep: string | null; // current phase while syncing (for visibility)
   syncError: string | null; // last sync error message, if any
@@ -107,18 +108,23 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
 
   const recomputePending = useCallback(() => {
     const o = outboxRef.current;
-    setPendingCount(o.contactIds.length + Object.keys(o.deletes).length);
-    const ids = new Set(o.contactIds);
+    const dirty = new Set(o.contactIds);
+    const ids: string[] = [];
     let ai = 0;
     for (const c of contactsRef.current) {
       const pv = c.voiceNotes.filter((v) => v.status === 'pending').length;
       // Draft (shown in Drafts, hidden from Home) if it owes AI, is a held
       // duplicate awaiting a decision, or is otherwise unsynced.
-      if (c.pendingExtract || pv > 0 || c.duplicateOf) ids.add(c.id);
+      if (dirty.has(c.id) || c.pendingExtract || pv > 0 || c.duplicateOf) ids.push(c.id);
       ai += (c.pendingExtract ? 1 : 0) + pv;
     }
+    // ONE per record, not one per unit of work. A card sitting in the outbox that
+    // also owes extraction and a transcription is a single pending lead — summing
+    // the outbox and the AI counters made the chip read 5 for 2 drafts. Deletes
+    // are tombstones, not contacts, so they're added separately.
+    setPendingCount(ids.length + Object.keys(o.deletes).length);
     setPendingAiCount(ai);
-    setPendingIds(Array.from(ids));
+    setPendingIds(ids);
   }, []);
 
   // ---- Load per-user cache on login / clear on logout ----------------------
@@ -129,6 +135,10 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       syncingRef.current = false; // clear any stuck guard from a prior wedged run
       setSyncing(false);
       if (!userId) {
+        // In-memory reset ONLY. The per-user AsyncStorage cache + outbox must
+        // survive a sign-out: they hold leads captured offline that were never
+        // pushed. Never call clearUserCache() here — signing back in as the same
+        // user has to restore them.
         setContacts([]);
         setMasters(defaultMasters());
         outboxRef.current = emptyOutbox();
@@ -152,7 +162,10 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
         const seededMasters = defaultMasters();
         setContacts(legacyContacts);
         setMasters(seededMasters);
-        mastersUpdatedAtRef.current = nowIso();
+        // EPOCH, not nowIso(): these are only offline placeholders until the first
+        // sync. A "now" timestamp here would make the local defaults look newer than
+        // the admin's server masters and block the real categories from ever loading.
+        mastersUpdatedAtRef.current = EPOCH;
         cursorRef.current = EPOCH;
         outboxRef.current = {
           contactIds: legacyContacts.map((c) => c.id),
@@ -256,6 +269,21 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
 
   const runSync = useCallback(async () => {
     if (!userId || syncingRef.current) return;
+
+    // Offline: don't even start. Every Supabase call would grind through its 30s
+    // timeout (plus auth's token-refresh retries) before failing, churning the JS
+    // thread for up to two minutes while the user is still capturing cards.
+    // useSync re-triggers the moment connectivity returns, so nothing is lost.
+    //
+    // Gate on `isConnected` ONLY. Android reports `isInternetReachable: false` for
+    // a second or two after airplane mode goes off, while it probes — bailing on
+    // that swallowed the reconnect sync and left the leads sitting there.
+    const net = await NetInfo.fetch().catch(() => null);
+    if (net?.isConnected === false) {
+      setSyncError('Offline — will sync when you’re back online');
+      return;
+    }
+
     syncingRef.current = true;
     setSyncing(true);
     setSyncError(null);
@@ -284,18 +312,19 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       // 1) Push whatever we have NOW — leads land in seconds, before (slow) AI.
       await doFlush();
 
-      // 2) Deferred AI (online only; slow; must never block the push above).
+      // 2) Deferred AI (online only; slow; must never block the push above). Each
+      //    contact is published the moment ITS work lands, so cards leave
+      //    "Processing…" one by one instead of all at the end of the batch.
       setSyncStep('Reading cards & voice');
-      const { contacts: enriched, changed } = await processDeferredAI(contactsRef.current, mastersRef.current);
-      if (changed.length) {
-        setContacts(enriched);
-        contactsRef.current = enriched;
-        for (const id of changed) {
-          if (!outboxRef.current.contactIds.includes(id)) outboxRef.current.contactIds.push(id);
-        }
+      const onContact = (c: Contact) => {
+        const next = contactsRef.current.map((x) => (x.id === c.id ? c : x));
+        contactsRef.current = next;
+        setContacts(next);
+        if (!outboxRef.current.contactIds.includes(c.id)) outboxRef.current.contactIds.push(c.id);
         persistOutbox();
-        await doFlush(); // push the enriched rows
-      }
+      };
+      const { changed } = await processDeferredAI(contactsRef.current, mastersRef.current, onContact);
+      if (changed.length) await doFlush(); // push the enriched rows
 
       // 3) Pull remote changes + merge.
       setSyncStep('Downloading');
@@ -306,11 +335,17 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
         contactsRef.current = merged;
         await saveContactsCache(userId, merged);
       }
-      if (res.masters && res.mastersUpdatedAt && new Date(res.mastersUpdatedAt) > new Date(mastersUpdatedAtRef.current)) {
+      // Masters are admin-managed org-wide and read-only here, so the server row is
+      // the single source of truth — ALWAYS adopt it (no last-write-wins gate). The
+      // old `mastersUpdatedAt > local` check wrongly kept the on-device defaults,
+      // whose seed timestamp (install time) beat the admin's earlier save, so users
+      // never saw updated categories. Apply on any content change; heal existing
+      // installs on their next sync.
+      if (res.masters && JSON.stringify(res.masters) !== JSON.stringify(mastersRef.current)) {
         setMasters(res.masters);
         mastersRef.current = res.masters;
-        mastersUpdatedAtRef.current = res.mastersUpdatedAt;
-        await saveMastersCache(userId, res.masters, res.mastersUpdatedAt);
+        mastersUpdatedAtRef.current = res.mastersUpdatedAt ?? nowIso();
+        await saveMastersCache(userId, res.masters, mastersUpdatedAtRef.current);
       }
       cursorRef.current = res.cursor;
       await saveCursor(userId, res.cursor);
@@ -328,7 +363,13 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
   // render, re-firing the "sync on start" effect in a loop (network churn +
   // "Syncing…" that never settles). The ref keeps it pointing at the latest runSync.
   const triggerSync = useCallback(() => runSyncRef.current?.('trigger'), []);
-  useSync(userId ?? null, ready, triggerSync);
+  // Reads refs, so it stays referentially stable and never resubscribes useSync.
+  const hasPendingWork = useCallback(() => {
+    const o = outboxRef.current;
+    if (o.contactIds.length > 0 || Object.keys(o.deletes).length > 0) return true;
+    return contactsRef.current.some((c) => c.pendingExtract || c.voiceNotes.some((v) => v.status === 'pending'));
+  }, []);
+  useSync(userId ?? null, ready, triggerSync, hasPendingWork);
 
   const isPending = useCallback((id: string) => pendingIds.includes(id), [pendingIds]);
 
@@ -408,105 +449,168 @@ const base64Of = (uri: string): Promise<string | null> => bytesBase64FromUri(uri
 // forever. Attempts only tick on real sync cycles, so this spans several tries.
 const MAX_AI_ATTEMPTS = 5;
 
+/** A lead captured offline holds a "lat, lng" address — the geocoder was unreachable. */
+const owesAddress = (c: Contact): boolean =>
+  !!c.capturedAt && c.capturedAt.lat != null && c.capturedAt.lng != null && isCoordAddress(c.capturedAt.address);
+
+/** Cards/voice processed at once. Each is a multi-second edge-function round-trip. */
+const AI_CONCURRENCY = 3;
+
+const owesAI = (c: Contact): boolean =>
+  !!c.pendingExtract || c.voiceNotes.some((v) => v.status === 'pending') || owesAddress(c);
+
 /**
- * Process cards/voice captured offline. Only runs when online; each item is
- * independent and keyed by id, so failures simply stay pending for next time
- * (up to MAX_AI_ATTEMPTS, after which it stops retrying and leaves "Processing…").
+ * All the NETWORK work one contact owes, run concurrently. Touches no shared
+ * state, so several of these can be in flight at once. Returns the enriched
+ * contact plus whether it changed and whether the card was newly read (the
+ * caller does the duplicate check, which needs the whole list).
  */
-async function processDeferredAI(
-  list: Contact[],
+async function enrichContact(
+  contact: Contact,
   masters: Masters
-): Promise<{ contacts: Contact[]; changed: string[] }> {
-  const net = await NetInfo.fetch();
-  const online = net.isConnected !== false && net.isInternetReachable !== false;
-  const anyWork = list.some((c) => c.pendingExtract || c.voiceNotes.some((v) => v.status === 'pending'));
-  if (!online || !anyWork) return { contacts: list, changed: [] };
+): Promise<{ contact: Contact; touched: boolean; extracted: boolean }> {
+  let c = contact;
+  let touched = false;
+  let extracted = false;
 
-  const out = [...list];
-  const changed = new Set<string>();
+  const wantsExtract = c.pendingExtract && (c.cardImages.front || c.cardImages.back);
+  const pendingNotes = c.voiceNotes.filter((v) => v.status === 'pending');
 
-  for (let i = 0; i < out.length; i++) {
-    let c = out[i];
-    let touched = false;
+  // Card read, every voice note, and the address lookup all fire together — a
+  // card with two voice notes used to cost three round-trips end to end.
+  const [card, transcripts, address] = await Promise.all([
+    wantsExtract
+      ? (async () => {
+          // Front and back are two file reads; don't do them one after the other.
+          const [fb, bb] = await Promise.all([
+            c.cardImages.front ? base64Of(c.cardImages.front) : null,
+            c.cardImages.back ? base64Of(c.cardImages.back) : null,
+          ]);
+          return extractCardDraft(
+            c.cardImages.front ? { uri: c.cardImages.front, base64: fb } : null,
+            c.cardImages.back ? { uri: c.cardImages.back, base64: bb } : null
+          ).catch(() => null);
+        })()
+      : Promise.resolve(null),
+    Promise.all(pendingNotes.map((v) => transcribeVoice(v.uri).catch(() => ({ ok: false as const })))),
+    owesAddress(c) && c.capturedAt
+      ? reverseGeocode(c.capturedAt.lat as number, c.capturedAt.lng as number)
+      : Promise.resolve(null),
+  ]);
 
-    // Deferred card extraction.
-    if (c.pendingExtract && (c.cardImages.front || c.cardImages.back)) {
-      let extracted = false;
-      try {
-        const front = c.cardImages.front ? { uri: c.cardImages.front, base64: await base64Of(c.cardImages.front) } : null;
-        const back = c.cardImages.back ? { uri: c.cardImages.back, base64: await base64Of(c.cardImages.back) } : null;
-        const res = await extractCardDraft(front, back);
-        if (res.ok) {
-          c = { ...fillFromExtract(c, res.draft), pendingExtract: false, extractAttempts: undefined };
-          touched = true;
-          extracted = true;
-          // Now that the card is read, check whether it duplicates an existing
-          // contact (by phone/email). Compare against everyone EXCEPT this draft
-          // and any other still-held duplicate. If matched, hold it for the user
-          // to resolve on the Duplicate card screen (see sync.flush skip).
-          const others = out.filter((o) => o.id !== c.id && !o.duplicateOf);
-          const dup = findDuplicates(c, others)[0];
-          if (dup) c = { ...c, duplicateOf: dup.id };
-        }
-      } catch {
-        /* handled below */
+  if (wantsExtract) {
+    if (card?.ok) {
+      c = { ...fillFromExtract(c, card.draft), pendingExtract: false, extractAttempts: undefined };
+      touched = true;
+      extracted = true;
+    } else {
+      // Count the failed attempt; give up (stop showing "Processing…") after the cap.
+      const n = (c.extractAttempts ?? 0) + 1;
+      c = { ...c, extractAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { pendingExtract: false } : {}) };
+      touched = true;
+    }
+  }
+
+  if (pendingNotes.length) {
+    const resultById = new Map(pendingNotes.map((v, i) => [v.id, transcripts[i]]));
+    const notes: VoiceNote[] = [];
+    for (const v of c.voiceNotes) {
+      const r = resultById.get(v.id);
+      if (!r) {
+        notes.push(v);
+        continue;
       }
-      if (!extracted) {
-        // Count the failed attempt; give up (stop showing "Processing…") after the cap.
-        const n = (c.extractAttempts ?? 0) + 1;
-        c = { ...c, extractAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { pendingExtract: false } : {}) };
+      if (r.ok && 'data' in r) {
+        const nv: VoiceNote = {
+          ...v,
+          transcript: r.data?.transcript || null,
+          summary: r.data?.summary || null,
+          suggestedInterest: r.data?.suggestedInterest || null,
+          followUps: r.data?.followUps ?? [],
+          status: 'done',
+        };
+        notes.push(nv);
+        touched = true;
+        // Auto-fill empty interest/follow-up/notes from the note.
+        const fill = autofillFromVoice(nv, masters, {
+          interest: !!c.interestLevelId,
+          followUp: !!c.followUpActionId,
+          notes: !!c.notes[0]?.text,
+        });
+        c = {
+          ...c,
+          interestLevelId: fill.interestLevelId ?? c.interestLevelId,
+          followUpActionId: fill.followUpActionId ?? c.followUpActionId,
+          notes: fill.noteText ? [{ id: newId('n'), text: fill.noteText, createdAt: nowIso() }] : c.notes,
+        };
+      } else {
+        // Count the failed attempt; mark 'failed' (terminal, no longer "pending"
+        // → card leaves "Processing…") once the cap is hit. Persisted via touched.
+        const n = (v.transcribeAttempts ?? 0) + 1;
+        notes.push({ ...v, transcribeAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { status: 'failed' as const } : {}) });
         touched = true;
       }
     }
-
-    // Deferred voice transcription.
-    if (c.voiceNotes.some((v) => v.status === 'pending')) {
-      const notes: VoiceNote[] = [];
-      for (const v of c.voiceNotes) {
-        if (v.status !== 'pending') {
-          notes.push(v);
-          continue;
-        }
-        const r = await transcribeVoice(v.uri);
-        if (r.ok) {
-          const nv: VoiceNote = {
-            ...v,
-            transcript: r.data?.transcript || null,
-            summary: r.data?.summary || null,
-            suggestedInterest: r.data?.suggestedInterest || null,
-            followUps: r.data?.followUps ?? [],
-            status: 'done',
-          };
-          notes.push(nv);
-          touched = true;
-          // Auto-fill empty interest/follow-up/notes from the note.
-          const fill = autofillFromVoice(nv, masters, {
-            interest: !!c.interestLevelId,
-            followUp: !!c.followUpActionId,
-            notes: !!c.notes[0]?.text,
-          });
-          c = {
-            ...c,
-            interestLevelId: fill.interestLevelId ?? c.interestLevelId,
-            followUpActionId: fill.followUpActionId ?? c.followUpActionId,
-            notes: fill.noteText ? [{ id: newId('n'), text: fill.noteText, createdAt: nowIso() }] : c.notes,
-          };
-        } else {
-          // Count the failed attempt; mark 'failed' (terminal, no longer "pending"
-          // → card leaves "Processing…") once the cap is hit. Persisted via touched.
-          const n = (v.transcribeAttempts ?? 0) + 1;
-          notes.push({ ...v, transcribeAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { status: 'failed' as const } : {}) });
-          touched = true;
-        }
-      }
-      c = { ...c, voiceNotes: notes };
-    }
-
-    if (touched) {
-      out[i] = { ...c, updatedAt: nowIso() };
-      changed.add(out[i].id);
-    }
+    c = { ...c, voiceNotes: notes };
   }
+
+  // Resolve a coord-string address captured offline into a real one. Best-effort:
+  // a failure just leaves the coordinates, and the next cycle tries again.
+  if (address && c.capturedAt) {
+    c = { ...c, capturedAt: { ...c.capturedAt, address } };
+    touched = true;
+  }
+
+  return { contact: c, touched, extracted };
+}
+
+/**
+ * Process cards/voice captured offline, and backfill the addresses of leads that
+ * were geo-tagged with bare coordinates while offline. Only runs when online; each
+ * item is independent and keyed by id, so failures simply stay pending for next
+ * time (up to MAX_AI_ATTEMPTS, after which it stops retrying and leaves "Processing…").
+ *
+ * Contacts are processed AI_CONCURRENCY at a time and reported through `onContact`
+ * the instant each one lands, so a card leaves "Processing…" as soon as ITS card is
+ * read — it no longer waits for the whole batch. Merging + the duplicate check run
+ * in the synchronous tail of each task, so they still see a consistent list.
+ */
+async function processDeferredAI(
+  list: Contact[],
+  masters: Masters,
+  onContact?: (c: Contact) => void
+): Promise<{ contacts: Contact[]; changed: string[] }> {
+  const net = await NetInfo.fetch();
+  const online = net.isConnected !== false && net.isInternetReachable !== false;
+  const targets = list.filter(owesAI);
+  if (!online || !targets.length) return { contacts: list, changed: [] };
+
+  const out = [...list];
+  const indexById = new Map(list.map((c, i) => [c.id, i]));
+  const changed = new Set<string>();
+
+  await mapPool(targets, AI_CONCURRENCY, async (target) => {
+    const { contact, touched, extracted } = await enrichContact(target, masters);
+    if (!touched) return;
+
+    // Everything below is synchronous — no other task can interleave, so `out` is
+    // a consistent snapshot for the duplicate check.
+    let c = contact;
+    if (extracted) {
+      // Now that the card is read, check whether it duplicates an existing contact
+      // (by phone/email). Compare against everyone EXCEPT this draft and any other
+      // still-held duplicate. If matched, hold it for the user to resolve on the
+      // Duplicate card screen (see sync.flush skip).
+      const others = out.filter((o) => o.id !== c.id && !o.duplicateOf);
+      const dup = findDuplicates(c, others)[0];
+      if (dup) c = { ...c, duplicateOf: dup.id };
+    }
+    c = { ...c, updatedAt: nowIso() };
+    out[indexById.get(c.id) as number] = c;
+    changed.add(c.id);
+    onContact?.(c);
+  });
+
   return { contacts: out, changed: [...changed] };
 }
 

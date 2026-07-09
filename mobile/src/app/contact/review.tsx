@@ -10,7 +10,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, ToastAndroid, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,7 +23,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Chip } from '@/components/ui/Chip';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { captureLocation } from '@/lib/leads/media';
+import { backfillLocation, peekLocation, warmLocation } from '@/lib/leads/media';
 import { consumePendingScan } from '@/lib/leads/pendingScan';
 import { autofillFromVoice } from '@/lib/leads/suggestions';
 import { newId, useLeads } from '@/lib/leads/store';
@@ -41,7 +41,7 @@ export default function ReviewCardScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { masters, addContact } = useLeads();
+  const { masters, addContact, getContact, updateContact } = useLeads();
 
   // The camera hands the (cropped) card image + pendingExtract flag through here.
   const [draft, setDraft] = useState<ContactDraft>(() => consumePendingScan() ?? emptyDraft());
@@ -49,12 +49,17 @@ export default function ReviewCardScreen() {
   const [saving, setSaving] = useState(false);
   const [zoomUri, setZoomUri] = useState<string | null>(null);
 
+  // Get a location fix warm while the user fills the form, so Save can read it
+  // synchronously. Offline, acquiring one takes 30-120s — far too long to hold
+  // the Save tap.
+  useEffect(() => warmLocation(), []);
+
   const clean = (arr: string[]) => arr.map((s) => s.trim()).filter(Boolean);
 
-  const save = async () => {
+  const save = () => {
     if (saving) return;
     setSaving(true);
-    const capturedAt = draft.capturedAt ?? (await captureLocation());
+    const capturedAt = draft.capturedAt ?? peekLocation();
     const cleaned: ContactDraft = {
       ...draft,
       notes: draft.notes.filter((n) => n.text.trim()),
@@ -65,7 +70,8 @@ export default function ReviewCardScreen() {
       // Card details are filled by the background sync — flag it for extraction.
       pendingExtract: !!(draft.cardImages.front || draft.cardImages.back),
     };
-    addContact(cleaned);
+    const created = addContact(cleaned);
+    if (!capturedAt) backfillLocation(created.id, getContact, updateContact);
     if (Platform.OS === 'android') ToastAndroid.show('Saved to drafts — processing…', ToastAndroid.SHORT);
     router.replace('/(tabs)');
   };

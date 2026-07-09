@@ -27,6 +27,8 @@ type LeadInsert = Database['public']['Tables']['app_leads']['Insert'];
 
 export const EPOCH = '1970-01-01T00:00:00.000Z';
 const BUCKET = 'lead-media';
+/** Concurrent media uploads. Enough to saturate a phone uplink, not enough to stall it. */
+const MEDIA_CONCURRENCY = 3;
 const time = (iso: string) => new Date(iso).getTime();
 
 // React Native's fetch has NO timeout — a stalled request hangs forever and would
@@ -38,7 +40,7 @@ class TimeoutError extends Error {
     this.name = 'TimeoutError';
   }
 }
-function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
+export function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const t = setTimeout(() => reject(new TimeoutError(label, ms)), ms);
     Promise.resolve(p).then(
@@ -52,6 +54,24 @@ function withTimeout<T>(p: PromiseLike<T>, ms: number, label: string): Promise<T
       }
     );
   });
+}
+
+/**
+ * Run `fn` over `items` with at most `limit` in flight. The AI and media calls
+ * are network-bound round-trips of several seconds each — running them serially
+ * meant a batch of offline drafts took the SUM of every call. A small pool keeps
+ * the phone's uplink busy without hammering the edge functions.
+ */
+export async function mapPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= items.length) return;
+      await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
 }
 
 // ---- Per-user storage keys -------------------------------------------------
@@ -190,32 +210,35 @@ async function uploadOne(userId: string, contactId: string, uri: string, map: Re
   return stored;
 }
 
+/** Every LOCAL media uri a contact still owns. Legacy contacts may miss arrays. */
+function localMediaUris(c: Contact): string[] {
+  const all = [
+    c.person?.photoUri,
+    c.company?.logoUri,
+    c.cardImages?.front,
+    c.cardImages?.back,
+    ...(c.reminderPhotos ?? []),
+    ...(c.voiceNotes ?? []).map((v) => v.uri),
+  ];
+  return Array.from(new Set(all.filter(isLocal)));
+}
+
 /**
- * Clone a contact with every LOCAL media uri replaced by its uploaded storage
- * path. Best-effort: a media file that can't be read/uploaded keeps its local
- * uri so the lead still syncs (the capturing device keeps showing it; it
- * re-uploads on a later dirty cycle). Never throws. Legacy contacts may miss
- * some arrays, so every field is guarded.
+ * Clone a contact with every already-uploaded LOCAL media uri swapped for its
+ * storage path. Pure + synchronous — the uploads happen first, in parallel. A
+ * file that failed to upload simply isn't in the map, so it keeps its local uri
+ * and re-uploads on a later dirty cycle. Never throws.
  */
-async function prepareForUpload(userId: string, c: Contact, map: Record<string, string>): Promise<Contact> {
-  const up = async (uri?: string | null): Promise<string | null> => {
-    if (!isLocal(uri)) return uri ?? null;
-    try {
-      return await uploadOne(userId, c.id, uri, map);
-    } catch {
-      return uri; // keep local uri — media is best-effort, the lead row still syncs
-    }
-  };
+function substituteMedia(c: Contact, map: Record<string, string>): Contact {
+  const sub = (uri?: string | null): string | null => (isLocal(uri) ? map[uri] ?? uri : uri ?? null);
   const out: Contact = JSON.parse(JSON.stringify(c));
   out.person = out.person ?? ({} as Contact['person']);
   out.company = out.company ?? ({} as Contact['company']);
-  out.person.photoUri = await up(c.person?.photoUri);
-  out.company.logoUri = await up(c.company?.logoUri);
-  out.cardImages = { front: await up(c.cardImages?.front), back: await up(c.cardImages?.back) };
-  out.reminderPhotos = [];
-  for (const p of c.reminderPhotos ?? []) out.reminderPhotos.push((await up(p)) as string);
-  out.voiceNotes = [];
-  for (const v of c.voiceNotes ?? []) out.voiceNotes.push({ ...v, uri: (await up(v.uri)) as string });
+  out.person.photoUri = sub(c.person?.photoUri);
+  out.company.logoUri = sub(c.company?.logoUri);
+  out.cardImages = { front: sub(c.cardImages?.front), back: sub(c.cardImages?.back) };
+  out.reminderPhotos = (c.reminderPhotos ?? []).map((p) => sub(p) as string);
+  out.voiceNotes = (c.voiceNotes ?? []).map((v) => ({ ...v, uri: sub(v.uri) as string }));
   return out;
 }
 
@@ -353,24 +376,44 @@ export async function flush(
     }
   }
 
-  // 2) Media best-effort: upload each dirty contact's local media, then re-write
-  //    JUST that row with the storage paths — same updated_at, so no LWW churn.
-  //    Every failure is swallowed; the lead already synced in step 1, so nothing
+  // 2) Media best-effort: upload every dirty contact's local media IN PARALLEL,
+  //    then re-write the affected rows in ONE upsert with the storage paths —
+  //    same updated_at, so no LWW churn. Serial per-file uploads followed by a
+  //    round-trip per contact made a batch of offline drafts take minutes.
+  //    Every failure is swallowed; the leads already synced in step 1, so nothing
   //    here can wedge the cycle or lose data.
+  const pushable: Contact[] = [];
+  for (const id of outbox.contactIds) {
+    const c = contactsById.get(id);
+    if (c && !c.duplicateOf) pushable.push(c); // held duplicate — not pushed until resolved
+  }
+
   const map = await loadMediaMap(userId);
   try {
-    for (const id of outbox.contactIds) {
-      const c = contactsById.get(id);
-      if (!c) continue;
-      if (c.duplicateOf) continue; // held duplicate — not pushed until resolved
-      const withMedia = await prepareForUpload(userId, c, map); // non-throwing
-      if (JSON.stringify(withMedia) !== JSON.stringify(c)) {
-        await withTimeout(
-          supabase.from('app_leads').upsert([contactToRow(userId, withMedia, false)], { onConflict: 'id' }),
-          30000,
-          'upsert media paths'
-        ).catch(() => {});
+    const uploads: { contactId: string; uri: string }[] = [];
+    const seen = new Set<string>();
+    for (const c of pushable) {
+      for (const uri of localMediaUris(c)) {
+        if (map[uri] || seen.has(uri)) continue;
+        seen.add(uri);
+        uploads.push({ contactId: c.id, uri });
       }
+    }
+    await mapPool(uploads, MEDIA_CONCURRENCY, async ({ contactId, uri }) => {
+      await uploadOne(userId, contactId, uri, map).catch(() => {}); // best-effort
+    });
+
+    const mediaRows: LeadInsert[] = [];
+    for (const c of pushable) {
+      const withMedia = substituteMedia(c, map);
+      if (JSON.stringify(withMedia) !== JSON.stringify(c)) mediaRows.push(contactToRow(userId, withMedia, false));
+    }
+    if (mediaRows.length > 0) {
+      await withTimeout(
+        supabase.from('app_leads').upsert(mediaRows, { onConflict: 'id' }),
+        30000,
+        'upsert media paths'
+      ).catch(() => {});
     }
   } finally {
     await saveMediaMap(userId, map); // persist whatever uploaded

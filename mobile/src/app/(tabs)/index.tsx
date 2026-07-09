@@ -32,10 +32,13 @@ export default function HomeScreen() {
   // still being read by AI) belong to the Drafts screen until they complete.
   const liveContacts = useMemo(() => contacts.filter((c) => !isPending(c.id)), [contacts, isPending]);
 
+  // Both stats count EVERY lead, drafts included. "Leads captured" already did;
+  // "Today" used to count only synced ones, so capturing offline bumped the total
+  // while Today stayed at 0. A lead you captured today is captured today.
   const todayCount = useMemo(() => {
     const today = new Date().toDateString();
-    return liveContacts.filter((c) => new Date(c.capturedOn).toDateString() === today).length;
-  }, [liveContacts]);
+    return contacts.filter((c) => new Date(c.capturedOn).toDateString() === today).length;
+  }, [contacts]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -91,23 +94,33 @@ export default function HomeScreen() {
 
         {/* Stat card */}
         <View style={[styles.stat, { backgroundColor: Brand.navy }]}>
-          <View>
-            <ThemedText type="title" style={styles.statNum}>
-              {contacts.length}
-            </ThemedText>
-            <ThemedText type="small" style={styles.statLabel}>
-              Leads captured
-            </ThemedText>
+          <View style={styles.statRow}>
+            <View>
+              <ThemedText type="title" style={styles.statNum}>
+                {contacts.length}
+              </ThemedText>
+              <ThemedText type="small" style={styles.statLabel}>
+                Leads captured
+              </ThemedText>
+            </View>
+            <View style={styles.statDivider} />
+            <View>
+              <ThemedText type="title" style={styles.statNum}>
+                {todayCount}
+              </ThemedText>
+              <ThemedText type="small" style={styles.statLabel}>
+                Today
+              </ThemedText>
+            </View>
           </View>
-          <View style={styles.statDivider} />
-          <View>
-            <ThemedText type="title" style={styles.statNum}>
-              {todayCount}
+          {/* Say where the totals sit, so a draft never looks like a missing lead. */}
+          <Pressable onPress={() => router.push('/drafts')} disabled={draftCount === 0}>
+            <ThemedText type="small" style={styles.statNote}>
+              {draftCount > 0
+                ? `${contacts.length - draftCount} synced · ${draftCount} in drafts`
+                : 'All leads synced'}
             </ThemedText>
-            <ThemedText type="small" style={styles.statLabel}>
-              Today
-            </ThemedText>
-          </View>
+          </Pressable>
         </View>
 
         {/* Search + sort */}
@@ -191,15 +204,15 @@ const styles = StyleSheet.create({
   avatar: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   title: { marginTop: -4 },
   stat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.four,
+    gap: Spacing.two,
     borderRadius: Spacing.three,
     padding: Spacing.four,
   },
+  statRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.four },
   statNum: { color: '#ffffff', fontSize: 34, lineHeight: 38 },
   statLabel: { color: 'rgba(255,255,255,0.7)' },
   statDivider: { width: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.2)' },
+  statNote: { color: 'rgba(255,255,255,0.55)' },
   searchRow: { flexDirection: 'row', gap: Spacing.two, alignItems: 'center' },
   search: {
     flex: 1,

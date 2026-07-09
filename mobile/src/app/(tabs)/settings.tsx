@@ -28,20 +28,25 @@ const SHOW_HELP: boolean = false; // "Contact support" + "Help center" under GEN
 export default function SettingsScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { masters, syncing, pendingCount, pendingAiCount, lastSyncedAt, syncError, syncNow } = useLeads();
+  const { masters, syncing, pendingCount, lastSyncedAt, syncError, syncNow } = useLeads();
   const { user, signOut } = useAuth();
 
   const soon = () => Alert.alert('Coming soon', 'This will be available in a later phase.');
   const masterTypes: MasterType[] = ['categories', 'interestLevels', 'askedAbout', 'followUpActions'];
 
-  const pending = pendingCount + pendingAiCount;
+  const pending = pendingCount;
   const syncValue = syncing && pending > 0 ? 'Syncing…' : pending > 0 ? `${pending} pending` : 'All synced';
   const lastSynced = lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—';
-  const confirmSignOut = () =>
-    Alert.alert('Sign out', 'Sign out of Orange One Leads on this device?', [
+  const confirmSignOut = () => {
+    const unsynced =
+      pending > 0
+        ? `\n\n${pending} ${pending === 1 ? 'lead has' : 'leads have'} not uploaded yet. They stay on this device and will be waiting when you sign back in.`
+        : '';
+    Alert.alert('Sign out', `Sign out of Orange One Leads on this device?${unsynced}`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: () => signOut() },
     ]);
+  };
 
   return (
     <ScrollView
