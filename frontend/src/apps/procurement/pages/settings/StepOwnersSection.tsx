@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
-import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
@@ -10,39 +9,44 @@ import { useProcurementStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
 /**
- * Step Owners config (admin). Assign the responsible Department / Designation /
- * Employees for each of the 10 workflow steps. Owners are the people authorized
- * to action that stage and who get notified when work reaches it.
+ * Step Owners config (admin). Pick one or more Departments, then one or more
+ * Employees drawn from them — a step can be co-owned across departments. Every
+ * selected employee may action the step and all are notified. Designation is not
+ * chosen here; it follows from the employee and is shown beside their name.
  */
 export default function StepOwnersSection() {
   const s = useProcurementStore();
   const [editing, setEditing] = useState<StepKey | null>(null);
-  const [deptId, setDeptId] = useState("");
-  const [desigId, setDesigId] = useState("");
+  const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const deptOptions: ComboOption[] = useMemo(
-    () => [{ value: "", label: "— None —" }, ...s.departments.map((d) => ({ value: d.id, label: d.name }))],
+  const deptOptions: MultiOption[] = useMemo(
+    () => s.departments.map((d) => ({ value: d.id, label: d.name })),
     [s.departments]
   );
-  const desigOptions: ComboOption[] = useMemo(
-    () => [{ value: "", label: "— None —" }, ...s.activeDesignations.map((d) => ({ value: d.id, label: d.name }))],
-    [s.activeDesignations]
-  );
-  const peopleOptions: MultiOption[] = useMemo(
-    () =>
-      [...s.profiles]
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((p) => ({ value: p.id, label: p.designation ? `${p.name} · ${p.designation}` : p.name })),
-    [s.profiles]
-  );
+  /** Employees in ANY chosen department (all of them when none is chosen). */
+  const peopleOptions: MultiOption[] = useMemo(() => {
+    const chosen = new Set(deptIds);
+    return [...s.profiles]
+      .filter((p) => chosen.size === 0 || (p.departmentId && chosen.has(p.departmentId)))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => ({ value: p.id, label: p.designation ? `${p.name} · ${p.designation}` : p.name }));
+  }, [s.profiles, deptIds]);
+
+  /** Narrowing the departments drops any picked employee who is no longer offered. */
+  const changeDepts = (next: string[]) => {
+    setDeptIds(next);
+    if (next.length === 0) return; // no filter — every employee stays selectable
+    const chosen = new Set(next);
+    const allowed = new Set(s.profiles.filter((p) => p.departmentId && chosen.has(p.departmentId)).map((p) => p.id));
+    setEmpIds((prev) => prev.filter((id) => allowed.has(id)));
+  };
 
   const open = (stepKey: StepKey) => {
     const cur = s.stepOwnerFor(stepKey);
-    setDeptId(cur?.departmentId ?? "");
-    setDesigId(cur?.designationId ?? "");
+    setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
     setErr(null);
     setEditing(stepKey);
@@ -54,8 +58,9 @@ export default function StepOwnersSection() {
     setErr(null);
     try {
       await s.setStepOwner(editing, {
-        departmentId: deptId || null,
-        designationId: desigId || null,
+        departmentIds: deptIds,
+        // Designation is derived from each employee, never chosen for the step.
+        designationId: null,
         employeeIds: empIds,
       });
       setEditing(null);
@@ -111,7 +116,7 @@ export default function StepOwnersSection() {
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={`Owners — ${editingStep?.title ?? ""}`}
-        subtitle="Who is responsible for this step. Listed employees can action it and are notified."
+        subtitle="Pick a department, then every employee who owns this step. All of them can action it and are notified."
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>
@@ -124,14 +129,19 @@ export default function StepOwnersSection() {
         }
       >
         <div className="space-y-3.5">
-          <FieldLabel label="Department">
-            <Combobox value={deptId} onChange={setDeptId} options={deptOptions} placeholder="— None —" autoAdvance />
+          <FieldLabel label="Departments" hint="select one or more">
+            <MultiSelect values={deptIds} onChange={changeDepts} options={deptOptions} placeholder="All departments" />
+            <span className="mt-1 block text-[11px] leading-snug text-grey-2">
+              Filters the employees below. Pick several to co-own a step across departments; leave empty for all.
+            </span>
           </FieldLabel>
-          <FieldLabel label="Designation">
-            <Combobox value={desigId} onChange={setDesigId} options={desigOptions} placeholder="— None —" autoAdvance />
-          </FieldLabel>
-          <FieldLabel label="Employees">
+          <FieldLabel label="Employees" hint="select one or more">
             <MultiSelect values={empIds} onChange={setEmpIds} options={peopleOptions} placeholder="Select owners" />
+            <span className="mt-1 block text-[11px] leading-snug text-grey-2">
+              {peopleOptions.length === 0
+                ? "No employees are mapped to the selected department(s)."
+                : `${empIds.length} of ${peopleOptions.length} selected · every owner can action this step.`}
+            </span>
           </FieldLabel>
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>

@@ -37,7 +37,7 @@ export default function SandboxDashboard() {
   if (s.canInward) cards.push({ label: "Inward", count: stageCount("inward"), to: `${B}/queues/inward` });
   if (s.canTally) cards.push({ label: "Tally", count: stageCount("tally"), to: `${B}/queues/tally` });
   if (s.canFinalPayment) cards.push({ label: "Final Pay", count: stageCount("final_payment"), to: `${B}/queues/final-pay` });
-  if (s.isProcessCoordinator) cards.push({ label: "Control Center", count: openPos.length + s.sourcingQueue.length + s.approvalQueue.length + s.poPool.length, to: `${B}/monitoring` });
+  if (s.isProcessCoordinator) cards.push({ label: "Purchase FMS Control Center", count: openPos.length + s.sourcingQueue.length + s.approvalQueue.length + s.poPool.length, to: `${B}/monitoring` });
 
   const notifs = s.myNotifications.slice(0, 6);
   const firstAction = cards.find((c) => c.count > 0);

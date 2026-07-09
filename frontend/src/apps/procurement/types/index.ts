@@ -73,8 +73,12 @@ export interface Designation {
 export interface StepOwner {
   id: string;
   stepKey: string;
+  /** @deprecated single-department legacy column; use departmentIds. */
   departmentId: string | null;
+  /** Departments whose employees may own this step (UI filter only). */
+  departmentIds: string[];
   designationId: string | null;
+  /** The owners. Authorization derives from this list alone. */
   employeeIds: string[];
 }
 
@@ -129,6 +133,10 @@ export interface RequestItem {
   assignedApproverId: string | null;
   rejectReason: string | null;
   cancelReason: string | null;
+  /** When sourcing was saved — the `sourcing` step's completion timestamp. */
+  sourcedAt: string | null;
+  /** When the line was approved/overridden — the `approval` step's completion timestamp. */
+  approvedAt: string | null;
   createdAt: string;
 }
 
@@ -156,6 +164,12 @@ export interface PurchaseOrder {
   currentStage: string;
   totalValue: number;
   advancePaid: number;
+  /** Payment terms are decided at the Share-PO step and drive whether an advance is due. */
+  paymentTerms: PaymentTerms | null;
+  /** Expected dispatch date, captured (required) at the Share-PO step. */
+  dispatchDate: string | null;
+  /** When the PO was first shared — the `share_po` step's completion timestamp. */
+  sharedAt: string | null;
   documentPath: string | null;
   documentName: string | null;
   tallyPoNo: string | null;
@@ -204,10 +218,10 @@ export interface PiItem {
   qty: number;
 }
 
-/** One follow-up event on a PI (append-only history; the PI holds the latest snapshot). */
+/** One follow-up event on a PO (append-only history). PO-level follow-ups have piId null. */
 export interface Followup {
   id: string;
-  piId: string;
+  piId: string | null;
   poId: string;
   dispatchStatus: DispatchStatus;
   actualDispatchDate: string | null;
@@ -215,6 +229,8 @@ export interface Followup {
   lrNo: string | null;
   transportDetails: string | null;
   remarks: string | null;
+  /** Optional free-text PI reference / remark. */
+  piRemarks: string | null;
   createdBy: string | null;
   createdAt: string;
 }
@@ -225,6 +241,10 @@ export interface Grn {
   id: string;
   poId: string;
   piId: string | null;
+  /** The PO reference the receipt was booked against — the base reference. */
+  poRef: string | null;
+  /** Optional free-text vendor PI reference, kept only as a remark. */
+  piRef: string | null;
   gateRegisterNo: string | null;
   condition: GrnCondition;
   note: string | null;
@@ -264,6 +284,8 @@ export interface Payment {
   amount: number;
   paidOn: string;
   utrRef: string | null;
+  /** Optional free-text PI reference / remark (PI is no longer the payment base). */
+  piRemarks: string | null;
   createdAt: string;
 }
 

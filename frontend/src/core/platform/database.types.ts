@@ -484,7 +484,8 @@ export type Database = {
           dispatch_status: string
           id: string
           lr_no: string | null
-          pi_id: string
+          pi_id: string | null
+          pi_remarks: string | null
           po_id: string
           remarks: string | null
           revised_dispatch_date: string | null
@@ -497,7 +498,8 @@ export type Database = {
           dispatch_status: string
           id?: string
           lr_no?: string | null
-          pi_id: string
+          pi_id?: string | null
+          pi_remarks?: string | null
           po_id: string
           remarks?: string | null
           revised_dispatch_date?: string | null
@@ -510,7 +512,8 @@ export type Database = {
           dispatch_status?: string
           id?: string
           lr_no?: string | null
-          pi_id?: string
+          pi_id?: string | null
+          pi_remarks?: string | null
           po_id?: string
           remarks?: string | null
           revised_dispatch_date?: string | null
@@ -583,7 +586,9 @@ export type Database = {
           id: string
           note: string | null
           pi_id: string | null
+          pi_ref: string | null
           po_id: string
+          po_ref: string | null
           received_by: string | null
         }
         Insert: {
@@ -593,7 +598,9 @@ export type Database = {
           id?: string
           note?: string | null
           pi_id?: string | null
+          pi_ref?: string | null
           po_id: string
+          po_ref?: string | null
           received_by?: string | null
         }
         Update: {
@@ -603,7 +610,9 @@ export type Database = {
           id?: string
           note?: string | null
           pi_id?: string | null
+          pi_ref?: string | null
           po_id?: string
+          po_ref?: string | null
           received_by?: string | null
         }
         Relationships: [
@@ -816,6 +825,7 @@ export type Database = {
           kind: string
           paid_on: string
           pi_id: string | null
+          pi_remarks: string | null
           po_id: string
           utr_ref: string | null
         }
@@ -827,6 +837,7 @@ export type Database = {
           kind: string
           paid_on?: string
           pi_id?: string | null
+          pi_remarks?: string | null
           po_id: string
           utr_ref?: string | null
         }
@@ -838,6 +849,7 @@ export type Database = {
           kind?: string
           paid_on?: string
           pi_id?: string | null
+          pi_remarks?: string | null
           po_id?: string
           utr_ref?: string | null
         }
@@ -1023,11 +1035,14 @@ export type Database = {
           created_at: string
           created_by: string | null
           current_stage: string
+          dispatch_date: string | null
           document_name: string | null
           document_path: string | null
           id: string
+          payment_terms: string | null
           po_no: string
           share_remarks: string | null
+          shared_at: string | null
           status: string
           tally_po_no: string | null
           total_value: number
@@ -1040,11 +1055,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_stage?: string
+          dispatch_date?: string | null
           document_name?: string | null
           document_path?: string | null
           id?: string
+          payment_terms?: string | null
           po_no: string
           share_remarks?: string | null
+          shared_at?: string | null
           status?: string
           tally_po_no?: string | null
           total_value?: number
@@ -1057,11 +1075,14 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_stage?: string
+          dispatch_date?: string | null
           document_name?: string | null
           document_path?: string | null
           id?: string
+          payment_terms?: string | null
           po_no?: string
           share_remarks?: string | null
+          shared_at?: string | null
           status?: string
           tally_po_no?: string | null
           total_value?: number
@@ -1139,6 +1160,7 @@ export type Database = {
       fms_purchase_request_items: {
         Row: {
           approval_tier: string | null
+          approved_at: string | null
           approver_id: string | null
           assigned_approver_id: string | null
           cancel_reason: string | null
@@ -1154,6 +1176,7 @@ export type Database = {
           quantity: number
           reject_reason: string | null
           request_id: string
+          sourced_at: string | null
           sourcing_reason: string | null
           status: string
           unit: string
@@ -1161,6 +1184,7 @@ export type Database = {
         }
         Insert: {
           approval_tier?: string | null
+          approved_at?: string | null
           approver_id?: string | null
           assigned_approver_id?: string | null
           cancel_reason?: string | null
@@ -1176,6 +1200,7 @@ export type Database = {
           quantity: number
           reject_reason?: string | null
           request_id: string
+          sourced_at?: string | null
           sourcing_reason?: string | null
           status?: string
           unit?: string
@@ -1183,6 +1208,7 @@ export type Database = {
         }
         Update: {
           approval_tier?: string | null
+          approved_at?: string | null
           approver_id?: string | null
           assigned_approver_id?: string | null
           cancel_reason?: string | null
@@ -1198,6 +1224,7 @@ export type Database = {
           quantity?: number
           reject_reason?: string | null
           request_id?: string
+          sourced_at?: string | null
           sourcing_reason?: string | null
           status?: string
           unit?: string
@@ -1282,6 +1309,7 @@ export type Database = {
         Row: {
           created_at: string
           department_id: string | null
+          department_ids: string[]
           designation_id: string | null
           employee_ids: string[]
           id: string
@@ -1291,6 +1319,7 @@ export type Database = {
         Insert: {
           created_at?: string
           department_id?: string | null
+          department_ids?: string[]
           designation_id?: string | null
           employee_ids?: string[]
           id?: string
@@ -1300,6 +1329,7 @@ export type Database = {
         Update: {
           created_at?: string
           department_id?: string | null
+          department_ids?: string[]
           designation_id?: string | null
           employee_ids?: string[]
           id?: string
@@ -2350,7 +2380,8 @@ export type Database = {
           p_actual_dispatch_date?: string
           p_dispatch_status: string
           p_lr_no?: string
-          p_pi_id: string
+          p_pi_remarks?: string
+          p_po_id: string
           p_remarks?: string
           p_revised_dispatch_date?: string
           p_transport?: string
@@ -2363,8 +2394,12 @@ export type Database = {
           p_gate_register_no?: string
           p_items: Json
           p_note?: string
+          p_photo_name?: string
+          p_photo_path?: string
           p_pi_id?: string
+          p_pi_ref?: string
           p_po_id: string
+          p_po_ref?: string
         }
         Returns: string
       }
@@ -2374,6 +2409,7 @@ export type Database = {
           p_kind: string
           p_paid_on?: string
           p_pi_id?: string
+          p_pi_remarks?: string
           p_po_id: string
           p_utr?: string
         }
@@ -2403,8 +2439,10 @@ export type Database = {
       }
       fms_purchase_share_po: {
         Args: {
+          p_dispatch_date?: string
           p_document_name?: string
           p_document_path?: string
+          p_payment_terms?: string
           p_po_id: string
           p_remarks?: string
           p_tally_po_no?: string

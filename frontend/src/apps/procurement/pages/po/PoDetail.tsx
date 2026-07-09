@@ -19,10 +19,7 @@ export default function PoDetail() {
   const { id } = useParams();
   const s = useProcurementStore();
   const [tab, setTab] = useState("items");
-  const [modal, setModal] = useState<"share" | "pi" | "payment" | "grn" | "tally" | null>(null);
-  const [followPi, setFollowPi] = useState<Pi | null>(null);
-  // Advance / balance recorded against a specific PI (not the whole PO).
-  const [payPi, setPayPi] = useState<{ pi: Pi; kind: "advance" | "installment" } | null>(null);
+  const [modal, setModal] = useState<"share" | "pi" | "advance" | "payment" | "followup" | "grn" | "tally" | null>(null);
 
   const po = s.poById(id ?? null);
   if (!po) {
@@ -36,11 +33,13 @@ export default function PoDetail() {
   const tally = s.tallyForPo(po.id);
   const pending = s.pendingAmount(po);
   const open = po.currentStage !== "closed" && po.currentStage !== "cancelled";
-  // Goods fully received → GRN step done (hide "Record GRN"); a Tally booking
-  // exists → Tally step done (hide "Book in Tally"). Mirrors how Share PO / Add
-  // PI already self-hide once their step is complete.
+  // Goods fully received → GRN step done (hide "Record GRN"). Every receipt booked
+  // → Tally step done (hide "Book in Tally"); a partial GRN still needs its own
+  // invoice, so the button stays while any receipt is unbooked. Mirrors how Share
+  // PO / Add PI already self-hide once their step is complete.
   const allReceived = items.length > 0 && items.every((it) => it.receivedQty >= it.qty);
-  const tallyBooked = tally.length > 0;
+  const unbookedGrns = s.unbookedGrnsForPo(po.id);
+  const tallyBooked = unbookedGrns.length === 0;
 
   // Comma-separated names of the items a PI covers (via its PI items → PO lines).
   const piItemNames = (p: (typeof pis)[number]): string =>
@@ -84,6 +83,8 @@ export default function PoDetail() {
           <p className="text-[13.5px] text-grey-2 mt-1">
             {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {formatDate(po.createdAt)}
             {po.tallyPoNo ? <> · Tally PO: <span className="font-medium text-navy">{po.tallyPoNo}</span></> : null}
+            {po.paymentTerms ? <> · Terms: <span className="font-medium text-navy capitalize">{po.paymentTerms.replace(/_/g, " ")}</span></> : null}
+            {po.dispatchDate ? <> · Dispatch: <span className="font-medium text-navy">{formatDate(po.dispatchDate)}</span></> : null}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -106,9 +107,11 @@ export default function PoDetail() {
         <div className="flex flex-wrap gap-2">
           {s.canSharePo && po.currentStage === "share_po" && <Button size="sm" variant="ghost" onClick={() => setModal("share")}>Share PO</Button>}
           {s.canCollectPi && po.currentStage !== "share_po" && !piFullyCollected && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Add PI</Button>}
+          {s.canRecordPayment && po.currentStage === "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("advance")}>Record Advance</Button>}
+          {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
           {s.canInward && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
           {s.canTally && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
-          {s.canRecordPayment && pending > 0 && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
+          {s.canRecordPayment && po.currentStage !== "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
         </div>
       )}
 
@@ -143,34 +146,17 @@ export default function PoDetail() {
           pis.length === 0 ? <EmptyState title="No PIs yet" message="Add a PI from the action bar." /> : (
             <ScrollableTable>
               <table className="w-full text-[13.5px]">
-                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Vendor PI No.</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Terms</th><th className="font-medium px-4 py-3">Value</th><th className="font-medium px-4 py-3">Paid</th><th className="font-medium px-4 py-3">Pending</th><th className="font-medium px-4 py-3">Dispatch</th><th className="font-medium px-4 py-3">Status</th><th className="font-medium px-4 py-3">Document</th><th className="font-medium px-4 py-3 text-right">Actions</th></tr></thead>
+                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Vendor PI No.</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Value</th><th className="font-medium px-4 py-3">Status</th><th className="font-medium px-4 py-3">Document</th></tr></thead>
                 <tbody>
-                  {pis.map((p) => {
-                    const piPaid = s.paidForPi(p);
-                    const piPending = s.pendingForPi(p);
-                    const hasAdvance = s.paymentsForPi(p.id).some((pay) => pay.kind === "advance");
-                    return (
+                  {pis.map((p) => (
                     <tr key={p.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                       <td className="px-4 py-3 font-medium text-navy">{p.vendorPiNo}</td>
                       <td className="px-4 py-3 text-navy min-w-[150px] max-w-[260px]"><span title={piItemNames(p)}>{piItemNames(p) || "—"}</span></td>
-                      <td className="px-4 py-3 whitespace-nowrap">{p.paymentTerms.replace("_", " ")}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{inr(p.piValue)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{inr(piPaid)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{inr(piPending)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{p.dispatchStatus}{p.actualDispatchDate ? ` · ${formatDate(p.actualDispatchDate)}` : p.dispatchDate ? ` · plan ${formatDate(p.dispatchDate)}` : ""}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{p.status.replace("_", " ")}</td>
                       <td className="px-4 py-3 whitespace-nowrap"><PiDocLink pi={p} /></td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-3">
-                          {s.canRecordPayment && open && piPending > 0 && (
-                            <button onClick={() => setPayPi({ pi: p, kind: hasAdvance ? "installment" : "advance" })} className="text-[12.5px] font-semibold text-navy hover:text-orange hover:underline">{hasAdvance ? "Record Payment" : "Record Advance"}</button>
-                          )}
-                          {s.canFollowup && open && <button onClick={() => setFollowPi(p)} className="text-[12.5px] font-semibold text-orange hover:underline">Follow-up</button>}
-                        </div>
-                      </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </ScrollableTable>
@@ -181,16 +167,18 @@ export default function PoDetail() {
           grns.length === 0 ? <EmptyState title="No receipts yet" message="Record a GRN from the action bar." /> : (
             <ScrollableTable>
               <table className="w-full text-[13.5px]">
-                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Gate Reg No.</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Condition</th><th className="font-medium px-4 py-3">Photo</th></tr></thead>
+                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">PO Ref</th><th className="font-medium px-4 py-3">Gate Reg No.</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">Items</th><th className="font-medium px-4 py-3">Condition</th><th className="font-medium px-4 py-3">PI Ref</th><th className="font-medium px-4 py-3">Photo</th></tr></thead>
                 <tbody>
                   {grns.map((g) => {
                     const gi = s.grnItemsForGrn(g.id);
                     return (
                       <tr key={g.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                        <td className="px-4 py-3 font-medium text-navy">{g.gateRegisterNo || "—"}</td>
+                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{g.poRef || po.tallyPoNo || po.poNo}</td>
+                        <td className="px-4 py-3">{g.gateRegisterNo || "—"}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDate(g.createdAt)}</td>
                         <td className="px-4 py-3">{gi.map((x) => { const l = s.lineById(s.poItemsForPo(po.id).find((p) => p.id === x.poItemId)?.requestItemId ?? null); return l ? `${s.itemLabel(l.itemId)} ×${x.receivedQty}` : `×${x.receivedQty}`; }).join(", ")}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{g.condition.replace("_", " ")}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{g.piRef || "—"}</td>
                         <td className="px-4 py-3 whitespace-nowrap"><GrnPhotoLink grn={g} /></td>
                       </tr>
                     );
@@ -205,12 +193,12 @@ export default function PoDetail() {
           payments.length === 0 ? <EmptyState title="No payments yet" message="Record advance or installments from the action bar." /> : (
             <ScrollableTable>
               <table className="w-full text-[13.5px]">
-                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Kind</th><th className="font-medium px-4 py-3">Against PI</th><th className="font-medium px-4 py-3">Amount</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">UTR / Ref</th></tr></thead>
+                <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Kind</th><th className="font-medium px-4 py-3">PI ref / remarks</th><th className="font-medium px-4 py-3">Amount</th><th className="font-medium px-4 py-3">Date</th><th className="font-medium px-4 py-3">UTR / Ref</th></tr></thead>
                 <tbody>
                   {payments.map((p) => (
                     <tr key={p.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                       <td className="px-4 py-3 capitalize">{p.kind}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{pis.find((x) => x.id === p.piId)?.vendorPiNo ?? "—"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{p.piRemarks || (p.piId ? pis.find((x) => x.id === p.piId)?.vendorPiNo : null) || "—"}</td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-navy">{inr(p.amount)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{formatDate(p.paidOn)}</td>
                       <td className="px-4 py-3">{p.utrRef || "—"}</td>
@@ -227,23 +215,33 @@ export default function PoDetail() {
 
       {tally.length > 0 && (
         <Card className="px-4 py-3 text-[13px] text-grey space-y-1.5">
-          {tally.map((t) => (
-            <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span><span className="font-medium text-navy">Tally invoice:</span> {t.tallyPiNo}</span>
-              {t.remarks && <span className="text-grey-2">· {t.remarks}</span>}
-              {t.documentPath && <TallyDocLink booking={t} />}
-            </div>
-          ))}
+          {tally.map((t) => {
+            // Each invoice is booked against one goods receipt (partial or full).
+            const g = t.grnId ? grns.find((x) => x.id === t.grnId) : undefined;
+            return (
+              <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span><span className="font-medium text-navy">Tally invoice:</span> {t.tallyPiNo}</span>
+                {g && <span className="text-grey-2">· GRN {g.gateRegisterNo || formatDate(g.createdAt)}</span>}
+                {t.remarks && <span className="text-grey-2">· {t.remarks}</span>}
+                {t.documentPath && <TallyDocLink booking={t} />}
+              </div>
+            );
+          })}
+          {unbookedGrns.length > 0 && (
+            <p className="text-[12.5px] text-orange">
+              {unbookedGrns.length} goods receipt{unbookedGrns.length === 1 ? "" : "s"} still to be booked in Tally.
+            </p>
+          )}
         </Card>
       )}
 
       <SharePoModal po={po} open={modal === "share"} onClose={() => setModal(null)} />
       <AddPiModal po={po} open={modal === "pi"} onClose={() => setModal(null)} />
+      <PaymentModal po={po} open={modal === "advance"} onClose={() => setModal(null)} kind="advance" />
       <PaymentModal po={po} open={modal === "payment"} onClose={() => setModal(null)} kind="installment" />
-      {payPi && <PaymentModal po={po} pi={payPi.pi} open onClose={() => setPayPi(null)} kind={payPi.kind} />}
       <GrnModal po={po} open={modal === "grn"} onClose={() => setModal(null)} />
       <TallyModal po={po} open={modal === "tally"} onClose={() => setModal(null)} />
-      <FollowupModal pi={followPi} open={followPi !== null} onClose={() => setFollowPi(null)} />
+      <FollowupModal po={po} open={modal === "followup"} onClose={() => setModal(null)} />
     </div>
   );
 }

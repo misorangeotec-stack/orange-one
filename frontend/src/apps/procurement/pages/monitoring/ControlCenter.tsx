@@ -5,193 +5,271 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import { formatDate } from "@/shared/lib/time";
+import { EMPTY_COUNTS, bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
 import { useProcurementStore } from "../../store";
-import { inr, lineBadge, poStageBadge, LINE_STATUS_LABEL, PO_STAGE_LABEL } from "../../lib/format";
-import { stepByKey } from "../../lib/steps";
+import { inr } from "../../lib/format";
+import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
+import type { QueueEntry } from "../../lib/queues";
 import QueueTable, { type QueueColumn } from "../../components/QueueTable";
-import type { LineStatus, RequestItem } from "../../types";
+import StepPipeline, { type StepPipelineNode } from "../../components/StepPipeline";
+import type { RequestItem } from "../../types";
 
-const OVERDUE_DAYS = 7;
-const ageDays = (iso: string) => Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000));
+/** What the table is currently showing. Clicking a pipeline step pins this to "delayed". */
+type Scope = "delayed" | "today" | "noDate" | "all";
 
-interface MonitorEntry {
-  key: string;
-  entityType: "line" | "po";
-  entityId: string;
-  ref: string;
-  to: string;
-  detail: string;
-  stageLabel: string;
-  ownerIds: string[];
-  companyId: string;
-  value: number | null;
-  badgeClass: string;
-  statusLabel: string;
-  age: number;
-  reassignLine: RequestItem | null;
-}
+const SCOPES: { value: Scope; label: string }[] = [
+  { value: "delayed", label: "Delayed" },
+  { value: "today", label: "Due today" },
+  { value: "noDate", label: "No date" },
+  { value: "all", label: "All" },
+];
+
+/** The 10 steps that can hold queue work — `request` never enters a queue. */
+const PIPELINE_STEPS = STEPS.filter((s) => s.key !== "request");
 
 /**
- * Monitoring / Control Center — admins + process coordinators get an all-up view
- * of every in-flight item-line and open PO, with age-based "overdue" flagging and
- * Nudge / Escalate / Reassign levers. Read-all; the actions only send
- * notifications (and, for Reassign, set an approval line's override approver).
- * Uses the shared queue-style table (per-column filters, company grouping).
+ * Purchase FMS Control Center — the process coordinator's view of what is late.
+ *
+ * Everything derives from `store.queueEntries` (the shared `buildQueueEntries`
+ * output), which is the exact list the cross-FMS scoreboard counts. So the
+ * Delayed KPI here always equals Purchase's Delayed there — they cannot drift.
+ *
+ * An entry is one (step, entity) work-item, so the same PO can appear at two
+ * steps at once. That is intentional: it is two units of work.
  */
 export default function ControlCenter() {
   const s = useProcurementStore();
-  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [reassign, setReassign] = useState<RequestItem | null>(null);
-  const [overdueOnly, setOverdueOnly] = useState(false);
+  /** Empty = no step filter (every step shows), matching the multi-select convention. */
+  const [selectedSteps, setSelectedSteps] = useState<StepKey[]>([]);
+  const [scope, setScope] = useState<Scope>("delayed");
 
-  const entries = useMemo<MonitorEntry[]>(() => {
-    const out: MonitorEntry[] = [];
+  const todayIso = todayLocalIso();
+  const bucketFor = (e: QueueEntry): Bucket | null => bucketOf(e.dueIso, todayIso);
 
-    const lineOwners = (l: RequestItem): string[] => {
-      if (l.status === "sourcing") return s.stepOwnerFor("sourcing")?.employeeIds ?? [];
-      if (l.status === "approval" || l.status === "on_hold") {
-        const ids = new Set<string>();
-        const appr = s.approverForAmount(l.lineValue ?? 0);
-        if (appr) ids.add(appr);
-        if (l.assignedApproverId) ids.add(l.assignedApproverId);
-        return [...ids];
-      }
-      if (l.status === "approved_pending_po") return s.stepOwnerFor("po")?.employeeIds ?? [];
-      return [];
-    };
+  // ---- one pass: KPI totals + per-step delayed/today counts ----
+  const { counts, nodes } = useMemo(() => {
+    const totals: Record<Bucket, number> = { ...EMPTY_COUNTS };
+    const perStep = new Map<StepKey, { delayed: number; today: number }>();
+    for (const st of PIPELINE_STEPS) perStep.set(st.key, { delayed: 0, today: 0 });
 
-    const IN_FLIGHT: LineStatus[] = ["sourcing", "approval", "on_hold", "approved_pending_po"];
-    for (const l of s.requestItems) {
-      if (!IN_FLIGHT.includes(l.status)) continue;
-      const req = s.requestById(l.requestId);
-      if (!req) continue;
-      const canReassign = l.status === "approval" || l.status === "on_hold";
-      out.push({
-        key: `line:${l.id}`,
-        entityType: "line",
-        entityId: l.id,
-        ref: req.requestNo,
-        to: `/procurement/requests/${req.id}`,
-        detail: s.itemLabel(l.itemId),
-        stageLabel: l.status === "sourcing" ? "Sourcing" : l.status === "approved_pending_po" ? "PO Desk" : "Approval",
-        ownerIds: lineOwners(l),
-        companyId: req.companyId,
-        value: l.lineValue,
-        badgeClass: lineBadge(l.status),
-        statusLabel: LINE_STATUS_LABEL[l.status],
-        age: ageDays(l.createdAt),
-        reassignLine: canReassign ? l : null,
-      });
+    for (const e of s.queueEntries) {
+      const b = bucketOf(e.dueIso, todayIso);
+      if (b) totals[b]++;
+      const rec = perStep.get(e.stepKey);
+      if (!rec) continue;
+      if (b === "delayed") rec.delayed++;
+      else if (b === "today") rec.today++;
     }
 
-    for (const po of s.pos) {
-      if (po.currentStage === "closed" || po.currentStage === "cancelled") continue;
-      out.push({
-        key: `po:${po.id}`,
-        entityType: "po",
-        entityId: po.id,
-        ref: po.poNo,
-        to: `/procurement/pos/${po.id}`,
-        detail: s.vendorById(po.vendorId)?.name ?? "—",
-        stageLabel: stepByKey(po.currentStage)?.short ?? po.currentStage,
-        ownerIds: s.stepOwnerFor(po.currentStage)?.employeeIds ?? [],
-        companyId: po.companyId,
-        value: po.totalValue,
-        badgeClass: poStageBadge(po.currentStage),
-        statusLabel: PO_STAGE_LABEL[po.currentStage] ?? po.currentStage,
-        age: ageDays(po.createdAt),
-        reassignLine: null,
-      });
+    const pipeline: StepPipelineNode[] = PIPELINE_STEPS.map((st) => ({
+      stepKey: st.key,
+      index: st.index,
+      label: st.short,
+      ...perStep.get(st.key)!,
+    }));
+    return { counts: totals, nodes: pipeline };
+  }, [s.queueEntries, todayIso]);
+
+  const pending = counts.delayed + counts.today;
+
+  // ---- row derivation: QueueEntry carries no owner / display detail ----
+  const lineOf = (e: QueueEntry) => s.lineById(e.entityId);
+
+  const detailOf = (e: QueueEntry): string => {
+    if (e.entityType === "line") {
+      const l = lineOf(e);
+      return l ? s.itemLabel(l.itemId) : "—";
     }
+    return s.vendorById(s.poById(e.entityId)?.vendorId ?? null)?.name ?? "—";
+  };
 
-    return out.sort((a, b) => b.age - a.age);
-  }, [s]);
+  const linkOf = (e: QueueEntry): string =>
+    e.entityType === "line" ? `/procurement/requests/${lineOf(e)?.requestId ?? ""}` : `/procurement/pos/${e.entityId}`;
 
-  const overdue = entries.filter((e) => e.age >= OVERDUE_DAYS).length;
-  const lineCount = entries.filter((e) => e.entityType === "line").length;
-  const poCount = entries.filter((e) => e.entityType === "po").length;
+  /**
+   * Who owns this work-item. Every step reads its owners from `step_owners`,
+   * except `approval` — there the owner depends on the line's value (the
+   * approval matrix band), plus any manual reassign override.
+   */
+  const ownerIdsOf = (e: QueueEntry): string[] => {
+    if (e.stepKey === "approval") {
+      const l = lineOf(e);
+      const ids = new Set<string>();
+      const appr = s.approverForAmount(l?.lineValue ?? 0);
+      if (appr) ids.add(appr);
+      if (l?.assignedApproverId) ids.add(l.assignedApproverId);
+      return [...ids];
+    }
+    return s.stepOwnerFor(e.stepKey)?.employeeIds ?? [];
+  };
 
-  // One-click "Overdue only" quick filter, layered on top of the shared table's
-  // own per-column filters.
-  const rows = useMemo(() => (overdueOnly ? entries.filter((e) => e.age >= OVERDUE_DAYS) : entries), [entries, overdueOnly]);
-
-  const ownerNames = (ids: string[]) => {
-    const names = ids.map((id) => s.profileById(id)?.name).filter(Boolean) as string[];
+  const ownerNames = (e: QueueEntry): string => {
+    const names = ownerIdsOf(e)
+      .map((id) => s.profileById(id)?.name)
+      .filter(Boolean) as string[];
     return names.length ? names.join(", ") : "Unassigned";
   };
 
-  const doNudge = async (e: MonitorEntry) => {
-    setBusyKey(e.key);
-    try {
-      await s.nudge({ entityType: e.entityType, entityId: e.entityId, recipients: e.ownerIds, label: e.ref });
-    } finally {
-      setBusyKey(null);
-    }
-  };
-  const doEscalate = async (e: MonitorEntry) => {
-    setBusyKey(e.key);
-    try {
-      await s.escalate({ entityType: e.entityType, entityId: e.entityId, label: e.ref });
-    } finally {
-      setBusyKey(null);
-    }
+  const ownerCell = (e: QueueEntry) => {
+    const owners = ownerIdsOf(e)
+      .map((id) => s.profileById(id))
+      .filter(Boolean);
+    if (!owners.length) return <span className="text-grey-2">Unassigned</span>;
+    return (
+      <div className="space-y-0.5">
+        {owners.map((p) => (
+          <div key={p!.id} className="leading-tight">
+            <div className="text-navy">{p!.name}</div>
+            {p!.phone ? (
+              <div className="text-[12px] text-grey-2 tabular-nums">{p!.phone}</div>
+            ) : (
+              <div className="text-[12px] text-grey-2/60 italic">no number</div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
   };
 
-  const columns: QueueColumn<MonitorEntry>[] = [
-    { key: "ref", header: "Ref", cell: (e) => <Link to={e.to} className="font-semibold text-orange hover:underline">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
-    { key: "detail", header: "Item / Vendor", cell: (e) => e.detail, sortValue: (e) => e.detail, filter: { kind: "text", get: (e) => e.detail } },
-    { key: "stage", header: "Stage", cell: (e) => <span className="text-grey">{e.stageLabel}</span>, sortValue: (e) => e.stageLabel, filter: { kind: "select", get: (e) => e.stageLabel }, tdClassName: "whitespace-nowrap" },
-    { key: "owner", header: "Owner", cell: (e) => ownerNames(e.ownerIds), sortValue: (e) => ownerNames(e.ownerIds), filter: { kind: "select", get: (e) => ownerNames(e.ownerIds) }, tdClassName: "whitespace-nowrap" },
+  // ---- filtering: selected steps (empty = all) + scope ----
+  const rows = useMemo(() => {
+    const sel = new Set(selectedSteps);
+    return s.queueEntries
+      .filter((e) => {
+        if (sel.size && !sel.has(e.stepKey)) return false;
+        const b = bucketOf(e.dueIso, todayIso);
+        if (scope === "delayed") return b === "delayed";
+        if (scope === "today") return b === "today";
+        if (scope === "noDate") return b === "noDate";
+        return true;
+      })
+      .sort((a, b) => (a.dueIso ?? "9999").localeCompare(b.dueIso ?? "9999"));
+  }, [s.queueEntries, selectedSteps, scope, todayIso]);
+
+  const columns: QueueColumn<QueueEntry>[] = [
+    {
+      key: "ref",
+      header: "Ref",
+      cell: (e) => (
+        <Link to={linkOf(e)} className="font-semibold text-orange hover:underline">
+          {e.ref}
+        </Link>
+      ),
+      sortValue: (e) => e.ref,
+      filter: { kind: "text", get: (e) => e.ref },
+      tdClassName: "whitespace-nowrap",
+    },
+    { key: "detail", header: "Item / Vendor", cell: (e) => detailOf(e), sortValue: (e) => detailOf(e), filter: { kind: "text", get: (e) => detailOf(e) } },
+    {
+      key: "step",
+      header: "Stage",
+      cell: (e) => <span className="text-grey">{stepByKey(e.stepKey)?.short ?? e.stepKey}</span>,
+      sortValue: (e) => stepByKey(e.stepKey)?.index ?? 0,
+      filter: { kind: "select", get: (e) => stepByKey(e.stepKey)?.short ?? e.stepKey },
+      tdClassName: "whitespace-nowrap",
+    },
+    { key: "owner", header: "Owner", cell: ownerCell, sortValue: (e) => ownerNames(e), filter: { kind: "select", get: (e) => ownerNames(e) }, tdClassName: "whitespace-nowrap" },
     { key: "value", header: "Value", cell: (e) => inr(e.value), sortValue: (e) => e.value ?? 0, filter: { kind: "number", get: (e) => e.value ?? 0 }, tdClassName: "whitespace-nowrap" },
-    { key: "age", header: "Age", cell: (e) => <span className={e.age >= OVERDUE_DAYS ? "text-ryg-red font-semibold" : "text-grey"}>{e.age}d</span>, sortValue: (e) => e.age, filter: { kind: "number", get: (e) => e.age }, tdClassName: "whitespace-nowrap" },
-    { key: "status", header: "Status", cell: (e) => <span className={e.badgeClass}>{e.statusLabel}</span>, sortValue: (e) => e.statusLabel, filter: { kind: "select", get: (e) => e.statusLabel }, tdClassName: "whitespace-nowrap" },
+    {
+      key: "due",
+      header: "Due",
+      cell: (e) => <DueChip dueIso={e.dueIso} todayIso={todayIso} />,
+      sortValue: (e) => e.dueIso ?? "9999-99-99",
+      filter: { kind: "date", get: (e) => e.dueIso ?? "" },
+      tdClassName: "whitespace-nowrap",
+    },
   ];
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">Control Center</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">Every in-flight request line and open PO, with age-based overdue flagging. Nudge the owner, escalate to coordinators, or reassign an approval.</p>
+        <h1 className="text-[22px] font-bold text-navy">Purchase FMS Control Center</h1>
+        <p className="text-[13.5px] text-grey-2 mt-1">
+          Pending work by the day it falls due. Each count is one <strong>step</strong> of work on one entry — the same PO can
+          be waiting at two steps. Click a step to see what's late there, then call the owner.
+        </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Kpi label="In-flight lines" value={lineCount} />
-        <Kpi label="Open POs" value={poCount} />
-        <Kpi label={`Overdue (≥${OVERDUE_DAYS}d)`} value={overdue} tone={overdue > 0 ? "red" : undefined} />
-        <Kpi label="Total in flight" value={entries.length} />
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <Kpi label="Today's pending" value={pending} hint="delayed + due today" hero tone={pending > 0 ? "red" : undefined} />
+        <Kpi label="In queue (today)" value={counts.today} hint="due today" />
+        <Kpi label="Delayed" value={counts.delayed} hint="past due" tone={counts.delayed > 0 ? "red" : undefined} />
+        <Kpi label="Tomorrow" value={counts.tomorrow} hint="in queue" />
+        <Kpi label="Day after" value={counts.dayAfter} hint="in queue" />
       </div>
+
+      <Card className="p-4 space-y-3">
+        <h2 className="text-[14px] font-semibold text-navy">Where it's stuck</h2>
+        <StepPipeline
+          nodes={nodes}
+          selectedKeys={selectedSteps}
+          onChange={(next) => {
+            setSelectedSteps(next);
+            // Picking a step means "show me what's late here". Clearing the last
+            // one must NOT pin — the user is widening, not narrowing.
+            if (next.length) setScope("delayed");
+          }}
+        />
+      </Card>
 
       <Card className="p-4">
-        <div className="mb-3 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setOverdueOnly((v) => !v)}
-            aria-pressed={overdueOnly}
-            className={`inline-flex items-center gap-2 h-9 px-3.5 rounded-lg border text-[12.5px] font-semibold transition-colors ${
-              overdueOnly ? "border-ryg-red/50 text-ryg-red bg-ryg-red/5" : "border-line text-grey-2 hover:border-grey-2/40 hover:text-grey"
-            }`}
-          >
-            <span className={`inline-block w-2 h-2 rounded-full ${overdueOnly ? "bg-ryg-red" : "bg-grey-2/40"}`} />
-            Overdue only (≥{OVERDUE_DAYS}d)
-          </button>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-line overflow-hidden">
+            {SCOPES.map((sc) => {
+              const n = sc.value === "all" ? null : counts[sc.value as Bucket];
+              return (
+                <button
+                  key={sc.value}
+                  type="button"
+                  onClick={() => setScope(sc.value)}
+                  aria-pressed={scope === sc.value}
+                  className={`h-9 px-3.5 text-[12.5px] font-semibold border-r border-line last:border-r-0 transition-colors ${
+                    scope === sc.value ? "bg-orange/10 text-orange" : "text-grey-2 hover:text-navy hover:bg-page/60"
+                  }`}
+                >
+                  {sc.label}
+                  {n !== null && n > 0 && <span className="ml-1.5 text-[11px] opacity-70">{n}</span>}
+                </button>
+              );
+            })}
+          </div>
+          {selectedSteps.length > 0 && (
+            <span className="text-[12.5px] text-grey-2">
+              {selectedSteps.length === 1 ? "Step: " : "Steps: "}
+              <strong className="text-navy">
+                {selectedSteps.length <= 2
+                  ? selectedSteps.map((k) => stepByKey(k)?.short ?? k).join(", ")
+                  : `${selectedSteps.length} selected`}
+              </strong>
+            </span>
+          )}
         </div>
+
         <QueueTable
           rows={rows}
-          rowKey={(e) => e.key}
+          rowKey={(e) => `${e.stepKey}:${e.entityId}`}
           columns={columns}
           companyIdOf={(e) => e.companyId}
           companyNameOf={(id) => s.companyById(id)?.name ?? "—"}
-          initialSort={{ key: "age", dir: "desc" }}
+          rowClassName={(e) => (bucketFor(e) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="entries"
-          emptyTitle="Nothing in flight"
-          emptyMessage="Open requests and POs that need attention will appear here."
+          emptyTitle="Nothing here"
+          emptyMessage="No work matches this step selection and filter."
           actions={(e) => (
             <div className="flex items-center justify-end gap-3 whitespace-nowrap">
-              <button onClick={() => doNudge(e)} disabled={busyKey === e.key} className="text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-50">Nudge</button>
-              <button onClick={() => doEscalate(e)} disabled={busyKey === e.key} className="text-[12.5px] font-semibold text-ryg-red hover:underline disabled:opacity-50">Escalate</button>
-              {e.reassignLine && (
-                <button onClick={() => setReassign(e.reassignLine)} className="text-[12.5px] font-semibold text-grey hover:text-navy">Reassign</button>
+              {e.stepKey === "approval" && (
+                <button
+                  onClick={() => setReassign(lineOf(e) ?? null)}
+                  className="text-[12.5px] font-semibold text-grey hover:text-navy"
+                >
+                  Reassign
+                </button>
               )}
+              <Link to={linkOf(e)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                Open
+              </Link>
             </div>
           )}
         />
@@ -202,11 +280,42 @@ export default function ControlCenter() {
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: number; tone?: "red" }) {
+/**
+ * The entry's due date with a Delayed / Today / Tomorrow chip.
+ *
+ * Distinct from `DueCell`, which shows an overdue / due-today chip only: this one
+ * colours by the Control Center's four-way bucket. Both now take an
+ * already-computed `dueIso` from `lib/queues.ts`, so they can never disagree.
+ */
+function DueChip({ dueIso, todayIso }: { dueIso: string | null; todayIso: string }) {
+  if (!dueIso) return <span className="text-grey-2">No date</span>;
+  const b = bucketOf(dueIso, todayIso);
+  const chip =
+    b === "delayed"
+      ? { cls: "bg-[#FDECEC] text-ryg-red", text: "Delayed" }
+      : b === "today"
+        ? { cls: "bg-[#FFF7E6] text-yellow", text: "Today" }
+        : b === "tomorrow"
+          ? { cls: "bg-page text-grey-2", text: "Tomorrow" }
+          : null;
   return (
-    <Card className="px-4 py-3">
-      <div className="text-[11px] text-grey-2">{label}</div>
-      <div className={`text-[20px] font-bold ${tone === "red" ? "text-ryg-red" : "text-navy"}`}>{value}</div>
+    <span className={b === "delayed" ? "text-ryg-red font-semibold" : b === "today" ? "text-yellow font-medium" : "text-grey"}>
+      {formatDate(dueIso)}
+      {chip && (
+        <span className={`ml-1.5 inline-block text-[10px] font-semibold uppercase tracking-wide rounded-full px-1.5 py-0.5 align-middle ${chip.cls}`}>
+          {chip.text}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function Kpi({ label, value, hint, tone, hero }: { label: string; value: number; hint?: string; tone?: "red"; hero?: boolean }) {
+  return (
+    <Card className={`px-4 py-3 ${hero ? "ring-1 ring-orange/20" : ""}`}>
+      <div className="text-[11px] text-grey-2 uppercase tracking-wide">{label}</div>
+      <div className={`font-bold ${hero ? "text-[30px]" : "text-[20px]"} ${tone === "red" ? "text-ryg-red" : "text-navy"}`}>{value}</div>
+      {hint && <div className="text-[11px] text-grey-2/80">{hint}</div>}
     </Card>
   );
 }

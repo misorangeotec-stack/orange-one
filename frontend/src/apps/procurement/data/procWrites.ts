@@ -251,7 +251,8 @@ export async function resolveMasterRequest(
 
 /* ------------------------------ step owners ------------------------------- */
 export interface StepOwnerInput {
-  departmentId: string | null;
+  /** Departments whose employees may own this step (UI filter; may span several). */
+  departmentIds: string[];
   designationId: string | null;
   employeeIds: string[];
 }
@@ -261,7 +262,9 @@ export async function setStepOwner(stepKey: string, input: StepOwnerInput): Prom
   const { error } = await supabase.from("fms_purchase_step_owners").upsert(
     {
       step_key: stepKey,
-      department_id: input.departmentId,
+      department_ids: input.departmentIds,
+      // Legacy single column kept in sync when exactly one department is chosen.
+      department_id: input.departmentIds.length === 1 ? input.departmentIds[0] : null,
       designation_id: input.designationId,
       employee_ids: input.employeeIds,
     },
@@ -445,6 +448,8 @@ export async function sharePo(
   documentName?: string | null,
   tallyPoNo?: string | null,
   remarks?: string | null,
+  paymentTerms?: string | null,
+  dispatchDate?: string | null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_purchase_share_po", {
     p_po_id: poId,
@@ -452,6 +457,8 @@ export async function sharePo(
     p_document_name: documentName ?? undefined,
     p_tally_po_no: tallyPoNo ?? undefined,
     p_remarks: remarks ?? undefined,
+    p_payment_terms: paymentTerms ?? undefined,
+    p_dispatch_date: dispatchDate ?? undefined,
   });
   if (error) throw new Error(error.message);
 }
@@ -464,9 +471,7 @@ export interface PiItemInput {
 export async function addPi(input: {
   poId: string;
   vendorPiNo: string;
-  paymentTerms: string;
   piValue: number;
-  dispatchDate: string | null;
   items: PiItemInput[];
   documentPath?: string | null;
   documentName?: string | null;
@@ -474,9 +479,7 @@ export async function addPi(input: {
   const { data, error } = await supabase.rpc("fms_purchase_add_pi", {
     p_po_id: input.poId,
     p_vendor_pi_no: input.vendorPiNo,
-    p_payment_terms: input.paymentTerms,
     p_pi_value: input.piValue,
-    p_dispatch_date: input.dispatchDate ?? undefined,
     p_items: input.items.map((i) => ({ po_item_id: i.poItemId, qty: i.qty })) as unknown as Json,
     p_document_path: input.documentPath ?? undefined,
     p_document_name: input.documentName ?? undefined,
@@ -539,6 +542,7 @@ export async function recordPayment(input: {
   amount: number;
   paidOn: string | null;
   utrRef: string | null;
+  piRemarks?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase.rpc("fms_purchase_record_payment", {
     p_po_id: input.poId,
@@ -547,28 +551,31 @@ export async function recordPayment(input: {
     p_amount: input.amount,
     p_paid_on: input.paidOn ?? undefined,
     p_utr: input.utrRef ?? undefined,
+    p_pi_remarks: input.piRemarks ?? undefined,
   });
   if (error) throw new Error(error.message);
   return data as string;
 }
 
 export async function recordFollowup(input: {
-  piId: string;
+  poId: string;
   dispatchStatus: string;
   actualDispatchDate: string | null;
   lrNo: string | null;
   transportDetails: string | null;
   revisedDispatchDate: string | null;
   remarks: string | null;
+  piRemarks?: string | null;
 }): Promise<void> {
   const { error } = await supabase.rpc("fms_purchase_record_followup", {
-    p_pi_id: input.piId,
+    p_po_id: input.poId,
     p_dispatch_status: input.dispatchStatus,
     p_actual_dispatch_date: input.actualDispatchDate ?? undefined,
     p_lr_no: input.lrNo ?? undefined,
     p_transport: input.transportDetails ?? undefined,
     p_revised_dispatch_date: input.revisedDispatchDate ?? undefined,
     p_remarks: input.remarks ?? undefined,
+    p_pi_remarks: input.piRemarks ?? undefined,
   });
   if (error) throw new Error(error.message);
 }
@@ -582,6 +589,8 @@ export interface GrnItemInput {
 export async function recordGrn(input: {
   poId: string;
   piId: string | null;
+  poRef?: string | null;
+  piRef?: string | null;
   gateRegisterNo: string | null;
   condition: string;
   note: string | null;
@@ -592,6 +601,8 @@ export async function recordGrn(input: {
   const { data, error } = await supabase.rpc("fms_purchase_record_grn", {
     p_po_id: input.poId,
     p_pi_id: input.piId ?? undefined,
+    p_po_ref: input.poRef ?? undefined,
+    p_pi_ref: input.piRef ?? undefined,
     p_gate_register_no: input.gateRegisterNo ?? undefined,
     p_condition: input.condition,
     p_note: input.note ?? undefined,

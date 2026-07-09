@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
@@ -7,7 +7,7 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { todayIso, formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
-import type { PurchaseOrder, Pi } from "../types";
+import type { PurchaseOrder } from "../types";
 
 const PAYMENT_TERMS: ComboOption[] = [
   { value: "full_advance", label: "100% Advance" },
@@ -30,13 +30,20 @@ function Err({ msg }: { msg: string | null }) {
   return msg ? <p className="text-[12.5px] text-ryg-red">{msg}</p> : null;
 }
 
+/**
+ * Helper text rendered BELOW a field. FieldLabel's own `hint` sits inline beside
+ * the label, which wraps and misaligns inputs in narrow grid columns — so any
+ * hint longer than a couple of words goes here instead.
+ */
+function Hint({ children }: { children: ReactNode }) {
+  return <span className="mt-1 block text-[11px] leading-snug text-grey-2">{children}</span>;
+}
+
 /* ----------------------------- Add PI ------------------------------------ */
 export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
   const s = useProcurementStore();
   const items = s.poItemsForPo(po.id);
   const [vendorPiNo, setVendorPiNo] = useState("");
-  const [terms, setTerms] = useState("on_delivery");
-  const [dispatch, setDispatch] = useState("");
   const [qty, setQty] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -55,8 +62,6 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
   useEffect(() => {
     if (!open) return;
     setVendorPiNo("");
-    setTerms("on_delivery");
-    setDispatch("");
     setFile(null);
     const init: Record<string, string> = {};
     for (const pi of items) {
@@ -77,7 +82,7 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
     try {
       let doc: { path: string; name: string } | null = null;
       if (file) doc = await s.uploadPiDocument(po.id, file);
-      await s.addPi({ poId: po.id, vendorPiNo: vendorPiNo.trim(), paymentTerms: terms, piValue, dispatchDate: dispatch || null, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+      await s.addPi({ poId: po.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -87,7 +92,7 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Add PI" subtitle="Proforma invoice — covered items, terms and dispatch date."
+    <Modal open={open} onClose={onClose} size="lg" title="Add PI" subtitle="Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Add PI"}</Button></>}>
       <div className="space-y-3.5">
         <div className="grid grid-cols-2 gap-3">
@@ -95,8 +100,6 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
           <FieldLabel label="PI Value (incl GST)" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
             <TextInput type="number" value={String(piValue)} readOnly title="Auto-calculated from the covered lines (Cover Qty × rate incl GST)" className="bg-page/70 text-grey-2 cursor-not-allowed" />
           </FieldLabel>
-          <FieldLabel label="Payment Terms"><Combobox value={terms} onChange={setTerms} options={PAYMENT_TERMS} autoAdvance /></FieldLabel>
-          <FieldLabel label="Dispatch Date"><TextInput type="date" value={dispatch} onChange={(e) => setDispatch(e.target.value)} /></FieldLabel>
         </div>
         <FieldLabel label="Vendor PI Document" hint="PDF or any file · optional">
           <div className="flex items-center gap-2.5">
@@ -165,6 +168,8 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
 export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
   const s = useProcurementStore();
   const [tallyPoNo, setTallyPoNo] = useState("");
+  const [terms, setTerms] = useState("on_delivery");
+  const [dispatch, setDispatch] = useState("");
   const [remarks, setRemarks] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -173,19 +178,22 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
   useEffect(() => {
     if (!open) return;
     setTallyPoNo("");
+    setTerms(po.paymentTerms ?? "on_delivery");
+    setDispatch(po.dispatchDate ?? "");
     setRemarks("");
     setFile(null);
     setErr(null);
-  }, [open, po.id]);
+  }, [open, po.id, po.paymentTerms, po.dispatchDate]);
 
   const save = async () => {
     setErr(null);
     if (!tallyPoNo.trim()) return setErr("Enter the PO number generated in Tally.");
+    if (!dispatch) return setErr("Enter the expected dispatch date.");
     if (!file) return setErr("Attach the PO PDF to mark it shared.");
     setBusy(true);
     try {
       const doc = await s.uploadPoDocument(po.id, file);
-      await s.sharePo(po.id, { path: doc.path, name: doc.name, tallyPoNo: tallyPoNo.trim(), remarks: remarks.trim() || null });
+      await s.sharePo(po.id, { path: doc.path, name: doc.name, tallyPoNo: tallyPoNo.trim(), remarks: remarks.trim() || null, paymentTerms: terms, dispatchDate: dispatch });
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -195,14 +203,28 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Share PO" subtitle={`${po.poNo} · attach the PO PDF and Tally PO number, then mark it shared with the vendor.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !file || !tallyPoNo.trim()}>{busy ? "Sharing…" : "Share PO"}</Button></>}>
-      <div className="space-y-3.5">
-        <FieldLabel label="Tally PO Number" required hint="The PO number generated in Tally/ERP">
-          <TextInput value={tallyPoNo} onChange={(e) => setTallyPoNo(e.target.value)} placeholder="e.g. 2627/PO/0042" />
-        </FieldLabel>
-        <FieldLabel label="PO PDF" required hint="PDF or any file — required to share">
-          <div className="flex items-center gap-2.5">
+    <Modal open={open} onClose={onClose} size="lg" title="Share PO" subtitle={`${po.poNo} · confirm the terms and dispatch date, attach the PO PDF, then mark it shared with the vendor.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !file || !tallyPoNo.trim() || !dispatch}>{busy ? "Sharing…" : "Share PO"}</Button></>}>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3.5">
+          <FieldLabel label="Tally PO Number" required>
+            <TextInput value={tallyPoNo} onChange={(e) => setTallyPoNo(e.target.value)} placeholder="e.g. 2627/PO/0042" />
+            <Hint>Generated in Tally/ERP</Hint>
+          </FieldLabel>
+          <FieldLabel label="Payment Terms">
+            <Combobox value={terms} onChange={setTerms} options={PAYMENT_TERMS} autoAdvance />
+            <Hint>Drives whether an advance is due</Hint>
+          </FieldLabel>
+          <FieldLabel label="Expected Dispatch Date" required>
+            <TextInput type="date" value={dispatch} onChange={(e) => setDispatch(e.target.value)} />
+            <Hint>Anchors the follow-up due date</Hint>
+          </FieldLabel>
+        </div>
+
+        <div className="border-t border-line/70" />
+
+        <FieldLabel label="PO PDF" required>
+          <div className="flex flex-wrap items-center gap-2.5">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
               <Upload className="h-4 w-4" />
               {file ? "Change file" : "Choose file"}
@@ -210,17 +232,19 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
             {file ? (
-              <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
-                <span className="max-w-[220px] truncate text-navy">{file.name}</span>
-                <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+              <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                <span className="max-w-[260px] truncate text-navy">{file.name}</span>
+                <button type="button" onClick={() => setFile(null)} className="shrink-0 text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
               </span>
             ) : (
               <span className="text-[12.5px] text-grey-2">No file selected</span>
             )}
           </div>
+          <Hint>PDF or any file — required to share</Hint>
         </FieldLabel>
+
         <FieldLabel label="Remarks" hint="Optional">
-          <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+          <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Anything the vendor should know about this PO." />
         </FieldLabel>
         <Err msg={err} />
       </div>
@@ -229,77 +253,39 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
 }
 
 /* --------------------------- Payment (adv/inst) -------------------------- */
-export function PaymentModal({ po, pi = null, open, onClose, kind }: { po: PurchaseOrder; pi?: Pi | null; open: boolean; onClose: () => void; kind: "advance" | "installment" }) {
+export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; open: boolean; onClose: () => void; kind: "advance" | "installment" }) {
   const s = useProcurementStore();
-  // The PO's PIs that still carry a balance — payment can be allocated across them.
-  const eligible = s.pisForPo(po.id).filter((p) => s.pendingForPi(p) > 0);
-  const hasPis = eligible.length > 0;
+  // Payments are recorded against the PO; the whole-PO pending caps the amount.
   const poPending = s.pendingAmount(po);
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [amounts, setAmounts] = useState<Record<string, string>>({});
-  const [poAmount, setPoAmount] = useState(""); // used only when the PO has no PIs
+  const [amount, setAmount] = useState("");
+  const [piRemarks, setPiRemarks] = useState("");
   const [paidOn, setPaidOn] = useState(todayIso());
   const [utr, setUtr] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const termLabel = (t: string) => PAYMENT_TERMS.find((o) => o.value === t)?.label ?? t;
+  const isAdvance = kind === "advance";
 
   useEffect(() => {
     if (!open) return;
     setPaidOn(todayIso());
     setUtr("");
+    setPiRemarks("");
     setErr(null);
-    setPoAmount(kind === "installment" ? String(poPending) : "");
-    // Preselect: the PI we were opened for, else the only PI if there's exactly one.
-    const preId = pi?.id ?? (eligible.length === 1 ? eligible[0].id : null);
-    const sel = new Set<string>();
-    const amt: Record<string, string> = {};
-    if (preId) {
-      const p = eligible.find((e) => e.id === preId);
-      if (p) { sel.add(p.id); amt[p.id] = String(s.pendingForPi(p)); }
-    }
-    setSelected(sel);
-    setAmounts(amt);
+    // Final payment defaults to the full remaining balance; advance is entered.
+    setAmount(isAdvance ? "" : String(poPending));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, po.id, pi?.id, kind]);
-
-  const toggle = (p: Pi) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(p.id) ? next.delete(p.id) : next.add(p.id);
-      return next;
-    });
-    setAmounts((a) => (a[p.id] !== undefined ? a : { ...a, [p.id]: String(s.pendingForPi(p)) }));
-  };
-
-  const total = eligible.filter((p) => selected.has(p.id)).reduce((sum, p) => sum + (Number(amounts[p.id]) || 0), 0);
+  }, [open, po.id, kind]);
 
   const save = async () => {
     setErr(null);
-    let rows: { piId: string | null; amount: number }[] = [];
-    if (hasPis) {
-      const chosen = eligible.filter((p) => selected.has(p.id));
-      if (chosen.length === 0) return setErr("Select at least one PI this payment is against.");
-      for (const p of chosen) {
-        const amt = Number(amounts[p.id]);
-        if (!(amt > 0)) return setErr(`Enter an amount for PI ${p.vendorPiNo}.`);
-        if (amt > s.pendingForPi(p) + 0.01) return setErr(`Amount for PI ${p.vendorPiNo} exceeds its pending ${inr(s.pendingForPi(p))}.`);
-        rows.push({ piId: p.id, amount: amt });
-      }
-    } else {
-      const amt = Number(poAmount);
-      if (!(amt > 0)) return setErr("Enter an amount greater than 0.");
-      if (amt > poPending + 0.01) return setErr(`Amount exceeds the pending ${inr(poPending)}.`);
-      rows = [{ piId: null, amount: amt }];
-    }
+    const amt = Number(amount);
+    if (!(amt > 0)) return setErr("Enter an amount greater than 0.");
+    if (amt > poPending + 0.01) return setErr(`Amount exceeds the pending ${inr(poPending)}.`);
     setBusy(true);
     try {
-      // One payment row per PI — each advance/installment stays tagged to its PI.
-      for (const row of rows) {
-        await s.recordPayment({ poId: po.id, piId: row.piId, kind, amount: row.amount, paidOn, utrRef: utr.trim() || null });
-      }
+      await s.recordPayment({ poId: po.id, piId: null, kind, amount: amt, paidOn, utrRef: utr.trim() || null, piRemarks: piRemarks.trim() || null });
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -308,68 +294,23 @@ export function PaymentModal({ po, pi = null, open, onClose, kind }: { po: Purch
     }
   };
 
-  const isAdvance = kind === "advance";
-
   return (
-    <Modal open={open} onClose={onClose} size={hasPis ? "lg" : "md"} title={isAdvance ? "Record advance" : "Record payment"} subtitle={`${po.poNo} · Pending ${inr(poPending)}`}
+    <Modal open={open} onClose={onClose} title={isAdvance ? "Record advance" : "Record payment"} subtitle={`${po.poNo} · Pending ${inr(poPending)}`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Record"}</Button></>}>
       <div className="space-y-3.5">
-        {hasPis ? (
-          <>
-            <p className="text-[12.5px] text-grey-2">Select the PI(s) this {isAdvance ? "advance" : "payment"} is against{eligible.length === 1 ? " (only one on this PO)" : ""}, and set the amount per PI.</p>
-            <div className="rounded-xl border border-line overflow-hidden">
-              <table className="w-full text-[13px]">
-                <thead>
-                  <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                    <th className="px-3 py-2 font-medium w-8"></th>
-                    <th className="px-3 py-2 font-medium">PI</th>
-                    <th className="px-3 py-2 font-medium">Pending</th>
-                    <th className="px-3 py-2 font-medium w-32">Amount (₹)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {eligible.map((p) => {
-                    const sel = selected.has(p.id);
-                    const piPending = s.pendingForPi(p);
-                    return (
-                      <tr key={p.id} className="border-b border-line/70 last:border-0">
-                        <td className="px-3 py-2"><input type="checkbox" className="w-4 h-4 accent-orange" checked={sel} onChange={() => toggle(p)} /></td>
-                        <td className="px-3 py-2">
-                          <div className="font-medium text-navy">{p.vendorPiNo}</div>
-                          <div className="text-[11px] text-grey-2">{termLabel(p.paymentTerms)} · Value {inr(p.piValue)}</div>
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap">{inr(piPending)}</td>
-                        <td className="px-3 py-2">
-                          <TextInput
-                            type="number"
-                            className={`w-28 ${sel ? "" : "bg-page/70 text-grey-2 cursor-not-allowed"}`}
-                            value={sel ? (amounts[p.id] ?? "") : ""}
-                            min={0}
-                            max={piPending}
-                            disabled={!sel}
-                            onChange={(e) =>
-                              setAmounts((a) => ({ ...a, [p.id]: e.target.value === "" ? "" : String(Math.max(0, Math.min(piPending, Number(e.target.value)))) }))
-                            }
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div className="flex items-center justify-end gap-2 text-[13px]">
-              <span className="text-grey-2">Total {isAdvance ? "advance" : "payment"}:</span>
-              <span className="font-semibold text-navy">{inr(total)}</span>
-            </div>
-          </>
-        ) : (
-          <FieldLabel label="Amount (₹)" required><TextInput type="number" value={poAmount} onChange={(e) => setPoAmount(e.target.value)} /></FieldLabel>
-        )}
+        <FieldLabel label="Amount (₹)" required hint={`Pending on this PO: ${inr(poPending)}`}>
+          <TextInput type="number" value={amount} min={0} max={poPending} onChange={(e) => setAmount(e.target.value)} />
+        </FieldLabel>
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Date"><TextInput type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></FieldLabel>
-          <FieldLabel label="UTR / Ref" hint="one reference for this batch · optional"><TextInput value={utr} onChange={(e) => setUtr(e.target.value)} /></FieldLabel>
+          <FieldLabel label="UTR / Ref" hint="optional">
+            <TextInput value={utr} onChange={(e) => setUtr(e.target.value)} />
+            <Hint>Bank reference</Hint>
+          </FieldLabel>
         </div>
+        <FieldLabel label="PI ref / remarks" hint="e.g. the vendor PI this covers · optional">
+          <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. against PI-8841" />
+        </FieldLabel>
         <Err msg={err} />
       </div>
     </Modal>
@@ -377,7 +318,7 @@ export function PaymentModal({ po, pi = null, open, onClose, kind }: { po: Purch
 }
 
 /* ----------------------------- Follow-up --------------------------------- */
-export function FollowupModal({ pi, open, onClose }: { pi: Pi | null; open: boolean; onClose: () => void }) {
+export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null; open: boolean; onClose: () => void }) {
   const s = useProcurementStore();
   const [status, setStatus] = useState("pending");
   const [actual, setActual] = useState("");
@@ -385,48 +326,42 @@ export function FollowupModal({ pi, open, onClose }: { pi: Pi | null; open: bool
   const [transport, setTransport] = useState("");
   const [revised, setRevised] = useState("");
   const [remarks, setRemarks] = useState("");
+  const [piRemarks, setPiRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Follow-ups are recorded against the PO; seed from the latest PO-level record.
+  const history = po ? s.followupsForPo(po.id) : [];
+  const latest = history[0];
+  // The date the vendor currently owes us the goods by.
+  const due = po ? s.dispatchDueForPo(po.id) : null;
+
   useEffect(() => {
-    if (!open || !pi) return;
-    setStatus(pi.dispatchStatus);
-    // Default the dispatch date to the PI's planned dispatch date (recorded on Add PI).
-    setActual(pi.actualDispatchDate ?? pi.dispatchDate ?? "");
-    setLr(pi.lrNo ?? "");
-    setTransport(pi.transportDetails ?? "");
-    setRevised(pi.revisedDispatchDate ?? "");
+    if (!open || !po) return;
+    setStatus(latest?.dispatchStatus ?? "pending");
+    // Actual dispatch defaults to the current dispatch due date. A previously
+    // recorded actual date only sticks once the goods really went out — on a
+    // `delayed`/`pending` follow-up the date entered was just the then-current
+    // due, so it must not shadow the revised date that superseded it.
+    const dispatched = latest?.dispatchStatus === "dispatched" ? latest.actualDispatchDate : null;
+    setActual(dispatched ?? due ?? "");
+    setLr(latest?.lrNo ?? "");
+    setTransport(latest?.transportDetails ?? "");
+    setRevised("");
     setRemarks("");
+    setPiRemarks("");
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, pi?.id]);
+  }, [open, po?.id]);
 
-  if (!pi) return null;
-  const po = s.poById(pi.poId);
-  const poPis = s.pisForPo(pi.poId);
-  // Follow-up is a PO-level call — it's logged against every PI still awaiting dispatch.
-  const pendingPis = poPis.filter((p) => p.status !== "received" && p.dispatchStatus !== "dispatched");
-  const targets = pendingPis.length > 0 ? pendingPis : [pi];
-  // Item names a PI covers — shown so the caller can ask about every PI's goods.
-  const piItemNames = (p: Pi): string =>
-    s
-      .piItemsForPi(p.id)
-      .map((x) => {
-        const poItem = s.poItemsForPo(pi.poId).find((it) => it.id === x.poItemId);
-        const line = poItem ? s.lineById(poItem.requestItemId) : undefined;
-        return line ? s.itemById(line.itemId)?.name ?? s.itemLabel(line.itemId) : null;
-      })
-      .filter(Boolean)
-      .join(", ");
-  // Full follow-up history across all of the PO's PIs, newest first.
-  const history = s.followups.filter((f) => f.poId === pi.poId).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (!po) return null;
+
   const save = async () => {
-    setBusy(true);
     setErr(null);
+    if (status === "delayed" && !revised) return setErr("Enter the revised dispatch date the vendor promised.");
+    setBusy(true);
     try {
-      for (const t of targets) {
-        await s.recordFollowup({ piId: t.id, dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null });
-      }
+      await s.recordFollowup({ poId: po.id, dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null, piRemarks: piRemarks.trim() || null });
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -436,43 +371,29 @@ export function FollowupModal({ pi, open, onClose }: { pi: Pi | null; open: bool
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={`Follow-up — ${po?.poNo ?? "PO"}`}
+    <Modal open={open} onClose={onClose} size="lg" title={`Follow-up — ${po.poNo}`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button></>}>
       <div className="space-y-3.5">
-        {poPis.length > 0 && (
-          <div className="rounded-xl border border-line bg-page/40 p-3">
-            <div className="text-[12px] font-semibold text-grey-2 mb-2">
-              {poPis.length === 1 ? "PI on this PO" : `PIs on this PO · ${poPis.length}`}
-              <span className="font-normal"> — {poPis.length === 1 ? "follow up on its item(s)" : "this follow-up is logged against every pending PI"}</span>
-            </div>
-            <div className="space-y-1.5">
-              {poPis.map((p) => {
-                const due = p.revisedDispatchDate ?? p.dispatchDate;
-                return (
-                  <div key={p.id} className="flex items-start justify-between gap-3 rounded-lg border border-line bg-white px-2.5 py-1.5 text-[12.5px]">
-                    <div className="min-w-0">
-                      <span className="font-semibold text-navy">{p.vendorPiNo}</span>
-                      <div className="text-grey-2" title={piItemNames(p)}>{piItemNames(p) || "—"}</div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <div className="capitalize text-navy">{p.dispatchStatus}</div>
-                      {due && <div className="text-grey-2 text-[11px]">plan {formatDate(due)}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
         <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={setStatus} options={DISPATCH} autoAdvance /></FieldLabel>
         <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Actual Dispatch Date"><TextInput type="date" value={actual} onChange={(e) => setActual(e.target.value)} /></FieldLabel>
-          {status === "delayed" && <FieldLabel label="Revised Dispatch Date"><TextInput type="date" value={revised} onChange={(e) => setRevised(e.target.value)} /></FieldLabel>}
+          <FieldLabel label="Actual Dispatch Date">
+            <TextInput type="date" value={actual} onChange={(e) => setActual(e.target.value)} />
+            {due && <Hint>Dispatch due — edit if it differs</Hint>}
+          </FieldLabel>
+          {status === "delayed" && (
+            <FieldLabel label="Revised Dispatch Date" required>
+              <TextInput type="date" value={revised} min={actual || undefined} onChange={(e) => setRevised(e.target.value)} />
+              <Hint>The new date the vendor promised</Hint>
+            </FieldLabel>
+          )}
           <FieldLabel label="LR No."><TextInput value={lr} onChange={(e) => setLr(e.target.value)} /></FieldLabel>
           <FieldLabel label="Transport"><TextInput value={transport} onChange={(e) => setTransport(e.target.value)} /></FieldLabel>
         </div>
         <FieldLabel label="Remarks" hint="what the vendor said this time · optional">
           <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor confirmed dispatch by Fri; awaiting LR." />
+        </FieldLabel>
+        <FieldLabel label="PI ref / remarks" hint="the vendor PI this dispatch relates to · optional">
+          <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. PI-8841" />
         </FieldLabel>
         <Err msg={err} />
 
@@ -489,11 +410,12 @@ export function FollowupModal({ pi, open, onClose }: { pi: Pi | null; open: bool
                   f.revisedDispatchDate ? `Revised ${formatDate(f.revisedDispatchDate)}` : null,
                   f.lrNo ? `LR ${f.lrNo}` : null,
                   f.transportDetails ? f.transportDetails : null,
+                  f.piRemarks ? `PI ${f.piRemarks}` : null,
                 ].filter(Boolean);
                 return (
                   <div key={f.id} className="px-3 py-2 text-[12.5px]">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold capitalize text-navy">{f.dispatchStatus}<span className="ml-2 text-[11px] font-normal normal-case text-grey-2">{poPis.find((x) => x.id === f.piId)?.vendorPiNo ?? ""}</span></span>
+                      <span className="font-semibold capitalize text-navy">{f.dispatchStatus}</span>
                       <span className="text-grey-2">{formatDate(f.createdAt)} · {who}</span>
                     </div>
                     {bits.length > 0 && <div className="text-grey mt-0.5">{bits.join(" · ")}</div>}
@@ -513,8 +435,11 @@ export function FollowupModal({ pi, open, onClose }: { pi: Pi | null; open: bool
 export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
   const s = useProcurementStore();
   const items = s.poItemsForPo(po.id);
-  const pis = s.pisForPo(po.id);
-  const [piId, setPiId] = useState("");
+  // The receipt is booked against the PO. Default to the reference the vendor
+  // sees on the shared PO (its Tally number), falling back to the system PO no.
+  const defaultPoRef = po.tallyPoNo || po.poNo;
+  const [poRef, setPoRef] = useState(defaultPoRef);
+  const [piRef, setPiRef] = useState("");
   const [gate, setGate] = useState("");
   const [condition, setCondition] = useState("good");
   const [note, setNote] = useState("");
@@ -525,7 +450,8 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
 
   useEffect(() => {
     if (!open) return;
-    setPiId("");
+    setPoRef(defaultPoRef);
+    setPiRef("");
     setGate("");
     setCondition("good");
     setNote("");
@@ -539,17 +465,16 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
 
   const damaged = condition === "damaged" || condition === "partial_damage";
 
-  const piOptions: ComboOption[] = [{ value: "", label: "— No specific PI —" }, ...pis.map((p) => ({ value: p.id, label: p.vendorPiNo }))];
-
   const save = async () => {
     setErr(null);
+    if (!poRef.trim()) return setErr("Enter the PO reference number this receipt is against.");
     const lines = items.filter((it) => Number(qty[it.id]) > 0).map((it) => ({ poItemId: it.id, receivedQty: Number(qty[it.id]), condition }));
     if (lines.length === 0) return setErr("Enter a received quantity for at least one item.");
     setBusy(true);
     try {
       let photoDoc: { path: string; name: string } | null = null;
       if (photo) photoDoc = await s.uploadGrnPhoto(po.id, photo);
-      await s.recordGrn({ poId: po.id, piId: piId || null, gateRegisterNo: gate.trim() || null, condition, note: note.trim() || null, items: lines, photoPath: photoDoc?.path ?? null, photoName: photoDoc?.name ?? null });
+      await s.recordGrn({ poId: po.id, piId: null, poRef: poRef.trim(), piRef: piRef.trim() || null, gateRegisterNo: gate.trim() || null, condition, note: note.trim() || null, items: lines, photoPath: photoDoc?.path ?? null, photoName: photoDoc?.name ?? null });
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -559,13 +484,20 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Record GRN" subtitle="Goods receipt — partial receipts allowed."
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Record receipt"}</Button></>}>
+    <Modal open={open} onClose={onClose} size="lg" title="Record GRN" subtitle={`${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : "Record receipt"}</Button></>}>
       <div className="space-y-3.5">
-        <div className="grid grid-cols-3 gap-3">
-          <FieldLabel label="Against PI"><Combobox value={piId} onChange={setPiId} options={piOptions} autoAdvance /></FieldLabel>
-          <FieldLabel label="Gate Register No."><TextInput value={gate} onChange={(e) => setGate(e.target.value)} /></FieldLabel>
-          <FieldLabel label="Condition"><Combobox value={condition} onChange={setCondition} options={CONDITION} autoAdvance /></FieldLabel>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3.5">
+          <FieldLabel label="PO Ref No." required>
+            <TextInput value={poRef} onChange={(e) => setPoRef(e.target.value)} placeholder="e.g. 2627/PO/0042" />
+            <Hint>The PO this receipt is against</Hint>
+          </FieldLabel>
+          <FieldLabel label="Gate Register No.">
+            <TextInput value={gate} onChange={(e) => setGate(e.target.value)} />
+          </FieldLabel>
+          <FieldLabel label="Condition">
+            <Combobox value={condition} onChange={setCondition} options={CONDITION} autoAdvance />
+          </FieldLabel>
         </div>
         <div className="rounded-xl border border-line overflow-hidden">
           <table className="w-full text-[13px]">
@@ -585,6 +517,10 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
             </tbody>
           </table>
         </div>
+        <FieldLabel label="PI Ref" hint="optional">
+          <TextInput value={piRef} onChange={(e) => setPiRef(e.target.value)} placeholder="e.g. PI-8841" />
+          <Hint>Vendor PI number, kept as a remark only</Hint>
+        </FieldLabel>
         <FieldLabel label="Note"><TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></FieldLabel>
         <FieldLabel label="Photo" hint={damaged ? "recommended — capture the damage for records" : "optional"}>
           <div className="flex items-center gap-2.5">
@@ -612,7 +548,8 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
 /* ------------------------------- Tally ----------------------------------- */
 export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
   const s = useProcurementStore();
-  const grns = s.grnsForPo(po.id);
+  // One Tally invoice per goods receipt — only receipts not yet booked are offered.
+  const unbooked = s.unbookedGrnsForPo(po.id);
   const [grnId, setGrnId] = useState("");
   const [tallyNo, setTallyNo] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -622,18 +559,26 @@ export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
 
   useEffect(() => {
     if (!open) return;
-    setGrnId("");
+    setGrnId(unbooked[0]?.id ?? "");
     setTallyNo("");
     setRemarks("");
     setFile(null);
     setErr(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po.id]);
 
-  const grnOptions: ComboOption[] = [{ value: "", label: "— No specific GRN —" }, ...grns.map((g) => ({ value: g.id, label: g.gateRegisterNo || g.id.slice(0, 8) }))];
+  /** Received qty on a GRN, so the user can tell partial consignments apart. */
+  const grnLabel = (g: (typeof unbooked)[number]): string => {
+    const qty = s.grnItemsForGrn(g.id).reduce((a, x) => a + x.receivedQty, 0);
+    const ref = g.gateRegisterNo || g.poRef || g.id.slice(0, 8);
+    return `${ref} · ${formatDate(g.createdAt)} · ${qty.toLocaleString("en-IN")} recd`;
+  };
+  const grnOptions: ComboOption[] = unbooked.map((g) => ({ value: g.id, label: grnLabel(g) }));
 
   const save = async () => {
     setErr(null);
     if (!tallyNo.trim()) return setErr("Tally invoice number is required.");
+    if (unbooked.length > 0 && !grnId) return setErr("Select the goods receipt this invoice is booked against.");
     setBusy(true);
     try {
       let doc: { path: string; name: string } | null = null;
@@ -648,10 +593,17 @@ export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Book in Tally" subtitle="Record the vendor invoice as entered in Tally."
+    <Modal open={open} onClose={onClose} title="Book in Tally" subtitle={`${po.poNo} · one invoice per goods receipt — partial receipts included.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Book"}</Button></>}>
       <div className="space-y-3.5">
-        <FieldLabel label="Against GRN"><Combobox value={grnId} onChange={setGrnId} options={grnOptions} autoAdvance /></FieldLabel>
+        <FieldLabel label="Against GRN" required={unbooked.length > 0}>
+          <Combobox value={grnId} onChange={setGrnId} options={grnOptions} autoAdvance />
+          <Hint>
+            {unbooked.length === 0
+              ? "Every goods receipt on this PO is already booked."
+              : `${unbooked.length} receipt${unbooked.length === 1 ? "" : "s"} awaiting an invoice.`}
+          </Hint>
+        </FieldLabel>
         <FieldLabel label="Tally Invoice No." required><TextInput value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} placeholder="e.g. 2627/PUR/0123" /></FieldLabel>
         <FieldLabel label="Tally Invoice Document" hint="PDF or any file · optional">
           <div className="flex items-center gap-2.5">

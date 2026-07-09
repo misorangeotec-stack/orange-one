@@ -5,7 +5,7 @@ import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "./sandbox/useEffectiveIdentity";
-import { fetchProcurementData } from "./data/procFetch";
+import { fetchProcurementData, PROCUREMENT_QK, procurementQueryKey } from "./data/procFetch";
 import type {
   Company,
   Category,
@@ -35,6 +35,20 @@ import type {
   ProcEntityType,
 } from "./types";
 import type { StepKey } from "./lib/steps";
+import {
+  buildProcIndex,
+  buildQueueEntries,
+  dispatchDueForPo as dispatchDueForPoPure,
+  lineDueIso,
+  lineInApproval,
+  lineInPoDesk,
+  lineInSourcing,
+  poDueIso,
+  type ProcIndex,
+  type ProcSnapshot,
+  type QueueEntry,
+} from "./lib/queues";
+import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import {
   insertCompany,
   updateCompany,
@@ -91,7 +105,8 @@ import {
   type GrnItemInput,
 } from "./data/procWrites";
 
-const QK = ["procurementData"];
+/** Prefix key for invalidation; the full key adds the real session user id. */
+const QK = PROCUREMENT_QK;
 
 interface ProcurementStoreValue {
   // masters
@@ -135,6 +150,12 @@ interface ProcurementStoreValue {
   processCoordinatorIds: string[];
   isProcessCoordinator: boolean;
   amountBasis: string;
+  /** Per-step due-date rules (anchor step + working days), merged over the defaults. */
+  stepSla: StepSlaMap;
+  /** The due date for a request line sitting in `step` (never null). */
+  dueIsoForLine: (line: RequestItem, step: StepKey) => string;
+  /** The due date for a PO sitting in `step`. Null only for `follow_up` with no promised dispatch. */
+  dueIsoForPo: (po: PurchaseOrder, step: StepKey) => string | null;
   /** True for admins — all Setup config is admin-managed. */
   canConfigure: boolean;
 
@@ -153,6 +174,13 @@ interface ProcurementStoreValue {
   poItemForLine: (requestItemId: string) => PoItem | undefined;
   /** A short item label "Item · Group" for display. */
   itemLabel: (itemId: string) => string;
+  /** O(1) lookups over the current snapshot, shared with `lib/queues.ts` predicates. */
+  procIndex: ProcIndex;
+  /**
+   * Every open (step, entity) work-item, owner-agnostic — the same list the FMS
+   * Control Center counts. Note `approvalQueue` below is the owner-scoped view.
+   */
+  queueEntries: QueueEntry[];
   // role-scoped queues
   sourcingQueue: RequestItem[];
   approvalQueue: RequestItem[];
@@ -168,12 +196,26 @@ interface ProcurementStoreValue {
   pisForPo: (poId: string) => Pi[];
   piItemsForPi: (piId: string) => PiItem[];
   grnsForPo: (poId: string) => Grn[];
+  /**
+   * Goods receipts on this PO with no Tally invoice booked yet. Each GRN — partial
+   * or full — is booked as its own invoice, so this drives the Tally step.
+   */
+  unbookedGrnsForPo: (poId: string) => Grn[];
   grnItemsForGrn: (grnId: string) => GrnItem[];
   tallyForPo: (poId: string) => TallyBooking[];
   paymentsForPo: (poId: string) => Payment[];
   paymentsForPi: (piId: string) => Payment[];
   /** Follow-up history for a PI, newest first. */
   followupsForPi: (piId: string) => Followup[];
+  /** Follow-up history for a PO (PO-level records), newest first. */
+  followupsForPo: (poId: string) => Followup[];
+  /**
+   * The dispatch date currently promised for a PO: the most recent revised date
+   * from its follow-ups, else the PO's expected dispatch date (set at Share PO).
+   */
+  dispatchDueForPo: (poId: string) => string | null;
+  /** Whether the PO's payment terms require an advance (full/partial advance). */
+  needsAdvance: (po: PurchaseOrder) => boolean;
   pendingAmount: (po: PurchaseOrder) => number;
   /** Amount paid so far against a specific PI (advances + installments tagged to it). */
   paidForPi: (pi: Pi) => number;
@@ -210,15 +252,15 @@ interface ProcurementStoreValue {
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
 
   // PO lifecycle mutations
-  sharePo: (poId: string, input?: { path: string | null; name: string | null; tallyPoNo: string | null; remarks: string | null }) => Promise<void>;
-  addPi: (input: { poId: string; vendorPiNo: string; paymentTerms: string; piValue: number; dispatchDate: string | null; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
+  sharePo: (poId: string, input?: { path: string | null; name: string | null; tallyPoNo: string | null; remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
+  addPi: (input: { poId: string; vendorPiNo: string; piValue: number; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
   uploadPiDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   piDocumentUrl: (path: string) => Promise<string>;
   uploadPoDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   poDocumentUrl: (path: string) => Promise<string>;
-  recordPayment: (input: { poId: string; piId: string | null; kind: "advance" | "installment"; amount: number; paidOn: string | null; utrRef: string | null }) => Promise<string>;
-  recordFollowup: (input: { piId: string; dispatchStatus: string; actualDispatchDate: string | null; lrNo: string | null; transportDetails: string | null; revisedDispatchDate: string | null; remarks: string | null }) => Promise<void>;
-  recordGrn: (input: { poId: string; piId: string | null; gateRegisterNo: string | null; condition: string; note: string | null; items: GrnItemInput[]; photoPath?: string | null; photoName?: string | null }) => Promise<string>;
+  recordPayment: (input: { poId: string; piId: string | null; kind: "advance" | "installment"; amount: number; paidOn: string | null; utrRef: string | null; piRemarks?: string | null }) => Promise<string>;
+  recordFollowup: (input: { poId: string; dispatchStatus: string; actualDispatchDate: string | null; lrNo: string | null; transportDetails: string | null; revisedDispatchDate: string | null; remarks: string | null; piRemarks?: string | null }) => Promise<void>;
+  recordGrn: (input: { poId: string; piId: string | null; poRef?: string | null; piRef?: string | null; gateRegisterNo: string | null; condition: string; note: string | null; items: GrnItemInput[]; photoPath?: string | null; photoName?: string | null }) => Promise<string>;
   uploadGrnPhoto: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   grnPhotoUrl: (path: string) => Promise<string>;
   bookTally: (input: { poId: string; grnId: string | null; tallyPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<string>;
@@ -275,6 +317,8 @@ interface ProcurementStoreValue {
   editApprovalBand: (id: string, input: ApprovalBandInput) => Promise<void>;
   removeApprovalBand: (id: string) => Promise<void>;
   setProcessCoordinators: (userIds: string[]) => Promise<void>;
+  /** Persist the whole per-step due-date map (admin only, enforced by RLS). */
+  setStepSla: (map: StepSlaMap) => Promise<void>;
 }
 
 const Ctx = createContext<ProcurementStoreValue | null>(null);
@@ -291,7 +335,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: [...QK, session.user?.id ?? null],
+    queryKey: procurementQueryKey(session.user?.id ?? null),
     queryFn: fetchProcurementData,
     enabled: !!session.user,
   });
@@ -308,6 +352,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const approvalBands = data?.approvalBands ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const amountBasis = data?.config.amountBasis ?? "line_incl_gst";
+  const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
   const quotations = data?.quotations ?? [];
@@ -325,6 +370,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
 
   const value = useMemo<ProcurementStoreValue>(() => {
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
+
+    // Queue membership + due dates live in lib/queues.ts so the per-step queue
+    // pages and the FMS Control Center count the identical work-items.
+    // `config` rides along so the pure due-date rules can read the admin's per-step SLA.
+    const snapshot: ProcSnapshot = {
+      requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings, payments, followups, activity,
+      config: { processCoordinatorIds, amountBasis, stepSla },
+    };
+    const procIndex = buildProcIndex(snapshot);
     const byName = <T extends { name: string; sortOrder: number }>(a: T, b: T) =>
       a.sortOrder - b.sortOrder || a.name.localeCompare(b.name);
 
@@ -447,9 +501,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       poItemsForPo: (poId) => poItems.filter((pi) => pi.poId === poId),
       poItemForLine: (requestItemId) => poItemByLine.get(requestItemId),
       itemLabel,
-      sourcingQueue: requestItems.filter((l) => l.status === "sourcing"),
-      approvalQueue: requestItems.filter((l) => (l.status === "approval" || l.status === "on_hold") && canApproveLine(l)),
-      poPool: requestItems.filter((l) => l.status === "approved_pending_po"),
+      procIndex,
+      queueEntries: buildQueueEntries(snapshot, procIndex),
+      sourcingQueue: requestItems.filter(lineInSourcing),
+      // The ONE owner-scoped queue: an approver sees only the lines they may act
+      // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
+      approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
+      poPool: requestItems.filter(lineInPoDesk),
       isStepOwner,
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
@@ -464,13 +522,23 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       payments,
       followups,
       followupsForPi: (piId) => followups.filter((f) => f.piId === piId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      followupsForPo: (poId) => followups.filter((f) => f.poId === poId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      dispatchDueForPo: (poId) => dispatchDueForPoPure(procIndex, snapshot, poId),
+      stepSla,
+      dueIsoForLine: (line, step) => lineDueIso(snapshot, line, step),
+      dueIsoForPo: (po, step) => poDueIso(procIndex, snapshot, po, step),
       pisForPo: (poId) => pis.filter((p) => p.poId === poId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       piItemsForPi: (piId) => piItems.filter((x) => x.piId === piId),
       grnsForPo: (poId) => grns.filter((g) => g.poId === poId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      unbookedGrnsForPo: (poId) =>
+        grns
+          .filter((g) => g.poId === poId && !tallyBookings.some((t) => t.grnId === g.id))
+          .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       grnItemsForGrn: (grnId) => grnItems.filter((x) => x.grnId === grnId),
       tallyForPo: (poId) => tallyBookings.filter((t) => t.poId === poId),
       paymentsForPo: (poId) => payments.filter((p) => p.poId === poId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       paymentsForPi: (piId) => payments.filter((p) => p.piId === piId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
+      needsAdvance: (po) => po.paymentTerms === "full_advance" || po.paymentTerms === "partial_advance",
       pendingAmount: (po) => Math.max(0, po.totalValue - payments.filter((p) => p.poId === po.id).reduce((a, p) => a + p.amount, 0)),
       paidForPi: (pi) => payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0),
       pendingForPi: (pi) => Math.max(0, pi.piValue - payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0)),
@@ -567,7 +635,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
 
       // ---- PO lifecycle mutations ----
       sharePo: async (poId, input) => {
-        await sharePoWrite(poId, input?.path ?? null, input?.name ?? null, input?.tallyPoNo ?? null, input?.remarks ?? null);
+        await sharePoWrite(poId, input?.path ?? null, input?.name ?? null, input?.tallyPoNo ?? null, input?.remarks ?? null, input?.paymentTerms ?? null, input?.dispatchDate ?? null);
         await safeAnnounce({
           entityType: "po",
           entityId: poId,
@@ -614,8 +682,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         await recordFollowupWrite(input);
         if (input.dispatchStatus === "dispatched") {
           await safeAnnounce({
-            entityType: "pi",
-            entityId: input.piId,
+            entityType: "po",
+            entityId: input.poId,
             type: "dispatched",
             text: "Goods dispatched — expect inward (GRN)",
             recipients: ownerIdsOf("inward"),
@@ -780,6 +848,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       },
       setProcessCoordinators: async (userIds) => {
         await setConfigWrite("process_coordinators", { user_ids: userIds });
+        await invalidate();
+      },
+      setStepSla: async (map) => {
+        await setConfigWrite("step_sla", map as unknown as Record<string, unknown>);
         await invalidate();
       },
     };

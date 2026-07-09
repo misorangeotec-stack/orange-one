@@ -119,16 +119,29 @@ export default function MultiSelect({
           style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: pos.minWidth }}
           className="z-[70] w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
         >
-          {values.length > 0 && (
+          {options.length > 0 && (
             <div className="px-2 py-1.5 border-b border-line flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">{values.length} selected</span>
-              <button
-                type="button"
-                onClick={() => onChange([])}
-                className="text-[12px] font-semibold text-orange hover:underline"
-              >
-                Clear
-              </button>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">
+                {values.length > 0 ? `${values.length} selected` : `${options.length} option${options.length === 1 ? "" : "s"}`}
+              </span>
+              <span className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => onChange(options.map((o) => o.value))}
+                  disabled={values.length === options.length}
+                  className="text-[12px] font-semibold text-orange hover:underline disabled:text-grey-2 disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  disabled={values.length === 0}
+                  className="text-[12px] font-semibold text-orange hover:underline disabled:text-grey-2 disabled:no-underline disabled:cursor-not-allowed"
+                >
+                  Clear all
+                </button>
+              </span>
             </div>
           )}
           <ul className="max-h-60 overflow-y-auto py-1">

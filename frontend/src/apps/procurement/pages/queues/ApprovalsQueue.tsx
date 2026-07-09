@@ -18,6 +18,8 @@ export default function ApprovalsQueue() {
   const vendorName = (l: RequestItem) => s.vendorById(l.finalVendorId)?.name ?? "—";
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
   const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
+  /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
+  const dueIso = (l: RequestItem) => s.dueIsoForLine(l, "approval");
 
   const columns: QueueColumn<RequestItem>[] = [
     {
@@ -32,7 +34,7 @@ export default function ApprovalsQueue() {
     { key: "value", header: "Line Value", cell: (l) => <span className="font-semibold text-navy">{inr(l.lineValue)}</span>, sortValue: (l) => l.lineValue ?? 0, filter: { kind: "number", get: (l) => l.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
     { key: "status", header: "Status", cell: (l) => <span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span>, sortValue: (l) => LINE_STATUS_LABEL[l.status], filter: { kind: "select", get: (l) => LINE_STATUS_LABEL[l.status] } },
     { key: "created", header: "Created", cell: (l) => formatDate(l.createdAt), sortValue: (l) => l.createdAt, filter: { kind: "date", get: (l) => l.createdAt }, tdClassName: "whitespace-nowrap" },
-    { key: "due", header: "Due", cell: (l) => <DueCell createdAt={l.createdAt} step="approval" />, tdClassName: "whitespace-nowrap" },
+    { key: "due", header: "Due", cell: (l) => <DueCell dueIso={dueIso(l)} />, sortValue: (l) => dueIso(l), filter: { kind: "date", get: (l) => dueIso(l) }, tdClassName: "whitespace-nowrap" },
   ];
 
   return (
@@ -49,7 +51,7 @@ export default function ApprovalsQueue() {
           columns={columns}
           companyIdOf={companyOf}
           companyNameOf={companyName}
-          rowClassName={(l) => overdueRowClass(l.createdAt, "approval")}
+          rowClassName={(l) => overdueRowClass(dueIso(l))}
           rowsLabel="lines"
           emptyTitle="Nothing to approve"
           emptyMessage="Lines routed to you will appear here."

@@ -3,6 +3,7 @@ import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
+import { fmsControlCenterApp } from "./fms-control-center/meta";
 // Legacy `purchase-fms` (the older linear prototype) is retired from the portal —
 // the newer `procurement` app (also named "Purchase FMS") replaces it. Its folder
 // is kept as dead code; re-add `purchaseFmsApp` here to bring it back.
@@ -25,6 +26,7 @@ export const apps: AppManifest[] = [
   receivablesHubApp,
   procurementApp,
   leadsDashboardApp,
+  fmsControlCenterApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);

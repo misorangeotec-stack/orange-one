@@ -16,6 +16,8 @@ export default function SourcingQueue() {
   const requestNo = (l: RequestItem) => s.requestById(l.requestId)?.requestNo ?? "—";
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
   const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
+  /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
+  const dueIso = (l: RequestItem) => s.dueIsoForLine(l, "sourcing");
 
   const columns: QueueColumn<RequestItem>[] = [
     {
@@ -28,7 +30,7 @@ export default function SourcingQueue() {
     { key: "item", header: "Item", cell: (l) => <span className="font-medium text-navy">{s.itemLabel(l.itemId)}</span>, sortValue: (l) => s.itemLabel(l.itemId), filter: { kind: "text", get: (l) => s.itemLabel(l.itemId) } },
     { key: "qty", header: "Qty", cell: (l) => <>{l.quantity} {l.unit}</>, sortValue: (l) => l.quantity, filter: { kind: "number", get: (l) => l.quantity }, tdClassName: "whitespace-nowrap" },
     { key: "created", header: "Created", cell: (l) => formatDate(l.createdAt), sortValue: (l) => l.createdAt, filter: { kind: "date", get: (l) => l.createdAt }, tdClassName: "whitespace-nowrap" },
-    { key: "due", header: "Due", cell: (l) => <DueCell createdAt={l.createdAt} step="sourcing" />, tdClassName: "whitespace-nowrap" },
+    { key: "due", header: "Due", cell: (l) => <DueCell dueIso={dueIso(l)} />, sortValue: (l) => dueIso(l), filter: { kind: "date", get: (l) => dueIso(l) }, tdClassName: "whitespace-nowrap" },
   ];
 
   return (
@@ -45,7 +47,7 @@ export default function SourcingQueue() {
           columns={columns}
           companyIdOf={companyOf}
           companyNameOf={companyName}
-          rowClassName={(l) => overdueRowClass(l.createdAt, "sourcing")}
+          rowClassName={(l) => overdueRowClass(dueIso(l))}
           rowsLabel="lines"
           emptyTitle="Nothing to source"
           emptyMessage="New request lines will appear here."

@@ -1,4 +1,5 @@
 import { supabase } from "@/core/platform/supabase";
+import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company,
   Category,
@@ -92,7 +93,19 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 export interface ProcConfig {
   processCoordinatorIds: string[];
   amountBasis: string;
+  /** Per-step due-date rules (anchor + working days), merged over the code defaults. */
+  stepSla: StepSlaMap;
 }
+
+/**
+ * The react-query key for `fetchProcurementData`. Exported so that consumers
+ * outside this app (the FMS Control Center's purchase adapter) share the same
+ * cache entry instead of issuing a second copy of the ~25 table reads. Key on
+ * the REAL session user id — never the impersonated persona — to match the
+ * store; admin RLS returns all rows, so switching persona must not refetch.
+ */
+export const PROCUREMENT_QK = ["procurementData"] as const;
+export const procurementQueryKey = (userId: string | null) => [...PROCUREMENT_QK, userId] as const;
 
 export interface ProcurementData {
   companies: Company[];
@@ -194,13 +207,18 @@ const mapDesignation = (r: any): Designation => ({
   active: r.active,
 });
 
-const mapStepOwner = (r: any): StepOwner => ({
-  id: r.id,
-  stepKey: r.step_key,
-  departmentId: r.department_id ?? null,
-  designationId: r.designation_id ?? null,
-  employeeIds: (r.employee_ids ?? []) as string[],
-});
+const mapStepOwner = (r: any): StepOwner => {
+  const ids = (r.department_ids ?? []) as string[];
+  return {
+    id: r.id,
+    stepKey: r.step_key,
+    departmentId: r.department_id ?? null,
+    // Fall back to the legacy single column for rows written before the array existed.
+    departmentIds: ids.length ? ids : r.department_id ? [r.department_id] : [],
+    designationId: r.designation_id ?? null,
+    employeeIds: (r.employee_ids ?? []) as string[],
+  };
+};
 
 const mapApprovalBand = (r: any): ApprovalBand => ({
   id: r.id,
@@ -244,6 +262,8 @@ const mapRequestItem = (r: any): RequestItem => ({
   assignedApproverId: r.assigned_approver_id ?? null,
   rejectReason: r.reject_reason ?? null,
   cancelReason: r.cancel_reason ?? null,
+  sourcedAt: r.sourced_at ?? null,
+  approvedAt: r.approved_at ?? null,
   createdAt: r.created_at,
 });
 
@@ -266,6 +286,9 @@ const mapPo = (r: any): PurchaseOrder => ({
   currentStage: r.current_stage,
   totalValue: Number(r.total_value ?? 0),
   advancePaid: Number(r.advance_paid ?? 0),
+  paymentTerms: (r.payment_terms ?? null) as PurchaseOrder["paymentTerms"],
+  dispatchDate: r.dispatch_date ?? null,
+  sharedAt: r.shared_at ?? null,
   documentPath: r.document_path ?? null,
   documentName: r.document_name ?? null,
   tallyPoNo: r.tally_po_no ?? null,
@@ -314,6 +337,8 @@ const mapGrn = (r: any): Grn => ({
   id: r.id,
   poId: r.po_id,
   piId: r.pi_id ?? null,
+  poRef: r.po_ref ?? null,
+  piRef: r.pi_ref ?? null,
   gateRegisterNo: r.gate_register_no ?? null,
   condition: r.condition as GrnCondition,
   note: r.note ?? null,
@@ -351,12 +376,13 @@ const mapPayment = (r: any): Payment => ({
   amount: Number(r.amount),
   paidOn: r.paid_on,
   utrRef: r.utr_ref ?? null,
+  piRemarks: r.pi_remarks ?? null,
   createdAt: r.created_at,
 });
 
 const mapFollowup = (r: any): Followup => ({
   id: r.id,
-  piId: r.pi_id,
+  piId: r.pi_id ?? null,
   poId: r.po_id,
   dispatchStatus: r.dispatch_status as DispatchStatus,
   actualDispatchDate: r.actual_dispatch_date ?? null,
@@ -364,6 +390,7 @@ const mapFollowup = (r: any): Followup => ({
   lrNo: r.lr_no ?? null,
   transportDetails: r.transport_details ?? null,
   remarks: r.remarks ?? null,
+  piRemarks: r.pi_remarks ?? null,
   createdBy: r.created_by ?? null,
   createdAt: r.created_at,
 });
@@ -451,6 +478,8 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
   const config: ProcConfig = {
     processCoordinatorIds: (configByKey.get("process_coordinators")?.user_ids ?? []) as string[],
     amountBasis: (configByKey.get("amount_basis")?.value ?? "line_incl_gst") as string,
+    // Unset or partially-stored rules fall back to the code defaults.
+    stepSla: resolveStepSla(configByKey.get("step_sla")),
   };
 
   return {
