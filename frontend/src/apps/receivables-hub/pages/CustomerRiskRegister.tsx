@@ -35,7 +35,7 @@ import {
   TooltipProvider as UITooltipProvider,
 } from "@hub/components/ui/tooltip";
 import * as XLSX from "xlsx-js-style";
-import { HEADER_STYLE, styleRow } from "@hub/lib/xlsxStyle";
+import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import { saveAs } from "file-saver";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
@@ -578,6 +578,11 @@ const R_DIMENSIONS: { key: RDim; label: string }[] = [
   { key: "company",     label: "Company" },
   { key: "location",    label: "Location" },
 ];
+// A dimension that is also a table column: when it is an active group-by level the
+// export emits it as a dimension column, so the data column would just repeat it.
+const DIM_COL: Partial<Record<RDim, SortKey>> = {
+  customer: "name", salesperson: "salesPerson", company: "companies", location: "locations",
+};
 const R_PRESETS: GroupByPreset<RDim>[] = [
   { label: "Customer",                     dims: ["customer"] },
   { label: "Customer Group",               dims: ["group"] },
@@ -1369,13 +1374,31 @@ export default function CustomerRiskRegister() {
     return out;
   };
 
+  /** One exported cell. `isHeader` marks a group subtotal row, where the
+   *  non-additive columns are blank (matching `aggregate()` and `renderRow`). */
+  const exportCell = (row: CustomerRow, key: SortKey, isHeader: boolean): string | number => {
+    if (isHeader && (key === "creditPeriod" || key === "utilization" || key === "blocked")) return "";
+    if (key === "salesPerson") return row.salesPersons?.join("; ") ?? row.salesPerson ?? "";
+    if (key === "companies" || key === "locations") return (row[key] as string[] | undefined)?.join("; ") ?? "";
+    if (key === "risk") return row.risk.charAt(0).toUpperCase() + row.risk.slice(1);
+    if (key === "blocked") return row.blocked ? "Blocked" : "";
+    if (key === "overdue") return overdueForRow(row);
+    // Blocked customers carry a ₹1 sentinel credit limit, not a real limit,
+    // so their utilization % is meaningless — export a dash instead.
+    if (key === "utilization") return row.blocked ? "—" : row.utilization;
+    const v = row[key];
+    return typeof v === "number" ? v : (v ?? "") as string;
+  };
+
+  /** Exports the roll-up the user is actually looking at: one column per group-by
+   *  level, a subtotal row per group header, its members beneath it, and a Grand
+   *  Total. Covers every page, not just the visible one. */
   const handleExport = () => {
-    if (rows.length === 0) {
+    if (groupTree.length === 0) {
       toast({ title: "Nothing to export", description: "No customers match the current filters." });
       return;
     }
 
-    const visibleCols_ = columns.filter((c) => visibleCols.has(c.key));
     const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
     const PCT_FMT = '0.0"%"';
     const INT_FMT = "0";
@@ -1388,40 +1411,70 @@ export default function CustomerRiskRegister() {
       utilization: PCT_FMT,
     };
 
-    const header = visibleCols_.map((c) =>
-      c.key === "overdue" && agingBucketKeys.length > 0 ? `Overdue (${agingFilters.join(", ")})` : c.label);
+    // Dimension columns (one per group-by level) lead; then the visible data
+    // columns, minus `name` (always carried by a dimension column) and minus any
+    // column an active dimension already spells out.
+    const dimCols = groupBy.map((d) => ({ dim: d, label: R_DIMENSIONS.find((x) => x.key === d)!.label }));
+    const suppressed = new Set<SortKey>(["name", ...groupBy.map((d) => DIM_COL[d]).filter(Boolean) as SortKey[]]);
+    const dataCols = columns.filter((c) => visibleCols.has(c.key) && !suppressed.has(c.key));
+
+    const header = [
+      ...dimCols.map((d) => d.label),
+      ...dataCols.map((c) =>
+        c.key === "overdue" && agingBucketKeys.length > 0 ? `Overdue (${agingFilters.join(", ")})` : c.label),
+    ];
+    const width = header.length;
     const aoa: (string | number)[][] = [header];
-    for (const row of rows) {
-      const r: (string | number)[] = [];
-      for (const c of visibleCols_) {
-        if (c.key === "salesPerson") {
-          r.push(row.salesPersons?.join("; ") ?? row.salesPerson ?? "");
-        } else if (c.key === "companies" || c.key === "locations") {
-          r.push((row[c.key] as string[] | undefined)?.join("; ") ?? "");
-        } else if (c.key === "risk") {
-          r.push(row.risk.charAt(0).toUpperCase() + row.risk.slice(1));
-        } else if (c.key === "blocked") {
-          r.push(row.blocked ? "Blocked" : "");
-        } else if (c.key === "overdue") {
-          r.push(overdueForRow(row));
-        } else if (c.key === "utilization") {
-          // Blocked customers carry a ₹1 sentinel credit limit, not a real limit,
-          // so their utilization % is meaningless — export a dash instead.
-          r.push(row.blocked ? "—" : row.utilization);
-        } else {
-          const v = row[c.key];
-          r.push(typeof v === "number" ? v : (v ?? "") as string);
-        }
+
+    // Pre-order walk (parents before children). Ancestor labels fill the leading
+    // dimension columns; deeper levels stay blank on a subtotal row.
+    const subtotalRows: number[] = [];
+    const walk = (nodes: RNode[], ancestors: string[]) => {
+      for (const n of nodes) {
+        const path = [...ancestors, n.label];
+        const isHeader = !n.isLeaf;
+        // A terminal non-customer node (e.g. group by Salesperson alone) is the row
+        // itself, not a subtotal over anything — leave it unstyled.
+        if (n.children.length > 0) subtotalRows.push(aoa.length);
+        aoa.push([
+          ...dimCols.map((_, i) => path[i] ?? ""),
+          ...dataCols.map((c) => exportCell(n.header, c.key, isHeader)),
+        ]);
+        if (n.children.length) walk(n.children, path);
       }
-      aoa.push(r);
-    }
+    };
+    walk(groupTree, []);
+
+    // Grand Total — mirrors the on-screen row: money sums, ratio/count columns blank.
+    const grandTotal: (string | number)[] = [
+      "GRAND TOTAL",
+      ...dimCols.slice(1).map(() => ""),
+      ...dataCols.map((c) => {
+        switch (c.key) {
+          case "openingBalance":        return totals.openingBalance;
+          case "sales":                 return totals.sales;
+          case "receipts":              return totals.receipts;
+          case "creditNotes":           return totals.creditNotes;
+          case "debitNotes":            return totals.debitNotes;
+          case "journalAdjustments":    return totals.journalAdjustments;
+          case "outstanding":           return totals.outstanding;
+          case "overdue":               return totals.overdue;
+          case "creditLimit":           return totals.creditLimit;
+          case "proposedCreditLimit3M": return totals.proposedCreditLimit3M;
+          case "proposedCreditLimitAI": return totals.proposedCreditLimitAI;
+          default:                      return "";
+        }
+      }),
+    ];
+    aoa.push(grandTotal);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    // Apply number formats to numeric columns.
-    for (let ci = 0; ci < visibleCols_.length; ci++) {
-      const fmt = numericFmt[visibleCols_[ci].key];
+    // Apply number formats to the numeric data columns (offset past the dimensions).
+    for (let di = 0; di < dataCols.length; di++) {
+      const fmt = numericFmt[dataCols[di].key];
       if (!fmt) continue;
+      const ci = dimCols.length + di;
       for (let ri = 1; ri < aoa.length; ri++) {
         const ref = XLSX.utils.encode_cell({ r: ri, c: ci });
         const cell = ws[ref];
@@ -1430,8 +1483,8 @@ export default function CustomerRiskRegister() {
     }
 
     // Auto column widths.
-    ws["!cols"] = visibleCols_.map((c, ci) => {
-      let max = c.label.length;
+    ws["!cols"] = header.map((label, ci) => {
+      let max = label.length;
       for (let ri = 1; ri < aoa.length; ri++) {
         const v = aoa[ri][ci];
         const len = typeof v === "number" ? Math.round(v).toString().length + 4 : String(v ?? "").length;
@@ -1440,11 +1493,13 @@ export default function CustomerRiskRegister() {
       return { wch: Math.min(Math.max(max + 2, 10), 40) };
     });
 
-    // Freeze header row.
-    ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+    // Freeze the header row and the dimension columns.
+    ws["!freeze"] = { xSplit: dimCols.length, ySplit: 1 };
 
-    // Column header row: bold, black fill, white text.
-    styleRow(ws, 0, visibleCols_.length, HEADER_STYLE);
+    // Styles go last — `styleRow` preserves the number formats set above.
+    styleRow(ws, 0, width, HEADER_STYLE);
+    for (const ri of subtotalRows) styleRow(ws, ri, width, TOTAL_STYLE);
+    styleRow(ws, aoa.length - 1, width, GRAND_TOTAL_STYLE);
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Risk Register");
@@ -1455,7 +1510,8 @@ export default function CustomerRiskRegister() {
       `risk-register-${ts}.xlsx`,
     );
 
-    toast({ title: "Export complete", description: `${rows.length} customer${rows.length !== 1 ? "s" : ""} exported to Excel.` });
+    const n = groupTree.length;
+    toast({ title: "Export complete", description: `${n} ${groupByNoun}${n !== 1 ? "s" : ""} exported to Excel.` });
   };
   const handleSaveView = () => toast({ title: "View saved", description: "Current filters have been saved." });
 
