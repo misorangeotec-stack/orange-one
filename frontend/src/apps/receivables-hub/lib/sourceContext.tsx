@@ -3,18 +3,16 @@ import { createContext, useContext, type ReactNode } from "react";
 /**
  * Which backend useAppData reads from.
  *   "default"     — the normal receivables source (VITE_DATA_SOURCE: supabase/local).
- *   "connectwave" — the live Tally mirror (ConnectWave snapshot), used by the admin
- *                   "Collection Report (Tally Live)" screen and the parallel "Live (Tally)"
- *                   dashboard set (Dashboard / Risk Register / Customer Detail / Aging).
+ *   "connectwave" — the live Tally mirror (ConnectWave snapshot).
  *
- * A page opts into ConnectWave by wrapping itself in <ReceivablesSourceProvider
- * value="connectwave">; every other screen inherits the default, so the rest of the
- * Receivables Hub is untouched.
+ * The value is set in ONE place: ReceivablesHubApp wraps the whole router in a provider that
+ * follows the admin-only "Live (Tally)" topbar toggle (see lib/liveMode). So every screen is the
+ * SAME component on both sources — there is no separate set of "Live" pages, and no page opts in
+ * on its own. (An earlier design did both: a "/outstanding-dashboard/live" route set and a
+ * self-wrapping "Collection Report (Tally Live)" page. Both are gone; don't reintroduce them.)
  *
- * `basePath` lets a wrapped subtree relocate the app's routes (the Live set lives under
- * "/outstanding-dashboard/live"). The four Live screens are the SAME components as the
- * default ones, so their internal navigation must be source-aware — they read useHubBase()
- * instead of hard-coding "/outstanding-dashboard", so drill-through stays inside the Live set.
+ * `basePath` therefore has no override today, but useHubBase() is still the right way for a screen
+ * to build internal links: it keeps drill-through source-aware if the routes are ever relocated.
  */
 export type ReceivablesSource = "default" | "connectwave";
 

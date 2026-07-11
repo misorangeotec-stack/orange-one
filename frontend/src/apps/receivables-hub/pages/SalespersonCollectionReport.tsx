@@ -28,6 +28,7 @@ import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/In
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
+import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
@@ -239,6 +240,7 @@ function sortRows<T extends { m: Metrics; mPrev: Metrics }>(
 export default function SalespersonCollectionReport() {
   const { label: fyLabel } = useFY();
   const { loading, error, allCustomers, customerDetail, dashboard, customerGroupMap } = useAppData();
+  const isLive = useReceivablesSource() === "connectwave";
 
   const asOfDate = dashboard?.asOfDate ?? new Date().toISOString().slice(0, 10);
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
@@ -1098,7 +1100,17 @@ export default function SalespersonCollectionReport() {
             <HandCoins className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Salesperson Collection Report</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-foreground">Salesperson Collection Report</h1>
+              {/* Same badge the topbar shows in Live mode. Repeated here because this report used to
+                  ALSO exist as a separate "Collection Report (Tally Live)" menu item, and the two were
+                  indistinguishable on screen — so the source is now called out on the report itself. */}
+              {isLive && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1.5 py-0.5">
+                  Live · Tally
+                </span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               {fyLabel} · {selectedMonth || "—"} · as on {formatDateLong(asOfDate)}
             </p>

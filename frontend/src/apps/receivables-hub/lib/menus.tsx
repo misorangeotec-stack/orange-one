@@ -40,10 +40,11 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
   { key: "salesperson-analysis", title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck },
   { key: "salesperson-collection", title: "Salesperson Collection Report", url: `${BASE}/salesperson-collection`, icon: HandCoins },
-  { key: "collection-report-live", title: "Collection Report (Tally Live)", url: `${BASE}/collection-live`, icon: HandCoins, adminOnly: true },
   // NOTE: the parallel "Live (Tally)" view is NOT a set of separate menu items — an admin toggles
   // the whole hub to the ConnectWave live source via the topbar switch (see lib/liveMode), so the
-  // nav stays a single clean set instead of showing every screen twice.
+  // nav stays a single clean set instead of showing every screen twice. The Collection Report used to
+  // break this rule with a duplicate "Collection Report (Tally Live)" entry that rendered the very same
+  // Salesperson Collection Report against ConnectWave; it's gone — toggle Live on the report instead.
   { key: "import", title: "Import Data", url: `${BASE}/import`, icon: PackageOpen },
   { key: "reports", title: "Reports", url: `${BASE}/reports`, icon: FileText },
   { key: "settings", title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },

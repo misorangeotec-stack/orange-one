@@ -11,7 +11,6 @@ import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import SalespersonAnalysis from "@hub/pages/SalespersonAnalysis";
 import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport";
-import CollectionReportLive from "@hub/pages/CollectionReportLive";
 import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
@@ -47,7 +46,10 @@ function HubRoutes() {
           <Route path="risk-register" element={<CustomerRiskRegister />} />
           <Route path="salesperson-analysis" element={<SalespersonAnalysis />} />
           <Route path="salesperson-collection" element={<SalespersonCollectionReport />} />
-          <Route path="collection-live" element={<CollectionReportLive />} />
+          {/* Retired: "Collection Report (Tally Live)" was a duplicate menu item rendering this very
+              report against ConnectWave. Live is now reached the same way as every other screen — the
+              topbar toggle. Kept as a redirect so old bookmarks land on the report, not the dashboard. */}
+          <Route path="collection-live" element={<Navigate to="../salesperson-collection" replace />} />
           <Route path="customer/:id" element={<CustomerDetail />} />
           <Route path="group/:id" element={<CustomerDetail />} />
           <Route path="import" element={<ImportDashboard />} />
