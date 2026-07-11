@@ -21,7 +21,7 @@
  */
 import type { ProcurementData } from "../data/procFetch";
 import type { StepKey } from "./steps";
-import { DEFAULT_STEP_SLA, addWorkingDays, localDateIso } from "./sla";
+import { DEFAULT_STEP_SLA, addWorkingDays, localDateIso, type StepSla } from "./sla";
 import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, RequestItem, TallyBooking } from "../types";
 
 /**
@@ -244,6 +244,10 @@ export function dispatchDueForPo(idx: ProcIndex, data: ProcSnapshot, poId: strin
 const maxIso = (xs: (string | null | undefined)[]): string | null =>
   xs.filter((x): x is string => !!x).sort().pop() ?? null;
 
+/** Earliest of a list of ISO timestamps, ignoring nulls. (ISO sorts lexicographically.) */
+const minIso = (xs: (string | null | undefined)[]): string | null =>
+  xs.filter((x): x is string => !!x).sort()[0] ?? null;
+
 /**
  * When `step` completed for one request LINE, or `null` if it hasn't.
  * `sourced_at` / `approved_at` are stamped inside the RPCs (not the best-effort
@@ -298,14 +302,19 @@ export function poStepCompletedIso(idx: ProcIndex, po: PurchaseOrder, step: Step
       return unbookedGrnsForPo(idx, po.id).length > 0
         ? null
         : maxIso((idx.tallyByPo.get(po.id) ?? []).map((t) => t.createdAt));
-    case "final_payment":
-      return pendingAmount(idx, po) > 0 ? null : maxIso((idx.paymentsByPo.get(po.id) ?? []).map((p) => p.createdAt));
     default:
       return null;
   }
 }
 
-const slaFor = (data: ProcSnapshot, step: StepKey) => data.config?.stepSla?.[step] ?? DEFAULT_STEP_SLA[step];
+/**
+ * The final `?? {…}` is load-bearing: `step` reaches here from a raw DB
+ * `current_stage` string (cast in PoQueues), so a PO parked on a retired stage —
+ * e.g. `final_payment` before its migration runs — would otherwise destructure
+ * `undefined` and white-screen the queue page.
+ */
+const slaFor = (data: ProcSnapshot, step: StepKey): StepSla =>
+  data.config?.stepSla?.[step] ?? DEFAULT_STEP_SLA[step] ?? { anchor: step, days: 1 };
 
 /**
  * A line's due date for `step` = its anchor step's completion + N working days.
@@ -319,14 +328,26 @@ export function lineDueIso(data: ProcSnapshot, line: RequestItem, step: StepKey)
 }
 
 /**
- * A PO's due date for `step`. `follow_up` is the exception — its due date is the
- * vendor's promised dispatch date, never an SLA — and it may be null.
+ * A PO's due date for `step`, or null when the step has no clock yet.
+ *
+ * Three steps do not use the anchor rule:
+ *   • `follow_up` — the vendor's promised dispatch date, never an SLA.
+ *   • `inward` — untimed. The transporter controls when the goods turn up, so
+ *     receiving can never be "late": the step has no due date at any point.
+ *   • `tally` — trigger-anchored on the oldest unbooked GRN (see TRIGGER_STEPS).
+ *     It gets NO `po.createdAt` fallback: a PO raised two months ago must not show
+ *     its Tally invoice 60 days overdue the instant the first box arrives.
  */
 export function poDueIso(idx: ProcIndex, data: ProcSnapshot, po: PurchaseOrder, step: StepKey): string | null {
   if (step === "follow_up") return dispatchDueForPo(idx, data, po.id);
-  const { anchor, days } = slaFor(data, step);
-  const from = poStepCompletedIso(idx, po, anchor) ?? po.createdAt;
-  return localDateIso(addWorkingDays(new Date(from), days));
+  if (step === "inward") return null;
+  const { days } = slaFor(data, step);
+  const after = (iso: string | null) => (iso ? localDateIso(addWorkingDays(new Date(iso), days)) : null);
+
+  if (step === "tally") return after(minIso(unbookedGrnsForPo(idx, po.id).map((g) => g.createdAt)));
+
+  const { anchor } = slaFor(data, step);
+  return after(poStepCompletedIso(idx, po, anchor) ?? po.createdAt);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -338,7 +359,7 @@ export const lineInSourcing = (l: RequestItem) => l.status === "sourcing";
 export const lineInApproval = (l: RequestItem) => l.status === "approval" || l.status === "on_hold";
 export const lineInPoDesk = (l: RequestItem) => l.status === "approved_pending_po";
 
-/** The seven PO queues. Each takes the index so it stays O(1). */
+/** The six PO queues. Each takes the index so it stays O(1). */
 export const poInSharePo = (_idx: ProcIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage === "share_po";
 export const poInCollectPi = (idx: ProcIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage !== "share_po" && needsPi(idx, p);
 export const poInAdvance = (_idx: ProcIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage === "advance_payment";
@@ -356,9 +377,6 @@ export const poInInward = (idx: ProcIndex, p: PurchaseOrder) =>
   (anyReceived(idx, p) || isDispatched(idx, p) || p.currentStage === "inward");
 /** Each GRN becomes its own Tally invoice, so a partial receipt qualifies. */
 export const poInTally = (idx: ProcIndex, p: PurchaseOrder) => isOpenPo(p) && unbookedGrnsForPo(idx, p.id).length > 0;
-/** A booked invoice is payable even if more consignments are still to arrive. */
-export const poInFinalPayment = (idx: ProcIndex, p: PurchaseOrder) =>
-  isOpenPo(p) && (idx.tallyByPo.get(p.id)?.length ?? 0) > 0 && pendingAmount(idx, p) > 0;
 
 const PO_STEPS: { stepKey: StepKey; match: (idx: ProcIndex, p: PurchaseOrder) => boolean }[] = [
   { stepKey: "share_po", match: poInSharePo },
@@ -367,7 +385,6 @@ const PO_STEPS: { stepKey: StepKey; match: (idx: ProcIndex, p: PurchaseOrder) =>
   { stepKey: "follow_up", match: poInFollowUp },
   { stepKey: "inward", match: poInInward },
   { stepKey: "tally", match: poInTally },
-  { stepKey: "final_payment", match: poInFinalPayment },
 ];
 
 const LINE_STEPS: { stepKey: StepKey; match: (l: RequestItem) => boolean }[] = [

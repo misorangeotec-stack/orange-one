@@ -23,7 +23,6 @@ declare
   p_follow   uuid := 'fde9faec-c6f5-4670-91b6-5e4ee4c085ff'; -- Ravina         (Follow-up)
   p_inward   uuid := '1e40c1b8-3bd1-46c6-b4e7-393b0ae6168c'; -- Vishal Dabekar (Inward/GRN)
   p_tally    uuid := 'bb096b8e-bbae-4476-ae6b-89111fbad4bd'; -- Jayshree Patil (Tally)
-  p_final    uuid := 'bf164ac0-e945-427b-9a99-89a3f5018956'; -- Yash Joshi     (Final Pay)
   p_coord    uuid := '7c82f7b4-cb51-4304-89bc-5754c8f17cdc'; -- Master Admin   (Coordinator/Admin)
   v_l1       uuid := '7cd18ada-d6a7-4636-9edd-2f6aeeedd373'; -- Yash Agarwal   (Approver = matrix L1)
 
@@ -87,8 +86,7 @@ begin
     ('advance_payment',  array[p_adv]),
     ('follow_up',        array[p_follow]),
     ('inward',           array[p_inward]),
-    ('tally',            array[p_tally]),
-    ('final_payment',    array[p_final])
+    ('tally',            array[p_tally])
   on conflict (step_key) do update set employee_ids = excluded.employee_ids, updated_at = now();
 
   -- ---- process coordinator (Control Center) -----------------------------------
@@ -231,7 +229,7 @@ begin
     (request_id, item_id, quantity, unit, final_vendor_id, final_qty, final_rate, gst_pct, line_value, status, approver_id, approval_tier)
   values (r, it_filter, 120, 'PCS', v_filterpro, 120, 210, 18, round(120*210*1.18,2), 'po', v_l1, 'L1 — Purchase Head') returning id into l;
   insert into public.fms_purchase_pos (po_no, vendor_id, company_id, status, current_stage, total_value, advance_paid, created_by, tally_po_no)
-  values ('PO-PDEMO-07', v_filterpro, c_colorix, 'receiving', 'final_payment', round(120*210*1.18,2), 8000, p_po, 'TPO-PDEMO-07') returning id into po;
+  values ('PO-PDEMO-07', v_filterpro, c_colorix, 'receiving', 'closed', round(120*210*1.18,2), 8000, p_po, 'TPO-PDEMO-07') returning id into po;
   insert into public.fms_purchase_po_items (po_id, request_item_id, qty, rate, gst_pct, line_value, received_qty)
   values (po, l, 120, 210, 18, round(120*210*1.18,2), 120) returning id into poi;
   insert into public.fms_purchase_pis (po_id, vendor_pi_no, payment_terms, pi_value, dispatch_date, status, dispatch_status, actual_dispatch_date, lr_no, created_by)
@@ -243,6 +241,6 @@ begin
   values (po, pi, 'GATE-6020', 'good', p_inward) returning id into grn;
   insert into public.fms_purchase_grn_items (grn_id, po_item_id, received_qty, condition) values (grn, poi, 120, 'good');
   insert into public.fms_purchase_tally_bookings (po_id, grn_id, tally_pi_no, booked_by) values (po, grn, 'TLY/PDEMO/6020', p_tally);
-  insert into public.fms_purchase_notifications (user_id, type, entity_type, entity_id, text, actor_id)
-  values (p_final, 'tally_booked', 'po', po, 'booked in Tally — settle the final payment', p_tally);
+  -- Tally is the last step: booking the invoice closes the PO, so there is no
+  -- downstream owner to notify.
 end $$;

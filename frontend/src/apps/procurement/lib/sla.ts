@@ -13,9 +13,12 @@ import { STEPS, type StepKey } from "./steps";
  * over {@link DEFAULT_STEP_SLA}, so an unset or unknown step falls back to the
  * default and behaviour never silently disappears.
  *
- * `follow_up` is the exception: its due date is the vendor's promised dispatch
- * date (captured at Share PO), not an SLA — see `dispatchDueForPo` in queues.ts.
- * Its entry here is inert.
+ * Three steps are exceptions to the anchor rule:
+ *   • `follow_up` — its due date is the vendor's promised dispatch date (captured
+ *     at Share PO), not an SLA. See `dispatchDueForPo` in queues.ts.
+ *   • `inward` — untimed: receiving can never be late, so it has no due date at all.
+ *   • `tally` — trigger-anchored, see {@link TRIGGER_STEPS}.
+ * Their `anchor` entries here are inert, as is `days` for the first two.
  */
 export interface StepSla {
   /** An earlier step whose completion starts this step's clock. */
@@ -38,6 +41,19 @@ export const DEFAULT_STEP_SLA: StepSlaMap = STEPS.reduce((acc, step, i) => {
   acc[step.key] = { anchor: STEPS[i - 1]?.key ?? step.key, days: 1 };
   return acc;
 }, {} as StepSlaMap);
+
+/**
+ * Steps whose clock starts on a domain EVENT, not on an earlier step's completion.
+ * `days` stays admin-configurable; `anchor` is inert and never read.
+ *
+ * Each GRN is its own invoice, so `tally` keys off the oldest one still unbooked.
+ */
+export const TRIGGER_STEPS: Partial<Record<StepKey, { dueAfter: string; rule: string }>> = {
+  tally: {
+    dueAfter: "Oldest unbooked goods receipt (GRN)",
+    rule: "Each GRN is its own invoice; the oldest unbooked one sets the deadline.",
+  },
+};
 
 /** Steps an admin may anchor `step` on: any strictly earlier step (`request` → itself). */
 export function anchorOptions(step: StepKey): StepKey[] {

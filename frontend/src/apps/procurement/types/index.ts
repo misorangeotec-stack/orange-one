@@ -152,7 +152,7 @@ export interface Quotation {
 }
 
 /**
- * A PO's single state axis is `currentStage` (see PO_STAGE_LABEL). The seven
+ * A PO's single state axis is `currentStage` (see PO_STAGE_LABEL). The six
  * workflow stages plus two terminal stages: `closed`, `cancelled`. There is no
  * separate PO status field.
  */

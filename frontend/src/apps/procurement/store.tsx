@@ -154,7 +154,7 @@ interface ProcurementStoreValue {
   stepSla: StepSlaMap;
   /** The due date for a request line sitting in `step` (never null). */
   dueIsoForLine: (line: RequestItem, step: StepKey) => string;
-  /** The due date for a PO sitting in `step`. Null only for `follow_up` with no promised dispatch. */
+  /** The due date for a PO sitting in `step`. Null for `follow_up` with no promised dispatch, and for `inward`/`tally` before a GRN exists. */
   dueIsoForPo: (po: PurchaseOrder, step: StepKey) => string | null;
   /** True for admins — all Setup config is admin-managed. */
   canConfigure: boolean;
@@ -231,7 +231,6 @@ interface ProcurementStoreValue {
   canCollectPi: boolean;
   canRecordPayment: boolean;
   canAdvancePayment: boolean;
-  canFinalPayment: boolean;
   canFollowup: boolean;
   canInward: boolean;
   canTally: boolean;
@@ -544,9 +543,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       pendingForPi: (pi) => Math.max(0, pi.piValue - payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0)),
       canSharePo: isStepOwner("share_po"),
       canCollectPi: isStepOwner("collect_pi"),
-      canRecordPayment: isStepOwner("advance_payment") || isStepOwner("final_payment"),
+      canRecordPayment: isStepOwner("advance_payment"),
       canAdvancePayment: isStepOwner("advance_payment"),
-      canFinalPayment: isStepOwner("final_payment"),
       canFollowup: isStepOwner("follow_up"),
       canInward: isStepOwner("inward"),
       canTally: isStepOwner("tally"),
@@ -703,15 +701,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         await invalidate();
         return id;
       },
+      // Tally is the last step — booking the invoice ends the flow, so there is
+      // no downstream owner to notify.
       bookTally: async (input) => {
         const id = await bookTallyWrite(input);
-        await safeAnnounce({
-          entityType: "po",
-          entityId: input.poId,
-          type: "tally_booked",
-          text: "Booked in Tally — final payment due",
-          recipients: ownerIdsOf("final_payment"),
-        });
         await invalidate();
         return id;
       },

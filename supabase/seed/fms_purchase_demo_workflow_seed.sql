@@ -159,7 +159,7 @@ begin
     (request_id, item_id, quantity, unit, final_vendor_id, final_qty, final_rate, gst_pct, line_value, status, approver_id, approval_tier)
   values (r, it_filter, 50, 'PCS', v_filterpro, 50, 200, 18, round(50*200*1.18,2), 'po', v_l1, 'L1 — Purchase Head') returning id into l;
   insert into public.fms_purchase_pos (po_no, vendor_id, company_id, status, current_stage, total_value, advance_paid, created_by)
-  values ('PO-DEMO-003', v_filterpro, c_colorix, 'closed', 'final_payment', round(50*200*1.18,2), round(50*200*1.18,2), v_admin) returning id into po;
+  values ('PO-DEMO-003', v_filterpro, c_colorix, 'closed', 'closed', round(50*200*1.18,2), round(50*200*1.18,2), v_admin) returning id into po;
   insert into public.fms_purchase_po_items (po_id, request_item_id, qty, rate, gst_pct, line_value, received_qty)
   values (po, l, 50, 200, 18, round(50*200*1.18,2), 50) returning id into poi;
   insert into public.fms_purchase_pis (po_id, vendor_pi_no, payment_terms, pi_value, dispatch_date, status, dispatch_status, actual_dispatch_date, lr_no, created_by)

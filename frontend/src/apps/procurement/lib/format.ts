@@ -26,7 +26,7 @@ export const LINE_STATUS_CLASS: Record<LineStatus, string> = {
 
 /**
  * The PO's single state axis is `current_stage` — one coloured badge everywhere
- * (there is no separate PO "status" anymore). Covers the seven workflow stages
+ * (there is no separate PO "status" anymore). Covers the six workflow stages
  * plus the two terminal stages (`closed`, `cancelled`) the old status carried.
  */
 export const PO_STAGE_LABEL: Record<string, string> = {
@@ -36,7 +36,6 @@ export const PO_STAGE_LABEL: Record<string, string> = {
   follow_up: "Follow-up",
   inward: "Inward",
   tally: "Tally",
-  final_payment: "Final Pay",
   closed: "Closed",
   cancelled: "Cancelled",
 };
@@ -48,7 +47,6 @@ export const PO_STAGE_CLASS: Record<string, string> = {
   follow_up: "text-orange bg-orange-soft",
   inward: "text-teal bg-[#E6F8F6]",
   tally: "text-teal bg-[#E6F8F6]",
-  final_payment: "text-teal bg-[#E6F8F6]",
   closed: "text-ryg-green bg-[#E9F8EF]",
   cancelled: "text-grey-2 bg-page",
 };

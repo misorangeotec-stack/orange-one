@@ -10,7 +10,6 @@ const STAGES = [
   { key: "follow_up", label: "Follow-up" },
   { key: "inward", label: "Inward" },
   { key: "tally", label: "Tally" },
-  { key: "final_payment", label: "Final Pay" },
   { key: "closed", label: "Closed" },
 ];
 

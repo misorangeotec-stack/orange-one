@@ -9,7 +9,6 @@ import {
   piCoverage,
   poInAdvance,
   poInCollectPi,
-  poInFinalPayment,
   poInFollowUp,
   poInInward,
   poInSharePo,
@@ -344,36 +343,6 @@ export function TallyQueue() {
         renderAction={(p) => <ActionButton label="Book in Tally" onClick={() => setTallyPo(p)} />}
       />
       {tallyPo && <TallyModal po={tallyPo} open onClose={() => setTallyPo(null)} />}
-    </>
-  );
-}
-
-/* -------------------------- Step 10: Final Pay ----------------------------- */
-export function FinalPaymentQueue() {
-  const s = useProcurementStore();
-  const [payPo, setPayPo] = useState<PurchaseOrder | null>(null);
-  return (
-    <>
-      <StepQueuePage
-        title="Final Pay Queue"
-        subtitle="POs with a booked Tally invoice and a balance to settle."
-        filter={(p) => poInFinalPayment(s.procIndex, p)}
-        extraColumns={[
-          {
-            key: "receipt",
-            header: "Receipt",
-            tdClassName: "whitespace-nowrap",
-            cell: (p) =>
-              allReceived(s.procIndex, p) ? (
-                <span className="text-grey-2">Complete</span>
-              ) : (
-                <span className={`${PILL} bg-orange/10 text-orange`}>Partial</span>
-              ),
-          },
-        ]}
-        renderAction={(p) => <ActionButton label="Record Payment" onClick={() => setPayPo(p)} />}
-      />
-      {payPo && <PaymentModal po={payPo} open onClose={() => setPayPo(null)} kind="installment" />}
     </>
   );
 }

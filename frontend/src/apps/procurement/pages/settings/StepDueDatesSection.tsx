@@ -6,7 +6,7 @@ import { TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useProcurementStore } from "../../store";
 import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
-import { anchorOptions, type StepSlaMap } from "../../lib/sla";
+import { anchorOptions, TRIGGER_STEPS, type StepSlaMap } from "../../lib/sla";
 
 /**
  * Due Dates config (admin). Each step's due date = the **anchor step's completion
@@ -16,16 +16,23 @@ import { anchorOptions, type StepSlaMap } from "../../lib/sla";
  * step — the reference is not always the one right before. Restricting the choice
  * to earlier steps also makes a cycle impossible by construction.
  *
- * Two rows carry no rule of their own:
- *  • `request` — raising the order IS the event; it never sits in a queue waiting
- *    to be done (see LINE_STEPS in lib/queues.ts), so no due date is ever computed
- *    for it. It exists here only because later steps anchor on it (it resolves to
- *    the line's creation date, and is Sourcing's default anchor).
- *  • `follow_up` — its due date is the vendor's promised dispatch date, captured at
- *    Share PO, not an SLA.
+ * Rows come in three shapes:
+ *  • Fully inert — no rule of their own, nothing to edit:
+ *     · `request` — raising the order IS the event; it never sits in a queue waiting
+ *       to be done (see LINE_STEPS in lib/queues.ts), so no due date is ever computed
+ *       for it. It exists here only because later steps anchor on it (it resolves to
+ *       the line's creation date, and is Sourcing's default anchor).
+ *     · `follow_up` — its due date is the vendor's promised dispatch date, captured
+ *       at Share PO, not an SLA.
+ *     · `inward` — the transporter decides when the goods land, so receiving can
+ *       never be late. It carries no due date at all (see `poDueIso`).
+ *  • Trigger-anchored (`tally`) — the anchor is a domain event, so the "Due after"
+ *    cell is static, but the working-days input stays editable.
+ *  • Everything else — a freely chosen earlier anchor + N working days.
  */
 const REQUEST: StepKey = "request";
 const FOLLOW_UP: StepKey = "follow_up";
+const INWARD: StepKey = "inward";
 
 const stepTitle = (k: StepKey) => stepByKey(k)?.title ?? k;
 
@@ -96,7 +103,11 @@ export default function StepDueDatesSection() {
                     ? { dueAfter: "Not applicable", rule: "Raising the order is the event — it never waits in a queue. Other steps anchor on it." }
                     : st.key === FOLLOW_UP
                       ? { dueAfter: "Vendor's promised dispatch date", rule: "Set at Share PO — not an SLA." }
-                      : null;
+                      : st.key === INWARD
+                        ? { dueAfter: "Not applicable", rule: "The transporter decides when goods arrive — receiving can never be late, so no due date." }
+                        : null;
+                // Anchored on a domain event: static "Due after", editable days.
+                const trigger = inert ? undefined : TRIGGER_STEPS[st.key];
                 const options: ComboOption[] = anchorOptions(st.key).map((k) => ({ value: k, label: stepTitle(k) }));
                 return (
                   <tr key={st.key} className={`border-b border-line/70 last:border-0 ${inert ? "bg-page/40" : "hover:bg-page/60"}`}>
@@ -105,6 +116,8 @@ export default function StepDueDatesSection() {
                     <td className="px-4 py-3">
                       {inert ? (
                         <span className="text-grey-2">{inert.dueAfter}</span>
+                      ) : trigger ? (
+                        <span className="text-grey-2">{trigger.dueAfter}</span>
                       ) : (
                         <Combobox value={rule.anchor} onChange={(v) => setAnchor(st.key, v)} options={options} autoAdvance />
                       )}
@@ -126,6 +139,8 @@ export default function StepDueDatesSection() {
                     <td className="px-4 py-3 text-[12.5px] text-grey-2">
                       {inert ? (
                         inert.rule
+                      ) : trigger ? (
+                        trigger.rule
                       ) : (
                         <>
                           {stepTitle(rule.anchor)}

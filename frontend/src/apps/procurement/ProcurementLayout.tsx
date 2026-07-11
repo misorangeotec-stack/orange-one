@@ -38,7 +38,6 @@ export default function ProcurementLayout() {
     canFollowup,
     canInward,
     canTally,
-    canFinalPayment,
     isProcessCoordinator,
     myNotifications,
     profileById,
@@ -59,12 +58,11 @@ export default function ProcurementLayout() {
         canFollowup,
         canInward,
         canTally,
-        canFinalPayment,
         canMonitor: isAdmin || isProcessCoordinator,
         canDemo: realAdmin && !demoActive,
         pendingRequests: pendingRequests.length,
       }),
-    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, canFinalPayment, isProcessCoordinator, realAdmin, demoActive, pendingRequests.length]
+    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, isProcessCoordinator, realAdmin, demoActive, pendingRequests.length]
   );
 
   // Resolve the deep-link for a notification's entity.

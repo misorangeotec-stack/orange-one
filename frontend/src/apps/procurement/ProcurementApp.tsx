@@ -16,7 +16,7 @@ import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
 import SourcingQueue from "./pages/queues/SourcingQueue";
 import ApprovalsQueue from "./pages/queues/ApprovalsQueue";
-import { SharePoQueue, CollectPiQueue, AdvanceQueue, FollowUpQueue, InwardQueue, TallyQueue, FinalPaymentQueue } from "./pages/queues/PoQueues";
+import { SharePoQueue, CollectPiQueue, AdvanceQueue, FollowUpQueue, InwardQueue, TallyQueue } from "./pages/queues/PoQueues";
 import PoWorkbench from "./pages/po/PoWorkbench";
 import PoList from "./pages/po/PoList";
 import PoDetail from "./pages/po/PoDetail";
@@ -74,7 +74,6 @@ export default function ProcurementApp() {
             <Route path="queues/follow-up" element={<FollowUpQueue />} />
             <Route path="queues/inward" element={<InwardQueue />} />
             <Route path="queues/tally" element={<TallyQueue />} />
-            <Route path="queues/final-pay" element={<FinalPaymentQueue />} />
             <Route path="po/workbench" element={<PoWorkbench />} />
             <Route path="pos" element={<PoList />} />
             <Route path="pos/:id" element={<PoDetail />} />

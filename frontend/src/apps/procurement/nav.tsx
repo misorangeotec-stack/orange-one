@@ -62,7 +62,6 @@ export function buildProcurementNav(opts: {
   canFollowup: boolean;
   canInward: boolean;
   canTally: boolean;
-  canFinalPayment: boolean;
   canMonitor: boolean;
   /** Real signed-in admin, not in demo mode → show the "Demo mode" entry point. */
   canDemo: boolean;
@@ -87,7 +86,6 @@ export function buildProcurementNav(opts: {
     { show: opts.canFollowup, label: "Follow-up", to: `${B}/queues/follow-up`, icon: ic.orders },
     { show: opts.canInward, label: "Inward", to: `${B}/queues/inward`, icon: ic.orders },
     { show: opts.canTally, label: "Tally", to: `${B}/queues/tally`, icon: ic.orders },
-    { show: opts.canFinalPayment, label: "Final Pay", to: `${B}/queues/final-pay`, icon: ic.orders },
   ];
   let queueSectionUsed = false;
   for (const q of stepQueues) {
