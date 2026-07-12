@@ -16,6 +16,7 @@ import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import AgingReport from "@hub/pages/AgingReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
+import ZeroCollectionsReport from "@hub/pages/ZeroCollectionsReport";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -56,6 +57,7 @@ function HubRoutes() {
           <Route path="reports" element={<Reports />} />
           <Route path="reports/aging" element={<AgingReport />} />
           <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
+          <Route path="reports/zero-collections" element={<ZeroCollectionsReport />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

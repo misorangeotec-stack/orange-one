@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins, UserX } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -33,6 +33,15 @@ const REPORTS: ReportCard[] = [
       "Manual (non-Tally) payments applied against invoices or booked on account — grouped by salesperson or customer, with against-invoice vs on-account split and styled Excel export.",
     icon: HandCoins,
     to: "/outstanding-dashboard/reports/other-payments",
+    ready: true,
+  },
+  {
+    id: "zero-collections",
+    title: "Customers with Zero Collections",
+    description:
+      "Customers who owe money and paid nothing in the period — ranked by outstanding, flagged when we're still billing them. Never-paid and still-buying counts, drill-down to open bills, Excel export.",
+    icon: UserX,
+    to: "/outstanding-dashboard/reports/zero-collections",
     ready: true,
   },
 ];
