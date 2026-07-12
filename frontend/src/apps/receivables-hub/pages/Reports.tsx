@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -53,6 +53,17 @@ const REPORTS: ReportCard[] = [
       "Customers who collected less than 30% of what we could have collected (opening outstanding + sales billed). Shortfall in rupees, severity bands, prior-period comparison, and bounced-cheque and still-buying flags.",
     icon: PercentIcon,
     to: "/outstanding-dashboard/reports/collections?below=30",
+    ready: true,
+  },
+  // The cutoff is switchable on the page (90 / 120 / 180 / custom, via ?over=) — this card is
+  // just the one management asked for. See lib/overdueAging.ts.
+  {
+    id: "overdue-aging",
+    title: "Customers Overdue Over 120 Days",
+    description:
+      "Customers with money stuck on bills more than 120 days past due — ranked on the aged amount alone, split into opening debt brought forward vs debt billed since, with the 180+ slice, still-buying flags, bill-level drill-down and an aged-bill Excel sheet to chase.",
+    icon: AlarmClock,
+    to: "/outstanding-dashboard/reports/overdue?over=120",
     ready: true,
   },
 ];

@@ -18,6 +18,7 @@ import Reports from "@hub/pages/Reports";
 import AgingReport from "@hub/pages/AgingReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
 import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
+import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -69,6 +70,9 @@ function HubRoutes() {
             path="reports/zero-collections"
             element={<Navigate to="/outstanding-dashboard/reports/collections?below=0" replace />}
           />
+          {/* Aged debt: ?over=120 (the card), 90 / 180 / any custom cutoff. Pinned to the pipeline
+              source AND to Both FYs — see the header of pages/OverdueAgingReport.tsx. */}
+          <Route path="reports/overdue" element={<OverdueAgingReport />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

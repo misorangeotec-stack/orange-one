@@ -694,8 +694,18 @@ export function detailPathFor(
   return null;
 }
 
-/** Bucket value + display label for a row on a dimension (feeds buildGroupTree). */
-export function zcDimValue(r: ZCRow, dim: string): { value: string; label: string; sub?: string } {
+/**
+ * Bucket value + display label for a row on a dimension (feeds buildGroupTree).
+ *
+ * Typed on the structural minimum rather than ZCRow so the Overdue Aging report (lib/overdueAging)
+ * shares one set of group labels, sub-labels and drill-through targets with the two collection
+ * reports instead of forking them. Widening a parameter is contravariant-safe: ZCRow still fits.
+ * (`ZC_FOCUS_PREDICATES` is NOT shared — see the note on OA_FOCUS_PREDICATES.)
+ */
+export function zcDimValue(
+  r: { customer: ConsolidatedCustomer; group: string },
+  dim: string,
+): { value: string; label: string; sub?: string } {
   const c = r.customer;
   switch (dim as ZCDim) {
     case "salesperson": {

@@ -1,4 +1,4 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Radio } from "lucide-react";
 import { SidebarProvider, SidebarTrigger } from "@hub/components/ui/sidebar";
 import { UserSidebar } from "@hub/components/UserSidebar";
@@ -45,11 +45,23 @@ function formatAsOfDateTime(input: string): string {
   return formatAsOf(s);
 }
 
+/**
+ * Routes that IGNORE the financial-year selector because they read the whole book by design.
+ *
+ * The Overdue Aging report is pinned to Both FYs: a single financial year cannot contain a
+ * 120-day-old invoice until it is itself 120 days old, so an FY-scoped view of "overdue > 120
+ * days" silently becomes 100% brought-forward debt. The page enforces that with its own nested
+ * FYProvider; hiding the selector here is what stops the topbar from claiming otherwise.
+ */
+const FY_PINNED_ROUTES = ["/outstanding-dashboard/reports/overdue"];
+
 export default function UserLayout() {
   const { dashboard } = useAppData({});
   const { label: fyLabel } = useFY();
   const { user, role } = useSession();
   const { liveMode, setLiveMode, canUseLive } = useLiveMode();
+  const { pathname } = useLocation();
+  const fyPinned = FY_PINNED_ROUTES.some((r) => pathname.startsWith(r));
 
   return (
     <SidebarProvider>
@@ -64,7 +76,9 @@ export default function UserLayout() {
                 Live · Tally
               </span>
             )}
-            <span className="text-xs text-muted-foreground hidden sm:inline">· {fyLabel}</span>
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              · {fyPinned ? "Both FYs" : fyLabel}
+            </span>
             <div className="ml-auto flex items-center gap-3">
               {/* Admin-only: flip the WHOLE hub between the pipeline source and the ConnectWave
                   live-Tally snapshot. One switch instead of duplicating every menu (see lib/liveMode). */}
@@ -91,7 +105,9 @@ export default function UserLayout() {
                   </span>
                 </span>
               )}
-              <FYMultiSelect />
+              {/* Hidden on the FY-pinned reports — see FY_PINNED_ROUTES. Showing a selector that
+                  cannot change the numbers below it is worse than showing none. */}
+              {!fyPinned && <FYMultiSelect />}
               <div className="h-6 w-px bg-border hidden sm:block" />
               <UserMenu
                 user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: ROLE_LABEL[role] ?? role }}
