@@ -17,7 +17,7 @@ import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import AgingReport from "@hub/pages/AgingReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
-import ZeroCollectionsReport from "@hub/pages/ZeroCollectionsReport";
+import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -60,7 +60,15 @@ function HubRoutes() {
           <Route path="reports" element={<Reports />} />
           <Route path="reports/aging" element={<AgingReport />} />
           <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
-          <Route path="reports/zero-collections" element={<ZeroCollectionsReport />} />
+          {/* One page, two reports: ?below=0 is "Zero Collections", ?below=30 is "Below 30%".
+              Zero collection is the 0% case, so they share an engine — see lib/collections.ts.
+              The page pins itself to the pipeline source (the Live/Tally toggle can't reach it). */}
+          <Route path="reports/collections" element={<CollectionPerformanceReport />} />
+          {/* The zero report shipped at its own URL first. Keep the bookmark working. */}
+          <Route
+            path="reports/zero-collections"
+            element={<Navigate to="/outstanding-dashboard/reports/collections?below=0" replace />}
+          />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

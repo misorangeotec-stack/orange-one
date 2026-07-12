@@ -2,11 +2,11 @@ import {
   useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, Fragment,
   type ReactNode, type CSSProperties,
 } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   UserX, ChevronRight, ChevronDown, Download, ArrowLeft, Info, Pin, Search, X,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Wallet, TrendingDown,
-  CalendarClock, ShoppingCart, Ban,
+  CalendarClock, ShoppingCart, Ban, Percent, Target, Undo2,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -22,6 +22,7 @@ import {
   Pagination, PaginationContent, PaginationEllipsis, PaginationItem,
   PaginationLink, PaginationNext, PaginationPrevious,
 } from "@hub/components/ui/pagination";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@hub/components/ui/tooltip";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
@@ -31,33 +32,41 @@ import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
-import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
+import { useHubBase, ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import { monthEndLong, monthStartLong } from "@hub/lib/months";
 import {
-  buildLastReceiptDates, buildMonthlySeries, factsFor, isZeroCollection,
-  metricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
-  applyFocus, totalsOf, detailPathFor,
-  NEVER_PAID, PERIOD_LABELS, ZC_COLUMNS, ZC_DIMENSIONS, ZC_PRESETS, ZC_FOCUS_LABELS,
-  type CollectionsSource, type PeriodPreset, type ZCColumn, type ZCColumnKey,
+  buildLastReceiptDates, buildLedgerBalances, buildMonthlySeries, factsFor,
+  isZeroCollection, isBelowThreshold, bandOf, bandCounts, pctOf,
+  makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
+  applyFocus, totalsOf, detailPathFor, defaultColumnsFor,
+  COLLECTIBLE_EPS, DETERIORATION_PP, NEVER_PAID, BAND_LABELS, BAND_ORDER,
+  PERIOD_LABELS, ZC_COLUMNS, ZC_DIMENSIONS, ZC_PRESETS, ZC_FOCUS_LABELS,
+  type CollectionBand, type PeriodPreset, type ZCColumn, type ZCColumnKey,
   type ZCDim, type ZCFocus, type ZCMetrics, type ZCRow,
-} from "@hub/lib/zeroCollections";
-import { exportZeroCollectionsXlsx } from "@hub/lib/exportZeroCollections";
+} from "@hub/lib/collections";
+import { exportCollectionsXlsx } from "@hub/lib/exportCollections";
 import type { ConsolidatedCustomer } from "@hub/lib/types";
 
 /**
- * Customers with Zero Collections.
+ * Collection Performance — ONE report, TWO thresholds.
  *
- * Who owes us money and has paid us NOTHING in the period — ranked by how much is stuck,
- * and flagged when we're still shipping to them (the "Sales in Window" column is the one
- * that gets a decision made).
+ *   ?below=0   → "Customers with Zero Collections"  (paid us nothing)
+ *   ?below=30  → "Customers Below 30% Collection"   (paid us less than 30% of what we
+ *                                                     could have collected)
  *
- * A management report, so the controls are deliberately thin: five one-click Views, six
- * filters on one line, everything else behind "More". The aggregation lives in
- * lib/zeroCollections.ts — read its header for why the window is month-granular and why
- * the convenient-looking Customer.lastReceiptDate / monthlyReceipts fields are a trap.
+ * Zero collection is the 0% case, so both are the same screen; only the predicate and the
+ * default column set differ. The aggregation lives in lib/collections.ts — read its header
+ * for the denominator, for why the window is month-granular, and for the three traps in the
+ * pipeline data (gross-of-cheque-return receipts, the clamped opening, FY scoping).
+ *
+ * PINNED TO THE PIPELINE DATA. The page is force-wrapped in
+ * <ReceivablesSourceProvider value="default"> so it reads the normal receivables Supabase
+ * even when an admin has the "Live (Tally)" topbar toggle on. Live is a later, separate
+ * piece of work — until then it is impossible for a ConnectWave number to reach a report
+ * that goes to management. (Same pattern as pages/Followups.tsx.)
  */
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
@@ -73,6 +82,11 @@ type MinOutKey = (typeof MIN_OUTSTANDING_OPTIONS)[number]["key"];
 
 type Segment = "all" | "active" | "no_activity";
 
+/** The thresholds management actually asks for. Anything else via the URL (?below=42). */
+const THRESHOLD_OPTIONS = [0, 30, 50] as const;
+/** Shortfall is measured against this. Defaults to the threshold; 65% is the standing goal. */
+const TARGET_OPTIONS = [30, 50, 65, 80] as const;
+
 function getPageWindow(current: number, total: number): (number | "...")[] {
   if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
   const pages: (number | "...")[] = [1];
@@ -87,9 +101,26 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 const daysText = (v: number): string =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : `${v}d`;
 
-export default function ZeroCollectionsReport() {
-  const source = useReceivablesSource();
-  const collectionsSource: CollectionsSource = source === "connectwave" ? "live" : "pipeline";
+/** A percentage cell. null (no denominator) is "—", never "0%" — the two mean different things. */
+const pctText = (v: number | null): string => (v === null ? "—" : `${v.toFixed(1)}%`);
+
+function CollectionPerformanceInner() {
+  // ── Threshold: the one control that decides which of the two reports this is ──────
+  const [params, setParams] = useSearchParams();
+  const threshold = useMemo(() => {
+    const raw = Number(params.get("below"));
+    return Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 30;
+  }, [params]);
+  const mode: "zero" | "threshold" = threshold <= 0 ? "zero" : "threshold";
+  const setThreshold = (t: number) =>
+    setParams((p) => { p.set("below", String(t)); return p; }, { replace: true });
+
+  const title = mode === "zero"
+    ? "Customers with Zero Collections"
+    : `Customers Below ${threshold}% Collection`;
+  const subtitle = mode === "zero"
+    ? "Customers who owe money and paid nothing in the period."
+    : `Customers who collected less than ${threshold}% of what we could have collected from them.`;
 
   const {
     loading, allCustomers, consolidatedCustomers, customerDetail, customerGroupMap,
@@ -122,6 +153,8 @@ export default function ZeroCollectionsReport() {
   }, [months, preset, customFrom, customTo]);
 
   const prevMonths = useMemo(() => priorWindow(months, windowMonths), [months, windowMonths]);
+  /** Trap 3: the data is FY-scoped, so a "This FY" window simply has no prior period. */
+  const hasPrior = prevMonths.length > 0;
 
   const periodRange = windowMonths.length
     ? `${monthStartLong(windowMonths[0])} → ${
@@ -131,6 +164,10 @@ export default function ZeroCollectionsReport() {
       }`
     : "—";
   const periodLabel = `${PERIOD_LABELS[preset]} (${periodRange})`;
+
+  // ── Target (drives Shortfall ₹) ───────────────────────────────────────────────────
+  const [target, setTarget] = useState<number>(30);
+  useEffect(() => { setTarget(threshold > 0 ? threshold : 30); }, [threshold]);
 
   // ── Filters (the bar; the rest behind "More") ─────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -167,28 +204,33 @@ export default function ZeroCollectionsReport() {
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
 
   // ── View ──────────────────────────────────────────────────────────────────────────
-  // Chainable roll-up levels (Customer Group → Customer → Salesperson, in any order) via the
-  // shared GroupByBuilder — the same control the Risk Register and Collection Report use.
   const [groupBy, setGroupBy] = useState<ZCDim[]>(["salesperson", "customer"]);
   const viewLabel = useMemo(
     () => groupBy.map((d) => ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → "),
     [groupBy],
   );
 
-  // ── Columns ───────────────────────────────────────────────────────────────────────
+  // ── Columns + sort ────────────────────────────────────────────────────────────────
+  // The two reports want different defaults: at threshold 0 every percentage column reads
+  // 0% / "—" and only wastes width. Switching threshold therefore re-seeds both.
   const columnOptions: ColumnOption[] = ZC_COLUMNS.map((c) => ({ key: c.key, label: c.label }));
-  const [visibleCols, setVisibleCols] = useState<string[]>(
-    ZC_COLUMNS.filter((c) => c.default).map((c) => c.key),
-  );
+  const [visibleCols, setVisibleCols] = useState<string[]>(() => defaultColumnsFor(mode));
   const columns = useMemo<ZCColumn[]>(
     () => ZC_COLUMNS.filter((c) => visibleCols.includes(c.key)),
     [visibleCols],
   );
+  const colByKey = useMemo(() => new Map(ZC_COLUMNS.map((c) => [c.key, c])), []);
 
-  // ── Sorting ───────────────────────────────────────────────────────────────────────
   type SortKey = ZCColumnKey | "label";
-  const [sortKey, setSortKey] = useState<SortKey>("outstanding");
+  const [sortKey, setSortKey] = useState<SortKey>(() => (mode === "zero" ? "outstanding" : "shortfall"));
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  useEffect(() => {
+    setVisibleCols(defaultColumnsFor(mode));
+    setSortKey(mode === "zero" ? "outstanding" : "shortfall");
+    setSortDir("desc");
+  }, [mode]);
+
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else { setSortKey(key); setSortDir(key === "label" ? "asc" : "desc"); }
@@ -197,6 +239,10 @@ export default function ZeroCollectionsReport() {
     if (sortKey !== key) return <ArrowUpDown className="h-3 w-3 opacity-30 inline" />;
     return sortDir === "asc" ? <ArrowUp className="h-3 w-3 inline" /> : <ArrowDown className="h-3 w-3 inline" />;
   };
+
+  // The "How this report is calculated" panel. Collapsed by default — the working has to be
+  // available, but it must not shout over the numbers.
+  const [basisOpen, setBasisOpen] = useState(false);
 
   // ── Expand / paginate ─────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -211,16 +257,19 @@ export default function ZeroCollectionsReport() {
 
   // ── The engine ────────────────────────────────────────────────────────────────────
   // Built from RAW ledgers (allCustomers) — a ConsolidatedCustomer's monthlyReceipts /
-  // lastReceiptDate carry only its FIRST ledger's values (consolidateByName spreads
-  // ...entries[0] and doesn't override them). See lib/zeroCollections.ts.
+  // lastReceiptDate / openingBalance carry only its FIRST ledger's values (consolidateByName
+  // spreads ...entries[0] and doesn't override them). See lib/collections.ts.
   const series = useMemo(
-    () => buildMonthlySeries(allCustomers, customerDetail, collectionsSource),
-    [allCustomers, customerDetail, collectionsSource],
+    () => buildMonthlySeries(allCustomers, customerDetail, "pipeline"),
+    [allCustomers, customerDetail],
   );
   const lastDates = useMemo(
-    () => buildLastReceiptDates(allCustomers, customerDetail, collectionsSource),
-    [allCustomers, customerDetail, collectionsSource],
+    () => buildLastReceiptDates(allCustomers, customerDetail, "pipeline"),
+    [allCustomers, customerDetail],
   );
+  // The anchor for Opening: the CANONICAL outstanding, rolled backwards through the window's
+  // movements. Never customer_trend.outstanding — see the openingForLedger header.
+  const balances = useMemo(() => buildLedgerBalances(allCustomers), [allCustomers]);
 
   const groupOf = useCallback(
     (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
@@ -259,37 +308,79 @@ export default function ZeroCollectionsReport() {
     segment, blockedOnly, includeNonDebtors, minOut, search, groupOf,
   ]);
 
-  /** The report itself: eligible customers who collected nothing in the window. */
-  const rows = useMemo<ZCRow[]>(() => {
-    if (!windowMonths.length) return [];
+  /**
+   * The report itself.
+   *
+   *  - zero mode      : collected nothing at all. Needs no denominator, so it still catches
+   *                     a customer with an empty collectible pool. Bit-for-bit the original.
+   *  - threshold mode : collected less than `threshold`% of Opening + Sales. Reads the WORSE
+   *                     of the gross and net-of-cheque-return percentages, so a customer whose
+   *                     only "payment" bounced can't hide above the bar.
+   *
+   * `noPool` is the count we deliberately dropped: nothing was collectible from them in this
+   * window, so their percentage is undefined — NOT 0%. The basis note reports it rather than
+   * letting them silently vanish.
+   */
+  const { rows, noPool } = useMemo(() => {
+    if (!windowMonths.length) return { rows: [] as ZCRow[], noPool: 0 };
     const out: ZCRow[] = [];
+    let dropped = 0;
     for (const c of eligible) {
-      const facts = factsFor(c, series, lastDates, windowMonths, prevMonths, asOfDate);
-      if (isZeroCollection(facts)) out.push({ customer: c, facts, group: groupOf(c) });
+      const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate);
+      const listed = mode === "zero"
+        ? isZeroCollection(facts)
+        : isBelowThreshold(facts, threshold);
+      if (listed) out.push({ customer: c, facts, group: groupOf(c) });
+      else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped++;
     }
-    return out;
-  }, [eligible, series, lastDates, windowMonths, prevMonths, asOfDate, groupOf]);
+    return { rows: out, noPool: dropped };
+  }, [eligible, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold]);
 
-  // ── Focus (the clickable KPI cards) ───────────────────────────────────────────────
+  // ── Focus (the clickable KPI cards) + severity bands ──────────────────────────────
   // A layer ON TOP of the filter chain: eligible → rows → focusedRows. Lenses AND together.
   const [focus, setFocus] = useState<Set<ZCFocus>>(new Set());
+  const [bands, setBands] = useState<Set<CollectionBand>>(new Set());
   const toggleFocus = (f: ZCFocus) =>
     setFocus((prev) => {
       const next = new Set(prev);
       if (next.has(f)) next.delete(f); else next.add(f);
       return next;
     });
-  const focusedRows = useMemo(() => applyFocus(rows, focus), [rows, focus]);
+  const toggleBand = (b: CollectionBand) =>
+    setBands((prev) => {
+      const next = new Set(prev);
+      if (next.has(b)) next.delete(b); else next.add(b);
+      return next;
+    });
+
+  const focusedRows = useMemo(() => {
+    let r = applyFocus(rows, focus);
+    if (bands.size) r = r.filter((x) => bands.has(bandOf(x.facts)));
+    return r;
+  }, [rows, focus, bands]);
+
+  // Counts printed on the band chips — over the UNFOCUSED rows, same invariant as the KPIs.
+  const counts = useMemo(() => bandCounts(rows), [rows]);
+  /** Bands that can actually appear below the threshold (30% → no 30%+ band). */
+  const visibleBands = useMemo(
+    () => BAND_ORDER.filter((b) => counts[b] > 0),
+    [counts],
+  );
 
   // Reset paging/expansion whenever the shape of the report changes.
   useEffect(() => {
     setExpanded(new Set());
     setPage(1);
-  }, [groupBy, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, preset, customFrom, customTo, focus]);
+  }, [groupBy, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, preset, customFrom, customTo, focus, bands, threshold]);
+
+  // Switching report (zero ⇄ threshold) must not strand a lens or band that no longer applies.
+  useEffect(() => { setFocus(new Set()); setBands(new Set()); }, [mode]);
 
   // ── Roll-up ───────────────────────────────────────────────────────────────────────
   // Built from the FOCUSED rows, so the table, its grand total, pagination and the export
   // all follow the active lenses. The KPI cards deliberately do NOT — see `allTotals`.
+  const metricsOf = useMemo(() => makeMetricsOf(target), [target]);
+
   const tree = useMemo(
     () =>
       buildGroupTree<ZCRow, ZCMetrics>(focusedRows, groupBy, {
@@ -299,17 +390,26 @@ export default function ZeroCollectionsReport() {
         empty: emptyMetrics,
         add: addMetrics,
       }),
-    [focusedRows, groupBy],
+    [focusedRows, groupBy, metricsOf],
   );
 
+  // Percentage columns can be null (no denominator). Nulls sort LAST in both directions —
+  // a "—" floating to the top of a descending sort reads as if it were the worst offender.
   const sortedRoots = useMemo(() => {
     const dir = sortDir === "asc" ? 1 : -1;
-    return sortTree(tree.roots, (a, b) =>
-      sortKey === "label"
-        ? dir * a.label.localeCompare(b.label)
-        : dir * (a.metrics[sortKey] - b.metrics[sortKey]),
-    );
-  }, [tree.roots, sortKey, sortDir]);
+    if (sortKey === "label")
+      return sortTree(tree.roots, (a, b) => dir * a.label.localeCompare(b.label));
+    const col = colByKey.get(sortKey);
+    if (!col) return tree.roots;
+    return sortTree(tree.roots, (a, b) => {
+      const av = col.value(a.metrics);
+      const bv = col.value(b.metrics);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return dir * (av - bv);
+    });
+  }, [tree.roots, sortKey, sortDir, colByKey]);
 
   const totalPages = pageSize === "all" ? 1 : Math.max(1, Math.ceil(sortedRoots.length / pageSize));
   const safePage = Math.min(page, totalPages);
@@ -323,7 +423,7 @@ export default function ZeroCollectionsReport() {
   // the active focus, clicking "Still Buying" (94) would silently drop "Never Paid" from 38
   // to "never-paid AND still-buying": the number printed on a card would stop matching what
   // clicking it shows, and the second click of a combination would be unreadable.
-  const allTotals = useMemo(() => totalsOf(rows), [rows]);
+  const allTotals = useMemo(() => totalsOf(rows, target), [rows, target]);
 
   const kpis = useMemo(() => {
     const t = allTotals;
@@ -342,6 +442,14 @@ export default function ZeroCollectionsReport() {
       neverPaidOutstanding,
       stillBuying: t.stillBuying,
       salesInWindow: t.salesInWindow,
+      // Weighted, never an average of percentages.
+      collectionPct: pctOf(t.collected, t.collectible),
+      collected: t.collected,
+      collectible: t.collectible,
+      shortfall: t.shortfall,
+      deteriorating: t.deteriorating,
+      bounced: t.bounced,
+      chequeReturns: t.chequeReturns,
     };
   }, [allTotals, rows, eligible]);
 
@@ -355,52 +463,299 @@ export default function ZeroCollectionsReport() {
     focusKey: ZCFocus | null;
     /** The underlying magnitude — a card with nothing behind it isn't worth a click. */
     count: number;
+    /** Why the card is inert, when that isn't obvious (e.g. no prior period this FY). */
+    disabledHint?: string;
+    /**
+     * What the card MEANS, in plain words, on hover. A number on a management screen that
+     * can't explain itself gets quoted wrong in a meeting — so every card says what it
+     * counts, how it was worked out, and what to do about it.
+     */
+    explain: ReactNode;
   }
 
-  const kpiCards: KpiCard[] = [
+  const money = (n: number) => fmtINRMoney(n);
+
+  const zeroCards: KpiCard[] = [
     {
       label: "Zero-Collection Customers", icon: UserX, focusKey: null,
       value: String(kpis.count),
       sub: `of ${kpis.eligibleCount} who owe money`,
       count: kpis.count,
+      explain: (
+        <>
+          Customers who owe you money and paid <strong>nothing at all</strong> in this period —
+          no receipt voucher and no manual Other Payment.
+          <br />
+          <br />
+          <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
+          currently owe you money. Ledgers with the same name are merged, so one customer with
+          three company ledgers counts once.
+        </>
+      ),
     },
     {
       label: "Outstanding Locked", icon: Wallet, focusKey: null,
       value: fmtINRMoney(kpis.outstanding),
       sub: `${kpis.sharePct.toFixed(1)}% of in-scope outstanding`,
       count: kpis.count,
+      explain: (
+        <>
+          The total these zero-collection customers owe you — <strong>{money(kpis.outstanding)}</strong>.
+          <br />
+          <br />
+          That is <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in
+          scope. The higher this is, the more your problem is concentrated in people who aren’t
+          paying at all.
+        </>
+      ),
     },
     {
       label: "Overdue Locked", icon: TrendingDown, focusKey: "overdue",
       value: fmtINRMoney(kpis.overdue),
       sub: "already past due date",
       count: kpis.overdue,
+      explain: (
+        <>
+          How much of that money is <strong>already past its due date</strong> — you had a
+          contractual right to it and it still hasn’t come.
+          <br />
+          <br />
+          The rest of the Outstanding is still inside its credit period.
+        </>
+      ),
     },
     {
       label: "Never Paid", icon: Ban, focusKey: "never",
       value: String(kpis.neverPaid),
       sub: `${fmtINRMoney(kpis.neverPaidOutstanding)} · no receipt ever`,
       count: kpis.neverPaid,
+      explain: (
+        <>
+          Of those, how many have <strong>never made a single payment</strong> — not one receipt
+          since the data begins (01-04-2025). They hold {money(kpis.neverPaidOutstanding)}.
+          <br />
+          <br />
+          This is a write-off or legal conversation, not a follow-up call.
+        </>
+      ),
     },
     {
       label: "Still Buying", icon: ShoppingCart, focusKey: "buying",
       value: String(kpis.stillBuying),
       sub: `${fmtINRMoney(kpis.salesInWindow)} billed in period`,
       count: kpis.stillBuying,
+      explain: (
+        <>
+          How many of these non-payers you are <strong>still billing</strong>. You invoiced them{" "}
+          <strong>{money(kpis.salesInWindow)}</strong> during the very period in which they paid
+          you nothing.
+          <br />
+          <br />
+          This is the card that gets a decision made — it’s a <strong>credit</strong> decision, not
+          a collections one.
+        </>
+      ),
     },
     {
       label: "> 180 Days", icon: CalendarClock, focusKey: "over180",
       value: fmtINRMoney(kpis.over180),
       sub: "oldest, hardest money",
       count: kpis.over180,
+      explain: (
+        <>
+          Money on bills more than <strong>180 days past due</strong> — the oldest and hardest to
+          recover.
+          <br />
+          <br />
+          The longer a receivable sits here, the less of it you typically get back.
+        </>
+      ),
     },
   ];
+
+  const thresholdCards: KpiCard[] = [
+    {
+      label: `Customers Below ${threshold}%`, icon: UserX, focusKey: null,
+      value: String(kpis.count),
+      sub: `of ${kpis.eligibleCount} who owe money`,
+      count: kpis.count,
+      explain: (
+        <>
+          Worked out <strong>for each customer separately</strong>:
+          <br />
+          <br />
+          <span className="font-mono text-[10px] leading-relaxed block">
+            Collectible = what they owed at the start
+            <br />
+            &nbsp;&nbsp;&nbsp;&nbsp;+ what you billed them since
+            <br />
+            Collected&nbsp;&nbsp; = what they actually paid
+            <br />
+            <br />
+            Collected ÷ Collectible &lt; {threshold}% → listed
+          </span>
+          <br />
+          <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
+          currently owe you money. Bounced cheques don’t count as payment; customers with nothing
+          to collect are excluded, not scored 0%.
+        </>
+      ),
+    },
+    {
+      label: "Collection %", icon: Percent, focusKey: null,
+      value: pctText(kpis.collectionPct),
+      sub: `${fmtINRMoney(kpis.collected)} of ${fmtINRMoney(kpis.collectible)} collectible`,
+      count: kpis.count,
+      explain: (
+        <>
+          Together these {kpis.count} customers could have paid{" "}
+          <strong>{money(kpis.collectible)}</strong>. They paid{" "}
+          <strong>{money(kpis.collected)}</strong>.
+          <br />
+          <br />
+          So roughly <strong>{kpis.collectionPct === null ? "—" : Math.round(kpis.collectionPct)} paise
+          in every rupee</strong>.
+          <br />
+          <br />
+          This is <strong>weighted</strong> — total collected ÷ total collectible — not the average
+          of their individual percentages, which would let a tiny customer count as much as a
+          ₹1 Cr one.
+        </>
+      ),
+    },
+    {
+      // The headline. A % can't be summed up a roll-up; this can — and it is the number
+      // management acts on: "₹X would have come in had everyone hit the target."
+      label: `Shortfall vs ${target}%`, icon: Target, focusKey: null,
+      value: fmtINRMoney(kpis.shortfall),
+      sub: "money that didn't come in",
+      count: kpis.count,
+      explain: (
+        <>
+          <strong>The number to take to a review meeting.</strong>
+          <br />
+          <br />
+          If every one of these {kpis.count} customers had simply hit <strong>{target}%</strong>,
+          another <strong>{money(kpis.shortfall)}</strong> would have landed in the bank this
+          period.
+          <br />
+          <br />
+          It’s added up <strong>customer by customer</strong>, so a good payer can’t quietly cancel
+          out a bad one. Unlike a percentage, it totals correctly under every salesperson, group
+          and company in the table below.
+        </>
+      ),
+    },
+    {
+      label: "Outstanding Locked", icon: Wallet, focusKey: null,
+      value: fmtINRMoney(kpis.outstanding),
+      sub: `${kpis.sharePct.toFixed(1)}% of in-scope outstanding`,
+      count: kpis.count,
+      explain: (
+        <>
+          The total these under-payers owe you — <strong>{money(kpis.outstanding)}</strong>, which is{" "}
+          <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in scope.
+          <br />
+          <br />
+          This is the “how bad is it really” card. A high share means the problem isn’t a long tail
+          of small defaulters — it’s sitting where most of your money already is.
+        </>
+      ),
+    },
+    {
+      label: "Still Buying", icon: ShoppingCart, focusKey: "buying",
+      value: String(kpis.stillBuying),
+      sub: `${fmtINRMoney(kpis.salesInWindow)} billed in period`,
+      count: kpis.stillBuying,
+      explain: (
+        <>
+          How many of these poor payers you are <strong>still billing</strong>. You invoiced them{" "}
+          <strong>{money(kpis.salesInWindow)}</strong> during the very period in which they were
+          under-paying you.
+          <br />
+          <br />
+          The most actionable card here — it’s a <strong>credit</strong> decision, not a collections
+          one.
+        </>
+      ),
+    },
+    {
+      label: "Deteriorating", icon: TrendingDown, focusKey: "deteriorating",
+      value: String(kpis.deteriorating),
+      sub: hasPrior ? `fell > ${DETERIORATION_PP}pp vs prior period` : "no prior period in this FY",
+      count: hasPrior ? kpis.deteriorating : 0,
+      disabledHint: hasPrior
+        ? undefined
+        : "This fiscal year has no earlier months to compare against — pick a shorter period.",
+      explain: hasPrior ? (
+        <>
+          These customers <strong>used to pay better</strong>. Their collection % fell by more than{" "}
+          {DETERIORATION_PP} percentage points versus the previous period of the same length
+          ({monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}).
+          <br />
+          <br />
+          Something changed <strong>recently</strong> — worth a call before it hardens. This is what
+          separates a customer who just went quiet from a chronic non-payer.
+        </>
+      ) : (
+        <>
+          Compares each customer’s collection % against the previous period of the same length.
+          <br />
+          <br />
+          <strong>Unavailable here:</strong> this fiscal year has no earlier months to compare
+          against, so Prior % and Δ read “—”. Pick a shorter period to enable it.
+        </>
+      ),
+    },
+    {
+      label: "Bounced", icon: Undo2, focusKey: "bounced",
+      value: String(kpis.bounced),
+      sub: `${fmtINRMoney(kpis.chequeReturns)} of cheques returned`,
+      count: kpis.bounced,
+      explain: (
+        <>
+          They “paid”, and the cheque <strong>came back</strong>.{" "}
+          <strong>{money(kpis.chequeReturns)}</strong> of cheques returned in this period.
+          <br />
+          <br />
+          A bounced cheque is not a collection. Without this check, several of these customers would
+          look like they had paid and would <strong>never appear on this report at all</strong> —
+          so a customer is listed if they fall below {threshold}% on <em>either</em> the gross or the
+          net-of-bounces figure.
+        </>
+      ),
+    },
+    {
+      label: "Never Paid", icon: Ban, focusKey: "never",
+      value: String(kpis.neverPaid),
+      sub: `${fmtINRMoney(kpis.neverPaidOutstanding)} · no receipt ever`,
+      count: kpis.neverPaid,
+      explain: (
+        <>
+          Not a single payment <strong>ever</strong> — no receipt since the data begins
+          (01-04-2025). They hold <strong>{money(kpis.neverPaidOutstanding)}</strong>.
+          <br />
+          <br />
+          A write-off or legal conversation, not a follow-up call.
+        </>
+      ),
+    },
+  ];
+
+  const kpiCards = mode === "zero" ? zeroCards : thresholdCards;
+  const kpiGridClass = mode === "zero"
+    ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"
+    : "grid grid-cols-2 sm:grid-cols-4 gap-2";
 
   // ── Filter chips ──────────────────────────────────────────────────────────────────
   const chips: FilterChip[] = [
     ...[...focus].map((f) => ({
       label: `Focus: ${ZC_FOCUS_LABELS[f]}`,
       onRemove: () => toggleFocus(f),
+    })),
+    ...[...bands].map((b) => ({
+      label: `Band: ${BAND_LABELS[b]}`,
+      onRemove: () => toggleBand(b),
     })),
     search.trim() && { label: `Search: “${search.trim()}”`, onRemove: () => setSearch("") },
     customerNames.length > 0 && {
@@ -432,7 +787,7 @@ export default function ZeroCollectionsReport() {
     setSalespersons([]); setCompanies([]); setLocations([]);
     setCategories([]); setMinOut("0"); setSegment("all");
     setBlockedOnly(false); setIncludeNonDebtors(false);
-    setFocus(new Set());
+    setFocus(new Set()); setBands(new Set());
   };
 
   const filterSummary = useMemo(() => {
@@ -440,6 +795,7 @@ export default function ZeroCollectionsReport() {
     // Lenses first — they're the most drastic cut, and the exported sheet has to record
     // them or it's unauditable a week later.
     for (const f of focus) s.push(`Focus: ${ZC_FOCUS_LABELS[f]}`);
+    for (const b of bands) s.push(`Band: ${BAND_LABELS[b]}`);
     if (search.trim()) s.push(`Search: ${search.trim()}`);
     if (customerNames.length) s.push(`Customer: ${customerNames.join(", ")}`);
     if (groupNamesSel.length) s.push(`Group: ${groupNamesSel.join(", ")}`);
@@ -452,16 +808,23 @@ export default function ZeroCollectionsReport() {
     if (blockedOnly) s.push("Blocked only");
     if (includeNonDebtors) s.push("Incl. zero & credit balances");
     return s;
-  }, [focus, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors]);
+  }, [focus, bands, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors]);
 
-  // ── Export — WYSIWYG: same period, filters, FOCUS, view, sort and visible columns ──
+  const basis = mode === "zero"
+    ? "No receipt voucher and no Other Payment in the period. Cheque returns are reported, not netted."
+    : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`;
+
+  // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
   // `focusedRows` (not `rows`) feeds the flat Customers sheet: otherwise the roll-up sheet
   // would be focused while the flat sheet silently listed every customer — a mismatch you'd
   // only ever discover in Excel.
   const handleExport = () => {
-    exportZeroCollectionsXlsx(sortedRoots, tree.total, focusedRows, columns, {
+    exportCollectionsXlsx(sortedRoots, tree.total, focusedRows, columns, {
+      title,
       viewLabel,
       periodLabel,
+      basis,
+      targetPct: target,
       asOfDate,
       filterSummary,
     });
@@ -475,9 +838,6 @@ export default function ZeroCollectionsReport() {
   const hubBase = useHubBase();
   const openDetail = (path: string) =>
     window.open(path.replace(/^\/outstanding-dashboard/, hubBase), "_blank", "noopener,noreferrer");
-  /** Detail route for a node, or null when its dimension has no detail page.
-   *  Keyed off the node's own DIMENSION, not its leaf-ness — so a Customer row stays
-   *  clickable even when another level is chained beneath it. */
   const detailPathOf = (n: GroupNode<ZCMetrics>): string | null =>
     detailPathFor(n.path[n.path.length - 1]?.dim as ZCDim | undefined, n.label, realGroupNames);
 
@@ -581,13 +941,26 @@ export default function ZeroCollectionsReport() {
   const metricCells = (node: GroupNode<ZCMetrics> | null, isTotal: boolean): ReactNode =>
     columns.map((col) => {
       const m = node ? node.metrics : tree.total;
-      const v = m[col.key];
-      const clickable = !!col.drill && Math.abs(v) >= 0.5;
-      const alarm = col.alarm && (col.kind === "days" ? v === NEVER_PAID || v > 180 : v > 0.5);
+      const v = col.value(m);
+      const clickable = !!col.drill && v !== null && Math.abs(v) >= 0.5;
+
+      // What "wrong" means differs by column: a shortfall is bad when it's big, a collection
+      // % when it's SMALL, and a Δ when it's a steep fall.
+      const alarm =
+        v === null ? false
+        : col.key === "deltaPp" ? v < -DETERIORATION_PP
+        : col.lowIsBad ? v < threshold
+        : col.kind === "days" ? !!col.alarm && (v === NEVER_PAID || v > 180)
+        : !!col.alarm && v > 0.5;
+
       const text =
-        col.kind === "money" ? fmtINRMoney(v)
+        v === null ? "—"
+        : col.kind === "money" ? fmtINRMoney(v)
         : col.kind === "days" ? daysText(v)
-        : String(v);
+        : col.kind === "pct"
+          ? (col.key === "deltaPp" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}` : `${v.toFixed(1)}%`)
+          : String(v);
+
       return (
         <TableCell
           key={col.key}
@@ -662,10 +1035,10 @@ export default function ZeroCollectionsReport() {
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <UserX className="h-6 w-6 text-primary" /> Customers with Zero Collections
+            <UserX className="h-6 w-6 text-primary" /> {title}
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Customers who owe money and paid nothing in the period.
+            {subtitle}
             {asOfDate && <span className="text-foreground/70"> As on {formatDateDMY(asOfDate)}</span>}
           </p>
         </div>
@@ -682,55 +1055,94 @@ export default function ZeroCollectionsReport() {
         </div>
       </div>
 
-      {/* Period */}
+      {/* Threshold + Period */}
       <Card className="rounded-card border-border bg-surface">
         <CardContent className="p-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Period</span>
-            {(["1m", "3m", "6m", "fy", "all", "custom"] as PeriodPreset[]).map((p) => (
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Collected below</span>
+            {THRESHOLD_OPTIONS.map((t) => (
               <Button
-                key={p}
-                variant={preset === p ? "default" : "outline"}
+                key={t}
+                variant={threshold === t ? "default" : "outline"}
                 size="sm"
-                onClick={() => setPreset(p)}
-                className={`h-7 text-xs rounded-button ${preset === p ? "bg-primary text-primary-foreground" : "border-border"}`}
+                onClick={() => setThreshold(t)}
+                className={`h-7 text-xs rounded-button ${threshold === t ? "bg-primary text-primary-foreground" : "border-border"}`}
               >
-                {PERIOD_LABELS[p]}
+                {t === 0 ? "0% (nothing)" : `${t}%`}
               </Button>
             ))}
-            {preset === "custom" && (
-              <div className="flex items-center gap-1">
-                <Select value={customFrom} onValueChange={setCustomFrom}>
-                  <SelectTrigger className="h-7 w-28 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
+            {!THRESHOLD_OPTIONS.includes(threshold as (typeof THRESHOLD_OPTIONS)[number]) && (
+              <span className="h-7 px-2.5 inline-flex items-center text-xs rounded-button bg-primary text-primary-foreground">
+                {threshold}%
+              </span>
+            )}
+            {mode === "threshold" && (
+              <>
+                <span className="ml-3 text-xs font-semibold text-muted-foreground uppercase tracking-wide">Target</span>
+                <Select value={String(target)} onValueChange={(v) => setTarget(Number(v))}>
+                  <SelectTrigger className="h-7 w-24 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    {TARGET_OPTIONS.map((t) => (
+                      <SelectItem key={t} value={String(t)}>{t}%</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                <span className="text-muted-foreground text-xs">→</span>
-                <Select value={customTo} onValueChange={setCustomTo}>
-                  <SelectTrigger className="h-7 w-28 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+                <span className="text-[11px] text-muted-foreground">drives the Shortfall column</span>
+              </>
             )}
           </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/60">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">Period</span>
+            <div className="pt-2 flex flex-wrap items-center gap-2">
+              {(["1m", "3m", "6m", "fy", "all", "custom"] as PeriodPreset[]).map((p) => (
+                <Button
+                  key={p}
+                  variant={preset === p ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setPreset(p)}
+                  className={`h-7 text-xs rounded-button ${preset === p ? "bg-primary text-primary-foreground" : "border-border"}`}
+                >
+                  {PERIOD_LABELS[p]}
+                </Button>
+              ))}
+              {preset === "custom" && (
+                <div className="flex items-center gap-1">
+                  <Select value={customFrom} onValueChange={setCustomFrom}>
+                    <SelectTrigger className="h-7 w-28 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-muted-foreground text-xs">→</span>
+                  <Select value={customTo} onValueChange={setCustomTo}>
+                    <SelectTrigger className="h-7 w-28 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          </div>
+
           <p className="text-[11px] text-muted-foreground">
             {periodRange}
             {windowMonths.length > 0 && windowMonths[windowMonths.length - 1] === months[months.length - 1] && (
               <span className="opacity-70"> · the current month is still in progress</span>
             )}
-            {prevMonths.length > 0 && (
-              <span className="opacity-70"> · “Prior Collections” compares against {monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}</span>
+            {hasPrior ? (
+              <span className="opacity-70"> · compared against {monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}</span>
+            ) : (
+              <span className="opacity-70"> · no prior period in this fiscal year, so Prior % and Δ read “—”</span>
             )}
           </p>
         </CardContent>
       </Card>
 
-      {/* KPIs — click to focus the table. The four lens cards AND together; the two summary
-          cards describe the whole list, so clicking either clears every lens. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+      {/* KPIs — click to focus the table. The lens cards AND together; the summary cards
+          describe the whole list, so clicking any of them clears every lens. */}
+      <div className={kpiGridClass}>
         {kpiCards.map((k) => {
           const Icon = k.icon;
           const isSummary = k.focusKey === null;
@@ -738,52 +1150,95 @@ export default function ZeroCollectionsReport() {
           // A card with nothing behind it isn't worth a click — EXCEPT while it's active, or
           // a filter that drives it to zero would strand a focus the user can't switch off.
           const clickable = isSummary ? rows.length > 0 : active || k.count > 0.5;
+          // Every card explains itself on hover. A number on a management screen that can't say
+          // what it counts gets quoted wrong in a meeting.
+          const action =
+            !clickable ? null
+            : isSummary ? "Click to clear every filter and show all customers."
+            : active ? `Click to remove the “${k.label}” filter.`
+            : "Click to show only these customers in the table.";
           return (
-            <Card
-              key={k.label}
-              onClick={clickable ? () => (isSummary ? setFocus(new Set()) : toggleFocus(k.focusKey!)) : undefined}
-              role="button"
-              tabIndex={clickable ? 0 : -1}
-              aria-pressed={active}
-              aria-disabled={!clickable}
-              onKeyDown={(e) => {
-                if (!clickable) return;
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  isSummary ? setFocus(new Set()) : toggleFocus(k.focusKey!);
-                }
-              }}
-              className={`rounded-card bg-surface transition-all ${
-                active
-                  ? "border-primary/50 ring-2 ring-primary"
-                  : clickable
-                    ? "border-border cursor-pointer hover:border-primary/40 hover:bg-muted/30"
-                    : "border-border opacity-50"
-              }`}
-              title={
-                !clickable ? undefined
-                : isSummary ? "Show all customers"
-                : active ? `Remove the “${k.label}” focus`
-                : `Show only these customers`
-              }
-            >
-              <CardContent className="px-3 py-2">
-                <div className="flex items-center gap-1 mb-0.5">
-                  <Icon className={`h-3 w-3 shrink-0 ${active && !isSummary ? "text-primary" : "text-muted-foreground"}`} />
-                  <span className="text-[11px] text-muted-foreground leading-tight">{k.label}</span>
-                </div>
-                <p className="text-sm font-bold text-destructive">{k.value}</p>
-                <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{k.sub}</p>
-              </CardContent>
-            </Card>
+            <Tooltip key={k.label} delayDuration={200}>
+              <TooltipTrigger asChild>
+                <Card
+                  onClick={clickable ? () => (isSummary ? setFocus(new Set()) : toggleFocus(k.focusKey!)) : undefined}
+                  role="button"
+                  tabIndex={clickable ? 0 : -1}
+                  aria-pressed={active}
+                  aria-disabled={!clickable}
+                  onKeyDown={(e) => {
+                    if (!clickable) return;
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      isSummary ? setFocus(new Set()) : toggleFocus(k.focusKey!);
+                    }
+                  }}
+                  className={`rounded-card bg-surface transition-all ${
+                    active
+                      ? "border-primary/50 ring-2 ring-primary"
+                      : clickable
+                        ? "border-border cursor-pointer hover:border-primary/40 hover:bg-muted/30"
+                        : "border-border opacity-50"
+                  }`}
+                >
+                  <CardContent className="px-3 py-2">
+                    <div className="flex items-center gap-1 mb-0.5">
+                      <Icon className={`h-3 w-3 shrink-0 ${active && !isSummary ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="text-[11px] text-muted-foreground leading-tight">{k.label}</span>
+                    </div>
+                    <p className="text-sm font-bold text-destructive">{k.value}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{k.sub}</p>
+                  </CardContent>
+                </Card>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                align="start"
+                className="max-w-[320px] p-3 text-[11px] leading-relaxed font-normal text-left"
+              >
+                <p className="font-semibold text-[12px] mb-1.5">{k.label}</p>
+                <p>{k.explain}</p>
+                {(action || k.disabledHint) && (
+                  <p className="mt-2 pt-2 border-t border-border/50 text-[10px] opacity-80">
+                    {action ?? k.disabledHint}
+                  </p>
+                )}
+              </TooltipContent>
+            </Tooltip>
           );
         })}
       </div>
-      {focus.size > 0 && (
+
+      {/* Severity bands — how bad is "below the bar"? Only meaningful once there's a bar. */}
+      {mode === "threshold" && visibleBands.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 -mt-2">
+          <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Severity</span>
+          {visibleBands.map((b) => {
+            const on = bands.has(b);
+            return (
+              <button
+                key={b}
+                type="button"
+                onClick={() => toggleBand(b)}
+                className={`h-7 px-2.5 text-xs rounded-button border transition-colors ${
+                  on
+                    ? "bg-primary text-primary-foreground border-primary font-medium"
+                    : "bg-surface text-muted-foreground border-border hover:bg-muted"
+                }`}
+                title={on ? "Remove this band" : "Show only this band"}
+              >
+                {BAND_LABELS[b]} <span className="opacity-70">({counts[b]})</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {(focus.size > 0 || bands.size > 0) && (
         <p className="text-[11px] text-primary -mt-3">
           Showing {focusedRows.length} of {rows.length} customers —{" "}
-          {[...focus].map((f) => ZC_FOCUS_LABELS[f]).join(" + ")}
-          {focus.size > 1 && <span className="text-muted-foreground"> (all conditions met)</span>}
+          {[...[...focus].map((f) => ZC_FOCUS_LABELS[f]), ...[...bands].map((b) => BAND_LABELS[b])].join(" + ")}
+          {focus.size + bands.size > 1 && <span className="text-muted-foreground"> (all conditions met)</span>}
           . The cards above still count all {rows.length}.
         </p>
       )}
@@ -877,19 +1332,118 @@ export default function ZeroCollectionsReport() {
         </CardContent>
       </Card>
 
-      {/* Basis note */}
-      <p className="text-[11px] text-muted-foreground flex items-start gap-1.5">
-        <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-        <span>
-          A customer is listed when they received <strong>no receipt voucher and no Other Payment</strong> in the period.
-          Cheque returns are reported in their own column but do <strong>not</strong> count as a collection reversal here —
-          a bounced payer still shows as having paid. Collections are month-wise, matching the Salesperson Collection
-          Report exactly. The data horizon starts 01-04-2025, so <strong>“Never”</strong> means no receipt since then.
-          There is no Sale Type filter: per-type collections are an estimate, and this report only makes claims it can prove.
-          Click a <strong>Customer</strong> or <strong>Customer Group</strong> row to open its detail page in a new tab (use the caret to expand instead).
-          Use the <Pin className="h-3 w-3 inline" /> to freeze the name column while scrolling.
-        </span>
-      </p>
+      {/* How it's calculated — a management report must be able to show its working, but the
+          working must not shout over the numbers. Collapsed by default; one click to audit. */}
+      <Card className="rounded-card border-border bg-surface">
+        <button
+          type="button"
+          onClick={() => setBasisOpen((o) => !o)}
+          aria-expanded={basisOpen}
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors rounded-card"
+        >
+          <Info className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="text-xs font-semibold text-foreground">How this report is calculated</span>
+          <span className="text-[11px] text-muted-foreground hidden sm:inline truncate">
+            {mode === "zero"
+              ? "· who is listed, and what counts as a payment"
+              : `· Collection % = Collected ÷ (Opening Outstanding + Sales)`}
+          </span>
+          <ChevronDown
+            className={`ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform ${basisOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+
+        {basisOpen && (
+          <CardContent className="px-4 pb-4 pt-0">
+            <ul className="space-y-2 text-[12px] leading-relaxed text-muted-foreground list-disc pl-9 marker:text-primary">
+              {mode === "zero" ? (
+                <>
+                  <li>
+                    <strong className="text-foreground">Who is listed.</strong> Customers who owe money and made{" "}
+                    <strong className="text-foreground">no receipt voucher and no manual Other Payment</strong> in the
+                    period — they paid nothing at all.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Cheque returns are shown, not netted.</strong> A bounced payer
+                    still counts as having paid, so they do <em>not</em> appear here. The{" "}
+                    <em>Below 30% Collection</em> report does catch them.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">“Never” means never.</strong> The data starts{" "}
+                    <strong className="text-foreground">01-04-2025</strong>, so “Never Paid” means no receipt since
+                    then — not merely none this period.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">It reconciles.</strong> Collections are month-wise, matching
+                    the Salesperson Collection Report exactly.
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li>
+                    <strong className="text-foreground">Collection % = Collected ÷ Collectible</strong>, worked out for
+                    each customer separately.
+                    <div className="mt-1.5 font-mono text-[11px] text-foreground/80 bg-muted/40 rounded-input px-3 py-2 inline-block">
+                      Collectible = what they owed at the start of the period
+                      <br />
+                      &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ what we billed them during it
+                      <br />
+                      Collected&nbsp;&nbsp;&nbsp;= receipt vouchers + manual Other Payments
+                    </div>
+                  </li>
+                  <li>
+                    <strong className="text-foreground">A group’s % is weighted.</strong> Every salesperson, group and
+                    company row is its own <strong className="text-foreground">Σ Collected ÷ Σ Collectible</strong> —{" "}
+                    <em>never</em> the average of its customers’ percentages, which would let a ₹1 L customer count as
+                    much as a ₹1 Cr one.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">The columns add up.</strong> Opening is derived by rolling
+                    today’s Outstanding <em>back</em> through the period’s movements, so{" "}
+                    <strong className="text-foreground">Opening + Sales − Collected reconciles to Outstanding</strong>{" "}
+                    — to the rupee, once credit/debit notes and journals are taken in.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">A bounced cheque cannot hide a defaulter.</strong> A customer is
+                    listed when <strong className="text-foreground">either</strong> the gross{" "}
+                    <strong className="text-foreground">or</strong> the net-of-cheque-returns percentage falls below{" "}
+                    {threshold}%. Without this, a customer whose only payment bounced would score above the bar and
+                    never appear.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Credit notes clear a bill without cash.</strong> A customer
+                    whose balance was cleared by sales returns still appears here — they paid nothing. The{" "}
+                    <strong className="text-foreground">Credit Notes</strong> column says why.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Nothing to collect ⇒ excluded, not 0%.</strong>{" "}
+                    {noPool > 0 ? (
+                      <>
+                        {noPool} customer{noPool === 1 ? "" : "s"} had no opening balance and no sales this period, so{" "}
+                        {noPool === 1 ? "it is" : "they are"} left out — a percentage of nothing is undefined.
+                      </>
+                    ) : (
+                      <>A customer with no opening balance and no sales is left out — a percentage of nothing is undefined.</>
+                    )}
+                  </li>
+                  <li>
+                    <strong className="text-foreground">It reconciles.</strong> Collections are month-wise, matching the
+                    Salesperson Collection Report exactly. The data starts{" "}
+                    <strong className="text-foreground">01-04-2025</strong>.
+                  </li>
+                </>
+              )}
+              <li>
+                <strong className="text-foreground">Getting around.</strong> Click a{" "}
+                <strong className="text-foreground">Customer</strong> or{" "}
+                <strong className="text-foreground">Customer Group</strong> row to open its detail page in a new tab
+                (use the caret to expand instead). Use the <Pin className="h-3 w-3 inline" /> to freeze the name column
+                while scrolling.
+              </li>
+            </ul>
+          </CardContent>
+        )}
+      </Card>
 
       {/* Table */}
       <ScrollableTable maxHeight="max-h-[62vh]" className="rounded-lg border border-border">
@@ -940,19 +1494,22 @@ export default function ZeroCollectionsReport() {
             ) : sortedRoots.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={columns.length + 2} className="text-center py-12 text-muted-foreground">
-                  {focus.size > 0 ? (
+                  {focus.size > 0 || bands.size > 0 ? (
                     <>
-                      No customer matches {[...focus].map((f) => ZC_FOCUS_LABELS[f]).join(" + ")}.
+                      No customer matches{" "}
+                      {[...[...focus].map((f) => ZC_FOCUS_LABELS[f]), ...[...bands].map((b) => BAND_LABELS[b])].join(" + ")}.
                       <button
                         type="button"
-                        onClick={() => setFocus(new Set())}
+                        onClick={() => { setFocus(new Set()); setBands(new Set()); }}
                         className="ml-1.5 text-primary hover:underline"
                       >
                         Clear the focus
                       </button>
                     </>
-                  ) : (
+                  ) : mode === "zero" ? (
                     "No customer matches — everyone who owes money paid something in this period."
+                  ) : (
+                    `No customer matches — everyone who owes money collected at least ${threshold}% in this period.`
                   )}
                 </TableCell>
               </TableRow>
@@ -996,7 +1553,7 @@ export default function ZeroCollectionsReport() {
             </Select>
             <span>
               {sortedRoots.length} {sortedRoots.length === 1 ? "row" : "rows"} · {focusedRows.length} customer{focusedRows.length === 1 ? "" : "s"}
-              {focus.size > 0 && <span className="opacity-70"> of {rows.length}</span>}
+              {(focus.size > 0 || bands.size > 0) && <span className="opacity-70"> of {rows.length}</span>}
             </span>
           </div>
           {pageSize !== "all" && totalPages > 1 && (
@@ -1042,5 +1599,16 @@ export default function ZeroCollectionsReport() {
         asOfDate={asOfDate}
       />
     </div>
+  );
+}
+
+export default function CollectionPerformanceReport() {
+  // These two reports go to management, so they are pinned to the pipeline data: the admin
+  // "Live (Tally)" topbar toggle must not be able to change a number here. Live is a later,
+  // separate piece of work.
+  return (
+    <ReceivablesSourceProvider value="default">
+      <CollectionPerformanceInner />
+    </ReceivablesSourceProvider>
   );
 }

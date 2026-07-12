@@ -1,16 +1,22 @@
 /**
- * exportZeroCollections.ts — the Excel export for the Zero Collections report.
+ * exportCollections.ts — the Excel export for the Collection Performance reports
+ * (Zero Collections at threshold 0, Below-30% at threshold 30 — same workbook shape).
  *
- * Two rules drive everything here:
+ * Three rules drive everything here:
  *
- *  1. WYSIWYG. The workbook carries exactly what was on screen — same period, filters,
- *     view preset, sort and visible columns. An export that quietly differs from the
- *     thing that was reviewed is worse than no export at all. Hence the Filters band:
+ *  1. WYSIWYG. The workbook carries exactly what was on screen — same period, threshold,
+ *     filters, view preset, sort and visible columns. An export that quietly differs from
+ *     the thing that was reviewed is worse than no export at all. Hence the Filters band:
  *     without it, a sheet mailed on Monday is unauditable by Friday.
  *
  *  2. Money is written as NUMBERS with an INR display format, never as pre-formatted
  *     strings ("₹1.20 L"). Strings look right and are useless — Excel can't SUM them.
- *     Sheet 2 additionally gets an autofilter so finance can slice it without coming
+ *     Percentages get the same treatment (a numeric 12.3 with a `0.0"%"` display format),
+ *     so finance can sort and filter on them.
+ *
+ *  3. A percentage is NEVER summed. The roll-up sheet's % cells come from each node's own
+ *     Σcollected / Σcollectible via the column's value() — the same function the screen
+ *     uses. Sheet 2 additionally gets an autofilter so finance can slice it without coming
  *     back to the app, which is what they'll actually do.
  */
 
@@ -19,17 +25,30 @@ import { saveAs } from "file-saver";
 import { formatDateDMY } from "./utils";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import { utilizationPct } from "./receivables";
-import { NEVER_PAID, type ZCColumn, type ZCMetrics, type ZCRow } from "./zeroCollections";
+import {
+  NEVER_PAID, BAND_LABELS, bandOf, shortfallOf,
+  type ZCColumn, type ZCMetrics, type ZCRow,
+} from "./collections";
 import type { GroupNode } from "./groupTree";
 
 /** INR cell number format (whole rupees, "₹" prefixed, dash for zero). */
 const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
 
+/** A literal "%" suffix — the cell holds 12.3, not 0.123, so it stays readable AND numeric.
+ *  (Excel's native `0.0%` would multiply by 100 and render 1230.0%.) */
+const PCT_FMT = '0.0"%";-0.0"%";"—"';
+
 export interface ZCExportMeta {
+  /** Report title, e.g. "Customers Below 30% Collection". */
+  title: string;
   /** The View preset name, e.g. "Salesperson → Customer". */
   viewLabel: string;
   /** Human-readable period, e.g. "Last 3 Months (01-05-2026 → 12-07-2026)". */
   periodLabel: string;
+  /** The basis paragraph — how the number was arrived at. */
+  basis: string;
+  /** Shortfall target, in percent. */
+  targetPct: number;
   asOfDate: string;
   /** Active-filter lines, e.g. ["Salesperson: Rakesh, Vinay", "Min Outstanding: ≥ ₹1 L"]. */
   filterSummary: string[];
@@ -38,6 +57,19 @@ export interface ZCExportMeta {
 /** Days-since-receipt renders as a number, except the never-paid sentinel. */
 const daysCell = (v: number): string | number =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : v;
+
+/** A null percentage (no denominator) must render as a dash, never as 0%. */
+const pctCell = (v: number | null): string | number =>
+  v === null ? "—" : Math.round(v * 10) / 10;
+
+/** One column's value for one node, ready to drop into a cell. */
+const cellFor = (col: ZCColumn, m: ZCMetrics): string | number => {
+  const v = col.value(m);
+  if (v === null) return "—";
+  if (col.kind === "pct") return pctCell(v);
+  if (col.kind === "days") return daysCell(v);
+  return Math.round(v);
+};
 
 /** Pre-order walk of the tree → flat rows carrying their depth and whether they're a leaf. */
 function flatten(
@@ -59,18 +91,19 @@ function flatten(
   return out;
 }
 
-/** Apply the INR format to a span of columns on a span of rows (both 0-indexed, inclusive). */
-function formatMoney(
+/** Apply a number format to a span of columns on a span of rows (both 0-indexed). */
+function formatCells(
   ws: XLSX.WorkSheet,
   firstRow0: number,
   rowCount: number,
-  moneyCols0: number[],
+  cols0: number[],
+  fmt: string,
 ): void {
   for (let i = 0; i < rowCount; i++) {
-    for (const col of moneyCols0) {
+    for (const col of cols0) {
       const addr = XLSX.utils.encode_cell({ r: firstRow0 + i, c: col });
       const cell = (ws as Record<string, unknown>)[addr] as { v?: unknown; z?: string } | undefined;
-      if (cell && typeof cell.v === "number") cell.z = INR_FMT;
+      if (cell && typeof cell.v === "number") cell.z = fmt;
     }
   }
 }
@@ -87,14 +120,12 @@ function buildRollupSheet(
 ): XLSX.WorkSheet {
   const aoa: Array<Array<string | number>> = [];
 
-  aoa.push(["Customers with Zero Collections"]);
+  aoa.push([meta.title]);
   aoa.push(["Period", meta.periodLabel]);
   aoa.push(["As on", formatDateDMY(meta.asOfDate)]);
   aoa.push(["View", meta.viewLabel]);
-  aoa.push([
-    "Basis",
-    "No receipt voucher and no Other Payment in the period. Cheque returns are reported, not netted.",
-  ]);
+  aoa.push(["Basis", meta.basis]);
+  aoa.push(["Shortfall target", `${meta.targetPct}%`]);
   aoa.push(["Filters", meta.filterSummary.length ? meta.filterSummary.join(" · ") : "None"]);
   aoa.push([]);
 
@@ -107,30 +138,22 @@ function buildRollupSheet(
   for (const r of rows) {
     aoa.push([
       `${"    ".repeat(r.depth)}${r.label}`,
-      ...columns.map((c) =>
-        c.kind === "days"
-          ? daysCell(r.metrics[c.key])
-          : Math.round(r.metrics[c.key]),
-      ),
+      ...columns.map((c) => cellFor(c, r.metrics)),
     ]);
   }
 
   const grandRow0 = aoa.length;
-  aoa.push([
-    "GRAND TOTAL",
-    ...columns.map((c) =>
-      c.kind === "days" ? daysCell(total[c.key]) : Math.round(total[c.key]),
-    ),
-  ]);
+  aoa.push(["GRAND TOTAL", ...columns.map((c) => cellFor(c, total))]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const ncols = header.length;
   ws["!cols"] = [{ wch: 40 }, ...columns.map(() => ({ wch: 16 }))];
 
-  const moneyCols0 = columns
-    .map((c, i) => (c.kind === "money" ? i + 1 : -1))
-    .filter((i) => i >= 0);
-  formatMoney(ws, firstData0, rows.length + 1, moneyCols0); // +1 → include the grand total
+  // +1 on the row count → include the grand total.
+  const pick = (k: ZCColumn["kind"]) =>
+    columns.map((c, i) => (c.kind === k ? i + 1 : -1)).filter((i) => i >= 0);
+  formatCells(ws, firstData0, rows.length + 1, pick("money"), INR_FMT);
+  formatCells(ws, firstData0, rows.length + 1, pick("pct"), PCT_FMT);
 
   styleRow(ws, 0, ncols, HEADER_STYLE);
   styleRow(ws, headerRow0, ncols, HEADER_STYLE);
@@ -148,21 +171,26 @@ function buildRollupSheet(
 }
 
 /**
- * Sheet 2 — flat, one row per zero-collection customer, every column. This is the sheet
- * finance pivots and filters in, so it gets the autofilter and the full attribute set
- * (including the leaf-only columns the roll-up can't show on a group row).
+ * Sheet 2 — flat, one row per listed customer, every column regardless of the ColumnPicker.
+ * This is the sheet finance pivots and filters in, so it gets the autofilter and the full
+ * attribute set (including the leaf-only columns the roll-up can't show on a group row).
  */
 function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
   const header = [
     "Customer", "Group", "Company", "Location", "Salesperson", "Category",
     "Outstanding", "Overdue", "> 180 Days",
-    "Sales in Window", "Prior Collections", "Cheque Returns",
+    "Opening", "Sales in Period", "Collectible", "Collected",
+    "Collection %", "Collection % (net of cheque returns)", `Shortfall vs ${meta.targetPct}%`, "Band",
+    "Prior Collections", "Prior %", "Δ pp",
+    "Cheque Returns", "Credit Notes",
     "Max Overdue Days", "Days Since Receipt", "Last Receipt Date",
     "Credit Limit", "Utilization %", "Risk", "Blocked",
   ];
+  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 15, 17, 20, 21, 25];
+  const PCT_COLS = [13, 14, 18, 19];
 
   const aoa: Array<Array<string | number>> = [];
-  aoa.push([`Customers with Zero Collections — ${meta.periodLabel}`]);
+  aoa.push([`${meta.title} — ${meta.periodLabel}`]);
   aoa.push([]);
   const headerRow0 = aoa.length;
   aoa.push(header);
@@ -170,6 +198,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
   const firstData0 = aoa.length;
   for (const r of rows) {
     const c = r.customer;
+    const f = r.facts;
     aoa.push([
       c.name,
       r.group,
@@ -180,12 +209,22 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
       Math.round(c.outstanding),
       Math.round(c.overdue),
       Math.round(c.agingBuckets?.["180_plus"] ?? 0),
-      Math.round(r.facts.salesInWindow),
-      Math.round(r.facts.inPrior),
-      Math.round(r.facts.chequeReturns),
+      Math.round(f.opening),
+      Math.round(f.salesInWindow),
+      Math.round(f.collectible),
+      Math.round(f.collected),
+      pctCell(f.pct),
+      pctCell(f.pctNet),
+      Math.round(shortfallOf(f, meta.targetPct)),
+      BAND_LABELS[bandOf(f)],
+      Math.round(f.inPrior),
+      pctCell(f.priorPct),
+      pctCell(f.deltaPp),
+      Math.round(f.chequeReturns),
+      Math.round(f.creditNotes),
       c.maxOverdueDays ?? 0,
-      r.facts.lastReceiptDate === null ? "Never" : (r.facts.daysSinceLastReceipt ?? 0),
-      r.facts.lastReceiptDate ? formatDateDMY(r.facts.lastReceiptDate) : "Never",
+      f.lastReceiptDate === null ? "Never" : (f.daysSinceLastReceipt ?? 0),
+      f.lastReceiptDate ? formatDateDMY(f.lastReceiptDate) : "Never",
       Math.round(c.creditLimit ?? 0),
       utilizationPct(c),
       c.risk,
@@ -197,12 +236,17 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
   const ncols = header.length;
   ws["!cols"] = [
     { wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 12 },
-    { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 16 }, { wch: 17 }, { wch: 15 },
-    { wch: 16 }, { wch: 17 }, { wch: 16 }, { wch: 15 }, { wch: 13 }, { wch: 10 }, { wch: 9 },
+    { wch: 15 }, { wch: 15 }, { wch: 15 },
+    { wch: 15 }, { wch: 16 }, { wch: 15 }, { wch: 15 },
+    { wch: 13 }, { wch: 30 }, { wch: 17 }, { wch: 13 },
+    { wch: 17 }, { wch: 11 }, { wch: 10 },
+    { wch: 15 }, { wch: 14 },
+    { wch: 16 }, { wch: 17 }, { wch: 16 },
+    { wch: 15 }, { wch: 13 }, { wch: 10 }, { wch: 9 },
   ];
 
-  // Money columns: Outstanding … Cheque Returns (6..11), Credit Limit (15).
-  formatMoney(ws, firstData0, rows.length, [6, 7, 8, 9, 10, 11, 15]);
+  formatCells(ws, firstData0, rows.length, MONEY_COLS, INR_FMT);
+  formatCells(ws, firstData0, rows.length, PCT_COLS, PCT_FMT);
 
   styleRow(ws, 0, ncols, HEADER_STYLE);
   styleRow(ws, headerRow0, ncols, HEADER_STYLE);
@@ -219,7 +263,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
   return ws;
 }
 
-export function exportZeroCollectionsXlsx(
+export function exportCollectionsXlsx(
   roots: GroupNode<ZCMetrics>[],
   total: ZCMetrics,
   leafRows: ZCRow[],
@@ -227,13 +271,16 @@ export function exportZeroCollectionsXlsx(
   meta: ZCExportMeta,
 ): void {
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, buildRollupSheet(roots, total, columns, meta), "Zero Collections");
+  // Excel caps sheet names at 31 chars and rejects most punctuation.
+  const tab = meta.title.replace(/[\\/?*[\]:]/g, "").slice(0, 31) || "Collections";
+  XLSX.utils.book_append_sheet(wb, buildRollupSheet(roots, total, columns, meta), tab);
   XLSX.utils.book_append_sheet(wb, buildCustomerSheet(leafRows, meta), "Customers");
 
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   const stamp = formatDateDMY(meta.asOfDate) || "export";
+  const file = meta.title.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
   saveAs(
     new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `Zero_Collections_${stamp}.xlsx`,
+    `${file}_${stamp}.xlsx`,
   );
 }

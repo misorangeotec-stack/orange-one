@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins, UserX } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -35,13 +35,24 @@ const REPORTS: ReportCard[] = [
     to: "/outstanding-dashboard/reports/other-payments",
     ready: true,
   },
+  // Two cards, one page. Zero collection is the 0% case of the threshold report, so both
+  // open pages/CollectionPerformanceReport at a different ?below= — see lib/collections.ts.
   {
     id: "zero-collections",
     title: "Customers with Zero Collections",
     description:
       "Customers who owe money and paid nothing in the period — ranked by outstanding, flagged when we're still billing them. Never-paid and still-buying counts, drill-down to open bills, Excel export.",
     icon: UserX,
-    to: "/outstanding-dashboard/reports/zero-collections",
+    to: "/outstanding-dashboard/reports/collections?below=0",
+    ready: true,
+  },
+  {
+    id: "low-collections",
+    title: "Customers Below 30% Collection",
+    description:
+      "Customers who collected less than 30% of what we could have collected (opening outstanding + sales billed). Shortfall in rupees, severity bands, prior-period comparison, and bounced-cheque and still-buying flags.",
+    icon: PercentIcon,
+    to: "/outstanding-dashboard/reports/collections?below=30",
     ready: true,
   },
 ];
