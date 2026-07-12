@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   TrendingUp, TrendingDown, AlertTriangle, Users, DollarSign, Receipt,
   Clock, ShieldAlert, Filter, Download, RefreshCw, ChevronRight, ChevronDown, ChevronUp,
-  FileMinus, FilePlus, RotateCcw, BookOpen, Wallet,
+  FileMinus, FilePlus, RotateCcw, BookOpen, Wallet, PhoneCall,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -18,7 +18,8 @@ import {
 } from "@hub/components/ui/select";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
-import { useHubBase } from "@hub/lib/sourceContext";
+import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
+import { useFollowups } from "@hub/lib/useFollowups";
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY, formatDateTimeDMY } from "@hub/lib/utils";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { ActivityLegendPopover } from "@hub/components/ActivityLegendPopover";
@@ -64,6 +65,10 @@ export default function Dashboard() {
   // inside whichever set the user is viewing.
   const hubBase = useHubBase();
   const rebase = (p: string) => p.replace(/^\/outstanding-dashboard/, hubBase);
+
+  // Follow-ups are a normal-dashboard feature — hidden under the Live (Tally) source toggle.
+  const followupsEnabled = useReceivablesSource() === "default";
+  const { due: followupsDue } = useFollowups();
 
   const [riskLevels,      setRiskLevels]      = useState<string[]>([]);
   const [customerSegment, setCustomerSegment] = useState<"all" | "active" | "no_activity">("active");
@@ -404,6 +409,32 @@ export default function Dashboard() {
           );
         })}
       </div>
+
+      {/* Today's chase list — only shown when there is actually something to chase, so it
+          stays a call to action rather than permanent furniture. */}
+      {followupsEnabled && (followupsDue.today.length > 0 || followupsDue.overdue.length > 0) && (
+        <Card
+          className="rounded-card border-border bg-surface cursor-pointer transition-colors hover:bg-muted/40"
+          onClick={() => navigate("/outstanding-dashboard/followups")}
+        >
+          <CardContent className="flex items-center gap-3 px-4 py-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-button border border-amber-200 bg-amber-50 text-amber-600">
+              <PhoneCall className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">
+                {followupsDue.today.length} follow-up{followupsDue.today.length === 1 ? "" : "s"} due today
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {followupsDue.overdue.length > 0
+                  ? `${followupsDue.overdue.length} overdue — chase date already passed`
+                  : "Nothing overdue"}
+              </p>
+            </div>
+            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Outstanding Build-up — shown on demand */}
       {showBuildup && kpis && (() => {

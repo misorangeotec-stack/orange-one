@@ -95,13 +95,26 @@ interface CustomerRow {
   childNames?: string[];
   /** Set on group rows; true if isGroup === true (more than one Tally child). */
   isGroup?: boolean;
+  /** Open follow-up date ("YYYY-MM-DD"), from this entity's most recent follow-up. "" = none. */
+  nextFollowupDate?: string;
+  /** The remark on that most recent follow-up. */
+  lastRemark?: string;
+  /** Which follow-up entity this row logs against. Undefined on roll-up headers that aren't
+   *  a customer or a customer group (e.g. a Salesperson subtotal) — those can't be chased. */
+  followupEntity?: { type: FollowupEntityType; name: string };
 }
 
 type ViewMode = "customer" | "group";
 
-import { fmtINRMoney, fmtINRDrCr } from "@hub/lib/utils";
+import { fmtINRMoney, fmtINRDrCr, formatDateDMY } from "@hub/lib/utils";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
+import { useReceivablesSource } from "@hub/lib/sourceContext";
+import { useFollowups } from "@hub/lib/useFollowups";
+import { FollowupModal } from "@hub/components/FollowupModal";
+import { FollowupRowAction } from "@hub/components/FollowupRowAction";
+import { NextFollowupCell } from "@hub/components/NextFollowupCell";
+import { entityKey, type FollowupEntityType } from "@hub/lib/followupTypes";
 
 const fmt = (n: number) => {
   const sign = n < 0 ? "-" : "";
@@ -539,6 +552,11 @@ const columns: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "salesPerson",    label: "Sales Person" },
   { key: "companies",      label: "Company" },
   { key: "locations",      label: "Location" },
+  // Sits in the first slot PAST the freezable block (see FREEZABLE_KEYS below — those four must
+  // stay the leading contiguous run or the sticky-column offsets break). Company/Location are
+  // hidden by default, so in practice this renders right after Sales Person: the chase date is
+  // readable without scrolling past ten money columns, which is where it was buried before.
+  { key: "nextFollowupDate", label: "Next Follow-up" },
   { key: "openingBalance", label: "Opening Bal",   align: "right" },
   { key: "sales",          label: "Sales",         align: "right" },
   { key: "receipts",       label: "Receipts",      align: "right" },
@@ -555,6 +573,9 @@ const columns: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "utilization",    label: "Util %",        align: "right" },
   { key: "risk",           label: "Risk" },
   { key: "blocked",        label: "Blocked" },
+  // Stays last: it's a wide free-text column, and moving it left would shove the money columns
+  // off-screen. The remark is also surfaced in the row action's tooltip.
+  { key: "lastRemark",       label: "Last Remark" },
 ];
 
 // Leading identity columns that can be frozen (Excel-style freeze panes). They are
@@ -566,7 +587,13 @@ const ALL_COL_KEYS = columns.map((c) => c.key);
 // Columns hidden by default — user can opt-in via the column toggle.
 const HIDDEN_BY_DEFAULT: SortKey[] = ["companies", "locations", "proposedCreditLimit3M", "proposedCreditLimitAI"];
 const DEFAULT_VISIBLE_COL_KEYS = ALL_COL_KEYS.filter((k) => !HIDDEN_BY_DEFAULT.includes(k));
-const COL_STORAGE_KEY = "riskRegister.visibleColumns";
+// Bumped to v2 when the follow-up columns were added: the v1 key holds a saved column set
+// from before they existed, so anyone who had ever touched the column picker would never
+// see them. A one-time reset of column prefs is the cheap fix.
+const COL_STORAGE_KEY = "riskRegister.visibleColumns.v2";
+
+/** Follow-up columns — dropped entirely when the hub is in Live (Tally) mode. */
+const FOLLOWUP_COL_KEYS: SortKey[] = ["nextFollowupDate", "lastRemark"];
 
 /* ── Group-by dimensions (Aging-style multi-level roll-up) ───────────────────── */
 type RDim = "customer" | "group" | "salesperson" | "category" | "company" | "location";
@@ -593,8 +620,10 @@ const R_PRESETS: GroupByPreset<RDim>[] = [
   { label: "Customer Category",            dims: ["category"] },
 ];
 
-/** A roll-up node: a leaf (one customer) or a group header with summed money columns. */
-interface RNode { key: string; depth: number; label: string; header: CustomerRow; children: RNode[]; isLeaf: boolean; count: number; }
+/** A roll-up node: a leaf (one customer) or a group header with summed money columns.
+ *  `dim` is the dimension that produced a header node — only a "group" header has a detail
+ *  page to drill into, so it's the one that gets a click-through. */
+interface RNode { key: string; depth: number; label: string; header: CustomerRow; children: RNode[]; isLeaf: boolean; count: number; dim?: RDim; }
 const RISK_ORDER: RiskCategory[] = ["critical", "high", "medium", "low"];
 
 /** Single display value for a consolidated row on a dimension (multi-valued → "Multiple"). */
@@ -666,7 +695,7 @@ export default function CustomerRiskRegister() {
   );
   // Expanded roll-up nodes, keyed by node.key (any depth).
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const [visibleCols, setVisibleCols] = useState<Set<SortKey>>(() => {
+  const [storedCols, setVisibleCols] = useState<Set<SortKey>>(() => {
     try {
       const raw = localStorage.getItem(COL_STORAGE_KEY);
       if (raw) {
@@ -679,8 +708,23 @@ export default function CustomerRiskRegister() {
   });
 
   useEffect(() => {
-    try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify([...visibleCols])); } catch {}
-  }, [visibleCols]);
+    try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify([...storedCols])); } catch {}
+  }, [storedCols]);
+
+  // Follow-ups are a normal-dashboard feature: under the admin "Live (Tally)" source toggle
+  // the columns (and the quick-add) disappear entirely, without disturbing the user's saved
+  // column preferences.
+  const followupsEnabled = useReceivablesSource() === "default";
+  const visibleCols = useMemo(() => {
+    if (followupsEnabled) return storedCols;
+    const s = new Set(storedCols);
+    for (const k of FOLLOWUP_COL_KEYS) s.delete(k);
+    return s;
+  }, [storedCols, followupsEnabled]);
+  const pickerColumns = useMemo(
+    () => (followupsEnabled ? columns : columns.filter((c) => !FOLLOWUP_COL_KEYS.includes(c.key))),
+    [followupsEnabled],
+  );
 
   const toggleCol = (key: SortKey) => {
     setVisibleCols((prev) => {
@@ -736,7 +780,23 @@ export default function CustomerRiskRegister() {
   // Leaves are always the consolidated (per-name) customers; the group-by builder
   // rolls them up into headers. (The precomputed groupedCustomers are used only to
   // derive the customer-name → customer-group mapping for the "group" dimension.)
-  const allData: CustomerRow[] = consolidatedCustomers as CustomerRow[];
+  // Follow-up state, joined onto each customer leaf by NAME (the hub's stable key).
+  const { latestByEntity } = useFollowups();
+  const [followupTarget, setFollowupTarget] = useState<{ type: FollowupEntityType; name: string } | null>(null);
+
+  const allData: CustomerRow[] = useMemo(() => {
+    const base = consolidatedCustomers as CustomerRow[];
+    if (!followupsEnabled) return base;
+    return base.map((c): CustomerRow => {
+      const latest = latestByEntity.get(entityKey("customer", c.name));
+      return {
+        ...c,
+        nextFollowupDate: latest?.nextFollowupDate ?? "",
+        lastRemark: latest?.remarks ?? "",
+        followupEntity: { type: "customer", name: c.name },
+      };
+    });
+  }, [consolidatedCustomers, latestByEntity, followupsEnabled]);
   const nameToGroup = useMemo(() => {
     const m: Record<string, string> = {};
     for (const g of groupedCustomers as GroupedCustomer[]) {
@@ -746,6 +806,12 @@ export default function CustomerRiskRegister() {
     }
     return m;
   }, [groupedCustomers]);
+
+  // The labels that are REAL (multi-member) groups. `nameToGroup` only carries entries for genuine
+  // multi-child groups, so its values are exactly those. An ungrouped customer still surfaces as its
+  // own row under the "group" dimension (rdimValue falls back to the customer's own name) — that row
+  // must drill into /customer/, not /group/, which is how it behaved before the Group By rework.
+  const groupNames = useMemo(() => new Set(Object.values(nameToGroup)), [nameToGroup]);
 
   // Company / Location filter options — dependent (each list narrows by the other
   // selection) and sourced from the unfiltered, salesperson-scoped customer set so
@@ -1119,7 +1185,12 @@ export default function CustomerRiskRegister() {
   // by Salesperson only) yields header rows with no children — exactly like the Aging Report.
   const groupTree = useMemo<RNode[]>(() => {
     const uniqStr = (xss: string[][]) => [...new Set(xss.flat().filter(Boolean))];
-    const aggregate = (rs: CustomerRow[], key: string, label: string): CustomerRow => {
+    const aggregate = (rs: CustomerRow[], key: string, label: string, dim: RDim): CustomerRow => {
+      // Only a Customer-Group header is itself a chaseable entity — a Salesperson or
+      // Company subtotal is not something you can log a follow-up against.
+      const groupLatest = dim === "group" && followupsEnabled
+        ? latestByEntity.get(entityKey("group", label))
+        : undefined;
       const sum = (f: keyof CustomerRow) => rs.reduce((s, r) => s + (Number(r[f]) || 0), 0);
       const buckets: AgingBuckets = { "0_30": 0, "31_60": 0, "61_90": 0, "91_120": 0, "121_180": 0, "180_plus": 0 };
       for (const r of rs) for (const k of Object.keys(buckets) as (keyof AgingBuckets)[]) buckets[k] += r.agingBuckets?.[k] ?? 0;
@@ -1154,6 +1225,11 @@ export default function CustomerRiskRegister() {
         proposedCreditLimitAI: sum("proposedCreditLimitAI"),
         proposedCreditLimitAIDeltaPct: null,
         constituentIds: rs.flatMap((r) => r.constituentIds ?? [r.id]),
+        nextFollowupDate: groupLatest?.nextFollowupDate ?? "",
+        lastRemark: groupLatest?.remarks ?? "",
+        followupEntity: dim === "group" && followupsEnabled
+          ? { type: "group", name: label }
+          : undefined,
       } as CustomerRow;
     };
     const valueFor = (r: CustomerRow): number | string =>
@@ -1184,13 +1260,13 @@ export default function CustomerRiskRegister() {
       const nodes = order.map((v): RNode => {
         const brs = buckets.get(v)!;
         const key = `${prefix}/${dim}:${v}`;
-        return { key, depth, label: v, header: aggregate(brs, key, v), children: rest.length ? build(brs, rest, depth + 1, key) : [], isLeaf: false, count: brs.length };
+        return { key, depth, label: v, dim, header: aggregate(brs, key, v, dim), children: rest.length ? build(brs, rest, depth + 1, key) : [], isLeaf: false, count: brs.length };
       });
       nodes.sort((a, b) => cmp(a.header, b.header));
       return nodes;
     };
     return build(rows, groupBy, 0, "");
-  }, [rows, groupBy, nameToGroup, sortKey, sortDir, agingBucketKeys]);
+  }, [rows, groupBy, nameToGroup, sortKey, sortDir, agingBucketKeys, latestByEntity, followupsEnabled]);
 
   // Reset to page 1 whenever filters, sort, page size, or grouping changes.
   useEffect(() => {
@@ -1221,7 +1297,17 @@ export default function CustomerRiskRegister() {
     return (
       <TableRow key={opts.key} className={`group hover:bg-muted/30 transition-colors ${opts.onClick ? "cursor-pointer" : ""} ${tint}`} onClick={opts.onClick}>
         {visibleCols.has("name") && (() => { const f = freezeStick("name", { bg }); return (
-          <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>{opts.leadCell}</TableCell>
+          <TableCell style={f.style} className={`font-medium text-sm whitespace-nowrap ${f.className}`}>
+            {opts.leadCell}
+            {/* Log a follow-up straight from the row. Only on rows that ARE a chaseable entity:
+                a customer, or a Customer-Group header — never a Salesperson/Company subtotal. */}
+            {followupsEnabled && r.followupEntity && (
+              <FollowupRowAction
+                latest={latestByEntity.get(entityKey(r.followupEntity.type, r.followupEntity.name))}
+                onLog={() => setFollowupTarget(r.followupEntity!)}
+              />
+            )}
+          </TableCell>
         ); })()}
         {visibleCols.has("salesPerson") && (() => { const f = freezeStick("salesPerson", { bg }); return (
           <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`}>{r.salesPersons?.length ? (r.salesPersons.length === 1 ? r.salesPersons[0] : "Multiple") : r.salesPerson}</TableCell>
@@ -1317,6 +1403,23 @@ export default function CustomerRiskRegister() {
             )}
           </TableCell>
         )}
+        {visibleCols.has("nextFollowupDate") && (
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            {r.followupEntity ? (
+              <NextFollowupCell
+                latest={latestByEntity.get(entityKey(r.followupEntity.type, r.followupEntity.name))}
+                onLog={() => setFollowupTarget(r.followupEntity!)}
+              />
+            ) : (
+              <span className="text-[10px] text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )}
+        {visibleCols.has("lastRemark") && (
+          <TableCell className="text-[11px] text-muted-foreground max-w-[260px] truncate" title={r.lastRemark || ""}>
+            {r.lastRemark || "—"}
+          </TableCell>
+        )}
         <TableCell>
           {!isHeader && (
             <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); opts.onClick?.(); }} className="h-7 w-7 p-0 rounded-button text-muted-foreground hover:text-primary">
@@ -1353,9 +1456,20 @@ export default function CustomerRiskRegister() {
       if (next.has(n.key)) next.delete(n.key); else next.add(n.key);
       return next;
     });
+    // Only a Customer Group header has a detail page to open. A Salesperson / Company / Category
+    // subtotal has none, so it stays inert rather than becoming a dead link. An ungrouped customer
+    // appearing under the "group" dimension drills into its own /customer/ page — the behaviour the
+    // Group By rework (0b7de4c) dropped, which is what made these rows unclickable.
+    const navPath = n.dim !== "group" ? null
+      : groupNames.has(n.label)
+        ? `/outstanding-dashboard/group/${encodeURIComponent(n.label)}`
+        : `/outstanding-dashboard/customer/${encodeURIComponent(n.label)}`;
+    const openDetail = navPath ? () => openInNewTab(withSaleType(navPath)) : undefined;
     const out: ReactNode[] = [renderRow(n.header, {
       key: n.key, depth: n.depth, isHeader: true,
-      onClick: canExpand ? toggle : undefined,
+      // The row click opens the group; expand/collapse lives on its own caret below (which stops
+      // propagation), so a group header can do both. Every other header keeps toggle-on-row-click.
+      onClick: openDetail ?? (canExpand ? toggle : undefined),
       leadCell: (
         <span className="inline-flex items-center gap-2" style={{ paddingLeft: n.depth * 18 }}>
           {canExpand ? (
@@ -1363,7 +1477,18 @@ export default function CustomerRiskRegister() {
               {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
             </button>
           ) : <span className="w-5 shrink-0" />}
-          <span className="font-semibold">{n.label}</span>
+          {openDetail ? (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); openDetail(); }}
+              className="font-semibold text-left hover:text-primary hover:underline"
+              title="Open consolidated detail"
+            >
+              {n.label}
+            </button>
+          ) : (
+            <span className="font-semibold">{n.label}</span>
+          )}
           <Badge variant="outline" className="text-[9px] px-1 py-0 rounded font-normal text-muted-foreground border-border shrink-0">
             {n.count} {n.count === 1 ? "customer" : "customers"}
           </Badge>
@@ -1383,6 +1508,8 @@ export default function CustomerRiskRegister() {
     if (key === "risk") return row.risk.charAt(0).toUpperCase() + row.risk.slice(1);
     if (key === "blocked") return row.blocked ? "Blocked" : "";
     if (key === "overdue") return overdueForRow(row);
+    if (key === "nextFollowupDate") return row.nextFollowupDate ? formatDateDMY(row.nextFollowupDate) : "";
+    if (key === "lastRemark") return row.lastRemark ?? "";
     // Blocked customers carry a ₹1 sentinel credit limit, not a real limit,
     // so their utilization % is meaningless — export a dash instead.
     if (key === "utilization") return row.blocked ? "—" : row.utilization;
@@ -1567,13 +1694,13 @@ export default function CustomerRiskRegister() {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="rounded-button border-border">
                 <Columns3 className="h-4 w-4 mr-2" />
-                Columns{visibleCols.size < columns.length ? ` (${visibleCols.size}/${columns.length})` : ""}
+                Columns{visibleCols.size < pickerColumns.length ? ` (${visibleCols.size}/${pickerColumns.length})` : ""}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 max-h-[70vh] overflow-y-auto">
               <DropdownMenuLabel>Show columns</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {columns.map((col) => (
+              {pickerColumns.map((col) => (
                 <DropdownMenuCheckboxItem
                   key={col.key}
                   checked={visibleCols.has(col.key)}
@@ -2009,6 +2136,17 @@ export default function CustomerRiskRegister() {
             </Pagination>
           )}
         </div>
+      )}
+
+      {/* Quick-add from the worklist. The entity follows the row: a customer leaf logs against
+          the customer, a Customer-Group header against the group. */}
+      {followupTarget && (
+        <FollowupModal
+          open={!!followupTarget}
+          onOpenChange={(o) => !o && setFollowupTarget(null)}
+          entityType={followupTarget.type}
+          entityName={followupTarget.name}
+        />
       )}
     </div>
     </UITooltipProvider>

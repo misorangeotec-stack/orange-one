@@ -1817,6 +1817,57 @@ export type Database = {
         }
         Relationships: []
       }
+      receivables_followups: {
+        Row: {
+          created_at: string
+          created_by: string
+          entity_name: string
+          entity_type: string
+          id: string
+          next_followup_date: string | null
+          outcome: string
+          outstanding_at_entry: number | null
+          overdue_at_entry: number | null
+          promised_amount: number | null
+          promised_date: string | null
+          remarks: string
+          salesperson: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          entity_name: string
+          entity_type: string
+          id?: string
+          next_followup_date?: string | null
+          outcome: string
+          outstanding_at_entry?: number | null
+          overdue_at_entry?: number | null
+          promised_amount?: number | null
+          promised_date?: string | null
+          remarks: string
+          salesperson?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          entity_name?: string
+          entity_type?: string
+          id?: string
+          next_followup_date?: string | null
+          outcome?: string
+          outstanding_at_entry?: number | null
+          overdue_at_entry?: number | null
+          promised_amount?: number | null
+          promised_date?: string | null
+          remarks?: string
+          salesperson?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       recurring_task_locations: {
         Row: {
           created_at: string

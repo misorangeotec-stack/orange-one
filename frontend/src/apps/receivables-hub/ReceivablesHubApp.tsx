@@ -9,6 +9,7 @@ import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
 import UserLayout from "@hub/layouts/UserLayout";
 import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
+import FollowupsPage from "@hub/pages/Followups";
 import SalespersonAnalysis from "@hub/pages/SalespersonAnalysis";
 import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport";
 import CustomerDetail from "@hub/pages/CustomerDetail";
@@ -45,6 +46,8 @@ function HubRoutes() {
         <Route element={<UserLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="risk-register" element={<CustomerRiskRegister />} />
+          {/* Follow-ups force the pipeline source internally — see pages/Followups.tsx. */}
+          <Route path="followups" element={<FollowupsPage />} />
           <Route path="salesperson-analysis" element={<SalespersonAnalysis />} />
           <Route path="salesperson-collection" element={<SalespersonCollectionReport />} />
           {/* Retired: "Collection Report (Tally Live)" was a duplicate menu item rendering this very

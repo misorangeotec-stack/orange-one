@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from "react-rout
 import {
   ArrowLeft, Download, ShieldAlert, Clock, AlertTriangle,
   CreditCard, TrendingUp, RefreshCw, BookOpen, Building2, ChevronDown, X, Search,
-  ArrowUpDown, ArrowUp, ArrowDown, Columns3, Loader2,
+  ArrowUpDown, ArrowUp, ArrowDown, Columns3, Loader2, Plus,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -51,6 +51,10 @@ type RiskCategory = "critical" | "high" | "medium" | "low";
 /* ── Helpers ───────────────────────────────────────────── */
 
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY } from "@hub/lib/utils";
+import { useFollowups } from "@hub/lib/useFollowups";
+import { FollowupModal } from "@hub/components/FollowupModal";
+import { FollowupTimeline } from "@hub/components/FollowupTimeline";
+import { dueBucketFor, entityKey, type FollowupEntityType } from "@hub/lib/followupTypes";
 
 const fmt = (n: number) => {
   const sign = n < 0 ? "-" : "";
@@ -478,6 +482,8 @@ export default function CustomerDetail() {
   const [activeTrendKeys, setActiveTrendKeys] = useState<Set<string>>(new Set());
   const [ledgerMonth, setLedgerMonth] = useState<string | null>(null);
   const [trendOpen, setTrendOpen] = useState(true);
+  const [followupsOpen, setFollowupsOpen] = useState(true);
+  const [followupModalOpen, setFollowupModalOpen] = useState(false);
   const [agingOpen, setAgingOpen] = useState(true);
   const [obOpen, setObOpen] = useState(false);
   const [agingBucketFilter, setAgingBucketFilter] = useState<Set<string>>(new Set());
@@ -530,6 +536,15 @@ export default function CustomerDetail() {
     if (explicit.length > 0) return [...explicit].sort();
     return [groupName];  // ungrouped customer reached via group route
   }, [isGroupRoute, customerGroupMap.groups, groupName]);
+
+  // ── Follow-ups ───────────────────────────────────────────────────────────────
+  // The entity follows the ROUTE: /group/:id logs against the group, /customer/:id against
+  // the customer. Keyed by name — never by Customer.id, which is a pipeline surrogate.
+  const followupsEnabled = useReceivablesSource() === "default";
+  const followupEntityType: FollowupEntityType = isGroupRoute ? "group" : "customer";
+  const followupEntityName = isGroupRoute ? groupName : customerName;
+  const { latestByEntity } = useFollowups();
+  const openFollowup = latestByEntity.get(entityKey(followupEntityType, followupEntityName));
 
   // Initialise child selection to "all" once we know who the children are.
   // Re-initialises if groupChildNames structurally changes (e.g. mapping loads
@@ -1686,6 +1701,61 @@ export default function CustomerDetail() {
         })}
       </div>
 
+
+      {/* Follow-ups — the case file. Placed directly under the KPI cards because it's what you
+          read (and add to) while you're actually on the phone with the client. Hidden in Live
+          (Tally) mode: follow-ups are a normal-dashboard feature. */}
+      {followupsEnabled && (
+        <Collapsible open={followupsOpen} onOpenChange={setFollowupsOpen}>
+          <Card className="rounded-card border-border bg-surface">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <CollapsibleTrigger asChild>
+                  <button className="flex flex-1 items-center gap-2 text-left">
+                    <CardTitle className="text-sm font-semibold">Follow-ups</CardTitle>
+                    {openFollowup?.nextFollowupDate && (
+                      <span
+                        className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+                          dueBucketFor(openFollowup.nextFollowupDate) === "overdue"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : dueBucketFor(openFollowup.nextFollowupDate) === "today"
+                              ? "border-amber-200 bg-amber-50 text-amber-700"
+                              : "border-border bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        Next {formatDateDMY(openFollowup.nextFollowupDate)}
+                      </span>
+                    )}
+                    <ChevronDown className={`ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200 ${followupsOpen ? "rotate-180" : ""}`} />
+                  </button>
+                </CollapsibleTrigger>
+                <Button size="sm" className="h-7 shrink-0 text-[11px]" onClick={() => setFollowupModalOpen(true)}>
+                  <Plus className="mr-1 h-3 w-3" />
+                  Add Follow-up
+                </Button>
+              </div>
+            </CardHeader>
+            <CollapsibleContent>
+              <CardContent>
+                <FollowupTimeline
+                  entityType={followupEntityType}
+                  entityName={followupEntityName}
+                  childNames={isGroupRoute ? groupChildNames : []}
+                />
+              </CardContent>
+            </CollapsibleContent>
+          </Card>
+        </Collapsible>
+      )}
+
+      {followupModalOpen && (
+        <FollowupModal
+          open={followupModalOpen}
+          onOpenChange={setFollowupModalOpen}
+          entityType={followupEntityType}
+          entityName={followupEntityName}
+        />
+      )}
 
       {/* Trend Chart */}
       <Collapsible open={trendOpen} onOpenChange={setTrendOpen}>

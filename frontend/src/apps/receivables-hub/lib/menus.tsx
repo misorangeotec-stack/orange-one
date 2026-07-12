@@ -3,6 +3,7 @@ import {
   ShieldAlert,
   FileText,
   PackageOpen,
+  PhoneCall,
   UserCheck,
   HandCoins,
   Settings as SettingsIcon,
@@ -38,6 +39,7 @@ export interface ReceivablesMenu {
 export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "dashboard", title: "Dashboard", url: BASE, icon: BarChart3 },
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
+  { key: "followups", title: "Follow-ups", url: `${BASE}/followups`, icon: PhoneCall },
   { key: "salesperson-analysis", title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck },
   { key: "salesperson-collection", title: "Salesperson Collection Report", url: `${BASE}/salesperson-collection`, icon: HandCoins },
   // NOTE: the parallel "Live (Tally)" view is NOT a set of separate menu items — an admin toggles
