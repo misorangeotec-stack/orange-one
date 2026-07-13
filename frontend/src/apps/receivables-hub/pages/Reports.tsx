@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock, PackageX } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock, PackageX, Layers } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -75,6 +75,17 @@ const REPORTS: ReportCard[] = [
       "Dormant accounts — they owe money but have billed nothing in the period. Opens on the last 6 months, excluding one-time machine sales (switchable), ranked by the cash stuck in them, with months-since-last-sale, a \"paid nothing either\" lens for the dead-and-stuck, a \"recently gone quiet\" lens for the ones still worth a call, drill-down to open bills and Excel export.",
     icon: PackageX,
     to: "/outstanding-dashboard/reports/dormant",
+    ready: true,
+  },
+  // The only report where the A/B/C/D/E tier is the SPINE rather than a filter — and the only one
+  // that asks whether the tiers mean anything. See lib/customerCategory.ts.
+  {
+    id: "customer-category",
+    title: "Customer Category Report (A/B/C/D/E)",
+    description:
+      "The whole book pivoted by customer tier — customers, sales, collection %, what they owe, what they've pre-paid us, share of book, aging, credit limits and risk, per grade. Plus a tag-hygiene lens that grades every customer on how they ACTUALLY pay and flags the mismatches: the ones tagged A who behave like a D, and the D/E who settle on time. Category × salesperson / sale type / company cross-tab, and a five-sheet Excel worklist.",
+    icon: Layers,
+    to: "/outstanding-dashboard/reports/category",
     ready: true,
   },
 ];

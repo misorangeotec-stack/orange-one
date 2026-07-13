@@ -441,7 +441,41 @@ export function factsFor(
   priorMonths: string[],
   asOfDate: string,
 ): CollectionFacts {
-  const ids = c.constituentIds?.length ? c.constituentIds : [c.id];
+  return factsForScoped(c, series, lastDates, balances, months, windowMonths, priorMonths, asOfDate, null);
+}
+
+/**
+ * factsFor, restricted to a subset of the customer's ledgers.
+ *
+ * ── Why this exists ───────────────────────────────────────────────────────────────
+ * A ConsolidatedCustomer's `constituentIds` span EVERY ledger it trades under, ignoring
+ * whatever company / location / salesperson filter the calling report has applied. A report
+ * that filters to one company and then reads plain `factsFor` shows that company's balances
+ * beside the customer's ALL-INDIA sales and receipts — so Collection % is silently wrong and
+ * the grand total ties to nothing. That is the exact bug overdueAging.ts:63-73 is shaped to
+ * avoid, and it is why it refuses to call factsFor at all.
+ *
+ * Passing the in-scope ledger ids fixes it properly. Every ledger's opening and flows are
+ * derived INDEPENDENTLY and then summed (see openingForLedger — it is per-ledger, anchored on
+ * that ledger's own canonical balance), so restricting the id set is exact, not an
+ * approximation: the identity Opening + Sales + DN + Jnl − (Collected − Bounced) − CN =
+ * Outstanding still holds, over the scoped ledgers.
+ *
+ * `scopeIds = null` means "no scope" and is byte-for-byte the old behaviour.
+ */
+export function factsForScoped(
+  c: ConsolidatedCustomer,
+  series: Map<string, Map<string, MonthFacts>>,
+  lastDates: Map<string, string | null>,
+  balances: Map<string, number>,
+  months: string[],
+  windowMonths: string[],
+  priorMonths: string[],
+  asOfDate: string,
+  scopeIds: ReadonlySet<string> | null,
+): CollectionFacts {
+  const all = c.constituentIds?.length ? c.constituentIds : [c.id];
+  const ids = scopeIds ? all.filter((id) => scopeIds.has(id)) : all;
 
   let inWindow = 0, inPrior = 0, salesInWindow = 0, chequeReturns = 0, creditNotes = 0;
   let salesInPrior = 0;

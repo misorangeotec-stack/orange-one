@@ -63,6 +63,10 @@ function formatAsOfDateTime(input: string): string {
 const FY_PINNED_ROUTES = [
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
+  // The Category Report's balance/aging half is a property of the whole book, while its
+  // sales/collections half has its own period selector on the page. An FY selector in the topbar
+  // would be claiming to drive both, and would drive neither.
+  "/outstanding-dashboard/reports/category",
 ];
 
 export default function UserLayout() {
