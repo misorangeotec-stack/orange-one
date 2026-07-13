@@ -19,9 +19,25 @@ export interface StepBreak {
   counts: Record<Bucket, number>;
 }
 
+/**
+ * A stage — several steps rolled into the one thing a reader actually asks about
+ * ("is it stuck getting approved, or stuck finding people?").
+ *
+ * Optional, and that is the point. Purchase's nine steps are one journey, so it declares
+ * no stages and expands to the nine, exactly as it always has. HR's eighteen span four
+ * unrelated processes, and eighteen rows on a scoreboard is a wall you read nothing from.
+ */
+export interface StageBreak {
+  label: string;
+  counts: Record<Bucket, number>;
+  steps: StepBreak[];
+}
+
 export interface FmsSnapshot {
   total: Record<Bucket, number>;
   steps: StepBreak[];
+  /** Present only for an FMS that declares stages; every queue step appears in exactly one. */
+  stages?: StageBreak[];
 }
 
 export interface FmsAdapter {

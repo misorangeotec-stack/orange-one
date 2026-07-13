@@ -671,7 +671,7 @@ export async function tallyDocumentUrl(path: string): Promise<string> {
 
 /* ================= activity + notifications (Phase 5) =================== */
 
-export type ProcEntity = "request" | "line" | "po" | "pi" | "grn" | "payment";
+export type ProcEntity = "request" | "line" | "po" | "pi" | "grn" | "payment" | "master_request";
 
 /**
  * Write one activity row (actor = signed-in user) and fan a notification out to

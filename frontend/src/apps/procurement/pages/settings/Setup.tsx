@@ -4,11 +4,12 @@ import StepOwnersSection from "./StepOwnersSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import ApprovalMatrixSection from "./ApprovalMatrixSection";
 import CoordinatorsSection from "./CoordinatorsSection";
+import MasterOwnersSection from "./MasterOwnersSection";
 
 /**
  * Setup — the no-code configuration backbone (admin only). Wire up step owners,
- * each step's due date, the amount-tiered approval matrix, and the process
- * coordinators. Master managers live under Masters → Managers.
+ * each step's due date, the amount-tiered approval matrix, the process
+ * coordinators, and who owns each master (and so reviews its new-entry requests).
  */
 export default function Setup() {
   const [tab, setTab] = useState("owners");
@@ -18,6 +19,7 @@ export default function Setup() {
     { key: "sla", label: "Due Dates" },
     { key: "approval", label: "Approval Matrix" },
     { key: "roles", label: "Coordinators" },
+    { key: "masters", label: "Master Owners" },
   ];
 
   return (
@@ -26,7 +28,7 @@ export default function Setup() {
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Wire up the workflow without code — who owns each step, when each step falls due, how approvals route by
-          value, and who oversees the whole process.
+          value, who oversees the whole process, and who owns each master.
         </p>
       </div>
 
@@ -36,6 +38,7 @@ export default function Setup() {
       {tab === "sla" && <StepDueDatesSection />}
       {tab === "approval" && <ApprovalMatrixSection />}
       {tab === "roles" && <CoordinatorsSection />}
+      {tab === "masters" && <MasterOwnersSection />}
     </div>
   );
 }

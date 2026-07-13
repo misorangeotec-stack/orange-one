@@ -7,6 +7,8 @@
  * on the vendor's credit terms, not a procurement work-item to chase in a queue —
  * balance payments stay *recordable* on PoDetail, but no step tracks them.
  */
+import type { StepDefBase } from "@/shared/lib/fmsQueue";
+
 export type StepKey =
   | "request"
   | "sourcing"
@@ -19,16 +21,11 @@ export type StepKey =
   | "inward"
   | "tally";
 
-export interface StepDef {
-  key: StepKey;
-  index: number; // 1-based
-  title: string;
-  short: string;
-  scope: "request" | "po";
-}
+/** Purchase's instance of the shared step shape (see `@/shared/lib/fmsQueue`). */
+export type StepDef = StepDefBase<StepKey, "request" | "po">;
 
 export const STEPS: StepDef[] = [
-  { key: "request", index: 1, title: "Generate Order (Request)", short: "Request", scope: "request" },
+  { key: "request", index: 1, title: "Generate Order (Request)", short: "Request", scope: "request", noQueue: true },
   { key: "sourcing", index: 2, title: "Sourcing — Quotations", short: "Sourcing", scope: "request" },
   { key: "approval", index: 3, title: "Vendor-Price Approval", short: "Approval", scope: "request" },
   { key: "po", index: 4, title: "Generate PO", short: "PO", scope: "request" },

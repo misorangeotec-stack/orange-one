@@ -11,6 +11,7 @@ export default function Modal({
   children,
   footer,
   size = "md",
+  stacked = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -19,23 +20,39 @@ export default function Modal({
   children: ReactNode;
   footer?: ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
+  /**
+   * This modal opens on top of another one. Sits at z-65 — above the parent
+   * dialog (z-60) but below the portalled Combobox menu (z-70), so its own
+   * dropdowns still render on top. Leaves the parent's `body.overflow` lock
+   * alone (ours would clear it on unmount while the parent is still open) and
+   * takes Escape on the capture phase so it closes only the top dialog.
+   */
+  stacked?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = "";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      // A Combobox/MultiSelect menu is open on top of us — Escape belongs to it
+      // (it closes its own menu). Closing the dialog here would discard the
+      // user's half-made selection.
+      if (document.querySelector("[data-portal-menu]")) return;
+      if (stacked) e.stopPropagation();
+      onClose();
     };
-  }, [open, onClose]);
+    document.addEventListener("keydown", onKey, stacked);
+    if (!stacked) document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey, stacked);
+      if (!stacked) document.body.style.overflow = "";
+    };
+  }, [open, onClose, stacked]);
 
   if (!open) return null;
   const width = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-3xl" }[size];
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div className={cn("fixed inset-0 flex items-center justify-center p-4", stacked ? "z-[65]" : "z-[60]")}>
       <div className="absolute inset-0 bg-navy/45 backdrop-blur-[2px] animate-[fade-up_.2s_ease]" onClick={onClose} />
       {/* Flex column capped to the viewport: header + footer stay put, the body
           scrolls when its content grows (e.g. adding quotation rows) instead of

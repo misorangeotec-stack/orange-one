@@ -46,9 +46,12 @@ const ic = {
 };
 
 /**
- * Builds the procurement sidebar nav. Grows as the workflow phases land. The
- * Masters + Master Requests items show for admins and any assigned master
- * manager (`canManageMasters`). `pendingRequests` drives the inbox badge.
+ * Builds the procurement sidebar nav. Grows as the workflow phases land.
+ *
+ * "Master Requests" shows for EVERYONE — it's a review queue for a master's
+ * owner (badged with `pendingReviews`, the requests they can actually resolve)
+ * and a personal worklist for everyone else, so it sits under Actions for them.
+ * "Masters" itself stays gated on `canManageMasters`.
  */
 export function buildProcurementNav(opts: {
   canManageMasters: boolean;
@@ -65,7 +68,8 @@ export function buildProcurementNav(opts: {
   canMonitor: boolean;
   /** Real signed-in admin, not in demo mode → show the "Demo mode" entry point. */
   canDemo: boolean;
-  pendingRequests: number;
+  /** Pending master requests THIS user can resolve — drives the inbox badge. */
+  pendingReviews: number;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: `${B}`, icon: ic.dashboard, section: "Workspace" },
@@ -73,6 +77,11 @@ export function buildProcurementNav(opts: {
     { label: "Purchase Orders", to: `${B}/pos`, icon: ic.orders },
     { label: "New Request", to: `${B}/requests/new`, icon: ic.newRequest, section: "Actions" },
   ];
+
+  // Non-owners get Master Requests as a personal worklist, alongside New Request.
+  if (!opts.canManageMasters) {
+    nav.push({ label: "Master Requests", to: `${B}/master-requests`, icon: ic.inbox });
+  }
 
   // One queue per workflow step — each shown only to that step's owner(s); admins see all.
   // "My Queues" is set on the first queue that renders so the section header appears once.
@@ -100,7 +109,7 @@ export function buildProcurementNav(opts: {
   if (opts.canManageMasters) {
     nav.push(
       { label: "Masters", to: `${B}/masters`, icon: ic.masters, section: opts.canMonitor ? undefined : "Administration" },
-      { label: "Master Requests", to: `${B}/master-requests`, icon: ic.inbox, badge: opts.pendingRequests || undefined }
+      { label: "Master Requests", to: `${B}/master-requests`, icon: ic.inbox, badge: opts.pendingReviews || undefined }
     );
   }
   if (opts.isAdmin) {

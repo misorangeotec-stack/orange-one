@@ -3,6 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import { Field } from "@/shared/components/ui/Readout";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import type { RequestItem } from "../types";
@@ -167,11 +168,7 @@ export default function ApprovalModal({
   );
 }
 
+/** The boxed read-only stat. The shared Field carries the typography; the tint is local. */
 function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl bg-page/60 px-3 py-2">
-      <div className="text-[11px] text-grey-2">{label}</div>
-      <div className="font-semibold text-navy">{value}</div>
-    </div>
-  );
+  return <Field label={label} value={value} className="rounded-xl bg-page/60 px-3 py-2" />;
 }

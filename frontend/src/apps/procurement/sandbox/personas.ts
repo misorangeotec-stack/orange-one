@@ -1,14 +1,8 @@
+import type { Persona } from "@/shared/sandbox/SandboxContext";
 import { STEPS } from "../lib/steps";
 import { useProcurementStore } from "../store";
 
-export interface Persona {
-  /** Directory profile id to impersonate. */
-  id: string;
-  /** Person's display name. */
-  name: string;
-  /** Their role in the workflow, e.g. "Approver", "Inward (GRN)". */
-  stepLabel: string;
-}
+export type { Persona };
 
 /**
  * The demo cast, derived entirely from the seeded config in the store — no

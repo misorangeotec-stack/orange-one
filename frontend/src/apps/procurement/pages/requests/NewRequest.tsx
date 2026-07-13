@@ -4,6 +4,9 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import RequestMasterModal from "../../components/RequestMasterModal";
+import { masterTypeLabel, type MasterValues } from "../../lib/masterFields";
+import type { MasterType } from "../../types";
 import { useProcurementStore } from "../../store";
 
 interface Line {
@@ -31,6 +34,7 @@ export default function NewRequest() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
+  const [raise, setRaise] = useState<{ mt: MasterType; prefill: MasterValues } | null>(null);
 
   const companyOptions: ComboOption[] = useMemo(
     () => s.activeCompanies.map((c) => ({ value: c.id, label: c.location ? `${c.name} — ${c.location}` : c.name })),
@@ -66,16 +70,18 @@ export default function NewRequest() {
     setErr(null);
   };
 
-  const requestGroup = (name: string) => {
+  /** Missing from a dropdown? Raise it as a master request, prefilled with what
+   *  was typed plus the parent the form already knows. */
+  const raiseGroup = (name: string) => {
     if (!categoryId) {
       setErr("Pick a category first.");
       return;
     }
-    void s.requestNewMaster("item_group", { category_id: categoryId, name }).then(() => setRequested(`item group “${name}”`));
+    setRaise({ mt: "item_group", prefill: { name, category_id: categoryId } });
   };
-  const requestItem = (name: string) => {
+  const raiseItem = (name: string) => {
     if (!groupId) return;
-    void s.requestNewMaster("item", { item_group_id: groupId, name }).then(() => setRequested(`item “${name}”`));
+    setRaise({ mt: "item", prefill: { name, item_group_id: groupId } });
   };
 
   const submit = async () => {
@@ -110,7 +116,15 @@ export default function NewRequest() {
       <Card className="p-5 space-y-4">
         <div className="grid sm:grid-cols-2 gap-4">
           <FieldLabel label="Company" required>
-            <Combobox value={companyId} onChange={setCompanyId} options={companyOptions} placeholder="Select company" autoAdvance />
+            <Combobox
+              value={companyId}
+              onChange={setCompanyId}
+              options={companyOptions}
+              placeholder="Select company"
+              onCreate={(name) => setRaise({ mt: "company", prefill: { name } })}
+              createLabel={(q) => `Request new company “${q}”`}
+              autoAdvance
+            />
           </FieldLabel>
           <FieldLabel label="Category" required>
             <Combobox
@@ -121,6 +135,8 @@ export default function NewRequest() {
               }}
               options={categoryOptions}
               placeholder="Select category"
+              onCreate={(name) => setRaise({ mt: "category", prefill: { name } })}
+              createLabel={(q) => `Request new category “${q}”`}
               autoAdvance
             />
           </FieldLabel>
@@ -134,7 +150,7 @@ export default function NewRequest() {
                 onChange={pickGroup}
                 options={groupOptions}
                 placeholder="Select item group"
-                onCreate={requestGroup}
+                onCreate={raiseGroup}
                 createLabel={(q) => `Request new item group “${q}”`}
                 autoAdvance
               />
@@ -147,14 +163,14 @@ export default function NewRequest() {
                   onChange={addItemLine}
                   options={itemOptions}
                   placeholder={groupItems.length === 0 ? "No items in this group yet" : itemOptions.length === 0 ? "All items in this group added" : "Search & select an item…"}
-                  onCreate={requestItem}
+                  onCreate={raiseItem}
                   createLabel={(q) => `Request new item “${q}”`}
                   searchable
                 />
                 <p className="text-[12px] text-grey-2 mt-1">Pick items one at a time — set quantities in the list below. Missing one? Type its name to request it.</p>
               </FieldLabel>
             )}
-            {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once a master manager approves it.</p>}
+            {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>}
           </div>
         )}
 
@@ -203,6 +219,15 @@ export default function NewRequest() {
           <span className="text-[12.5px] text-grey-2">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
         </div>
       </Card>
+
+      <RequestMasterModal
+        open={raise !== null}
+        onClose={() => setRaise(null)}
+        masterType={raise?.mt ?? null}
+        lockType
+        prefill={raise?.prefill}
+        onRequested={(_id, mt, name) => setRequested(`${masterTypeLabel(mt).toLowerCase()} “${name}”`)}
+      />
     </div>
   );
 }

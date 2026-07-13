@@ -15,6 +15,11 @@ verify_jwt = false
 [functions.transcribe-voice]
 verify_jwt = false
 
+# CV/resume extraction (Claude) for the HR Recruitment FMS. Resumes are PII and the
+# caller is always a signed-in portal user, so JWT verification stays ON.
+[functions.parse-resume]
+verify_jwt = true
+
 # Mirror a synced lead into the "Leads DB" Google Sheet + Drive folders. Fired by a
 # Postgres trigger on app_leads via pg_net; authed with an x-push-secret header
 # (PUSH_GOOGLE_SECRET), so JWT verification is off.

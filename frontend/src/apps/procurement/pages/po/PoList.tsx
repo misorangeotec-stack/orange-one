@@ -4,7 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import { useProcurementStore } from "../../store";
 import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import { stepByKey } from "../../lib/steps";
-import QueueTable, { type QueueColumn } from "../../components/QueueTable";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { PurchaseOrder } from "../../types";
 
 /** Purchase Orders list — same queue-style per-column filters, grouped by company. */
@@ -42,8 +42,7 @@ export default function PoList() {
           rows={rows}
           rowKey={(p) => p.id}
           columns={columns}
-          companyIdOf={(p) => p.companyId}
-          companyNameOf={companyName}
+          groupBy={{ idOf: (p) => p.companyId, nameOf: companyName, allLabel: "All companies" }}
           rowsLabel="POs"
           emptyTitle="No purchase orders yet"
           emptyMessage="Generate POs from the PO Workbench."

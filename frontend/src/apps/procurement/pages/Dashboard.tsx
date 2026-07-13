@@ -1,6 +1,6 @@
 import Card from "@/shared/components/ui/Card";
-import { useEffectiveIdentity } from "../sandbox/useEffectiveIdentity";
-import { useSandbox } from "../sandbox/SandboxContext";
+import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
+import { useSandbox } from "@/shared/sandbox/SandboxContext";
 import SandboxDashboard from "../sandbox/SandboxDashboard";
 
 /**

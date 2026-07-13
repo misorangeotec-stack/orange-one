@@ -1,46 +1,32 @@
-import { STEPS, type StepKey } from "./steps";
-
 /**
- * Per-step due-date rules.
+ * Purchase FMS's instance of the shared step-SLA model.
  *
- * A step's due date = the **anchor step's completion timestamp** + `days`
- * **working days**, where a working day is Mon–Sat (only Sunday is skipped).
+ * The model itself (defaults, anchor options, the stored-map merge) lives in
+ * `@/shared/lib/stepSla` because HR Recruitment uses the identical rules; this
+ * file is only the Purchase-specific instantiation plus its trigger steps.
  *
- * The anchor defaults to the immediately preceding step — "24 hours after the
- * previous step" — but an admin may point any step at any *earlier* step (Setup →
- * Due Dates), because the natural reference is not always the previous one. The
- * live map is stored in `fms_purchase_config` under the key `step_sla` and merged
- * over {@link DEFAULT_STEP_SLA}, so an unset or unknown step falls back to the
- * default and behaviour never silently disappears.
+ * A step's due date = the anchor step's completion + `days` working days (Mon–Sat,
+ * only Sunday is skipped). The live map is stored in `fms_purchase_config` under
+ * the key `step_sla` and merged over {@link DEFAULT_STEP_SLA}.
  *
  * Three steps are exceptions to the anchor rule:
  *   • `follow_up` — its due date is the vendor's promised dispatch date (captured
  *     at Share PO), not an SLA. See `dispatchDueForPo` in queues.ts.
  *   • `inward` — untimed: receiving can never be late, so it has no due date at all.
  *   • `tally` — trigger-anchored, see {@link TRIGGER_STEPS}.
- * Their `anchor` entries here are inert, as is `days` for the first two.
+ * Their `anchor` entries are inert, as is `days` for the first two.
  */
-export interface StepSla {
-  /** An earlier step whose completion starts this step's clock. */
-  anchor: StepKey;
-  /** Working days (Mon–Sat) to add to the anchor's completion. */
-  days: number;
-}
+import { createStepSlaModel, type StepSla as StepSlaBase, type StepSlaMap as StepSlaMapBase } from "@/shared/lib/stepSla";
+import { STEPS, type StepKey } from "./steps";
 
-export type StepSlaMap = Record<StepKey, StepSla>;
+export type StepSla = StepSlaBase<StepKey>;
+export type StepSlaMap = StepSlaMapBase<StepKey>;
 
-/**
- * Previous step + 1 working day, for every step.
- *
- * `request` anchors on itself so the map is total, but its own rule is never
- * evaluated — raising the order never becomes a queue entry (see `LINE_STEPS` in
- * queues.ts). It matters only as the *anchor* other steps point at, where it
- * resolves to the line's creation date.
- */
-export const DEFAULT_STEP_SLA: StepSlaMap = STEPS.reduce((acc, step, i) => {
-  acc[step.key] = { anchor: STEPS[i - 1]?.key ?? step.key, days: 1 };
-  return acc;
-}, {} as StepSlaMap);
+const model = createStepSlaModel<StepKey>(STEPS);
+
+export const DEFAULT_STEP_SLA: StepSlaMap = model.DEFAULT_STEP_SLA;
+export const anchorOptions = model.anchorOptions;
+export const resolveStepSla = model.resolveStepSla;
 
 /**
  * Steps whose clock starts on a domain EVENT, not on an earlier step's completion.
@@ -55,58 +41,6 @@ export const TRIGGER_STEPS: Partial<Record<StepKey, { dueAfter: string; rule: st
   },
 };
 
-/** Steps an admin may anchor `step` on: any strictly earlier step (`request` → itself). */
-export function anchorOptions(step: StepKey): StepKey[] {
-  const i = STEPS.findIndex((s) => s.key === step);
-  return i <= 0 ? [STEPS[0].key] : STEPS.slice(0, i).map((s) => s.key);
-}
-
-/** Merge a stored (possibly partial / stale) map over the defaults. */
-export function resolveStepSla(stored: Partial<Record<string, Partial<StepSla>>> | null | undefined): StepSlaMap {
-  const out = { ...DEFAULT_STEP_SLA };
-  for (const step of STEPS) {
-    const s = stored?.[step.key];
-    if (!s) continue;
-    const days = Number(s.days);
-    const anchor = s.anchor as StepKey | undefined;
-    out[step.key] = {
-      // Guard against a stored anchor that is not a legal (earlier) step.
-      anchor: anchor && anchorOptions(step.key).includes(anchor) ? anchor : out[step.key].anchor,
-      days: Number.isFinite(days) && days >= 0 ? Math.floor(days) : out[step.key].days,
-    };
-  }
-  return out;
-}
-
-const isSunday = (d: Date) => d.getDay() === 0;
-
-/**
- * Add `n` working days, counting Mon–Sat and skipping Sundays. `n = 0` means the
- * anchor day itself (rolled forward if it lands on a Sunday).
- */
-export function addWorkingDays(from: Date, n: number): Date {
-  const d = new Date(from);
-  for (let i = 0; i < Math.max(0, n); i++) {
-    d.setDate(d.getDate() + 1);
-    if (isSunday(d)) d.setDate(d.getDate() + 1);
-  }
-  if (isSunday(d)) d.setDate(d.getDate() + 1);
-  return d;
-}
-
-/**
- * Overdue / due-today state of an already-computed due date. `days` is whole days
- * until due at day granularity (negative = overdue).
- */
-export function dueState(due: Date): { days: number; overdue: boolean; dueToday: boolean } {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
-  const dueDay = new Date(due);
-  dueDay.setHours(0, 0, 0, 0);
-  const days = Math.round((dueDay.getTime() - startOfToday.getTime()) / 86_400_000);
-  return { days, overdue: days < 0, dueToday: days === 0 };
-}
-
-/** Local yyyy-mm-dd (avoids the UTC drift `toISOString()` would introduce). */
-export const localDateIso = (d: Date): string =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+// The date math moved to shared/lib/workingDays. Re-exported so this module stays
+// the single import site for everything due-date-related inside Purchase FMS.
+export { addWorkingDays, dueState, localDateIso } from "@/shared/lib/workingDays";

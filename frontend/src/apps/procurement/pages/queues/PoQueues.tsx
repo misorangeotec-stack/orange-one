@@ -18,8 +18,8 @@ import {
   unbookedQty,
 } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
-import DueCell, { overdueRowClass } from "../../components/DueCell";
-import QueueTable, { type QueueColumn } from "../../components/QueueTable";
+import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
 import type { PurchaseOrder } from "../../types";
 
@@ -103,8 +103,7 @@ function StepQueuePage({
           rows={rows}
           rowKey={(p) => p.id}
           columns={columns}
-          companyIdOf={(p) => p.companyId}
-          companyNameOf={companyName}
+          groupBy={{ idOf: (p) => p.companyId, nameOf: companyName, allLabel: "All companies" }}
           rowClassName={rowClassName ?? ((p) => overdueRowClass(dueIso(p)))}
           rowsLabel="POs"
           emptyMessage="POs needing your action will appear here."

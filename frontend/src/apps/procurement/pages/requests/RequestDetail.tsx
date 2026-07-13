@@ -5,6 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
@@ -70,8 +71,10 @@ export default function RequestDetail() {
       </div>
 
       {request.note && (
-        <Card className="px-4 py-3 text-[13px] text-grey">
-          <span className="font-medium text-navy">Note:</span> {request.note}
+        // Was inverted: the word "Note:" was navy and bold while the note itself sat in
+        // grey — the label outshouting its own data.
+        <Card className="px-4 py-3">
+          <Field label="Note" value={request.note} />
         </Card>
       )}
 
@@ -134,7 +137,7 @@ export default function RequestDetail() {
       </Card>
 
       <div>
-        <h2 className="text-[15px] font-semibold text-navy mb-2">Activity</h2>
+        <SectionHeading className="mb-3">Activity</SectionHeading>
         <ActivityTimeline rows={activity} />
       </div>
 

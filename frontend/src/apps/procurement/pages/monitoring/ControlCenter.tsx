@@ -3,6 +3,8 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
+import SharedKpi from "@/shared/components/ui/Kpi";
+import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDate } from "@/shared/lib/time";
@@ -11,8 +13,8 @@ import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
 import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import type { QueueEntry } from "../../lib/queues";
-import QueueTable, { type QueueColumn } from "../../components/QueueTable";
-import StepPipeline, { type StepPipelineNode } from "../../components/StepPipeline";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import StepPipeline, { type StepPipelineNode } from "@/shared/components/ui/StepPipeline";
 import type { RequestItem } from "../../types";
 
 /** What the table is currently showing. Clicking a pipeline step pins this to "delayed". */
@@ -25,8 +27,8 @@ const SCOPES: { value: Scope; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-/** The 10 steps that can hold queue work — `request` never enters a queue. */
-const PIPELINE_STEPS = STEPS.filter((s) => s.key !== "request");
+/** The steps that can hold queue work. `request` is declared `noQueue` — it never enters one. */
+const PIPELINE_STEPS = STEPS.filter((s) => !s.noQueue);
 
 /**
  * Purchase FMS Control Center — the process coordinator's view of what is late.
@@ -48,22 +50,26 @@ export default function ControlCenter() {
   const todayIso = todayLocalIso();
   const bucketFor = (e: QueueEntry): Bucket | null => bucketOf(e.dueIso, todayIso);
 
-  // ---- one pass: KPI totals + per-step delayed/today counts ----
+  // ---- one pass: KPI totals + per-step delayed/today/total counts ----
   const { counts, nodes } = useMemo(() => {
     const totals: Record<Bucket, number> = { ...EMPTY_COUNTS };
-    const perStep = new Map<StepKey, { delayed: number; today: number }>();
-    for (const st of PIPELINE_STEPS) perStep.set(st.key, { delayed: 0, today: 0 });
+    const perStep = new Map<StepKey, { delayed: number; today: number; total: number }>();
+    for (const st of PIPELINE_STEPS) perStep.set(st.key, { delayed: 0, today: 0, total: 0 });
 
     for (const e of s.queueEntries) {
       const b = bucketOf(e.dueIso, todayIso);
       if (b) totals[b]++;
       const rec = perStep.get(e.stepKey);
       if (!rec) continue;
+      // Counted regardless of bucket — including the far-future ones bucketOf returns
+      // null for. This is what lets a step's ✓ mean "empty" instead of "nothing due in
+      // the next 24 hours", which is what it used to claim while holding work.
+      rec.total++;
       if (b === "delayed") rec.delayed++;
       else if (b === "today") rec.today++;
     }
 
-    const pipeline: StepPipelineNode[] = PIPELINE_STEPS.map((st) => ({
+    const pipeline: StepPipelineNode<StepKey>[] = PIPELINE_STEPS.map((st) => ({
       stepKey: st.key,
       index: st.index,
       label: st.short,
@@ -201,7 +207,7 @@ export default function ControlCenter() {
       </div>
 
       <Card className="p-4 space-y-3">
-        <h2 className="text-[14px] font-semibold text-navy">Where it's stuck</h2>
+        <h2 className={SECTION_HEADING_CLASS}>Where it's stuck</h2>
         <StepPipeline
           nodes={nodes}
           selectedKeys={selectedSteps}
@@ -251,8 +257,7 @@ export default function ControlCenter() {
           rows={rows}
           rowKey={(e) => `${e.stepKey}:${e.entityId}`}
           columns={columns}
-          companyIdOf={(e) => e.companyId}
-          companyNameOf={(id) => s.companyById(id)?.name ?? "—"}
+          groupBy={{ idOf: (e) => e.companyId, nameOf: (id) => s.companyById(id)?.name ?? "—", allLabel: "All companies" }}
           rowClassName={(e) => (bucketFor(e) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="entries"
           emptyTitle="Nothing here"
@@ -311,13 +316,7 @@ function DueChip({ dueIso, todayIso }: { dueIso: string | null; todayIso: string
 }
 
 function Kpi({ label, value, hint, tone, hero }: { label: string; value: number; hint?: string; tone?: "red"; hero?: boolean }) {
-  return (
-    <Card className={`px-4 py-3 ${hero ? "ring-1 ring-orange/20" : ""}`}>
-      <div className="text-[11px] text-grey-2 uppercase tracking-wide">{label}</div>
-      <div className={`font-bold ${hero ? "text-[30px]" : "text-[20px]"} ${tone === "red" ? "text-ryg-red" : "text-navy"}`}>{value}</div>
-      {hint && <div className="text-[11px] text-grey-2/80">{hint}</div>}
-    </Card>
-  );
+  return <SharedKpi label={label} value={value} hint={hint} tone={tone} size={hero ? "hero" : "md"} />;
 }
 
 /** Reassign an approval line to a chosen approver (coordinator/admin). */

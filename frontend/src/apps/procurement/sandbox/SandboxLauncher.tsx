@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Navigate } from "react-router-dom";
-import { useSandbox } from "./SandboxContext";
+import { useSandbox } from "@/shared/sandbox/SandboxContext";
 
 /**
  * Route target for /procurement/sandbox (real-admin gated). Turns demo mode on

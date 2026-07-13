@@ -10,71 +10,35 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import { formatDate } from "@/shared/lib/time";
+import RequestMasterModal from "../components/RequestMasterModal";
 import { useProcurementStore } from "../store";
-import { MASTER_TYPES, type MasterRequest, type MasterType } from "../types";
-
-type Values = Record<string, string>;
-
-interface ReqField {
-  key: string;
-  label: string;
-  type: "text" | "textarea" | "select";
-  required?: boolean;
-  options?: ComboOption[];
-}
-
-/** Field descriptor per master type for the approve (edit-before-add) modal. */
-function fieldsFor(mt: MasterType, categoryOptions: ComboOption[], itemGroupOptions: ComboOption[]): ReqField[] {
-  switch (mt) {
-    case "company":
-      return [
-        { key: "name", label: "Company name", type: "text", required: true },
-        { key: "location", label: "Location", type: "text" },
-      ];
-    case "category":
-      return [{ key: "name", label: "Category name", type: "text", required: true }];
-    case "item_group":
-      return [
-        { key: "category_id", label: "Category", type: "select", required: true, options: categoryOptions },
-        { key: "name", label: "Item group name", type: "text", required: true },
-      ];
-    case "item":
-      return [
-        { key: "item_group_id", label: "Item Group", type: "select", required: true, options: itemGroupOptions },
-        { key: "name", label: "Item name", type: "text", required: true },
-        { key: "unit", label: "Unit", type: "text" },
-      ];
-    case "vendor":
-      return [
-        { key: "name", label: "Vendor name", type: "text", required: true },
-        { key: "gstin", label: "GSTIN", type: "text" },
-        { key: "contact_name", label: "Contact person", type: "text" },
-        { key: "phone", label: "Phone", type: "text" },
-        { key: "email", label: "Email", type: "text" },
-        { key: "address", label: "Address", type: "textarea" },
-      ];
-  }
-}
-
-const typeLabel = (mt: MasterType) => MASTER_TYPES.find((m) => m.value === mt)?.label ?? mt;
-
-/** A short human summary of what was proposed. */
-function summarize(r: MasterRequest): string {
-  const p = r.proposedPayload as Record<string, string>;
-  return p.name || JSON.stringify(p);
-}
+import { MASTER_TYPES, type MasterRequest } from "../types";
+import {
+  describePayload,
+  masterFields,
+  masterTypeLabel,
+  masterTypePlural,
+  missingRequired,
+  type MasterValues,
+} from "../lib/masterFields";
 
 /**
- * Master Requests queue — incoming "Request new …" submissions. Admins and the
- * relevant master's manager can approve (creating the real master row, editable
- * first) or reject with a reason. Everyone may view status of requests.
+ * Master Requests — one page, two audiences.
+ *
+ * A master's manager (and any admin) gets the review queue: approve, adjusting
+ * the proposed values first if needed, or reject with a reason. Everyone else
+ * gets "My requests" — the entries they've asked for and where each one stands.
+ * Anyone can raise a new one from here for any master.
  */
 export default function MasterRequests() {
   const s = useProcurementStore();
-  const [tab, setTab] = useState("pending");
+  const canReview = s.isAnyManager;
+
+  const [tab, setTab] = useState(canReview ? "review" : "mine");
+  const [raising, setRaising] = useState(false);
   const [approving, setApproving] = useState<MasterRequest | null>(null);
   const [rejecting, setRejecting] = useState<MasterRequest | null>(null);
-  const [values, setValues] = useState<Values>({});
+  const [values, setValues] = useState<MasterValues>({});
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -90,16 +54,27 @@ export default function MasterRequests() {
         .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
     [s.itemGroups, s]
   );
+  const ctx = { categoryOptions, itemGroupOptions };
+
+  const describe = (r: MasterRequest) =>
+    describePayload(r.masterType, r.proposedPayload as Record<string, unknown>, {
+      categoryName: (id) => s.categoryById(id)?.name,
+      itemGroupName: (id) => s.itemGroupById(id)?.name,
+    });
 
   const rows = useMemo(() => {
-    const list = tab === "pending" ? s.masterRequests.filter((r) => r.status === "pending") : s.masterRequests;
+    const list =
+      tab === "review" ? s.resolvableRequests : tab === "mine" ? s.myMasterRequests : s.masterRequests;
     return [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [s.masterRequests, tab]);
+  }, [tab, s.resolvableRequests, s.myMasterRequests, s.masterRequests]);
 
   const pg = usePagination(rows, { resetKey: tab });
 
+  /** Masters nobody owns — their requests land with the admins until someone is assigned. */
+  const unassigned = MASTER_TYPES.filter((m) => s.isMasterUnassigned(m.value));
+
   const openApprove = (r: MasterRequest) => {
-    setValues({ ...(r.proposedPayload as Values) });
+    setValues({ ...(r.proposedPayload as MasterValues) });
     setErr(null);
     setApproving(r);
   };
@@ -111,12 +86,10 @@ export default function MasterRequests() {
 
   const doApprove = async () => {
     if (!approving) return;
-    const fields = fieldsFor(approving.masterType, categoryOptions, itemGroupOptions);
-    for (const f of fields) {
-      if (f.required && !values[f.key]?.trim()) {
-        setErr(`${f.label} is required.`);
-        return;
-      }
+    const missing = missingRequired(approving.masterType, values, ctx);
+    if (missing) {
+      setErr(missing);
+      return;
     }
     setBusy(true);
     setErr(null);
@@ -161,27 +134,52 @@ export default function MasterRequests() {
     );
   };
 
-  const tabs = [
-    { key: "pending", label: "Pending", count: s.masterRequests.filter((r) => r.status === "pending").length },
-    { key: "all", label: "All", count: s.masterRequests.length },
-  ];
+  const tabs = canReview
+    ? [
+        { key: "review", label: "To review", count: s.resolvableRequests.length },
+        { key: "mine", label: "My requests", count: s.myMasterRequests.length },
+        { key: "all", label: "All", count: s.masterRequests.length },
+      ]
+    : [{ key: "mine", label: "My requests", count: s.myMasterRequests.length }];
 
-  const approveFields = approving ? fieldsFor(approving.masterType, categoryOptions, itemGroupOptions) : [];
+  const approveFields = approving ? masterFields(approving.masterType, ctx) : [];
+
+  const emptyMessage =
+    tab === "review"
+      ? "Nothing waiting on you. New-master requests for the masters you own will appear here."
+      : tab === "mine"
+        ? "You haven't requested any new master entries. Missing something from a dropdown? Request it — here or straight from the form."
+        : "New-master requests will appear here for review.";
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-[22px] font-bold text-navy">Master Requests</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">
-          New-master-entry requests raised from across the workflow. Approve to add them to the master, or reject with a reason.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">Master Requests</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1">
+            {canReview
+              ? "New-master-entry requests raised from across the workflow. Approve to add them to the master — adjusting the details first if you need to — or reject with a reason."
+              : "Entries you've asked to add to the purchase masters. Once the master's owner approves one, it's selectable on the forms."}
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setRaising(true)}>
+          Request new entry
+        </Button>
       </div>
+
+      {canReview && unassigned.length > 0 && (
+        <div className="rounded-xl border border-orange/30 bg-orange-soft/40 px-4 py-3 text-[12.5px] text-navy">
+          <span className="font-semibold">{unassigned.map((m) => m.plural).join(", ")}</span>{" "}
+          {unassigned.length === 1 ? "has" : "have"} no assigned owner — those requests fall back to the admins. Assign
+          one in <span className="font-semibold">Setup → Master Owners</span>.
+        </div>
+      )}
 
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
       <Card className="overflow-hidden">
         {rows.length === 0 ? (
-          <EmptyState title="No requests" message="New-master requests will appear here for review." />
+          <EmptyState title="No requests" message={emptyMessage} />
         ) : (
           <>
             <ScrollableTable>
@@ -193,6 +191,8 @@ export default function MasterRequests() {
                     <th className="font-medium px-4 py-3">Requested by</th>
                     <th className="font-medium px-4 py-3">Date</th>
                     <th className="font-medium px-4 py-3">Status</th>
+                    <th className="font-medium px-4 py-3">Reviewed by</th>
+                    <th className="font-medium px-4 py-3">Outcome</th>
                     <th className="font-medium px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -201,11 +201,23 @@ export default function MasterRequests() {
                     const canResolve = r.status === "pending" && s.canManage(r.masterType);
                     return (
                       <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{typeLabel(r.masterType)}</td>
-                        <td className="px-4 py-3">{summarize(r)}</td>
+                        <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
+                        <td className="px-4 py-3">{describe(r)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{s.profileById(r.requestedBy)?.name ?? "—"}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
                         <td className="px-4 py-3">{statusBadge(r.status)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {r.reviewedBy ? s.profileById(r.reviewedBy)?.name ?? "—" : <span className="text-grey-2">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {r.status === "approved" ? (
+                            <span className="text-ryg-green">Added to {masterTypePlural(r.masterType)}</span>
+                          ) : r.reviewNote ? (
+                            <span className="text-grey">{r.reviewNote}</span>
+                          ) : (
+                            <span className="text-grey-2">—</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           {canResolve ? (
                             <>
@@ -217,7 +229,9 @@ export default function MasterRequests() {
                               </button>
                             </>
                           ) : (
-                            <span className="text-grey-2 text-[12.5px]">{r.status === "pending" ? "—" : r.reviewNote || "—"}</span>
+                            <span className="text-grey-2 text-[12.5px]">
+                              {r.status === "pending" ? "Awaiting review" : "—"}
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -231,11 +245,19 @@ export default function MasterRequests() {
         )}
       </Card>
 
-      {/* Approve modal — edit before adding */}
+      {/* Raise a request for any master, from one place. */}
+      <RequestMasterModal
+        open={raising}
+        onClose={() => setRaising(false)}
+        masterType={null}
+        onRequested={() => setTab("mine")}
+      />
+
+      {/* Approve — edit before adding */}
       <Modal
         open={approving !== null}
         onClose={() => setApproving(null)}
-        title={`Approve ${approving ? typeLabel(approving.masterType) : ""}`}
+        title={`Approve ${approving ? masterTypeLabel(approving.masterType) : ""}`}
         subtitle="Review and adjust the details, then add it to the master."
         footer={
           <>
@@ -256,25 +278,40 @@ export default function MasterRequests() {
                   value={values[f.key] ?? ""}
                   onChange={(v) => setValues((p) => ({ ...p, [f.key]: v }))}
                   options={f.options ?? []}
-                  placeholder="Select…"
+                  placeholder={f.placeholder ?? "Select…"}
                   autoAdvance
                 />
               ) : f.type === "textarea" ? (
-                <TextArea rows={3} value={values[f.key] ?? ""} onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))} />
+                <TextArea
+                  rows={3}
+                  value={values[f.key] ?? ""}
+                  placeholder={f.placeholder}
+                  onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                />
               ) : (
-                <TextInput value={values[f.key] ?? ""} onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))} />
+                <TextInput
+                  value={values[f.key] ?? ""}
+                  placeholder={f.placeholder}
+                  onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                />
               )}
             </FieldLabel>
           ))}
+          {approving && (
+            <p className="text-[12px] text-grey-2">
+              Requested by {s.profileById(approving.requestedBy)?.name ?? "—"} on {formatDate(approving.createdAt)}.
+            </p>
+          )}
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>
 
-      {/* Reject modal — reason required */}
+      {/* Reject — reason required */}
       <Modal
         open={rejecting !== null}
         onClose={() => setRejecting(null)}
-        title={`Reject ${rejecting ? typeLabel(rejecting.masterType) : ""}`}
+        title={`Reject ${rejecting ? masterTypeLabel(rejecting.masterType) : ""}`}
+        subtitle="The requester is notified, and sees the reason on their request."
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setRejecting(null)} disabled={busy}>

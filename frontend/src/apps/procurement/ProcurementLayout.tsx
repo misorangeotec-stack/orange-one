@@ -5,10 +5,11 @@ import { useSession, ALL_ROLES } from "@/core/platform/session";
 import { timeAgo } from "@/shared/lib/time";
 import { buildProcurementNav } from "./nav";
 import { useProcurementStore } from "./store";
-import { useEffectiveIdentity } from "./sandbox/useEffectiveIdentity";
-import { useSandbox } from "./sandbox/SandboxContext";
-import PersonaSwitcher from "./sandbox/PersonaSwitcher";
-import DemoBanner from "./sandbox/DemoBanner";
+import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
+import { useSandbox } from "@/shared/sandbox/SandboxContext";
+import PersonaSwitcher from "@/shared/sandbox/PersonaSwitcher";
+import DemoBanner from "@/shared/sandbox/DemoBanner";
+import { usePersonas } from "./sandbox/personas";
 import type { ProcNotification } from "./types";
 
 const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
@@ -25,10 +26,11 @@ export default function ProcurementLayout() {
   const { user, role, isAdmin } = useEffectiveIdentity();
   const { isAdmin: realAdmin } = useSession();
   const { active: demoActive } = useSandbox();
+  const personas = usePersonas();
   const store = useProcurementStore();
   const {
     isAnyManager,
-    pendingRequests,
+    resolvableRequests,
     canSource,
     isApprover,
     canGeneratePo,
@@ -60,9 +62,11 @@ export default function ProcurementLayout() {
         canTally,
         canMonitor: isAdmin || isProcessCoordinator,
         canDemo: realAdmin && !demoActive,
-        pendingRequests: pendingRequests.length,
+        // Badge only what THIS user can act on — a vendor owner shouldn't see a
+        // count for item requests they can't resolve.
+        pendingReviews: resolvableRequests.length,
       }),
-    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, isProcessCoordinator, realAdmin, demoActive, pendingRequests.length]
+    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
   );
 
   // Resolve the deep-link for a notification's entity.
@@ -80,6 +84,8 @@ export default function ProcurementLayout() {
         const pi = store.pis.find((p) => p.id === n.entityId);
         return pi ? `${B}/pos/${pi.poId}` : undefined;
       }
+      case "master_request":
+        return `${B}/master-requests`;
       default:
         return undefined;
     }
@@ -107,7 +113,7 @@ export default function ProcurementLayout() {
       user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: roleLabel(role) }}
       notifications={notifItems}
       onMarkRead={(ids) => { void markNotificationsRead(ids); }}
-      roleSwitcher={demoActive ? <PersonaSwitcher /> : undefined}
+      roleSwitcher={demoActive ? <PersonaSwitcher personas={personas} /> : undefined}
       banner={demoActive ? <DemoBanner /> : undefined}
     />
   );

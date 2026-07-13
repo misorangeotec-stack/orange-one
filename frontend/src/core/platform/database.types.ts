@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       app_access: {
@@ -43,6 +68,24 @@ export type Database = {
           },
         ]
       }
+      app_lead_masters: {
+        Row: {
+          masters: Json
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          masters?: Json
+          updated_at: string
+          user_id?: string
+        }
+        Update: {
+          masters?: Json
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       app_lead_masters_global: {
         Row: {
           id: string
@@ -63,49 +106,49 @@ export type Database = {
       }
       app_leads: {
         Row: {
-          id: string
-          user_id: string
-          person_name: string | null
-          company_name: string | null
-          interest_level_id: string | null
-          follow_up_action_id: string | null
           captured_on: string | null
-          payload: Json
-          deleted: boolean
-          updated_at: string
+          company_name: string | null
           created_at: string
+          deleted: boolean
+          follow_up_action_id: string | null
+          google_media: Json
           google_synced_at: string | null
-          google_media: Json | null
+          id: string
+          interest_level_id: string | null
+          payload: Json
+          person_name: string | null
+          updated_at: string
+          user_id: string
         }
         Insert: {
-          id: string
-          user_id?: string
-          person_name?: string | null
-          company_name?: string | null
-          interest_level_id?: string | null
-          follow_up_action_id?: string | null
           captured_on?: string | null
-          payload?: Json
-          deleted?: boolean
-          updated_at: string
+          company_name?: string | null
           created_at?: string
+          deleted?: boolean
+          follow_up_action_id?: string | null
+          google_media?: Json
           google_synced_at?: string | null
-          google_media?: Json | null
+          id: string
+          interest_level_id?: string | null
+          payload?: Json
+          person_name?: string | null
+          updated_at: string
+          user_id?: string
         }
         Update: {
-          id?: string
-          user_id?: string
-          person_name?: string | null
-          company_name?: string | null
-          interest_level_id?: string | null
-          follow_up_action_id?: string | null
           captured_on?: string | null
-          payload?: Json
-          deleted?: boolean
-          updated_at?: string
+          company_name?: string | null
           created_at?: string
+          deleted?: boolean
+          follow_up_action_id?: string | null
+          google_media?: Json
           google_synced_at?: string | null
-          google_media?: Json | null
+          id?: string
+          interest_level_id?: string | null
+          payload?: Json
+          person_name?: string | null
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
@@ -304,6 +347,1011 @@ export type Database = {
             columns: ["workflow_id"]
             isOneToOne: false
             referencedRelation: "fms_workflows"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
+      fms_hr_candidates: {
+        Row: {
+          candidate_no: string | null
+          created_at: string
+          created_by: string | null
+          current_company: string | null
+          disqualification_note: string | null
+          disqualification_reason_id: string | null
+          disqualified_at: string | null
+          email: string | null
+          experience_years: number | null
+          final_decision_at: string | null
+          finalized_at: string | null
+          finalized_by: string | null
+          hod_decided_at: string | null
+          hod_decided_by: string | null
+          hr_shortlisted_at: string | null
+          hr_shortlisted_by: string | null
+          id: string
+          interview1_at: string | null
+          interview2_at: string | null
+          interview3_at: string | null
+          joined_at: string | null
+          name: string
+          notes: string | null
+          offered_ctc: number | null
+          parse_status: string
+          parsed_json: Json
+          phone: string | null
+          requisition_id: string
+          resume_name: string | null
+          resume_path: string | null
+          shared_to_hod_at: string | null
+          shared_to_hod_by: string | null
+          skills: string[]
+          source_platform_id: string | null
+          stage: string
+          updated_at: string
+          uploaded_at: string
+        }
+        Insert: {
+          candidate_no?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_company?: string | null
+          disqualification_note?: string | null
+          disqualification_reason_id?: string | null
+          disqualified_at?: string | null
+          email?: string | null
+          experience_years?: number | null
+          final_decision_at?: string | null
+          finalized_at?: string | null
+          finalized_by?: string | null
+          hod_decided_at?: string | null
+          hod_decided_by?: string | null
+          hr_shortlisted_at?: string | null
+          hr_shortlisted_by?: string | null
+          id?: string
+          interview1_at?: string | null
+          interview2_at?: string | null
+          interview3_at?: string | null
+          joined_at?: string | null
+          name: string
+          notes?: string | null
+          offered_ctc?: number | null
+          parse_status?: string
+          parsed_json?: Json
+          phone?: string | null
+          requisition_id: string
+          resume_name?: string | null
+          resume_path?: string | null
+          shared_to_hod_at?: string | null
+          shared_to_hod_by?: string | null
+          skills?: string[]
+          source_platform_id?: string | null
+          stage?: string
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Update: {
+          candidate_no?: string | null
+          created_at?: string
+          created_by?: string | null
+          current_company?: string | null
+          disqualification_note?: string | null
+          disqualification_reason_id?: string | null
+          disqualified_at?: string | null
+          email?: string | null
+          experience_years?: number | null
+          final_decision_at?: string | null
+          finalized_at?: string | null
+          finalized_by?: string | null
+          hod_decided_at?: string | null
+          hod_decided_by?: string | null
+          hr_shortlisted_at?: string | null
+          hr_shortlisted_by?: string | null
+          id?: string
+          interview1_at?: string | null
+          interview2_at?: string | null
+          interview3_at?: string | null
+          joined_at?: string | null
+          name?: string
+          notes?: string | null
+          offered_ctc?: number | null
+          parse_status?: string
+          parsed_json?: Json
+          phone?: string | null
+          requisition_id?: string
+          resume_name?: string | null
+          resume_path?: string | null
+          shared_to_hod_at?: string | null
+          shared_to_hod_by?: string | null
+          skills?: string[]
+          source_platform_id?: string | null
+          stage?: string
+          updated_at?: string
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_candidates_disqualification_reason_id_fkey"
+            columns: ["disqualification_reason_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_disqualification_reasons"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_candidates_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_candidates_source_platform_id_fkey"
+            columns: ["source_platform_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_job_platforms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      fms_hr_counters: {
+        Row: {
+          last_value: number
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          last_value?: number
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          last_value?: number
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_disqualification_reasons: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_interviews: {
+        Row: {
+          candidate_id: string
+          created_at: string
+          created_by: string | null
+          document_name: string | null
+          document_path: string | null
+          held_at: string | null
+          id: string
+          interviewer_id: string | null
+          interviewer_name: string | null
+          remarks: string | null
+          round: number
+          scheduled_on: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          candidate_id: string
+          created_at?: string
+          created_by?: string | null
+          document_name?: string | null
+          document_path?: string | null
+          held_at?: string | null
+          id?: string
+          interviewer_id?: string | null
+          interviewer_name?: string | null
+          remarks?: string | null
+          round: number
+          scheduled_on?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          candidate_id?: string
+          created_at?: string
+          created_by?: string | null
+          document_name?: string | null
+          document_path?: string | null
+          held_at?: string | null
+          id?: string
+          interviewer_id?: string | null
+          interviewer_name?: string | null
+          remarks?: string | null
+          round?: number
+          scheduled_on?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_interviews_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_job_platforms: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_job_types: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_locations: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fms_hr_onboarding_checks: {
+        Row: {
+          allows_link: boolean
+          created_at: string
+          description: string | null
+          done: boolean
+          done_at: string | null
+          done_by: string | null
+          due_days: number
+          file_name: string | null
+          file_path: string | null
+          id: string
+          item_id: string | null
+          item_key: string
+          link_url: string | null
+          name: string
+          onboarding_id: string
+          pending_reason: string | null
+          requires_file: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          allows_link?: boolean
+          created_at?: string
+          description?: string | null
+          done?: boolean
+          done_at?: string | null
+          done_by?: string | null
+          due_days?: number
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          item_id?: string | null
+          item_key: string
+          link_url?: string | null
+          name: string
+          onboarding_id: string
+          pending_reason?: string | null
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          allows_link?: boolean
+          created_at?: string
+          description?: string | null
+          done?: boolean
+          done_at?: string | null
+          done_by?: string | null
+          due_days?: number
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          item_id?: string | null
+          item_key?: string
+          link_url?: string | null
+          name?: string
+          onboarding_id?: string
+          pending_reason?: string | null
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_onboarding_checks_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_onboarding_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_onboarding_checks_onboarding_id_fkey"
+            columns: ["onboarding_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_onboardings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_onboarding_items: {
+        Row: {
+          active: boolean
+          allows_link: boolean
+          created_at: string
+          description: string | null
+          due_days: number
+          id: string
+          key: string
+          name: string
+          requires_file: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          allows_link?: boolean
+          created_at?: string
+          description?: string | null
+          due_days?: number
+          id?: string
+          key: string
+          name: string
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          allows_link?: boolean
+          created_at?: string
+          description?: string | null
+          due_days?: number
+          id?: string
+          key?: string
+          name?: string
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_onboardings: {
+        Row: {
+          candidate_id: string
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          employee_code: string | null
+          employee_code_at: string | null
+          id: string
+          joining_date: string | null
+          joining_date_set_at: string | null
+          offer_decided_at: string | null
+          offer_status: string
+          offer_status_reason: string | null
+          requisition_id: string
+          updated_at: string
+        }
+        Insert: {
+          candidate_id: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          employee_code?: string | null
+          employee_code_at?: string | null
+          id?: string
+          joining_date?: string | null
+          joining_date_set_at?: string | null
+          offer_decided_at?: string | null
+          offer_status?: string
+          offer_status_reason?: string | null
+          requisition_id: string
+          updated_at?: string
+        }
+        Update: {
+          candidate_id?: string
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          employee_code?: string | null
+          employee_code_at?: string | null
+          id?: string
+          joining_date?: string | null
+          joining_date_set_at?: string | null
+          offer_decided_at?: string | null
+          offer_status?: string
+          offer_status_reason?: string | null
+          requisition_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_onboardings_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: true
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_onboardings_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_probation_reviews: {
+        Row: {
+          created_at: string
+          file_name: string | null
+          file_path: string | null
+          id: string
+          month: number
+          probation_id: string
+          remarks: string | null
+          reviewed_at: string
+          reviewer_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          month: number
+          probation_id: string
+          remarks?: string | null
+          reviewed_at?: string
+          reviewer_id?: string | null
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          month?: number
+          probation_id?: string
+          remarks?: string | null
+          reviewed_at?: string
+          reviewer_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_probation_reviews_probation_id_fkey"
+            columns: ["probation_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_probations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_probations: {
+        Row: {
+          candidate_id: string
+          created_at: string
+          employee_code: string | null
+          extension_months: number
+          extension_outcome: string | null
+          extension_outcome_at: string | null
+          extension_outcome_by: string | null
+          extension_remarks: string | null
+          final_status: string | null
+          final_status_at: string | null
+          id: string
+          joining_date: string
+          onboarding_id: string
+          opened_at: string
+          outcome: string | null
+          outcome_at: string | null
+          outcome_by: string | null
+          outcome_remarks: string | null
+          permanent_from: string | null
+          requisition_id: string
+          updated_at: string
+        }
+        Insert: {
+          candidate_id: string
+          created_at?: string
+          employee_code?: string | null
+          extension_months?: number
+          extension_outcome?: string | null
+          extension_outcome_at?: string | null
+          extension_outcome_by?: string | null
+          extension_remarks?: string | null
+          final_status?: string | null
+          final_status_at?: string | null
+          id?: string
+          joining_date: string
+          onboarding_id: string
+          opened_at?: string
+          outcome?: string | null
+          outcome_at?: string | null
+          outcome_by?: string | null
+          outcome_remarks?: string | null
+          permanent_from?: string | null
+          requisition_id: string
+          updated_at?: string
+        }
+        Update: {
+          candidate_id?: string
+          created_at?: string
+          employee_code?: string | null
+          extension_months?: number
+          extension_outcome?: string | null
+          extension_outcome_at?: string | null
+          extension_outcome_by?: string | null
+          extension_remarks?: string | null
+          final_status?: string | null
+          final_status_at?: string | null
+          id?: string
+          joining_date?: string
+          onboarding_id?: string
+          opened_at?: string
+          outcome?: string | null
+          outcome_at?: string | null
+          outcome_by?: string | null
+          outcome_remarks?: string | null
+          permanent_from?: string | null
+          requisition_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_probations_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_probations_onboarding_id_fkey"
+            columns: ["onboarding_id"]
+            isOneToOne: true
+            referencedRelation: "fms_hr_onboardings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_probations_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_requisition_platforms: {
+        Row: {
+          platform_id: string
+          posted_on: string | null
+          requisition_id: string
+        }
+        Insert: {
+          platform_id: string
+          posted_on?: string | null
+          requisition_id: string
+        }
+        Update: {
+          platform_id?: string
+          posted_on?: string | null
+          requisition_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_requisition_platforms_platform_id_fkey"
+            columns: ["platform_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_job_platforms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_requisition_platforms_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_requisitions: {
+        Row: {
+          business_contribution: string | null
+          cancel_reason: string | null
+          closed_at: string | null
+          created_at: string
+          current_step: string
+          decided_by: string | null
+          department_id: string
+          expected_start_date: string | null
+          hiring_manager_ids: string[]
+          hold_at: string | null
+          hold_reason: string | null
+          hr_approved_at: string | null
+          hr_approver_id: string | null
+          hr_remarks: string | null
+          id: string
+          impact_if_unfilled: string | null
+          jd_name: string | null
+          jd_path: string | null
+          job_title: string
+          job_type_id: string | null
+          key_responsibilities: string | null
+          location_id: string | null
+          mgmt_approved_at: string | null
+          mgmt_approver_id: string | null
+          mgmt_remarks: string | null
+          mrf_no: string
+          position_kind: string
+          positions_required: number
+          posted_at: string | null
+          posted_on: string | null
+          preferred_experience: string | null
+          previous_employee_name: string | null
+          reject_reason: string | null
+          rejected_at: string | null
+          reporting_to_ids: string[]
+          reporting_to_note: string | null
+          request_date: string
+          requester_id: string | null
+          required_skills: string | null
+          salary_max: number | null
+          salary_min: number | null
+          salary_note: string | null
+          sent_back_at: string | null
+          sent_back_reason: string | null
+          status: string
+          submitted_at: string
+          updated_at: string
+          why_needed: string | null
+        }
+        Insert: {
+          business_contribution?: string | null
+          cancel_reason?: string | null
+          closed_at?: string | null
+          created_at?: string
+          current_step?: string
+          decided_by?: string | null
+          department_id: string
+          expected_start_date?: string | null
+          hiring_manager_ids?: string[]
+          hold_at?: string | null
+          hold_reason?: string | null
+          hr_approved_at?: string | null
+          hr_approver_id?: string | null
+          hr_remarks?: string | null
+          id?: string
+          impact_if_unfilled?: string | null
+          jd_name?: string | null
+          jd_path?: string | null
+          job_title: string
+          job_type_id?: string | null
+          key_responsibilities?: string | null
+          location_id?: string | null
+          mgmt_approved_at?: string | null
+          mgmt_approver_id?: string | null
+          mgmt_remarks?: string | null
+          mrf_no: string
+          position_kind?: string
+          positions_required?: number
+          posted_at?: string | null
+          posted_on?: string | null
+          preferred_experience?: string | null
+          previous_employee_name?: string | null
+          reject_reason?: string | null
+          rejected_at?: string | null
+          reporting_to_ids?: string[]
+          reporting_to_note?: string | null
+          request_date?: string
+          requester_id?: string | null
+          required_skills?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_note?: string | null
+          sent_back_at?: string | null
+          sent_back_reason?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+          why_needed?: string | null
+        }
+        Update: {
+          business_contribution?: string | null
+          cancel_reason?: string | null
+          closed_at?: string | null
+          created_at?: string
+          current_step?: string
+          decided_by?: string | null
+          department_id?: string
+          expected_start_date?: string | null
+          hiring_manager_ids?: string[]
+          hold_at?: string | null
+          hold_reason?: string | null
+          hr_approved_at?: string | null
+          hr_approver_id?: string | null
+          hr_remarks?: string | null
+          id?: string
+          impact_if_unfilled?: string | null
+          jd_name?: string | null
+          jd_path?: string | null
+          job_title?: string
+          job_type_id?: string | null
+          key_responsibilities?: string | null
+          location_id?: string | null
+          mgmt_approved_at?: string | null
+          mgmt_approver_id?: string | null
+          mgmt_remarks?: string | null
+          mrf_no?: string
+          position_kind?: string
+          positions_required?: number
+          posted_at?: string | null
+          posted_on?: string | null
+          preferred_experience?: string | null
+          previous_employee_name?: string | null
+          reject_reason?: string | null
+          rejected_at?: string | null
+          reporting_to_ids?: string[]
+          reporting_to_note?: string | null
+          request_date?: string
+          requester_id?: string | null
+          required_skills?: string | null
+          salary_max?: number | null
+          salary_min?: number | null
+          salary_note?: string | null
+          sent_back_at?: string | null
+          sent_back_reason?: string | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+          why_needed?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_requisitions_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_requisitions_job_type_id_fkey"
+            columns: ["job_type_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_job_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_requisitions_location_id_fkey"
+            columns: ["location_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_locations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_hr_step_owners: {
+        Row: {
+          created_at: string
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_step_owners_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
             referencedColumns: ["id"]
           },
         ]
@@ -585,6 +1633,8 @@ export type Database = {
           gate_register_no: string | null
           id: string
           note: string | null
+          photo_name: string | null
+          photo_path: string | null
           pi_id: string | null
           pi_ref: string | null
           po_id: string
@@ -597,6 +1647,8 @@ export type Database = {
           gate_register_no?: string | null
           id?: string
           note?: string | null
+          photo_name?: string | null
+          photo_path?: string | null
           pi_id?: string | null
           pi_ref?: string | null
           po_id: string
@@ -609,6 +1661,8 @@ export type Database = {
           gate_register_no?: string | null
           id?: string
           note?: string | null
+          photo_name?: string | null
+          photo_path?: string | null
           pi_id?: string | null
           pi_ref?: string | null
           po_id?: string
@@ -2327,12 +3381,7 @@ export type Database = {
         Args: { p_mentioned?: string[]; p_note: string; p_task_id: string }
         Returns: string
       }
-      app_mobile_has_access: { Args: Record<PropertyKey, never>; Returns: boolean }
-      leads_dashboard_can_read: { Args: Record<PropertyKey, never>; Returns: boolean }
-      leads_dashboard_salespeople: {
-        Args: Record<PropertyKey, never>
-        Returns: { id: string; name: string | null; email: string | null }[]
-      }
+      app_mobile_has_access: { Args: never; Returns: boolean }
       fms_complete_stage: {
         Args: {
           p_entry_id: string
@@ -2340,6 +3389,182 @@ export type Database = {
           p_values?: Json
         }
         Returns: number
+      }
+      fms_hr_add_candidates: {
+        Args: { p_candidates: Json; p_req: string }
+        Returns: string[]
+      }
+      fms_hr_add_months: {
+        Args: { p_from: string; p_months: number }
+        Returns: string
+      }
+      fms_hr_announce: {
+        Args: {
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
+        }
+        Returns: undefined
+      }
+      fms_hr_can_act: {
+        Args: { p_req: string; p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_can_read_requisition: {
+        Args: { p_req: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_cancel_requisition: {
+        Args: { p_reason: string; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_decide_extension: {
+        Args: {
+          p_decision: string
+          p_employee_code?: string
+          p_permanent_from?: string
+          p_probation: string
+          p_remarks?: string
+        }
+        Returns: undefined
+      }
+      fms_hr_decide_mrf: {
+        Args: {
+          p_decision: string
+          p_remarks?: string
+          p_req: string
+          p_stage: string
+        }
+        Returns: undefined
+      }
+      fms_hr_decide_probation: {
+        Args: {
+          p_decision: string
+          p_employee_code?: string
+          p_permanent_from?: string
+          p_probation: string
+          p_remarks?: string
+        }
+        Returns: undefined
+      }
+      fms_hr_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_hr_hod_decide: {
+        Args: {
+          p_ids: string[]
+          p_note?: string
+          p_reason_id?: string
+          p_selected: boolean
+        }
+        Returns: undefined
+      }
+      fms_hr_hold_requisition: {
+        Args: { p_hold: boolean; p_reason?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_is_any_step_owner: { Args: { p_uid: string }; Returns: boolean }
+      fms_hr_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_hr_is_recruitment_staff: { Args: { p_uid: string }; Returns: boolean }
+      fms_hr_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_hr_move_candidate: {
+        Args: { p?: Json; p_id: string; p_to_stage: string }
+        Returns: undefined
+      }
+      fms_hr_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_hr_open_probation: { Args: { p_onb: string }; Returns: undefined }
+      fms_hr_pending_step: { Args: { p_stage: string }; Returns: string }
+      fms_hr_post_job: {
+        Args: { p_platform_ids: string[]; p_posted_on?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_record_interview_result: {
+        Args: {
+          p_doc_name?: string
+          p_doc_path?: string
+          p_id: string
+          p_remarks?: string
+          p_round: number
+          p_status: string
+        }
+        Returns: undefined
+      }
+      fms_hr_record_probation_review: {
+        Args: {
+          p_file_name?: string
+          p_file_path?: string
+          p_month: number
+          p_probation: string
+          p_remarks?: string
+          p_status: string
+        }
+        Returns: undefined
+      }
+      fms_hr_resubmit_mrf: {
+        Args: { p: Json; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_schedule_interview: {
+        Args: {
+          p_id: string
+          p_interviewer_id?: string
+          p_interviewer_name?: string
+          p_round: number
+          p_scheduled_on?: string
+        }
+        Returns: undefined
+      }
+      fms_hr_seats_joined: { Args: { p_req: string }; Returns: number }
+      fms_hr_seats_taken: {
+        Args: { p_exclude?: string; p_req: string }
+        Returns: number
+      }
+      fms_hr_set_employee_code: {
+        Args: { p_code: string; p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_set_offer_status: {
+        Args: { p_onb: string; p_reason?: string; p_status: string }
+        Returns: undefined
+      }
+      fms_hr_set_onboarding_date: {
+        Args: { p_date: string; p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_share_candidates_with_hod: {
+        Args: { p_ids: string[] }
+        Returns: undefined
+      }
+      fms_hr_stage_rank: { Args: { p_stage: string }; Returns: number }
+      fms_hr_stage_step: { Args: { p_stage: string }; Returns: string }
+      fms_hr_step_owner_ids: { Args: { p_step: string }; Returns: string[] }
+      fms_hr_submit_mrf: { Args: { p: Json }; Returns: string }
+      fms_hr_sync_requisition_fill: {
+        Args: { p_req: string }
+        Returns: undefined
+      }
+      fms_hr_toggle_onboarding_check: {
+        Args: {
+          p_check: string
+          p_done: boolean
+          p_file_name?: string
+          p_file_path?: string
+          p_link_url?: string
+          p_pending_reason?: string
+        }
+        Returns: undefined
+      }
+      fms_hr_try_complete_onboarding: {
+        Args: { p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_update_candidate: {
+        Args: { p: Json; p_id: string }
+        Returns: undefined
       }
       fms_is_current_owner: {
         Args: { p_entry_id: string; p_uid: string }
@@ -2527,6 +3752,15 @@ export type Database = {
         Args: { _root: string; _target: string }
         Returns: boolean
       }
+      leads_dashboard_can_read: { Args: never; Returns: boolean }
+      leads_dashboard_salespeople: {
+        Args: never
+        Returns: {
+          email: string
+          id: string
+          name: string
+        }[]
+      }
       list_org_people: {
         Args: never
         Returns: {
@@ -2692,6 +3926,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       activity_type: [

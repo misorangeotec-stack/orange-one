@@ -4,8 +4,8 @@ import Card from "@/shared/components/ui/Card";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import SourcingModal from "../../components/SourcingModal";
-import DueCell, { overdueRowClass } from "../../components/DueCell";
-import QueueTable, { type QueueColumn } from "../../components/QueueTable";
+import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { RequestItem } from "../../types";
 
 /** Sourcing Queue — lines awaiting quotations (Stage 2). */
@@ -45,8 +45,7 @@ export default function SourcingQueue() {
           rows={s.sourcingQueue}
           rowKey={(l) => l.id}
           columns={columns}
-          companyIdOf={companyOf}
-          companyNameOf={companyName}
+          groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
           rowClassName={(l) => overdueRowClass(dueIso(l))}
           rowsLabel="lines"
           emptyTitle="Nothing to source"

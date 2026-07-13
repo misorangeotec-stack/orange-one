@@ -2,6 +2,7 @@ import type { AppManifest } from "./types";
 import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
+import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 // Legacy `purchase-fms` (the older linear prototype) is retired from the portal —
@@ -25,6 +26,7 @@ export const apps: AppManifest[] = [
   taskManagementApp,
   receivablesHubApp,
   procurementApp,
+  hrRecruitmentApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];

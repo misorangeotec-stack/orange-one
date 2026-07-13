@@ -290,7 +290,7 @@ export interface Payment {
 }
 
 /** Entities an activity row / notification can point at. */
-export type ProcEntityType = "request" | "line" | "po" | "pi" | "grn" | "payment";
+export type ProcEntityType = "request" | "line" | "po" | "pi" | "grn" | "payment" | "master_request";
 
 export interface Activity {
   id: string;

@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import type { Department, Profile } from "@/core/platform/types";
-import { useEffectiveIdentity } from "./sandbox/useEffectiveIdentity";
+import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { fetchProcurementData, PROCUREMENT_QK, procurementQueryKey } from "./data/procFetch";
 import type {
   Company,
@@ -35,6 +35,7 @@ import type {
   ProcEntityType,
 } from "./types";
 import type { StepKey } from "./lib/steps";
+import { masterTypeLabel } from "./lib/masterFields";
 import {
   buildProcIndex,
   buildQueueEntries,
@@ -136,6 +137,12 @@ interface ProcurementStoreValue {
   isAnyManager: boolean;
   /** Pending requests the current user may resolve (admin → all; manager → their types). */
   resolvableRequests: MasterRequest[];
+  /** Requests I raised, newest first — the requester's worklist. */
+  myMasterRequests: MasterRequest[];
+  /** Who reviews a new request of this type: its managers, else the admins (who can always resolve). */
+  masterReviewersFor: (masterType: MasterType) => string[];
+  /** True when no manager is assigned to this master — its requests fall back to the admins. */
+  isMasterUnassigned: (masterType: MasterType) => boolean;
 
   // config / setup
   designations: Designation[];
@@ -393,6 +400,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       .filter((r) => r.status === "pending")
       .filter((r) => canManage(r.masterType));
 
+    // A master with no assigned manager still has to go somewhere: admins can
+    // always resolve, so they are the implicit reviewers. Nothing black-holes.
+    const adminIds = () => dir.profiles.filter((p) => p.role === "admin").map((p) => p.id);
+    const masterReviewersFor = (masterType: MasterType): string[] => {
+      const ids = managerIdsFor(masterType);
+      return ids.length ? ids : adminIds();
+    };
+    const isMasterUnassigned = (masterType: MasterType) => managerIdsFor(masterType).length === 0;
+
     const approverForAmount = (amount: number): string | null => {
       const band = [...approvalBands]
         .filter((b) => b.active)
@@ -471,6 +487,11 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       canManage,
       isAnyManager,
       resolvableRequests,
+      myMasterRequests: masterRequests
+        .filter((r) => r.requestedBy === user.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      masterReviewersFor,
+      isMasterUnassigned,
 
       // ---- config / setup ----
       designations,
@@ -811,12 +832,40 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         await invalidate();
       },
       requestNewMaster: async (masterType, payload) => {
-        const id = await requestNewMasterWrite(masterType, payload, user.id);
+        // requested_by MUST equal auth.uid() — the insert policy checks it. In demo
+        // mode the effective identity is a persona but the JWT is still the real
+        // signed-in user's, so stamp the REAL session id or RLS rejects the insert.
+        const requesterId = session.user?.id ?? user.id;
+        const id = await requestNewMasterWrite(masterType, payload, requesterId);
+        const name = String(payload.name ?? "entry");
+        await safeAnnounce({
+          entityType: "master_request",
+          entityId: id,
+          type: "master_requested",
+          text: `requested a new ${masterTypeLabel(masterType)} — “${name}”. Review it.`,
+          recipients: masterReviewersFor(masterType),
+          meta: { masterType },
+        });
         await invalidate();
         return id;
       },
       resolveMasterRequest: async (requestId, approve, payload, note) => {
+        const req = masterRequests.find((r) => r.id === requestId);
         const newId = await resolveMasterRequestWrite(requestId, approve, payload, note);
+        // The reviewer's edits win server-side, so report the name they actually saved.
+        const finalPayload = payload ?? req?.proposedPayload ?? {};
+        const name = String(finalPayload.name ?? "entry");
+        const label = req ? masterTypeLabel(req.masterType) : "entry";
+        await safeAnnounce({
+          entityType: "master_request",
+          entityId: requestId,
+          type: approve ? "master_approved" : "master_rejected",
+          text: approve
+            ? `approved your ${label} request — “${name}” is now selectable.`
+            : `rejected your ${label} request — “${name}”${note ? `: ${note}` : "."}`,
+          recipients: req?.requestedBy ? [req.requestedBy] : [],
+          meta: { masterType: req?.masterType, resolvedMasterId: newId },
+        });
         await invalidate();
         return newId;
       },
@@ -877,6 +926,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     notifications,
     dir,
     user,
+    session,
     isAdmin,
     queryClient,
   ]);

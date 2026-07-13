@@ -4,18 +4,18 @@ import { useEffectiveIdentity } from "./useEffectiveIdentity";
 
 /**
  * Persistent "you're in the demo" strip, rendered above the page content in demo
- * mode via the AppShell `banner` seam. Makes it unmistakable that nothing shown
- * is production, names who you're acting as, and offers a one-click exit.
+ * mode via the AppShell `banner` seam. Makes it unmistakable that nothing shown is
+ * production, names who you're acting as, and offers a one-click exit.
  */
 export default function DemoBanner() {
-  const { active, personaId, exit } = useSandbox();
+  const { active, personaId, exit, homePath } = useSandbox();
   const { user } = useEffectiveIdentity();
   const navigate = useNavigate();
   if (!active) return null;
 
   const onExit = () => {
     exit();
-    navigate("/procurement");
+    navigate(homePath);
   };
 
   return (

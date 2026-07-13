@@ -1,13 +1,16 @@
+// `formatDate` (a pure string split) rather than `formatDateDMY` (which round-trips
+// through `new Date()`, UTC-parsing a bare yyyy-mm-dd): `dueIso` is always a LOCAL
+// date produced by `localDateIso`, so it must never be re-interpreted as UTC.
 import { formatDate } from "@/shared/lib/time";
-import { dueState } from "../lib/sla";
+import { dueState } from "@/shared/lib/workingDays";
 
 /**
  * Renders an already-computed due date with an overdue / due-today chip.
  *
- * This component is deliberately dumb: it takes the due date rather than a step,
- * because the due date depends on the admin-configured anchor step + working days
- * (and, for `follow_up`, on the vendor's promised dispatch date instead). Only
- * `lib/queues.ts` knows how to derive it — see `lineDueIso` / `poDueIso`.
+ * Deliberately dumb: it takes the due date rather than a step, because the due
+ * date depends on the admin-configured anchor step and working days (and, for
+ * some steps, on a domain event instead). Only each FMS's `lib/queues.ts` knows
+ * how to derive it.
  */
 export default function DueCell({ dueIso }: { dueIso: string | null }) {
   if (!dueIso) return <span className="text-grey-2">—</span>;

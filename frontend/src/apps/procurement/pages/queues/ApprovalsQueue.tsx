@@ -5,8 +5,8 @@ import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
-import DueCell, { overdueRowClass } from "../../components/DueCell";
-import QueueTable, { type QueueColumn } from "../../components/QueueTable";
+import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { RequestItem } from "../../types";
 
 /** Approvals Queue — lines routed to me (or, for admins, all lines awaiting approval). */
@@ -49,8 +49,7 @@ export default function ApprovalsQueue() {
           rows={s.approvalQueue}
           rowKey={(l) => l.id}
           columns={columns}
-          companyIdOf={companyOf}
-          companyNameOf={companyName}
+          groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
           rowClassName={(l) => overdueRowClass(dueIso(l))}
           rowsLabel="lines"
           emptyTitle="Nothing to approve"

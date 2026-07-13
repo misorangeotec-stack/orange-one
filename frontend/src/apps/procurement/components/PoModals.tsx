@@ -4,6 +4,8 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
@@ -398,7 +400,9 @@ export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null;
         <Err msg={err} />
 
         <div>
-          <div className="text-[12px] font-semibold text-grey-2 mb-1.5">Follow-up history{history.length ? ` · ${history.length}` : ""}</div>
+          <div className={cn(SECTION_HEADING_CLASS, "mb-1.5")}>
+            Follow-up history{history.length ? ` · ${history.length}` : ""}
+          </div>
           {history.length === 0 ? (
             <p className="text-[12.5px] text-grey-2">No follow-ups recorded yet.</p>
           ) : (

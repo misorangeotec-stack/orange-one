@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import { timeAgo } from "@/shared/lib/time";
 import { useProcurementStore } from "../store";
-import { useEffectiveIdentity } from "./useEffectiveIdentity";
+import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import type { ProcNotification } from "../types";
 
 const B = "/procurement";
@@ -75,7 +75,7 @@ export default function SandboxDashboard() {
 
       {cards.length > 0 && (
         <div>
-          <div className="text-[12px] font-semibold uppercase tracking-wide text-grey-2 mb-2">Your queues</div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-navy mb-2">Your queues</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {cards.map((c) => (
               <Link key={c.to} to={c.to}>
@@ -96,7 +96,7 @@ export default function SandboxDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <Card className="p-4">
           <div className="flex items-center justify-between mb-2.5">
-            <div className="text-[12px] font-semibold uppercase tracking-wide text-grey-2">Your notifications</div>
+            <div className="text-[12px] font-semibold uppercase tracking-wide text-navy">Your notifications</div>
             <Link to={`${B}`} className="text-[12px] text-grey-2">·</Link>
           </div>
           {notifs.length === 0 ? (
@@ -122,7 +122,7 @@ export default function SandboxDashboard() {
         </Card>
 
         <Card className="p-4">
-          <div className="text-[12px] font-semibold uppercase tracking-wide text-grey-2 mb-2.5">Quick actions</div>
+          <div className="text-[12px] font-semibold uppercase tracking-wide text-navy mb-2.5">Quick actions</div>
           <div className="flex flex-wrap gap-2">
             <Link to={`${B}/requests/new`} className="inline-flex items-center rounded-lg border border-line px-3 py-2 text-[13px] font-medium text-navy hover:border-orange hover:text-orange transition-colors">+ New Request</Link>
             <Link to={`${B}/requests`} className="inline-flex items-center rounded-lg border border-line px-3 py-2 text-[13px] font-medium text-navy hover:border-orange hover:text-orange transition-colors">Purchase Requests</Link>

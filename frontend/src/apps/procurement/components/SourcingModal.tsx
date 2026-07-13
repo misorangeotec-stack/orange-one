@@ -3,6 +3,8 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import RequestMasterModal from "./RequestMasterModal";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import type { RequestItem } from "../types";
@@ -43,6 +45,8 @@ export default function SourcingModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
+  /** Vendor not in the master? Raise it for review without losing this form. */
+  const [raiseVendor, setRaiseVendor] = useState<string | null>(null);
 
   const activeVendors = useMemo(() => s.vendors.filter((v) => v.active), [s.vendors]);
   // A vendor already quoted on another row drops out of this row's dropdown — a
@@ -100,10 +104,6 @@ export default function SourcingModal({
   const rate = Number(finalRate);
   const gst = gstPct === "" ? 0 : Number(gstPct);
   const lineValue = qty > 0 && rate >= 0 ? Math.round(qty * rate * (1 + gst / 100) * 100) / 100 : null;
-
-  const requestVendor = (name: string) => {
-    void s.requestNewMaster("vendor", { name }).then(() => setRequested(name));
-  };
 
   const save = async () => {
     setErr(null);
@@ -164,7 +164,7 @@ export default function SourcingModal({
           {rows.map((r, i) => (
             <div key={i} className="rounded-xl border border-line p-3 space-y-2.5 bg-page/40">
               <div className="flex items-center justify-between">
-                <span className="text-[12px] font-semibold text-grey-2">Quotation {i + 1}</span>
+                <span className={SECTION_HEADING_CLASS}>Quotation {i + 1}</span>
                 <label className="flex items-center gap-1.5 text-[12px] text-navy cursor-pointer">
                   <input
                     type="radio"
@@ -187,7 +187,7 @@ export default function SourcingModal({
                 onChange={(v) => setRow(i, { vendorId: v })}
                 options={vendorOptionsFor(i)}
                 placeholder="Select vendor"
-                onCreate={(name) => requestVendor(name)}
+                onCreate={(name) => setRaiseVendor(name)}
                 createLabel={(q) => `Request new vendor “${q}”`}
                 autoAdvance
               />
@@ -205,7 +205,7 @@ export default function SourcingModal({
             </button>
           )}
           {requested && (
-            <p className="text-[12px] text-teal">Requested vendor “{requested}” — selectable once the master manager approves it.</p>
+            <p className="text-[12px] text-teal">Requested vendor “{requested}” — selectable once the vendor master's owner approves it.</p>
           )}
         </div>
 
@@ -234,6 +234,18 @@ export default function SourcingModal({
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
+
+      {/* Opens on top of this dialog — `stacked` keeps the sourcing form intact
+          underneath (no scroll unlock, ESC closes only this one). */}
+      <RequestMasterModal
+        stacked
+        open={raiseVendor !== null}
+        onClose={() => setRaiseVendor(null)}
+        masterType="vendor"
+        lockType
+        prefill={{ name: raiseVendor ?? "" }}
+        onRequested={(_id, _mt, name) => setRequested(name)}
+      />
     </Modal>
   );
 }

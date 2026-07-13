@@ -5,7 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
-import QueueTable, { type QueueColumn } from "../../components/QueueTable";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { LineStatus, PurchaseRequest, RequestItem } from "../../types";
 
 /**
@@ -88,8 +88,7 @@ export default function RequestsList() {
           rows={rows}
           rowKey={(r) => r.id}
           columns={columns}
-          companyIdOf={(r) => r.companyId}
-          companyNameOf={companyName}
+          groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
           rowsLabel="requests"
           emptyTitle="No requests"
           emptyMessage="Raise a purchase request to get started."

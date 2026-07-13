@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { ProcurementStoreProvider, useProcurementStore } from "./store";
-import { SandboxProvider } from "./sandbox/SandboxContext";
-import { useEffectiveIdentity } from "./sandbox/useEffectiveIdentity";
+import { SandboxProvider } from "@/shared/sandbox/SandboxContext";
+import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import SandboxLauncher from "./sandbox/SandboxLauncher";
 import ProcurementLayout from "./ProcurementLayout";
 import Dashboard from "./pages/Dashboard";
@@ -57,8 +57,10 @@ function RequireMonitor({ children }: { children: ReactNode }) {
  * each build phase lands (requests, queues, PO detail, setup, monitoring).
  */
 export default function ProcurementApp() {
+  // scope "proc" keeps the original sessionStorage keys, so a demo session already
+  // open across a refresh is not lost.
   return (
-    <SandboxProvider>
+    <SandboxProvider scope="proc" homePath="/procurement">
       <ProcurementStoreProvider>
         <Routes>
           <Route element={<ProcurementLayout />}>
@@ -78,7 +80,9 @@ export default function ProcurementApp() {
             <Route path="pos" element={<PoList />} />
             <Route path="pos/:id" element={<PoDetail />} />
             <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
-            <Route path="master-requests" element={<RequireMasterAccess><MasterRequests /></RequireMasterAccess>} />
+            {/* Open to everyone: owners get the review queue, everyone else their
+                own requests. The page scopes itself. */}
+            <Route path="master-requests" element={<MasterRequests />} />
             <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
             <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
             <Route path="sandbox" element={<RequireRealAdmin><SandboxLauncher /></RequireRealAdmin>} />

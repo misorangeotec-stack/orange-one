@@ -1,20 +1,19 @@
 import { useMemo, useState } from "react";
-import { useEffectiveIdentity } from "../../sandbox/useEffectiveIdentity";
 import Tabs from "@/shared/components/ui/Tabs";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
-import MasterCrud, { type MasterColumn, type MasterFieldDef } from "../../components/MasterCrud";
-import ManagersSection from "./ManagersSection";
+import MasterCrud, { type MasterColumn } from "@/shared/components/ui/MasterCrud";
+import { emptyValuesFor, masterFields } from "../../lib/masterFields";
 import { useProcurementStore } from "../../store";
 import type { Company, Category, ItemGroup, Item, Vendor } from "../../types";
 
 /**
- * Masters admin — Companies, Categories, Item Groups, Items, Vendors, plus the
- * per-master Managers config (admin only). Each tab is a MasterCrud surface; the
- * relational tabs (Item Groups → Category, Items → Item Group) source their
- * dropdown options live from the store.
+ * Masters admin — Companies, Categories, Item Groups, Items, Vendors. Each tab
+ * is a MasterCrud surface driven by the shared `masterFields` descriptor (the
+ * same one the request + approve modals use), with the relational tabs (Item
+ * Groups → Category, Items → Item Group) sourcing their options from the store.
+ * Who owns each master is configured in Setup → Master Owners.
  */
 export default function Masters() {
-  const { isAdmin } = useEffectiveIdentity();
   const s = useProcurementStore();
   const [tab, setTab] = useState("company");
 
@@ -30,13 +29,14 @@ export default function Masters() {
     [s.itemGroups, s]
   );
 
+  const ctx = { categoryOptions, itemGroupOptions };
+
   const tabs = [
     { key: "company", label: "Companies", count: s.companies.length },
     { key: "category", label: "Categories", count: s.categories.length },
     { key: "item_group", label: "Item Groups", count: s.itemGroups.length },
     { key: "item", label: "Items", count: s.items.length },
     { key: "vendor", label: "Vendors", count: s.vendors.length },
-    ...(isAdmin ? [{ key: "managers", label: "Managers" }] : []),
   ];
 
   return (
@@ -60,11 +60,8 @@ export default function Masters() {
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
             { header: "Location", render: (r) => r.location || <span className="text-grey-2">—</span> },
           ] as MasterColumn<Company>[]}
-          fields={[
-            { key: "name", label: "Company name", type: "text", required: true, placeholder: "e.g. Orange O Tec Enterprise" },
-            { key: "location", label: "Location", type: "text", placeholder: "e.g. Surat (optional)" },
-          ] as MasterFieldDef[]}
-          emptyValues={{ name: "", location: "" }}
+          fields={masterFields("company", ctx)}
+          emptyValues={emptyValuesFor("company")}
           toValues={(r) => ({ name: r.name, location: r.location ?? "" })}
           onSubmit={async (id, v, active) => {
             const input = { name: v.name.trim(), location: v.location.trim() || null, active, sortOrder: s.companyById(id)?.sortOrder ?? 0 };
@@ -87,8 +84,8 @@ export default function Masters() {
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
             { header: "Item Groups", render: (r) => s.itemGroupsByCategory(r.id).length },
           ] as MasterColumn<Category>[]}
-          fields={[{ key: "name", label: "Category name", type: "text", required: true, placeholder: "e.g. Raw Material" }]}
-          emptyValues={{ name: "" }}
+          fields={masterFields("category", ctx)}
+          emptyValues={emptyValuesFor("category")}
           toValues={(r) => ({ name: r.name })}
           onSubmit={async (id, v, active) => {
             const input = { name: v.name.trim(), active, sortOrder: s.categoryById(id)?.sortOrder ?? 0 };
@@ -110,11 +107,8 @@ export default function Masters() {
             { header: "Category", render: (r) => s.categoryById(r.categoryId)?.name ?? <span className="text-grey-2">—</span> },
             { header: "Items", render: (r) => s.itemsByGroup(r.id).length },
           ] as MasterColumn<ItemGroup>[]}
-          fields={[
-            { key: "category_id", label: "Category", type: "select", required: true, options: categoryOptions, placeholder: "Select category" },
-            { key: "name", label: "Item group name", type: "text", required: true, placeholder: "e.g. Solvents" },
-          ]}
-          emptyValues={{ category_id: "", name: "" }}
+          fields={masterFields("item_group", ctx)}
+          emptyValues={emptyValuesFor("item_group")}
           toValues={(r) => ({ category_id: r.categoryId, name: r.name })}
           onSubmit={async (id, v, active) => {
             const input = { categoryId: v.category_id, name: v.name.trim(), active, sortOrder: s.itemGroupById(id)?.sortOrder ?? 0 };
@@ -148,12 +142,8 @@ export default function Masters() {
             },
             { header: "Unit", render: (r) => r.unit || <span className="text-grey-2">—</span> },
           ] as MasterColumn<Item>[]}
-          fields={[
-            { key: "item_group_id", label: "Item Group", type: "select", required: true, options: itemGroupOptions, placeholder: "Select item group" },
-            { key: "name", label: "Item name", type: "text", required: true, placeholder: "e.g. Isopropyl Alcohol" },
-            { key: "unit", label: "Unit", type: "text", placeholder: "e.g. KGS, PCS, LTR" },
-          ]}
-          emptyValues={{ item_group_id: "", name: "", unit: "" }}
+          fields={masterFields("item", ctx)}
+          emptyValues={emptyValuesFor("item")}
           toValues={(r) => ({ item_group_id: r.itemGroupId, name: r.name, unit: r.unit })}
           onSubmit={async (id, v, active) => {
             const input = { itemGroupId: v.item_group_id, name: v.name.trim(), unit: v.unit.trim(), active, sortOrder: s.itemById(id)?.sortOrder ?? 0 };
@@ -179,15 +169,8 @@ export default function Masters() {
             { header: "Phone", render: (r) => r.phone || <span className="text-grey-2">—</span> },
             { header: "Email", render: (r) => r.email || <span className="text-grey-2">—</span> },
           ] as MasterColumn<Vendor>[]}
-          fields={[
-            { key: "name", label: "Vendor name", type: "text", required: true, placeholder: "e.g. Acme Chemicals Pvt Ltd" },
-            { key: "gstin", label: "GSTIN", type: "text", placeholder: "15-digit GSTIN (optional)" },
-            { key: "contact_name", label: "Contact person", type: "text" },
-            { key: "phone", label: "Phone", type: "text" },
-            { key: "email", label: "Email", type: "text" },
-            { key: "address", label: "Address", type: "textarea" },
-          ]}
-          emptyValues={{ name: "", gstin: "", contact_name: "", phone: "", email: "", address: "" }}
+          fields={masterFields("vendor", ctx)}
+          emptyValues={emptyValuesFor("vendor")}
           toValues={(r) => ({
             name: r.name,
             gstin: r.gstin ?? "",
@@ -223,7 +206,6 @@ export default function Masters() {
         />
       )}
 
-      {tab === "managers" && isAdmin && <ManagersSection />}
     </div>
   );
 }

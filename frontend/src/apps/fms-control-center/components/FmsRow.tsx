@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Bucket, FmsAdapter } from "../adapters/types";
+import type { Bucket, FmsAdapter, StageBreak, StepBreak } from "../adapters/types";
 
 const CELL = "px-3 py-2.5 text-center tabular-nums whitespace-nowrap";
 
@@ -31,13 +31,74 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
+/** The five count cells of a breakdown row, at whatever depth. */
+function Cells({ counts, className = "" }: { counts: Record<Bucket, number>; className?: string }) {
+  return (
+    <>
+      {ORDER.map((b) => (
+        <td key={b} className={`${CELL} ${className}`}>
+          <Count n={counts[b]} tone={TONES[b]} />
+        </td>
+      ))}
+    </>
+  );
+}
+
+/**
+ * One stage of a grouped FMS — a summary line that itself opens to its steps.
+ *
+ * Its own component, not a loop in the parent, because each stage owns an independent
+ * open/closed state and hooks cannot be called in a loop whose length can change.
+ */
+function StageRows({ stage }: { stage: StageBreak }) {
+  const [open, setOpen] = useState(false);
+  const empty = stage.steps.length === 0;
+  return (
+    <>
+      <tr className="border-t border-line/60 bg-page/40">
+        <td className="pl-8 pr-3 py-2 text-[13px]">
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            disabled={empty}
+            aria-expanded={open}
+            className="flex items-center gap-1.5 font-semibold text-navy hover:text-orange disabled:cursor-default disabled:opacity-60"
+          >
+            <Chevron open={open} />
+            {stage.label}
+            {!empty && (
+              <span className="text-[11px] font-normal text-grey-2">
+                {stage.steps.length} {stage.steps.length === 1 ? "step" : "steps"}
+              </span>
+            )}
+          </button>
+        </td>
+        <Cells counts={stage.counts} className="text-[13px]" />
+      </tr>
+
+      {open &&
+        stage.steps.map((s: StepBreak) => (
+          <tr key={s.stepKey} className="border-t border-line/40 bg-page/20">
+            <td className="pl-[62px] pr-3 py-1.5 text-[12.5px] text-grey">{s.label}</td>
+            <Cells counts={s.counts} className="text-[12.5px]" />
+          </tr>
+        ))}
+    </>
+  );
+}
+
 /**
  * One FMS row. Calls the adapter's single `useSnapshot()` hook — exactly one
  * hook per row, never a loop in the parent, so the Rules of Hooks hold as the
  * adapter list grows.
  *
  * Clicking the row opens that FMS's own control center; the chevron expands the
- * per-step breakdown in place.
+ * breakdown in place.
+ *
+ * An FMS that declares **stages** expands to those (four readable lines for HR), each of
+ * which opens again to its own steps. One that doesn't expands straight to its steps, as
+ * Purchase always has — its nine are one journey, and a stage layer over them would be a
+ * fold with nothing behind it.
  */
 export default function FmsRow({ adapter }: { adapter: FmsAdapter }) {
   const navigate = useNavigate();
@@ -45,6 +106,7 @@ export default function FmsRow({ adapter }: { adapter: FmsAdapter }) {
   const { snapshot, isLoading, error } = adapter.useSnapshot();
 
   const comingSoon = adapter.status === "coming-soon";
+  const stages = snapshot?.stages;
   const stepCount = snapshot?.steps.length ?? 0;
 
   if (comingSoon) {
@@ -96,25 +158,17 @@ export default function FmsRow({ adapter }: { adapter: FmsAdapter }) {
             <span className="text-ryg-red">Couldn't load</span>
           </td>
         )}
-        {!isLoading &&
-          !error &&
-          snapshot &&
-          ORDER.map((b) => (
-            <td key={b} className={CELL}>
-              <Count n={snapshot.total[b]} tone={TONES[b]} />
-            </td>
-          ))}
+        {!isLoading && !error && snapshot && <Cells counts={snapshot.total} />}
       </tr>
 
+      {open && stages && stages.map((st) => <StageRows key={st.label} stage={st} />)}
+
       {open &&
+        !stages &&
         snapshot?.steps.map((s) => (
           <tr key={s.stepKey} className="border-t border-line/60 bg-page/40">
             <td className="pl-10 pr-3 py-2 text-[13px] text-grey">{s.label}</td>
-            {ORDER.map((b) => (
-              <td key={b} className={`${CELL} text-[13px]`}>
-                <Count n={s.counts[b]} tone={TONES[b]} />
-              </td>
-            ))}
+            <Cells counts={s.counts} className="text-[13px]" />
           </tr>
         ))}
     </>

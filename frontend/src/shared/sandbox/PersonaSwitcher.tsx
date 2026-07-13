@@ -1,21 +1,22 @@
 import { useNavigate } from "react-router-dom";
-import { usePersonas } from "./personas";
-import { useSandbox } from "./SandboxContext";
+import { useSandbox, type Persona } from "./SandboxContext";
 
 /**
- * Topbar "Acting as …" control shown only in demo mode. Picking a persona sets
- * the effective identity, which re-scopes nav, queues, actions and the bell, and
- * drops you onto that persona's dashboard so you see their world from the top.
- * The empty option = act as yourself (the real admin / coordinator view).
+ * Topbar "Acting as …" control shown only in demo mode. Picking a persona sets the
+ * effective identity, which re-scopes nav, queues, actions and the bell, and drops
+ * you onto that persona's dashboard so you see their world from the top. The empty
+ * option = act as yourself (the real admin / coordinator view).
+ *
+ * The cast is passed in, not imported: each FMS derives its own personas from its
+ * own seeded step owners.
  */
-export default function PersonaSwitcher() {
-  const { personaId, setPersonaId } = useSandbox();
-  const personas = usePersonas();
+export default function PersonaSwitcher({ personas }: { personas: Persona[] }) {
+  const { personaId, setPersonaId, homePath } = useSandbox();
   const navigate = useNavigate();
 
   const onChange = (id: string) => {
     setPersonaId(id || null);
-    navigate("/procurement");
+    navigate(homePath);
   };
 
   return (

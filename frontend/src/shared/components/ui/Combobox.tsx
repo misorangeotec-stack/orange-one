@@ -229,6 +229,9 @@ export default function Combobox({
           ref={menuRef}
           tabIndex={-1}
           onKeyDown={onMenuKeyDown}
+          // Marks an open portalled menu, so an enclosing Modal knows to let
+          // Escape close just this menu instead of the whole dialog.
+          data-portal-menu=""
           style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: pos.minWidth }}
           className="z-[70] w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
         >

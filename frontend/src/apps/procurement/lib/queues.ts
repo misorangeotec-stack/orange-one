@@ -20,6 +20,7 @@
  * number a process coordinator wants: units of step-work due.
  */
 import type { ProcurementData } from "../data/procFetch";
+import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import type { StepKey } from "./steps";
 import { DEFAULT_STEP_SLA, addWorkingDays, localDateIso, type StepSla } from "./sla";
 import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, RequestItem, TallyBooking } from "../types";
@@ -46,14 +47,16 @@ export type ProcSnapshot = Pick<
   | "config"
 >;
 
-export interface QueueEntry {
-  stepKey: StepKey;
+/**
+ * Purchase's queue atom. Extends the shared shape (`stepKey`, `entityId`, `ref`,
+ * `dueIso` — all the Control Center reads) with the fields the Purchase queue
+ * tables need: which entity it is, the company to group by, and the order value.
+ *
+ * `dueIso` is `null` only for a follow-up with no promised dispatch date, and for
+ * `inward`, which is untimed by design.
+ */
+export interface QueueEntry extends QueueEntryBase<StepKey> {
   entityType: "line" | "po";
-  entityId: string;
-  /** Request no. for lines, PO no. for POs. */
-  ref: string;
-  /** Local yyyy-mm-dd. `null` only for a follow-up with no promised dispatch date. */
-  dueIso: string | null;
   companyId: string | null;
   value: number | null;
 }

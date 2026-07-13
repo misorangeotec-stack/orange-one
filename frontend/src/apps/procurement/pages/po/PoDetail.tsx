@@ -3,6 +3,7 @@ import { FileText, Image } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
+import Kpi from "@/shared/components/ui/Kpi";
 import Tabs from "@/shared/components/ui/Tabs";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
@@ -220,7 +221,12 @@ export default function PoDetail() {
             const g = t.grnId ? grns.find((x) => x.id === t.grnId) : undefined;
             return (
               <div key={t.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span><span className="font-medium text-navy">Tally invoice:</span> {t.tallyPiNo}</span>
+                {/* Was inverted: "Tally invoice:" was the dark, heavy thing and the invoice
+                    number itself was grey. The number is the fact worth reading. */}
+                <span>
+                  <span className="text-grey">Tally invoice:</span>{" "}
+                  <span className="font-semibold text-navy">{t.tallyPiNo}</span>
+                </span>
                 {g && <span className="text-grey-2">· GRN {g.gateRegisterNo || formatDate(g.createdAt)}</span>}
                 {t.remarks && <span className="text-grey-2">· {t.remarks}</span>}
                 {t.documentPath && <TallyDocLink booking={t} />}
@@ -346,11 +352,7 @@ function PoDocLink({ po }: { po: PurchaseOrder }) {
   );
 }
 
+/** The compact 4-up strip. `size="sm"` keeps its 16px value — typography changes, layout doesn't. */
 function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <Card className="px-4 py-3">
-      <div className="text-[11px] text-grey-2">{label}</div>
-      <div className="text-[16px] font-bold text-navy">{value}</div>
-    </Card>
-  );
+  return <Kpi label={label} value={value} size="sm" />;
 }
