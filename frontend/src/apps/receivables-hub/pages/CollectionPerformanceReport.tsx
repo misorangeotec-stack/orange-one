@@ -25,6 +25,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@hub/components/ui/tooltip";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
+import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
 import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
@@ -33,40 +34,51 @@ import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/In
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
 import { useHubBase, ReceivablesSourceProvider } from "@hub/lib/sourceContext";
+import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import { monthEndLong, monthStartLong } from "@hub/lib/months";
 import {
-  buildLastReceiptDates, buildLedgerBalances, buildMonthlySeries, factsFor,
-  isZeroCollection, isBelowThreshold, bandOf, bandCounts, pctOf,
+  buildLastReceiptDates, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor,
+  isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
   applyFocus, totalsOf, detailPathFor, defaultColumnsFor,
-  COLLECTIBLE_EPS, DETERIORATION_PP, NEVER_PAID, BAND_LABELS, BAND_ORDER,
+  COLLECTIBLE_EPS, DETERIORATION_PP, NEVER_PAID, NEVER_SOLD, ZERO_EPS, SALE_TYPES,
+  BAND_LABELS, BAND_ORDER,
   PERIOD_LABELS, ZC_COLUMNS, ZC_DIMENSIONS, ZC_PRESETS, ZC_FOCUS_LABELS,
-  type CollectionBand, type PeriodPreset, type ZCColumn, type ZCColumnKey,
+  type CollectionBand, type CollectionsMode, type PeriodPreset, type ZCColumn, type ZCColumnKey,
   type ZCDim, type ZCFocus, type ZCMetrics, type ZCRow,
 } from "@hub/lib/collections";
 import { exportCollectionsXlsx } from "@hub/lib/exportCollections";
 import type { ConsolidatedCustomer } from "@hub/lib/types";
 
 /**
- * Collection Performance — ONE report, TWO thresholds.
+ * Collection Performance — ONE screen, THREE reports.
  *
- *   ?below=0   → "Customers with Zero Collections"  (paid us nothing)
- *   ?below=30  → "Customers Below 30% Collection"   (paid us less than 30% of what we
- *                                                     could have collected)
+ *   ?below=0           → "Customers with Zero Collections"  (paid us nothing)
+ *   ?below=30          → "Customers Below 30% Collection"   (paid us less than 30% of what we
+ *                                                             could have collected)
+ *   variant="dormant"  → "Customers with Dues but No Sales" (owe us money and have STOPPED
+ *                                                             BUYING — the sales-side question)
  *
- * Zero collection is the 0% case, so both are the same screen; only the predicate and the
- * default column set differ. The aggregation lives in lib/collections.ts — read its header
- * for the denominator, for why the window is month-granular, and for the three traps in the
- * pipeline data (gross-of-cheque-return receipts, the clamped opening, FY scoping).
+ * The first two differ only by threshold; zero collection is the 0% case. The third asks a
+ * different question of the SAME facts: it is the exact complement of the other two reports'
+ * "Still Buying" lens, so it reuses the engine wholesale and differs only in its predicate
+ * (`isDormant`), its default columns and its lenses. It comes in by ROUTE, not by `?below=` —
+ * a dormancy report has no threshold.
+ *
+ * The aggregation lives in lib/collections.ts — read its header for the denominator, for why
+ * the window is month-granular, and for the three traps in the pipeline data
+ * (gross-of-cheque-return receipts, the clamped opening, FY scoping).
  *
  * PINNED TO THE PIPELINE DATA. The page is force-wrapped in
  * <ReceivablesSourceProvider value="default"> so it reads the normal receivables Supabase
  * even when an admin has the "Live (Tally)" topbar toggle on. Live is a later, separate
  * piece of work — until then it is impossible for a ConnectWave number to reach a report
  * that goes to management. (Same pattern as pages/Followups.tsx.)
+ *
+ * The DORMANT variant is pinned a second time, to Both FYs — see the default export.
  */
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
@@ -101,26 +113,47 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 const daysText = (v: number): string =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : `${v}d`;
 
+/**
+ * Months-since-sale cell. Same sentinel discipline as daysText.
+ *
+ * "None" — never "Never". The data horizon starts 01-Apr-2025, so all we can honestly say is
+ * that nothing was billed inside it. The basis note spells out where "inside it" begins.
+ */
+const monthsText = (v: number): string =>
+  v === NEVER_SOLD ? "None" : v < 0 ? "—" : v === 0 ? "This month" : `${v}m`;
+
 /** A percentage cell. null (no denominator) is "—", never "0%" — the two mean different things. */
 const pctText = (v: number | null): string => (v === null ? "—" : `${v.toFixed(1)}%`);
 
-function CollectionPerformanceInner() {
-  // ── Threshold: the one control that decides which of the two reports this is ──────
+/** "spare_parts" → "Spare Parts", for the filter chip and the exported filter summary. */
+const saleTypeLabel = (v: string): string =>
+  SALE_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? v;
+
+function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
+  // ── Mode: the one thing that decides which of the three reports this is ───────────
+  // `?below=` picks between the two COLLECTION reports. The DORMANT report is a different
+  // question (sales, not receipts), so it comes in by route as a prop and ignores `below`.
   const [params, setParams] = useSearchParams();
   const threshold = useMemo(() => {
     const raw = Number(params.get("below"));
     return Number.isFinite(raw) ? Math.min(100, Math.max(0, raw)) : 30;
   }, [params]);
-  const mode: "zero" | "threshold" = threshold <= 0 ? "zero" : "threshold";
+  const mode: CollectionsMode =
+    variant === "dormant" ? "dormant" : threshold <= 0 ? "zero" : "threshold";
+  const isDormantMode = mode === "dormant";
   const setThreshold = (t: number) =>
     setParams((p) => { p.set("below", String(t)); return p; }, { replace: true });
 
-  const title = mode === "zero"
-    ? "Customers with Zero Collections"
-    : `Customers Below ${threshold}% Collection`;
-  const subtitle = mode === "zero"
-    ? "Customers who owe money and paid nothing in the period."
-    : `Customers who collected less than ${threshold}% of what we could have collected from them.`;
+  const title = isDormantMode
+    ? "Customers with Dues but No Sales"
+    : mode === "zero"
+      ? "Customers with Zero Collections"
+      : `Customers Below ${threshold}% Collection`;
+  const subtitle = isDormantMode
+    ? "Customers who owe money and have billed nothing in the period — dormant accounts with cash stuck in them."
+    : mode === "zero"
+      ? "Customers who owe money and paid nothing in the period."
+      : `Customers who collected less than ${threshold}% of what we could have collected from them.`;
 
   const {
     loading, allCustomers, consolidatedCustomers, customerDetail, customerGroupMap,
@@ -131,8 +164,15 @@ function CollectionPerformanceInner() {
   // The org-wide month list, chronological — the vocabulary every period control speaks.
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
 
+  /** Where the data itself begins. "Never sold" can only ever mean "not since here" — read it
+   *  from the month vocabulary, never hardcode it: it moves when the FY selection does. */
+  const horizonLabel = months[0] ?? "—";
+
   // ── Period ────────────────────────────────────────────────────────────────────────
-  const [preset, setPreset] = useState<PeriodPreset>("3m");
+  // Dormant opens on 6 months: one quiet quarter is a lull, two is a dead account. (The
+  // collection reports open on 3 — that's a cash-flow question, and it moves faster.)
+  const defaultPreset: PeriodPreset = isDormantMode ? "6m" : "3m";
+  const [preset, setPreset] = useState<PeriodPreset>(defaultPreset);
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
 
@@ -140,10 +180,10 @@ function CollectionPerformanceInner() {
   // switching to Custom starts from what the user was already looking at.
   useEffect(() => {
     if (!months.length || customFrom) return;
-    const w = resolveWindow(months, "3m");
+    const w = resolveWindow(months, defaultPreset);
     setCustomFrom(w[0] ?? months[0]);
     setCustomTo(w[w.length - 1] ?? months[months.length - 1]);
-  }, [months, customFrom]);
+  }, [months, customFrom, defaultPreset]);
 
   const windowMonths = useMemo(() => {
     if (preset === "custom") {
@@ -177,6 +217,23 @@ function CollectionPerformanceInner() {
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
+  /**
+   * DORMANT ONLY. Scopes the report to customers whose outstanding is DOMINATED by one of the
+   * selected sale types — see dominantSaleTypeOf.
+   *
+   * Machine is deselected by default, deliberately. A machine is a one-time capital sale paid
+   * down over months, so "hasn't bought in 6 months" is the NORMAL state for a machine ledger,
+   * not a warning: on the live book, machine-dominant customers are 48 of the 123 dormant rows
+   * but ₹63.3 Cr of the ₹72.8 Cr, and they swamp the report with business-as-usual. They are one
+   * click away, not gone — and a machine customer who has genuinely stopped paying still shows
+   * on the two collection reports, which have no such filter.
+   *
+   * The other two reports (zero / threshold) do NOT get this control: they ask a payment
+   * question, where a machine customer is as accountable as anyone.
+   */
+  const [saleTypes, setSaleTypes] = useState<string[]>(
+    () => (variant === "dormant" ? ["ink", "spare_parts", "head", "other"] : []),
+  );
   const [minOut, setMinOut] = useState<MinOutKey>("0");
   // "More"
   const [segment, setSegment] = useState<Segment>("all");
@@ -222,12 +279,15 @@ function CollectionPerformanceInner() {
   const colByKey = useMemo(() => new Map(ZC_COLUMNS.map((c) => [c.key, c])), []);
 
   type SortKey = ZCColumnKey | "label";
-  const [sortKey, setSortKey] = useState<SortKey>(() => (mode === "zero" ? "outstanding" : "shortfall"));
+  /** Dormant and zero rank by the money at stake; threshold ranks by the shortfall it defines. */
+  const defaultSortFor = (m: CollectionsMode): SortKey =>
+    m === "threshold" ? "shortfall" : "outstanding";
+  const [sortKey, setSortKey] = useState<SortKey>(() => defaultSortFor(mode));
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   useEffect(() => {
     setVisibleCols(defaultColumnsFor(mode));
-    setSortKey(mode === "zero" ? "outstanding" : "shortfall");
+    setSortKey(defaultSortFor(mode));
     setSortDir("desc");
   }, [mode]);
 
@@ -270,6 +330,8 @@ function CollectionPerformanceInner() {
   // The anchor for Opening: the CANONICAL outstanding, rolled backwards through the window's
   // movements. Never customer_trend.outstanding — see the openingForLedger header.
   const balances = useMemo(() => buildLedgerBalances(allCustomers), [allCustomers]);
+  // Dormant only: what KIND of customer this is, for the sale-type scope filter.
+  const outstandingByType = useMemo(() => buildOutstandingByType(allCustomers), [allCustomers]);
 
   const groupOf = useCallback(
     (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
@@ -284,6 +346,13 @@ function CollectionPerformanceInner() {
     if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => (c.companies ?? [c.company]).some((x) => s.has(x))); }
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => (c.locations ?? [c.location]).some((x) => s.has(x))); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => (c.salesPersons?.length ? c.salesPersons : [c.salesPerson]).some((x) => s.has(x))); }
+    // Dormant only. Active only on a PROPER subset: empty and full both mean "no filter", the
+    // same convention SaleTypeMultiSelect labels ("All Sale Types") and every other multi-select
+    // in the app uses. So "Clear selection" restores machine rather than emptying the report.
+    if (isDormantMode && saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length) {
+      const s = new Set(saleTypes);
+      d = d.filter((c) => s.has(dominantSaleTypeOf(c, outstandingByType)));
+    }
     if (segment === "active")
       d = d.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
     else if (segment === "no_activity")
@@ -306,6 +375,7 @@ function CollectionPerformanceInner() {
   }, [
     consolidatedCustomers, categories, customerNames, groupNamesSel, companies, locations, salespersons,
     segment, blockedOnly, includeNonDebtors, minOut, search, groupOf,
+    isDormantMode, saleTypes, outstandingByType,
   ]);
 
   /**
@@ -316,10 +386,13 @@ function CollectionPerformanceInner() {
    *  - threshold mode : collected less than `threshold`% of Opening + Sales. Reads the WORSE
    *                     of the gross and net-of-cheque-return percentages, so a customer whose
    *                     only "payment" bounced can't hide above the bar.
+   *  - dormant mode   : billed NOTHING in the window. Also needs no denominator — paired with
+   *                     the outstanding > 0 gate in `eligible`, that IS the report.
    *
    * `noPool` is the count we deliberately dropped: nothing was collectible from them in this
    * window, so their percentage is undefined — NOT 0%. The basis note reports it rather than
-   * letting them silently vanish.
+   * letting them silently vanish. Threshold-only: the other two predicates have no denominator
+   * to be undefined, so they drop nobody.
    */
   const { rows, noPool } = useMemo(() => {
     if (!windowMonths.length) return { rows: [] as ZCRow[], noPool: 0 };
@@ -327,8 +400,9 @@ function CollectionPerformanceInner() {
     let dropped = 0;
     for (const c of eligible) {
       const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate);
-      const listed = mode === "zero"
-        ? isZeroCollection(facts)
+      const listed =
+        mode === "dormant" ? isDormant(facts)
+        : mode === "zero"  ? isZeroCollection(facts)
         : isBelowThreshold(facts, threshold);
       if (listed) out.push({ customer: c, facts, group: groupOf(c) });
       else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped++;
@@ -371,7 +445,7 @@ function CollectionPerformanceInner() {
   useEffect(() => {
     setExpanded(new Set());
     setPage(1);
-  }, [groupBy, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, preset, customFrom, customTo, focus, bands, threshold]);
+  }, [groupBy, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, saleTypes, minOut, segment, blockedOnly, includeNonDebtors, preset, customFrom, customTo, focus, bands, threshold]);
 
   // Switching report (zero ⇄ threshold) must not strand a lens or band that no longer applies.
   useEffect(() => { setFocus(new Set()); setBands(new Set()); }, [mode]);
@@ -431,6 +505,17 @@ function CollectionPerformanceInner() {
     const neverPaidOutstanding = rows
       .filter((r) => r.facts.lastReceiptDate === null)
       .reduce((s, r) => s + r.customer.outstanding, 0);
+    // The dormant report's damning subset: stopped buying AND stopped paying. The money on
+    // these is what "dead and stuck" actually costs.
+    const paidNothingOutstanding = rows
+      .filter((r) => r.facts.collected < ZERO_EPS)
+      .reduce((s, r) => s + r.customer.outstanding, 0);
+    const wentQuietOutstanding = rows
+      .filter((r) => r.facts.salesInPrior > 0.5 && r.facts.salesInWindow <= 0.5)
+      .reduce((s, r) => s + r.customer.outstanding, 0);
+    const neverSoldOutstanding = rows
+      .filter((r) => r.facts.lastSaleMonth === null)
+      .reduce((s, r) => s + r.customer.outstanding, 0);
     return {
       count: rows.length,
       eligibleCount: eligible.length,
@@ -450,6 +535,13 @@ function CollectionPerformanceInner() {
       deteriorating: t.deteriorating,
       bounced: t.bounced,
       chequeReturns: t.chequeReturns,
+      // Dormant
+      paidNothing: t.zeroCollectors,
+      paidNothingOutstanding,
+      wentQuiet: t.wentQuiet,
+      wentQuietOutstanding,
+      neverSold: t.neverSold,
+      neverSoldOutstanding,
     };
   }, [allTotals, rows, eligible]);
 
@@ -742,10 +834,131 @@ function CollectionPerformanceInner() {
     },
   ];
 
-  const kpiCards = mode === "zero" ? zeroCards : thresholdCards;
-  const kpiGridClass = mode === "zero"
-    ? "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2"
-    : "grid grid-cols-2 sm:grid-cols-4 gap-2";
+  /**
+   * The dormant report asks the SALES question, so its cards rank a dead account, not a bad
+   * payer. "Still Buying" is deliberately absent: it is false for every row by construction —
+   * that is the predicate — so the card would read 0 on every screen, forever.
+   */
+  const dormantCards: KpiCard[] = [
+    {
+      label: "Dormant Customers", icon: UserX, focusKey: null,
+      value: String(kpis.count),
+      sub: `of ${kpis.eligibleCount} who owe money`,
+      count: kpis.count,
+      explain: (
+        <>
+          Customers who owe you money and have billed <strong>nothing at all</strong> in this
+          period — you are no longer selling to them, but they are still holding your cash.
+          <br />
+          <br />
+          <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
+          currently owe you money. Ledgers with the same name are merged, so one customer with
+          three company ledgers counts once.
+        </>
+      ),
+    },
+    {
+      label: "Outstanding Locked", icon: Wallet, focusKey: null,
+      value: fmtINRMoney(kpis.outstanding),
+      sub: `${kpis.sharePct.toFixed(1)}% of in-scope outstanding`,
+      count: kpis.count,
+      explain: (
+        <>
+          The total these dormant customers owe you — <strong>{money(kpis.outstanding)}</strong>,
+          which is <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in
+          scope.
+          <br />
+          <br />
+          This is money tied up in relationships that have <strong>already ended</strong>. It will
+          not be recovered by selling them more.
+        </>
+      ),
+    },
+    {
+      label: "Overdue Locked", icon: TrendingDown, focusKey: "overdue",
+      value: fmtINRMoney(kpis.overdue),
+      sub: "already past due date",
+      count: kpis.overdue,
+      explain: (
+        <>
+          How much of that dormant money is <strong>already past its due date</strong>.
+          <br />
+          <br />
+          The rest is still inside its credit period — a customer can have stopped buying and
+          still not be late yet.
+        </>
+      ),
+    },
+    {
+      label: "Paid Nothing Either", icon: Ban, focusKey: "paidNothing",
+      value: String(kpis.paidNothing),
+      sub: `${fmtINRMoney(kpis.paidNothingOutstanding)} · dead and stuck`,
+      count: kpis.paidNothing,
+      explain: (
+        <>
+          Of these dormant customers, how many also paid you <strong>nothing</strong> in the
+          period. They hold <strong>{money(kpis.paidNothingOutstanding)}</strong>.
+          <br />
+          <br />
+          <strong>The list that matters.</strong> The others are dormant but still clearing their
+          balance — these have stopped buying <em>and</em> stopped paying. Nothing is coming back
+          on its own.
+        </>
+      ),
+    },
+    {
+      label: "Recently Gone Quiet", icon: ShoppingCart, focusKey: "wentQuiet",
+      value: String(kpis.wentQuiet),
+      sub: hasPrior
+        ? `${fmtINRMoney(kpis.wentQuietOutstanding)} · were buying before`
+        : "no prior period in this FY",
+      count: hasPrior ? kpis.wentQuiet : 0,
+      disabledHint: hasPrior
+        ? undefined
+        : "This period has no earlier months to compare against — pick a shorter period.",
+      explain: hasPrior ? (
+        <>
+          They were buying in the <strong>previous</strong> period of the same length (
+          {monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}) and
+          have billed nothing since. They hold <strong>{money(kpis.wentQuietOutstanding)}</strong>.
+          <br />
+          <br />
+          <strong>The ones you can still save.</strong> A customer who went quiet last quarter is a
+          sales call; one who has been dead for two years is a collections problem.
+        </>
+      ) : (
+        <>
+          Compares billing against the previous period of the same length.
+          <br />
+          <br />
+          <strong>Unavailable here:</strong> there are no earlier months to compare against. Pick a
+          shorter period to enable it.
+        </>
+      ),
+    },
+    {
+      label: "Never Sold in Horizon", icon: CalendarClock, focusKey: "neverSold",
+      value: String(kpis.neverSold),
+      sub: `${fmtINRMoney(kpis.neverSoldOutstanding)} · nothing billed since ${horizonLabel}`,
+      count: kpis.neverSold,
+      explain: (
+        <>
+          Not a single sale <strong>anywhere in the available data</strong>, which begins{" "}
+          {horizonLabel}. They hold <strong>{money(kpis.neverSoldOutstanding)}</strong>.
+          <br />
+          <br />
+          This does <strong>not</strong> mean they never bought from you — only that they haven’t
+          since the data starts. The balance is a leftover from an older relationship, and it is
+          the oldest, hardest money on this report.
+        </>
+      ),
+    },
+  ];
+
+  const kpiCards = isDormantMode ? dormantCards : mode === "zero" ? zeroCards : thresholdCards;
+  const kpiGridClass = mode === "threshold"
+    ? "grid grid-cols-2 sm:grid-cols-4 gap-2"
+    : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2";
 
   // ── Filter chips ──────────────────────────────────────────────────────────────────
   const chips: FilterChip[] = [
@@ -770,6 +983,11 @@ function CollectionPerformanceInner() {
     companies.length > 0 && { label: `Company: ${companies.join(", ")}`, onRemove: () => setCompanies([]) },
     locations.length > 0 && { label: `Location: ${locations.join(", ")}`, onRemove: () => setLocations([]) },
     categories.length > 0 && { label: `Category: ${categories.join(", ")}`, onRemove: () => setCategories([]) },
+    // Removing the chip clears the filter (= all sale types, machine back in).
+    isDormantMode && saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length && {
+      label: `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")}`,
+      onRemove: () => setSaleTypes([]),
+    },
     minOut !== "0" && {
       label: `Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`,
       onRemove: () => setMinOut("0"),
@@ -787,6 +1005,9 @@ function CollectionPerformanceInner() {
     setSalespersons([]); setCompanies([]); setLocations([]);
     setCategories([]); setMinOut("0"); setSegment("all");
     setBlockedOnly(false); setIncludeNonDebtors(false);
+    // "Clear filters" means CLEAR — including the machine exclusion, which is a filter like any
+    // other. Leaving it on would make the cleared report still quietly hide ₹63 Cr.
+    setSaleTypes([]);
     setFocus(new Set()); setBands(new Set());
   };
 
@@ -803,16 +1024,26 @@ function CollectionPerformanceInner() {
     if (companies.length) s.push(`Company: ${companies.join(", ")}`);
     if (locations.length) s.push(`Location: ${locations.join(", ")}`);
     if (categories.length) s.push(`Category: ${categories.join(", ")}`);
+    // Always record the sale-type scope on the dormant export, INCLUDING the default. The sheet
+    // has to say that machine was excluded, or the totals are unexplainable a week later.
+    if (isDormantMode)
+      s.push(
+        saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length
+          ? "Sale Type: All (incl. Machine)"
+          : `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")} (dominant type; Machine excluded by default)`,
+      );
     if (minOut !== "0") s.push(`Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`);
     if (segment !== "all") s.push(`Segment: ${segment === "active" ? "Active" : "No Activity"}`);
     if (blockedOnly) s.push("Blocked only");
     if (includeNonDebtors) s.push("Incl. zero & credit balances");
     return s;
-  }, [focus, bands, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors]);
+  }, [focus, bands, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, isDormantMode, saleTypes]);
 
-  const basis = mode === "zero"
-    ? "No receipt voucher and no Other Payment in the period. Cheque returns are reported, not netted."
-    : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`;
+  const basis = isDormantMode
+    ? `A customer is listed when they owe money (Outstanding > ₹0) and billed NO sales at all in the period. Sales are read at month grain from the customer trend and summed over every ledger the customer consolidates. Months Since Sale counts back to the most recent month with any billing; "None" means nothing billed anywhere in the available data, which begins ${horizonLabel} — it does NOT mean the customer never bought from us. A group row shows its deadest member. "Paid Nothing Either" narrows to those who also collected ₹0 in the period; "Recently Gone Quiet" to those who were still buying in the previous period of the same length. The Sale Type filter scopes the report to customers whose outstanding is DOMINATED by the selected types (the single largest type wins; untagged balances count as Other). MACHINE IS EXCLUDED BY DEFAULT: a machine is a one-time capital sale paid down over months, so a machine customer not re-ordering is normal rather than a warning — select it in the Sale Type filter to bring those customers back in.`
+    : mode === "zero"
+      ? "No receipt voucher and no Other Payment in the period. Cheque returns are reported, not netted."
+      : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`;
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
   // `focusedRows` (not `rows`) feeds the flat Customers sheet: otherwise the roll-up sheet
@@ -951,12 +1182,16 @@ function CollectionPerformanceInner() {
         : col.key === "deltaPp" ? v < -DETERIORATION_PP
         : col.lowIsBad ? v < threshold
         : col.kind === "days" ? !!col.alarm && (v === NEVER_PAID || v > 180)
+        // Six quiet months is the point at which a lull has become a dead account — the same
+        // bar the report opens on.
+        : col.kind === "months" ? !!col.alarm && (v === NEVER_SOLD || v >= 6)
         : !!col.alarm && v > 0.5;
 
       const text =
         v === null ? "—"
         : col.kind === "money" ? fmtINRMoney(v)
         : col.kind === "days" ? daysText(v)
+        : col.kind === "months" ? monthsText(v)
         : col.kind === "pct"
           ? (col.key === "deltaPp" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}` : `${v.toFixed(1)}%`)
           : String(v);
@@ -1058,6 +1293,9 @@ function CollectionPerformanceInner() {
       {/* Threshold + Period */}
       <Card className="rounded-card border-border bg-surface">
         <CardContent className="p-4 space-y-3">
+          {/* The threshold row is a COLLECTIONS control. Dormancy has no threshold — the
+              report's only knob is the period, so the row is dropped entirely there. */}
+          {!isDormantMode && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Collected below</span>
             {THRESHOLD_OPTIONS.map((t) => (
@@ -1091,8 +1329,10 @@ function CollectionPerformanceInner() {
               </>
             )}
           </div>
+          )}
 
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/60">
+          {/* No divider above the Period row when it's the only row on the card. */}
+          <div className={`flex flex-wrap items-center gap-2 ${isDormantMode ? "" : "pt-1 border-t border-border/60"}`}>
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">Period</span>
             <div className="pt-2 flex flex-wrap items-center gap-2">
               {(["1m", "3m", "6m", "fy", "all", "custom"] as PeriodPreset[]).map((p) => (
@@ -1278,6 +1518,12 @@ function CollectionPerformanceInner() {
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
+              {/* Dormant only. Scopes by the customer's DOMINANT sale type; Machine is off by
+                  default because a machine is bought once and paid down over months, so "no
+                  repeat purchase" is its normal state, not a warning. See dominantSaleTypeOf. */}
+              {isDormantMode && (
+                <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="h-8 w-36 text-xs rounded-input" />
+              )}
 
               {/* Min Outstanding — chips, not a fiddly ₹ box */}
               <div className="inline-flex items-center rounded-input border border-border overflow-hidden">
@@ -1602,13 +1848,22 @@ function CollectionPerformanceInner() {
   );
 }
 
-export default function CollectionPerformanceReport() {
-  // These two reports go to management, so they are pinned to the pipeline data: the admin
+export default function CollectionPerformanceReport({ variant }: { variant?: "dormant" }) {
+  // All three reports go to management, so they are pinned to the pipeline data: the admin
   // "Live (Tally)" topbar toggle must not be able to change a number here. Live is a later,
   // separate piece of work.
+  //
+  // DORMANT is pinned a SECOND time, to Both FYs — the same reasoning as OverdueAgingReport.
+  // Its window is `months.slice(-6)` over the FY-scoped month vocabulary, so on a young FY
+  // "no sales in the last 6 months" would silently become "in the last 3", and a customer who
+  // last bought in Feb would be reported as never having bought at all. A dormancy question is
+  // a property of the whole book, so it reads the whole book. The nested FYProvider re-bases
+  // the FY context to its default (Both FYs); UserLayout hides the topbar FY selector on the
+  // route so the two can never disagree on screen.
+  const inner = <CollectionPerformanceInner variant={variant} />;
   return (
     <ReceivablesSourceProvider value="default">
-      <CollectionPerformanceInner />
+      {variant === "dormant" ? <FYProvider>{inner}</FYProvider> : inner}
     </ReceivablesSourceProvider>
   );
 }

@@ -50,10 +50,20 @@ function formatAsOfDateTime(input: string): string {
  *
  * The Overdue Aging report is pinned to Both FYs: a single financial year cannot contain a
  * 120-day-old invoice until it is itself 120 days old, so an FY-scoped view of "overdue > 120
- * days" silently becomes 100% brought-forward debt. The page enforces that with its own nested
- * FYProvider; hiding the selector here is what stops the topbar from claiming otherwise.
+ * days" silently becomes 100% brought-forward debt.
+ *
+ * The Dormant Debtors report is pinned for the same class of reason: its window is the last N
+ * months of the FY-scoped month vocabulary, so inside a young FY "no sales in 6 months" quietly
+ * collapses to "no sales in 3" — and a customer who last bought in February gets reported as
+ * having never bought at all. Dormancy is a property of the whole book.
+ *
+ * Each page enforces this with its own nested FYProvider; hiding the selector here is what stops
+ * the topbar from claiming otherwise.
  */
-const FY_PINNED_ROUTES = ["/outstanding-dashboard/reports/overdue"];
+const FY_PINNED_ROUTES = [
+  "/outstanding-dashboard/reports/overdue",
+  "/outstanding-dashboard/reports/dormant",
+];
 
 export default function UserLayout() {
   const { dashboard } = useAppData({});

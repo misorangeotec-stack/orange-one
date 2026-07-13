@@ -1,6 +1,7 @@
 /**
- * exportCollections.ts — the Excel export for the Collection Performance reports
- * (Zero Collections at threshold 0, Below-30% at threshold 30 — same workbook shape).
+ * exportCollections.ts — the Excel export for all three Collection Performance reports
+ * (Zero Collections at threshold 0, Below-30% at threshold 30, and Dormant Debtors —
+ * one workbook shape, since they share one engine).
  *
  * Three rules drive everything here:
  *
@@ -26,7 +27,7 @@ import { formatDateDMY } from "./utils";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import { utilizationPct } from "./receivables";
 import {
-  NEVER_PAID, BAND_LABELS, bandOf, shortfallOf,
+  NEVER_PAID, NEVER_SOLD, BAND_LABELS, bandOf, shortfallOf,
   type ZCColumn, type ZCMetrics, type ZCRow,
 } from "./collections";
 import type { GroupNode } from "./groupTree";
@@ -58,6 +59,11 @@ export interface ZCExportMeta {
 const daysCell = (v: number): string | number =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : v;
 
+/** Months-since-sale renders as a number, except the never-sold sentinel. "None", not "Never":
+ *  it can only ever mean "nothing billed inside the data horizon" — see CollectionFacts. */
+const monthsCell = (v: number): string | number =>
+  v === NEVER_SOLD ? "None" : v < 0 ? "—" : v;
+
 /** A null percentage (no denominator) must render as a dash, never as 0%. */
 const pctCell = (v: number | null): string | number =>
   v === null ? "—" : Math.round(v * 10) / 10;
@@ -68,6 +74,7 @@ const cellFor = (col: ZCColumn, m: ZCMetrics): string | number => {
   if (v === null) return "—";
   if (col.kind === "pct") return pctCell(v);
   if (col.kind === "days") return daysCell(v);
+  if (col.kind === "months") return monthsCell(v);
   return Math.round(v);
 };
 
@@ -176,6 +183,9 @@ function buildRollupSheet(
  * attribute set (including the leaf-only columns the roll-up can't show on a group row).
  */
 function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
+  // "Last Sale Month" is the one figure the roll-up sheet CANNOT carry: a month label doesn't
+  // sum, so a group row has nothing honest to show for it. This sheet is per-customer, so here
+  // it can be exact — which is why the dormant report's month lands in Excel and not on screen.
   const header = [
     "Customer", "Group", "Company", "Location", "Salesperson", "Category",
     "Outstanding", "Overdue", "> 180 Days",
@@ -184,9 +194,10 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
     "Prior Collections", "Prior %", "Δ pp",
     "Cheque Returns", "Credit Notes",
     "Max Overdue Days", "Days Since Receipt", "Last Receipt Date",
+    "Sales in Prior Period", "Last Sale Month", "Months Since Sale",
     "Credit Limit", "Utilization %", "Risk", "Blocked",
   ];
-  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 15, 17, 20, 21, 25];
+  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 15, 17, 20, 21, 25, 28];
   const PCT_COLS = [13, 14, 18, 19];
 
   const aoa: Array<Array<string | number>> = [];
@@ -225,6 +236,9 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
       c.maxOverdueDays ?? 0,
       f.lastReceiptDate === null ? "Never" : (f.daysSinceLastReceipt ?? 0),
       f.lastReceiptDate ? formatDateDMY(f.lastReceiptDate) : "Never",
+      Math.round(f.salesInPrior),
+      f.lastSaleMonth ?? "None",
+      monthsCell(f.monthsSinceLastSale),
       Math.round(c.creditLimit ?? 0),
       utilizationPct(c),
       c.risk,
@@ -242,6 +256,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
     { wch: 17 }, { wch: 11 }, { wch: 10 },
     { wch: 15 }, { wch: 14 },
     { wch: 16 }, { wch: 17 }, { wch: 16 },
+    { wch: 19 }, { wch: 15 }, { wch: 16 },
     { wch: 15 }, { wch: 13 }, { wch: 10 }, { wch: 9 },
   ];
 

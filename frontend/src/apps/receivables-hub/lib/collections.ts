@@ -1,15 +1,18 @@
 /**
  * collections.ts — the Collection Performance engine. Pure, UI-free.
  *
- * ONE engine, TWO reports. Both answer "who isn't paying us", at different thresholds:
+ * ONE engine, THREE reports. All three answer "where is our money stuck", from two angles:
  *
  *   threshold = 0    → "Customers with Zero Collections"  — paid us NOTHING in the period.
  *   threshold = 30   → "Customers Below 30% Collection"   — paid us less than 30% of what
  *                                                            we could have collected.
+ *   dormant          → "Customers with Dues but No Sales" — owe us money and have STOPPED
+ *                                                            BUYING. The sales-side question.
  *
- * Zero collection is the 0% case, so they share every line below. The only thing that
- * differs is the predicate (`isZeroCollection` vs `isBelowThreshold`) and the default
- * column set — see `defaultColumnsFor`.
+ * Zero collection is the 0% case of the threshold report, and dormant is the exact complement
+ * of its "Still Buying" lens — so all three share every line below. What differs is only the
+ * predicate (`isZeroCollection` / `isBelowThreshold` / `isDormant`), the default column set
+ * (`defaultColumnsFor`) and which focus lenses the page offers.
  *
  * ── The percentage, and why the denominator is what it is ──────────────────────────
  *
@@ -70,7 +73,7 @@
 
 import { isoToMonthLabel } from "./months";
 import type { GroupByPreset } from "../components/GroupByBuilder";
-import type { ConsolidatedCustomer, Customer, CustomerDetail } from "./types";
+import type { ConsolidatedCustomer, Customer, CustomerDetail, SaleType } from "./types";
 
 /** Which backend the current view is reading. Mirrors useReceivablesSource(). */
 export type CollectionsSource = "pipeline" | "live";
@@ -162,14 +165,15 @@ export function buildMonthlySeries(
         const m = bucket(label);
         if (m) m.receipts += Number(amt) || 0;
       }
-    } else {
-      // Manual (non-Tally) Other Payments are real money but live outside the trend's
-      // receipts, so fold them in by date. (They don't exist in the live snapshot.)
-      for (const o of d?.otherPaymentTransactions ?? []) {
-        if (!o.date) continue;
-        const m = bucket(isoToMonthLabel(o.date));
-        if (m) m.receipts += Math.abs(o.amount);
-      }
+    }
+
+    // Manual (non-Tally) Other Payments are real money but live outside the trend's receipts
+    // (and outside Tally's monthlyReceipts), so fold them in by date. Both sources carry them:
+    // the pipeline loads them, and liveOtherPayments nets them into the ConnectWave snapshot.
+    for (const o of d?.otherPaymentTransactions ?? []) {
+      if (!o.date) continue;
+      const m = bucket(isoToMonthLabel(o.date));
+      if (m) m.receipts += Math.abs(o.amount);
     }
 
     out.set(c.id, byMonth);
@@ -226,6 +230,61 @@ export function buildLastReceiptDates(
   return out;
 }
 
+// ── Dominant sale type (the dormant report's scope filter) ──────────────────────────
+
+export const SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
+
+/** ledgerId → its outstanding split by sale type (₹). Raw ledgers — consolidateByName trap. */
+export function buildOutstandingByType(
+  ledgers: Customer[],
+): Map<string, Partial<Record<SaleType, number>>> {
+  const out = new Map<string, Partial<Record<SaleType, number>>>();
+  for (const c of ledgers) out.set(c.id, c.outstandingByType ?? {});
+  return out;
+}
+
+/**
+ * Where the BULK of this customer's outstanding sits. The largest single type wins.
+ *
+ * ── Why DOMINANT, and not "has any outstanding of a selected type" ──
+ *
+ * The obvious implementation keeps a customer if ANY selected type has money against it. It
+ * does not work here, and the live data says so loudly: nearly every MACHINE ledger carries a
+ * small `other` sliver (freight, a rate difference, a debit note), so "all types except
+ * machine" would still keep GOPI KRISHNA …-MACHINE (₹9.0 Cr), SKYLARK (₹2.7 Cr), YASH PRINTS
+ * (₹2.4 Cr) — 74 of the 123 dormant customers survive a filter meant to remove them, and the
+ * report stays dominated by exactly what you asked to exclude.
+ *
+ * Ranking by the largest share instead classifies a customer by what they actually ARE to us.
+ * Measured on the live book: 48 machine-dominant dormant customers holding ₹63.3 Cr drop out,
+ * leaving 75 holding ₹9.5 Cr — a consumables dormancy list rather than a machine-EMI list.
+ *
+ * A customer with NO sale-type tags at all (12 of them today, mostly opening-balance-only
+ * ledgers) is classified `other` — the catch-all bucket, which is selected by default. So
+ * untagged money is visible unless you explicitly deselect "Other": this filter never hides a
+ * balance silently.
+ */
+export function dominantSaleTypeOf(
+  c: ConsolidatedCustomer,
+  byType: Map<string, Partial<Record<SaleType, number>>>,
+): SaleType {
+  const ids = c.constituentIds?.length ? c.constituentIds : [c.id];
+  const totals = {} as Record<SaleType, number>;
+  for (const t of SALE_TYPES) totals[t] = 0;
+  for (const id of ids) {
+    const bt = byType.get(id);
+    if (!bt) continue;
+    // Magnitude, not sign: a credit sitting on one type still says the relationship is there.
+    for (const t of SALE_TYPES) totals[t] += Math.abs(bt[t] ?? 0);
+  }
+  let best: SaleType = "other";
+  let max = 0;
+  for (const t of SALE_TYPES) {
+    if (totals[t] > max) { max = totals[t]; best = t; }
+  }
+  return max < 0.5 ? "other" : best;
+}
+
 /** Everything the report knows about one customer's collection behaviour in a window. */
 export interface CollectionFacts {
   /** Collected inside the window (₹), GROSS of cheque returns. The zero test reads this. */
@@ -234,6 +293,9 @@ export interface CollectionFacts {
   inPrior: number;
   /** Billed inside the window (₹) — we're still supplying them. */
   salesInWindow: number;
+  /** Billed in the prior window (₹). Zero now + non-zero here = they JUST stopped buying,
+   *  which is the one dormant customer still worth a sales call. Feeds `wentQuiet`. */
+  salesInPrior: number;
   /** Cheque returns inside the window (₹) — they "paid" and it bounced. */
   chequeReturns: number;
   /** Credit notes inside the window (₹) — bills cleared without cash. */
@@ -265,6 +327,36 @@ export interface CollectionFacts {
   lastReceiptDate: string | null;
   /** Days from lastReceiptDate to as-of. null when never paid. */
   daysSinceLastReceipt: number | null;
+
+  /**
+   * The most recent month with ANY billing, across all constituent ledgers ("Jun-25").
+   * null = nothing billed anywhere in the data horizon — which is NOT "never bought from us",
+   * only "not since the horizon began". The UI must say so.
+   *
+   * Month grain, from the trend, deliberately: `CustomerDetail.invoices` would give a day-exact
+   * date, but the per-FY bundle DROPS fully-paid early bills (supabaseFetcher.ts), so the
+   * ABSENCE of an invoice is not proof of no sale. The trend is the only sound negative test,
+   * and it is the only sales source that exists in BOTH the pipeline and live backends.
+   */
+  lastSaleMonth: string | null;
+  /** Months from lastSaleMonth to the window's last month. NEVER_SOLD when never billed. */
+  monthsSinceLastSale: number;
+}
+
+/**
+ * The last month this ledger billed anything, or null. Scans the FULL month vocabulary, not
+ * the window — the whole question is how far back you have to go.
+ */
+export function lastSaleMonthOf(
+  byMonth: Map<string, MonthFacts> | undefined,
+  months: string[],
+): string | null {
+  if (!byMonth) return null;
+  for (let i = months.length - 1; i >= 0; i--) {
+    const m = byMonth.get(months[i]);
+    if (m && m.sales > 0.5) return months[i];
+  }
+  return null;
 }
 
 const sumMonths = (
@@ -355,6 +447,7 @@ export function factsFor(
   let salesInPrior = 0;
   let openingRaw = 0, priorOpeningRaw = 0;
   let lastReceiptDate: string | null = null;
+  let lastSaleMonth: string | null = null;
 
   for (const id of ids) {
     const byMonth = series.get(id);
@@ -372,7 +465,22 @@ export function factsFor(
 
     const last = lastDates.get(id) ?? null;
     if (last && (!lastReceiptDate || last > lastReceiptDate)) lastReceiptDate = last;
+
+    // The consolidated customer is as alive as its MOST RECENTLY active ledger. Compared by
+    // position in `months`, never as a string — "Sep-25" < "Apr-25" lexically.
+    const sale = lastSaleMonthOf(byMonth, months);
+    if (sale && (!lastSaleMonth || months.indexOf(sale) > months.indexOf(lastSaleMonth)))
+      lastSaleMonth = sale;
   }
+
+  // Distance back from the window's LAST month (the as-of month), so "sold in the final month
+  // of the window" is 0 and a dormant customer is always >= windowMonths.length.
+  const endIdx = windowMonths.length
+    ? months.indexOf(windowMonths[windowMonths.length - 1])
+    : months.length - 1;
+  const saleIdx = lastSaleMonth ? months.indexOf(lastSaleMonth) : -1;
+  const monthsSinceLastSale =
+    saleIdx < 0 || endIdx < 0 ? NEVER_SOLD : Math.max(0, endIdx - saleIdx);
 
   // Clamp deliberately (trap 2): a customer sitting in advance had nothing to collect from
   // their opening — but they may still have bought during the window.
@@ -394,6 +502,7 @@ export function factsFor(
     inWindow,
     inPrior,
     salesInWindow,
+    salesInPrior,
     chequeReturns,
     creditNotes,
     opening,
@@ -409,10 +518,12 @@ export function factsFor(
     lastReceiptDate,
     daysSinceLastReceipt:
       lastReceiptDate && asOfDate ? daysBetween(lastReceiptDate, asOfDate) : null,
+    lastSaleMonth,
+    monthsSinceLastSale,
   };
 }
 
-// ── The two predicates ──────────────────────────────────────────────────────────────
+// ── The three predicates ────────────────────────────────────────────────────────────
 
 /**
  * A customer collected nothing in the window. Strict: any receipt at all disqualifies.
@@ -431,6 +542,18 @@ export const isZeroCollection = (f: CollectionFacts): boolean => f.inWindow < ZE
  */
 export const isBelowThreshold = (f: CollectionFacts, thresholdPct: number): boolean =>
   f.collectible >= COLLECTIBLE_EPS && f.pctEff !== null && f.pctEff < thresholdPct;
+
+/**
+ * A customer billed NOTHING in the window — they've stopped buying. Paired with the report's
+ * outstanding > 0 gate, that's a dormant debtor: money stuck in a dead relationship.
+ *
+ * The ₹0.5 guard is deliberately the SAME one `ZC_FOCUS_PREDICATES.buying` uses, so the two
+ * are exact complements and no rounding dust can fall between them. Change one, change both.
+ *
+ * Needs no denominator (like isZeroCollection, unlike isBelowThreshold): a customer who bought
+ * nothing AND had nothing collectible is still a dormant debtor if they owe us money.
+ */
+export const isDormant = (f: CollectionFacts): boolean => f.salesInWindow <= 0.5;
 
 // ── Severity bands ──────────────────────────────────────────────────────────────────
 
@@ -495,8 +618,14 @@ export interface ZCMetrics {
   maxOverdueDays: number;
   /** Worst (largest) days-since-last-receipt in the group. NEVER_PAID when any never paid. */
   daysSinceLastReceipt: number;
+  /** Worst (largest) months-since-last-sale in the group. NEVER_SOLD when any never billed. */
+  monthsSinceLastSale: number;
   neverPaid: number;
+  /** Never billed anything in the whole data horizon. */
+  neverSold: number;
   stillBuying: number;
+  /** Was buying in the prior window, billed nothing in this one — they JUST went quiet. */
+  wentQuiet: number;
   bounced: number;
   deteriorating: number;
   zeroCollectors: number;
@@ -506,6 +635,10 @@ export interface ZCMetrics {
 /** Sentinel for "no receipt in the entire data horizon" — sorts as the worst possible. */
 export const NEVER_PAID = Number.MAX_SAFE_INTEGER;
 
+/** Sentinel for "no SALE in the entire data horizon" — sorts as the worst possible. Same
+ *  MAX-rollup contract as NEVER_PAID: a group inherits it if any member carries it. */
+export const NEVER_SOLD = Number.MAX_SAFE_INTEGER;
+
 /** A collection % has fallen this many points below the prior window → "deteriorating". */
 export const DETERIORATION_PP = 10;
 
@@ -513,8 +646,9 @@ export const emptyMetrics = (): ZCMetrics => ({
   customers: 0, outstanding: 0, overdue: 0, over180: 0,
   opening: 0, salesInWindow: 0, collectible: 0, collected: 0, shortfall: 0,
   priorCollections: 0, priorCollectible: 0, chequeReturns: 0, creditNotes: 0,
-  maxOverdueDays: 0, daysSinceLastReceipt: -1,
-  neverPaid: 0, stillBuying: 0, bounced: 0, deteriorating: 0, zeroCollectors: 0,
+  maxOverdueDays: 0, daysSinceLastReceipt: -1, monthsSinceLastSale: -1,
+  neverPaid: 0, neverSold: 0, stillBuying: 0, wentQuiet: 0, bounced: 0,
+  deteriorating: 0, zeroCollectors: 0,
   creditLimit: 0,
 });
 
@@ -526,6 +660,7 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
   const c = r.customer;
   const f = r.facts;
   const never = f.lastReceiptDate === null;
+  const neverSold = f.lastSaleMonth === null;
   return {
     customers: 1,
     outstanding: c.outstanding,
@@ -542,8 +677,11 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
     creditNotes: f.creditNotes,
     maxOverdueDays: c.maxOverdueDays ?? 0,
     daysSinceLastReceipt: never ? NEVER_PAID : (f.daysSinceLastReceipt ?? -1),
+    monthsSinceLastSale: f.monthsSinceLastSale,
     neverPaid: never ? 1 : 0,
+    neverSold: neverSold ? 1 : 0,
     stillBuying: f.salesInWindow > 0 ? 1 : 0,
+    wentQuiet: f.salesInPrior > 0.5 && f.salesInWindow <= 0.5 ? 1 : 0,
     bounced: f.chequeReturns > 0.5 ? 1 : 0,
     deteriorating: f.deltaPp !== null && f.deltaPp < -DETERIORATION_PP ? 1 : 0,
     zeroCollectors: f.collected < ZERO_EPS ? 1 : 0,
@@ -566,7 +704,9 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
   acc.chequeReturns    += m.chequeReturns;
   acc.creditNotes      += m.creditNotes;
   acc.neverPaid        += m.neverPaid;
+  acc.neverSold        += m.neverSold;
   acc.stillBuying      += m.stillBuying;
+  acc.wentQuiet        += m.wentQuiet;
   acc.bounced          += m.bounced;
   acc.deteriorating    += m.deteriorating;
   acc.zeroCollectors   += m.zeroCollectors;
@@ -574,6 +714,7 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
   // Non-summable: the group inherits its worst member.
   acc.maxOverdueDays       = Math.max(acc.maxOverdueDays, m.maxOverdueDays);
   acc.daysSinceLastReceipt = Math.max(acc.daysSinceLastReceipt, m.daysSinceLastReceipt);
+  acc.monthsSinceLastSale  = Math.max(acc.monthsSinceLastSale, m.monthsSinceLastSale);
 }
 
 // ── Focus lenses (the clickable KPI cards) ──────────────────────────────────────────
@@ -590,7 +731,8 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
  */
 export type ZCFocus =
   | "overdue" | "never" | "buying" | "over180"
-  | "partial" | "deteriorating" | "bounced";
+  | "partial" | "deteriorating" | "bounced"
+  | "paidNothing" | "wentQuiet" | "neverSold";
 
 export const ZC_FOCUS_LABELS: Record<ZCFocus, string> = {
   overdue: "Overdue Locked",
@@ -600,6 +742,9 @@ export const ZC_FOCUS_LABELS: Record<ZCFocus, string> = {
   partial: "Partial Payers",
   deteriorating: "Deteriorating",
   bounced: "Bounced",
+  paidNothing: "Paid Nothing Either",
+  wentQuiet:   "Recently Gone Quiet",
+  neverSold:   "Never Sold in Horizon",
 };
 
 /** The ₹0.5 guard matches the drill-down's `Math.abs(v) >= 0.5`, so a row carrying nothing
@@ -614,6 +759,16 @@ export const ZC_FOCUS_PREDICATES: Record<ZCFocus, (r: ZCRow) => boolean> = {
   partial: (r) => r.facts.collected >= ZERO_EPS,
   deteriorating: (r) => r.facts.deltaPp !== null && r.facts.deltaPp < -DETERIORATION_PP,
   bounced: (r) => r.facts.chequeReturns > 0.5,
+
+  // ── Dormant-report lenses ──
+  // Collected nothing either. The exact inverse of `partial`; on the dormant report this is
+  // the damning subset — stopped buying AND stopped paying. Dead and stuck.
+  paidNothing: (r) => r.facts.collected < ZERO_EPS,
+  // Was buying last period, billed nothing this one. The dormant customers you can still
+  // SAVE — as opposed to the long-dead, who are a collections problem, not a sales one.
+  wentQuiet: (r) => r.facts.salesInPrior > 0.5 && r.facts.salesInWindow <= 0.5,
+  // Nothing billed anywhere in the data horizon — not "never bought", see lastSaleMonth.
+  neverSold: (r) => r.facts.lastSaleMonth === null,
 };
 
 /** Apply every active lens (AND). An empty set means no focus — the full list. */
@@ -743,13 +898,13 @@ export type ZCColumnKey =
   | "opening" | "salesInWindow" | "collectible" | "collected"
   | "collectionPct" | "shortfall" | "priorPct" | "deltaPp"
   | "priorCollections" | "chequeReturns" | "creditNotes"
-  | "daysSinceLastReceipt" | "maxOverdueDays" | "creditLimit";
+  | "daysSinceLastReceipt" | "monthsSinceLastSale" | "maxOverdueDays" | "creditLimit";
 
 export interface ZCColumn {
   key: ZCColumnKey;
   label: string;
-  /** How the cell renders: money (₹), a plain count, a day count, or a percentage. */
-  kind: "money" | "count" | "days" | "pct";
+  /** How the cell renders: money (₹), a plain count, a day count, a month count, or a %. */
+  kind: "money" | "count" | "days" | "pct" | "months";
   /**
    * The node's value for this column, derived from its SUMMED metrics.
    *
@@ -790,23 +945,36 @@ export const ZC_COLUMNS: ZCColumn[] = [
   { key: "chequeReturns",        label: "Cheque Returns",    kind: "money", value: (m) => m.chequeReturns, alarm: true },
   { key: "creditNotes",          label: "Credit Notes",      kind: "money", value: (m) => m.creditNotes },
   { key: "daysSinceLastReceipt", label: "Days Since Receipt", kind: "days", value: (m) => m.daysSinceLastReceipt, alarm: true },
+  // Folded with MAX, so a group reads as its DEADEST member. The exact month label is a
+  // per-customer fact and can't be summed — it ships in the Excel export instead.
+  { key: "monthsSinceLastSale",  label: "Months Since Sale", kind: "months", value: (m) => m.monthsSinceLastSale, alarm: true },
   { key: "maxOverdueDays",       label: "Max Overdue Days",  kind: "days",  value: (m) => m.maxOverdueDays },
   { key: "creditLimit",          label: "Credit Limit",      kind: "money", value: (m) => m.creditLimit },
 ];
 
+/** Which of the three reports this is. Decides the predicate, the defaults and the lenses. */
+export type CollectionsMode = "zero" | "threshold" | "dormant";
+
 /**
  * The default (management) column set. Everything else lives behind the ColumnPicker.
  *
- * The two reports want different defaults: at threshold 0 every percentage column reads 0%
- * / "—" and only wastes width, so the zero report keeps exactly the columns it shipped with.
+ * The three reports want different defaults:
+ *  - zero      : at threshold 0 every percentage column reads 0% / "—" and only wastes width,
+ *                so it keeps exactly the columns it shipped with.
+ *  - threshold : the full percentage working.
+ *  - dormant   : "Sales in Period" is ₹0 for EVERY row by construction (that's the predicate),
+ *                so it is dropped for the two figures that actually rank a dead account —
+ *                how long since they bought, and how long since they paid.
  */
-export function defaultColumnsFor(mode: "zero" | "threshold"): ZCColumnKey[] {
-  return mode === "zero"
-    ? ["customers", "outstanding", "overdue", "over180", "salesInWindow", "priorCollections", "daysSinceLastReceipt"]
-    : [
-        "customers", "outstanding", "opening", "salesInWindow", "collectible", "collected",
-        "collectionPct", "shortfall", "priorPct", "deltaPp", "chequeReturns", "creditNotes",
-      ];
+export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
+  if (mode === "zero")
+    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "priorCollections", "daysSinceLastReceipt"];
+  if (mode === "dormant")
+    return ["customers", "outstanding", "overdue", "over180", "collected", "monthsSinceLastSale", "daysSinceLastReceipt"];
+  return [
+    "customers", "outstanding", "opening", "salesInWindow", "collectible", "collected",
+    "collectionPct", "shortfall", "priorPct", "deltaPp", "chequeReturns", "creditNotes",
+  ];
 }
 
 // ── Window resolution ───────────────────────────────────────────────────────────────

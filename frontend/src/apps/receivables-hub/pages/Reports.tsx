@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock, PackageX } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -64,6 +64,17 @@ const REPORTS: ReportCard[] = [
       "Customers with money stuck on bills more than 120 days past due — ranked on the aged amount alone, split into opening debt brought forward vs debt billed since, with the 180+ slice, still-buying flags, bill-level drill-down and an aged-bill Excel sheet to chase.",
     icon: AlarmClock,
     to: "/outstanding-dashboard/reports/overdue?over=120",
+    ready: true,
+  },
+  // The third report on the collections engine — but it asks the SALES question: not "who
+  // isn't paying" but "who has stopped buying and still owes us". See lib/collections.ts.
+  {
+    id: "dormant-debtors",
+    title: "Customers with Dues but No Sales",
+    description:
+      "Dormant accounts — they owe money but have billed nothing in the period. Opens on the last 6 months, excluding one-time machine sales (switchable), ranked by the cash stuck in them, with months-since-last-sale, a \"paid nothing either\" lens for the dead-and-stuck, a \"recently gone quiet\" lens for the ones still worth a call, drill-down to open bills and Excel export.",
+    icon: PackageX,
+    to: "/outstanding-dashboard/reports/dormant",
     ready: true,
   },
 ];

@@ -70,6 +70,12 @@ function HubRoutes() {
             path="reports/zero-collections"
             element={<Navigate to="/outstanding-dashboard/reports/collections?below=0" replace />}
           />
+          {/* Same page, third report: customers who owe money and have STOPPED BUYING. It is the
+              exact complement of the other two reports' "Still Buying" lens, so it reuses their
+              engine — but it asks a sales question, not a collections one, so it has no ?below=
+              threshold and arrives by route instead. Pinned to the pipeline source AND to Both
+              FYs (a 6-month window can't live inside a 3-month-old FY) — see the page header. */}
+          <Route path="reports/dormant" element={<CollectionPerformanceReport variant="dormant" />} />
           {/* Aged debt: ?over=120 (the card), 90 / 180 / any custom cutoff. Pinned to the pipeline
               source AND to Both FYs — see the header of pages/OverdueAgingReport.tsx. */}
           <Route path="reports/overdue" element={<OverdueAgingReport />} />
