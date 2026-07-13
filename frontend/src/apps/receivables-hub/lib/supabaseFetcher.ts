@@ -38,8 +38,31 @@ function monthLabelToOrdinal(label: string): number {
   return (2000 + y) * 12 + m;
 }
 
+/**
+ * Page through a table with .range(), under a STABLE TOTAL ORDER.
+ *
+ * ── Why `orderBy` is required, and why it must be UNIQUE ──────────────────────────────
+ *
+ * Postgres makes NO guarantee about row order without an ORDER BY. Paginating an unordered
+ * query is therefore not "probably fine" — it is a lottery re-run for every page: the planner
+ * is free to hand back rows in a different order on the very next request, so page 2 can repeat
+ * rows page 1 already returned and skip others entirely. Nothing errors. You just get the wrong
+ * number, sometimes.
+ *
+ * MEASURED on the live book (13-Jul-2026), fetching `customer_trend` (28,480 rows / 29 pages)
+ * four times with the identical unordered query: three runs came back clean, and one returned
+ * 2,064 DUPLICATE rows while silently dropping 2,064 others — inflating total receipts from
+ * ₹355.72 cr to ₹402.76 cr. A 13% error, on a random page load, on every screen in this app.
+ *
+ * The order key must be a UNIQUE column (or a unique combination). Ordering by a non-unique
+ * column re-introduces the same bug for the ties, which can straddle a page boundary.
+ *
+ * Small tables (< PAGE rows) never paginate and so were never at risk — but they are ordered
+ * too, because "it fits in one page today" is not a property worth relying on.
+ */
 async function fetchAllRows<T>(
   makeQuery: () => any,   // a builder factory — re-invoked each page
+  orderBy: string[],      // UNIQUE key. Required — see above.
 ): Promise<T[]> {
   // Walk pages until we receive a short one. We deliberately don't trust
   // PostgREST's count header here: chaining `.select(*, { count: "exact" })`
@@ -49,7 +72,9 @@ async function fetchAllRows<T>(
   const result: T[] = [];
   let from = 0;
   for (;;) {
-    const { data, error } = await makeQuery().range(from, from + PAGE - 1);
+    let q = makeQuery();
+    for (const col of orderBy) q = q.order(col, { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw error;
     const rows = (data ?? []) as T[];
     result.push(...rows);
@@ -145,7 +170,8 @@ export async function fetchCustomersFromSupabase(fySuffix: string): Promise<Cust
   const sb = getSupabase();
   const fy = fySuffixToFy(fySuffix);
   const rows = await fetchAllRows<CustomerRow>(
-    () => sb.from("customers").select("*").eq("fiscal_year", fy)
+    () => sb.from("customers").select("*").eq("fiscal_year", fy),
+    ["id"],   // unique within a fiscal_year (the ledger id)
   );
   return rows.map(toCustomer);
 }
@@ -166,7 +192,8 @@ export async function fetchInvoiceNumbersForCustomers(customerIds: string[]): Pr
   if (ids.length === 0) return new Set();
   const sb = getSupabase();
   const rows = await fetchAllRows<{ number: string | null }>(
-    () => sb.from("invoices").select("number").in("customer_id", ids)
+    () => sb.from("invoices").select("number,pk").in("customer_id", ids),
+    ["pk"],   // the table's real primary key (`id` repeats across fiscal years)
   );
   const set = new Set<string>();
   for (const r of rows) {
@@ -185,7 +212,8 @@ export async function fetchInvoiceNumbersForCustomers(customerIds: string[]): Pr
 export async function fetchSalespersonNames(): Promise<string[]> {
   const sb = getSupabase();
   const rows = await fetchAllRows<{ sales_person: string | null }>(
-    () => sb.from("customers").select("sales_person").eq("fiscal_year", "default")
+    () => sb.from("customers").select("sales_person,id").eq("fiscal_year", "default"),
+    ["id"],
   );
   const names = new Set<string>();
   for (const r of rows) {
@@ -204,9 +232,11 @@ export async function fetchDashboardFromSupabase(fySuffix: string): Promise<Dash
   const [metaRes, trendRows] = await Promise.all([
     sb.from("dashboard_meta").select("*").eq("fiscal_year", fy).maybeSingle(),
     fetchAllRows<{ month: string; sales: number; receipts: number; credit_notes: number; debit_notes: number; journal_adjustments: number; outstanding: number }>(
-      // No SQL .order("month") — that's an alphabetical string sort and yields
-      // Apr-25, Apr-26, Aug-25, … We sort chronologically client-side instead.
-      () => sb.from("dashboard_trend").select("*").eq("fiscal_year", fy)
+      // `month` is only the PAGE-STABILITY key here, not the display order: sorting it in SQL is
+      // an alphabetical string sort (Apr-25, Apr-26, Aug-25, …), so the chronological sort still
+      // happens client-side below. It is unique per fiscal_year, which is all pagination needs.
+      () => sb.from("dashboard_trend").select("*").eq("fiscal_year", fy),
+      ["month"],
     ),
   ]);
 
@@ -245,8 +275,10 @@ export async function fetchDashboardFromSupabase(fySuffix: string): Promise<Dash
 
 export async function fetchCustomerGroupsFromSupabase(): Promise<CustomerGroupMap> {
   const sb = getSupabase();
+  // 1,190 rows — this one DOES paginate, so it was exposed to the same bug.
   const rows = await fetchAllRows<{ tally_name: string; group_name: string }>(
-    () => sb.from("customer_groups").select("*")
+    () => sb.from("customer_groups").select("*"),
+    ["tally_name"],
   );
   const mapping: Record<string, string> = {};
   const groups: Record<string, string[]> = {};
@@ -264,13 +296,15 @@ export async function fetchInvoicesFromSupabase(fySuffix: string): Promise<Recor
   const fy = fySuffixToFy(fySuffix);
 
   const [invs, trends, rcpts, ops, cns, dns, jns] = await Promise.all([
-    fetchAllRows<any>(() => sb.from("invoices").select("*").eq("fiscal_year", fy)),
-    fetchAllRows<any>(() => sb.from("customer_trend").select("*").eq("fiscal_year", fy)),
-    fetchAllRows<any>(() => sb.from("receipt_transactions").select("*").eq("fiscal_year", fy)),
-    fetchAllRows<any>(() => sb.from("other_payment_transactions").select("*").eq("fiscal_year", fy)),
-    fetchAllRows<any>(() => sb.from("credit_note_transactions").select("*").eq("fiscal_year", fy)),
-    fetchAllRows<any>(() => sb.from("debit_note_transactions").select("*").eq("fiscal_year", fy)),
-    fetchAllRows<any>(() => sb.from("journal_transactions").select("*").eq("fiscal_year", fy)),
+    // Every key below is UNIQUE. customer_trend has no id column — (customer_id, month) is its
+    // natural key, and the pair is unique within a fiscal_year.
+    fetchAllRows<any>(() => sb.from("invoices").select("*").eq("fiscal_year", fy), ["pk"]),
+    fetchAllRows<any>(() => sb.from("customer_trend").select("*").eq("fiscal_year", fy), ["customer_id", "month"]),
+    fetchAllRows<any>(() => sb.from("receipt_transactions").select("*").eq("fiscal_year", fy), ["id"]),
+    fetchAllRows<any>(() => sb.from("other_payment_transactions").select("*").eq("fiscal_year", fy), ["id"]),
+    fetchAllRows<any>(() => sb.from("credit_note_transactions").select("*").eq("fiscal_year", fy), ["id"]),
+    fetchAllRows<any>(() => sb.from("debit_note_transactions").select("*").eq("fiscal_year", fy), ["id"]),
+    fetchAllRows<any>(() => sb.from("journal_transactions").select("*").eq("fiscal_year", fy), ["id"]),
   ]);
 
   const result: Record<string, CustomerDetail> = {};
