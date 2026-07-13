@@ -46,7 +46,11 @@ import {
   type OnboardingItemInput,
   type ProbationDecision,
   type StepOwnerInput,
+  setMasterManagers as setMasterManagersWrite,
+  requestNewMaster as requestNewMasterWrite,
+  resolveMasterRequest as resolveMasterRequestWrite,
 } from "./data/hrWrites";
+import { masterTypeLabel } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import { isHodStep, type StepKey } from "./lib/steps";
 import {
@@ -75,6 +79,9 @@ import type {
   HrActivity,
   HrEntityType,
   HrLocation,
+  HrMasterManager,
+  HrMasterRequest,
+  HrMasterType,
   HrNotification,
   JobPlatform,
   JobType,
@@ -110,6 +117,24 @@ interface HrStoreValue {
   onboardingItems: OnboardingItem[];
   /** Only the active items, in order — this is what a new onboarding is seeded from. */
   activeOnboardingItems: OnboardingItem[];
+
+  // master governance
+  masterManagers: HrMasterManager[];
+  masterRequests: HrMasterRequest[];
+  pendingRequests: HrMasterRequest[];
+  managerIdsFor: (masterType: HrMasterType) => string[];
+  /** May the user CRUD this master — admin, or its assigned owner. */
+  canManage: (masterType: HrMasterType) => boolean;
+  /** Owns at least one master → sees the Masters page and the review tabs. */
+  isAnyMasterManager: boolean;
+  /** Pending requests this user may resolve (admin → all; owner → their types). */
+  resolvableRequests: HrMasterRequest[];
+  /** Requests I raised, newest first — the requester's worklist. */
+  myMasterRequests: HrMasterRequest[];
+  /** Who reviews a new request of this type: its owners, else the admins. */
+  masterReviewersFor: (masterType: HrMasterType) => string[];
+  /** True when nobody owns this master — its requests fall back to the admins. */
+  isMasterUnassigned: (masterType: HrMasterType) => boolean;
 
   // config
   stepOwners: StepOwner[];
@@ -295,6 +320,15 @@ interface HrStoreValue {
   updateMaster: (table: HrMasterTable, id: string, input: MasterInput) => Promise<void>;
   insertOnboardingItem: (input: OnboardingItemInput) => Promise<void>;
   updateOnboardingItem: (id: string, input: OnboardingItemInput) => Promise<void>;
+
+  setMasterManagers: (masterType: HrMasterType, userIds: string[]) => Promise<void>;
+  requestNewMaster: (masterType: HrMasterType, payload: Record<string, unknown>) => Promise<string>;
+  resolveMasterRequest: (
+    requestId: string,
+    approve: boolean,
+    payload: Record<string, unknown> | null,
+    note: string | null
+  ) => Promise<string | null>;
 }
 
 const Ctx = createContext<HrStoreValue | null>(null);
@@ -332,9 +366,16 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const probationReviews = data?.probationReviews ?? [];
   const activity = data?.activity ?? [];
   const notifications = data?.notifications ?? [];
+  const masterManagers = data?.masterManagers ?? [];
+  const masterRequests = data?.masterRequests ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const minCvsToShare = data?.config.minCvsToShare ?? 5;
+
+  // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
+  // stamping run off the JWT, so any write whose policy checks `= auth.uid()`
+  // must carry this id — see requestNewMaster below.
+  const realUserId = session.user?.id ?? null;
 
   const value = useMemo<HrStoreValue>(() => {
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
@@ -376,6 +417,28 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         // The trail is best-effort. State lives on the domain row, stamped in the RPC.
       }
     };
+
+    /* ---- master governance ---- */
+
+    const managerIdsFor = (mt: HrMasterType) =>
+      masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
+
+    const canManage = (mt: HrMasterType) => isAdmin || managerIdsFor(mt).includes(user.id);
+
+    const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === user.id);
+
+    const resolvableRequests = masterRequests
+      .filter((r) => r.status === "pending")
+      .filter((r) => canManage(r.masterType));
+
+    // A master with no assigned owner still has to go somewhere: admins can always
+    // resolve, so they are the implicit reviewers. Nothing black-holes.
+    const adminIds = () => dir.profiles.filter((p) => p.role === "admin").map((p) => p.id);
+    const masterReviewersFor = (mt: HrMasterType): string[] => {
+      const ids = managerIdsFor(mt);
+      return ids.length ? ids : adminIds();
+    };
+    const isMasterUnassigned = (mt: HrMasterType) => managerIdsFor(mt).length === 0;
 
     /* ------------------------------ requisitions --------------------------- */
 
@@ -808,6 +871,19 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       designations,
       profileById: dir.profileById,
 
+      masterManagers,
+      masterRequests,
+      pendingRequests: masterRequests.filter((r) => r.status === "pending"),
+      managerIdsFor,
+      canManage,
+      isAnyMasterManager,
+      resolvableRequests,
+      myMasterRequests: masterRequests
+        .filter((r) => r.requestedBy === user.id)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      masterReviewersFor,
+      isMasterUnassigned,
+
       jobPlatforms,
       jobTypes,
       locations,
@@ -870,12 +946,56 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await updateOnboardingItemWrite(id, input);
         await invalidate();
       },
+
+      setMasterManagers: async (masterType, userIds) => {
+        await setMasterManagersWrite(masterType, userIds);
+        await invalidate();
+      },
+      requestNewMaster: async (masterType, payload) => {
+        // requested_by MUST equal auth.uid() — the insert policy checks it. In demo
+        // mode the effective identity is a persona but the JWT is still the real
+        // signed-in user's, so stamp the REAL session id or RLS rejects the insert.
+        const id = await requestNewMasterWrite(masterType, payload, realUserId ?? user.id);
+        const name = String(payload.name ?? "entry");
+        await safeAnnounce({
+          entityType: "master_request",
+          entityId: id,
+          type: "master_requested",
+          // The HR bell renders this text verbatim (no actor prefix), so it has to
+          // stand on its own as a sentence.
+          text: `A new ${masterTypeLabel(masterType)} was requested — “${name}”. Review it.`,
+          recipients: masterReviewersFor(masterType),
+          meta: { masterType },
+        });
+        await invalidate();
+        return id;
+      },
+      resolveMasterRequest: async (requestId, approve, payload, note) => {
+        const req = masterRequests.find((r) => r.id === requestId);
+        const newId = await resolveMasterRequestWrite(requestId, approve, payload, note);
+        // The reviewer's edits win server-side, so report the name they actually saved.
+        const finalPayload = payload ?? req?.proposedPayload ?? {};
+        const name = String(finalPayload.name ?? "entry");
+        const label = req ? masterTypeLabel(req.masterType) : "entry";
+        await safeAnnounce({
+          entityType: "master_request",
+          entityId: requestId,
+          type: approve ? "master_approved" : "master_rejected",
+          text: approve
+            ? `Your ${label} request — “${name}” — was approved. It is now selectable.`
+            : `Your ${label} request — “${name}” — was rejected${note ? `: ${note}` : "."}`,
+          recipients: req?.requestedBy ? [req.requestedBy] : [],
+          meta: { masterType: req?.masterType, resolvedMasterId: newId },
+        });
+        await invalidate();
+        return newId;
+      },
     };
   }, [
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
     onboardingItems, stepOwners, processCoordinatorIds, stepSla, minCvsToShare, activity, notifications,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
-    probations, probationReviews, isAdmin, user.id, queryClient,
+    probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, realUserId, queryClient,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

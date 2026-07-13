@@ -7,6 +7,8 @@ import type {
   HrLocation,
   HrNotification,
   HrEntityType,
+  HrMasterManager,
+  HrMasterRequest,
   JobPlatform,
   JobType,
   OnboardingItem,
@@ -100,6 +102,8 @@ type Tbl =
   | "fms_hr_probation_reviews"
   | "fms_hr_activity"
   | "fms_hr_notifications"
+  | "fms_hr_master_managers"
+  | "fms_hr_master_requests"
   | "designations";
 
 /** Narrow a candidate read. `q` is the PostgREST builder mid-chain. */
@@ -178,6 +182,8 @@ export interface HrData {
   probationReviews: ProbationReview[];
   activity: HrActivity[];
   notifications: HrNotification[];
+  masterManagers: HrMasterManager[];
+  masterRequests: HrMasterRequest[];
 }
 
 const num = (v: any): number | null => (v === null || v === undefined ? null : Number(v));
@@ -378,6 +384,24 @@ const mapOnboardingItem = (r: any): OnboardingItem => ({
   sortOrder: r.sort_order ?? 0,
 });
 
+const mapMasterManager = (r: any): HrMasterManager => ({
+  id: r.id,
+  masterType: r.master_type,
+  managerUserId: r.manager_user_id,
+});
+
+const mapMasterRequest = (r: any): HrMasterRequest => ({
+  id: r.id,
+  masterType: r.master_type,
+  proposedPayload: (r.proposed_payload ?? {}) as Record<string, unknown>,
+  status: r.status,
+  requestedBy: r.requested_by ?? null,
+  reviewedBy: r.reviewed_by ?? null,
+  reviewNote: r.review_note ?? null,
+  resolvedMasterId: r.resolved_master_id ?? null,
+  createdAt: r.created_at,
+});
+
 const mapStepOwner = (r: any): StepOwner => ({
   id: r.id,
   stepKey: r.step_key,
@@ -436,6 +460,8 @@ export async function fetchHrData(): Promise<HrData> {
     probationReviews,
     activity,
     notifications,
+    masterManagers,
+    masterRequests,
   ] = await Promise.all([
     fetchAll("fms_hr_step_owners"),
     fetchAll("fms_hr_config", "key"),
@@ -456,6 +482,8 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_probation_reviews"),
     fetchAll("fms_hr_activity"),
     fetchAll("fms_hr_notifications"),
+    fetchAll("fms_hr_master_managers"),
+    fetchAll("fms_hr_master_requests"),
   ]);
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -485,5 +513,7 @@ export async function fetchHrData(): Promise<HrData> {
     probationReviews: probationReviews.map(mapProbationReview),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
+    masterManagers: masterManagers.map(mapMasterManager),
+    masterRequests: masterRequests.map(mapMasterRequest),
   };
 }

@@ -741,6 +741,69 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_master_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          master_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          master_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          master_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_master_requests: {
+        Row: {
+          created_at: string
+          id: string
+          master_type: string
+          proposed_payload: Json
+          requested_by: string | null
+          resolved_master_id: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          master_type: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          master_type?: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fms_hr_notifications: {
         Row: {
           actor_id: string | null
@@ -3466,6 +3529,10 @@ export type Database = {
       }
       fms_hr_is_any_step_owner: { Args: { p_uid: string }; Returns: boolean }
       fms_hr_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_hr_is_master_manager: {
+        Args: { p_master_type: string; p_uid: string }
+        Returns: boolean
+      }
       fms_hr_is_recruitment_staff: { Args: { p_uid: string }; Returns: boolean }
       fms_hr_is_step_owner: {
         Args: { p_step_key: string; p_uid: string }
@@ -3503,6 +3570,15 @@ export type Database = {
           p_status: string
         }
         Returns: undefined
+      }
+      fms_hr_resolve_master_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: string
       }
       fms_hr_resubmit_mrf: {
         Args: { p: Json; p_req: string }

@@ -15,6 +15,8 @@ import InterviewsQueue from "./pages/queues/InterviewsQueue";
 import OnboardingQueue from "./pages/queues/OnboardingQueue";
 import ProbationQueue from "./pages/queues/ProbationQueue";
 import ControlCenter from "./pages/monitoring/ControlCenter";
+import Masters from "./pages/masters/Masters";
+import MasterRequests from "./pages/MasterRequests";
 import Setup from "./pages/settings/Setup";
 import SandboxLauncher from "./sandbox/SandboxLauncher";
 import AccessDenied from "./pages/system/AccessDenied";
@@ -42,6 +44,18 @@ function RequireMonitor({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Gate to admins + any assigned master owner (the Masters page). Deliberately NOT
+ * admin-only: the whole point of Master Owners is that, say, a Locations owner can
+ * open Masters and edit Locations without being an admin (the other tabs render
+ * read-only, and RLS agrees).
+ */
+function RequireMasterAccess({ children }: { children: ReactNode }) {
+  const { isAnyMasterManager } = useHrStore();
+  if (!isAnyMasterManager) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the HR Recruitment FMS. Owns all routing under /hr-recruitment, beneath
  * the live data store. Routes are added stage by stage as each build phase lands
  * (requisitions, the candidate board, onboarding, probation, monitoring).
@@ -63,6 +77,10 @@ export default function HrApp() {
             <Route path="queues/onboarding" element={<OnboardingQueue />} />
             <Route path="queues/probation" element={<ProbationQueue />} />
             <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
+            <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
+            {/* Open to everyone: owners get the review queue, everyone else gets
+                their own requests. The page scopes itself. */}
+            <Route path="master-requests" element={<MasterRequests />} />
             <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
             <Route path="sandbox" element={<RequireRealAdmin><SandboxLauncher /></RequireRealAdmin>} />
             <Route path="*" element={<NotFound />} />

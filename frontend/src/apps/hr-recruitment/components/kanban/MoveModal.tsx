@@ -5,6 +5,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
 import { interviewerPool, interviewerOptions } from "../../lib/interviewers";
+import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, roundOf } from "../../lib/board";
 import type { MovePayload } from "../../data/hrWrites";
@@ -42,6 +43,9 @@ export default function MoveModal({
   const [interviewerName, setInterviewerName] = useState("");
   const [scheduledOn, setScheduledOn] = useState(todayIso());
   const [reasonId, setReasonId] = useState("");
+  /** Reason not in the master? Raise it for review without losing this form. */
+  const [raiseReason, setRaiseReason] = useState<string | null>(null);
+  const [requested, setRequested] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [ctc, setCtc] = useState("");
   const [busy, setBusy] = useState(false);
@@ -169,9 +173,18 @@ export default function MoveModal({
         {isDisqualify && (
           <>
             <FieldLabel label="Reason" required>
-              <Combobox value={reasonId} onChange={setReasonId} options={reasons} placeholder="Why are they dropping out?" />
+              <Combobox
+                value={reasonId}
+                onChange={setReasonId}
+                options={reasons}
+                placeholder="Why are they dropping out?"
+                onCreate={(name) => setRaiseReason(name)}
+                createLabel={(q) => `Request new reason “${q}”`}
+              />
               <span className="mt-1 block text-[11px] leading-snug text-grey-2">
-                Add more reasons in Setup → Masters.
+                {requested
+                  ? `Requested reason “${requested}” — selectable once the master's owner approves it.`
+                  : "Not listed? Type it to request it, or add it directly in Masters."}
               </span>
             </FieldLabel>
             <FieldLabel label="Note" hint="optional">
@@ -220,6 +233,17 @@ export default function MoveModal({
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
+
+      {/* Opens on top of this dialog — `stacked` keeps the move form intact underneath. */}
+      <RequestMasterModal
+        stacked
+        open={raiseReason !== null}
+        onClose={() => setRaiseReason(null)}
+        masterType="disqualification_reason"
+        lockType
+        prefill={{ name: raiseReason ?? "" }}
+        onRequested={(_id, _mt, name) => setRequested(name)}
+      />
     </Modal>
   );
 }

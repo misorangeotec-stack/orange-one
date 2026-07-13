@@ -40,6 +40,12 @@ const ic = {
   demo: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 2h4M12 2v6l4.5 8a2 2 0 0 1-1.8 3H9.3a2 2 0 0 1-1.8-3L12 8" /></svg>
   ),
+  masters: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7l8-4 8 4-8 4-8-4z" /><path d="M4 12l8 4 8-4" /><path d="M4 17l8 4 8-4" /></svg>
+  ),
+  inbox: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.5 5.5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6l3.5-6.5z" /></svg>
+  ),
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
   ),
@@ -50,12 +56,18 @@ const ic = {
  * a queue link appears only for the people who own that step, so nobody sees work
  * they cannot action. Admins see everything.
  *
- * Queue links land in Phase 3+ — the flags are already threaded so the nav grows
- * without a rewrite.
+ * "Master Requests" shows for EVERYONE — it is a review queue for a master's owner
+ * (badged with `pendingReviews`, the requests they can actually resolve) and a
+ * personal worklist for everyone else, which is why it sits under Actions for them.
+ * "Masters" itself is owner/admin-only.
  */
 export function buildHrNav(opts: {
   isAdmin: boolean;
   canRaiseMrf: boolean;
+  /** Admin, or the owner of at least one master → sees the Masters page. */
+  canManageMasters: boolean;
+  /** Pending master requests THIS user can resolve — drives the inbox badge. */
+  pendingReviews: number;
   canApproveHr: boolean;
   canApproveMgmt: boolean;
   canPostJob: boolean;
@@ -73,9 +85,19 @@ export function buildHrNav(opts: {
     { label: "Requisitions", to: `${B}/requisitions`, icon: ic.requisitions },
   ];
 
-  if (opts.canRaiseMrf) {
-    nav.push({ label: "Raise a Requisition", to: `${B}/requisitions/new`, icon: ic.newMrf, section: "Actions" });
-  }
+  // "Actions" — the things anyone might personally start. The closure owns the
+  // section header, so whichever item renders first carries it (an employee who
+  // cannot raise an MRF would otherwise push Master Requests with no section and
+  // it would silently join Workspace).
+  let actionSectionUsed = false;
+  const action = (label: string, to: string, icon: JSX.Element) => {
+    nav.push({ label, to, icon, section: actionSectionUsed ? undefined : "Actions" });
+    actionSectionUsed = true;
+  };
+  if (opts.canRaiseMrf) action("Raise a Requisition", `${B}/requisitions/new`, ic.newMrf);
+  // Non-owners get Master Requests here, as a personal worklist. Owners get it in
+  // Administration instead, next to Masters, with the review badge.
+  if (!opts.canManageMasters) action("Master Requests", `${B}/master-requests`, ic.inbox);
 
   // One queue per workflow step, shown only to that step's owner(s); admins see all.
   // "My Queues" is set on the first queue that renders so the header appears once.
@@ -95,11 +117,15 @@ export function buildHrNav(opts: {
   }
 
   let adminSectionUsed = false;
-  const admin = (label: string, to: string, icon: JSX.Element) => {
-    nav.push({ label, to, icon, section: adminSectionUsed ? undefined : "Administration" });
+  const admin = (label: string, to: string, icon: JSX.Element, badge?: number) => {
+    nav.push({ label, to, icon, badge, section: adminSectionUsed ? undefined : "Administration" });
     adminSectionUsed = true;
   };
   if (opts.canMonitor) admin("HR FMS Control Center", `${B}/monitoring`, ic.monitor);
+  if (opts.canManageMasters) {
+    admin("Masters", `${B}/masters`, ic.masters);
+    admin("Master Requests", `${B}/master-requests`, ic.inbox, opts.pendingReviews || undefined);
+  }
   if (opts.isAdmin) admin("Setup", `${B}/settings`, ic.settings);
   if (opts.canDemo) admin("Demo mode", `${B}/sandbox`, ic.demo);
 

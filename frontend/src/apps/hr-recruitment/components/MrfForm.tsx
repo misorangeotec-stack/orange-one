@@ -4,9 +4,11 @@ import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import RequestMasterModal from "./RequestMasterModal";
+import { masterTypeLabel, type MasterValues } from "../lib/masterFields";
 import { useHrStore } from "../store";
 import type { MrfInput } from "../data/hrWrites";
-import type { Requisition } from "../types";
+import type { HrMasterType, Requisition } from "../types";
 
 /**
  * The Manpower Requisition form — sheet columns A–V, plus an optional JD file.
@@ -43,6 +45,10 @@ export default function MrfForm({
   onCancel: () => void;
 }) {
   const s = useHrStore();
+
+  /** Missing from a dropdown? Raise it as a master request without losing the form. */
+  const [raise, setRaise] = useState<{ mt: HrMasterType; prefill: MasterValues } | null>(null);
+  const [requested, setRequested] = useState<string | null>(null);
 
   const [jobTitle, setJobTitle] = useState(existing?.jobTitle ?? "");
   const [departmentId, setDepartmentId] = useState(existing?.departmentId ?? "");
@@ -135,10 +141,24 @@ export default function MrfForm({
             <Combobox value={departmentId} onChange={setDepartmentId} options={deptOptions} placeholder="Select department" searchable />
           </FieldLabel>
           <FieldLabel label="Location">
-            <Combobox value={locationId} onChange={setLocationId} options={locOptions} placeholder="Select location" />
+            <Combobox
+              value={locationId}
+              onChange={setLocationId}
+              options={locOptions}
+              placeholder="Select location"
+              onCreate={(name) => setRaise({ mt: "location", prefill: { name } })}
+              createLabel={(q) => `Request new location “${q}”`}
+            />
           </FieldLabel>
           <FieldLabel label="Job type">
-            <Combobox value={jobTypeId} onChange={setJobTypeId} options={typeOptions} placeholder="Select job type" />
+            <Combobox
+              value={jobTypeId}
+              onChange={setJobTypeId}
+              options={typeOptions}
+              placeholder="Select job type"
+              onCreate={(name) => setRaise({ mt: "job_type", prefill: { name } })}
+              createLabel={(q) => `Request new job type “${q}”`}
+            />
           </FieldLabel>
           <FieldLabel label="Number of positions required" required>
             <TextInput
@@ -287,6 +307,19 @@ export default function MrfForm({
         )}
         {error && <span className="text-[12.5px] text-ryg-red">{error}</span>}
       </div>
+
+      {requested && (
+        <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>
+      )}
+
+      <RequestMasterModal
+        open={raise !== null}
+        onClose={() => setRaise(null)}
+        masterType={raise?.mt ?? null}
+        lockType
+        prefill={raise?.prefill}
+        onRequested={(_id, mt, name) => setRequested(`${masterTypeLabel(mt).toLowerCase()} “${name}”`)}
+      />
     </div>
   );
 }

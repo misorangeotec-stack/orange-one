@@ -4,7 +4,13 @@
  * interviews, onboardings, probations) land in Phases 3–7.
  */
 
-export type HrEntityType = "requisition" | "candidate" | "interview" | "onboarding" | "probation";
+export type HrEntityType =
+  | "requisition"
+  | "candidate"
+  | "interview"
+  | "onboarding"
+  | "probation"
+  | "master_request";
 
 /** Every HR master has the same {id, name, active, sortOrder} shape (MasterCrud). */
 export interface HrMaster {
@@ -19,6 +25,53 @@ export type JobPlatform = HrMaster;
 export type JobType = HrMaster;
 export type HrLocation = HrMaster;
 export type DisqualificationReason = HrMaster;
+
+/* ================= master governance ==================================== */
+
+export type HrMasterType =
+  | "job_platform"
+  | "job_type"
+  | "location"
+  | "disqualification_reason"
+  | "onboarding_item";
+
+/** Every master, for the owners config — all five can be assigned an owner. */
+export const HR_MASTER_TYPES: { value: HrMasterType; label: string; plural: string }[] = [
+  { value: "job_platform", label: "Job Platform", plural: "Job Platforms" },
+  { value: "job_type", label: "Job Type", plural: "Job Types" },
+  { value: "location", label: "Location", plural: "Locations" },
+  { value: "disqualification_reason", label: "Disqualification Reason", plural: "Disqualification Reasons" },
+  { value: "onboarding_item", label: "Checklist Item", plural: "Onboarding Checklist" },
+];
+
+/**
+ * The masters a user can REQUEST a new entry for — the four that back a dropdown.
+ * The onboarding checklist is deliberately absent: it feeds no form (it is seeded
+ * server-side onto each onboarding), so there is no "it's missing from this list"
+ * moment. Its owner edits it directly on the Masters page. The DB agrees — the
+ * master_type CHECK on fms_hr_master_requests lists only these four.
+ */
+export const REQUESTABLE_MASTER_TYPES = HR_MASTER_TYPES.filter((m) => m.value !== "onboarding_item");
+
+export interface HrMasterManager {
+  id: string;
+  masterType: HrMasterType;
+  managerUserId: string;
+}
+
+export type HrMasterRequestStatus = "pending" | "approved" | "rejected";
+
+export interface HrMasterRequest {
+  id: string;
+  masterType: HrMasterType;
+  proposedPayload: Record<string, unknown>;
+  status: HrMasterRequestStatus;
+  requestedBy: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
+  resolvedMasterId: string | null;
+  createdAt: string;
+}
 
 /**
  * One onboarding checklist item. Config-driven on purpose: HR adds, renames and

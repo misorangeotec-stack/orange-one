@@ -4,6 +4,7 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
+import RequestMasterModal from "./RequestMasterModal";
 import { useHrStore } from "../store";
 import type { MrfDecision, MrfStage } from "../data/hrWrites";
 import type { Requisition } from "../types";
@@ -126,6 +127,9 @@ export function JobPostingModal({
 }) {
   const s = useHrStore();
   const [platformIds, setPlatformIds] = useState<string[]>(() => s.platformIdsFor(requisition.id));
+  /** Platform not in the master? Raise it for review without losing this form. */
+  const [raisePlatform, setRaisePlatform] = useState(false);
+  const [requested, setRequested] = useState<string | null>(null);
   const [postedOn, setPostedOn] = useState(todayIso());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -169,8 +173,23 @@ export function JobPostingModal({
         <FieldLabel label="Platforms posted on" required hint="one or more">
           <MultiSelect values={platformIds} onChange={setPlatformIds} options={options} placeholder="Select platforms" />
           <span className="mt-1 block text-[11px] leading-snug text-grey-2">
-            Recording these is what later tells you which platform actually produces hires. Add more in Setup → Masters.
+            Recording these is what later tells you which platform actually produces hires.{" "}
+            {/* A MultiSelect has no "type a name to add it" row, so the request path
+                needs its own way in. */}
+            <button
+              type="button"
+              onClick={() => setRaisePlatform(true)}
+              className="font-semibold text-orange hover:underline"
+            >
+              Request a new platform
+            </button>
+            .
           </span>
+          {requested && (
+            <span className="mt-1 block text-[11px] text-teal">
+              Requested platform “{requested}” — selectable once the master's owner approves it.
+            </span>
+          )}
         </FieldLabel>
 
         <FieldLabel label="Date of job posted" required>
@@ -182,6 +201,16 @@ export function JobPostingModal({
         )}
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
+
+      {/* Opens on top of this dialog — `stacked` keeps the posting form intact. */}
+      <RequestMasterModal
+        stacked
+        open={raisePlatform}
+        onClose={() => setRaisePlatform(false)}
+        masterType="job_platform"
+        lockType
+        onRequested={(_id, _mt, name) => setRequested(name)}
+      />
     </Modal>
   );
 }

@@ -1,6 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import type { Json } from "@/core/platform/database.types";
-import type { HrEntityType } from "../types";
+import type { HrEntityType, HrMasterType } from "../types";
 
 /**
  * HR Recruitment write layer.
@@ -123,6 +123,70 @@ export async function updateOnboardingItem(id: string, input: OnboardingItemInpu
     })
     .eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/* ================== master governance ===================================== */
+
+/**
+ * Replace the whole owner set for one master type. Delete-then-insert rather than
+ * upsert, so removing an owner actually drops their row. Admin-only under RLS.
+ */
+export async function setMasterManagers(masterType: HrMasterType, userIds: string[]): Promise<void> {
+  const { error: delError } = await supabase
+    .from("fms_hr_master_managers")
+    .delete()
+    .eq("master_type", masterType);
+  if (delError) throw new Error(delError.message);
+
+  if (userIds.length === 0) return;
+  const { error } = await supabase
+    .from("fms_hr_master_managers")
+    .insert(userIds.map((id) => ({ master_type: masterType, manager_user_id: id })));
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Raise a "Request new …" submission. RLS requires requested_by = auth.uid() and
+ * status = 'pending'. Returns the new request id.
+ */
+export async function requestNewMaster(
+  masterType: HrMasterType,
+  payload: Record<string, unknown>,
+  requestedBy: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("fms_hr_master_requests")
+    .insert({
+      master_type: masterType,
+      proposed_payload: payload as unknown as Json,
+      requested_by: requestedBy,
+      status: "pending",
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+/**
+ * Resolve a master request via the SECURITY DEFINER RPC: approve (creating the
+ * real master row from the payload — the approver's edits win) or reject.
+ * Returns the new master id, or null on reject.
+ */
+export async function resolveMasterRequest(
+  requestId: string,
+  approve: boolean,
+  payload: Record<string, unknown> | null,
+  note: string | null
+): Promise<string | null> {
+  const { data, error } = await supabase.rpc("fms_hr_resolve_master_request", {
+    p_request_id: requestId,
+    p_approve: approve,
+    p_payload: (payload ?? null) as unknown as Json,
+    p_note: note ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+  return (data as string | null) ?? null;
 }
 
 /* ================== workflow RPCs — requisitions (Phase 3) ================= */

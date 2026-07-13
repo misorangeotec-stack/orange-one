@@ -3,6 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 
 /**
@@ -24,6 +25,9 @@ export default function HodDecisionModal({
 }) {
   const s = useHrStore();
   const [reasonId, setReasonId] = useState("");
+  /** Reason not in the master? Raise it for review without losing this form. */
+  const [raiseReason, setRaiseReason] = useState<string | null>(null);
+  const [requested, setRequested] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -75,7 +79,19 @@ export default function HodDecisionModal({
         {!selected && (
           <>
             <FieldLabel label="Reason" required>
-              <Combobox value={reasonId} onChange={setReasonId} options={reasons} placeholder="Why are they dropping out?" />
+              <Combobox
+                value={reasonId}
+                onChange={setReasonId}
+                options={reasons}
+                placeholder="Why are they dropping out?"
+                onCreate={(name) => setRaiseReason(name)}
+                createLabel={(q) => `Request new reason “${q}”`}
+              />
+              {requested && (
+                <span className="mt-1 block text-[11px] text-teal">
+                  Requested reason “{requested}” — selectable once the master's owner approves it.
+                </span>
+              )}
             </FieldLabel>
             <FieldLabel label="Note" hint="optional">
               <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
@@ -85,6 +101,17 @@ export default function HodDecisionModal({
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
+
+      {/* Opens on top of this dialog — `stacked` keeps the picks intact underneath. */}
+      <RequestMasterModal
+        stacked
+        open={raiseReason !== null}
+        onClose={() => setRaiseReason(null)}
+        masterType="disqualification_reason"
+        lockType
+        prefill={{ name: raiseReason ?? "" }}
+        onRequested={(_id, _mt, name) => setRequested(name)}
+      />
     </Modal>
   );
 }

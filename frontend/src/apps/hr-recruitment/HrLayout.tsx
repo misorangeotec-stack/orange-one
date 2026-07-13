@@ -28,6 +28,8 @@ const linkFor = (n: HrNotification): string => {
       return `${B}/onboarding/${n.entityId}`;
     case "probation":
       return `${B}/probation/${n.entityId}`;
+    case "master_request":
+      return `${B}/master-requests`;
     default:
       return B;
   }
@@ -69,6 +71,10 @@ export default function HrLayout() {
         canReview:
           s.isStepOwner("probation_m1") || s.isStepOwner("probation_final") || s.isProcessCoordinator,
         canMonitor: s.isProcessCoordinator,
+        canManageMasters: s.isAnyMasterManager,
+        // Badge only what THIS user can act on — a Locations owner shouldn't see a
+        // count for platform requests they can't resolve.
+        pendingReviews: s.resolvableRequests.length,
         // Entering demo mode is for the REAL admin — a persona must not be able to
         // re-enter and nest demos.
         canDemo: realAdmin && !demoActive,

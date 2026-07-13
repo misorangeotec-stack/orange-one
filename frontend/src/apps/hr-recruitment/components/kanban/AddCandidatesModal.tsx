@@ -4,6 +4,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
+import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 import { uploadResume, type CandidateInput } from "../../data/hrWrites";
 import { parseResumes, type ParsedResume } from "../../data/parseResume";
@@ -70,6 +71,9 @@ export default function AddCandidatesModal({
   const s = useHrStore();
   const [rows, setRows] = useState<Row[]>([blank("r0")]);
   const [platformId, setPlatformId] = useState("");
+  /** Platform not in the master? Raise it for review without losing this form. */
+  const [raisePlatform, setRaisePlatform] = useState<string | null>(null);
+  const [requested, setRequested] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState("");
@@ -274,10 +278,22 @@ export default function AddCandidatesModal({
           </label>
 
           <FieldLabel label="Where did they come from?" hint="optional">
-            <Combobox value={platformId} onChange={setPlatformId} options={platforms} placeholder="Select platform" />
+            <Combobox
+              value={platformId}
+              onChange={setPlatformId}
+              options={platforms}
+              placeholder="Select platform"
+              onCreate={(name) => setRaisePlatform(name)}
+              createLabel={(q) => `Request new platform “${q}”`}
+            />
             <span className="mt-1.5 block text-[11px] leading-snug text-grey">
               This is what later tells you which platform actually produces hires.
             </span>
+            {requested && (
+              <span className="mt-1 block text-[11px] text-teal">
+                Requested platform “{requested}” — selectable once the master's owner approves it.
+              </span>
+            )}
           </FieldLabel>
         </div>
 
@@ -349,6 +365,17 @@ export default function AddCandidatesModal({
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
+
+      {/* Opens on top of this dialog — `stacked` keeps the CV rows intact underneath. */}
+      <RequestMasterModal
+        stacked
+        open={raisePlatform !== null}
+        onClose={() => setRaisePlatform(null)}
+        masterType="job_platform"
+        lockType
+        prefill={{ name: raisePlatform ?? "" }}
+        onRequested={(_id, _mt, name) => setRequested(name)}
+      />
     </Modal>
   );
 }

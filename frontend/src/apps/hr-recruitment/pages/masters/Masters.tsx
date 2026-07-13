@@ -1,16 +1,21 @@
 import { useState } from "react";
+import Button from "@/shared/components/ui/Button";
 import Tabs from "@/shared/components/ui/Tabs";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
+import RequestMasterModal from "../../components/RequestMasterModal";
 import { useHrStore } from "../../store";
 import type { HrMasterTable } from "../../data/hrWrites";
-import type { HrMaster, OnboardingItem } from "../../types";
+import type { HrMaster, HrMasterType, OnboardingItem } from "../../types";
 
 /**
- * HR masters (admin). Everything HR needs to change themselves — the platforms a
- * job is posted on, the employment types, the offices, why a candidate was dropped,
- * and THE ONBOARDING CHECKLIST.
+ * HR masters — the platforms a job is posted on, the employment types, the
+ * offices, why a candidate was dropped, and THE ONBOARDING CHECKLIST.
  *
- * The checklist being editable here is the whole point: adding a 7th item must
+ * Each tab is editable by an admin or by that master's assigned owner (Setup →
+ * Master Owners); to everyone else it is a read-only list. Missing an entry?
+ * Anyone can raise a request — from the form they were filling in, or from here.
+ *
+ * The checklist being editable at all is the whole point: adding a 7th item must
  * never require a migration or a developer. A new item shows up automatically on
  * the next onboarding (existing ones are already seeded and are left alone).
  */
@@ -23,11 +28,13 @@ const YES_NO = [
 /** The four plain {name, active, sort} masters. */
 function SimpleMaster({
   table,
+  masterType,
   singular,
   rows,
   hint,
 }: {
   table: HrMasterTable;
+  masterType: HrMasterType;
   singular: string;
   rows: HrMaster[];
   hint: string;
@@ -53,7 +60,7 @@ function SimpleMaster({
         columns={columns}
         fields={fields}
         searchText={(r) => r.name}
-        canManage={s.canConfigure}
+        canManage={s.canManage(masterType)}
         emptyValues={{ name: "", sortOrder: "0" }}
         toValues={(r) => ({ name: r.name, sortOrder: String(r.sortOrder) })}
         onSubmit={async (id, v, active) => {
@@ -122,7 +129,8 @@ function OnboardingItemsMaster() {
     <div className="space-y-3">
       <p className="text-[12.5px] text-grey-2">
         The checklist HR works through once a candidate is finalised. Add, rename or reorder items here — they appear on
-        the next onboarding with no code change. Deactivating an item leaves past onboardings untouched.
+        the next onboarding with no code change. Deactivating an item leaves past onboardings untouched. This is the one
+        master that isn't requestable: it feeds no dropdown, so it's edited here directly.
       </p>
       <MasterCrud<OnboardingItem>
         singular="Checklist item"
@@ -130,7 +138,7 @@ function OnboardingItemsMaster() {
         columns={columns}
         fields={fields}
         searchText={(r) => `${r.name} ${r.description ?? ""}`}
-        canManage={s.canConfigure}
+        canManage={s.canManage("onboarding_item")}
         emptyValues={{ name: "", description: "", requiresFile: "no", allowsLink: "yes", dueDays: "0", sortOrder: "0" }}
         toValues={(r) => ({
           name: r.name,
@@ -173,26 +181,41 @@ function OnboardingItemsMaster() {
   );
 }
 
-export default function MastersSection() {
+export default function Masters() {
   const s = useHrStore();
   const [tab, setTab] = useState("checklist");
+  const [raising, setRaising] = useState(false);
 
   const tabs = [
-    { key: "checklist", label: "Onboarding Checklist" },
-    { key: "platforms", label: "Job Platforms" },
-    { key: "types", label: "Job Types" },
-    { key: "locations", label: "Locations" },
-    { key: "reasons", label: "Disqualification Reasons" },
+    { key: "checklist", label: "Onboarding Checklist", count: s.onboardingItems.length },
+    { key: "platforms", label: "Job Platforms", count: s.jobPlatforms.length },
+    { key: "types", label: "Job Types", count: s.jobTypes.length },
+    { key: "locations", label: "Locations", count: s.locations.length },
+    { key: "reasons", label: "Disqualification Reasons", count: s.disqualificationReasons.length },
   ];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[22px] font-bold text-navy">Masters</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1">
+            The controlled lists that drive recruitment. Each is managed by the admins and its assigned owner — set that
+            in Setup → Master Owners.
+          </p>
+        </div>
+        <Button size="sm" onClick={() => setRaising(true)}>
+          Request new entry
+        </Button>
+      </div>
+
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
 
       {tab === "checklist" && <OnboardingItemsMaster />}
       {tab === "platforms" && (
         <SimpleMaster
           table="fms_hr_job_platforms"
+          masterType="job_platform"
           singular="Platform"
           rows={s.jobPlatforms}
           hint="Where a vacancy gets advertised. HR ticks these at the Job Posting step, and the Dashboard reports which one actually produces hires."
@@ -201,6 +224,7 @@ export default function MastersSection() {
       {tab === "types" && (
         <SimpleMaster
           table="fms_hr_job_types"
+          masterType="job_type"
           singular="Job type"
           rows={s.jobTypes}
           hint="The employment type a requisition is raised for."
@@ -209,6 +233,7 @@ export default function MastersSection() {
       {tab === "locations" && (
         <SimpleMaster
           table="fms_hr_locations"
+          masterType="location"
           singular="Location"
           rows={s.locations}
           hint="Offices and sites a vacancy can be raised for. Deliberately separate from the Task Management location list, so adding one here never changes task checklists."
@@ -217,11 +242,14 @@ export default function MastersSection() {
       {tab === "reasons" && (
         <SimpleMaster
           table="fms_hr_disqualification_reasons"
+          masterType="disqualification_reason"
           singular="Reason"
           rows={s.disqualificationReasons}
           hint="Why a candidate was dropped. Chosen when a card moves to Disqualified, and it is what tells you where the pipeline leaks."
         />
       )}
+
+      <RequestMasterModal open={raising} onClose={() => setRaising(false)} masterType={null} />
     </div>
   );
 }
