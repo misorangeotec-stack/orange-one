@@ -87,10 +87,21 @@ export const CUTOFF_PRESETS = [90, 120, 180] as const;
 
 export const DEFAULT_CUTOFF = 120;
 
-/** Read ?over=. Clamped to a sane range so a typo can't empty or hang the report. */
-export function parseCutoff(raw: string | null): number {
+/**
+ * Read ?over=. Clamped to a sane range so a typo can't empty or hang the report.
+ *
+ * `fallback` exists because the DSO report shares this parser but opens on 90 rather than 120.
+ * Shared rather than copied — a second copy of the clamp would inevitably drift from this one.
+ *
+ * The `!raw` guard also fixes a latent bug: `Number(null)` is 0, NOT NaN, so `Number.isFinite`
+ * happily accepted a MISSING ?over= and the clamp turned it into a 1-day cutoff. It never showed
+ * because the Reports card always links with ?over=120, but landing on the bare route silently
+ * gave "Overdue over 1 day". A missing or empty param now correctly yields the default.
+ */
+export function parseCutoff(raw: string | null, fallback: number = DEFAULT_CUTOFF): number {
+  if (!raw) return fallback;
   const n = Number(raw);
-  if (!Number.isFinite(n)) return DEFAULT_CUTOFF;
+  if (!Number.isFinite(n)) return fallback;
   return Math.min(3650, Math.max(1, Math.round(n)));
 }
 

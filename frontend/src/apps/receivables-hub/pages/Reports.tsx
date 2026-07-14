@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock, PackageX, Layers } from "lucide-react";
+import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock, PackageX, Layers, Gauge } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Card, CardContent } from "@hub/components/ui/card";
 
@@ -86,6 +86,19 @@ const REPORTS: ReportCard[] = [
       "The whole book pivoted by customer tier — customers, sales, collection %, what they owe, what they've pre-paid us, share of book, aging, credit limits and risk, per grade. Plus a tag-hygiene lens that grades every customer on how they ACTUALLY pay and flags the mismatches: the ones tagged A who behave like a D, and the D/E who settle on time. Category × salesperson / sale type / company cross-tab, and a five-sheet Excel worklist.",
     icon: Layers,
     to: "/outstanding-dashboard/reports/category",
+    ready: true,
+  },
+  // The only report that measures TIME rather than money. A customer can be inside their credit
+  // terms on every individual bill and still take 140 days to pay — that is what this catches, and
+  // no other report here can see it. The cutoff is switchable on the page (60/90/120/custom, via
+  // ?over=); 90 is the one management asked for. See lib/dso.ts.
+  {
+    id: "dso",
+    title: "Customers with Average DSO over 90 Days",
+    description:
+      "How long each customer really takes to turn a sale into cash — their outstanding counted back against their own monthly billings, so a dormant debtor reads as \"beyond a year\" rather than infinity. Book-wide DSO, excess over each customer's agreed credit terms, DSO by salesperson and a distribution of the whole book. Excludes one-time machine sales by default (switchable), drills to the open bills, exports to Excel.",
+    icon: Gauge,
+    to: "/outstanding-dashboard/reports/dso?over=90",
     ready: true,
   },
 ];

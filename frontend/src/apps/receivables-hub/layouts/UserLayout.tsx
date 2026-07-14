@@ -67,6 +67,9 @@ const FY_PINNED_ROUTES = [
   // sales/collections half has its own period selector on the page. An FY selector in the topbar
   // would be claiming to drive both, and would drive neither.
   "/outstanding-dashboard/reports/category",
+  // DSO reads a 12-month lookback. Inside a single young FY that would silently collapse to the
+  // months elapsed so far and every DSO would be wrong — so the report reads the whole book.
+  "/outstanding-dashboard/reports/dso",
 ];
 
 export default function UserLayout() {
