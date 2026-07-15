@@ -2,6 +2,7 @@ import type { AppManifest } from "./types";
 import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
+import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
@@ -29,6 +30,9 @@ export const apps: AppManifest[] = [
   taskManagementApp,
   receivablesHubApp,
   procurementApp,
+  // Import Purchase FMS — separate module (own fms_import_* tables), granted per
+  // user to the import team (not universal). Runs alongside domestic `procurement`.
+  importApp,
   hrRecruitmentApp,
   // Universal (apps/universal.ts): no per-user grant — every employee must be able to
   // raise their own resignation, and there is no bulk grant to fall back on.

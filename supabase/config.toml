@@ -25,3 +25,8 @@ verify_jwt = true
 # (PUSH_GOOGLE_SECRET), so JWT verification is off.
 [functions.push-to-google]
 verify_jwt = false
+
+# Live foreign-exchange rate (xe.com scrape + FX-API fallback) for the Import
+# Purchase FMS. The caller is always a signed-in portal user, so JWT stays ON.
+[functions.import-fx-rate]
+verify_jwt = true
