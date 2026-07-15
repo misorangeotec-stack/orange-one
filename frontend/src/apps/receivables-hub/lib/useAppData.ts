@@ -287,7 +287,8 @@ export interface LowCollectionCustomer {
   name: string;
   company: string;
   location: string;
-  receipts3M: number;
+  /** Trailing-3-month collection = Tally receipts (receipts3M) + manual Other Payments. */
+  collected3M: number;
   overdue: number;
   collectionRate: number;
 }
@@ -546,11 +547,12 @@ export function useAppData(filters: Filters = {}): AppData {
         // from every specific-type subset, so subsets fail to reconcile to the total.
         const salesTotal = allSaleTypes.reduce((s, t) => s + (c.salesByType?.[t] ?? 0), 0);
         if (salesTotal <= 1e-9 && saleTypeList.includes("other" as SaleType)) return true;
-        // Keep no-activity customers (sales/receipts/credit notes all 0) so the
-        // "No Activity" segment filter downstream can still find them. Without
+        // Keep no-activity customers (sales/receipts/credit notes/other payments all 0)
+        // so the "No Activity" segment filter downstream can still find them. Without
         // this, every no-activity customer is dropped here and the segment
-        // shows 0 totals when any sale-type filter is active.
-        return c.sales === 0 && c.receipts === 0 && c.creditNotes === 0;
+        // shows 0 totals when any sale-type filter is active. An Other Payment is a
+        // collection, so it counts as activity (matches the segment filter below).
+        return c.sales === 0 && c.receipts === 0 && c.creditNotes === 0 && (c.otherPayments ?? 0) === 0;
       })
       .map((c): Customer => {
         const typeMaxOD = saleTypeList.reduce((best, type) => {
@@ -851,10 +853,33 @@ export function useAppData(filters: Filters = {}): AppData {
       }));
   }, [segmentedConsolidatedCustomers]);
 
-  // ── Low collection rate customers (3M receipts < 30% of overdue) ─────────────
+  // ── Low collection rate customers (3M collection < 30% of overdue) ────────────
+  // "Collection" = Tally receipts (receipts3M) + manual Other Payments in the same
+  // trailing-3-month window. An Other Payment is real money collected, so a customer
+  // who paid us that way must not be branded low-collection. The window is a best-effort
+  // match to the pipeline's receipts_3m window (last 3 calendar months).
+  const otherPayments3MById = useMemo<Map<string, number>>(() => {
+    const now = new Date();
+    const cutoff = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate());
+    const cutoffIso = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
+    const map = new Map<string, number>();
+    for (const [id, detail] of Object.entries(customerDetail)) {
+      let sum = 0;
+      for (const o of detail.otherPaymentTransactions ?? []) {
+        if (!o.date || o.date < cutoffIso) continue;
+        sum += Math.abs(o.amount);
+      }
+      if (sum) map.set(id, sum);
+    }
+    return map;
+  }, [customerDetail]);
+
+  const collected3MOf = (c: Customer): number =>
+    c.receipts3M + (otherPayments3MById.get(c.id) ?? 0);
+
   const lowCollectionCustomers = useMemo<LowCollectionCustomer[]>(() => {
     return [...projectedCustomers]
-      .filter((c) => c.overdue > 0 && c.receipts3M < 0.30 * c.overdue)
+      .filter((c) => c.overdue > 0 && collected3MOf(c) < 0.30 * c.overdue)
       .sort((a, b) => b.overdue - a.overdue)
       .slice(0, 10)
       .map((c) => ({
@@ -862,15 +887,17 @@ export function useAppData(filters: Filters = {}): AppData {
         name:           c.name,
         company:        c.company,
         location:       c.location,
-        receipts3M:     c.receipts3M,
+        collected3M:    collected3MOf(c),
         overdue:        c.overdue,
-        collectionRate: Math.round(c.receipts3M / c.overdue * 1000) / 10,
+        collectionRate: Math.round(collected3MOf(c) / c.overdue * 1000) / 10,
       }));
-  }, [projectedCustomers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectedCustomers, otherPayments3MById]);
 
   const lowCollectionCount = useMemo<number>(
-    () => projectedCustomers.filter((c) => c.overdue > 0 && c.receipts3M < 0.30 * c.overdue).length,
-    [projectedCustomers],
+    () => projectedCustomers.filter((c) => c.overdue > 0 && collected3MOf(c) < 0.30 * c.overdue).length,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [projectedCustomers, otherPayments3MById],
   );
 
   // ── Alerts filtered by salesperson scope, then company / location ─────────────
@@ -900,7 +927,8 @@ export function useAppData(filters: Filters = {}): AppData {
   // When saleType = "all", returns the pre-computed company-wide trend from dashboard.json.
   // When a specific saleType is selected, aggregates from filtered invoices:
   //   sales       = sum of invoice.amount by invoice month
-  //   receipts    = sum of invoice.receiptAdj by invoice month (receipts applied to those invoices)
+  //   receipts    = sum of invoice.receiptAdj + otherPaymentAdj by invoice month
+  //                 (Tally receipts + manual Other Payments applied to those invoices)
   //   outstanding = running balance (sales - receipts accumulated month-over-month)
   const trend = useMemo<TrendPoint[]>(() => {
     const baseTrend = dashboard?.trend ?? [];
@@ -945,7 +973,8 @@ export function useAppData(filters: Filters = {}): AppData {
         const label = `${mon}-${yr}`;
         if (monthMap[label] !== undefined) {
           monthMap[label].sales    += inv.amount     / 100_000;
-          monthMap[label].receipts += inv.receiptAdj / 100_000;
+          // Collection = Tally receipts applied + manual Other Payments applied to this bill.
+          monthMap[label].receipts += (inv.receiptAdj + (inv.otherPaymentAdj ?? 0)) / 100_000;
         }
       });
     });
@@ -1201,13 +1230,16 @@ export function useAppData(filters: Filters = {}): AppData {
       overdue180Count: allCustomers.filter((c) => (c.outstandingByType?.[t] ?? 0) > 0 && c.maxOverdueDays > 180).length,
     }));
 
-    // Unmapped row — unallocated pool (advance balance sources) + all cheque returns
+    // Unmapped row — unallocated pool (advance balance sources) + all cheque returns.
+    // Manual Other Payments carry no sale type, so their whole collection lands here
+    // (the only untyped receipts bucket) — this is what makes the Total column foot to
+    // the NET outstanding, which already reflects the Other-Payment reduction.
     const unmappedRow: SaleTypeBreakdownRow = {
       label:           "Unmapped",
       type:            "unmapped",
       openingBalance:  0,
       sales:           0,
-      receipts:        sum((c) => (c.advanceBreakdown?.onAccount ?? 0) + (c.advanceBreakdown?.agstRefExcess ?? 0)),
+      receipts:        sum((c) => (c.advanceBreakdown?.onAccount ?? 0) + (c.advanceBreakdown?.agstRefExcess ?? 0) + (c.otherPayments ?? 0)),
       creditNotes:     sum((c) => c.advanceBreakdown?.creditNotes ?? 0),
       checkReturns:    sum((c) => c.checkReturns ?? 0),
       advanceBalance:  sum((c) => c.advanceBalance ?? 0),
@@ -1224,7 +1256,7 @@ export function useAppData(filters: Filters = {}): AppData {
       type:            "total",
       openingBalance:  sum((c) => c.openingBalance),
       sales:           sum((c) => c.sales),
-      receipts:        sum((c) => c.receipts),          // gross receipts
+      receipts:        sum((c) => c.receipts + (c.otherPayments ?? 0)), // Tally receipts + Other Payments (NET outstanding reflects OP)
       creditNotes:     sum((c) => c.creditNotes),
       checkReturns:    sum((c) => c.checkReturns),
       advanceBalance:  sum((c) => c.advanceBalance),

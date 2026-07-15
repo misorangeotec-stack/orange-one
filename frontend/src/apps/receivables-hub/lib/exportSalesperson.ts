@@ -18,6 +18,8 @@ export interface ExportCustomerRow {
   locations?: string[];
   sales: number;
   receipts: number;
+  /** Manual Other Payments — folded into the exported "Collected" column. */
+  otherPayments?: number;
   creditNotes: number;
   outstanding: number;
   overdue: number;
@@ -248,7 +250,7 @@ function buildCustomersSheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
 
   const header = [
     "Customer ID", "Customer Name", "Sales Person(s)", "Company", "Location",
-    "Sales", "Receipts", "Credit Notes", "Outstanding", "Overdue",
+    "Sales", "Collected", "Credit Notes", "Outstanding", "Overdue",
     "Max OD Days", "Credit Limit", "Utilization %", "Risk",
     "0-30", "31-60", "61-90", "91-120", "121-180", "180+",
   ];
@@ -259,7 +261,7 @@ function buildCustomersSheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
     c.salesPersons && c.salesPersons.length ? c.salesPersons.join(", ") : c.salesPerson,
     c.companies && c.companies.length ? c.companies.join(", ") : (c.company ?? ""),
     c.locations && c.locations.length ? c.locations.join(", ") : (c.location ?? ""),
-    c.sales, c.receipts, c.creditNotes, c.outstanding, c.overdue,
+    c.sales, c.receipts + (c.otherPayments ?? 0), c.creditNotes, c.outstanding, c.overdue,
     c.maxOverdueDays, c.creditLimit, c.utilization,
     riskLabel[c.risk],
     c.agingBuckets?.["0_30"]   ?? 0,
@@ -273,7 +275,7 @@ function buildCustomersSheet(opts: BuildWorkbookOptions): XLSX.WorkSheet {
   const totals = [
     "TOTAL", "", "", "", "",
     customers.reduce((s, c) => s + c.sales, 0),
-    customers.reduce((s, c) => s + c.receipts, 0),
+    customers.reduce((s, c) => s + c.receipts + (c.otherPayments ?? 0), 0),
     customers.reduce((s, c) => s + c.creditNotes, 0),
     sumOutstanding(customers),
     customers.reduce((s, c) => s + c.overdue, 0),

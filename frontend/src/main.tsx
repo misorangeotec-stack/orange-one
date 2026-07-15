@@ -23,10 +23,19 @@ const queryClient = new QueryClient({
   },
 });
 
-// Persist the heavy receivables dataset to IndexedDB so new tabs / reloads hydrate
-// instantly instead of re-fetching everything. Only the `appData` query is
-// persisted (auth/directory stay session-fresh and re-validate per login).
+// Persist the heavy server datasets to IndexedDB so new tabs / reloads hydrate
+// instantly instead of re-fetching everything, then revalidate in the background.
+// Opening a task (or a receivables customer) in a new tab used to cold-fetch the
+// whole dataset again; these query roots already reach the browser today, so
+// persisting them changes nothing about data exposure — it just avoids the
+// re-download. Anything not listed (auth session, etc.) stays session-fresh.
 const persister = createIDBPersister();
+const PERSISTED_QUERY_ROOTS = new Set([
+  "appData", // receivables hub payload
+  "taskData", // task-management: tasks + activity + recurring + locations
+  "orgPeople", // task-management: org people directory
+  "directory", // platform directory (profiles/roles/hods/app_access)
+]);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -39,7 +48,9 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
           buster: PERSIST_BUSTER,
           dehydrateOptions: {
             shouldDehydrateQuery: (query) =>
-              query.state.status === "success" && query.queryKey[0] === "appData",
+              query.state.status === "success" &&
+              typeof query.queryKey[0] === "string" &&
+              PERSISTED_QUERY_ROOTS.has(query.queryKey[0]),
           },
         }}
       >

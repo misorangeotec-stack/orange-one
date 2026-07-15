@@ -92,7 +92,7 @@ export function SaleTypeReconciliationTable({ breakdown }: Props) {
         </div>
         {open && (
           <p className="text-xs text-muted-foreground mt-1">
-            All figures year-to-date (Apr 2025 – Mar 2026). Receipts shown on gross basis; KPI card shows net (Receipts − Cheque Returns).
+            All figures year-to-date (Apr 2025 – Mar 2026). Collected = Tally receipts + manual Other Payments, on gross basis; KPI card shows net (Collected − Cheque Returns).
             Customer counts per type may overlap — Total row shows unique counts.
           </p>
         )}
@@ -110,7 +110,7 @@ export function SaleTypeReconciliationTable({ breakdown }: Props) {
                   </TableHead>
                   <TableHead className="text-right">Sales</TableHead>
                   <TableHead className="text-right">
-                    <ColHeader label="Receipts" tip="Gross receipts attributed to this row (before cheque return deduction)" />
+                    <ColHeader label="Collected" tip="Gross collection attributed to this row — Tally receipts + manual Other Payments (before cheque return deduction)" />
                   </TableHead>
                   <TableHead className="text-right">
                     <ColHeader label="Credit Notes" tip="Credit notes attributed to this row (directly linked + CN pool proportion)" />
@@ -122,7 +122,7 @@ export function SaleTypeReconciliationTable({ breakdown }: Props) {
                     <ColHeader label="Advance Bal." tip="Unallocated credit balance remaining after FIFO allocation" />
                   </TableHead>
                   <TableHead className="text-right font-semibold">
-                    <ColHeader label="Outstanding" tip="Net receivable = Opening Bal + Sales − Receipts + Chq Returns − Credit Notes + Advance Bal" />
+                    <ColHeader label="Outstanding" tip="Net receivable = Opening Bal + Sales − Collected + Chq Returns − Credit Notes + Advance Bal" />
                   </TableHead>
                   <TableHead className="text-right">Overdue</TableHead>
                   <TableHead className="text-center">
@@ -150,8 +150,8 @@ export function SaleTypeReconciliationTable({ breakdown }: Props) {
                               </span>
                             </TooltipTrigger>
                             <TooltipContent side="right" className="max-w-64 text-xs">
-                              Receipts, credit notes, and cheque returns not linked to any specific sale-type invoice.
-                              These represent On-Account / Advance pool entries.
+                              Collection (Tally receipts + Other Payments), credit notes, and cheque returns not linked
+                              to any specific sale-type invoice. These represent On-Account / Advance pool entries.
                             </TooltipContent>
                           </Tooltip>
                         </TooltipProvider>

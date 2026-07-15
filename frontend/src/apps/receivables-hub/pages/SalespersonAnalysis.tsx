@@ -45,6 +45,9 @@ interface CustomerRow {
   salesPersons?: string[];
   sales: number;
   receipts: number;
+  otherPayments?: number;
+  /** Total collection = Tally receipts + manual Other Payments. */
+  collected: number;
   creditNotes: number;
   outstanding: number;
   overdue: number;
@@ -140,7 +143,7 @@ const bottomColumns: { key: BottomSortKey; label: string; align?: "right" }[] = 
   { key: "name",           label: "Customer" },
   { key: "salesPerson",    label: "Sales Person" },
   { key: "sales",          label: "Sales",       align: "right" },
-  { key: "receipts",       label: "Receipts",    align: "right" },
+  { key: "collected",      label: "Collected",   align: "right" },
   { key: "outstanding",    label: "Outstanding", align: "right" },
   { key: "overdue",        label: "Overdue",     align: "right" },
   { key: "maxOverdueDays", label: "Max OD Days", align: "right" },
@@ -263,7 +266,12 @@ export default function SalespersonAnalysis() {
     customerSegment,
     balanceFilter,
   });
-  const allData: CustomerRow[] = consolidatedCustomers as CustomerRow[];
+  // An Other Payment is real money collected, so fold it into a "Collected" figure
+  // (Tally receipts + manual Other Payments) that the table sorts, totals and displays.
+  const allData: CustomerRow[] = consolidatedCustomers.map((c) => ({
+    ...(c as unknown as CustomerRow),
+    collected: c.receipts + (c.otherPayments ?? 0),
+  }));
   const asOfDate = dashboard?.asOfDate ?? new Date().toISOString().slice(0, 10);
 
   /* ── Derived: filtered customer set (feeds both tables) ── */
@@ -373,7 +381,7 @@ export default function SalespersonAnalysis() {
   const customerTotals = useMemo(() => ({
     count:       customerRows.length,
     sales:       customerRows.reduce((s, r) => s + r.sales, 0),
-    receipts:    customerRows.reduce((s, r) => s + r.receipts, 0),
+    collected:   customerRows.reduce((s, r) => s + r.collected, 0),
     outstanding: sumOutstanding(customerRows),
     overdue:     customerRows.reduce((s, r) => s + r.overdue, 0),
   }), [customerRows]);
@@ -921,7 +929,7 @@ export default function SalespersonAnalysis() {
                       <TableCell style={f.style} className={`text-sm text-muted-foreground/60 ${f.className}`}>—</TableCell>
                     ); })()}
                     <TableCell className="text-sm text-right font-mono">{fmt(customerTotals.sales)}</TableCell>
-                    <TableCell className="text-sm text-right font-mono">{fmt(customerTotals.receipts)}</TableCell>
+                    <TableCell className="text-sm text-right font-mono">{fmt(customerTotals.collected)}</TableCell>
                     <TableCell className="text-sm text-right font-mono">{fmt(Math.abs(customerTotals.outstanding))}</TableCell>
                     <TableCell className={`text-sm text-right font-mono ${customerTotals.overdue > 0 ? "text-destructive" : ""}`}>
                       {fmt(customerTotals.overdue)}
@@ -944,7 +952,7 @@ export default function SalespersonAnalysis() {
                       <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`}>{row.salesPersons?.join(", ") ?? row.salesPerson}</TableCell>
                     ); })()}
                     <TableCell className="text-sm text-right font-mono">{fmt(row.sales)}</TableCell>
-                    <TableCell className="text-sm text-right font-mono">{fmt(row.receipts)}</TableCell>
+                    <TableCell className="text-sm text-right font-mono">{fmt(row.collected)}</TableCell>
                     <TableCell className="text-sm text-right font-mono font-semibold">{fmt(Math.abs(row.outstanding))}</TableCell>
                     <TableCell className={`text-sm text-right font-mono ${row.overdue > 0 ? "text-destructive font-semibold" : ""}`}>
                       {fmt(row.overdue)}

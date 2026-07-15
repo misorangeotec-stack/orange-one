@@ -528,7 +528,7 @@ function AIProposedReason({ row }: { row: CustomerRow }) {
 const trendTabs = [
   { key: "all",          label: "All",          color: "" },
   { key: "sales",        label: "Sales",        color: "hsl(var(--primary))" },
-  { key: "receipts",     label: "Receipts",     color: "hsl(142, 71%, 45%)" },
+  { key: "receipts",     label: "Collected",    color: "hsl(142, 71%, 45%)" },
   { key: "creditNotes",  label: "Credit Notes", color: "hsl(271, 75%, 58%)" },
   { key: "checkReturns", label: "Chq Returns",  color: "hsl(213, 94%, 52%)" },
   { key: "outstanding",  label: "Outstanding",  color: "hsl(var(--secondary))" },
@@ -559,7 +559,7 @@ const columns: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "nextFollowupDate", label: "Next Follow-up" },
   { key: "openingBalance", label: "Opening Bal",   align: "right" },
   { key: "sales",          label: "Sales",         align: "right" },
-  { key: "receipts",       label: "Receipts",      align: "right" },
+  { key: "receipts",       label: "Collected",     align: "right" },
   { key: "creditNotes",    label: "Cr. Notes",     align: "right" },
   { key: "debitNotes",     label: "Dr. Notes",     align: "right" },
   { key: "journalAdjustments", label: "Journal (Net)", align: "right" },
@@ -785,7 +785,14 @@ export default function CustomerRiskRegister() {
   const [followupTarget, setFollowupTarget] = useState<{ type: FollowupEntityType; name: string } | null>(null);
 
   const allData: CustomerRow[] = useMemo(() => {
-    const base = consolidatedCustomers as CustomerRow[];
+    // Fold manual Other Payments into `receipts` — an Other Payment is real money
+    // collected, so every downstream figure that reads `receipts` (row + total + group
+    // sum + sort + CSV + the "No Activity" badge) counts it. The column is relabelled
+    // "Collected"; the aggregated-trend chart folds OP in separately by month.
+    const base: CustomerRow[] = consolidatedCustomers.map((c) => ({
+      ...(c as unknown as CustomerRow),
+      receipts: c.receipts + (c.otherPayments ?? 0),
+    }));
     if (!followupsEnabled) return base;
     return base.map((c): CustomerRow => {
       const latest = latestByEntity.get(entityKey("customer", c.name));
@@ -859,6 +866,7 @@ export default function CustomerRiskRegister() {
       .filter((c): c is Customer => !!c)
       .map((c): CustomerRow => ({
         ...c,
+        receipts:       c.receipts + (c.otherPayments ?? 0), // fold Other Payments into Collected
         companies:      [c.company],
         locations:      [c.location],
         salesPersons:   c.salesPerson ? [c.salesPerson] : [],
@@ -1159,6 +1167,15 @@ export default function CustomerRiskRegister() {
             m.outstanding   += t.outstanding;
             m.overdue       += t.overdue;
           }
+        }
+        // Fold manual Other Payments into the month's collection (trend is in LAKHS, so
+        // convert the rupee amount). Only lands in months the trend already spans.
+        for (const o of customerDetail[id]?.otherPaymentTransactions ?? []) {
+          if (!o.date) continue;
+          const d = new Date(o.date);
+          const label = `${d.toLocaleString("en-US", { month: "short" })}-${String(d.getFullYear()).slice(2)}`;
+          const m = byMonth.get(label);
+          if (m) m.receipts += Math.abs(o.amount) / 100_000;
         }
       }
     }
@@ -1952,7 +1969,7 @@ export default function CustomerRiskRegister() {
             <div className="mt-4 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-6 gap-3">
               {[
                 { label: "Total Sales",       value: fmtL(aggregatedTrend.reduce((s, r) => s + r.sales, 0)),              color: "text-primary" },
-                { label: "Total Receipts",    value: fmtL(aggregatedTrend.reduce((s, r) => s + r.receipts, 0)),           color: "text-[hsl(142,71%,45%)]" },
+                { label: "Total Collected",   value: fmtL(aggregatedTrend.reduce((s, r) => s + r.receipts, 0)),           color: "text-[hsl(142,71%,45%)]" },
                 { label: "Total Cr. Notes",   value: fmtL(aggregatedTrend.reduce((s, r) => s + r.creditNotes, 0)),        color: "text-[hsl(271,75%,58%)]" },
                 { label: "Total Chq Returns", value: fmtL(aggregatedTrend.reduce((s, r) => s + r.checkReturns, 0)),       color: "text-[hsl(213,94%,52%)]" },
                 { label: "Outstanding",       value: fmt(Math.abs(totals.outstanding)), color: "text-secondary" },
