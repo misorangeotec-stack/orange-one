@@ -8,7 +8,7 @@ import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
-import { fetchTaskData, type TaskData } from "../data/fetchTaskData";
+import { fetchTaskData, fetchTaskActivity, type TaskData } from "../data/fetchTaskData";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -205,7 +205,9 @@ function patchTaskLocation(
   update: (l: TaskLocation) => TaskLocation
 ) {
   queryClient.setQueriesData<TaskData>({ queryKey: ["taskData"] }, (prev) => {
-    if (!prev) return prev;
+    // The ["taskData"] prefix also matches the deferred ["taskData","activity",…]
+    // query, whose payload has no `tasks` — skip it so we only patch the core.
+    if (!prev || !prev.tasks) return prev;
     let changed = false;
     const tasks = prev.tasks.map((t) => {
       if (!t.locations.some((l) => l.id === taskLocationId)) return t;
@@ -225,6 +227,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     queryFn: fetchTaskData,
     enabled: !!user,
   });
+  // Deferred, NON-blocking slice: the org-scale activity timeline + notification
+  // bell. Nested under the ["taskData"] prefix so every existing
+  // invalidateQueries(["taskData"]) (remarks, status changes, realtime bell) and
+  // the IndexedDB persistence auto-cover it — but the "Loading tasks…" gate below
+  // waits only on the core query, so a cold load paints without this history.
+  const { data: activityData } = useQuery({
+    queryKey: ["taskData", "activity", user?.id ?? null],
+    queryFn: fetchTaskActivity,
+    enabled: !!user,
+  });
   // Org-wide people list for @mention pickers (see mentionablePeople). Cached
   // for 5 min; safe to share across the app since it carries no sensitive fields.
   const { data: orgPeople } = useQuery({
@@ -235,8 +247,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   });
 
   const tasks = data?.tasks ?? [];
-  const activity = data?.activity ?? [];
-  const notifications = data?.notifications ?? [];
+  const activity = activityData?.activity ?? [];
+  const notifications = activityData?.notifications ?? [];
   const recurringTasks = data?.recurringTasks ?? [];
   const weeklyPlans = data?.weeklyPlans ?? [];
   const workspace = data?.workspace ?? DEFAULT_WORKSPACE;

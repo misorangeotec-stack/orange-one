@@ -21,12 +21,21 @@ import type {
 
 export interface TaskData {
   tasks: Task[];
-  activity: TaskActivity[];
-  notifications: Notification[];
   recurringTasks: RecurringTask[];
   weeklyPlans: WeeklyPlan[];
   workspace: WorkspaceSettings;
   locations: Location[];
+}
+
+/**
+ * The two org-scale history tables (activity/remarks timeline + the notification
+ * bell) that the task list and dashboard don't need in order to first-paint.
+ * These are fetched by `fetchTaskActivity` in a SEPARATE, non-blocking query so
+ * the "Loading tasks…" gate clears without waiting for the whole org's history.
+ */
+export interface TaskActivityData {
+  activity: TaskActivity[];
+  notifications: Notification[];
 }
 
 const DEFAULT_WORKSPACE: WorkspaceSettings = { workspaceName: "Orange O Tec", weekStart: "mon", maxRevisionsPerWeek: 2 };
@@ -164,10 +173,8 @@ async function fetchAll(table: PagedTable): Promise<any[]> {
 }
 
 export async function fetchTaskData(): Promise<TaskData> {
-  const [tasksData, actData, notifData, recData, planData, wsRes, locData, taskLocData, recLocData] = await Promise.all([
+  const [tasksData, recData, planData, wsRes, locData, taskLocData, recLocData] = await Promise.all([
     fetchAll("tasks"),
-    fetchAll("task_activity"),
-    fetchAll("notifications"),
     fetchAll("recurring_tasks"),
     fetchAll("weekly_plans"),
     supabase.from("workspace_settings").select("*").limit(1).maybeSingle(),
@@ -201,13 +208,28 @@ export async function fetchTaskData(): Promise<TaskData> {
   const ws = wsRes.data;
   return {
     tasks,
-    activity: actData.map(mapActivity),
-    notifications: notifData.map(mapNotification),
     recurringTasks,
     weeklyPlans: planData.map(mapPlan),
     workspace: ws
       ? { workspaceName: ws.workspace_name, weekStart: ws.week_start, maxRevisionsPerWeek: ws.max_revisions_per_week }
       : DEFAULT_WORKSPACE,
     locations: locData.map(mapLocation),
+  };
+}
+
+/**
+ * Deferred, non-blocking companion to `fetchTaskData`: the org-scale activity
+ * timeline + notification rows. Loaded in a background query so a cold first
+ * load isn't gated on paging through the whole org's history. Every consumer
+ * tolerates these being empty (`?? []`), so they render empty then fill in.
+ */
+export async function fetchTaskActivity(): Promise<TaskActivityData> {
+  const [actData, notifData] = await Promise.all([
+    fetchAll("task_activity"),
+    fetchAll("notifications"),
+  ]);
+  return {
+    activity: actData.map(mapActivity),
+    notifications: notifData.map(mapNotification),
   };
 }
