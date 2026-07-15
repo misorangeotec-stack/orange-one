@@ -17,7 +17,7 @@ import { HoldCancelModal, JobPostingModal, MrfDecisionModal } from "../../compon
 import MrfForm from "../../components/MrfForm";
 import { useHrStore } from "../../store";
 import { inr, salaryLabel } from "../../lib/format";
-import type { MrfInput } from "../../data/hrWrites";
+import { hrDocUrl, type MrfInput } from "../../data/hrWrites";
 import type { StepKey } from "../../lib/steps";
 import type { Candidate, Onboarding, Probation } from "../../types";
 
@@ -27,6 +27,12 @@ const OFFER_LABEL: Record<string, string> = {
   declined: "Declined",
   no_show: "Did not join",
 };
+
+/** Open the private JD in a new tab via a short-lived signed URL. */
+async function openJd(path: string) {
+  const url = await hrDocUrl(path);
+  if (url) window.open(url, "_blank", "noreferrer");
+}
 
 /** One requisition: where it is, what it says, and what you can do about it. */
 export default function MrfDetail() {
@@ -104,11 +110,13 @@ export default function MrfDetail() {
             ? "resume_upload"
             : null;
 
-  const resubmit = async (input: MrfInput) => {
+  const resubmit = async (input: MrfInput, jdFile: File | null) => {
     setBusy(true);
     setErr(null);
     try {
       await s.resubmitMrf(r.id, input);
+      // The requisition already exists here, so a new JD can upload straight away.
+      if (jdFile) await s.attachRequisitionJd(r.id, jdFile);
       setEditing(false);
     } catch (e) {
       setErr((e as Error).message);
@@ -293,7 +301,7 @@ export default function MrfDetail() {
                         {OFFER_LABEL[o.offerStatus] ?? o.offerStatus}
                         {o.joiningDate ? ` · joining ${formatDateDMY(o.joiningDate)}` : " · joining date not set"}
                         {checks.length > 0 && ` · ${ticked}/${checks.length} done`}
-                        {c.offeredCtc !== null && ` · ${inr(c.offeredCtc)}`}
+                        {s.canViewSalary && c.offeredCtc !== null && ` · ${inr(c.offeredCtc)}`}
                         {o.employeeCode && ` · ${o.employeeCode}`}
                       </div>
                       {dropped && o.offerStatusReason && (
@@ -334,6 +342,19 @@ export default function MrfDetail() {
           <Field label="Hiring manager">{peopleList(r.hiringManagerIds, null)}</Field>
           <Field label="Reporting to">{peopleList(r.reportingToIds, r.reportingToNote)}</Field>
           <Field label="Salary range">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryNote)}</Field>
+          <Field label="Job description">
+            {r.jdPath ? (
+              <button
+                type="button"
+                onClick={() => void openJd(r.jdPath!)}
+                className="text-[13px] font-semibold text-orange hover:underline"
+              >
+                {r.jdName ?? "Open JD"} →
+              </button>
+            ) : (
+              "—"
+            )}
+          </Field>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">

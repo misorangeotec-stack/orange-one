@@ -16,12 +16,13 @@ import type { Candidate, Interview, Requisition } from "../../types";
 interface Row {
   candidate: Candidate;
   requisition: Requisition;
-  round: 1 | 2 | 3;
+  round: 0 | 1 | 2 | 3;
   interview: Interview | undefined;
   mine: boolean;
 }
 
-const ROUND_LABEL: Record<1 | 2 | 3, string> = {
+const ROUND_LABEL: Record<0 | 1 | 2 | 3, string> = {
+  0: "Screening · Tel",
   1: "R1 · HR",
   2: "R2 · HOD",
   3: "R3 · Director",
@@ -44,11 +45,12 @@ const ROUND_LABEL: Record<1 | 2 | 3, string> = {
 export default function InterviewsQueue() {
   const s = useHrStore();
   const [open, setOpen] = useState<Candidate | null>(null);
-  const [book, setBook] = useState<{ c: Candidate; round: 1 | 2 | 3 } | null>(null);
-  const [result, setResult] = useState<{ c: Candidate; round: 1 | 2 | 3 } | null>(null);
+  const [book, setBook] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
+  const [result, setResult] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [mineOnly, setMineOnly] = useState(false);
 
   const canSee =
+    s.isStepOwner("telephonic_screening") ||
     s.isStepOwner("interview_1") ||
     s.isStepOwner("interview_2") ||
     s.isStepOwner("interview_3") ||
@@ -62,7 +64,7 @@ export default function InterviewsQueue() {
       // A candidate parked in an interview stage owes that round — recording its result
       // is what moves them on, so anyone still sitting here has not been interviewed yet.
       const round = roundOf(c.stage);
-      if (!round) continue;
+      if (round === null) continue;
       const requisition = s.requisitionById(c.requisitionId);
       if (!requisition) continue;
       const interview = s.interviewsFor(c.id).find((iv) => iv.round === round && !iv.heldAt);

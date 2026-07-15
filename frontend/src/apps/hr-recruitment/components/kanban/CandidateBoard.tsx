@@ -38,8 +38,8 @@ export default function CandidateBoard({
   const s = useHrStore();
 
   const [move, setMove] = useState<{ c: Candidate; to: CandidateStage } | null>(null);
-  const [result, setResult] = useState<{ c: Candidate; round: 1 | 2 | 3 } | null>(null);
-  const [schedule, setSchedule] = useState<{ c: Candidate; round: 1 | 2 | 3 } | null>(null);
+  const [result, setResult] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
+  const [schedule, setSchedule] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [hodDecision, setHodDecision] = useState<{ ids: string[]; selected: boolean } | null>(null);
   const [addingCvs, setAddingCvs] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -133,7 +133,8 @@ export default function CandidateBoard({
         { header: "Round 2 held", width: 13, value: (c) => formatDateDMY(c.interview2At) },
         { header: "Round 3 held", width: 13, value: (c) => formatDateDMY(c.interview3At) },
         { header: "Selected on", width: 13, value: (c) => formatDateDMY(c.finalizedAt) },
-        { header: "Offered CTC", width: 13, value: (c) => c.offeredCtc ?? "" },
+        // Offered salary is gated: only salary viewers (admins, allowed depts/people) get the value.
+        { header: "Offered CTC", width: 13, value: (c) => (s.canViewSalary ? (c.offeredCtc ?? "") : "") },
         { header: "Joined", width: 13, value: (c) => formatDateDMY(c.joinedAt) },
         { header: "Disqualified", width: 13, value: (c) => formatDateDMY(c.disqualifiedAt) },
         { header: "Disqualification reason", width: 26, value: (c) => s.disqualificationReasons.find((d) => d.id === c.disqualificationReasonId)?.name ?? "" },

@@ -244,10 +244,14 @@ export default function ProbationPanel({
   const decisionDue = pendingStep === "probation_final";
   const isExtensionDecision = decisionDue && extended;
 
+  // The Employee ID is captured ONCE, at onboarding — this decision reuses it rather
+  // than asking HR to re-type it. Editable only if the onboarding never recorded one.
+  const onboardingCode = s.onboardingForCandidate(p.candidateId)?.employeeCode ?? "";
+
   const [decision, setDecision] = useState<"approve" | "reject" | "extend">("approve");
   const [remarks, setRemarks] = useState("");
   const [permanentFrom, setPermanentFrom] = useState(todayIso());
-  const [employeeCode, setEmployeeCode] = useState("");
+  const [employeeCode, setEmployeeCode] = useState(onboardingCode);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -444,11 +448,16 @@ export default function ProbationPanel({
                         onChange={(e) => setPermanentFrom(e.target.value)}
                       />
                     </FieldLabel>
-                    <FieldLabel label="Final employee ID" required>
+                    <FieldLabel
+                      label="Final employee ID"
+                      required
+                      hint={onboardingCode ? "fetched from onboarding" : undefined}
+                    >
                       <TextInput
                         value={employeeCode}
                         onChange={(e) => setEmployeeCode(e.target.value)}
                         placeholder="e.g. OOT-1043"
+                        disabled={!!onboardingCode}
                       />
                     </FieldLabel>
                   </div>

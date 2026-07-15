@@ -41,7 +41,8 @@ export default function MrfForm({
   busy: boolean;
   error: string | null;
   submitLabel: string;
-  onSubmit: (input: MrfInput) => void;
+  /** `jdFile` is the newly-picked JD, if any — the parent uploads it (a new MRF has no id yet). */
+  onSubmit: (input: MrfInput, jdFile: File | null) => void;
   onCancel: () => void;
 }) {
   const s = useHrStore();
@@ -70,6 +71,8 @@ export default function MrfForm({
   const [keyResponsibilities, setKeyResponsibilities] = useState(existing?.keyResponsibilities ?? "");
   const [requiredSkills, setRequiredSkills] = useState(existing?.requiredSkills ?? "");
   const [preferredExperience, setPreferredExperience] = useState(existing?.preferredExperience ?? "");
+  /** A newly-picked JD file. Left null keeps whatever the requisition already has. */
+  const [jdFile, setJdFile] = useState<File | null>(null);
 
   const people: MultiOption[] = useMemo(
     () =>
@@ -125,7 +128,7 @@ export default function MrfForm({
       preferredExperience: preferredExperience.trim() || null,
       jdPath: existing?.jdPath ?? null,
       jdName: existing?.jdName ?? null,
-    });
+    }, jdFile);
   };
 
   return (
@@ -202,6 +205,21 @@ export default function MrfForm({
             </FieldLabel>
           )}
         </div>
+
+        {/* ---- Job description file (optional) ---- */}
+        <FieldLabel label="Job description (JD)" hint="optional — attach a file">
+          <input
+            type="file"
+            accept=".pdf,.doc,.docx"
+            onChange={(e) => setJdFile(e.target.files?.[0] ?? null)}
+            className="block w-full text-[13px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-2 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line/50"
+          />
+          {existing?.jdName && !jdFile && (
+            <span className="mt-1 block text-[11.5px] leading-snug text-grey-2">
+              Current: {existing.jdName} — pick a file to replace it.
+            </span>
+          )}
+        </FieldLabel>
       </Card>
 
       {/* ---- People ---- */}

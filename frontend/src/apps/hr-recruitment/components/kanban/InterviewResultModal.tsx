@@ -1,21 +1,25 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
-import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useHrStore } from "../../store";
 import { uploadInterviewDoc } from "../../data/hrWrites";
-import type { Candidate } from "../../types";
+import { BOARD_STAGES, STAGE_LABEL, STAGE_RANK } from "../../lib/board";
+import type { Candidate, CandidateStage } from "../../types";
 
 type Result = "selected" | "rejected" | "on_hold" | "no_show";
 
+/** The stages a "selected" candidate may advance to — later interview rounds, or a decision. */
+const ADVANCE_STAGES: CandidateStage[] = ["interview_1", "interview_2", "interview_3", "final_decision"];
+
 /**
- * Record what actually HAPPENED in a round. This is what closes it — booking the
- * interview didn't.
+ * Record what actually HAPPENED in a round (0 = telephonic screen, 1–3 = interviews).
+ * This is what closes it — booking the interview didn't.
  *
- * Keeping "scheduled" and "conducted" apart is the whole point: in the sheet they
- * were one column, so a candidate could sit "in Round 2" for three weeks and still
- * look on track. Now the round has a due date the moment it's booked, and only a
- * result clears it.
+ * Because the rounds are optional, "Selected" no longer means "the very next round":
+ * the recorder chooses where the card goes — a later round, or straight to Awaiting
+ * Decision. Round 2 (online interviews) may also carry a meeting / recording link.
  */
 export default function InterviewResultModal({
   candidate,
@@ -24,7 +28,7 @@ export default function InterviewResultModal({
   onClose,
 }: {
   candidate: Candidate;
-  round: 1 | 2 | 3;
+  round: 0 | 1 | 2 | 3;
   open: boolean;
   onClose: () => void;
 }) {
@@ -32,15 +36,26 @@ export default function InterviewResultModal({
   const [result, setResult] = useState<Result>("selected");
   const [remarks, setRemarks] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [videoUrl, setVideoUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // Where a "selected" candidate can go: any interview stage still ahead, or the decision.
+  const advanceOptions = useMemo<ComboOption[]>(
+    () =>
+      BOARD_STAGES.filter(
+        (st) => ADVANCE_STAGES.includes(st) && STAGE_RANK[st] > STAGE_RANK[candidate.stage],
+      ).map((st) => ({ value: st, label: STAGE_LABEL[st] })),
+    [candidate.stage],
+  );
+  const [nextStage, setNextStage] = useState<CandidateStage>(
+    (advanceOptions[0]?.value as CandidateStage) ?? "final_decision",
+  );
+
+  const roundLabel = round === 0 ? "Telephonic screen" : `Round ${round}`;
+
   const choices: Array<{ key: Result; label: string; hint: string }> = [
-    {
-      key: "selected",
-      label: "Selected",
-      hint: round < 3 ? `Moves them straight to Round ${round + 1}` : "Moves them to Awaiting Decision",
-    },
+    { key: "selected", label: "Selected", hint: "Advance them to the stage you pick below" },
     { key: "rejected", label: "Rejected", hint: "They drop out of the pipeline" },
     { key: "on_hold", label: "On hold", hint: "Undecided — the card stays here" },
     { key: "no_show", label: "Didn't turn up", hint: "The card stays here" },
@@ -57,7 +72,16 @@ export default function InterviewResultModal({
         path = up.path;
         name = up.name;
       }
-      await s.recordInterviewResult(candidate, round, result, remarks.trim(), path, name);
+      await s.recordInterviewResult(
+        candidate,
+        round,
+        result,
+        remarks.trim(),
+        path,
+        name,
+        videoUrl.trim() || null,
+        result === "selected" ? nextStage : null,
+      );
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -70,7 +94,7 @@ export default function InterviewResultModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Round ${round} result — ${candidate.name}`}
+      title={`${roundLabel} result — ${candidate.name}`}
       subtitle="What happened in the interview?"
       footer={
         <>
@@ -100,8 +124,28 @@ export default function InterviewResultModal({
           ))}
         </div>
 
+        {result === "selected" && (
+          <FieldLabel label="Move them to" hint="skip ahead if you like">
+            <Combobox
+              value={nextStage}
+              onChange={(v) => setNextStage(v as CandidateStage)}
+              options={advanceOptions}
+              placeholder="Pick the next stage"
+            />
+          </FieldLabel>
+        )}
+
         <FieldLabel label="Remarks" hint={result === "rejected" ? "shown as the reason they dropped" : "optional"}>
           <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+        </FieldLabel>
+
+        {/* Online interviews (most often Round 2) — a meeting or recording link. */}
+        <FieldLabel label="Video link" hint="optional — for an online interview">
+          <TextInput
+            value={videoUrl}
+            onChange={(e) => setVideoUrl(e.target.value)}
+            placeholder="https://… (meeting or recording link)"
+          />
         </FieldLabel>
 
         <FieldLabel label="Feedback form" hint="optional">

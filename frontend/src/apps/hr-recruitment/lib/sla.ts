@@ -44,7 +44,11 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   hr_shortlist: { anchor: "resume_upload", days: 2 },
   hod_share: { anchor: "hr_shortlist", days: 1 },
   hod_shortlist: { anchor: "hod_share", days: 2 },
-  interview_1: { anchor: "hod_shortlist", days: 2 },
+  telephonic_screening: { anchor: "hod_shortlist", days: 2 },
+  // Anchored on the telephonic screen (the default previous stage). If the screen was
+  // skipped its timestamp is null, and candidateDueIso falls back to the last completed
+  // stage — so a skipped-into Round 1 is never born overdue.
+  interview_1: { anchor: "telephonic_screening", days: 2 },
   interview_2: { anchor: "interview_1", days: 2 },
   interview_3: { anchor: "interview_2", days: 2 },
   final_decision: { anchor: "interview_3", days: 2 },

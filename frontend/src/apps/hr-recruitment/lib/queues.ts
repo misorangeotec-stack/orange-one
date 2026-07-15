@@ -112,15 +112,16 @@ export const seatsJoined = (requisitionId: string, onboardings: Onboarding[]): n
  * Mirrors `fms_hr_pending_step()` in SQL — keep the two in step.
  */
 export const STAGE_PENDING_STEP: Record<CandidateStage, StepKey | null> = {
-  resume_uploaded: "hr_shortlist",   // HR must screen this CV
-  hr_shortlisted: "hod_share",       // HR must send it to the HOD
-  shared_with_hod: "hod_shortlist",  // the HOD must decide
-  hod_shortlisted: "interview_1",    // Round 1 must be booked
-  interview_1: "interview_1",        // Round 1 must be conducted
+  resume_uploaded: "hr_shortlist",       // HR must screen this CV
+  hr_shortlisted: "hod_share",           // HR must send it to the HOD
+  shared_with_hod: "hod_shortlist",      // the HOD must decide
+  hod_shortlisted: "telephonic_screening", // next up is the telephonic screen (default; rounds are skippable)
+  telephonic: "telephonic_screening",    // the screening call must be conducted
+  interview_1: "interview_1",            // Round 1 must be conducted
   interview_2: "interview_2",
   interview_3: "interview_3",
   final_decision: "final_decision",
-  finalized: null,                   // closed
+  finalized: null,                       // closed
   disqualified: null,
 };
 
@@ -175,6 +176,8 @@ export function candidateStepCompletedIso(
       return c.sharedToHodAt;
     case "hod_shortlist":
       return c.hodDecidedAt;
+    case "telephonic_screening":
+      return c.telephonicAt;
     case "interview_1":
       return c.interview1At;
     case "interview_2":
@@ -199,9 +202,36 @@ export function requisitionDueIso(snap: HrSnapshot, r: Requisition, step: StepKe
   return dueIsoFrom(from, sla);
 }
 
-/** The round a candidate's stage means, or null if they aren't in an interview stage. */
-const stageRound = (stage: CandidateStage): 1 | 2 | 3 | null =>
-  stage === "interview_1" ? 1 : stage === "interview_2" ? 2 : stage === "interview_3" ? 3 : null;
+/** The round a candidate's stage means, or null if they aren't in an interview stage. Telephonic is round 0. */
+const stageRound = (stage: CandidateStage): 0 | 1 | 2 | 3 | null =>
+  stage === "telephonic"
+    ? 0
+    : stage === "interview_1"
+      ? 1
+      : stage === "interview_2"
+        ? 2
+        : stage === "interview_3"
+          ? 3
+          : null;
+
+/**
+ * The most recent completed stage on this card — the honest anchor for a card that
+ * was SKIPPED into a later interview stage (its configured anchor's timestamp is null
+ * because that stage never happened). Falling back to `uploadedAt` instead would date
+ * the due clock from the CV's arrival and paint the card overdue at birth.
+ */
+function lastCompletedStageIso(c: Candidate): string | null {
+  return (
+    c.interview3At ??
+    c.interview2At ??
+    c.interview1At ??
+    c.telephonicAt ??
+    c.hodDecidedAt ??
+    c.sharedToHodAt ??
+    c.hrShortlistedAt ??
+    null
+  );
+}
 
 /**
  * Due date for the step a candidate card is currently waiting on.
@@ -229,13 +259,15 @@ export function candidateDueIso(
   if (!sla) return null;
 
   const round = stageRound(c.stage);
-  if (round) {
+  if (round !== null) {
     const list = ivByCandidate?.get(c.id) ?? snap.interviews.filter((iv) => iv.candidateId === c.id);
     const booked = list.find((iv) => iv.round === round && !iv.heldAt);
     if (booked?.scheduledOn) return booked.scheduledOn;
   }
 
-  const from = candidateStepCompletedIso(c, sla.anchor, reqById) ?? c.uploadedAt;
+  // A skipped-into stage has a null configured anchor — fall back to the last stage that
+  // actually completed, not to the CV's upload date (which would be born overdue).
+  const from = candidateStepCompletedIso(c, sla.anchor, reqById) ?? lastCompletedStageIso(c) ?? c.uploadedAt;
   return dueIsoFrom(from, sla);
 }
 
@@ -393,14 +425,18 @@ export function probationDueIso(snap: HrSnapshot, p: Probation, step: StepKey): 
 
 /** Whole days the card has sat in its current column. */
 export function daysInStage(c: Candidate): number {
+  // Each stage's "since" is when the card ENTERED it — i.e. when the previous stage
+  // completed. With optional rounds the previous stage may have been skipped, so the
+  // interview stages fall back down the chain to the last stage that actually happened.
   const map: Record<CandidateStage, string | null> = {
     resume_uploaded: c.uploadedAt,
     hr_shortlisted: c.hrShortlistedAt,
     shared_with_hod: c.sharedToHodAt,
     hod_shortlisted: c.hodDecidedAt,
-    interview_1: c.hodDecidedAt,
-    interview_2: c.interview1At,
-    interview_3: c.interview2At,
+    telephonic: c.hodDecidedAt,
+    interview_1: c.telephonicAt ?? c.hodDecidedAt,
+    interview_2: c.interview1At ?? c.telephonicAt ?? c.hodDecidedAt,
+    interview_3: c.interview2At ?? c.interview1At ?? c.telephonicAt ?? c.hodDecidedAt,
     final_decision: c.finalDecisionAt,
     finalized: c.finalizedAt,
     disqualified: c.disqualifiedAt,

@@ -26,7 +26,7 @@ export default function ScheduleInterviewModal({
   onClose,
 }: {
   candidate: Candidate;
-  round: 1 | 2 | 3;
+  round: 0 | 1 | 2 | 3;
   open: boolean;
   onClose: () => void;
 }) {
@@ -39,6 +39,7 @@ export default function ScheduleInterviewModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  const roundLabel = round === 0 ? "the telephonic screen" : `Round ${round}`;
   const pool = useMemo(
     () => interviewerPool(round, s.profiles, s.departments, req),
     [round, s.profiles, s.departments, req],
@@ -73,7 +74,7 @@ export default function ScheduleInterviewModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Book Round ${round} — ${candidate.name}`}
+      title={`Book ${roundLabel} — ${candidate.name}`}
       subtitle="They passed the last round, so they're already through. This just books who sees them, and when."
       footer={
         <>
@@ -87,7 +88,7 @@ export default function ScheduleInterviewModal({
       }
     >
       <div className="space-y-3.5">
-        <FieldLabel label={`Who is taking Round ${round}?`} required hint={pool.restricted ? pool.hint : undefined}>
+        <FieldLabel label={`Who is taking ${roundLabel}?`} required hint={pool.restricted ? pool.hint : undefined}>
           <Combobox
             value={interviewerId}
             onChange={(v) => {

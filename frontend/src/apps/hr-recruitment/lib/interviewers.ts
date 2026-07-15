@@ -28,7 +28,7 @@ export interface InterviewerPool {
 }
 
 export function interviewerPool(
-  round: 1 | 2 | 3,
+  round: 0 | 1 | 2 | 3,
   profiles: Profile[],
   departments: Department[],
   requisition: Requisition | undefined,
@@ -36,7 +36,8 @@ export function interviewerPool(
   const hrDeptId = departments.find((d) => /human resource|^hr$/i.test(d.name))?.id ?? null;
 
   let pool: Profile[] = [];
-  if (round === 1) {
+  // Round 0 (telephonic screening) is HR's call, same as Round 1.
+  if (round === 0 || round === 1) {
     pool = hrDeptId ? profiles.filter((p) => p.departmentId === hrDeptId) : [];
   } else if (round === 2) {
     // The hiring manager IS whoever raised the MRF — that rule holds everywhere in this app.
@@ -48,14 +49,14 @@ export function interviewerPool(
   }
 
   const hint =
-    round === 1
+    round === 0 || round === 1
       ? "The HR team."
       : round === 2
         ? "The manager who raised this requisition, and whoever the role reports to."
         : "Directors.";
 
   const fallbackNote =
-    round === 1
+    round === 0 || round === 1
       ? "No Human Resources department is set up, so everyone is listed."
       : round === 2
         ? "This requisition has no hiring manager or reporting-to recorded, so everyone is listed."

@@ -26,6 +26,7 @@ export default function PipelineQueue() {
     s.isStepOwner("resume_upload") ||
     s.isStepOwner("hr_shortlist") ||
     s.isStepOwner("hod_share") ||
+    s.isStepOwner("telephonic_screening") ||
     s.isStepOwner("interview_1") ||
     s.isStepOwner("interview_2") ||
     s.isStepOwner("interview_3") ||

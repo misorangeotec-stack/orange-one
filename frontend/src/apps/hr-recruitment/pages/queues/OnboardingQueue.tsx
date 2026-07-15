@@ -65,7 +65,7 @@ export default function OnboardingQueue() {
             <div className="font-medium text-navy">{c?.name ?? "Unknown"}</div>
             <div className="text-[12px] text-grey-2">
               {c?.phone ?? "—"}
-              {c?.offeredCtc !== null && c?.offeredCtc !== undefined && ` · ${inr(c.offeredCtc)}`}
+              {s.canViewSalary && c?.offeredCtc !== null && c?.offeredCtc !== undefined && ` · ${inr(c.offeredCtc)}`}
             </div>
           </div>
         );

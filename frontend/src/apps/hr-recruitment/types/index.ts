@@ -240,6 +240,7 @@ export type CandidateStage =
   | "hr_shortlisted"
   | "shared_with_hod"
   | "hod_shortlisted"
+  | "telephonic"
   | "interview_1"
   | "interview_2"
   | "interview_3"
@@ -279,6 +280,8 @@ export interface Candidate {
   sharedToHodBy: string | null;
   hodDecidedAt: string | null;
   hodDecidedBy: string | null;
+  /** When the telephonic screening (round 0) was HELD. Null if skipped. */
+  telephonicAt: string | null;
   /** When the round was HELD — not when it was booked. */
   interview1At: string | null;
   interview2At: string | null;
@@ -298,6 +301,8 @@ export interface Candidate {
   disqualifiedAt: string | null;
   disqualificationReasonId: string | null;
   disqualificationNote: string | null;
+  /** A free-text note captured on the Awaiting-Decision / finalize move. */
+  decisionRemarks: string | null;
 
   createdAt: string;
 }
@@ -307,7 +312,8 @@ export type InterviewStatus = "scheduled" | "selected" | "rejected" | "on_hold" 
 export interface Interview {
   id: string;
   candidateId: string;
-  round: 1 | 2 | 3;
+  /** 0 = telephonic screening; 1–3 = the interview rounds. */
+  round: 0 | 1 | 2 | 3;
   /** A portal user, OR a free-text name — the interviewer may be an external consultant. */
   interviewerId: string | null;
   interviewerName: string | null;
@@ -318,6 +324,8 @@ export interface Interview {
   remarks: string | null;
   documentPath: string | null;
   documentName: string | null;
+  /** A meeting / recording link for an online interview (used most for Round 2). */
+  videoUrl: string | null;
 }
 
 /* ------------------------------- onboarding ------------------------------- */

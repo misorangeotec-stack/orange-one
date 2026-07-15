@@ -5336,9 +5336,11 @@ export type Database = {
           p_doc_name?: string
           p_doc_path?: string
           p_id: string
+          p_next_stage?: string
           p_remarks?: string
           p_round: number
           p_status: string
+          p_video_url?: string
         }
         Returns: undefined
       }
@@ -5374,6 +5376,10 @@ export type Database = {
           p_round: number
           p_scheduled_on?: string
         }
+        Returns: undefined
+      }
+      fms_hr_set_requisition_jd: {
+        Args: { p_name?: string; p_path?: string; p_req: string }
         Returns: undefined
       }
       fms_hr_seats_joined: { Args: { p_req: string }; Returns: number }

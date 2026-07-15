@@ -64,6 +64,7 @@ const QUEUE_LINK: Partial<Record<StepKey, string>> = {
   hr_shortlist: "/hr-recruitment/queues/pipeline",
   hod_share: "/hr-recruitment/queues/pipeline",
   hod_shortlist: "/hr-recruitment/queues/pipeline",
+  telephonic_screening: "/hr-recruitment/queues/interviews",
   interview_1: "/hr-recruitment/queues/interviews",
   interview_2: "/hr-recruitment/queues/interviews",
   interview_3: "/hr-recruitment/queues/interviews",

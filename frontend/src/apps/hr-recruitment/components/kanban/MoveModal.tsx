@@ -37,6 +37,7 @@ export default function MoveModal({
   const isInterview = round !== null;
   const isDisqualify = toStage === "disqualified";
   const isFinalize = toStage === "finalized";
+  const isDecision = toStage === "final_decision";
   const isBackward = false; // the caller only offers legal targets; the RPC re-checks
 
   const [interviewerId, setInterviewerId] = useState("");
@@ -48,12 +49,15 @@ export default function MoveModal({
   const [requested, setRequested] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [ctc, setCtc] = useState("");
+  const [decisionRemarks, setDecisionRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  // A telephonic screen is round 0, so test against null — `round ? …` would skip it.
+  const roundLabel = round === 0 ? "the telephonic screen" : `Round ${round}`;
   // Each round is offered only the people who actually take it — see lib/interviewers.ts.
   const pool = useMemo(
-    () => (round ? interviewerPool(round, s.profiles, s.departments, req) : null),
+    () => (round !== null ? interviewerPool(round, s.profiles, s.departments, req) : null),
     [round, s.profiles, s.departments, req],
   );
   const people: ComboOption[] = useMemo(() => (pool ? interviewerOptions(pool.people) : []), [pool]);
@@ -98,6 +102,7 @@ export default function MoveModal({
         payload.disqualificationNote = note.trim() || null;
       }
       if (isFinalize) payload.offeredCtc = ctcNum;
+      if (isFinalize || isDecision) payload.decisionRemarks = decisionRemarks.trim() || null;
 
       await s.moveCandidate(candidate, toStage, payload);
       onClose();
@@ -137,7 +142,7 @@ export default function MoveModal({
         {isInterview && (
           <>
             <FieldLabel
-              label={`Who is taking Round ${round}?`}
+              label={`Who is taking ${roundLabel}?`}
               required
               hint={pool?.restricted ? pool.hint : undefined}
             >
@@ -224,10 +229,29 @@ export default function MoveModal({
                 That's below the minimum on the requisition (₹{req?.salaryMin?.toLocaleString("en-IN")}).
               </p>
             )}
+            <FieldLabel label="Decision remark" hint="optional">
+              <TextArea
+                rows={2}
+                value={decisionRemarks}
+                onChange={(e) => setDecisionRemarks(e.target.value)}
+                placeholder="Anything to note about this selection"
+              />
+            </FieldLabel>
           </>
         )}
 
-        {!isInterview && !isDisqualify && !isFinalize && !isBackward && (
+        {isDecision && (
+          <FieldLabel label="Decision remark" hint="optional — why this candidate is here / what's pending">
+            <TextArea
+              rows={2}
+              value={decisionRemarks}
+              onChange={(e) => setDecisionRemarks(e.target.value)}
+              placeholder="e.g. strong on skills, checking references before we decide"
+            />
+          </FieldLabel>
+        )}
+
+        {!isInterview && !isDisqualify && !isFinalize && !isDecision && !isBackward && (
           <p className="text-[13px] text-grey-2">Nothing else to capture — confirm to move the card.</p>
         )}
 

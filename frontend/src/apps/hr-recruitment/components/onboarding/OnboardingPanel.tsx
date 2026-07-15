@@ -378,7 +378,7 @@ export default function OnboardingPanel({
       title={`Onboarding — ${c?.name ?? "New hire"}`}
       subtitle={
         r
-          ? `${r.mrfNo} · ${r.jobTitle}${c?.offeredCtc !== null && c?.offeredCtc !== undefined ? ` · offered ${inr(c.offeredCtc)}` : ""}`
+          ? `${r.mrfNo} · ${r.jobTitle}${s.canViewSalary && c?.offeredCtc !== null && c?.offeredCtc !== undefined ? ` · offered ${inr(c.offeredCtc)}` : ""}`
           : undefined
       }
       footer={

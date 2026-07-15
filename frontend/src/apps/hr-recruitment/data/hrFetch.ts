@@ -153,6 +153,12 @@ export interface HrConfig {
   stepSla: StepSlaMap;
   /** The sheet's "share a minimum of 5–10 CVs with the HOD" rule. */
   minCvsToShare: number;
+  /**
+   * Who may see the OFFERED salary (not the requisition range, which stays public).
+   * Admins and the person who finalizes always see it; this widens the audience to
+   * whole departments and named people. UI-level only — see store.canViewSalary.
+   */
+  salaryViewers: { departmentIds: string[]; personIds: string[] };
 }
 
 /**
@@ -267,6 +273,7 @@ const mapCandidate = (r: any): Candidate => ({
   sharedToHodBy: r.shared_to_hod_by ?? null,
   hodDecidedAt: r.hod_decided_at ?? null,
   hodDecidedBy: r.hod_decided_by ?? null,
+  telephonicAt: r.telephonic_at ?? null,
   interview1At: r.interview1_at ?? null,
   interview2At: r.interview2_at ?? null,
   interview3At: r.interview3_at ?? null,
@@ -278,13 +285,14 @@ const mapCandidate = (r: any): Candidate => ({
   disqualifiedAt: r.disqualified_at ?? null,
   disqualificationReasonId: r.disqualification_reason_id ?? null,
   disqualificationNote: r.disqualification_note ?? null,
+  decisionRemarks: r.decision_remarks ?? null,
   createdAt: r.created_at,
 });
 
 const mapInterview = (r: any): Interview => ({
   id: r.id,
   candidateId: r.candidate_id,
-  round: r.round as 1 | 2 | 3,
+  round: r.round as 0 | 1 | 2 | 3,
   interviewerId: r.interviewer_id ?? null,
   interviewerName: r.interviewer_name ?? null,
   scheduledOn: r.scheduled_on ?? null,
@@ -293,6 +301,7 @@ const mapInterview = (r: any): Interview => ({
   remarks: r.remarks ?? null,
   documentPath: r.document_path ?? null,
   documentName: r.document_name ?? null,
+  videoUrl: r.video_url ?? null,
 });
 
 const mapOnboarding = (r: any): Onboarding => ({
@@ -492,6 +501,10 @@ export async function fetchHrData(): Promise<HrData> {
     // Unset or partially-stored rules fall back to the code defaults.
     stepSla: resolveStepSla(byKey.get("step_sla")),
     minCvsToShare: Number(byKey.get("min_cvs_to_share")?.value ?? 5),
+    salaryViewers: {
+      departmentIds: (byKey.get("salary_viewers")?.department_ids ?? []) as string[],
+      personIds: (byKey.get("salary_viewers")?.person_ids ?? []) as string[],
+    },
   };
 
   return {

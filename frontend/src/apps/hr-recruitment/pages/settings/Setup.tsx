@@ -3,6 +3,7 @@ import Tabs from "@/shared/components/ui/Tabs";
 import StepOwnersSection from "./StepOwnersSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
+import SalaryVisibilitySection from "./SalaryVisibilitySection";
 import MasterOwnersSection from "./MasterOwnersSection";
 
 /**
@@ -22,6 +23,7 @@ export default function Setup() {
     { key: "owners", label: "Step Owners" },
     { key: "sla", label: "Due Dates" },
     { key: "roles", label: "Coordinators" },
+    { key: "salary", label: "Salary Visibility" },
     { key: "masters", label: "Master Owners" },
   ];
 
@@ -40,6 +42,7 @@ export default function Setup() {
       {tab === "owners" && <StepOwnersSection />}
       {tab === "sla" && <StepDueDatesSection />}
       {tab === "roles" && <CoordinatorsSection />}
+      {tab === "salary" && <SalaryVisibilitySection />}
       {tab === "masters" && <MasterOwnersSection />}
     </div>
   );

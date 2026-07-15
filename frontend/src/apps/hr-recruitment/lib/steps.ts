@@ -36,6 +36,7 @@ export type StepKey =
   | "hr_shortlist"
   | "hod_share"
   | "hod_shortlist"
+  | "telephonic_screening"
   | "interview_1"
   | "interview_2"
   | "interview_3"
@@ -72,16 +73,17 @@ export const STEPS: StepDef[] = [
   { key: "hr_shortlist",        index: 7,  title: "Shortlist by HR",              short: "HR Shortlist",  scope: "candidate" },
   { key: "hod_share",           index: 8,  title: "Share CVs with HOD",           short: "Share to HOD",  scope: "candidate" },
   { key: "hod_shortlist",       index: 9,  title: "Shortlist by HOD",             short: "HOD Shortlist", scope: "candidate" },
-  { key: "interview_1",         index: 10, title: "Interview Round 1 — HR",       short: "Round 1",       scope: "candidate" },
-  { key: "interview_2",         index: 11, title: "Interview Round 2 — HOD",      short: "Round 2",       scope: "candidate" },
-  { key: "interview_3",         index: 12, title: "Interview Round 3 — Director", short: "Round 3",       scope: "candidate" },
-  { key: "final_decision",      index: 13, title: "Awaiting Decision",            short: "Decision",      scope: "candidate" },
-  { key: "onboarding",          index: 14, title: "Onboarding",                   short: "Onboarding",    scope: "hire" },
-  { key: "probation_m1",        index: 15, title: "Month-1 Review (HOD)",         short: "Review M1",     scope: "hire" },
-  { key: "probation_m2",        index: 16, title: "Month-2 Review (HOD)",         short: "Review M2",     scope: "hire" },
-  { key: "probation_m3",        index: 17, title: "Month-3 Review (HOD)",         short: "Review M3",     scope: "hire" },
-  { key: "probation_final",     index: 18, title: "Probation Decision",           short: "Confirm",       scope: "hire" },
-  { key: "probation_extension", index: 19, title: "Extended Review (Month 4)",    short: "Extension",     scope: "hire" },
+  { key: "telephonic_screening",index: 10, title: "Telephonic Screening",         short: "Telephonic",    scope: "candidate" },
+  { key: "interview_1",         index: 11, title: "Interview Round 1 — HR",       short: "Round 1",       scope: "candidate" },
+  { key: "interview_2",         index: 12, title: "Interview Round 2 — HOD",      short: "Round 2",       scope: "candidate" },
+  { key: "interview_3",         index: 13, title: "Interview Round 3 — Director", short: "Round 3",       scope: "candidate" },
+  { key: "final_decision",      index: 14, title: "Awaiting Decision",            short: "Decision",      scope: "candidate" },
+  { key: "onboarding",          index: 15, title: "Onboarding",                   short: "Onboarding",    scope: "hire" },
+  { key: "probation_m1",        index: 16, title: "Month-1 Review (HOD)",         short: "Review M1",     scope: "hire" },
+  { key: "probation_m2",        index: 17, title: "Month-2 Review (HOD)",         short: "Review M2",     scope: "hire" },
+  { key: "probation_m3",        index: 18, title: "Month-3 Review (HOD)",         short: "Review M3",     scope: "hire" },
+  { key: "probation_final",     index: 19, title: "Probation Decision",           short: "Confirm",       scope: "hire" },
+  { key: "probation_extension", index: 20, title: "Extended Review (Month 4)",    short: "Extension",     scope: "hire" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -105,7 +107,16 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Requisition", keys: ["mrf_resubmit", "hr_head_approval", "mgmt_approval", "job_posting", "resume_upload"] },
   {
     label: "Pipeline",
-    keys: ["hr_shortlist", "hod_share", "hod_shortlist", "interview_1", "interview_2", "interview_3", "final_decision"],
+    keys: [
+      "hr_shortlist",
+      "hod_share",
+      "hod_shortlist",
+      "telephonic_screening",
+      "interview_1",
+      "interview_2",
+      "interview_3",
+      "final_decision",
+    ],
   },
   { label: "Onboarding", keys: ["onboarding"] },
   { label: "Probation", keys: ["probation_m1", "probation_m2", "probation_m3", "probation_final", "probation_extension"] },
@@ -122,7 +133,8 @@ export const BOARD_COLUMNS: Array<{ stage: string; title: string; hint: string; 
   { stage: "resume_uploaded", title: "Resumes Uploaded", hint: "HR to screen" },
   { stage: "hr_shortlisted", title: "Shortlisted by HR", hint: "send to the HOD" },
   { stage: "shared_with_hod", title: "Shared with HOD", hint: "HOD to decide" },
-  { stage: "hod_shortlisted", title: "Shortlisted by HOD", hint: "book Round 1" },
+  { stage: "hod_shortlisted", title: "Shortlisted by HOD", hint: "screen or book a round" },
+  { stage: "telephonic", title: "Telephonic Screening", hint: "conduct + record" },
   { stage: "interview_1", title: "Interview R1 — HR", hint: "conduct + record" },
   { stage: "interview_2", title: "Interview R2 — HOD", hint: "conduct + record" },
   { stage: "interview_3", title: "Interview R3 — Director", hint: "conduct + record" },

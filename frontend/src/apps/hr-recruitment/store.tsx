@@ -31,7 +31,9 @@ import {
   setOfferStatus as setOfferStatusWrite,
   setOnboardingDate as setOnboardingDateWrite,
   setStepOwner as setStepOwnerWrite,
+  setRequisitionJd as setRequisitionJdWrite,
   submitMrf as submitMrfWrite,
+  uploadJd,
   toggleOnboardingCheck as toggleOnboardingCheckWrite,
   updateMaster as updateMasterWrite,
   updateOnboardingItem as updateOnboardingItemWrite,
@@ -142,6 +144,15 @@ interface HrStoreValue {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
   minCvsToShare: number;
+  /** Who may see the offered salary (departments + named people). Admin-configured. */
+  salaryViewers: { departmentIds: string[]; personIds: string[] };
+  /**
+   * May the effective user see the OFFERED salary? Admins, anyone in an allowed
+   * department, and anyone named. The requisition salary RANGE stays public — this
+   * gates only the finalized/offered CTC.
+   */
+  canViewSalary: boolean;
+  setSalaryViewers: (departmentIds: string[], personIds: string[]) => Promise<void>;
 
   // capabilities (derived from the EFFECTIVE identity, so demo personas re-scope)
   isAdmin: boolean;
@@ -301,11 +312,16 @@ interface HrStoreValue {
     remarks: string,
     docPath?: string | null,
     docName?: string | null,
+    videoUrl?: string | null,
+    /** On `selected`, the stage to advance to (a later interview stage, or `final_decision`). */
+    nextStage?: CandidateStage | null,
   ) => Promise<void>;
 
   // workflow writes
   submitMrf: (input: MrfInput) => Promise<string>;
   resubmitMrf: (requisitionId: string, input: MrfInput) => Promise<void>;
+  /** Upload a JD file to jd/<id>/… and record its path on the requisition. */
+  attachRequisitionJd: (requisitionId: string, file: File) => Promise<void>;
   decideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
   postJob: (requisitionId: string, platformIds: string[], postedOn: string) => Promise<void>;
   holdRequisition: (requisitionId: string, hold: boolean, reason: string) => Promise<void>;
@@ -316,6 +332,7 @@ interface HrStoreValue {
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setProcessCoordinators: (userIds: string[]) => Promise<void>;
   setMinCvsToShare: (n: number) => Promise<void>;
+  // setSalaryViewers is declared with canViewSalary above.
   insertMaster: (table: HrMasterTable, input: MasterInput) => Promise<void>;
   updateMaster: (table: HrMasterTable, id: string, input: MasterInput) => Promise<void>;
   insertOnboardingItem: (input: OnboardingItemInput) => Promise<void>;
@@ -371,6 +388,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const minCvsToShare = data?.config.minCvsToShare ?? 5;
+  const salaryViewers = data?.config.salaryViewers ?? { departmentIds: [], personIds: [] };
 
   // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
   // stamping run off the JWT, so any write whose policy checks `= auth.uid()`
@@ -394,6 +412,14 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
 
     const isAnyStepOwner = isAdmin || stepOwners.some((o) => o.employeeIds.includes(user.id));
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(user.id);
+
+    // Offered-salary visibility. Admins always; otherwise a named person or anyone in an
+    // allowed department. The finalize form shows the input regardless (you must see what
+    // you type) — this only governs read-back on the board, onboarding and reports.
+    const canViewSalary =
+      isAdmin ||
+      salaryViewers.personIds.includes(user.id) ||
+      (!!user.departmentId && salaryViewers.departmentIds.includes(user.departmentId));
 
     /** Who to notify when work lands at a step. */
     const ownerIdsOf = (stepKey: StepKey): string[] =>
@@ -747,6 +773,17 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           text: `${c.name} → ${toStage.replace(/_/g, " ")}`,
           recipients,
         });
+        // Selection kicks off onboarding — nudge its owners to send the offer
+        // confirmation (there is no auto-email; the checklist item is the record).
+        if (toStage === "finalized") {
+          await safeAnnounce({
+            entityType: "candidate",
+            entityId: c.id,
+            type: "send_offer_confirmation",
+            text: `${c.name} selected for ${r?.mrfNo ?? "the vacancy"} — send the offer confirmation`,
+            recipients: ownerIdsOf("onboarding"),
+          });
+        }
         await invalidate();
       },
       shareCandidatesWithHod: async (ids) => {
@@ -771,7 +808,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           entityId: ids[0],
           type: selected ? "hod_shortlisted" : "hod_dropped",
           text: `HOD ${selected ? "shortlisted" : "dropped"} ${ids.length} candidate${ids.length === 1 ? "" : "s"}`,
-          recipients: selected ? ownerIdsOf("interview_1") : [],
+          recipients: selected ? ownerIdsOf("telephonic_screening") : [],
         });
         await invalidate();
       },
@@ -779,12 +816,23 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await scheduleInterviewWrite(id, round, interviewerId, interviewerName, scheduledOn);
         await invalidate();
       },
-      recordInterviewResult: async (c, round, status, remarks, docPath, docName) => {
-        await recordInterviewResultWrite(c.id, round, status, remarks, docPath ?? null, docName ?? null);
+      recordInterviewResult: async (c, round, status, remarks, docPath, docName, videoUrl, nextStage) => {
+        await recordInterviewResultWrite(
+          c.id,
+          round,
+          status,
+          remarks,
+          docPath ?? null,
+          docName ?? null,
+          videoUrl ?? null,
+          nextStage ?? null,
+        );
         const r = reqById.get(c.requisitionId);
-        // 'selected' auto-advances the card, so notify whoever owns the NEXT round.
+        // 'selected' advances the card to the chosen next stage — notify whoever owns
+        // the step that stage is then waiting on. With optional rounds we can no longer
+        // assume it is the very next round.
         const nextStep: StepKey | null =
-          status !== "selected" ? null : round === 1 ? "interview_2" : round === 2 ? "interview_3" : "final_decision";
+          status !== "selected" ? null : nextStage ? STAGE_PENDING_STEP[nextStage] : null;
         const recipients =
           nextStep && r ? (isHodStep(nextStep) ? r.hiringManagerIds : ownerIdsOf(nextStep)) : [];
         await safeAnnounce({
@@ -808,6 +856,11 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
         return id;
+      },
+      attachRequisitionJd: async (id, file) => {
+        const up = await uploadJd(id, file);
+        await setRequisitionJdWrite(id, up.path, up.name);
+        await invalidate();
       },
       resubmitMrf: async (id, input) => {
         await resubmitMrfWrite(id, input);
@@ -898,6 +951,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       processCoordinatorIds,
       stepSla,
       minCvsToShare,
+      salaryViewers,
+      canViewSalary,
 
       isAdmin,
       canConfigure: isAdmin,
@@ -928,6 +983,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       setMinCvsToShare: async (n) => {
         await setConfigWrite("min_cvs_to_share", { value: n });
+        await invalidate();
+      },
+      setSalaryViewers: async (departmentIds, personIds) => {
+        await setConfigWrite("salary_viewers", { department_ids: departmentIds, person_ids: personIds });
         await invalidate();
       },
       insertMaster: async (table, input) => {
@@ -993,7 +1052,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
-    onboardingItems, stepOwners, processCoordinatorIds, stepSla, minCvsToShare, activity, notifications,
+    onboardingItems, stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, notifications,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, realUserId, queryClient,
   ]);

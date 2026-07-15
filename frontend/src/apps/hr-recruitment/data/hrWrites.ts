@@ -256,6 +256,24 @@ export async function submitMrf(input: MrfInput): Promise<string> {
   return data as unknown as string;
 }
 
+/**
+ * Attach (or replace) the JD file on a requisition. Separate from submit because a
+ * BRAND-NEW MRF has no id at upload time — the caller creates it, uploads to
+ * jd/<id>/…, then records the path here.
+ */
+export async function setRequisitionJd(
+  requisitionId: string,
+  path: string | null,
+  name: string | null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_requisition_jd", {
+    p_req: requisitionId,
+    p_path: path ?? "",
+    p_name: name ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** Edit + resubmit a sent-back MRF. The approval clock restarts server-side. */
 export async function resubmitMrf(requisitionId: string, input: MrfInput): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_resubmit_mrf", {
@@ -373,6 +391,8 @@ export interface MovePayload {
   offeredCtc?: number | null;
   disqualificationReasonId?: string | null;
   disqualificationNote?: string | null;
+  /** Free-text note captured when moving into Awaiting Decision / finalizing. */
+  decisionRemarks?: string | null;
 }
 
 export async function moveCandidate(id: string, toStage: string, payload: MovePayload = {}): Promise<void> {
@@ -384,6 +404,7 @@ export async function moveCandidate(id: string, toStage: string, payload: MovePa
   if (payload.disqualificationReasonId !== undefined)
     p.disqualification_reason_id = payload.disqualificationReasonId ?? "";
   if (payload.disqualificationNote !== undefined) p.disqualification_note = payload.disqualificationNote ?? "";
+  if (payload.decisionRemarks !== undefined) p.decision_remarks = payload.decisionRemarks ?? "";
 
   const { error } = await supabase.rpc("fms_hr_move_candidate", {
     p_id: id,
@@ -434,8 +455,10 @@ export async function scheduleInterview(
 }
 
 /**
- * Record the RESULT of a round — this is what closes it.
- * `selected` auto-advances the card; `rejected` sends it to Disqualified.
+ * Record the RESULT of a round (0 = telephonic, 1–3 = interviews) — this is what
+ * closes it. `selected` advances the card to `nextStage` (any later interview stage
+ * still to come, or `final_decision`); left null the server picks the immediate next.
+ * `rejected` sends the card to Disqualified.
  */
 export async function recordInterviewResult(
   id: string,
@@ -444,6 +467,8 @@ export async function recordInterviewResult(
   remarks: string,
   docPath: string | null = null,
   docName: string | null = null,
+  videoUrl: string | null = null,
+  nextStage: string | null = null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_record_interview_result", {
     p_id: id,
@@ -452,6 +477,8 @@ export async function recordInterviewResult(
     p_remarks: remarks,
     p_doc_path: docPath ?? undefined,
     p_doc_name: docName ?? undefined,
+    p_video_url: videoUrl ?? undefined,
+    p_next_stage: nextStage ?? undefined,
   });
   if (error) throw new Error(error.message);
 }

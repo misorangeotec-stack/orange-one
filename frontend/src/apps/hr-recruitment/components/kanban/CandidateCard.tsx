@@ -34,8 +34,8 @@ export default function CandidateCard({
   selected: boolean;
   onToggleSelect: (id: string) => void;
   onMoveTo: (c: Candidate, to: CandidateStage) => void;
-  onRecordResult: (c: Candidate, round: 1 | 2 | 3) => void;
-  onSchedule: (c: Candidate, round: 1 | 2 | 3) => void;
+  onRecordResult: (c: Candidate, round: 0 | 1 | 2 | 3) => void;
+  onSchedule: (c: Candidate, round: 0 | 1 | 2 | 3) => void;
   onOpen: (c: Candidate) => void;
   onDragStart: (e: React.DragEvent, id: string, from: CandidateStage) => void;
   onDragEnd: () => void;
@@ -60,9 +60,9 @@ export default function CandidateCard({
   const days = s.daysInStage(c);
 
   const round = roundOf(c.stage);
-  const iv = round ? s.interviewRound(c.id, round) : undefined;
+  const iv = round !== null ? s.interviewRound(c.id, round) : undefined;
   // A round the candidate was auto-advanced into has no interviewer yet.
-  const needsScheduling = !!round && !iv?.interviewerId && !iv?.interviewerName;
+  const needsScheduling = round !== null && !iv?.interviewerId && !iv?.interviewerName;
   const conducted = !!iv?.heldAt;
 
   const targets = legalTargets(c.stage);
@@ -129,7 +129,7 @@ export default function CandidateCard({
       </div>
 
       {/* Interview state: booked vs conducted are different facts. */}
-      {round && !conducted && (
+      {round !== null && !conducted && (
         <div className="mt-2 rounded-lg bg-page px-2 py-1.5">
           {needsScheduling ? (
             <span className="text-[11.5px] font-medium text-yellow">To be scheduled</span>
@@ -169,7 +169,7 @@ export default function CandidateCard({
         {due && <DueCell dueIso={due} />}
       </div>
 
-      {c.stage === "finalized" && c.offeredCtc !== null && (
+      {s.canViewSalary && c.stage === "finalized" && c.offeredCtc !== null && (
         <div className="mt-1.5 text-[11.5px] font-medium text-ryg-green">
           ₹{c.offeredCtc.toLocaleString("en-IN")}/mo
         </div>

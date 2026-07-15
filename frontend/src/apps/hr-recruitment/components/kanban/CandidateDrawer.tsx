@@ -116,7 +116,9 @@ export default function CandidateDrawer({
               {rounds.map((iv) => (
                 <li key={iv.id} className="rounded-lg border border-line px-3 py-2 text-[13px]">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-semibold text-navy">Round {iv.round}</span>
+                    <span className="font-semibold text-navy">
+                      {iv.round === 0 ? "Telephonic screen" : `Round ${iv.round}`}
+                    </span>
                     <span
                       className={
                         iv.status === "selected"
@@ -138,9 +140,35 @@ export default function CandidateDrawer({
                     {iv.scheduledOn && <span className="text-grey"> · {formatDateDMY(iv.scheduledOn)}</span>}
                   </div>
                   {iv.remarks && <div className="mt-1 text-navy">{iv.remarks}</div>}
+                  {iv.videoUrl && (
+                    <a
+                      href={iv.videoUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 block text-[12px] font-semibold text-orange hover:underline"
+                    >
+                      Video link →
+                    </a>
+                  )}
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {(c.decisionRemarks || c.disqualificationReasonId || c.disqualificationNote) && (
+          <div>
+            <SectionHeading>Decision</SectionHeading>
+            <div className="mt-2 space-y-1.5">
+              {c.disqualificationReasonId && (
+                <Field
+                  label="Disqualification reason"
+                  value={s.disqualificationReasons.find((r) => r.id === c.disqualificationReasonId)?.name ?? null}
+                />
+              )}
+              {c.disqualificationNote && <Field label="Disqualification note" value={c.disqualificationNote} />}
+              {c.decisionRemarks && <Field label="Decision remark" value={c.decisionRemarks} />}
+            </div>
           </div>
         )}
 
