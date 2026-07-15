@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useNavigate } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
@@ -9,6 +8,7 @@ import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import { isRecurringTask } from "../mock/selectors";
+import { taskDetailPath } from "../lib/taskLink";
 import { RECURRENCE_LABEL, type Task } from "../types";
 import StatusChip from "./StatusChip";
 
@@ -99,7 +99,6 @@ export default function TaskTable({ tasks, sort, onSort }: {
 }) {
   const { profileById, departmentById, getRecurring, canStatusActions, deleteTask } = useTaskStore();
   const { user, role } = useSession();
-  const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -142,7 +141,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
             return (
               <tr
                 key={task.id}
-                onClick={() => navigate(`/task-management/tasks/${task.id}`)}
+                onClick={() => window.open(taskDetailPath(task.id), "_blank", "noopener,noreferrer")}
                 className={cn(
                   "group hover:bg-page transition cursor-pointer align-middle",
                   task.notApplicable && "opacity-55" // N/A ("when") instances read as parked

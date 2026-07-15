@@ -26,6 +26,11 @@ export const COLOUR_STATUSES: Record<RygColour, TaskStatus[]> = {
   red: ["pending", "in_progress", "shifted"],
 };
 
+/** Route to a single task's detail page. */
+export function taskDetailPath(id: string): string {
+  return `/task-management/tasks/${id}`;
+}
+
 /** The task-list route a given role lands on (mirrors TaskManagementApp's RequireRole gates). */
 export function taskListRouteForRole(role: AppRole): string {
   if (role === "admin") return "/task-management/all";

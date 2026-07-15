@@ -8,7 +8,7 @@ import { useTaskStore } from "../mock/store";
 import { WEEK_START } from "../mock/data";
 import { computeStats, actualRygFor, aggregateRyg } from "../mock/selectors";
 import type { ActivityType, AppRole, StatusFilter, Task } from "../types";
-import { taskListLink } from "../lib/taskLink";
+import { taskListLink, taskDetailPath } from "../lib/taskLink";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
@@ -289,7 +289,7 @@ function TaskRow({ task }: { task: Task }) {
   const dept = departmentById(task.departmentId);
   return (
     <li>
-      <Link to={`/task-management/tasks/${task.id}`} className="flex items-center gap-3 py-3 group">
+      <Link to={taskDetailPath(task.id)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 py-3 group">
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="text-[13.5px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
