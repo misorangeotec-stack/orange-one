@@ -14,10 +14,21 @@ import { matchesSearch } from "@/shared/lib/search";
 export interface MasterFieldDef {
   key: string;
   label: string;
-  type: "text" | "textarea" | "select";
+  type: "text" | "textarea" | "select" | "custom";
   required?: boolean;
   options?: ComboOption[];
   placeholder?: string;
+  hint?: string;
+  /**
+   * Escape hatch for a field the three built-in inputs cannot express — HR Exit's
+   * clearance checklist needs a people MultiSelect for `owner_ids`.
+   *
+   * The form's value bag stays `Record<string, string>`, so a custom control must
+   * serialise itself into one string (a MultiSelect: comma-joined ids). Keeping the
+   * bag flat is what lets `toValues` / `emptyValues` / the required-check stay dumb.
+   * Only read when `type: "custom"`.
+   */
+  render?: (value: string, onChange: (next: string) => void) => ReactNode;
 }
 
 export interface MasterColumn<T> {
@@ -232,7 +243,9 @@ export default function MasterCrud<T extends { id: string; name: string; active:
         <div className="space-y-3.5">
           {fields.map((f) => (
             <FieldLabel key={f.key} label={f.label} required={f.required}>
-              {f.type === "select" ? (
+              {f.type === "custom" ? (
+                f.render?.(values[f.key] ?? "", (next) => setField(f.key, next))
+              ) : f.type === "select" ? (
                 <Combobox
                   value={values[f.key] ?? ""}
                   onChange={(v) => setField(f.key, v)}
@@ -254,6 +267,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                   placeholder={f.placeholder}
                 />
               )}
+              {f.hint && <span className="mt-1 block text-[11px] leading-snug text-grey">{f.hint}</span>}
             </FieldLabel>
           ))}
 

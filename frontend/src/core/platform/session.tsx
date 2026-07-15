@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { AppRole, Profile } from "./types";
 import { useAuth } from "./auth";
 import { useDirectory } from "./store";
+import { isUniversalApp } from "@/apps/universal";
 
 /**
  * Portal session (Stage B). The current user is the signed-in Supabase user,
@@ -41,7 +42,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       isHod: role === "hod" || role === "sub_hod",
       isEmployee: role === "employee",
       moduleAccess: user?.moduleAccess ?? [],
-      hasModule: (appId: string) => isAdmin || (user?.moduleAccess.includes(appId) ?? false),
+      // A universal app needs no grant — see apps/universal.ts. Everything else is
+      // opt-in per user, and admins bypass.
+      hasModule: (appId: string) =>
+        isAdmin || isUniversalApp(appId) || (user?.moduleAccess.includes(appId) ?? false),
     };
   }, [authId, profiles]);
 

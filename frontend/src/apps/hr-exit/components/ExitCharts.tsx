@@ -1,0 +1,191 @@
+import type { ReactNode } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import Card from "@/shared/components/ui/Card";
+
+/**
+ * The HR Exit dashboard's charts. Same Recharts conventions as HR Recruitment's
+ * (`apps/hr-recruitment/components/HrCharts.tsx`) — same palette, same axis styling,
+ * same tooltip — so the FMS dashboards read as one product.
+ *
+ * Every chart takes ALREADY-COMPUTED numbers from `lib/analytics.ts`. None of them does
+ * arithmetic: a chart that computes its own totals is a second source of truth, and the
+ * tile beside it will eventually disagree with it.
+ */
+
+const ORANGE = "#FF6A1F";
+const NAVY = "#0B1B40";
+const RED = "#E5484D";
+const GREY = "#94A3B8";
+const PALETTE = ["#FF6A1F", "#2563EB", "#27AE60", "#7C5CFC", "#F43F8E", "#F8B62B", "#14B8A6", "#94A3B8"];
+
+const AXIS = { fontSize: 11, fill: "#64748B" };
+const gridStroke = "#EEF2F8";
+const tooltipStyle = {
+  borderRadius: 10,
+  border: "1px solid #EEF2F8",
+  fontSize: 12,
+  boxShadow: "0 6px 20px rgba(11,27,64,0.08)",
+};
+
+export function ChartCard({
+  title,
+  subtitle,
+  action,
+  children,
+  className,
+}: {
+  title: string;
+  subtitle?: string;
+  /** Top-right slot — a link or an Excel button. */
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <Card className={`p-5 ${className ?? ""}`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[14px] font-bold text-navy">{title}</h2>
+          {subtitle && <p className="text-[11.5px] text-grey mt-0.5">{subtitle}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+/** A panel with no data yet, said deliberately. Day one is this state, all of it. */
+export function NoData({ message }: { message: string }) {
+  return (
+    <div className="flex h-[150px] items-center justify-center rounded-xl border border-dashed border-line bg-page/40 px-4 text-center">
+      <p className="text-[12.5px] text-grey-2 max-w-sm">{message}</p>
+    </div>
+  );
+}
+
+export interface Point {
+  name: string;
+  value: number;
+  color?: string;
+}
+
+/**
+ * Departures per month.
+ *
+ * Vertical bars, because a month series is a time series and the reader's eye reads time
+ * left-to-right. EVERY month in the window is present, empty ones included — the chart
+ * would otherwise silently close the gap where nobody left and turn a quiet quarter into
+ * a trend.
+ */
+export function MonthBarChart({ data }: { data: Array<{ name: string; value: number }> }) {
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+        <XAxis
+          dataKey="name"
+          tick={AXIS}
+          tickLine={false}
+          axisLine={{ stroke: gridStroke }}
+          interval={0}
+          angle={data.length > 6 ? -35 : 0}
+          textAnchor={data.length > 6 ? "end" : "middle"}
+          height={data.length > 6 ? 60 : 30}
+        />
+        <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} width={34} />
+        <Tooltip
+          contentStyle={tooltipStyle}
+          cursor={{ fill: "rgba(255,106,31,0.06)" }}
+          formatter={(v: number) => [v, "people left"]}
+        />
+        <Bar dataKey="value" fill={ORANGE} radius={[4, 4, 0, 0]} maxBarSize={34} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Generic horizontal bars — departures by department, by reason. */
+export function HBarChart({
+  data,
+  unit,
+  color = NAVY,
+}: {
+  data: Point[];
+  /** Tooltip unit, e.g. "people". */
+  unit: string;
+  color?: string;
+}) {
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(170, data.length * 36 + 24)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 24, left: 8, bottom: 4 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} horizontal={false} />
+        <XAxis type="number" allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
+        <YAxis type="category" dataKey="name" tick={AXIS} tickLine={false} axisLine={false} width={140} />
+        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(255,106,31,0.06)" }} formatter={(v: number) => [v, unit]} />
+        <Bar dataKey="value" radius={[0, 5, 5, 0]} maxBarSize={22}>
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.color || color || PALETTE[i % PALETTE.length]} />
+          ))}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/**
+ * Where the exits are STUCK — overdue vs on-time, per stage of the workflow.
+ *
+ * Red is the only thing anyone opened this for. `onTime` is the rest of the open work at
+ * that stage, whatever its date: a stage holding ten items due next week is not clear,
+ * and a chart that showed it as clear would be the same lie the ✓ on the step pipeline
+ * used to tell.
+ */
+export function StuckByStageChart({ data }: { data: Array<{ name: string; overdue: number; onTime: number }> }) {
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+        <XAxis dataKey="name" tick={AXIS} tickLine={false} axisLine={{ stroke: gridStroke }} interval={0} height={30} />
+        <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} width={34} />
+        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "rgba(255,106,31,0.06)" }} />
+        <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+        <Bar dataKey="overdue" name="Overdue" stackId="a" fill={RED} maxBarSize={44} />
+        <Bar dataKey="onTime" name="Open, not yet late" stackId="a" fill={GREY} radius={[4, 4, 0, 0]} maxBarSize={44} />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+/** Departures by reason — the question `fms_exit_reasons` exists to answer. */
+export function DonutChart({ data }: { data: Point[] }) {
+  const total = data.reduce((s, x) => s + x.value, 0);
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <PieChart>
+        <Pie data={data} dataKey="value" nameKey="name" innerRadius={54} outerRadius={82} paddingAngle={2} stroke="none">
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.color || PALETTE[i % PALETTE.length]} />
+          ))}
+        </Pie>
+        <Tooltip
+          contentStyle={tooltipStyle}
+          formatter={(v: number, n: string) => [`${v} (${total ? Math.round((v / total) * 100) : 0}%)`, n]}
+        />
+        <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}

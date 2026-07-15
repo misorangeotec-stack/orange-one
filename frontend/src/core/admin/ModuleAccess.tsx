@@ -34,6 +34,7 @@ export default function ModuleAccess() {
                 <th key={a.id} className="text-center text-[12px] font-semibold text-navy px-4 py-3 whitespace-nowrap">
                   {a.name}
                   {a.status !== "live" && <span className="block text-[10px] font-normal text-grey-2">coming soon</span>}
+                  {a.universal && <span className="block text-[10px] font-normal text-grey-2">everyone</span>}
                 </th>
               ))}
             </tr>
@@ -53,8 +54,11 @@ export default function ModuleAccess() {
                     </div>
                   </td>
                   {grantableModules.map((a) => {
-                    const on = isAdmin || u.moduleAccess.includes(a.id);
-                    const locked = isAdmin || !canManageModules;
+                    // A universal app is granted implicitly (apps/universal.ts), so its cell is
+                    // on and locked for everyone — an empty box the user could still open would
+                    // be a lie about who has access.
+                    const on = isAdmin || a.universal || u.moduleAccess.includes(a.id);
+                    const locked = isAdmin || !!a.universal || !canManageModules;
                     return (
                       <td key={a.id} className="text-center px-4 py-3">
                         <button
@@ -62,7 +66,17 @@ export default function ModuleAccess() {
                           disabled={locked}
                           onClick={() => toggle(u.id, u.moduleAccess, a.id)}
                           aria-pressed={on}
-                          title={isAdmin ? "Admins always have access" : !canManageModules ? "Read-only preview" : on ? "Granted — click to revoke" : "Not granted — click to grant"}
+                          title={
+                            isAdmin
+                              ? "Admins always have access"
+                              : a.universal
+                                ? "Everyone has access to this app"
+                                : !canManageModules
+                                  ? "Read-only preview"
+                                  : on
+                                    ? "Granted — click to revoke"
+                                    : "Not granted — click to grant"
+                          }
                           className={cn(
                             "w-5 h-5 rounded-[6px] border inline-flex items-center justify-center transition",
                             on ? "bg-orange border-orange text-white" : "border-grey-2 hover:border-orange",

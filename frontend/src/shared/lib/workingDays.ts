@@ -24,6 +24,31 @@ export function addWorkingDays(from: Date, n: number): Date {
 }
 
 /**
+ * Add `n` working days, or SUBTRACT them when `n` is negative.
+ *
+ * `addWorkingDays` clamps `n` to `max(0, n)`, so it CANNOT express a deadline that
+ * falls *before* its anchor — a negative offset silently returns the anchor day
+ * itself. HR Exit needs exactly that: "return your laptop one working day BEFORE
+ * the last working day". Hence this signed variant.
+ *
+ * Kept separate rather than relaxing `addWorkingDays`, because Purchase and HR
+ * Recruitment rely on that clamp to absorb a bad SLA config without producing a
+ * date in the past.
+ */
+export function addWorkingDaysSigned(from: Date, n: number): Date {
+  if (n >= 0) return addWorkingDays(from, n);
+  const d = new Date(from);
+  for (let i = 0; i < -n; i++) {
+    d.setDate(d.getDate() - 1);
+    if (isSunday(d)) d.setDate(d.getDate() - 1);
+  }
+  // Land on a working day. Walking BACKWARDS, so a Sunday rolls back to Saturday —
+  // rolling it forward would hand back the very day we were told to precede.
+  if (isSunday(d)) d.setDate(d.getDate() - 1);
+  return d;
+}
+
+/**
  * Add `n` calendar months, clamping to the end of a short month (31 Jan + 1 month
  * → 28 Feb, not 3 Mar). Used by HR probation reviews, which are due a month after
  * joining, not N working days after it.

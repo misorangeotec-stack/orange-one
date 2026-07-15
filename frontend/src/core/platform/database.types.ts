@@ -307,6 +307,1513 @@ export type Database = {
           },
         ]
       }
+      fms_exit_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
+      fms_exit_asset_types: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_assets: {
+        Row: {
+          asset_type_id: string | null
+          case_id: string
+          condition: string | null
+          created_at: string
+          file_name: string | null
+          file_path: string | null
+          id: string
+          name: string
+          recovery_amount: number | null
+          remarks: string | null
+          returned_on: string | null
+          sort_order: number
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          asset_type_id?: string | null
+          case_id: string
+          condition?: string | null
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          name: string
+          recovery_amount?: number | null
+          remarks?: string | null
+          returned_on?: string | null
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          asset_type_id?: string | null
+          case_id?: string
+          condition?: string | null
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          name?: string
+          recovery_amount?: number | null
+          remarks?: string | null
+          returned_on?: string | null
+          sort_order?: number
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_assets_asset_type_id_fkey"
+            columns: ["asset_type_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_asset_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_exit_assets_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_cases: {
+        Row: {
+          approval_remarks: string | null
+          approved_at: string | null
+          approver_id: string | null
+          archived_at: string | null
+          assets_hod_remarks: string | null
+          assets_hod_signed_at: string | null
+          assets_hod_signed_by: string | null
+          assets_hr_remarks: string | null
+          assets_hr_signed_at: string | null
+          assets_hr_signed_by: string | null
+          assets_returned_at: string | null
+          case_type: string
+          clearance_completed_at: string | null
+          clearance_remarks: string | null
+          created_at: string
+          current_step: string
+          date_of_joining: string | null
+          department_id: string
+          designation: string | null
+          discussed_at: string | null
+          documents_issued_at: string | null
+          employee_code: string
+          employee_name: string
+          employee_user_id: string | null
+          exit_no: string
+          fnf_approved_at: string | null
+          fnf_generated_at: string | null
+          fnf_paid_at: string | null
+          handover_completed_at: string | null
+          hold_at: string | null
+          hold_reason: string | null
+          hr_remarks: string | null
+          hr_verified_at: string | null
+          hr_verifier_id: string | null
+          id: string
+          interview_done_at: string | null
+          leave_verified_at: string | null
+          lwd: string | null
+          lwd_confirmed_at: string | null
+          manager_recommendation: string | null
+          manager_remarks: string | null
+          manager_reviewed_at: string | null
+          manager_reviewer_id: string | null
+          notice_period_days: number | null
+          notice_waived: boolean
+          payroll_done_at: string | null
+          policy_applicable: boolean
+          policy_na_reason: string | null
+          proposed_lwd: string | null
+          raised_by: string | null
+          raised_on_behalf: boolean
+          reason_id: string | null
+          reason_note: string | null
+          reject_reason: string | null
+          rejected_at: string | null
+          reporting_manager_ids: string[]
+          reporting_manager_note: string | null
+          resignation_letter_name: string | null
+          resignation_letter_path: string | null
+          status: string
+          submitted_at: string
+          system_status_changed: boolean
+          updated_at: string
+          withdraw_reason: string | null
+          withdrawn_at: string | null
+        }
+        Insert: {
+          approval_remarks?: string | null
+          approved_at?: string | null
+          approver_id?: string | null
+          archived_at?: string | null
+          assets_hod_remarks?: string | null
+          assets_hod_signed_at?: string | null
+          assets_hod_signed_by?: string | null
+          assets_hr_remarks?: string | null
+          assets_hr_signed_at?: string | null
+          assets_hr_signed_by?: string | null
+          assets_returned_at?: string | null
+          case_type?: string
+          clearance_completed_at?: string | null
+          clearance_remarks?: string | null
+          created_at?: string
+          current_step?: string
+          date_of_joining?: string | null
+          department_id: string
+          designation?: string | null
+          discussed_at?: string | null
+          documents_issued_at?: string | null
+          employee_code: string
+          employee_name: string
+          employee_user_id?: string | null
+          exit_no: string
+          fnf_approved_at?: string | null
+          fnf_generated_at?: string | null
+          fnf_paid_at?: string | null
+          handover_completed_at?: string | null
+          hold_at?: string | null
+          hold_reason?: string | null
+          hr_remarks?: string | null
+          hr_verified_at?: string | null
+          hr_verifier_id?: string | null
+          id?: string
+          interview_done_at?: string | null
+          leave_verified_at?: string | null
+          lwd?: string | null
+          lwd_confirmed_at?: string | null
+          manager_recommendation?: string | null
+          manager_remarks?: string | null
+          manager_reviewed_at?: string | null
+          manager_reviewer_id?: string | null
+          notice_period_days?: number | null
+          notice_waived?: boolean
+          payroll_done_at?: string | null
+          policy_applicable?: boolean
+          policy_na_reason?: string | null
+          proposed_lwd?: string | null
+          raised_by?: string | null
+          raised_on_behalf?: boolean
+          reason_id?: string | null
+          reason_note?: string | null
+          reject_reason?: string | null
+          rejected_at?: string | null
+          reporting_manager_ids?: string[]
+          reporting_manager_note?: string | null
+          resignation_letter_name?: string | null
+          resignation_letter_path?: string | null
+          status?: string
+          submitted_at?: string
+          system_status_changed?: boolean
+          updated_at?: string
+          withdraw_reason?: string | null
+          withdrawn_at?: string | null
+        }
+        Update: {
+          approval_remarks?: string | null
+          approved_at?: string | null
+          approver_id?: string | null
+          archived_at?: string | null
+          assets_hod_remarks?: string | null
+          assets_hod_signed_at?: string | null
+          assets_hod_signed_by?: string | null
+          assets_hr_remarks?: string | null
+          assets_hr_signed_at?: string | null
+          assets_hr_signed_by?: string | null
+          assets_returned_at?: string | null
+          case_type?: string
+          clearance_completed_at?: string | null
+          clearance_remarks?: string | null
+          created_at?: string
+          current_step?: string
+          date_of_joining?: string | null
+          department_id?: string
+          designation?: string | null
+          discussed_at?: string | null
+          documents_issued_at?: string | null
+          employee_code?: string
+          employee_name?: string
+          employee_user_id?: string | null
+          exit_no?: string
+          fnf_approved_at?: string | null
+          fnf_generated_at?: string | null
+          fnf_paid_at?: string | null
+          handover_completed_at?: string | null
+          hold_at?: string | null
+          hold_reason?: string | null
+          hr_remarks?: string | null
+          hr_verified_at?: string | null
+          hr_verifier_id?: string | null
+          id?: string
+          interview_done_at?: string | null
+          leave_verified_at?: string | null
+          lwd?: string | null
+          lwd_confirmed_at?: string | null
+          manager_recommendation?: string | null
+          manager_remarks?: string | null
+          manager_reviewed_at?: string | null
+          manager_reviewer_id?: string | null
+          notice_period_days?: number | null
+          notice_waived?: boolean
+          payroll_done_at?: string | null
+          policy_applicable?: boolean
+          policy_na_reason?: string | null
+          proposed_lwd?: string | null
+          raised_by?: string | null
+          raised_on_behalf?: boolean
+          reason_id?: string | null
+          reason_note?: string | null
+          reject_reason?: string | null
+          rejected_at?: string | null
+          reporting_manager_ids?: string[]
+          reporting_manager_note?: string | null
+          resignation_letter_name?: string | null
+          resignation_letter_path?: string | null
+          status?: string
+          submitted_at?: string
+          system_status_changed?: boolean
+          updated_at?: string
+          withdraw_reason?: string | null
+          withdrawn_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_cases_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_exit_cases_reason_id_fkey"
+            columns: ["reason_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_reasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_clearance_checks: {
+        Row: {
+          allows_link: boolean
+          case_id: string
+          created_at: string
+          department_label: string
+          description: string | null
+          done: boolean
+          done_at: string | null
+          done_by: string | null
+          due_days: number
+          file_name: string | null
+          file_path: string | null
+          id: string
+          item_id: string | null
+          item_key: string
+          link_url: string | null
+          na_reason: string | null
+          name: string
+          not_applicable: boolean
+          owner_ids: string[]
+          owner_is_reporting_manager: boolean
+          pending_reason: string | null
+          requires_file: boolean
+          satisfied_by_step: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          allows_link?: boolean
+          case_id: string
+          created_at?: string
+          department_label: string
+          description?: string | null
+          done?: boolean
+          done_at?: string | null
+          done_by?: string | null
+          due_days?: number
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          item_id?: string | null
+          item_key: string
+          link_url?: string | null
+          na_reason?: string | null
+          name: string
+          not_applicable?: boolean
+          owner_ids?: string[]
+          owner_is_reporting_manager?: boolean
+          pending_reason?: string | null
+          requires_file?: boolean
+          satisfied_by_step?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          allows_link?: boolean
+          case_id?: string
+          created_at?: string
+          department_label?: string
+          description?: string | null
+          done?: boolean
+          done_at?: string | null
+          done_by?: string | null
+          due_days?: number
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          item_id?: string | null
+          item_key?: string
+          link_url?: string | null
+          na_reason?: string | null
+          name?: string
+          not_applicable?: boolean
+          owner_ids?: string[]
+          owner_is_reporting_manager?: boolean
+          pending_reason?: string | null
+          requires_file?: boolean
+          satisfied_by_step?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_clearance_checks_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_exit_clearance_checks_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_clearance_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_clearance_items: {
+        Row: {
+          active: boolean
+          allows_link: boolean
+          created_at: string
+          department_label: string
+          description: string | null
+          due_days: number
+          id: string
+          key: string
+          name: string
+          owner_ids: string[]
+          owner_is_reporting_manager: boolean
+          requires_file: boolean
+          satisfied_by_step: string | null
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          allows_link?: boolean
+          created_at?: string
+          department_label: string
+          description?: string | null
+          due_days?: number
+          id?: string
+          key: string
+          name: string
+          owner_ids?: string[]
+          owner_is_reporting_manager?: boolean
+          requires_file?: boolean
+          satisfied_by_step?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          allows_link?: boolean
+          created_at?: string
+          department_label?: string
+          description?: string | null
+          due_days?: number
+          id?: string
+          key?: string
+          name?: string
+          owner_ids?: string[]
+          owner_is_reporting_manager?: boolean
+          requires_file?: boolean
+          satisfied_by_step?: string | null
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_step_owners: {
+        Row: {
+          created_at: string
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_config: {
+        Row: { key: string; updated_at: string; value: Json }
+        Insert: { key: string; updated_at?: string; value?: Json }
+        Update: { key?: string; updated_at?: string; value?: Json }
+        Relationships: []
+      }
+      fms_supplies_counters: {
+        Row: { last_value: number; scope: string; updated_at: string }
+        Insert: { last_value?: number; scope: string; updated_at?: string }
+        Update: { last_value?: number; scope?: string; updated_at?: string }
+        Relationships: []
+      }
+      fms_supplies_companies: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_departments: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          hod_user_id: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          hod_user_id?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          hod_user_id?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          requires_approval: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          requires_approval?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          requires_approval?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_items: {
+        Row: {
+          active: boolean
+          category_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_service_types: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_master_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          master_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          master_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          master_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_master_requests: {
+        Row: {
+          created_at: string
+          id: string
+          master_type: string
+          proposed_payload: Json
+          requested_by: string | null
+          resolved_master_id: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          master_type: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          master_type?: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_requests: {
+        Row: {
+          actual_delivery_date: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          category_id: string | null
+          company_id: string
+          created_at: string
+          current_step: string
+          delivered_at: string | null
+          department_id: string
+          first_approved_at: string | null
+          first_approver_id: string | null
+          first_remarks: string | null
+          handed_over_at: string | null
+          handover_by: string | null
+          handover_remarks: string | null
+          hold_at: string | null
+          hold_reason: string | null
+          id: string
+          item_name: string | null
+          location: string
+          quantity: string
+          raised_by: string | null
+          raised_on_behalf: boolean
+          reason: string | null
+          reject_reason: string | null
+          reject_stage: string | null
+          rejected_at: string | null
+          req_no: string
+          request_type: string
+          requested_for_name: string
+          requested_for_user_id: string | null
+          requires_approval: boolean
+          second_approved_at: string | null
+          second_approver_id: string | null
+          second_remarks: string | null
+          service_type_id: string | null
+          status: string
+          submitted_at: string
+          tentative_delivery_date: string | null
+          updated_at: string
+        }
+        Insert: { [key: string]: Json | string | number | boolean | null }
+        Update: { [key: string]: Json | string | number | boolean | null }
+        Relationships: []
+      }
+      fms_supplies_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: { [key: string]: Json | string | null }
+        Update: { [key: string]: Json | string | null }
+        Relationships: []
+      }
+      fms_supplies_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fms_exit_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      fms_exit_counters: {
+        Row: {
+          last_value: number
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          last_value?: number
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          last_value?: number
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_document_types: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          requires_file: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_documents: {
+        Row: {
+          ack_signed_name: string | null
+          ack_signed_path: string | null
+          case_id: string
+          created_at: string
+          document_type_id: string | null
+          file_name: string | null
+          file_path: string | null
+          handed_over_on: string | null
+          id: string
+          issued_on: string | null
+          name: string
+          remarks: string | null
+          requires_file: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          ack_signed_name?: string | null
+          ack_signed_path?: string | null
+          case_id: string
+          created_at?: string
+          document_type_id?: string | null
+          file_name?: string | null
+          file_path?: string | null
+          handed_over_on?: string | null
+          id?: string
+          issued_on?: string | null
+          name: string
+          remarks?: string | null
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          ack_signed_name?: string | null
+          ack_signed_path?: string | null
+          case_id?: string
+          created_at?: string
+          document_type_id?: string | null
+          file_name?: string | null
+          file_path?: string | null
+          handed_over_on?: string | null
+          id?: string
+          issued_on?: string | null
+          name?: string
+          remarks?: string | null
+          requires_file?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_documents_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_exit_documents_document_type_id_fkey"
+            columns: ["document_type_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_document_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_handover: {
+        Row: {
+          case_id: string
+          created_at: string
+          file_name: string | null
+          file_path: string | null
+          handover_to_name: string | null
+          handover_to_user_id: string | null
+          hr_confirmed_at: string | null
+          hr_confirmed_by: string | null
+          hr_remarks: string | null
+          kt_done: boolean
+          kt_remarks: string | null
+          manager_confirmed_at: string | null
+          manager_confirmed_by: string | null
+          manager_remarks: string | null
+          notes: string | null
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          handover_to_name?: string | null
+          handover_to_user_id?: string | null
+          hr_confirmed_at?: string | null
+          hr_confirmed_by?: string | null
+          hr_remarks?: string | null
+          kt_done?: boolean
+          kt_remarks?: string | null
+          manager_confirmed_at?: string | null
+          manager_confirmed_by?: string | null
+          manager_remarks?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          created_at?: string
+          file_name?: string | null
+          file_path?: string | null
+          handover_to_name?: string | null
+          handover_to_user_id?: string | null
+          hr_confirmed_at?: string | null
+          hr_confirmed_by?: string | null
+          hr_remarks?: string | null
+          kt_done?: boolean
+          kt_remarks?: string | null
+          manager_confirmed_at?: string | null
+          manager_confirmed_by?: string | null
+          manager_remarks?: string | null
+          notes?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_handover_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: true
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_interviews: {
+        Row: {
+          case_id: string
+          conducted_by: string | null
+          conducted_on: string | null
+          created_at: string
+          feedback: Json
+          file_name: string | null
+          file_path: string | null
+          portal_feedback_done: boolean
+          primary_reason_id: string | null
+          remarks: string | null
+          updated_at: string
+          would_rehire: boolean | null
+        }
+        Insert: {
+          case_id: string
+          conducted_by?: string | null
+          conducted_on?: string | null
+          created_at?: string
+          feedback?: Json
+          file_name?: string | null
+          file_path?: string | null
+          portal_feedback_done?: boolean
+          primary_reason_id?: string | null
+          remarks?: string | null
+          updated_at?: string
+          would_rehire?: boolean | null
+        }
+        Update: {
+          case_id?: string
+          conducted_by?: string | null
+          conducted_on?: string | null
+          created_at?: string
+          feedback?: Json
+          file_name?: string | null
+          file_path?: string | null
+          portal_feedback_done?: boolean
+          primary_reason_id?: string | null
+          remarks?: string | null
+          updated_at?: string
+          would_rehire?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_interviews_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: true
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_exit_interviews_primary_reason_id_fkey"
+            columns: ["primary_reason_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_reasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_master_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          master_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          master_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          master_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_master_requests: {
+        Row: {
+          created_at: string
+          id: string
+          master_type: string
+          proposed_payload: Json
+          requested_by: string | null
+          resolved_master_id: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          master_type: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          master_type?: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fms_exit_payroll_heads: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_payroll_lines: {
+        Row: {
+          amount: number
+          case_id: string
+          created_at: string
+          head_id: string | null
+          head_name: string
+          id: string
+          kind: string
+          remarks: string | null
+          sort_order: number
+        }
+        Insert: {
+          amount?: number
+          case_id: string
+          created_at?: string
+          head_id?: string | null
+          head_name: string
+          id?: string
+          kind: string
+          remarks?: string | null
+          sort_order?: number
+        }
+        Update: {
+          amount?: number
+          case_id?: string
+          created_at?: string
+          head_id?: string | null
+          head_name?: string
+          id?: string
+          kind?: string
+          remarks?: string | null
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_payroll_lines_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_exit_payroll_lines_head_id_fkey"
+            columns: ["head_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_payroll_heads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_reasons: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_exit_settlements: {
+        Row: {
+          case_id: string
+          created_at: string
+          encashable_days: number | null
+          final_fnf_name: string | null
+          final_fnf_path: string | null
+          fnf_amount: number | null
+          fnf_approval_remarks: string | null
+          fnf_approved_by_id: string | null
+          fnf_file_name: string | null
+          fnf_file_path: string | null
+          fnf_paid_by_id: string | null
+          fnf_paid_on: string | null
+          fnf_payment_mode: string | null
+          fnf_payment_ref: string | null
+          fnf_remarks: string | null
+          incentive_amount: number | null
+          leave_balance_days: number | null
+          leave_remarks: string | null
+          loan_recovery_amount: number | null
+          lwp_completed: boolean
+          lwp_days: number | null
+          notice_recovery_amount: number | null
+          notice_recovery_days: number | null
+          other_deductions: number | null
+          payroll_remarks: string | null
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          created_at?: string
+          encashable_days?: number | null
+          final_fnf_name?: string | null
+          final_fnf_path?: string | null
+          fnf_amount?: number | null
+          fnf_approval_remarks?: string | null
+          fnf_approved_by_id?: string | null
+          fnf_file_name?: string | null
+          fnf_file_path?: string | null
+          fnf_paid_by_id?: string | null
+          fnf_paid_on?: string | null
+          fnf_payment_mode?: string | null
+          fnf_payment_ref?: string | null
+          fnf_remarks?: string | null
+          incentive_amount?: number | null
+          leave_balance_days?: number | null
+          leave_remarks?: string | null
+          loan_recovery_amount?: number | null
+          lwp_completed?: boolean
+          lwp_days?: number | null
+          notice_recovery_amount?: number | null
+          notice_recovery_days?: number | null
+          other_deductions?: number | null
+          payroll_remarks?: string | null
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          created_at?: string
+          encashable_days?: number | null
+          final_fnf_name?: string | null
+          final_fnf_path?: string | null
+          fnf_amount?: number | null
+          fnf_approval_remarks?: string | null
+          fnf_approved_by_id?: string | null
+          fnf_file_name?: string | null
+          fnf_file_path?: string | null
+          fnf_paid_by_id?: string | null
+          fnf_paid_on?: string | null
+          fnf_payment_mode?: string | null
+          fnf_payment_ref?: string | null
+          fnf_remarks?: string | null
+          incentive_amount?: number | null
+          leave_balance_days?: number | null
+          leave_remarks?: string | null
+          loan_recovery_amount?: number | null
+          lwp_completed?: boolean
+          lwp_days?: number | null
+          notice_recovery_amount?: number | null
+          notice_recovery_days?: number | null
+          other_deductions?: number | null
+          payroll_remarks?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_settlements_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: true
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_step_owners: {
+        Row: {
+          created_at: string
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_step_owners_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_exit_step_skips: {
+        Row: {
+          case_id: string
+          reason: string
+          skipped_at: string
+          skipped_by: string | null
+          step_key: string
+        }
+        Insert: {
+          case_id: string
+          reason: string
+          skipped_at?: string
+          skipped_by?: string | null
+          step_key: string
+        }
+        Update: {
+          case_id?: string
+          reason?: string
+          skipped_at?: string
+          skipped_by?: string | null
+          step_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_exit_step_skips_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "fms_exit_cases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_field_options: {
         Row: {
           active: boolean
@@ -3500,6 +5007,233 @@ export type Database = {
           p_values?: Json
         }
         Returns: number
+      }
+      fms_supplies_announce: {
+        Args: {
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
+        }
+        Returns: undefined
+      }
+      fms_supplies_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_supplies_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_supplies_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_supplies_is_fulfilment_staff: { Args: { p_uid: string }; Returns: boolean }
+      fms_supplies_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
+      fms_supplies_request_hod: { Args: { p_req: string }; Returns: string }
+      fms_supplies_can_read_request: {
+        Args: { p_req: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_can_act: {
+        Args: { p_req: string; p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_resume_status: { Args: { p_req: string }; Returns: string }
+      fms_supplies_submit_request: { Args: { p: Json }; Returns: string }
+      fms_supplies_decide_first_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_decide_second_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_record_handover: {
+        Args: { p: Json; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_hold_request: {
+        Args: { p_hold: boolean; p_reason?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_cancel_request: {
+        Args: { p_reason: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_is_master_manager: {
+        Args: { p_master_type: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_resolve_master_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: string
+      }
+      fms_exit_announce: {
+        Args: {
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
+        }
+        Returns: undefined
+      }
+      fms_exit_approve_fnf: {
+        Args: { p_approve: boolean; p_case: string; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_exit_archive_blockers: {
+        Args: { p_case: string }
+        Returns: string[]
+      }
+      fms_exit_archive_case: {
+        Args: { p?: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_autotick_clearance: {
+        Args: { p_case: string; p_step: string }
+        Returns: number
+      }
+      fms_exit_can_act: {
+        Args: { p_case: string; p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_can_read_case: {
+        Args: { p_case: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_can_read_settlement: {
+        Args: { p_case: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_can_tick_clearance: {
+        Args: { p_check: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_confirm_handover: {
+        Args: { p_case: string; p_remarks?: string; p_role: string }
+        Returns: undefined
+      }
+      fms_exit_confirm_lwd: {
+        Args: { p_case: string; p_lwd: string }
+        Returns: undefined
+      }
+      fms_exit_decide_case: {
+        Args: { p_case: string; p_decision: string; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_exit_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_exit_generate_fnf: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_hold_case: {
+        Args: { p_case: string; p_hold: boolean; p_reason?: string }
+        Returns: undefined
+      }
+      fms_exit_hr_verify: { Args: { p: Json; p_case: string }; Returns: undefined }
+      fms_exit_issue_documents: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_exit_is_exit_staff: { Args: { p_uid: string }; Returns: boolean }
+      fms_exit_is_finance_staff: { Args: { p_uid: string }; Returns: boolean }
+      fms_exit_is_hr_confidential: { Args: { p_uid: string }; Returns: boolean }
+      fms_exit_is_master_manager: {
+        Args: { p_master_type: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_exit_manager_review: {
+        Args: { p_case: string; p_recommendation: string; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_exit_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_exit_raise_case: { Args: { p: Json }; Returns: string }
+      fms_exit_resolve_master_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: string
+      }
+      fms_exit_record_ack: {
+        Args: { p: Json; p_case: string; p_document: string }
+        Returns: undefined
+      }
+      fms_exit_record_handover: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_record_interview: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_record_payroll_inputs: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_release_fnf_payment: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_resume_status: { Args: { p_case: string }; Returns: string }
+      fms_exit_seed_documents: { Args: { p_case: string }; Returns: number }
+      fms_exit_set_clearance_na: {
+        Args: { p_check: string; p_reason: string }
+        Returns: undefined
+      }
+      fms_exit_sign_assets: {
+        Args: { p_case: string; p_remarks?: string; p_role: string }
+        Returns: undefined
+      }
+      fms_exit_skip_step: {
+        Args: { p_case: string; p_reason: string; p_step: string }
+        Returns: undefined
+      }
+      fms_exit_step_done: {
+        Args: { p_case: string; p_step: string }
+        Returns: boolean
+      }
+      fms_exit_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
+      fms_exit_toggle_clearance_check: {
+        Args: {
+          p_check: string
+          p_done: boolean
+          p_file_name?: string
+          p_file_path?: string
+          p_link_url?: string
+          p_pending_reason?: string
+        }
+        Returns: undefined
+      }
+      fms_exit_try_complete_clearance: {
+        Args: { p_case: string }
+        Returns: undefined
+      }
+      fms_exit_update_asset: {
+        Args: { p: Json; p_asset: string }
+        Returns: undefined
+      }
+      fms_exit_update_case: { Args: { p: Json; p_case: string }; Returns: undefined }
+      fms_exit_verify_leave: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_withdraw_case: {
+        Args: { p_case: string; p_reason: string }
+        Returns: undefined
       }
       fms_hr_add_candidates: {
         Args: { p_candidates: Json; p_req: string }

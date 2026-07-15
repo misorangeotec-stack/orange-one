@@ -3,8 +3,11 @@ import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
+import { hrExitApp } from "./hr-exit/meta";
+import { officeSuppliesApp } from "./office-supplies/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
+import { isUniversalApp } from "./universal";
 // Legacy `purchase-fms` (the older linear prototype) is retired from the portal —
 // the newer `procurement` app (also named "Purchase FMS") replaces it. Its folder
 // is kept as dead code; re-add `purchaseFmsApp` here to bring it back.
@@ -27,6 +30,11 @@ export const apps: AppManifest[] = [
   receivablesHubApp,
   procurementApp,
   hrRecruitmentApp,
+  // Universal (apps/universal.ts): no per-user grant — every employee must be able to
+  // raise their own resignation, and there is no bulk grant to fall back on.
+  hrExitApp,
+  // Universal (apps/universal.ts): every employee can raise an office-supply request.
+  officeSuppliesApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];
@@ -45,9 +53,11 @@ export interface GrantableModule {
   id: string;
   name: string;
   status: AppManifest["status"];
+  /** Granted to everyone implicitly (see apps/universal.ts) — the matrix shows it as locked-on. */
+  universal?: boolean;
 }
 
 export const grantableModules: GrantableModule[] = [
-  ...apps.map((a) => ({ id: a.id, name: a.name, status: a.status })),
+  ...apps.map((a) => ({ id: a.id, name: a.name, status: a.status, universal: isUniversalApp(a.id) })),
   { id: "mobile-app", name: "Mobile App", status: "live" },
 ];
