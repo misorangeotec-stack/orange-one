@@ -1897,6 +1897,45 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_purchase_po_cancel_requests: {
+        Row: {
+          created_at: string
+          id: string
+          po_id: string
+          reason: string
+          requested_by: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          vendor_ref: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          po_id: string
+          reason: string
+          requested_by?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          vendor_ref?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          po_id?: string
+          reason?: string
+          requested_by?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          vendor_ref?: string | null
+        }
+        Relationships: []
+      }
       fms_purchase_notifications: {
         Row: {
           actor_id: string | null
@@ -2148,6 +2187,9 @@ export type Database = {
       fms_purchase_pos: {
         Row: {
           advance_paid: number
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
           company_id: string
           created_at: string
           created_by: string | null
@@ -2168,6 +2210,9 @@ export type Database = {
         }
         Insert: {
           advance_paid?: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           company_id: string
           created_at?: string
           created_by?: string | null
@@ -2188,6 +2233,9 @@ export type Database = {
         }
         Update: {
           advance_paid?: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           company_id?: string
           created_at?: string
           created_by?: string | null
@@ -3689,6 +3737,18 @@ export type Database = {
       fms_purchase_cancel_line: {
         Args: { p_reason: string; p_request_item_id: string }
         Returns: undefined
+      }
+      fms_purchase_cancel_po: {
+        Args: { p_po_id: string; p_reason: string; p_request_id?: string }
+        Returns: undefined
+      }
+      fms_purchase_decline_po_cancel: {
+        Args: { p_note?: string; p_request_id: string }
+        Returns: undefined
+      }
+      fms_purchase_request_po_cancel: {
+        Args: { p_po_id: string; p_reason: string; p_vendor_ref?: string }
+        Returns: string
       }
       fms_purchase_decide_approval: {
         Args: {

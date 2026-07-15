@@ -176,6 +176,10 @@ export interface PurchaseOrder {
   shareRemarks: string | null;
   createdBy: string | null;
   createdAt: string;
+  /** Set when a PO is cancelled (approver-only, vendor-requested). */
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
 }
 
 export interface PoItem {
@@ -326,5 +330,23 @@ export interface MasterRequest {
   reviewedBy: string | null;
   reviewNote: string | null;
   resolvedMasterId: string | null;
+  createdAt: string;
+}
+
+export type PoCancelRequestStatus = "pending" | "approved" | "declined";
+
+/**
+ * A vendor-requested PO cancellation. A PO-side step owner logs the request;
+ * only the PO's approver (or an admin) may approve (cancel) or decline it.
+ */
+export interface PoCancelRequest {
+  id: string;
+  poId: string;
+  reason: string;
+  vendorRef: string | null;
+  status: PoCancelRequestStatus;
+  requestedBy: string | null;
+  reviewedBy: string | null;
+  reviewNote: string | null;
   createdAt: string;
 }

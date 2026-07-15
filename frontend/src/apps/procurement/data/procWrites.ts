@@ -440,6 +440,38 @@ export async function cancelLine(requestItemId: string, reason: string): Promise
   if (error) throw new Error(error.message);
 }
 
+/* ===================== PO cancellation (vendor-requested) ================= */
+
+/** A PO-side step owner logs the vendor's request to cancel a PO. Returns the request id. */
+export async function requestPoCancel(poId: string, reason: string, vendorRef?: string | null): Promise<string> {
+  const { data, error } = await supabase.rpc("fms_purchase_request_po_cancel", {
+    p_po_id: poId,
+    p_reason: reason,
+    p_vendor_ref: vendorRef ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+/** Approver-only — cancel a PO (optionally resolving the logged request). */
+export async function cancelPo(poId: string, reason: string, requestId?: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_cancel_po", {
+    p_po_id: poId,
+    p_reason: reason,
+    p_request_id: requestId ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Approver-only — decline a cancellation request; the PO stays open. */
+export async function declinePoCancel(requestId: string, note?: string | null): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_decline_po_cancel", {
+    p_request_id: requestId,
+    p_note: note ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /* ===================== PO lifecycle RPCs (Stages 5–10) =================== */
 
 export async function sharePo(

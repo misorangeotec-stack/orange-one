@@ -11,7 +11,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
-import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
+import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import type { Pi, PurchaseOrder, Grn, TallyBooking } from "../../types";
 
@@ -20,7 +20,7 @@ export default function PoDetail() {
   const { id } = useParams();
   const s = useProcurementStore();
   const [tab, setTab] = useState("items");
-  const [modal, setModal] = useState<"share" | "pi" | "advance" | "payment" | "followup" | "grn" | "tally" | null>(null);
+  const [modal, setModal] = useState<"share" | "pi" | "advance" | "payment" | "followup" | "grn" | "tally" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
 
   const po = s.poById(id ?? null);
   if (!po) {
@@ -34,6 +34,11 @@ export default function PoDetail() {
   const tally = s.tallyForPo(po.id);
   const pending = s.pendingAmount(po);
   const open = po.currentStage !== "closed" && po.currentStage !== "cancelled";
+  const cancelRequest = s.pendingCancelRequestForPo(po.id);
+  const isCancelled = po.currentStage === "cancelled";
+  // The current user is an approver for THIS PO iff its pending request is in the
+  // approver worklist (that list is already scoped to admins + the PO's approvers).
+  const iAmPoApprover = !!cancelRequest && s.pendingPoCancelRequests.some((r) => r.id === cancelRequest.id);
   // Goods fully received → GRN step done (hide "Record GRN"). Every receipt booked
   // → Tally step done (hide "Book in Tally"); a partial GRN still needs its own
   // invoice, so the button stays while any receipt is unbooked. Mirrors how Share
@@ -94,6 +99,40 @@ export default function PoDetail() {
         </div>
       </div>
 
+      {/* Cancelled banner — rendered outside the (open-only) action bar. */}
+      {isCancelled && (
+        <Card className="px-4 py-3 border-ryg-red/30 bg-[#FDECEC]">
+          <p className="text-[13px] text-ryg-red">
+            <span className="font-semibold">PO cancelled</span>
+            {po.cancelledBy ? <> by {s.profileById(po.cancelledBy)?.name ?? "—"}</> : null}
+            {po.cancelledAt ? <> on {formatDate(po.cancelledAt)}</> : null}
+            {po.cancelReason ? <> — {po.cancelReason}</> : null}
+          </p>
+        </Card>
+      )}
+
+      {/* Pending vendor-cancellation request — approver acts, others wait. */}
+      {open && cancelRequest && (
+        <Card className="px-4 py-3 border-orange/30 bg-orange-soft">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <p className="text-[13px] text-navy">
+              <span className="font-semibold text-orange">Vendor cancellation requested</span>
+              {cancelRequest.requestedBy ? <> by {s.profileById(cancelRequest.requestedBy)?.name ?? "—"}</> : null}
+              {" "}— {cancelRequest.reason}
+              {cancelRequest.vendorRef ? <span className="text-grey-2"> · ref: {cancelRequest.vendorRef}</span> : null}
+            </p>
+            {iAmPoApprover ? (
+              <div className="flex items-center gap-2 shrink-0">
+                {s.canCancelPo(po) && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("cancel")}>Cancel PO</Button>}
+                <Button size="sm" variant="ghost" onClick={() => setModal("declinecancel")}>Decline</Button>
+              </div>
+            ) : (
+              <span className="text-[12.5px] text-grey-2 shrink-0">Awaiting the approver's decision</span>
+            )}
+          </div>
+        </Card>
+      )}
+
       <Card className="px-4 py-4"><PoStepper po={po} /></Card>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -113,6 +152,8 @@ export default function PoDetail() {
           {s.canInward && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
           {s.canTally && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
           {s.canRecordPayment && po.currentStage !== "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
+          {s.canRequestPoCancel(po) && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("reqcancel")}>Request cancellation</Button>}
+          {s.canCancelPo(po) && !cancelRequest && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("cancel")}>Cancel PO</Button>}
         </div>
       )}
 
@@ -248,6 +289,9 @@ export default function PoDetail() {
       <GrnModal po={po} open={modal === "grn"} onClose={() => setModal(null)} />
       <TallyModal po={po} open={modal === "tally"} onClose={() => setModal(null)} />
       <FollowupModal po={po} open={modal === "followup"} onClose={() => setModal(null)} />
+      <RequestCancelModal po={po} open={modal === "reqcancel"} onClose={() => setModal(null)} />
+      <CancelPoModal po={po} request={cancelRequest ?? null} open={modal === "cancel"} onClose={() => setModal(null)} />
+      <DeclineCancelModal request={cancelRequest ?? null} open={modal === "declinecancel"} onClose={() => setModal(null)} />
     </div>
   );
 }

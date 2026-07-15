@@ -10,6 +10,8 @@ import type {
   MasterRequest,
   MasterType,
   MasterRequestStatus,
+  PoCancelRequest,
+  PoCancelRequestStatus,
   Designation,
   StepOwner,
   ApprovalBand,
@@ -55,6 +57,7 @@ type Tbl =
   | "fms_purchase_vendors"
   | "fms_purchase_master_managers"
   | "fms_purchase_master_requests"
+  | "fms_purchase_po_cancel_requests"
   | "fms_purchase_step_owners"
   | "fms_purchase_approval_matrix"
   | "fms_purchase_config"
@@ -115,6 +118,7 @@ export interface ProcurementData {
   vendors: Vendor[];
   masterManagers: MasterManager[];
   masterRequests: MasterRequest[];
+  poCancelRequests: PoCancelRequest[];
   designations: Designation[];
   stepOwners: StepOwner[];
   approvalBands: ApprovalBand[];
@@ -198,6 +202,18 @@ const mapMasterRequest = (r: any): MasterRequest => ({
   reviewedBy: r.reviewed_by ?? null,
   reviewNote: r.review_note ?? null,
   resolvedMasterId: r.resolved_master_id ?? null,
+  createdAt: r.created_at,
+});
+
+const mapPoCancelRequest = (r: any): PoCancelRequest => ({
+  id: r.id,
+  poId: r.po_id,
+  reason: r.reason,
+  vendorRef: r.vendor_ref ?? null,
+  status: r.status as PoCancelRequestStatus,
+  requestedBy: r.requested_by ?? null,
+  reviewedBy: r.reviewed_by ?? null,
+  reviewNote: r.review_note ?? null,
   createdAt: r.created_at,
 });
 
@@ -295,6 +311,9 @@ const mapPo = (r: any): PurchaseOrder => ({
   shareRemarks: r.share_remarks ?? null,
   createdBy: r.created_by ?? null,
   createdAt: r.created_at,
+  cancelledBy: r.cancelled_by ?? null,
+  cancelledAt: r.cancelled_at ?? null,
+  cancelReason: r.cancel_reason ?? null,
 });
 
 const mapPoItem = (r: any): PoItem => ({
@@ -428,6 +447,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     vendors,
     managers,
     masterReqs,
+    poCancelReqs,
     designations,
     stepOwners,
     bands,
@@ -454,6 +474,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     fetchAll("fms_purchase_vendors"),
     fetchAll("fms_purchase_master_managers"),
     fetchAll("fms_purchase_master_requests"),
+    fetchAll("fms_purchase_po_cancel_requests"),
     fetchAll("designations"),
     fetchAll("fms_purchase_step_owners"),
     fetchAll("fms_purchase_approval_matrix"),
@@ -490,6 +511,7 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     vendors: vendors.map(mapVendor),
     masterManagers: managers.map(mapManager),
     masterRequests: masterReqs.map(mapMasterRequest),
+    poCancelRequests: poCancelReqs.map(mapPoCancelRequest),
     designations: designations.map(mapDesignation),
     stepOwners: stepOwners.map(mapStepOwner),
     approvalBands: bands.map(mapApprovalBand),

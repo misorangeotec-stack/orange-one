@@ -15,6 +15,7 @@ import type {
   MasterManager,
   MasterRequest,
   MasterType,
+  PoCancelRequest,
   Designation,
   StepOwner,
   ApprovalBand,
@@ -34,12 +35,13 @@ import type {
   ProcNotification,
   ProcEntityType,
 } from "./types";
-import type { StepKey } from "./lib/steps";
+import { STEPS, type StepKey } from "./lib/steps";
 import { masterTypeLabel } from "./lib/masterFields";
 import {
   buildProcIndex,
   buildQueueEntries,
   dispatchDueForPo as dispatchDueForPoPure,
+  isOpenPo,
   lineDueIso,
   lineInApproval,
   lineInPoDesk,
@@ -74,6 +76,9 @@ import {
   decideApproval as decideApprovalWrite,
   generatePo as generatePoWrite,
   cancelLine as cancelLineWrite,
+  requestPoCancel as requestPoCancelWrite,
+  cancelPo as cancelPoWrite,
+  declinePoCancel as declinePoCancelWrite,
   sharePo as sharePoWrite,
   addPi as addPiWrite,
   uploadPiDocument as uploadPiDocumentWrite,
@@ -242,6 +247,17 @@ interface ProcurementStoreValue {
   canInward: boolean;
   canTally: boolean;
 
+  // PO cancellation (vendor-requested, approver-only)
+  poCancelRequests: PoCancelRequest[];
+  /** The one open (pending) cancellation request for a PO, if any. */
+  pendingCancelRequestForPo: (poId: string) => PoCancelRequest | undefined;
+  /** Pending cancellation requests the current user (an approver/admin) may act on. */
+  pendingPoCancelRequests: PoCancelRequest[];
+  /** A PO-side owner (or admin) may LOG a vendor cancellation request while the PO is still cancellable and none is open. */
+  canRequestPoCancel: (po: PurchaseOrder) => boolean;
+  /** The PO's approver (a user stamped on its lines) or an admin may cancel it, while it has no GRN/Tally booking. */
+  canCancelPo: (po: PurchaseOrder) => boolean;
+
   // workflow mutations
   submitRequest: (input: { companyId: string; categoryId: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
   saveSourcing: (input: {
@@ -256,6 +272,12 @@ interface ProcurementStoreValue {
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
+  /** A PO-side owner logs the vendor's request to cancel a PO. Returns the request id. */
+  requestPoCancel: (poId: string, reason: string, vendorRef?: string | null) => Promise<string>;
+  /** Approver-only — cancel a PO (optionally resolving the logged request). */
+  cancelPo: (poId: string, reason: string, requestId?: string | null) => Promise<void>;
+  /** Approver-only — decline a cancellation request; the PO stays open. */
+  declinePoCancel: (requestId: string, note?: string | null) => Promise<void>;
 
   // PO lifecycle mutations
   sharePo: (poId: string, input?: { path: string | null; name: string | null; tallyPoNo: string | null; remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
@@ -353,6 +375,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const vendors = data?.vendors ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
+  const poCancelRequests = data?.poCancelRequests ?? [];
   const designations = data?.designations ?? [];
   const stepOwners = data?.stepOwners ?? [];
   const approvalBands = data?.approvalBands ?? [];
@@ -422,6 +445,25 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
 
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
+
+    // ---- PO cancellation helpers (approver-only, vendor-requested) ----
+    const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
+    // The approver(s) of a PO = the distinct users stamped as approver_id on the
+    // PO's request lines. Approval routes per-line, so total_value is NOT a basis.
+    const poApproverIds = (po: PurchaseOrder): string[] => {
+      const ids = new Set<string>();
+      for (const poi of poItems) {
+        if (poi.poId !== po.id) continue;
+        const line = requestItems.find((l) => l.id === poi.requestItemId);
+        if (line?.approverId) ids.add(line.approverId);
+      }
+      return [...ids];
+    };
+    const poCancellable = (po: PurchaseOrder): boolean =>
+      isOpenPo(po) && !grns.some((g) => g.poId === po.id) && !tallyBookings.some((t) => t.poId === po.id);
+    const pendingCancelRequestForPo = (poId: string): PoCancelRequest | undefined =>
+      poCancelRequests.find((r) => r.poId === poId && r.status === "pending");
+    const isPoApprover = (po: PurchaseOrder): boolean => isAdmin || poApproverIds(po).includes(user.id);
 
     const itemsByGroupId = new Map<string, RequestItem[]>();
     for (const ri of requestItems) {
@@ -570,6 +612,20 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       canInward: isStepOwner("inward"),
       canTally: isStepOwner("tally"),
 
+      // ---- PO cancellation (vendor-requested, approver-only) ----
+      poCancelRequests,
+      pendingCancelRequestForPo,
+      pendingPoCancelRequests: poCancelRequests.filter((r) => {
+        if (r.status !== "pending") return false;
+        const po = pos.find((p) => p.id === r.poId);
+        return !!po && isPoApprover(po);
+      }),
+      canRequestPoCancel: (po) =>
+        (isAdmin || poScopeStepKeys.some((k) => isStepOwner(k))) &&
+        poCancellable(po) &&
+        !pendingCancelRequestForPo(po.id),
+      canCancelPo: (po) => isPoApprover(po) && poCancellable(po),
+
       // ---- workflow mutations ----
       submitRequest: async (input) => {
         const id = await submitRequestWrite(input);
@@ -648,6 +704,48 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "cancelled",
           text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
           recipients: requesterOfLine(requestItemId),
+        });
+        await invalidate();
+      },
+
+      // ---- PO cancellation mutations ----
+      requestPoCancel: async (poId, reason, vendorRef) => {
+        const id = await requestPoCancelWrite(poId, reason, vendorRef ?? null);
+        const po = pos.find((p) => p.id === poId);
+        await safeAnnounce({
+          entityType: "po",
+          entityId: poId,
+          type: "cancel_requested",
+          text: `Vendor cancellation requested for this PO — ${reason}`,
+          recipients: po ? poApproverIds(po) : [],
+        });
+        await invalidate();
+        return id;
+      },
+      cancelPo: async (poId, reason, requestId) => {
+        await cancelPoWrite(poId, reason, requestId ?? null);
+        const req = requestId ? poCancelRequests.find((r) => r.id === requestId) : undefined;
+        await safeAnnounce({
+          entityType: "po",
+          entityId: poId,
+          type: "po_cancelled",
+          text: `PO cancelled — ${reason}`,
+          recipients: [
+            ...(req?.requestedBy ? [req.requestedBy] : []),
+            ...ownerIdsOf("share_po"),
+          ],
+        });
+        await invalidate();
+      },
+      declinePoCancel: async (requestId, note) => {
+        const req = poCancelRequests.find((r) => r.id === requestId);
+        await declinePoCancelWrite(requestId, note ?? null);
+        await safeAnnounce({
+          entityType: "po",
+          entityId: req?.poId ?? "",
+          type: "cancel_declined",
+          text: `Cancellation request declined${note ? ` — ${note}` : ""}`,
+          recipients: req?.requestedBy ? [req.requestedBy] : [],
         });
         await invalidate();
       },
@@ -905,6 +1003,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     vendors,
     masterManagers,
     masterRequests,
+    poCancelRequests,
     designations,
     stepOwners,
     approvalBands,

@@ -9,7 +9,7 @@ import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
-import type { PurchaseOrder } from "../types";
+import type { PurchaseOrder, PoCancelRequest } from "../types";
 
 const PAYMENT_TERMS: ComboOption[] = [
   { value: "full_advance", label: "100% Advance" },
@@ -629,6 +629,141 @@ export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
         </FieldLabel>
         <FieldLabel label="Remarks" hint="Optional">
           <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+        </FieldLabel>
+        <Err msg={err} />
+      </div>
+    </Modal>
+  );
+}
+
+/* -------------------- PO cancellation (vendor-requested) ------------------ */
+
+/** A PO-side step owner logs the vendor's request to cancel a PO. */
+export function RequestCancelModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
+  const s = useProcurementStore();
+  const [reason, setReason] = useState("");
+  const [vendorRef, setVendorRef] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setReason("");
+    setVendorRef("");
+    setErr(null);
+  }, [open, po.id]);
+
+  const save = async () => {
+    setErr(null);
+    if (!reason.trim()) return setErr("A reason for the cancellation is required.");
+    setBusy(true);
+    try {
+      await s.requestPoCancel(po.id, reason.trim(), vendorRef.trim() || null);
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Request PO cancellation" subtitle={`${po.poNo} · the approver will review and decide.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Close</Button><Button size="sm" onClick={save} disabled={busy || !reason.trim()}>{busy ? "Sending…" : "Send to approver"}</Button></>}>
+      <div className="space-y-3.5">
+        <FieldLabel label="Reason (vendor's request)" required>
+          <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Vendor can no longer supply at the agreed rate" />
+        </FieldLabel>
+        <FieldLabel label="Vendor reference" hint="optional — the vendor's cancellation note / mail ref">
+          <TextInput value={vendorRef} onChange={(e) => setVendorRef(e.target.value)} placeholder="e.g. mail dated 14-Jul" />
+        </FieldLabel>
+        <Err msg={err} />
+      </div>
+    </Modal>
+  );
+}
+
+/** Approver-only — cancel the PO, optionally resolving a logged request. */
+export function CancelPoModal({ po, request, open, onClose }: { po: PurchaseOrder; request: PoCancelRequest | null; open: boolean; onClose: () => void }) {
+  const s = useProcurementStore();
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setReason(request?.reason ?? "");
+    setErr(null);
+  }, [open, po.id, request?.id]);
+
+  const save = async () => {
+    setErr(null);
+    if (!reason.trim()) return setErr("A reason for the cancellation is required.");
+    setBusy(true);
+    try {
+      await s.cancelPo(po.id, reason.trim(), request?.id ?? null);
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Cancel this PO" subtitle={`${po.poNo} · this cannot be undone — a re-order is a fresh PO.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Close</Button><Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={save} disabled={busy || !reason.trim()}>{busy ? "Cancelling…" : "Cancel PO"}</Button></>}>
+      <div className="space-y-3.5">
+        {po.advancePaid > 0 && (
+          <p className="rounded-xl border border-ryg-red/30 bg-[#FDECEC] px-3 py-2 text-[12.5px] text-ryg-red">
+            An advance of {inr(po.advancePaid)} has already been paid on this PO — arrange the refund with the vendor separately. Note it in the reason below.
+          </p>
+        )}
+        <FieldLabel label="Reason" required>
+          <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this PO being cancelled?" />
+        </FieldLabel>
+        <p className="text-[12.5px] text-grey-2">Cancelling marks the PO and its order lines cancelled and removes it from all work queues.</p>
+        <Err msg={err} />
+      </div>
+    </Modal>
+  );
+}
+
+/** Approver-only — decline a cancellation request; the PO stays open. */
+export function DeclineCancelModal({ request, open, onClose }: { request: PoCancelRequest | null; open: boolean; onClose: () => void }) {
+  const s = useProcurementStore();
+  const po = s.poById(request?.poId ?? null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setNote("");
+    setErr(null);
+  }, [open, request?.id]);
+
+  const save = async () => {
+    if (!request) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await s.declinePoCancel(request.id, note.trim() || null);
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Decline cancellation" subtitle={po ? `${po.poNo} · the PO stays active.` : undefined}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Close</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Decline request"}</Button></>}>
+      <div className="space-y-3.5">
+        {request?.reason && <p className="rounded-xl border border-line bg-page/60 px-3 py-2 text-[12.5px] text-grey-2">Requested reason: <span className="text-navy">{request.reason}</span></p>}
+        <FieldLabel label="Note" hint="optional — why the cancellation is declined">
+          <TextArea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Goods already dispatched; proceeding with the order" />
         </FieldLabel>
         <Err msg={err} />
       </div>
