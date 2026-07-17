@@ -16,6 +16,8 @@ import type { AppRole, Profile } from "../types";
 import { rygCounts, redCounts, RygNumCell, PerfCell } from "./RygCells";
 import type { RedCounts } from "./RygCells";
 import ReportsToTag from "./ReportsToTag";
+import { exportMasterAnalysis } from "../lib/exportMasterAnalysis";
+import { formatDate, weekEndOf } from "@/shared/lib/time";
 
 const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" };
 // HODs/managers surface first inside a department, then everyone else.
@@ -24,11 +26,19 @@ const ROLE_ORDER: Record<AppRole, number> = { hod: 0, sub_hod: 1, admin: 2, empl
 type SortKey = "name" | "planned" | "green" | "yellow" | "red";
 type SortDir = "asc" | "desc";
 
+const SORT_LABEL: Record<SortKey, string> = {
+  name: "Department / Member",
+  planned: "Planned",
+  green: "Green",
+  yellow: "Yellow",
+  red: "Red",
+};
+
 function emptyReport(): PersonReport {
   return { planned: 0, completed: 0, pending: 0, revised: 0, shifted: 0, revisionTotal: 0 };
 }
 
-type Group = {
+export type Group = {
   id: string;
   name: string;
   members: Profile[];
@@ -150,32 +160,59 @@ export default function DepartmentReport({ weekStart = WEEK_START, scope }: { we
     return [...visibleGroups].sort((a, b) => cmpBy(groupVal(a), groupVal(b)));
   }, [visibleGroups, sort, scoped]);
 
+  // The export carries the week off the same prop the table renders from, so it follows
+  // the week picker rather than pinning to WEEK_START (the initial value, not the view).
+  const exportNow = () =>
+    exportMasterAnalysis({
+      groups: sortedGroups,
+      weekStart,
+      filters: [
+        `Week: ${formatDate(weekStart)} – ${formatDate(weekEndOf(weekStart))}`,
+        ...(q ? [`Search: "${q}"`] : []),
+        `Sorted by: ${SORT_LABEL[sort.key]} (${sort.dir === "asc" ? "ascending" : "descending"})`,
+        // A HOD's export is their downline, not the company. The sheet has to say so.
+        ...(scoped ? [`Scope: ${sortedGroups[0]?.name ?? "your department"} — your department and your reports only`] : []),
+      ],
+    });
+
   if (!departments.length) return <EmptyState title="No departments yet" message="Add departments in Setup to see department-wise performance." />;
 
   return (
     <div className="space-y-4">
-      {/* search across departments and their members */}
-      <div className="relative max-w-[340px]">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-grey-2">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-        </span>
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={scoped ? "Search member…" : "Search department or member…"}
-          className="w-full rounded-xl border border-line bg-white pl-9 pr-9 py-2.5 text-[13px] text-ink outline-none focus:border-orange transition"
-        />
-        {query && (
-          <button
-            type="button"
-            onClick={() => setQuery("")}
-            aria-label="Clear search"
-            className="absolute right-2.5 top-1/2 -translate-y-1/2 grid place-items-center w-5 h-5 rounded-full text-grey-2 hover:text-navy hover:bg-line transition"
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        )}
+      {/* search across departments and their members, with the week's export on the right */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px] max-w-[340px]">
+          <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-grey-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          </span>
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={scoped ? "Search member…" : "Search department or member…"}
+            className="w-full rounded-xl border border-line bg-white pl-9 pr-9 py-2.5 text-[13px] text-ink outline-none focus:border-orange transition"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 grid place-items-center w-5 h-5 rounded-full text-grey-2 hover:text-navy hover:bg-line transition"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={exportNow}
+          disabled={sortedGroups.length === 0}
+          title="Download this week's Master Analysis as an Excel workbook"
+          className="ml-auto inline-flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-semibold text-grey-2 rounded-lg border border-line bg-white hover:text-orange hover:border-orange/50 disabled:opacity-40 disabled:hover:text-grey-2 disabled:hover:border-line transition"
+        >
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+          Excel
+        </button>
       </div>
 
       {/* all departments in one table */}
