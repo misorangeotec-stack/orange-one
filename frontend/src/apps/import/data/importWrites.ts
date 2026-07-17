@@ -864,3 +864,178 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
     .in("id", ids);
   if (error) throw new Error(error.message);
 }
+
+/* ------------------------- stage edits (update_*) -------------------------- */
+/**
+ * Correcting an entry at a stage, until the next step is done.
+ *
+ * Each of these mirrors a `fms_import_update_<step>` RPC (20260719120000) that
+ * re-checks the lock server-side, refuses on a closed/cancelled PO, excludes the
+ * edited row from its own cap, and writes its activity row in the same
+ * transaction — so, unlike the create wrappers, none of these needs a
+ * `safeAnnounce` follow-up call.
+ */
+
+export async function updateSharePo(input: {
+  poId: string;
+  tallyPoNo: string;
+  paymentTerms: string;
+  dispatchDate: string;
+  remarks?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_share_po", {
+    p_po_id: input.poId,
+    p_tally_po_no: input.tallyPoNo,
+    p_payment_terms: input.paymentTerms,
+    p_dispatch_date: input.dispatchDate,
+    p_remarks: input.remarks ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updatePi(input: {
+  piId: string;
+  vendorPiNo: string;
+  items: PiItemInput[];
+  piValue: number;
+  paymentTerms?: string | null;
+  dispatchDate?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_pi", {
+    p_pi_id: input.piId,
+    p_vendor_pi_no: input.vendorPiNo,
+    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, qty: i.qty })) as unknown as Json,
+    p_payment_terms: input.paymentTerms ?? undefined,
+    p_pi_value: input.piValue,
+    p_dispatch_date: input.dispatchDate ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * The cap the RPC applies is on `amountFx` against the PO's foreign value, not on
+ * INR — the FX rate at payment is independent of the rate at request, so an INR
+ * cap would wrongly reject a full 100% advance after the currency appreciated.
+ */
+export async function updatePayment(input: {
+  paymentId: string;
+  amount: number;
+  amountFx?: number | null;
+  currency?: string | null;
+  fxRate?: number | null;
+  paidOn?: string | null;
+  utrRef?: string | null;
+  piRemarks?: string | null;
+  details?: string | null;
+  advicePath?: string | null;
+  adviceName?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_payment", {
+    p_payment_id: input.paymentId,
+    p_amount: input.amount,
+    p_amount_fx: input.amountFx ?? undefined,
+    p_currency: input.currency ?? undefined,
+    p_fx_rate: input.fxRate ?? undefined,
+    p_paid_on: input.paidOn ?? undefined,
+    p_utr: input.utrRef ?? undefined,
+    p_pi_remarks: input.piRemarks ?? undefined,
+    p_details: input.details ?? undefined,
+    p_advice_path: input.advicePath ?? undefined,
+    p_advice_name: input.adviceName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateFollowup(input: {
+  followupId: string;
+  dispatchStatus: string;
+  actualDispatchDate?: string | null;
+  lrNo?: string | null;
+  transportDetails?: string | null;
+  revisedDispatchDate?: string | null;
+  remarks?: string | null;
+  piRemarks?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_followup", {
+    p_followup_id: input.followupId,
+    p_dispatch_status: input.dispatchStatus,
+    p_actual_dispatch_date: input.actualDispatchDate ?? undefined,
+    p_lr_no: input.lrNo ?? undefined,
+    p_transport: input.transportDetails ?? undefined,
+    p_revised_dispatch_date: input.revisedDispatchDate ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+    p_pi_remarks: input.piRemarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateGrn(input: {
+  grnId: string;
+  items: GrnItemInput[];
+  poRef: string;
+  piRef?: string | null;
+  gateRegisterNo?: string | null;
+  condition?: string | null;
+  note?: string | null;
+  photoPath?: string | null;
+  photoName?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_grn", {
+    p_grn_id: input.grnId,
+    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, received_qty: i.receivedQty, condition: i.condition })) as unknown as Json,
+    p_po_ref: input.poRef,
+    p_pi_ref: input.piRef ?? undefined,
+    p_gate_register_no: input.gateRegisterNo ?? undefined,
+    p_condition: input.condition ?? undefined,
+    p_note: input.note ?? undefined,
+    p_photo_path: input.photoPath ?? undefined,
+    p_photo_name: input.photoName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateTally(input: {
+  bookingId: string;
+  tallyPiNo: string;
+  documentPath?: string | null;
+  documentName?: string | null;
+  remarks?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_tally", {
+    p_booking_id: input.bookingId,
+    p_tally_pi_no: input.tallyPiNo,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** `decision` is 'approve' | 'reject'. Import has no quoted vendors, so the RPC refuses 'override'. */
+export async function updateApproval(input: {
+  lineId: string;
+  decision: string;
+  overrideVendorId?: string | null;
+  reason?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_approval", {
+    p_line_id: input.lineId,
+    p_decision: input.decision,
+    p_override_vendor_id: input.overrideVendorId ?? undefined,
+    p_reason: input.reason ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updatePoNo(poId: string, poNo: string): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_po_no", { p_po_id: poId, p_po_no: poNo });
+  if (error) throw new Error(error.message);
+}

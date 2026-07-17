@@ -397,6 +397,272 @@ const LINE_STEPS: { stepKey: StepKey; match: (l: RequestItem) => boolean }[] = [
 ];
 
 /* -------------------------------------------------------------------------- */
+/*  Completed entries — the "what I did here" side of a stage                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One piece of work a user COMPLETED at a step — the counterpart to a queue
+ * entry, which is work still owed.
+ *
+ * Note what this is NOT: `poStepCompletedIso` answers "has this PO cleared this
+ * step, and when", collapsing N rows to one timestamp and returning null while
+ * any sibling line is outstanding. Both behaviours are correct for an SLA anchor
+ * and useless here — a PO with three PIs has three entries, and a PI collected
+ * yesterday is done even if line 3 is still open.
+ *
+ * `companyId` is resolved at BUILD time, not in the table's `groupBy.idOf`.
+ * QueueTable calls `idOf` from inside its sort comparator, so a `pos.find(...)`
+ * there would be O(n·m) — measured in seconds once this list is a year deep.
+ *
+ * Like every predicate in this file, this is owner-agnostic: it returns
+ * everyone's entries and the caller filters to "mine". The Control Center needs
+ * the unscoped set.
+ *
+ * NO SOURCING ENTRIES: Import has no Sourcing step (the vendor and rate come
+ * from the price master, so a line is born at `approval`). Its SourcingQueue.tsx
+ * is unrouted dead code, so a `completedSourcingEntries` here would build a list
+ * nothing can render.
+ */
+export interface StageEntry<T> {
+  /** The underlying row's id — the PO for `share_po`, the PI row for `collect_pi`, … */
+  id: string;
+  stepKey: StepKey;
+  poId: string;
+  /** Human reference, for display and search. */
+  ref: string;
+  companyId: string | null;
+  /** Who completed the step. Null = unknown: the row pre-dates its actor column. */
+  actorId: string | null;
+  /** When the step completed. */
+  atIso: string;
+  /** When it was last corrected, if ever. */
+  editedAtIso: string | null;
+  editedById: string | null;
+  /** Null when the entry may still be corrected; otherwise why it cannot be. */
+  lockReason: string | null;
+  /** The row itself, so the page can render its own columns without a second lookup. */
+  row: T;
+}
+
+/**
+ * Why a Share PO entry can no longer be corrected, or null while it still can.
+ *
+ * Mirrors `fms_import_share_po_editable()` in the DB. The server is the gate —
+ * this exists so the UI can disable the button and say why, and the two rules
+ * are deliberately written to the same shape so a drift is easy to spot.
+ *
+ * "The next step" is not merely `collect_pi`: the flow can legitimately skip
+ * ahead (an advance paid, or goods landing, before any PI), and each of those is
+ * downstream work that a changed PO document would invalidate. So the rule is
+ * "no downstream artifact of any kind exists yet".
+ */
+export function poShareLockReason(idx: ImportIndex, p: PurchaseOrder): string | null {
+  if (p.currentStage === "closed" || p.currentStage === "cancelled") {
+    // Terminal is absorbing: refresh_po short-circuits on these, so an edit here
+    // would silently skip every derived recompute and drift the data.
+    return `This PO is ${p.currentStage} — its share details can no longer be edited.`;
+  }
+  if ((idx.pisByPo.get(p.id) ?? []).length > 0) return "A PI has already been collected against this PO.";
+  if ((idx.paymentsByPo.get(p.id) ?? []).length > 0) return "A payment has already been recorded against this PO.";
+  if ((idx.followupsByPo.get(p.id) ?? []).length > 0) return "A follow-up has already been recorded against this PO.";
+  if ((idx.grnsByPo.get(p.id) ?? []).length > 0) return "Goods have already been received against this PO.";
+  return null;
+}
+
+/**
+ * Every Share PO step completed across the book — the PO rows that carry a
+ * `sharedAt`. The entry IS the PO here, because the share details live on the PO
+ * row rather than on a child of their own.
+ *
+ * Includes closed and cancelled POs on purpose: "what I did" must not evaporate
+ * when the order later completes or is abandoned. They come back locked.
+ */
+export function completedShareEntries(data: ImportSnapshot, idx: ImportIndex): StageEntry<PurchaseOrder>[] {
+  const out: StageEntry<PurchaseOrder>[] = [];
+  for (const p of data.pos) {
+    if (!p.sharedAt) continue; // the step isn't done, so there is nothing to show
+    out.push({
+      id: p.id,
+      stepKey: "share_po",
+      poId: p.id,
+      ref: p.poNo,
+      companyId: p.companyId,
+      actorId: p.sharedBy,
+      atIso: p.sharedAt,
+      editedAtIso: p.editedAt,
+      editedById: p.editedBy,
+      lockReason: poShareLockReason(idx, p),
+      row: p,
+    });
+  }
+  return out;
+}
+
+/* ----- The remaining PO-scope stages ------------------------------------- */
+
+/**
+ * Every rule below mirrors its `fms_import_<step>_editable()` counterpart in the
+ * DB. The server is the gate; these exist so the UI can grey a button and SAY
+ * WHY, and are written to the same shape so a drift is easy to spot.
+ *
+ * All of them start from the same bar: a closed or cancelled PO is never
+ * editable. `refresh_po` short-circuits on terminal POs, so an edit there would
+ * silently skip every derived recompute — that's mechanical, not policy.
+ */
+const terminalReason = (p: PurchaseOrder | undefined, what: string): string | null =>
+  p && (p.currentStage === "closed" || p.currentStage === "cancelled")
+    ? `This PO is ${p.currentStage} — its ${what} can no longer be edited.`
+    : null;
+
+const poOf = (data: ImportSnapshot, poId: string) => data.pos.find((p) => p.id === poId);
+
+export function piLockReason(data: ImportSnapshot, idx: ImportIndex, pi: Pi): string | null {
+  const t = terminalReason(poOf(data, pi.poId), "PI");
+  if (t) return t;
+  if ((idx.grnsByPo.get(pi.poId) ?? []).length > 0) return "Goods have already been received against this PO.";
+  if ((idx.paymentsByPo.get(pi.poId) ?? []).some((x) => x.piId === pi.id)) return "A payment has already been recorded against this PI.";
+  return null;
+}
+
+export function paymentLockReason(data: ImportSnapshot, idx: ImportIndex, pay: Payment): string | null {
+  const t = terminalReason(poOf(data, pay.poId), "payment");
+  if (t) return t;
+  if ((idx.followupsByPo.get(pay.poId) ?? []).length > 0) return "A follow-up has already been recorded against this PO.";
+  return null;
+}
+
+export function followupLockReason(data: ImportSnapshot, idx: ImportIndex, f: Followup): string | null {
+  const t = terminalReason(poOf(data, f.poId), "follow-up");
+  if (t) return t;
+  if ((idx.grnsByPo.get(f.poId) ?? []).length > 0) return "Goods have already been received against this PO.";
+  return null;
+}
+
+export function grnLockReason(data: ImportSnapshot, idx: ImportIndex, g: Grn): string | null {
+  const t = terminalReason(poOf(data, g.poId), "goods receipt");
+  if (t) return t;
+  if (idx.bookedGrnIds.has(g.id)) return "This receipt has already been booked in Tally.";
+  return null;
+}
+
+export function tallyLockReason(data: ImportSnapshot, t: TallyBooking): string | null {
+  return terminalReason(poOf(data, t.poId), "Tally booking");
+}
+
+/** Shared shape for the five child-row stages: same fields, different row type. */
+function poChildEntry<T>(
+  data: ImportSnapshot,
+  stepKey: StepKey,
+  row: T & { id: string; poId: string; createdAt: string; editedAt?: string | null; editedBy?: string | null },
+  actorId: string | null,
+  lockReason: string | null,
+): StageEntry<T> {
+  const po = poOf(data, row.poId);
+  return {
+    id: row.id,
+    stepKey,
+    poId: row.poId,
+    ref: po?.poNo ?? "—",
+    companyId: po?.companyId ?? null,
+    actorId,
+    atIso: row.createdAt,
+    editedAtIso: row.editedAt ?? null,
+    editedById: row.editedBy ?? null,
+    lockReason,
+    row,
+  };
+}
+
+export const completedPiEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<Pi>[] =>
+  data.pis.map((pi) => poChildEntry(data, "collect_pi", pi, pi.createdBy, piLockReason(data, idx, pi)));
+
+/**
+ * Advance only — not every payment. A balance payment is recordable from PoDetail
+ * but no step chases it (see 20260716122600), so it is not stage work and does
+ * not belong in this stage's history.
+ */
+export const completedAdvanceEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<Payment>[] =>
+  data.payments
+    .filter((p) => p.kind === "advance")
+    .map((p) => poChildEntry(data, "advance_payment", p, p.createdBy, paymentLockReason(data, idx, p)));
+
+export const completedFollowupEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<Followup>[] =>
+  data.followups.map((f) => poChildEntry(data, "follow_up", f, f.createdBy, followupLockReason(data, idx, f)));
+
+export const completedGrnEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<Grn>[] =>
+  data.grns.map((g) => poChildEntry(data, "inward", g, g.receivedBy, grnLockReason(data, idx, g)));
+
+export const completedTallyEntries = (data: ImportSnapshot): StageEntry<TallyBooking>[] =>
+  data.tallyBookings.map((t) => poChildEntry(data, "tally", t, t.bookedBy, tallyLockReason(data, t)));
+
+/* ----- The request-scope stages ------------------------------------------ */
+
+/**
+ * An approval decision is editable while the line is approved but has no PO yet.
+ *
+ * Note what this is NOT: "locked once `approvedAt` is set" would lock the
+ * decision the moment it was made, and "locked once a PO exists" would leave a
+ * REJECTED line editable forever — a rejected line never gets a PO. Rejected and
+ * cancelled are terminal: the app has no un-reject path and this does not add one.
+ */
+export function approvalLockReason(line: RequestItem): string | null {
+  if (line.status === "po") return "The PO has already been generated — this approval can no longer be changed.";
+  if (line.status === "rejected" || line.status === "cancelled") return `This line was ${line.status} — its approval can no longer be changed.`;
+  return null;
+}
+
+/** The generated PO is amendable (its number only) until it goes to the vendor. */
+export function poGenLockReason(p: PurchaseOrder): string | null {
+  if (p.currentStage === "closed" || p.currentStage === "cancelled") return `This PO is ${p.currentStage} — it can no longer be edited.`;
+  if (p.sharedAt) return "This PO has already been shared with the vendor — its number can no longer be changed.";
+  return null;
+}
+
+function lineEntry(idx: ImportIndex, stepKey: StepKey, line: RequestItem, actorId: string | null, atIso: string, lockReason: string | null): StageEntry<RequestItem> {
+  const req = idx.requestById.get(line.requestId);
+  return {
+    id: line.id,
+    stepKey,
+    poId: "", // request-scope: no PO yet. Callers link to the request, not a PO.
+    ref: req?.requestNo ?? "—",
+    companyId: req?.companyId ?? null,
+    actorId,
+    atIso,
+    editedAtIso: line.editedAt,
+    editedById: line.editedBy,
+    lockReason,
+    row: line,
+  };
+}
+
+/**
+ * Decided lines. A rejection is a completed decision too — it is exactly the kind
+ * of thing an approver wants to look back at — so `rejected` is included, locked.
+ * It carries no `approvedAt` (reject never stamps one), so fall back to the line's
+ * own timestamp rather than dropping the row.
+ */
+export const completedApprovalEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<RequestItem>[] =>
+  data.requestItems
+    .filter((l) => !!l.approvedAt || l.status === "rejected")
+    .map((l) => lineEntry(idx, "approval", l, l.approverId, l.approvedAt ?? l.createdAt, approvalLockReason(l)));
+
+/** Generated POs. The entry is the PO; `po.createdAt` is the step's completion. */
+export const completedPoGenEntries = (data: ImportSnapshot): StageEntry<PurchaseOrder>[] =>
+  data.pos.map((p) => ({
+    id: p.id,
+    stepKey: "po" as StepKey,
+    poId: p.id,
+    ref: p.poNo,
+    companyId: p.companyId,
+    actorId: p.createdBy,
+    atIso: p.createdAt,
+    editedAtIso: p.editedAt,
+    editedById: p.editedBy,
+    lockReason: poGenLockReason(p),
+    row: p,
+  }));
+
+/* -------------------------------------------------------------------------- */
 /*  The aggregator                                                             */
 /* -------------------------------------------------------------------------- */
 

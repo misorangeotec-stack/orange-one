@@ -305,6 +305,8 @@ const mapRequestItem = (r: any): RequestItem => ({
   cancelReason: r.cancel_reason ?? null,
   sourcedAt: r.sourced_at ?? null,
   approvedAt: r.approved_at ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -335,12 +337,15 @@ const mapPo = (r: any): PurchaseOrder => ({
   paymentTerms: (r.payment_terms ?? null) as PurchaseOrder["paymentTerms"],
   dispatchDate: r.dispatch_date ?? null,
   sharedAt: r.shared_at ?? null,
+  sharedBy: r.shared_by ?? null,
   documentPath: r.document_path ?? null,
   documentName: r.document_name ?? null,
   tallyPoNo: r.tally_po_no ?? null,
   shareRemarks: r.share_remarks ?? null,
   createdBy: r.created_by ?? null,
   createdAt: r.created_at,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   cancelledBy: r.cancelled_by ?? null,
   cancelledAt: r.cancelled_at ?? null,
   cancelReason: r.cancel_reason ?? null,
@@ -372,6 +377,9 @@ const mapPi = (r: any): Pi => ({
   revisedDispatchDate: r.revised_dispatch_date ?? null,
   documentPath: r.document_path ?? null,
   documentName: r.document_name ?? null,
+  createdBy: r.created_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -394,6 +402,8 @@ const mapGrn = (r: any): Grn => ({
   photoPath: r.photo_path ?? null,
   photoName: r.photo_name ?? null,
   receivedBy: r.received_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -414,6 +424,8 @@ const mapTally = (r: any): TallyBooking => ({
   documentName: r.document_name ?? null,
   remarks: r.remarks ?? null,
   bookedBy: r.booked_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -433,6 +445,9 @@ const mapPayment = (r: any): Payment => ({
   advicePath: r.advice_path ?? null,
   adviceName: r.advice_name ?? null,
   piRemarks: r.pi_remarks ?? null,
+  createdBy: r.created_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -448,6 +463,8 @@ const mapFollowup = (r: any): Followup => ({
   remarks: r.remarks ?? null,
   piRemarks: r.pi_remarks ?? null,
   createdBy: r.created_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 

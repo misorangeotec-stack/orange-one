@@ -8,17 +8,22 @@ import type { SupplyRequest } from "../types";
 /**
  * Approve / send back a request at the first (HOD) or second (Management) approval.
  * A remark is mandatory when it is NOT a plain approval — the RPC enforces it too.
+ *
+ * `editing` revises a decision already made. It stays available until the next
+ * step is done; the server re-checks that and refuses otherwise.
  */
 export default function ApprovalModal({
   open,
   onClose,
   request,
   stage,
+  editing = false,
 }: {
   open: boolean;
   onClose: () => void;
   request: SupplyRequest | null;
   stage: "first" | "second";
+  editing?: boolean;
 }) {
   const s = useSuppliesStore();
   const [remarks, setRemarks] = useState("");
@@ -27,11 +32,12 @@ export default function ApprovalModal({
 
   useEffect(() => {
     if (open) {
-      setRemarks("");
+      // Editing shows the remark actually recorded; a fresh decision starts blank.
+      setRemarks(editing ? (stage === "first" ? request?.firstRemarks : request?.secondRemarks) ?? "" : "");
       setErr(null);
       setBusy(null);
     }
-  }, [open]);
+  }, [open, editing, stage, request?.id, request?.firstRemarks, request?.secondRemarks]);
 
   const act = async (approve: boolean) => {
     if (!request) return;
@@ -42,8 +48,14 @@ export default function ApprovalModal({
     setBusy(approve ? "approve" : "reject");
     setErr(null);
     try {
-      if (stage === "first") await s.decideFirstApproval(request, approve, remarks.trim());
-      else await s.decideSecondApproval(request, approve, remarks.trim());
+      if (editing) {
+        if (stage === "first") await s.updateFirstApproval(request, approve, remarks.trim());
+        else await s.updateSecondApproval(request, approve, remarks.trim());
+      } else if (stage === "first") {
+        await s.decideFirstApproval(request, approve, remarks.trim());
+      } else {
+        await s.decideSecondApproval(request, approve, remarks.trim());
+      }
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -58,8 +70,10 @@ export default function ApprovalModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`${label} — ${request?.reqNo ?? ""}`}
-      subtitle={request ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}` : undefined}
+      title={`${editing ? "Edit " : ""}${editing ? label.charAt(0).toLowerCase() + label.slice(1) : label} — ${request?.reqNo ?? ""}`}
+      subtitle={request
+        ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}${editing ? " · revisable until the next step is done" : ""}`
+        : undefined}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={!!busy}>
@@ -75,7 +89,7 @@ export default function ApprovalModal({
             {busy === "reject" ? "Saving…" : "Not approved"}
           </Button>
           <Button size="sm" onClick={() => act(true)} disabled={!!busy}>
-            {busy === "approve" ? "Saving…" : "Approve"}
+            {busy === "approve" ? "Saving…" : editing ? "Keep approved" : "Approve"}
           </Button>
         </>
       }

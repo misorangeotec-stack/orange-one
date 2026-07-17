@@ -7,9 +7,13 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
+// NOT time.ts's todayIso(): that is documented "local" but is really the UTC
+// date, so in IST it reads as yesterday until 05:30 and would reject a dispatch
+// entered early in the morning. todayLocalIso() is the genuinely local one.
+import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useImportStore } from "../store";
 import { inr } from "../lib/format";
-import type { PurchaseOrder, PoCancelRequest } from "../types";
+import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, TallyBooking } from "../types";
 
 const PAYMENT_TERMS: ComboOption[] = [
   { value: "full_advance", label: "100% Advance" },
@@ -42,7 +46,7 @@ function Hint({ children }: { children: ReactNode }) {
 }
 
 /* ----------------------------- Add PI ------------------------------------ */
-export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
+export function AddPiModal({ po, open, onClose, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi }) {
   const s = useImportStore();
   const items = s.poItemsForPo(po.id);
   const [vendorPiNo, setVendorPiNo] = useState("");
@@ -53,8 +57,14 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
 
   // Per-line coverage: how much of each PO line is already on an existing PI, how
   // much is still to collect, and its per-unit (incl-GST) value.
+  //
+  // When EDITING, this PI's own lines are excluded from `covered` — they are what
+  // we are replacing, so counting them would show a line as fully covered and
+  // leave nothing editable. The server's cap excludes the same rows.
   const coverage = items.map((pi) => {
-    const covered = s.piItems.filter((x) => x.poItemId === pi.id).reduce((a, x) => a + x.qty, 0);
+    const covered = s.piItems
+      .filter((x) => x.poItemId === pi.id && (!editing || x.piId !== editing.id))
+      .reduce((a, x) => a + x.qty, 0);
     return { pi, covered, remaining: Math.max(0, pi.qty - covered), unit: pi.qty > 0 ? pi.lineValue / pi.qty : 0 };
   });
   const unitById = new Map(coverage.map((c) => [c.pi.id, c.unit]));
@@ -63,17 +73,23 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
 
   useEffect(() => {
     if (!open) return;
-    setVendorPiNo("");
+    setVendorPiNo(editing?.vendorPiNo ?? "");
     setFile(null);
     const init: Record<string, string> = {};
     for (const pi of items) {
-      const covered = s.piItems.filter((x) => x.poItemId === pi.id).reduce((a, x) => a + x.qty, 0);
-      init[pi.id] = String(Math.max(0, pi.qty - covered));
+      if (editing) {
+        // Editing seeds THIS PI's own recorded qty — not the remaining, which is
+        // what a new PI would be seeded with.
+        init[pi.id] = String(s.piItemsForPi(editing.id).find((x) => x.poItemId === pi.id)?.qty ?? 0);
+      } else {
+        const covered = s.piItems.filter((x) => x.poItemId === pi.id).reduce((a, x) => a + x.qty, 0);
+        init[pi.id] = String(Math.max(0, pi.qty - covered));
+      }
     }
     setQty(init);
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, po.id]);
+  }, [open, po.id, editing?.id]);
 
   const save = async () => {
     setErr(null);
@@ -84,7 +100,11 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
     try {
       let doc: { path: string; name: string } | null = null;
       if (file) doc = await s.uploadPiDocument(po.id, file);
-      await s.addPi({ poId: po.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+      if (editing) {
+        await s.updatePi({ piId: editing.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+      } else {
+        await s.addPi({ poId: po.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+      }
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -94,8 +114,11 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Add PI" subtitle="Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Add PI"}</Button></>}>
+    <Modal open={open} onClose={onClose} size="lg" title={editing ? "Edit PI" : "Add PI"}
+      subtitle={editing
+        ? `${po.poNo} · correct what was recorded. Editable until a payment lands against it or goods arrive.`
+        : "Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Add PI"}</Button></>}>
       <div className="space-y-3.5">
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
@@ -167,7 +190,7 @@ export function AddPiModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
 }
 
 /* --------------------------- Share PO (upload PDF) ------------------------ */
-export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
+export function SharePoModal({ po, open, editing = false, onClose }: { po: PurchaseOrder; open: boolean; editing?: boolean; onClose: () => void }) {
   const s = useImportStore();
   const [tallyPoNo, setTallyPoNo] = useState("");
   const [dispatch, setDispatch] = useState("");
@@ -178,23 +201,47 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
 
   useEffect(() => {
     if (!open) return;
-    setTallyPoNo("");
+    // Editing shows what was actually recorded; sharing starts blank. Seeding the
+    // Tally number when sharing would invite blind-accepting a stale value.
+    setTallyPoNo(editing ? po.tallyPoNo ?? "" : "");
     setDispatch(po.dispatchDate ?? "");
-    setRemarks("");
+    setRemarks(editing ? po.shareRemarks ?? "" : "");
     setFile(null);
     setErr(null);
-  }, [open, po.id, po.dispatchDate]);
+  }, [open, editing, po.id, po.dispatchDate, po.tallyPoNo, po.shareRemarks]);
+
+  const hasExistingDoc = !!po.documentPath;
+  // Sharing requires the PDF. Editing does not: no new file simply means "keep the
+  // one already attached".
+  const docSatisfied = editing ? hasExistingDoc || !!file : !!file;
 
   const save = async () => {
     setErr(null);
     if (!tallyPoNo.trim()) return setErr("Enter the PO number generated in Tally.");
     if (!dispatch) return setErr("Enter the expected dispatch date.");
-    if (!file) return setErr("Attach the PO PDF to mark it shared.");
+    if (!docSatisfied) return setErr(editing ? "Attach the PO PDF." : "Attach the PO PDF to mark it shared.");
     setBusy(true);
     try {
-      const doc = await s.uploadPoDocument(po.id, file);
-      // Import is always 100% advance — force full_advance so the PO routes to the Payment step.
-      await s.sharePo(po.id, { path: doc.path, name: doc.name, tallyPoNo: tallyPoNo.trim(), remarks: remarks.trim() || null, paymentTerms: "full_advance", dispatchDate: dispatch });
+      // Upload first, so a failed upload never half-writes the row. The superseded
+      // file is left in storage on purpose — uploads are immutable timestamped
+      // keys, and the document's history is part of what this stage records.
+      const doc = file ? await s.uploadPoDocument(po.id, file) : null;
+      if (editing) {
+        await s.updateSharePo({
+          poId: po.id,
+          tallyPoNo: tallyPoNo.trim(),
+          // Import is always 100% advance; an edit must not quietly re-route the PO
+          // off the Payment step, so the terms stay forced here exactly as at share.
+          paymentTerms: "full_advance",
+          dispatchDate: dispatch,
+          remarks: remarks.trim() || null,
+          documentPath: doc?.path ?? null, // null ⇒ server keeps the existing document
+          documentName: doc?.name ?? null,
+        });
+      } else {
+        // Import is always 100% advance — force full_advance so the PO routes to the Payment step.
+        await s.sharePo(po.id, { path: doc!.path, name: doc!.name, tallyPoNo: tallyPoNo.trim(), remarks: remarks.trim() || null, paymentTerms: "full_advance", dispatchDate: dispatch });
+      }
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -204,8 +251,11 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Share PO" subtitle={`${po.poNo} · confirm the dispatch date, attach the PO PDF, then mark it shared with the vendor. Import is 100% advance.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !file || !tallyPoNo.trim() || !dispatch}>{busy ? "Sharing…" : "Share PO"}</Button></>}>
+    <Modal open={open} onClose={onClose} size="lg" title={editing ? "Edit Share Details" : "Share PO"}
+      subtitle={editing
+        ? `${po.poNo} · correct what was recorded when this PO was shared. Editable until the next step is done.`
+        : `${po.poNo} · confirm the dispatch date, attach the PO PDF, then mark it shared with the vendor. Import is 100% advance.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !docSatisfied || !tallyPoNo.trim() || !dispatch}>{busy ? (editing ? "Saving…" : "Sharing…") : editing ? "Save Changes" : "Share PO"}</Button></>}>
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
           <FieldLabel label="Tally PO Number" required>
@@ -220,11 +270,11 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
 
         <div className="border-t border-line/70" />
 
-        <FieldLabel label="PO PDF" required>
+        <FieldLabel label="PO PDF" required={!editing}>
           <div className="flex flex-wrap items-center gap-2.5">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
               <Upload className="h-4 w-4" />
-              {file ? "Change file" : "Choose file"}
+              {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
               <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
@@ -233,11 +283,15 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
                 <span className="max-w-[260px] truncate text-navy">{file.name}</span>
                 <button type="button" onClick={() => setFile(null)} className="shrink-0 text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
               </span>
+            ) : editing && hasExistingDoc ? (
+              <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                Current: <span className="max-w-[260px] truncate text-navy">{po.documentName ?? "attached file"}</span>
+              </span>
             ) : (
               <span className="text-[12.5px] text-grey-2">No file selected</span>
             )}
           </div>
-          <Hint>PDF or any file — required to share</Hint>
+          <Hint>{editing ? "Leave as-is to keep the attached file — the previous version is retained either way." : "PDF or any file — required to share"}</Hint>
         </FieldLabel>
 
         <FieldLabel label="Remarks" hint="Optional">
@@ -250,12 +304,17 @@ export function SharePoModal({ po, open, onClose }: { po: PurchaseOrder; open: b
 }
 
 /* --------------------------- Payment (adv/inst) -------------------------- */
-export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; open: boolean; onClose: () => void; kind: "advance" | "installment" }) {
+export function PaymentModal({ po, open, onClose, kind, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; kind: "advance" | "installment"; editing?: Payment }) {
   const s = useImportStore();
   // Import pays 100% advance in the vendor's currency; INR (via the FX rate) caps
   // against the PO's INR pending so approval/booking stay consistent.
-  const poPending = s.pendingAmount(po);
-  const ccy = po.currency || "USD";
+  //
+  // When EDITING, this payment's own INR amount is added back: `pendingAmount`
+  // already subtracts it, so without this a ₹100 → ₹101 nudge would look like it
+  // exceeds the pending by ₹100. (The server's real cap is on the FOREIGN amount —
+  // see `pendingFx` below — and excludes this row the same way.)
+  const poPending = s.pendingAmount(po) + (editing?.amount ?? 0);
+  const ccy = (editing?.currency ?? po.currency) || "USD";
 
   const [amountFx, setAmountFx] = useState("");
   const [fxRate, setFxRate] = useState("");
@@ -271,6 +330,18 @@ export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; o
 
   useEffect(() => {
     if (!open) return;
+    if (editing) {
+      // Editing shows THIS payment's own recorded values — not the PO's full value,
+      // which is what a new 100% advance would be seeded with.
+      setPaidOn(editing.paidOn);
+      setUtr(editing.utrRef ?? "");
+      setDetails(editing.details ?? "");
+      setFile(null);
+      setErr(null);
+      setAmountFx(editing.amountFx !== null ? String(editing.amountFx) : "");
+      setFxRate(editing.fxRate !== null ? String(editing.fxRate) : "");
+      return;
+    }
     setPaidOn(todayIso());
     setUtr("");
     setDetails("");
@@ -280,7 +351,7 @@ export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; o
     setAmountFx(isAdvance ? (po.totalValueFx ? String(po.totalValueFx) : "") : "");
     setFxRate(po.fxRate ? String(po.fxRate) : "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, po.id, kind]);
+  }, [open, po.id, kind, editing?.id]);
 
   const loadFx = async () => {
     setFxBusy(true);
@@ -299,7 +370,12 @@ export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; o
   const amtFx = Number(amountFx) || 0;
   const inrAmount = Math.round(amtFx * fx * 100) / 100;
   // Cap on the FOREIGN value (the FX rate at payment is independent of the request rate).
-  const paidFx = s.payments.filter((p) => p.poId === po.id).reduce((a, p) => a + (p.amountFx ?? 0), 0);
+  // Editing excludes this payment's own row from the running total — mirroring the
+  // server's `and id <> p_payment_id`. Without it, re-saving an unchanged 100%
+  // advance would count itself twice and reject.
+  const paidFx = s.payments
+    .filter((p) => p.poId === po.id && (!editing || p.id !== editing.id))
+    .reduce((a, p) => a + (p.amountFx ?? 0), 0);
   const pendingFx = Math.max(0, (po.totalValueFx ?? 0) - paidFx);
 
   const save = async () => {
@@ -311,20 +387,35 @@ export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; o
     try {
       let advice: { path: string; name: string } | null = null;
       if (file) advice = await s.uploadPaymentAdvice(po.id, file);
-      await s.recordPayment({
-        poId: po.id,
-        piId: null,
-        kind,
-        amount: inrAmount,
-        amountFx: amtFx,
-        currency: ccy,
-        fxRate: fx,
-        details: details.trim() || null,
-        advicePath: advice?.path ?? null,
-        adviceName: advice?.name ?? null,
-        paidOn,
-        utrRef: utr.trim() || null,
-      });
+      if (editing) {
+        await s.updatePayment({
+          paymentId: editing.id,
+          amount: inrAmount,
+          amountFx: amtFx,
+          currency: ccy,
+          fxRate: fx,
+          details: details.trim() || null,
+          advicePath: advice?.path ?? null, // null ⇒ server keeps the existing advice
+          adviceName: advice?.name ?? null,
+          paidOn,
+          utrRef: utr.trim() || null,
+        });
+      } else {
+        await s.recordPayment({
+          poId: po.id,
+          piId: null,
+          kind,
+          amount: inrAmount,
+          amountFx: amtFx,
+          currency: ccy,
+          fxRate: fx,
+          details: details.trim() || null,
+          advicePath: advice?.path ?? null,
+          adviceName: advice?.name ?? null,
+          paidOn,
+          utrRef: utr.trim() || null,
+        });
+      }
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -334,8 +425,12 @@ export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; o
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={isAdvance ? "Record payment (100% advance)" : "Record payment"} subtitle={`${po.poNo} · ${ccy} ${(po.totalValueFx ?? 0).toLocaleString("en-IN")} · pending ${inr(poPending)}`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Record payment"}</Button></>}>
+    <Modal open={open} onClose={onClose}
+      title={editing ? "Edit payment" : isAdvance ? "Record payment (100% advance)" : "Record payment"}
+      subtitle={editing
+        ? `${po.poNo} · correct what was recorded. Editable until a follow-up is logged against this PO.`
+        : `${po.poNo} · ${ccy} ${(po.totalValueFx ?? 0).toLocaleString("en-IN")} · pending ${inr(poPending)}`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Record payment"}</Button></>}>
       <div className="space-y-3.5">
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label={`Amount (${ccy})`} required>
@@ -388,7 +483,7 @@ export function PaymentModal({ po, open, onClose, kind }: { po: PurchaseOrder; o
 }
 
 /* ----------------------------- Follow-up --------------------------------- */
-export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null; open: boolean; onClose: () => void }) {
+export function FollowupModal({ po, open, onClose, editing }: { po: PurchaseOrder | null; open: boolean; onClose: () => void; editing?: Followup }) {
   const s = useImportStore();
   const [status, setStatus] = useState("pending");
   const [actual, setActual] = useState("");
@@ -408,13 +503,27 @@ export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null;
 
   useEffect(() => {
     if (!open || !po) return;
+    if (editing) {
+      // Editing shows THIS row exactly as recorded — including its own revised
+      // date and remarks, which a NEW follow-up deliberately starts blank.
+      setStatus(editing.dispatchStatus);
+      setActual(editing.actualDispatchDate ?? "");
+      setLr(editing.lrNo ?? "");
+      setTransport(editing.transportDetails ?? "");
+      setRevised(editing.revisedDispatchDate ?? "");
+      setRemarks(editing.remarks ?? "");
+      setPiRemarks(editing.piRemarks ?? "");
+      setErr(null);
+      return;
+    }
     setStatus(latest?.dispatchStatus ?? "pending");
-    // Actual dispatch defaults to the current dispatch due date. A previously
-    // recorded actual date only sticks once the goods really went out — on a
-    // `delayed`/`pending` follow-up the date entered was just the then-current
-    // due, so it must not shadow the revised date that superseded it.
-    const dispatched = latest?.dispatchStatus === "dispatched" ? latest.actualDispatchDate : null;
-    setActual(dispatched ?? due ?? "");
+    // Actual dispatch is a FACT — the day the goods really left — so it seeds
+    // ONLY from a prior follow-up that actually recorded a dispatch. It must
+    // never seed from the dispatch DUE date: that is a future promise, and
+    // copying it in here is how a future actual dispatch date reached the
+    // database (PO-2627-0011 was booked as dispatched on 10-08-2026, three
+    // weeks out). The due date lives in the modal subtitle instead.
+    setActual(latest?.dispatchStatus === "dispatched" ? latest.actualDispatchDate ?? "" : "");
     setLr(latest?.lrNo ?? "");
     setTransport(latest?.transportDetails ?? "");
     setRevised("");
@@ -422,16 +531,31 @@ export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null;
     setPiRemarks("");
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, po?.id]);
+  }, [open, po?.id, editing?.id]);
 
   if (!po) return null;
 
+  // The actual dispatch date only means anything on a `dispatched` follow-up:
+  // clear it on the way out so a seeded date can't ride along on a status that
+  // says the goods have NOT left.
+  const onStatusChange = (next: string) => {
+    setStatus(next);
+    if (next !== "dispatched") setActual("");
+  };
+
   const save = async () => {
     setErr(null);
+    if (status === "dispatched" && !actual) return setErr("Enter the date the goods actually left the vendor.");
+    // `max` on the input only constrains the picker — save runs from a button,
+    // not a form submit, so a typed or pasted date arrives unchecked. This is
+    // the guard that actually holds; the trigger behind the RPC is the backstop.
+    if (actual && actual > todayLocalIso()) return setErr("Enter a dispatch date on or before today.");
     if (status === "delayed" && !revised) return setErr("Enter the revised dispatch date the vendor promised.");
     setBusy(true);
     try {
-      await s.recordFollowup({ poId: po.id, dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null, piRemarks: piRemarks.trim() || null });
+      const payload = { dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null, piRemarks: piRemarks.trim() || null };
+      if (editing) await s.updateFollowup({ followupId: editing.id, ...payload });
+      else await s.recordFollowup({ poId: po.id, ...payload });
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -441,18 +565,21 @@ export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null;
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={`Follow-up — ${po.poNo}`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button></>}>
+    <Modal open={open} onClose={onClose} size="lg" title={editing ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
+      subtitle={editing ? "Correct what was recorded. Editable until goods are received." : due ? `Dispatch due ${formatDate(due)}` : undefined}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Save"}</Button></>}>
       <div className="space-y-3.5">
-        <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={setStatus} options={DISPATCH} autoAdvance /></FieldLabel>
+        <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance /></FieldLabel>
         <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Actual Dispatch Date">
-            <TextInput type="date" value={actual} onChange={(e) => setActual(e.target.value)} />
-            {due && <Hint>Dispatch due — edit if it differs</Hint>}
+          <FieldLabel label="Actual Dispatch Date" required={status === "dispatched"}>
+            <TextInput type="date" value={actual} max={todayLocalIso()} onChange={(e) => setActual(e.target.value)} />
+            <Hint>The day the goods actually left — cannot be in the future</Hint>
           </FieldLabel>
           {status === "delayed" && (
             <FieldLabel label="Revised Dispatch Date" required>
-              <TextInput type="date" value={revised} min={actual || undefined} onChange={(e) => setRevised(e.target.value)} />
+              {/* Was min={actual}. `actual` is now empty on a `delayed` follow-up,
+                  which would leave this unbounded — a revised promise is future. */}
+              <TextInput type="date" value={revised} min={todayLocalIso()} onChange={(e) => setRevised(e.target.value)} />
               <Hint>The new date the vendor promised</Hint>
             </FieldLabel>
           )}
@@ -504,7 +631,7 @@ export function FollowupModal({ po, open, onClose }: { po: PurchaseOrder | null;
 }
 
 /* ------------------------------- GRN ------------------------------------- */
-export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
+export function GrnModal({ po, open, onClose, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Grn }) {
   const s = useImportStore();
   const items = s.poItemsForPo(po.id);
   // The receipt is booked against the PO. Default to the reference the vendor
@@ -522,18 +649,25 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
 
   useEffect(() => {
     if (!open) return;
-    setPoRef(defaultPoRef);
-    setPiRef("");
-    setGate("");
-    setCondition("good");
-    setNote("");
+    setPoRef(editing?.poRef ?? defaultPoRef);
+    setPiRef(editing?.piRef ?? "");
+    setGate(editing?.gateRegisterNo ?? "");
+    setCondition(editing?.condition ?? "good");
+    setNote(editing?.note ?? "");
     setPhoto(null);
     const init: Record<string, string> = {};
-    for (const it of items) init[it.id] = String(Math.max(0, it.qty - it.receivedQty));
+    for (const it of items) {
+      // Editing seeds THIS receipt's own recorded qty; a new receipt seeds the
+      // outstanding balance. `it.receivedQty` is the rolled-up total across every
+      // GRN, so it is the wrong number to show when correcting one of them.
+      init[it.id] = editing
+        ? String(s.grnItemsForGrn(editing.id).find((g) => g.poItemId === it.id)?.receivedQty ?? 0)
+        : String(Math.max(0, it.qty - it.receivedQty));
+    }
     setQty(init);
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, po.id]);
+  }, [open, po.id, editing?.id]);
 
   const damaged = condition === "damaged" || condition === "partial_damage";
 
@@ -546,7 +680,11 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
     try {
       let photoDoc: { path: string; name: string } | null = null;
       if (photo) photoDoc = await s.uploadGrnPhoto(po.id, photo);
-      await s.recordGrn({ poId: po.id, piId: null, poRef: poRef.trim(), piRef: piRef.trim() || null, gateRegisterNo: gate.trim() || null, condition, note: note.trim() || null, items: lines, photoPath: photoDoc?.path ?? null, photoName: photoDoc?.name ?? null });
+      if (editing) {
+        await s.updateGrn({ grnId: editing.id, poRef: poRef.trim(), piRef: piRef.trim() || null, gateRegisterNo: gate.trim() || null, condition, note: note.trim() || null, items: lines, photoPath: photoDoc?.path ?? null, photoName: photoDoc?.name ?? null });
+      } else {
+        await s.recordGrn({ poId: po.id, piId: null, poRef: poRef.trim(), piRef: piRef.trim() || null, gateRegisterNo: gate.trim() || null, condition, note: note.trim() || null, items: lines, photoPath: photoDoc?.path ?? null, photoName: photoDoc?.name ?? null });
+      }
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -556,8 +694,9 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title="Record GRN" subtitle={`${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : "Record receipt"}</Button></>}>
+    <Modal open={open} onClose={onClose} size="lg" title={editing ? "Edit GRN" : "Record GRN"}
+      subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until this receipt is booked in Tally.` : `${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : editing ? "Save Changes" : "Record receipt"}</Button></>}>
       <div className="space-y-3.5">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3.5">
           <FieldLabel label="PO Ref No." required>
@@ -618,7 +757,7 @@ export function GrnModal({ po, open, onClose }: { po: PurchaseOrder; open: boole
 }
 
 /* ------------------------------- Tally ----------------------------------- */
-export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boolean; onClose: () => void }) {
+export function TallyModal({ po, open, onClose, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: TallyBooking }) {
   const s = useImportStore();
   // One Tally invoice per goods receipt — only receipts not yet booked are offered.
   const unbooked = s.unbookedGrnsForPo(po.id);
@@ -631,13 +770,13 @@ export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
 
   useEffect(() => {
     if (!open) return;
-    setGrnId(unbooked[0]?.id ?? "");
-    setTallyNo("");
-    setRemarks("");
+    setGrnId(editing?.grnId ?? unbooked[0]?.id ?? "");
+    setTallyNo(editing?.tallyPiNo ?? "");
+    setRemarks(editing?.remarks ?? "");
     setFile(null);
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, po.id]);
+  }, [open, po.id, editing?.id]);
 
   /** Received qty on a GRN, so the user can tell partial consignments apart. */
   const grnLabel = (g: (typeof unbooked)[number]): string => {
@@ -650,12 +789,18 @@ export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
   const save = async () => {
     setErr(null);
     if (!tallyNo.trim()) return setErr("Tally invoice number is required.");
-    if (unbooked.length > 0 && !grnId) return setErr("Select the goods receipt this invoice is booked against.");
+    if (!editing && unbooked.length > 0 && !grnId) return setErr("Select the goods receipt this invoice is booked against.");
     setBusy(true);
     try {
       let doc: { path: string; name: string } | null = null;
       if (file) doc = await s.uploadTallyDocument(po.id, file);
-      await s.bookTally({ poId: po.id, grnId: grnId || null, tallyPiNo: tallyNo.trim(), documentPath: doc?.path ?? null, documentName: doc?.name ?? null, remarks: remarks.trim() || null });
+      if (editing) {
+        // grnId is deliberately not sent: which receipt an invoice belongs to is
+        // not a typo, and moving it would silently un-book the old one.
+        await s.updateTally({ bookingId: editing.id, tallyPiNo: tallyNo.trim(), documentPath: doc?.path ?? null, documentName: doc?.name ?? null, remarks: remarks.trim() || null });
+      } else {
+        await s.bookTally({ poId: po.id, grnId: grnId || null, tallyPiNo: tallyNo.trim(), documentPath: doc?.path ?? null, documentName: doc?.name ?? null, remarks: remarks.trim() || null });
+      }
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -664,17 +809,32 @@ export function TallyModal({ po, open, onClose }: { po: PurchaseOrder; open: boo
     }
   };
 
+  // On edit the booking's own GRN is no longer in `unbooked` (it IS booked), so
+  // offer it explicitly — read-only, purely so the user can see what they are
+  // correcting against.
+  const editedGrn = editing?.grnId ? s.grnsForPo(po.id).find((g) => g.id === editing.grnId) : undefined;
+
   return (
-    <Modal open={open} onClose={onClose} title="Book in Tally" subtitle={`${po.poNo} · one invoice per goods receipt — partial receipts included.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Book"}</Button></>}>
+    <Modal open={open} onClose={onClose} title={editing ? "Edit Tally Booking" : "Book in Tally"}
+      subtitle={editing ? `${po.poNo} · correct the invoice details. The receipt it is booked against cannot be changed.` : `${po.poNo} · one invoice per goods receipt — partial receipts included.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Book"}</Button></>}>
       <div className="space-y-3.5">
-        <FieldLabel label="Against GRN" required={unbooked.length > 0}>
-          <Combobox value={grnId} onChange={setGrnId} options={grnOptions} autoAdvance />
-          <Hint>
-            {unbooked.length === 0
-              ? "Every goods receipt on this PO is already booked."
-              : `${unbooked.length} receipt${unbooked.length === 1 ? "" : "s"} awaiting an invoice.`}
-          </Hint>
+        <FieldLabel label="Against GRN" required={!editing && unbooked.length > 0}>
+          {editing ? (
+            <>
+              <TextInput value={editedGrn ? grnLabel(editedGrn) : "—"} readOnly className="bg-page/70 text-grey-2 cursor-not-allowed" />
+              <Hint>Fixed — delete and re-book if the invoice is against the wrong receipt.</Hint>
+            </>
+          ) : (
+            <>
+              <Combobox value={grnId} onChange={setGrnId} options={grnOptions} autoAdvance />
+              <Hint>
+                {unbooked.length === 0
+                  ? "Every goods receipt on this PO is already booked."
+                  : `${unbooked.length} receipt${unbooked.length === 1 ? "" : "s"} awaiting an invoice.`}
+              </Hint>
+            </>
+          )}
         </FieldLabel>
         <FieldLabel label="Tally Invoice No." required><TextInput value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} placeholder="e.g. 2627/PUR/0123" /></FieldLabel>
         <FieldLabel label="Tally Invoice Document" hint="PDF or any file · optional">

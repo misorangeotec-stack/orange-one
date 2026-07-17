@@ -1086,6 +1086,8 @@ export type Database = {
           current_step: string
           delivered_at: string | null
           department_id: string
+          edited_at: string | null
+          edited_by: string | null
           first_approved_at: string | null
           first_approver_id: string | null
           first_remarks: string | null
@@ -5051,6 +5053,30 @@ export type Database = {
         Args: { p: Json; p_req: string }
         Returns: undefined
       }
+      fms_supplies_update_first_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_update_second_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_update_handover: {
+        Args: { p: Json; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_first_approval_editable: {
+        Args: { p_req: string }
+        Returns: boolean
+      }
+      fms_supplies_second_approval_editable: {
+        Args: { p_req: string }
+        Returns: boolean
+      }
+      fms_supplies_handover_editable: {
+        Args: { p_req: string }
+        Returns: boolean
+      }
       fms_supplies_hold_request: {
         Args: { p_hold: boolean; p_reason?: string; p_req: string }
         Returns: undefined
@@ -5599,6 +5625,104 @@ export type Database = {
           p_remarks?: string
           p_tally_po_no?: string
         }
+        Returns: undefined
+      }
+      fms_purchase_share_po_editable: {
+        Args: { p_po_id: string }
+        Returns: boolean
+      }
+      fms_purchase_po_open: { Args: { p_po_id: string }; Returns: boolean }
+      fms_purchase_pi_editable: { Args: { p_pi_id: string }; Returns: boolean }
+      fms_purchase_payment_editable: { Args: { p_payment_id: string }; Returns: boolean }
+      fms_purchase_followup_editable: { Args: { p_followup_id: string }; Returns: boolean }
+      fms_purchase_grn_editable: { Args: { p_grn_id: string }; Returns: boolean }
+      fms_purchase_tally_editable: { Args: { p_booking_id: string }; Returns: boolean }
+      fms_purchase_sourcing_editable: { Args: { p_line_id: string }; Returns: boolean }
+      fms_purchase_approval_editable: { Args: { p_line_id: string }; Returns: boolean }
+      fms_purchase_po_editable: { Args: { p_po_id: string }; Returns: boolean }
+      fms_purchase_update_share_po: {
+        Args: {
+          p_dispatch_date: string
+          p_document_name?: string
+          p_document_path?: string
+          p_payment_terms: string
+          p_po_id: string
+          p_remarks?: string
+          p_tally_po_no: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_pi: {
+        Args: {
+          p_dispatch_date?: string
+          p_document_name?: string
+          p_document_path?: string
+          p_items: Json
+          p_payment_terms?: string
+          p_pi_id: string
+          p_pi_value?: number
+          p_vendor_pi_no: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_payment: {
+        Args: {
+          p_amount: number
+          p_paid_on?: string
+          p_payment_id: string
+          p_pi_remarks?: string
+          p_utr?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_followup: {
+        Args: {
+          p_actual_dispatch_date?: string
+          p_dispatch_status: string
+          p_followup_id: string
+          p_lr_no?: string
+          p_pi_remarks?: string
+          p_remarks?: string
+          p_revised_dispatch_date?: string
+          p_transport?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_grn: {
+        Args: {
+          p_condition?: string
+          p_gate_register_no?: string
+          p_grn_id: string
+          p_items: Json
+          p_note?: string
+          p_photo_name?: string
+          p_photo_path?: string
+          p_pi_ref?: string
+          p_po_ref?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_tally: {
+        Args: {
+          p_booking_id: string
+          p_document_name?: string
+          p_document_path?: string
+          p_remarks?: string
+          p_tally_pi_no: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_approval: {
+        Args: {
+          p_decision: string
+          p_line_id: string
+          p_override_vendor_id?: string
+          p_reason?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_po_no: {
+        Args: { p_po_id: string; p_po_no: string }
         Returns: undefined
       }
       fms_purchase_submit_request: {

@@ -495,6 +495,163 @@ export async function sharePo(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Correct an already-shared PO's share details.
+ *
+ * Separate from `sharePo` on purpose. `sharePo` is the step ITSELF: it moves the
+ * stage on and stamps who/when. This only amends what was recorded, leaves
+ * `shared_at`/`shared_by` untouched, and — unlike `sharePo` — the RPC refuses
+ * once the next step has been done. Omit `documentPath` to keep the existing PDF.
+ */
+export async function updateSharePo(input: {
+  poId: string;
+  tallyPoNo: string;
+  paymentTerms: string;
+  dispatchDate: string;
+  remarks?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_share_po", {
+    p_po_id: input.poId,
+    p_tally_po_no: input.tallyPoNo,
+    p_payment_terms: input.paymentTerms,
+    p_dispatch_date: input.dispatchDate,
+    p_remarks: input.remarks ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/* --- Stage edits. Each refuses server-side once the next step is done. ----- */
+/* Omit a document/photo path to keep the existing file.                       */
+
+export async function updatePi(input: {
+  piId: string;
+  vendorPiNo: string;
+  items: { poItemId: string; qty: number }[];
+  piValue: number;
+  paymentTerms?: string | null;
+  dispatchDate?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_pi", {
+    p_pi_id: input.piId,
+    p_vendor_pi_no: input.vendorPiNo,
+    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, qty: i.qty })) as unknown as Json,
+    p_payment_terms: input.paymentTerms ?? undefined,
+    p_pi_value: input.piValue,
+    p_dispatch_date: input.dispatchDate ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updatePayment(input: {
+  paymentId: string;
+  amount: number;
+  paidOn?: string | null;
+  utrRef?: string | null;
+  piRemarks?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_payment", {
+    p_payment_id: input.paymentId,
+    p_amount: input.amount,
+    p_paid_on: input.paidOn ?? undefined,
+    p_utr: input.utrRef ?? undefined,
+    p_pi_remarks: input.piRemarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateFollowup(input: {
+  followupId: string;
+  dispatchStatus: string;
+  actualDispatchDate?: string | null;
+  lrNo?: string | null;
+  transportDetails?: string | null;
+  revisedDispatchDate?: string | null;
+  remarks?: string | null;
+  piRemarks?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_followup", {
+    p_followup_id: input.followupId,
+    p_dispatch_status: input.dispatchStatus,
+    p_actual_dispatch_date: input.actualDispatchDate ?? undefined,
+    p_lr_no: input.lrNo ?? undefined,
+    p_transport: input.transportDetails ?? undefined,
+    p_revised_dispatch_date: input.revisedDispatchDate ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+    p_pi_remarks: input.piRemarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateGrn(input: {
+  grnId: string;
+  items: { poItemId: string; receivedQty: number; condition?: string }[];
+  poRef: string;
+  piRef?: string | null;
+  gateRegisterNo?: string | null;
+  condition?: string | null;
+  note?: string | null;
+  photoPath?: string | null;
+  photoName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_grn", {
+    p_grn_id: input.grnId,
+    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, received_qty: i.receivedQty, condition: i.condition ?? "good" })) as unknown as Json,
+    p_po_ref: input.poRef,
+    p_pi_ref: input.piRef ?? undefined,
+    p_gate_register_no: input.gateRegisterNo ?? undefined,
+    p_condition: input.condition ?? undefined,
+    p_note: input.note ?? undefined,
+    p_photo_path: input.photoPath ?? undefined,
+    p_photo_name: input.photoName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateTally(input: {
+  bookingId: string;
+  tallyPiNo: string;
+  documentPath?: string | null;
+  documentName?: string | null;
+  remarks?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_tally", {
+    p_booking_id: input.bookingId,
+    p_tally_pi_no: input.tallyPiNo,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateApproval(input: {
+  lineId: string;
+  decision: string;
+  overrideVendorId?: string | null;
+  reason?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_approval", {
+    p_line_id: input.lineId,
+    p_decision: input.decision,
+    p_override_vendor_id: input.overrideVendorId ?? undefined,
+    p_reason: input.reason ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updatePoNo(poId: string, poNo: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_po_no", { p_po_id: poId, p_po_no: poNo });
+  if (error) throw new Error(error.message);
+}
+
 export interface PiItemInput {
   poItemId: string;
   qty: number;

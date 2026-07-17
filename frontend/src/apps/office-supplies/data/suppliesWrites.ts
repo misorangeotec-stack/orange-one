@@ -81,6 +81,50 @@ export async function recordHandover(requestId: string, input: HandoverInput): P
   if (error) throw new Error(error.message);
 }
 
+/* ------------------------- stage edits (update_*) -------------------------- */
+/**
+ * Correcting an entry at a stage, until the next step is done.
+ *
+ * Each mirrors a `fms_supplies_update_<step>` RPC (20260719130000) that re-checks
+ * the lock server-side, refuses while the request is held / rejected / cancelled,
+ * and writes its activity row in the same transaction.
+ *
+ * A note on `update_handover`: it exists because `record_handover` hard-refuses
+ * once the request is delivered, and a delivered request's handover is
+ * deliberately still correctable — handover is the last step and nothing is
+ * derived from it.
+ */
+
+export async function updateFirstApproval(requestId: string, approve: boolean, remarks: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_supplies_update_first_approval", {
+    p_req: requestId,
+    p_approve: approve,
+    p_remarks: remarks,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateSecondApproval(requestId: string, approve: boolean, remarks: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_supplies_update_second_approval", {
+    p_req: requestId,
+    p_approve: approve,
+    p_remarks: remarks,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateHandover(requestId: string, input: HandoverInput): Promise<void> {
+  const { error } = await supabase.rpc("fms_supplies_update_handover", {
+    p_req: requestId,
+    p: {
+      handover_remarks: input.handoverRemarks ?? "",
+      tentative_delivery_date: input.tentativeDeliveryDate ?? "",
+      actual_delivery_date: input.actualDeliveryDate ?? "",
+    } as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function holdRequest(requestId: string, hold: boolean, reason: string): Promise<void> {
   const { error } = await supabase.rpc("fms_supplies_hold_request", {
     p_req: requestId,

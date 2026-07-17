@@ -97,6 +97,13 @@ export interface SupplyRequest {
   holdReason: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+  /**
+   * When a stage entry on this request was last CORRECTED via an update_* RPC.
+   * Distinct from `updated_at`, which a DB trigger bumps on every write and so
+   * cannot date an edit.
+   */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 

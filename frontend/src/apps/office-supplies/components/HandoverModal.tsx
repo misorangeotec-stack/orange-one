@@ -8,15 +8,22 @@ import type { SupplyRequest } from "../types";
 /**
  * Final confirmation / material handover. Records remarks + delivery dates; supplying an
  * ACTUAL delivery date closes the request as delivered (the RPC decides).
+ *
+ * `editing` corrects a handover already recorded — including a DELIVERED one,
+ * which `recordHandover` refuses outright (it only accepts `pending_handover`).
+ * Handover is the last step and this app has no stage machine, so there is
+ * nothing derived downstream for a late correction to drift.
  */
 export default function HandoverModal({
   open,
   onClose,
   request,
+  editing = false,
 }: {
   open: boolean;
   onClose: () => void;
   request: SupplyRequest | null;
+  editing?: boolean;
 }) {
   const s = useSuppliesStore();
   const [remarks, setRemarks] = useState("");
@@ -40,11 +47,13 @@ export default function HandoverModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.recordHandover(request, {
+      const payload = {
         handoverRemarks: remarks.trim() || null,
         tentativeDeliveryDate: tentative || null,
         actualDeliveryDate: actual || null,
-      });
+      };
+      if (editing) await s.updateHandover(request, payload);
+      else await s.recordHandover(request, payload);
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -57,8 +66,10 @@ export default function HandoverModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Handover — ${request?.reqNo ?? ""}`}
-      subtitle={request ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}` : undefined}
+      title={`${editing ? "Edit handover" : "Handover"} — ${request?.reqNo ?? ""}`}
+      subtitle={request
+        ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}${editing ? " · correct what was recorded" : ""}`
+        : undefined}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>

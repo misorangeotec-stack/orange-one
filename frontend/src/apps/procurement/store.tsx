@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
+import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { fetchProcurementData, PROCUREMENT_QK, procurementQueryKey } from "./data/procFetch";
@@ -47,9 +48,20 @@ import {
   lineInPoDesk,
   lineInSourcing,
   poDueIso,
+  completedShareEntries,
+  completedPiEntries,
+  completedAdvanceEntries,
+  completedFollowupEntries,
+  completedGrnEntries,
+  completedTallyEntries,
+  completedSourcingEntries,
+  completedApprovalEntries,
+  completedPoGenEntries,
+  poShareLockReason,
   type ProcIndex,
   type ProcSnapshot,
   type QueueEntry,
+  type StageEntry,
 } from "./lib/queues";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import {
@@ -80,6 +92,14 @@ import {
   cancelPo as cancelPoWrite,
   declinePoCancel as declinePoCancelWrite,
   sharePo as sharePoWrite,
+  updateSharePo as updateSharePoWrite,
+  updatePi as updatePiWrite,
+  updatePayment as updatePaymentWrite,
+  updateFollowup as updateFollowupWrite,
+  updateGrn as updateGrnWrite,
+  updateTally as updateTallyWrite,
+  updateApproval as updateApprovalWrite,
+  updatePoNo as updatePoNoWrite,
   addPi as addPiWrite,
   uploadPiDocument as uploadPiDocumentWrite,
   piDocumentUrl as piDocumentUrlWrite,
@@ -193,6 +213,23 @@ interface ProcurementStoreValue {
    * Control Center counts. Note `approvalQueue` below is the owner-scoped view.
    */
   queueEntries: QueueEntry[];
+  /**
+   * Every COMPLETED Share PO step, owner-agnostic — the "what was done here"
+   * counterpart to the pending queue. Includes closed/cancelled POs (locked), so
+   * a user's history never evaporates. Filter to `actorId === user.id` for "Mine".
+   */
+  completedShareEntries: StageEntry<PurchaseOrder>[];
+  /** The same, for each remaining stage. Entries are the domain ROWS, not POs. */
+  completedPiEntries: StageEntry<Pi>[];
+  completedAdvanceEntries: StageEntry<Payment>[];
+  completedFollowupEntries: StageEntry<Followup>[];
+  completedGrnEntries: StageEntry<Grn>[];
+  completedTallyEntries: StageEntry<TallyBooking>[];
+  completedSourcingEntries: StageEntry<RequestItem>[];
+  completedApprovalEntries: StageEntry<RequestItem>[];
+  completedPoGenEntries: StageEntry<PurchaseOrder>[];
+  /** Display name for an actor id, resolvable org-wide (not just your department). */
+  personName: (id: string | null) => string;
   // role-scoped queues
   sourcingQueue: RequestItem[];
   approvalQueue: RequestItem[];
@@ -281,6 +318,20 @@ interface ProcurementStoreValue {
 
   // PO lifecycle mutations
   sharePo: (poId: string, input?: { path: string | null; name: string | null; tallyPoNo: string | null; remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
+  /**
+   * Stage edits. Each is refused server-side once the next step is done — these
+   * wrappers only carry the payload; the RPC is the gate.
+   */
+  updateSharePo: (input: { poId: string; tallyPoNo: string; paymentTerms: string; dispatchDate: string; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updatePi: (input: { piId: string; vendorPiNo: string; items: { poItemId: string; qty: number }[]; piValue: number; paymentTerms?: string | null; dispatchDate?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updatePayment: (input: { paymentId: string; amount: number; paidOn?: string | null; utrRef?: string | null; piRemarks?: string | null }) => Promise<void>;
+  updateFollowup: (input: { followupId: string; dispatchStatus: string; actualDispatchDate?: string | null; lrNo?: string | null; transportDetails?: string | null; revisedDispatchDate?: string | null; remarks?: string | null; piRemarks?: string | null }) => Promise<void>;
+  updateGrn: (input: { grnId: string; items: { poItemId: string; receivedQty: number; condition?: string }[]; poRef: string; piRef?: string | null; gateRegisterNo?: string | null; condition?: string | null; note?: string | null; photoPath?: string | null; photoName?: string | null }) => Promise<void>;
+  updateTally: (input: { bookingId: string; tallyPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<void>;
+  updateApproval: (input: { lineId: string; decision: string; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  updatePoNo: (poId: string, poNo: string) => Promise<void>;
+  /** True while the Share PO entry may still be corrected. Mirrors the server rule. */
+  canEditSharePo: (po: PurchaseOrder) => boolean;
   addPi: (input: { poId: string; vendorPiNo: string; piValue: number; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
   uploadPiDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   piDocumentUrl: (path: string) => Promise<string>;
@@ -368,6 +419,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     enabled: !!session.user,
   });
 
+  // Org-wide names so a colleague's completed entry never renders blank: the
+  // normal directory is RLS-scoped (self + downline + same department), so a GRN
+  // booked by warehouse and viewed by accounts would not resolve.
+  // list_org_people() is the SECURITY DEFINER, name-only escape hatch — the same
+  // pattern the receivables follow-ups screen uses.
+  const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
+
   const companies = data?.companies ?? [];
   const categories = data?.categories ?? [];
   const itemGroups = data?.itemGroups ?? [];
@@ -442,6 +500,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
 
     const isStepOwner = (stepKey: StepKey): boolean =>
       isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
+
+    // Resolves against the org-wide list, not `dir.profileById`: the directory is
+    // RLS-scoped, so a cross-department colleague would render blank. Null actors
+    // are real — every actor FK is `on delete set null`, and rows created before
+    // their actor column existed were deliberately never backfilled.
+    const personName = (id: string | null): string => {
+      if (!id) return "—";
+      if (id === user.id) return user.name;
+      return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
+    };
 
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
@@ -565,6 +633,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       itemLabel,
       procIndex,
       queueEntries: buildQueueEntries(snapshot, procIndex),
+      completedShareEntries: completedShareEntries(snapshot, procIndex),
+      completedPiEntries: completedPiEntries(snapshot, procIndex),
+      completedAdvanceEntries: completedAdvanceEntries(snapshot, procIndex),
+      completedFollowupEntries: completedFollowupEntries(snapshot, procIndex),
+      completedGrnEntries: completedGrnEntries(snapshot, procIndex),
+      completedTallyEntries: completedTallyEntries(snapshot),
+      completedSourcingEntries: completedSourcingEntries(snapshot, procIndex),
+      completedApprovalEntries: completedApprovalEntries(snapshot, procIndex),
+      completedPoGenEntries: completedPoGenEntries(snapshot),
+      personName,
       sourcingQueue: requestItems.filter(lineInSourcing),
       // The ONE owner-scoped queue: an approver sees only the lines they may act
       // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
@@ -762,6 +840,22 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         });
         await invalidate();
       },
+      // The edit counterpart. No announce() call here: unlike every other write
+      // in this store, update_share_po logs its own activity row inside the same
+      // transaction — an edit's audit trail must not be able to go missing the
+      // way safeAnnounce's best-effort one can.
+      updateSharePo: async (input) => {
+        await updateSharePoWrite(input);
+        await invalidate();
+      },
+      updatePi: async (input) => { await updatePiWrite(input); await invalidate(); },
+      updatePayment: async (input) => { await updatePaymentWrite(input); await invalidate(); },
+      updateFollowup: async (input) => { await updateFollowupWrite(input); await invalidate(); },
+      updateGrn: async (input) => { await updateGrnWrite(input); await invalidate(); },
+      updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
+      updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
+      updatePoNo: async (poId, poNo) => { await updatePoNoWrite(poId, poNo); await invalidate(); },
+      canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(procIndex, po) === null,
       addPi: async (input) => {
         const id = await addPiWrite(input);
         await safeAnnounce({
@@ -1024,6 +1118,9 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     activity,
     notifications,
     dir,
+    // `personName` closes over this: without it the memo would not recompute when
+    // the org-wide people query resolves, and every actor would read "Unknown user".
+    orgPeople,
     user,
     session,
     isAdmin,

@@ -165,6 +165,9 @@ export interface RequestItem {
   sourcedAt: string | null;
   /** When the line was approved/overridden — the `approval` step's completion timestamp. */
   approvedAt: string | null;
+  /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -207,12 +210,21 @@ export interface PurchaseOrder {
   dispatchDate: string | null;
   /** When the PO was first shared — the `share_po` step's completion timestamp. */
   sharedAt: string | null;
+  /** Who first shared it. Null for POs shared before the column existed — never guessed. */
+  sharedBy: string | null;
   documentPath: string | null;
   documentName: string | null;
   tallyPoNo: string | null;
   shareRemarks: string | null;
   createdBy: string | null;
   createdAt: string;
+  /**
+   * When the share details were last CORRECTED. Distinct from the row's
+   * `updated_at`, which a DB trigger bumps on every write (including the stage
+   * machine's own recomputes) and so cannot date an edit.
+   */
+  editedAt: string | null;
+  editedBy: string | null;
   /** Set when a PO is cancelled (approver-only, vendor-requested). */
   cancelledBy: string | null;
   cancelledAt: string | null;
@@ -249,6 +261,11 @@ export interface Pi {
   revisedDispatchDate: string | null;
   documentPath: string | null;
   documentName: string | null;
+  /** Who collected the PI — the `collect_pi` step's actor. Recorded since day one; the mapper just never read it. */
+  createdBy: string | null;
+  /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -273,6 +290,9 @@ export interface Followup {
   /** Optional free-text PI reference / remark. */
   piRemarks: string | null;
   createdBy: string | null;
+  /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -292,6 +312,9 @@ export interface Grn {
   photoPath: string | null;
   photoName: string | null;
   receivedBy: string | null;
+  /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -312,6 +335,9 @@ export interface TallyBooking {
   documentName: string | null;
   remarks: string | null;
   bookedBy: string | null;
+  /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -338,6 +364,11 @@ export interface Payment {
   adviceName: string | null;
   /** Optional free-text PI reference / remark (PI is no longer the payment base). */
   piRemarks: string | null;
+  /** Who recorded the payment — the `advance_payment` step's actor. Recorded since day one; the mapper just never read it. */
+  createdBy: string | null;
+  /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 

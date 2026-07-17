@@ -13,16 +13,27 @@ import type { RequestItem } from "../types";
  * and lets the matched approver Approve · Override (pick another quoted vendor) ·
  * Reject (reason required) · On Hold (or Resume if held).
  */
+/**
+ * Decide an approval, or — with `editing` — revise one already decided.
+ *
+ * The two go through different RPCs on purpose. `decide_approval` only accepts a
+ * line still awaiting a decision; revising an already-approved line is
+ * `update_approval`, which accepts exactly `approved_pending_po` and refuses once
+ * the PO exists. Hold/Resume are not offered when editing: the line is past the
+ * point where holding it means anything.
+ */
 export default function ApprovalModal({
   line,
   open,
   onClose,
   onSaved,
+  editing = false,
 }: {
   line: RequestItem | null;
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
+  editing?: boolean;
 }) {
   const s = useProcurementStore();
   const [mode, setMode] = useState<"none" | "override" | "reject" | "hold">("none");
@@ -46,7 +57,11 @@ export default function ApprovalModal({
     setErr(null);
     setBusy(true);
     try {
-      await s.decideApproval({ requestItemId: line.id, decision, ...extra });
+      if (editing) {
+        await s.updateApproval({ lineId: line.id, decision, overrideVendorId: extra?.overrideVendorId ?? null, reason: extra?.reason ?? null });
+      } else {
+        await s.decideApproval({ requestItemId: line.id, decision, ...extra });
+      }
       setMode("none");
       setOverrideVendor("");
       setReason("");
@@ -64,8 +79,12 @@ export default function ApprovalModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title={`Approve — ${s.itemLabel(line.itemId)}`}
-      subtitle={`Recommended: ${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}`}
+      title={`${editing ? "Edit approval" : "Approve"} — ${s.itemLabel(line.itemId)}`}
+      subtitle={
+        editing
+          ? `Currently ${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)} — revise until the PO is generated.`
+          : `Recommended: ${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}`
+      }
     >
       <div className="space-y-4">
         {/* Quotes */}
@@ -151,14 +170,17 @@ export default function ApprovalModal({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => run("approve")} disabled={busy}>Approve</Button>
+            <Button size="sm" onClick={() => run("approve")} disabled={busy}>{editing ? "Re-approve" : "Approve"}</Button>
             <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("override"); }} disabled={busy}>Override</Button>
             <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("reject"); }} disabled={busy}>Reject</Button>
-            {line.status === "on_hold" ? (
-              <Button variant="ghost" size="sm" onClick={() => run("resume")} disabled={busy}>Resume</Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("hold"); }} disabled={busy}>On Hold</Button>
-            )}
+            {/* Hold/Resume are decisions on an UNDECIDED line — meaningless once
+                one has been made, so they're absent when revising. */}
+            {!editing &&
+              (line.status === "on_hold" ? (
+                <Button variant="ghost" size="sm" onClick={() => run("resume")} disabled={busy}>Resume</Button>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("hold"); }} disabled={busy}>On Hold</Button>
+              ))}
           </div>
         )}
 

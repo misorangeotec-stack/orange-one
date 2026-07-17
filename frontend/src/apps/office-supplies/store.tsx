@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
+import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
 import { SUPPLIES_QK, fetchSuppliesData, suppliesQueryKey } from "./data/suppliesFetch";
 import {
@@ -29,6 +30,9 @@ import {
   updateDepartment as updateDepartmentWrite,
   updateItem as updateItemWrite,
   updateServiceType as updateServiceTypeWrite,
+  updateFirstApproval as updateFirstApprovalWrite,
+  updateSecondApproval as updateSecondApprovalWrite,
+  updateHandover as updateHandoverWrite,
   type CategoryInput,
   type CompanyInput,
   type DepartmentInput,
@@ -38,7 +42,18 @@ import {
   type ServiceTypeInput,
   type StepOwnerInput,
 } from "./data/suppliesWrites";
-import { buildQueueEntries, isOpenRequest, supplyDueIso, supplySnapshotFrom, type QueueEntry, type SupplySnapshot } from "./lib/queues";
+import {
+  buildQueueEntries,
+  isOpenRequest,
+  supplyDueIso,
+  supplySnapshotFrom,
+  completedFirstApprovalEntries,
+  completedSecondApprovalEntries,
+  completedHandoverEntries,
+  type QueueEntry,
+  type StageEntry,
+  type SupplySnapshot,
+} from "./lib/queues";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import { masterTypeLabel } from "./lib/masterFields";
 import type { StepKey } from "./lib/steps";
@@ -137,6 +152,19 @@ interface SuppliesStoreValue {
   dueIsoFor: (r: SupplyRequest, stepKey: StepKey) => string | null;
   queueOwnerIds: (e: QueueEntry) => string[];
 
+  /**
+   * The "what I did here" side of each stage — every COMPLETED entry, unscoped.
+   * Owner-agnostic on purpose (the Control Center needs the full set); the pages
+   * scope to "mine" through `useStageMode`.
+   */
+  completedFirstApprovalEntries: StageEntry<SupplyRequest>[];
+  completedSecondApprovalEntries: StageEntry<SupplyRequest>[];
+  completedHandoverEntries: StageEntry<SupplyRequest>[];
+  /** Every completed entry for one step — what RequestQueue renders. */
+  completedFor: (stepKey: StepKey) => StageEntry<SupplyRequest>[];
+  /** Org-wide name lookup for a stage actor — see the note at the query. */
+  personName: (id: string | null) => string;
+
   // activity + bell
   activity: SupplyActivity[];
   activityFor: (entityType: SupplyEntityType, entityId: string) => SupplyActivity[];
@@ -151,6 +179,13 @@ interface SuppliesStoreValue {
   recordHandover: (r: SupplyRequest, input: HandoverInput) => Promise<void>;
   holdRequest: (r: SupplyRequest, hold: boolean, reason: string) => Promise<void>;
   cancelRequest: (r: SupplyRequest, reason: string) => Promise<void>;
+
+  // stage edits — correcting an entry until the next step is done. Each RPC
+  // re-checks its lock server-side and logs in-transaction, so none of these
+  // needs a separate announce.
+  updateFirstApproval: (r: SupplyRequest, approve: boolean, remarks: string) => Promise<void>;
+  updateSecondApproval: (r: SupplyRequest, approve: boolean, remarks: string) => Promise<void>;
+  updateHandover: (r: SupplyRequest, input: HandoverInput) => Promise<void>;
 
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
@@ -184,6 +219,13 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     queryFn: fetchSuppliesData,
     enabled: !!session.user,
   });
+
+  // Org-wide names so a colleague's completed entry never renders blank: this
+  // app's `profiles` come from the directory, which is RLS-scoped (self +
+  // downline + same department), so a request approved by one department's HOD
+  // and viewed from another would not resolve. list_org_people() is the SECURITY
+  // DEFINER, name-only escape hatch.
+  const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
@@ -219,6 +261,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
     const departmentById = (id: string) => departments.find((d) => d.id === id);
 
+    // Mirrors fms_supplies_can_act(step, req, uid) — the same rule the update_*
+    // RPCs enforce, so the greyed-out button and the server agree.
     const canActOn = (stepKey: StepKey, r: SupplyRequest): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
       if (stepKey === "first_approval") {
@@ -226,6 +270,14 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         if (hod && hod === uid) return true;
       }
       return isStepOwner(stepKey);
+    };
+
+    // Resolves against the org-wide list, not `dir.profileById`: the directory is
+    // RLS-scoped, so a cross-department actor would render blank. Null actors are
+    // real — every actor FK is `on delete set null`.
+    const personName = (id: string | null): string => {
+      if (!id) return "—";
+      return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
     };
 
     /* --------------------------- master governance --------------------------- */
@@ -276,6 +328,11 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
     const snapshot: SupplySnapshot = supplySnapshotFrom({ requests, stepSla });
     const queueEntries = buildQueueEntries(snapshot);
+    // Unscoped, like every predicate in lib/queues.ts — the pages narrow to
+    // "mine" via useStageMode, and the Control Center needs the full set.
+    const firstEntries = completedFirstApprovalEntries(snapshot);
+    const secondEntries = completedSecondApprovalEntries(snapshot);
+    const handoverEntries = completedHandoverEntries(snapshot);
 
     const myQueue = (stepKey: StepKey): QueueEntry[] =>
       queueEntries.filter((e) => {
@@ -395,6 +452,16 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       dueIsoFor: (r, stepKey) => supplyDueIso(snapshot, r, stepKey),
       queueOwnerIds,
 
+      completedFirstApprovalEntries: firstEntries,
+      completedSecondApprovalEntries: secondEntries,
+      completedHandoverEntries: handoverEntries,
+      completedFor: (stepKey) =>
+        stepKey === "first_approval" ? firstEntries
+        : stepKey === "second_approval" ? secondEntries
+        : stepKey === "handover" ? handoverEntries
+        : [],
+      personName,
+
       activity,
       activityFor: (entityType, entityId) => activityByEntity.get(`${entityType}:${entityId}`) ?? [],
       notifications: mine,
@@ -446,6 +513,34 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       recordHandover: async (r, input) => {
         await recordHandoverWrite(r.id, input);
         if (input.actualDeliveryDate) {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: r.id,
+            type: "delivered",
+            text: `${r.reqNo} (${r.requestedForName}) has been delivered.`,
+            recipients: [r.raisedBy, r.requestedForUserId].filter((x): x is string => !!x),
+          });
+        }
+        await invalidate();
+      },
+      // ---- stage edits ----
+      // No safeAnnounce for the edit itself: each update_* RPC writes its own
+      // activity row inside the same transaction. safeAnnounce is best-effort and
+      // swallows failures, which is not good enough to answer "who changed this".
+      updateFirstApproval: async (r, approve, remarks) => {
+        await updateFirstApprovalWrite(r.id, approve, remarks);
+        await invalidate();
+      },
+      updateSecondApproval: async (r, approve, remarks) => {
+        await updateSecondApprovalWrite(r.id, approve, remarks);
+        await invalidate();
+      },
+      updateHandover: async (r, input) => {
+        await updateHandoverWrite(r.id, input);
+        // An edit CAN deliver a request that was recorded but not yet delivered
+        // (a tentative date saved, the actual filled in later). The requester
+        // still deserves the notification — the RPC only writes the audit row.
+        if (input.actualDeliveryDate && !r.actualDeliveryDate) {
           await safeAnnounce({
             entityType: "request",
             entityId: r.id,
@@ -525,6 +620,10 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     isLoading, error, dir, userId, isAdmin, designations, companies, departments, categories, items,
     serviceTypes, masterManagers, masterRequests, requests, activity, notifications,
     stepOwners, processCoordinatorIds, stepSla, queryClient,
+    // Load-bearing, and tsc cannot catch its absence: personName closes over
+    // orgPeople, so without this the names stay "Unknown user" until some other
+    // dep happens to change.
+    orgPeople,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

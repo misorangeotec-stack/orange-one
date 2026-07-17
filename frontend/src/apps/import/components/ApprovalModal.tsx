@@ -18,11 +18,13 @@ export default function ApprovalModal({
   open,
   onClose,
   onSaved,
+  editing = false,
 }: {
   line: RequestItem | null;
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
+  editing?: boolean;
 }) {
   const s = useImportStore();
   const [mode, setMode] = useState<"none" | "override" | "reject" | "hold">("none");
@@ -46,7 +48,11 @@ export default function ApprovalModal({
     setErr(null);
     setBusy(true);
     try {
-      await s.decideApproval({ requestItemId: line.id, decision, ...extra });
+      if (editing) {
+        await s.updateApproval({ lineId: line.id, decision, overrideVendorId: extra?.overrideVendorId ?? null, reason: extra?.reason ?? null });
+      } else {
+        await s.decideApproval({ requestItemId: line.id, decision, ...extra });
+      }
       setMode("none");
       setOverrideVendor("");
       setReason("");
@@ -64,8 +70,8 @@ export default function ApprovalModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title={`Approve — ${s.itemLabel(line.itemId)}`}
-      subtitle={`Recommended: ${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}`}
+      title={`${editing ? "Edit approval" : "Approve"} — ${s.itemLabel(line.itemId)}`}
+      subtitle={`${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}${editing ? " · revisable until the PO is generated" : ""}`}
     >
       <div className="space-y-4">
         {/* Quotes */}
@@ -151,14 +157,24 @@ export default function ApprovalModal({
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => run("approve")} disabled={busy}>Approve</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("override"); }} disabled={busy}>Override</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("reject"); }} disabled={busy}>Reject</Button>
-            {line.status === "on_hold" ? (
-              <Button variant="ghost" size="sm" onClick={() => run("resume")} disabled={busy}>Resume</Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("hold"); }} disabled={busy}>On Hold</Button>
+            <Button size="sm" onClick={() => run("approve")} disabled={busy}>{editing ? "Re-approve" : "Approve"}</Button>
+            {/* Override swaps to another QUOTED vendor, and Import has no quotations
+                (its vendor comes from the request header + price master, and nothing
+                routes to save_sourcing). The button is already a dead end on the
+                create path — pre-existing — but the edit RPC refuses it outright, so
+                it is not offered here. */}
+            {!editing && (
+              <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("override"); }} disabled={busy}>Override</Button>
             )}
+            <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("reject"); }} disabled={busy}>Reject</Button>
+            {/* Hold/Resume are decisions on an UNDECIDED line — meaningless once
+                one has been made, so they're absent when revising. */}
+            {!editing &&
+              (line.status === "on_hold" ? (
+                <Button variant="ghost" size="sm" onClick={() => run("resume")} disabled={busy}>Resume</Button>
+              ) : (
+                <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("hold"); }} disabled={busy}>On Hold</Button>
+              ))}
           </div>
         )}
 

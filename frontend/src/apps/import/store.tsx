@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
+import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { fetchImportData, IMPORT_QK, importQueryKey } from "./data/importFetch";
@@ -48,6 +49,16 @@ import {
   lineInPoDesk,
   lineInSourcing,
   poDueIso,
+  poShareLockReason,
+  completedShareEntries,
+  completedPiEntries,
+  completedAdvanceEntries,
+  completedFollowupEntries,
+  completedGrnEntries,
+  completedTallyEntries,
+  completedApprovalEntries,
+  completedPoGenEntries,
+  type StageEntry,
   type ImportIndex,
   type ImportSnapshot,
   type QueueEntry,
@@ -102,6 +113,14 @@ import {
   announce as announceWrite,
   reassignLine as reassignLineWrite,
   markNotificationsRead as markNotificationsReadWrite,
+  updateSharePo as updateSharePoWrite,
+  updatePi as updatePiWrite,
+  updatePayment as updatePaymentWrite,
+  updateFollowup as updateFollowupWrite,
+  updateGrn as updateGrnWrite,
+  updateTally as updateTallyWrite,
+  updateApproval as updateApprovalWrite,
+  updatePoNo as updatePoNoWrite,
   type ImportEntity,
   type CompanyInput,
   type CategoryInput,
@@ -210,6 +229,23 @@ interface ImportStoreValue {
   sourcingQueue: RequestItem[];
   approvalQueue: RequestItem[];
   poPool: RequestItem[];
+  /**
+   * The "what I did here" side of each stage — every COMPLETED entry, unscoped.
+   * Owner-agnostic on purpose (the Control Center needs the full set); the pages
+   * scope to "mine" through `useStageMode`.
+   *
+   * No `completedSourcingEntries`: Import has no Sourcing step.
+   */
+  completedShareEntries: StageEntry<PurchaseOrder>[];
+  completedPiEntries: StageEntry<Pi>[];
+  completedAdvanceEntries: StageEntry<Payment>[];
+  completedFollowupEntries: StageEntry<Followup>[];
+  completedGrnEntries: StageEntry<Grn>[];
+  completedTallyEntries: StageEntry<TallyBooking>[];
+  completedApprovalEntries: StageEntry<RequestItem>[];
+  completedPoGenEntries: StageEntry<PurchaseOrder>[];
+  /** Org-wide name lookup for a stage actor — see the note at the query. */
+  personName: (id: string | null) => string;
   // PO lifecycle data (Stages 5–10)
   pis: Pi[];
   piItems: PiItem[];
@@ -312,6 +348,20 @@ interface ImportStoreValue {
   uploadTallyDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   tallyDocumentUrl: (path: string) => Promise<string>;
 
+  // stage edits — correcting an entry until the next step is done. Each RPC
+  // re-checks its lock server-side and logs in-transaction, so none of these
+  // needs a separate announce.
+  updateSharePo: (input: { poId: string; tallyPoNo: string; paymentTerms: string; dispatchDate: string; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updatePi: (input: { piId: string; vendorPiNo: string; items: PiItemInput[]; piValue: number; paymentTerms?: string | null; dispatchDate?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updatePayment: (input: { paymentId: string; amount: number; amountFx?: number | null; currency?: string | null; fxRate?: number | null; paidOn?: string | null; utrRef?: string | null; piRemarks?: string | null; details?: string | null; advicePath?: string | null; adviceName?: string | null }) => Promise<void>;
+  updateFollowup: (input: { followupId: string; dispatchStatus: string; actualDispatchDate?: string | null; lrNo?: string | null; transportDetails?: string | null; revisedDispatchDate?: string | null; remarks?: string | null; piRemarks?: string | null }) => Promise<void>;
+  updateGrn: (input: { grnId: string; items: GrnItemInput[]; poRef: string; piRef?: string | null; gateRegisterNo?: string | null; condition?: string | null; note?: string | null; photoPath?: string | null; photoName?: string | null }) => Promise<void>;
+  updateTally: (input: { bookingId: string; tallyPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<void>;
+  updateApproval: (input: { lineId: string; decision: string; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  updatePoNo: (poId: string, poNo: string) => Promise<void>;
+  /** True when the signed-in user may still correct this PO's share details. */
+  canEditSharePo: (po: PurchaseOrder) => boolean;
+
   // activity + notifications (Phase 5)
   activity: Activity[];
   notifications: ImportNotification[];
@@ -386,6 +436,13 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     queryFn: fetchImportData,
     enabled: !!session.user,
   });
+
+  // Org-wide names so a colleague's completed entry never renders blank: the
+  // normal directory is RLS-scoped (self + downline + same department), so a GRN
+  // booked by warehouse and viewed by accounts would not resolve.
+  // list_org_people() is the SECURITY DEFINER, name-only escape hatch — the same
+  // pattern the receivables follow-ups screen uses.
+  const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const companies = data?.companies ?? [];
   const categories = data?.categories ?? [];
@@ -462,6 +519,16 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
     const isStepOwner = (stepKey: StepKey): boolean =>
       isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
+
+    // Resolves against the org-wide list, not `dir.profileById`: the directory is
+    // RLS-scoped, so a cross-department colleague would render blank. Null actors
+    // are real — every actor FK is `on delete set null`, and rows created before
+    // their actor column existed were deliberately never backfilled.
+    const personName = (id: string | null): string => {
+      if (!id) return "—";
+      if (id === user.id) return user.name;
+      return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
+    };
 
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
@@ -601,6 +668,15 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
       poPool: requestItems.filter(lineInPoDesk),
+      completedShareEntries: completedShareEntries(snapshot, importIndex),
+      completedPiEntries: completedPiEntries(snapshot, importIndex),
+      completedAdvanceEntries: completedAdvanceEntries(snapshot, importIndex),
+      completedFollowupEntries: completedFollowupEntries(snapshot, importIndex),
+      completedGrnEntries: completedGrnEntries(snapshot, importIndex),
+      completedTallyEntries: completedTallyEntries(snapshot),
+      completedApprovalEntries: completedApprovalEntries(snapshot, importIndex),
+      completedPoGenEntries: completedPoGenEntries(snapshot),
+      personName,
       isStepOwner,
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
@@ -872,6 +948,20 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       uploadTallyDocument: (poId, file) => uploadTallyDocumentWrite(poId, file),
       tallyDocumentUrl: (path) => tallyDocumentUrlWrite(path),
 
+      // ---- stage edits ----
+      // No safeAnnounce on any of these: each update_* RPC writes its own activity
+      // row inside the same transaction. safeAnnounce is best-effort and swallows
+      // failures, which is not good enough to answer "who changed this, and when".
+      updateSharePo: async (input) => { await updateSharePoWrite(input); await invalidate(); },
+      updatePi: async (input) => { await updatePiWrite(input); await invalidate(); },
+      updatePayment: async (input) => { await updatePaymentWrite(input); await invalidate(); },
+      updateFollowup: async (input) => { await updateFollowupWrite(input); await invalidate(); },
+      updateGrn: async (input) => { await updateGrnWrite(input); await invalidate(); },
+      updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
+      updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
+      updatePoNo: async (poId, poNo) => { await updatePoNoWrite(poId, poNo); await invalidate(); },
+      canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(importIndex, po) === null,
+
       // ---- activity + notifications (Phase 5) ----
       activity,
       notifications,
@@ -1075,6 +1165,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     followups,
     activity,
     notifications,
+    // Load-bearing, and tsc cannot catch its absence: personName closes over
+    // orgPeople, so without this the names stay "Unknown user" until some other
+    // dep happens to change.
+    orgPeople,
     dir,
     user,
     session,

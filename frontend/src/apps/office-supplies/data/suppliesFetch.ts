@@ -178,6 +178,8 @@ const mapRequest = (r: any): SupplyRequest => ({
   holdReason: r.hold_reason ?? null,
   cancelledAt: r.cancelled_at ?? null,
   cancelReason: r.cancel_reason ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
