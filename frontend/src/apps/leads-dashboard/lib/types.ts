@@ -9,6 +9,13 @@ export interface MasterItem {
   label: string;
   color?: string;
   order?: number;
+  /**
+   * Soft-delete flag; ABSENT MEANS ACTIVE (seeded items carry no `active` key).
+   * The dashboard deliberately does NOT filter on this — it charts history, and a
+   * deactivated master with existing leads must still appear or the numbers lie.
+   * Only the mobile capture pickers hide inactive items.
+   */
+  active?: boolean;
 }
 
 export type MasterType = "source" | "categories" | "interestLevels" | "askedAbout" | "followUpActions";

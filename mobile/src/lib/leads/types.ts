@@ -12,6 +12,14 @@ export type MasterItem = {
   color?: string;
   /** Sort order within its list. */
   order: number;
+  /**
+   * Soft-delete flag set by the web admin. ABSENT MEANS ACTIVE — seeded items
+   * carry no `active` key, so never test `=== true`; use `pickable()`.
+   * Inactive items are hidden from the CAPTURE pickers only. They must stay
+   * resolvable everywhere a stored value is displayed (a lead captured before the
+   * item was retired still has to show its label).
+   */
+  active?: boolean;
 };
 
 export type MasterType = 'source' | 'categories' | 'interestLevels' | 'askedAbout' | 'followUpActions';

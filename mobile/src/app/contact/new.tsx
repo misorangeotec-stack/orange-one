@@ -22,6 +22,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { findDuplicate } from '@/lib/leads/dedupe';
+import { pickable } from '@/lib/leads/masters';
 import { backfillLocation, peekLocation, warmLocation } from '@/lib/leads/media';
 import { consumePendingScan } from '@/lib/leads/pendingScan';
 import { autofillFromVoice } from '@/lib/leads/suggestions';
@@ -311,7 +312,7 @@ export default function UploadContactScreen() {
         <SelectSheet
           visible
           title={sheetConfig[sheet].title}
-          options={masters[sheet]}
+          options={pickable(masters[sheet])}
           selectedIds={sheetConfig[sheet].ids}
           multi={sheetConfig[sheet].multi}
           onChange={sheetConfig[sheet].set}

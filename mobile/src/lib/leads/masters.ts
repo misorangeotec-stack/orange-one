@@ -14,6 +14,17 @@ const item = (label: string, color?: string): MasterItem => ({
   order: n,
 });
 
+/**
+ * The options a user may CHOOSE from: active only, in the admin's order.
+ *
+ * Use this everywhere the user picks a value — never where a stored value is
+ * resolved for display. A lead captured before an item was deactivated must still
+ * render its label on the detail screen, in the dashboard charts and in the Sheets
+ * export, so `masters[type]` stays the full list for lookups.
+ */
+export const pickable = (items: MasterItem[]): MasterItem[] =>
+  items.filter((i) => i.active !== false).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
 export const MASTER_LABELS: Record<keyof Masters, string> = {
   source: 'Source',
   categories: 'Categories',

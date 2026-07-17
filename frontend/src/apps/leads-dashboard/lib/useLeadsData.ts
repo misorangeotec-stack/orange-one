@@ -23,7 +23,7 @@ function parseMasters(raw: unknown): Masters {
     Array.isArray(obj[k])
       ? (obj[k] as unknown[])
           .filter((i): i is Record<string, unknown> => !!i && typeof i === "object")
-          .map((i) => ({ id: String(i.id ?? ""), label: String(i.label ?? ""), color: typeof i.color === "string" ? i.color : undefined, order: typeof i.order === "number" ? i.order : undefined }))
+          .map((i) => ({ id: String(i.id ?? ""), label: String(i.label ?? ""), color: typeof i.color === "string" ? i.color : undefined, order: typeof i.order === "number" ? i.order : undefined, active: typeof i.active === "boolean" ? i.active : undefined }))
           .filter((i) => i.id)
       : [];
   return {

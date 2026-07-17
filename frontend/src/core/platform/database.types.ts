@@ -5628,6 +5628,14 @@ export type Database = {
         Args: { _root: string; _target: string }
         Returns: boolean
       }
+      lead_master_usage: {
+        Args: never
+        Returns: {
+          master_type: string
+          master_id: string
+          uses: number
+        }[]
+      }
       leads_dashboard_can_read: { Args: never; Returns: boolean }
       leads_dashboard_salespeople: {
         Args: never

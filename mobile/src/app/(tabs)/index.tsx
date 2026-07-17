@@ -14,6 +14,7 @@ import { SyncChip } from '@/components/leads/SyncChip';
 import { ThemedText } from '@/components/themed-text';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { pickable } from '@/lib/leads/masters';
 import { useLeads } from '@/lib/leads/store';
 
 export default function HomeScreen() {
@@ -146,7 +147,7 @@ export default function HomeScreen() {
         {/* Interest filter chips */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
           <FilterChip label="All" active={!interestFilter} onPress={() => setInterestFilter(null)} />
-          {masters.interestLevels.map((lvl) => (
+          {pickable(masters.interestLevels).map((lvl) => (
             <FilterChip
               key={lvl.id}
               label={lvl.label}
