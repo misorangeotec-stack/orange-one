@@ -54,7 +54,7 @@ interface QueueTableProps<T> {
   rowKey: (row: T) => string;
   columns: QueueColumn<T>[];
   groupBy: QueueGroupBy<T>;
-  /** Right-aligned actions cell (buttons / Open link). */
+  /** Leading actions cell (buttons / Open link) — rendered as the first column. */
   actions?: (row: T) => ReactNode;
   rowClassName?: (row: T) => string;
   rowsLabel?: string;
@@ -366,6 +366,7 @@ export default function QueueTable<T>({
             <table className="w-full text-[13.5px] border-separate border-spacing-0">
               <thead>
                 <tr className="text-left text-grey-2">
+                  {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line w-px whitespace-nowrap">Actions</th>}
                   {columns.map((c) => (
                     <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${c.align === "right" ? "text-right" : ""}`}>
                       {c.sortValue ? (
@@ -378,16 +379,15 @@ export default function QueueTable<T>({
                       )}
                     </th>
                   ))}
-                  {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line text-right">Actions</th>}
                 </tr>
                 {/* Typed per-column filter row */}
                 <tr className="bg-page/50">
+                  {actions && <th className="px-3 py-2.5 border-b border-line" />}
                   {columns.map((c) => (
                     <th key={c.key} className="px-3 py-2.5 border-b border-line align-middle font-normal">
                       {renderFilter(c)}
                     </th>
                   ))}
-                  {actions && <th className="px-3 py-2.5 border-b border-line" />}
                 </tr>
               </thead>
               <tbody>
@@ -417,12 +417,12 @@ export default function QueueTable<T>({
                           </tr>
                         )}
                         <tr className={`hover:bg-page/60 ${rowClassName?.(row) ?? ""}`}>
+                          {actions && <td className="px-4 py-3 border-b border-line/70 whitespace-nowrap">{actions(row)}</td>}
                           {columns.map((c) => (
                             <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>
                               {c.cell(row)}
                             </td>
                           ))}
-                          {actions && <td className="px-4 py-3 border-b border-line/70 text-right">{actions(row)}</td>}
                         </tr>
                       </QueueRows>
                     );

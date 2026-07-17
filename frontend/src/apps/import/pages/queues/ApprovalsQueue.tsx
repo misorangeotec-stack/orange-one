@@ -67,17 +67,17 @@ export default function ApprovalsQueue() {
           <p className="text-[13px] text-grey-2 mt-0.5 mb-2.5">Vendor-requested PO cancellations awaiting your decision.</p>
           <Card className="overflow-hidden">
             <table className="w-full text-[13.5px]">
-              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">PO</th><th className="font-medium px-4 py-3">Requested by</th><th className="font-medium px-4 py-3">Reason</th><th className="font-medium px-4 py-3">Requested</th><th className="font-medium px-4 py-3"></th></tr></thead>
+              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th><th className="font-medium px-4 py-3">PO</th><th className="font-medium px-4 py-3">Requested by</th><th className="font-medium px-4 py-3">Reason</th><th className="font-medium px-4 py-3">Requested</th></tr></thead>
               <tbody>
                 {s.pendingPoCancelRequests.map((r) => {
                   const po = s.poById(r.poId);
                   return (
                     <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                      <td className="px-4 py-3 whitespace-nowrap"><Link to={`/import/pos/${r.poId}`} className="text-[12.5px] font-semibold text-orange hover:underline">Review PO →</Link></td>
                       <td className="px-4 py-3 font-semibold text-navy whitespace-nowrap">{po?.poNo ?? "—"}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{r.requestedBy ? s.profileById(r.requestedBy)?.name ?? "—" : "—"}</td>
                       <td className="px-4 py-3 text-navy min-w-[180px] max-w-[360px]"><span title={r.reason}>{r.reason}</span>{r.vendorRef ? <span className="text-grey-2"> · {r.vendorRef}</span> : null}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-right"><Link to={`/import/pos/${r.poId}`} className="text-[12.5px] font-semibold text-orange hover:underline">Review PO →</Link></td>
                     </tr>
                   );
                 })}

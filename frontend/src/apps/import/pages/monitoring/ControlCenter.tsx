@@ -263,7 +263,7 @@ export default function ControlCenter() {
           emptyTitle="Nothing here"
           emptyMessage="No work matches this step selection and filter."
           actions={(e) => (
-            <div className="flex items-center justify-end gap-3 whitespace-nowrap">
+            <div className="flex items-center gap-3 whitespace-nowrap">
               {e.stepKey === "approval" && (
                 <button
                   onClick={() => setReassign(lineOf(e) ?? null)}

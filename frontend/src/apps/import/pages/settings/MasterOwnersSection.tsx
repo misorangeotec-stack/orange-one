@@ -58,10 +58,10 @@ export default function MasterOwnersSection() {
       <table className="w-full text-[13.5px]">
         <thead>
           <tr className="text-left text-grey-2 border-b border-line">
+            <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
             <th className="font-medium px-4 py-3">Master</th>
             <th className="font-medium px-4 py-3">Owners</th>
             <th className="font-medium px-4 py-3">Pending requests</th>
-            <th className="font-medium px-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -71,6 +71,11 @@ export default function MasterOwnersSection() {
             const pending = s.pendingRequests.filter((r) => r.masterType === mt.value).length;
             return (
               <tr key={mt.value} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <button onClick={() => open(mt.value)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                    Edit
+                  </button>
+                </td>
                 <td className="px-4 py-3 font-medium text-navy">{mt.plural}</td>
                 <td className="px-4 py-3">
                   {names.length ? (
@@ -81,11 +86,6 @@ export default function MasterOwnersSection() {
                 </td>
                 <td className="px-4 py-3">
                   {pending ? <span className="text-orange font-semibold">{pending}</span> : <span className="text-grey-2">—</span>}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <button onClick={() => open(mt.value)} className="text-[12.5px] font-semibold text-orange hover:underline">
-                    Edit
-                  </button>
                 </td>
               </tr>
             );

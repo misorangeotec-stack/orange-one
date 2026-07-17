@@ -165,13 +165,13 @@ export default function MasterRequests() {
               <table className="w-full text-[13.5px]">
                 <thead>
                   <tr className="text-left text-grey-2 border-b border-line">
+                    <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
                     <th className="font-medium px-4 py-3">Type</th>
                     <th className="font-medium px-4 py-3">Proposed</th>
                     <th className="font-medium px-4 py-3">Requested by</th>
                     <th className="font-medium px-4 py-3">Date</th>
                     <th className="font-medium px-4 py-3">Status</th>
                     <th className="font-medium px-4 py-3">Outcome</th>
-                    <th className="font-medium px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -179,6 +179,20 @@ export default function MasterRequests() {
                     const canResolve = r.status === "pending" && s.canManage(r.masterType);
                     return (
                       <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {canResolve ? (
+                            <>
+                              <button onClick={() => openApprove(r)} className="text-[12.5px] font-semibold text-ryg-green hover:underline mr-3">
+                                Approve
+                              </button>
+                              <button onClick={() => { setNote(""); setErr(null); setRejecting(r); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
+                                Reject
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-grey-2 text-[12.5px]">{r.status === "pending" ? "Awaiting review" : "—"}</span>
+                          )}
+                        </td>
                         <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
                         <td className="px-4 py-3">{describePayload(r.masterType, r.proposedPayload, categoryName)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{nameOf(r.requestedBy)}</td>
@@ -191,20 +205,6 @@ export default function MasterRequests() {
                             <span className="text-grey">{r.reviewNote}</span>
                           ) : (
                             <span className="text-grey-2">—</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          {canResolve ? (
-                            <>
-                              <button onClick={() => openApprove(r)} className="text-[12.5px] font-semibold text-ryg-green hover:underline mr-3">
-                                Approve
-                              </button>
-                              <button onClick={() => { setNote(""); setErr(null); setRejecting(r); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
-                                Reject
-                              </button>
-                            </>
-                          ) : (
-                            <span className="text-grey-2 text-[12.5px]">{r.status === "pending" ? "Awaiting review" : "—"}</span>
                           )}
                         </td>
                       </tr>

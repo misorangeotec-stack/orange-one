@@ -172,34 +172,20 @@ export default function MasterCrud<T extends { id: string; name: string; active:
               <table className="w-full text-[13.5px]">
                 <thead>
                   <tr className="text-left text-grey-2 border-b border-line">
+                    {canManage && <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>}
                     {columns.map((c) => (
                       <th key={c.header} className={`font-medium px-4 py-3 whitespace-nowrap ${c.className ?? ""}`}>
                         {c.header}
                       </th>
                     ))}
                     <th className="font-medium px-4 py-3 whitespace-nowrap">Status</th>
-                    {canManage && <th className="font-medium px-4 py-3 text-right whitespace-nowrap">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {pg.pageItems.map((row) => (
                     <tr key={row.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                      {columns.map((c) => (
-                        <td key={c.header} className={`px-4 py-3 align-middle ${c.className ?? ""}`}>
-                          {c.render(row)}
-                        </td>
-                      ))}
-                      <td className="px-4 py-3 align-middle">
-                        <span
-                          className={`inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 ${
-                            row.active ? "text-ryg-green bg-[#E9F8EF]" : "text-grey-2 bg-page"
-                          }`}
-                        >
-                          {row.active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
                       {canManage && (
-                        <td className="px-4 py-3 align-middle text-right whitespace-nowrap">
+                        <td className="px-4 py-3 align-middle whitespace-nowrap">
                           <button
                             onClick={() => openEdit(row)}
                             className="text-[12.5px] font-semibold text-orange hover:underline mr-3"
@@ -215,6 +201,20 @@ export default function MasterCrud<T extends { id: string; name: string; active:
                           </button>
                         </td>
                       )}
+                      {columns.map((c) => (
+                        <td key={c.header} className={`px-4 py-3 align-middle ${c.className ?? ""}`}>
+                          {c.render(row)}
+                        </td>
+                      ))}
+                      <td className="px-4 py-3 align-middle">
+                        <span
+                          className={`inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 ${
+                            row.active ? "text-ryg-green bg-[#E9F8EF]" : "text-grey-2 bg-page"
+                          }`}
+                        >
+                          {row.active ? "Active" : "Inactive"}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

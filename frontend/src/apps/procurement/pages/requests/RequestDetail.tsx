@@ -83,6 +83,7 @@ export default function RequestDetail() {
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
+                <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
                 <th className="font-medium px-4 py-3">Item</th>
                 <th className="font-medium px-4 py-3">Qty</th>
                 <th className="font-medium px-4 py-3">Status</th>
@@ -90,7 +91,6 @@ export default function RequestDetail() {
                 <th className="font-medium px-4 py-3">Rate</th>
                 <th className="font-medium px-4 py-3">Line Value</th>
                 <th className="font-medium px-4 py-3">PO</th>
-                <th className="font-medium px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -99,16 +99,7 @@ export default function RequestDetail() {
                 const po = poItem ? s.poById(poItem.poId) : undefined;
                 return (
                   <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60 align-middle">
-                    <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
-                    <td className="px-4 py-3"><span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span></td>
-                    <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.finalRate)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.lineValue)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {po ? <Link to={`/procurement/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
                       {(l.status === "sourcing") && s.canSource && (
                         <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Source</button>
                       )}
@@ -127,6 +118,15 @@ export default function RequestDetail() {
                       )}
                       {l.status === "rejected" && <span className="text-[12px] text-grey-2" title={l.rejectReason ?? ""}>Rejected</span>}
                       {l.status === "cancelled" && <span className="text-[12px] text-grey-2" title={l.cancelReason ?? ""}>Cancelled</span>}
+                    </td>
+                    <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
+                    <td className="px-4 py-3"><span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span></td>
+                    <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.finalRate)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.lineValue)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {po ? <Link to={`/procurement/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
                     </td>
                   </tr>
                 );

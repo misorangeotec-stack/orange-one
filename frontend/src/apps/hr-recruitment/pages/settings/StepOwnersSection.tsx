@@ -82,10 +82,10 @@ export default function StepOwnersSection() {
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
+                <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
                 <th className="font-medium px-4 py-3 w-10">#</th>
                 <th className="font-medium px-4 py-3">Step</th>
                 <th className="font-medium px-4 py-3">Owners</th>
-                <th className="font-medium px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -98,6 +98,18 @@ export default function StepOwnersSection() {
                     key={st.key}
                     className={`border-b border-line/70 last:border-0 ${hod ? "bg-page/40" : "hover:bg-page/60"}`}
                   >
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {hod ? (
+                        <span className="text-[12px] text-grey-2">Automatic</span>
+                      ) : (
+                        <button
+                          onClick={() => open(st.key)}
+                          className="text-[12.5px] font-semibold text-orange hover:underline"
+                        >
+                          Edit
+                        </button>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-grey-2">{st.index}</td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{st.title}</td>
                     <td className="px-4 py-3">
@@ -109,18 +121,6 @@ export default function StepOwnersSection() {
                         <span className="text-navy">{names.join(", ")}</span>
                       ) : (
                         <span className="text-grey-2">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {hod ? (
-                        <span className="text-[12px] text-grey-2">Automatic</span>
-                      ) : (
-                        <button
-                          onClick={() => open(st.key)}
-                          className="text-[12.5px] font-semibold text-orange hover:underline"
-                        >
-                          Edit
-                        </button>
                       )}
                     </td>
                   </tr>

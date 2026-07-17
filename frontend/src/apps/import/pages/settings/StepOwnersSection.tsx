@@ -79,10 +79,10 @@ export default function StepOwnersSection() {
         <table className="w-full text-[13.5px]">
           <thead>
             <tr className="text-left text-grey-2 border-b border-line">
+              <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
               <th className="font-medium px-4 py-3 w-10">#</th>
               <th className="font-medium px-4 py-3">Step</th>
               <th className="font-medium px-4 py-3">Owners</th>
-              <th className="font-medium px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -91,6 +91,11 @@ export default function StepOwnersSection() {
               const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
               return (
                 <tr key={st.key} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <button onClick={() => open(st.key)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                      Edit
+                    </button>
+                  </td>
                   <td className="px-4 py-3 text-grey-2">{st.index}</td>
                   <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{st.title}</td>
                   <td className="px-4 py-3">
@@ -99,11 +104,6 @@ export default function StepOwnersSection() {
                     ) : (
                       <span className="text-grey-2">Unassigned</span>
                     )}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <button onClick={() => open(st.key)} className="text-[12.5px] font-semibold text-orange hover:underline">
-                      Edit
-                    </button>
                   </td>
                 </tr>
               );

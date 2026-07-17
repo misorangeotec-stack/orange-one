@@ -50,7 +50,7 @@ function StepQueuePage({
   /**
    * Optional queue-specific columns. Full QueueColumn configs (so they can carry
    * their own filter/sort). `after` places the column right after the column with
-   * that key (e.g. "stage"); omitted ⇒ appended just before Actions.
+   * that key (e.g. "stage"); omitted ⇒ appended as the last column.
    */
   extraColumns?: (QueueColumn<PurchaseOrder> & { after?: string })[];
   /** Hide the generic SLA "Due" column (e.g. Follow-up, where dispatch date is the only due). */
@@ -108,7 +108,7 @@ function StepQueuePage({
           rowsLabel="POs"
           emptyMessage="POs needing your action will appear here."
           actions={(p) => (
-            <div className="flex items-center justify-end gap-3">
+            <div className="flex items-center gap-3">
               {renderAction(p)}
               <Link to={`/procurement/pos/${p.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">Open</Link>
             </div>

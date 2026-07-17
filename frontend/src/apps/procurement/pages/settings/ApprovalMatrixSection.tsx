@@ -129,17 +129,25 @@ export default function ApprovalMatrixSection() {
             <table className="w-full text-[13.5px]">
               <thead>
                 <tr className="text-left text-grey-2 border-b border-line">
+                  <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
                   <th className="font-medium px-4 py-3">Tier</th>
                   <th className="font-medium px-4 py-3">Min</th>
                   <th className="font-medium px-4 py-3">Max</th>
                   <th className="font-medium px-4 py-3">Approver</th>
                   <th className="font-medium px-4 py-3">Status</th>
-                  <th className="font-medium px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {bands.map((b) => (
                   <tr key={b.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <button onClick={() => openEdit(b)} className="text-[12.5px] font-semibold text-orange hover:underline mr-3">
+                        Edit
+                      </button>
+                      <button onClick={() => remove(b)} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
+                        Delete
+                      </button>
+                    </td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{b.tierLabel}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{inr(b.minAmount)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{b.maxAmount === null ? "No limit" : inr(b.maxAmount)}</td>
@@ -152,14 +160,6 @@ export default function ApprovalMatrixSection() {
                       >
                         {b.active ? "Active" : "Inactive"}
                       </span>
-                    </td>
-                    <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <button onClick={() => openEdit(b)} className="text-[12.5px] font-semibold text-orange hover:underline mr-3">
-                        Edit
-                      </button>
-                      <button onClick={() => remove(b)} className="text-[12.5px] font-semibold text-ryg-red hover:underline">
-                        Delete
-                      </button>
                     </td>
                   </tr>
                 ))}
