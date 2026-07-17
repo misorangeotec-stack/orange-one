@@ -9,6 +9,8 @@ import { dateLabel, timeAgo, formatDateTime, weekStartOf, todayIso } from "@/sha
 import { cn } from "@/shared/lib/cn";
 import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
+import { returnToFor } from "@/shared/lib/returnTo";
+import { taskListRouteForRole, taskListLabelForRole } from "../lib/taskLink";
 import { locationLabel, RECURRENCE_LABEL, type ActivityType } from "../types";
 import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
@@ -34,7 +36,14 @@ export default function TaskDetail() {
 
   const task = getTask(id);
   if (!task) {
-    return <EmptyState title="Task not found" message="It may have been removed." actionLabel="Back to My Tasks" actionTo="/task-management/tasks" />;
+    return (
+      <EmptyState
+        title="Task not found"
+        message="It may have been removed."
+        actionLabel={`Back to ${taskListLabelForRole(role)}`}
+        actionTo={returnToFor(taskListRouteForRole(role))}
+      />
+    );
   }
 
   const onReschedule = async (date: string) => {
@@ -89,10 +98,15 @@ export default function TaskDetail() {
 
   return (
     <div className="space-y-5">
-      <button onClick={() => navigate(-1)} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
+      {/* An absolute link, not navigate(-1): a ctrl-click opens this page in a NEW tab with no
+          history, and after a create/revise/reschedule history points at the form or the stale
+          pre-shift task. Resolved through returnToFor so it returns to the list's LAST VIEWED
+          URL — that keeps the deep-link signature matched, so the sticky filters restore rather
+          than being discarded (see shared/lib/returnTo). Falls back to the bare route. */}
+      <Link to={returnToFor(taskListRouteForRole(role))} className="text-[13px] text-grey hover:text-orange font-medium inline-flex items-center gap-1">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-        Back
-      </button>
+        Back to {taskListLabelForRole(role)}
+      </Link>
 
       {/* header */}
       <div className="flex flex-wrap items-start justify-between gap-3">

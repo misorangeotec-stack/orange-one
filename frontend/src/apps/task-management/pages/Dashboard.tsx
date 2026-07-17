@@ -289,7 +289,9 @@ function TaskRow({ task }: { task: Task }) {
   const dept = departmentById(task.departmentId);
   return (
     <li>
-      <Link to={taskDetailPath(task.id)} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 py-3 group">
+      {/* Same tab, like the task rows. It's a real link, so ctrl/cmd/middle-click
+          still open a new tab natively — no target="_blank" needed to allow that. */}
+      <Link to={taskDetailPath(task.id)} className="flex items-center gap-3 py-3 group">
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="text-[13.5px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>

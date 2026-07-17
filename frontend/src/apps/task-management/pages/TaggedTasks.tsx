@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import { TextInput } from "@/shared/components/ui/Form";
@@ -6,6 +7,8 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
+import { rememberReturnTo } from "@/shared/lib/returnTo";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -17,11 +20,18 @@ import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 export default function TaggedTasks() {
   const { user } = useSession();
   const { tasks, notifications, profileById } = useTaskStore();
-  const [q, setQ] = useState("");
-  const [scope, setScope] = useState<Scope>("week");
-  const [statuses, setStatuses] = useState<StatusFilter[]>([]);
-  const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
+  const location = useLocation();
+  // No deep-link contract reaches this page, so the scope seed is always "".
+  const sticky = useStickyScope("tm:tagged");
+  const [q, setQ] = useStickyState(sticky, "q", "");
+  const [scope, setScope] = useStickyState<Scope>(sticky, "scope", "week");
+  const [statuses, setStatuses] = useStickyState<StatusFilter[]>(sticky, "statuses", []);
+  const [sort, setSort] = useStickyState<TaskSort>(sticky, "sort", DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
+
+  useEffect(() => {
+    rememberReturnTo("/task-management/tagged", location.pathname + location.search);
+  }, [location.pathname, location.search]);
 
   // Tasks I've been tagged in = tasks referenced by my own mention notifications.
   // notifications are RLS-scoped to the caller, so this is the source of truth.
@@ -50,7 +60,8 @@ export default function TaggedTasks() {
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${scope}|${statuses.join(",")}|${q}|${sort.key}|${sort.dir}` });
+  const pageState = useStickyState(sticky, "page", 1);
+  const pg = usePagination(sorted, { resetKey: `${scope}|${statuses.join(",")}|${q}|${sort.key}|${sort.dir}`, pageState });
 
   const activeFilters: ActiveFilter[] = [];
   if (statuses.length)

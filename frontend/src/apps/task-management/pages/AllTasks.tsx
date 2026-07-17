@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
+import { rememberReturnTo } from "@/shared/lib/returnTo";
 import { useTaskStore } from "../mock/store";
-import { parseTaskFilters } from "../lib/taskLink";
+import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
 import TaskBrowser from "../components/TaskBrowser";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
@@ -9,11 +11,18 @@ import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 export default function AllTasks() {
   const { tasks, profiles, departments } = useTaskStore();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   // Seed filters from a deep-link; a linked week starts in "all time" so the
   // historical week isn't pre-scoped out before TaskBrowser's exact-week filter.
   // Other-tasks links are week-agnostic (counted all-time), so start all-time too.
   const initialFilters = useMemo(() => parseTaskFilters(searchParams), [searchParams]);
-  const [scope, setScope] = useState<Scope>(initialFilters.week || initialFilters.personal ? "all" : "week");
+  // Own namespace, kept separate from Team Tasks even though both render TaskBrowser.
+  const sticky = useStickyScope("tm:all-tasks", taskLinkSignature(searchParams));
+  const [scope, setScope] = useStickyState<Scope>(sticky, "scope", initialFilters.week || initialFilters.personal ? "all" : "week");
+
+  useEffect(() => {
+    rememberReturnTo("/task-management/all", location.pathname + location.search);
+  }, [location.pathname, location.search]);
 
   const scopedTasks = useMemo(() => scopeTasks(tasks, scope), [tasks, scope]);
 
@@ -41,7 +50,7 @@ export default function AllTasks() {
         <ScopeToggle scope={scope} onChange={setScope} />
       </div>
 
-      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter initialFilters={initialFilters} enableExport exportSubtitle={`Scope: ${scope === "week" ? "This week" : "All time"}`} />
+      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter initialFilters={initialFilters} enableExport exportSubtitle={`Scope: ${scope === "week" ? "This week" : "All time"}`} stickyScope={sticky} />
     </div>
   );
 }

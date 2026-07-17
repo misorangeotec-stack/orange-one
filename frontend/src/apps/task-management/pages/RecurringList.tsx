@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
 import { Link, useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -52,13 +53,14 @@ export default function RecurringList() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [genId, setGenId] = useState<string | null>(null);
 
-  // filters + sort
-  const [q, setQ] = useState("");
-  const [type, setType] = useState<"all" | "daily" | "weekly" | "monthly" | "when" | "quarterly">("all");
-  const [activeFilter, setActiveFilter] = useState<"all" | "active" | "paused">("all");
-  const [person, setPerson] = useState("all");
-  const [assigner, setAssigner] = useState("all");
-  const [sort, setSort] = useState<"title-asc" | "title-desc" | "status">("title-asc");
+  // filters + sort — sticky, so opening a row's task and coming Back keeps them
+  const sticky = useStickyScope("tm:recurring");
+  const [q, setQ] = useStickyState(sticky, "q", "");
+  const [type, setType] = useStickyState<"all" | "daily" | "weekly" | "monthly" | "when" | "quarterly">(sticky, "type", "all");
+  const [activeFilter, setActiveFilter] = useStickyState<"all" | "active" | "paused">(sticky, "activeFilter", "all");
+  const [person, setPerson] = useStickyState(sticky, "person", "all");
+  const [assigner, setAssigner] = useStickyState(sticky, "assigner", "all");
+  const [sort, setSort] = useStickyState<"title-asc" | "title-desc" | "status">(sticky, "sort", "title-asc");
 
   const visible = useMemo(() => {
     if (role === "admin") return recurringTasks;
@@ -108,7 +110,8 @@ export default function RecurringList() {
   }, [visible, type, activeFilter, person, assigner, q, sort]);
 
   const target = recurringTasks.find((r) => r.id === confirmId);
-  const pg = usePagination(filtered, { resetKey: `${q}|${type}|${activeFilter}|${person}|${assigner}|${sort}` });
+  const pageState = useStickyState(sticky, "page", 1);
+  const pg = usePagination(filtered, { resetKey: `${q}|${type}|${activeFilter}|${person}|${assigner}|${sort}`, pageState });
 
   // active-filter chips
   const chips: ActiveFilter[] = [];

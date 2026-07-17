@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
 import Combobox from "@/shared/components/ui/Combobox";
@@ -9,12 +9,14 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
+import { rememberReturnTo } from "@/shared/lib/returnTo";
 import { formatDate, isToday } from "@/shared/lib/time";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
-import { parseTaskFilters } from "../lib/taskLink";
+import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
@@ -34,27 +36,41 @@ export default function TasksList() {
   const { user, role } = useSession();
   const { tasks, canCreateTask, profileById, assignableUsers } = useTaskStore();
   const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
-  const [params, setParams] = useSearchParams();
-  const view = (params.get("view") as View) || "all";
+  const [params] = useSearchParams();
+  const location = useLocation();
   // Seed status + an exact week from a deep-link (e.g. a RYG number on the scorecard).
   const initialFilters = useMemo(() => parseTaskFilters(params), [params]);
-  const [q, setQ] = useState("");
-  const [statuses, setStatuses] = useState<StatusFilter[]>(initialFilters.statuses);
+  // Everything below survives leaving the page and coming Back (so rows can open in
+  // this same tab). A deep-link asking for a DIFFERENT set discards the snapshot —
+  // see taskLinkSignature. Must be opened before the useStickyState calls below.
+  const sticky = useStickyScope("tm:my-tasks", taskLinkSignature(params));
+  const [q, setQ] = useStickyState(sticky, "q", "");
+  const [statuses, setStatuses] = useStickyState<StatusFilter[]>(sticky, "statuses", initialFilters.statuses);
   // Recurring-vs-one-off scope, seeded from a deep-link (Weekly Scorecard split blocks).
-  const [kind, setKind] = useState<"all" | "recurring" | "oneoff">(initialFilters.kind ?? "all");
-  const [relation, setRelation] = useState<Relation>("assigned");
+  const [kind, setKind] = useStickyState<"all" | "recurring" | "oneoff">(sticky, "kind", initialFilters.kind ?? "all");
+  const [relation, setRelation] = useStickyState<Relation>(sticky, "relation", "assigned");
   // Show ONLY "Other" (self-tracking) tasks — set when arriving from the Other-tasks
   // card on the scorecard, which counts them all-time, so default to all-time scope.
-  const [personalOnly, setPersonalOnly] = useState(initialFilters.personal ?? false);
-  const [scope, setScope] = useState<Scope>(initialFilters.personal ? "all" : "week");
+  const [personalOnly, setPersonalOnly] = useStickyState(sticky, "personalOnly", initialFilters.personal ?? false);
+  const [scope, setScope] = useStickyState<Scope>(sticky, "scope", initialFilters.personal ? "all" : "week");
   // A specific ISO-Monday week from a deep-link; when set it overrides the
   // this-week/all-time scope so a historical week's tasks are shown.
-  const [exactWeek, setExactWeek] = useState<string | null>(initialFilters.week ?? null);
+  const [exactWeek, setExactWeek] = useStickyState<string | null>(sticky, "exactWeek", initialFilters.week ?? null);
   // Exclude personal + N/A tasks (set when arriving from a score number).
-  const [metricOnly, setMetricOnly] = useState(initialFilters.metricOnly);
-  const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
+  const [metricOnly, setMetricOnly] = useStickyState(sticky, "metricOnly", initialFilters.metricOnly);
+  const [sort, setSort] = useStickyState<TaskSort>(sticky, "sort", DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
-  const [personalOpen, setPersonalOpen] = useState(false);
+  // The tab. Was read from ?view= and written back with a setParams that wholesale-
+  // replaced the param set (destroying status/week/metric/...); nothing links to
+  // ?view=, so it's plain sticky state now and that bug is gone with it.
+  const [view, setView] = useStickyState<View>(sticky, "view", "all");
+  const [personalOpen, setPersonalOpen] = useState(false); // a modal, not a filter — never sticky
+
+  // Let a task's "Back to My Tasks" return to this exact URL, so the snapshot's
+  // deep-link signature still matches and the filters restore.
+  useEffect(() => {
+    rememberReturnTo("/task-management/tasks", location.pathname + location.search);
+  }, [location.pathname, location.search]);
 
   const mine = useMemo(
     () =>
@@ -113,7 +129,14 @@ export default function TasksList() {
     [filtered, sort, profileById, view],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${sort.key}|${sort.dir}` });
+  // Sticky page number: injected (not seeded) so restore, the filter-change reset and
+  // the shrink-clamp all write through one value — a mirror effect would instead write
+  // back the clamped 1 while the list is still hydrating and destroy the restore.
+  const pageState = useStickyState(sticky, "page", 1);
+  const pg = usePagination(sorted, {
+    resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${sort.key}|${sort.dir}`,
+    pageState,
+  });
 
   const activeFilters: ActiveFilter[] = [];
   if (exactWeek)
@@ -211,7 +234,7 @@ export default function TasksList() {
               { key: "personal", label: "Other", count: counts.personal },
             ]}
             active={view}
-            onChange={(k) => setParams(k === "all" ? {} : { view: k }, { replace: true })}
+            onChange={(k) => setView(k as View)}
           />
           <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
             <Combobox

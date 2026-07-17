@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -7,6 +7,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
 import { timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
@@ -27,8 +28,10 @@ const VERB: Record<ActivityType, string> = {
 export default function ActivityHistory() {
   const { user, role } = useSession();
   const { activity, getTask, tasks, mentionablePeople, actorById, visibleTasks } = useTaskStore();
-  const [type, setType] = useState<ActivityType | "all">("all");
-  const [actor, setActor] = useState("all");
+  // Sticky, so following a task link from here and coming Back keeps the filters.
+  const sticky = useStickyScope("tm:activity");
+  const [type, setType] = useStickyState<ActivityType | "all">(sticky, "type", "all");
+  const [actor, setActor] = useStickyState(sticky, "actor", "all");
 
   const ids = useMemo(() => new Set(visibleTasks(role, user.id).map((t) => t.id)), [role, user.id, tasks]);
 
@@ -50,7 +53,8 @@ export default function ActivityHistory() {
     return mentionablePeople.filter((p) => set.has(p.id));
   }, [activity, ids, mentionablePeople]);
 
-  const pg = usePagination(items, { resetKey: `${type}|${actor}` });
+  const pageState = useStickyState(sticky, "page", 1);
+  const pg = usePagination(items, { resetKey: `${type}|${actor}`, pageState });
 
   const activeFilters: ActiveFilter[] = [];
   if (type !== "all")

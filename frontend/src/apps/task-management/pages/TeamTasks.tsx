@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { useStickyScope, useStickyState } from "@/shared/lib/stickyState";
+import { rememberReturnTo } from "@/shared/lib/returnTo";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { parseTaskFilters } from "../lib/taskLink";
+import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
 import ReportsToTag from "../components/ReportsToTag";
 import TaskBrowser from "../components/TaskBrowser";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
@@ -16,16 +18,23 @@ export default function TeamTasks() {
   const { user } = useSession();
   const { tasks, downlineIds, profileById } = useTaskStore();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   // Seed filters from a deep-link (e.g. a RYG number on the scorecard). When a
   // specific week is linked, start in "all time" so that historical week isn't
   // pre-scoped out before TaskBrowser's exact-week filter can apply. The
   // Other-tasks card links are week-agnostic (those tasks are counted all-time),
   // so start in "all time" for them too, otherwise the matching task is scoped out.
   const initialFilters = useMemo(() => parseTaskFilters(searchParams), [searchParams]);
-  const [scope, setScope] = useState<Scope>(initialFilters.week || initialFilters.personal ? "all" : "week");
+  // Own namespace, kept separate from All Tasks even though both render TaskBrowser.
+  const sticky = useStickyScope("tm:team-tasks", taskLinkSignature(searchParams));
+  const [scope, setScope] = useStickyState<Scope>(sticky, "scope", initialFilters.week || initialFilters.personal ? "all" : "week");
   // The "Team · last active" panel is collapsed by default so the task list is
   // the focus; the header acts as the expand/collapse toggle.
   const [showActivity, setShowActivity] = useState(false);
+
+  useEffect(() => {
+    rememberReturnTo("/task-management/team", location.pathname + location.search);
+  }, [location.pathname, location.search]);
 
   const reportIds = downlineIds(user.id);
   const teamIds = useMemo(() => [user.id, ...reportIds], [user.id, reportIds.join(",")]);
@@ -105,7 +114,7 @@ export default function TeamTasks() {
               </ul>
             )}
           </Card>
-          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." hideWeekFilter initialFilters={initialFilters} />
+          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." hideWeekFilter initialFilters={initialFilters} stickyScope={sticky} />
         </>
       )}
     </div>

@@ -8,6 +8,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
+import { useStickyState, NO_STICKY, type StickyScope } from "@/shared/lib/stickyState";
 import { matchesSearch } from "@/shared/lib/search";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { WEEK_START } from "../mock/data";
@@ -43,6 +44,7 @@ export default function TaskBrowser({
   initialFilters,
   enableExport = false,
   exportSubtitle,
+  stickyScope,
 }: {
   tasks: Task[];
   people: Profile[];
@@ -56,26 +58,34 @@ export default function TaskBrowser({
   enableExport?: boolean;
   /** Context line recorded on the export's Filters sheet (e.g. the week/all-time scope). */
   exportSubtitle?: string;
+  /**
+   * Namespace for remembering these filters across navigation, opened by the PARENT
+   * (`useStickyScope`) and passed down — Team Tasks and All Tasks both render this
+   * component, so each must own its own scope or they'd share one snapshot. Omit to
+   * persist nothing.
+   */
+  stickyScope?: StickyScope;
 }) {
   const { profileById, departmentById, getRecurring } = useTaskStore();
-  const [q, setQ] = useState("");
-  const [person, setPerson] = useState(initialFilters?.assignee ?? "all");
-  const [creator, setCreator] = useState("all");
-  const [dept, setDept] = useState(initialFilters?.dept ?? "all");
-  const [statuses, setStatuses] = useState<StatusFilter[]>(initialFilters?.statuses ?? []);
+  const scope = stickyScope ?? NO_STICKY;
+  const [q, setQ] = useStickyState(scope, "q", "");
+  const [person, setPerson] = useStickyState(scope, "person", initialFilters?.assignee ?? "all");
+  const [creator, setCreator] = useStickyState(scope, "creator", "all");
+  const [dept, setDept] = useStickyState(scope, "dept", initialFilters?.dept ?? "all");
+  const [statuses, setStatuses] = useStickyState<StatusFilter[]>(scope, "statuses", initialFilters?.statuses ?? []);
   // Recurring-vs-one-off scope, seeded from a deep-link (Weekly Scorecard split blocks).
-  const [kind, setKind] = useState<"all" | "recurring" | "oneoff">(initialFilters?.kind ?? "all");
-  const [week, setWeek] = useState<"all" | "this" | "next">("all");
+  const [kind, setKind] = useStickyState<"all" | "recurring" | "oneoff">(scope, "kind", initialFilters?.kind ?? "all");
+  const [week, setWeek] = useStickyState<"all" | "this" | "next">(scope, "week", "all");
   // An exact ISO-Monday week from a deep-link — independent of the all/this/next
   // dropdown, so it can target a historical week even when that dropdown is hidden.
-  const [exactWeek, setExactWeek] = useState<string | null>(initialFilters?.week ?? null);
+  const [exactWeek, setExactWeek] = useStickyState<string | null>(scope, "exactWeek", initialFilters?.week ?? null);
   // Exclude personal + N/A tasks (set when arriving from a score/RYG number, so
   // the list matches the count behind it). Clearable, like any other filter.
-  const [metricOnly, setMetricOnly] = useState(initialFilters?.metricOnly ?? false);
+  const [metricOnly, setMetricOnly] = useStickyState(scope, "metricOnly", initialFilters?.metricOnly ?? false);
   // Regular (scored) vs "Other" (self-tracking, is_personal) tasks. Seeded to
   // "other" when arriving from the Other-tasks card on the scorecard.
-  const [category, setCategory] = useState<"all" | "regular" | "other">(initialFilters?.personal ? "other" : "all");
-  const [sort, setSort] = useState<TaskSort>(DEFAULT_TASK_SORT);
+  const [category, setCategory] = useStickyState<"all" | "regular" | "other">(scope, "category", initialFilters?.personal ? "other" : "all");
+  const [sort, setSort] = useStickyState<TaskSort>(scope, "sort", DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
@@ -165,7 +175,12 @@ export default function TaskBrowser({
     [filtered, sort, profileById],
   );
 
-  const pg = usePagination(sorted, { resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${kind}|${category}|${week}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}` });
+  // Injected rather than seeded — see the note in TasksList.
+  const pageState = useStickyState(scope, "page", 1);
+  const pg = usePagination(sorted, {
+    resetKey: `${q}|${person}|${creator}|${dept}|${statuses.join(",")}|${kind}|${category}|${week}|${exactWeek ?? ""}|${metricOnly}|${sort.key}|${sort.dir}`,
+    pageState,
+  });
 
   // Active-filter chips, so it's always visible what's narrowing the list.
   const activeFilters: ActiveFilter[] = [];

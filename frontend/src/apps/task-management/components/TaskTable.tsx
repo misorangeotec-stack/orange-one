@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
@@ -99,8 +100,29 @@ export default function TaskTable({ tasks, sort, onSort }: {
 }) {
   const { profileById, departmentById, getRecurring, canStatusActions, deleteTask } = useTaskStore();
   const { user, role } = useSession();
+  const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  /**
+   * Open a row's task. A plain click navigates IN THIS TAB — the list's filters,
+   * sort and page survive in sticky state (shared/lib/stickyState), so coming Back
+   * restores them; that's what replaced the old window.open-a-new-tab workaround.
+   * Ctrl/Cmd-click and middle-click still open a new tab, as any link would.
+   */
+  const openTask = (e: { target: EventTarget | null; button: number; metaKey: boolean; ctrlKey: boolean }, id: string) => {
+    // The row's own controls (delete) win outright. The delete button stops
+    // propagation on click, but auxclick is a separate event with no such guard.
+    if ((e.target as HTMLElement | null)?.closest("button, a, input, select, textarea, label")) return;
+
+    const href = taskDetailPath(id);
+    if (e.button === 1 || e.metaKey || e.ctrlKey) {
+      window.open(href, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (e.button !== 0) return; // right-click etc.
+    navigate(href);
+  };
 
   // Same guard as the detail page: a genuine one-off (not personal, not recurring)
   // may be deleted only while PENDING, and only by its creator, assignee, or an
@@ -135,13 +157,18 @@ export default function TaskTable({ tasks, sort, onSort }: {
             const creator = profileById(task.createdBy);
             const assignee = profileById(task.assignedTo);
             const dept = departmentById(task.departmentId);
-            const overdue = isOverdue(task.dueDate) && task.status !== "completed" && task.status !== "shifted";
+            const closed = task.status === "completed" || task.status === "shifted";
+            const overdue = isOverdue(task.dueDate) && !closed;
             const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
             const recurring = isRecurringTask(task);
             return (
               <tr
                 key={task.id}
-                onClick={() => window.open(taskDetailPath(task.id), "_blank", "noopener,noreferrer")}
+                onClick={(e) => openTask(e, task.id)}
+                // Middle-click fires auxclick, not click; and middle-MOUSEDOWN would
+                // otherwise start the browser's autoscroll on a non-link element.
+                onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); openTask(e, task.id); } }}
+                onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
                 className={cn(
                   "group hover:bg-page transition cursor-pointer align-middle",
                   task.notApplicable && "opacity-55" // N/A ("when") instances read as parked
@@ -179,17 +206,20 @@ export default function TaskTable({ tasks, sort, onSort }: {
                   <div className="text-[11.5px] text-grey-2 mt-0.5 truncate">
                     {dept?.name ?? "—"}
                     {task.followUpDate && (
+                      // A closed task needs no chasing, so its follow-up reads as plain history.
                       <span
                         className={cn(
-                          isOverdue(task.followUpDate)
-                            ? "text-[#d4493f] font-medium"
-                            : isToday(task.followUpDate)
-                              ? "text-orange font-medium"
-                              : "",
+                          closed
+                            ? ""
+                            : isOverdue(task.followUpDate)
+                              ? "text-[#d4493f] font-medium"
+                              : isToday(task.followUpDate)
+                                ? "text-orange font-medium"
+                                : "",
                         )}
                       >
                         {` · follow-up ${dateLabel(task.followUpDate)}`}
-                        {isOverdue(task.followUpDate) ? " (overdue)" : isToday(task.followUpDate) ? " (today)" : ""}
+                        {closed ? "" : isOverdue(task.followUpDate) ? " (overdue)" : isToday(task.followUpDate) ? " (today)" : ""}
                       </span>
                     )}
                   </div>

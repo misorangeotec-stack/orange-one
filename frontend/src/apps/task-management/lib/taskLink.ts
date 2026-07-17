@@ -38,6 +38,13 @@ export function taskListRouteForRole(role: AppRole): string {
   return "/task-management/tasks";
 }
 
+/** Display name of that route, so a link to it can say where it goes. Matches the nav labels. */
+export function taskListLabelForRole(role: AppRole): string {
+  if (role === "admin") return "All Tasks";
+  if (role === "hod" || role === "sub_hod") return "Team Tasks";
+  return "My Tasks";
+}
+
 export interface TaskLinkParams {
   role: AppRole;
   /** Filter to a single assignee. Ignored for employees (My Tasks is always self-scoped). */
@@ -82,6 +89,29 @@ export function taskListLink({ role, assignee, dept, weekStart, statuses, colour
   if (metricOnly) sp.set("metric", "1");
   const qs = sp.toString();
   return qs ? `${base}?${qs}` : base;
+}
+
+/** The deep-link contract's params — the ones taskListLink emits and parseTaskFilters reads. */
+const LINK_PARAMS = ["assignee", "dept", "week", "status", "kind", "personal", "metric"] as const;
+
+/**
+ * Canonical signature of the deep-link contract in a URL — the identity of "the set
+ * of tasks this link asks for". Sticky filter snapshots (shared/lib/stickyState) are
+ * keyed on it, so a link asking for something DIFFERENT wins over a stale snapshot
+ * (a scorecard drill-down must never show the filters you last had), while a link
+ * asking for the same thing restores it.
+ *
+ * Only the seven contract params count. `view`, `q`, `sort`, page etc. are sticky
+ * state, not part of what a link asks for.
+ */
+export function taskLinkSignature(params: URLSearchParams): string {
+  const sp = new URLSearchParams();
+  for (const k of LINK_PARAMS) {
+    const v = params.get(k);
+    if (v !== null) sp.set(k, v);
+  }
+  sp.sort();
+  return sp.toString();
 }
 
 export interface ParsedTaskFilters {

@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
+import { clearAllSticky } from "@/shared/lib/stickyState";
+import { clearAllReturnTo } from "@/shared/lib/returnTo";
 import { supabase } from "./supabase";
 
 /**
@@ -62,6 +64,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     signOut: async () => {
       await supabase.auth.signOut();
+      // Signing out is an SPA navigate, not a page reload, so these in-memory stores
+      // would otherwise survive into the next user's session on a shared machine and
+      // hand them the previous user's filters, search text and assignee selections.
+      clearAllSticky();
+      clearAllReturnTo();
     },
   };
 
