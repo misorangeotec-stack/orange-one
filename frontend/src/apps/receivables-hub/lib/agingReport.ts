@@ -1,4 +1,5 @@
-import type { Customer, CustomerDetail, Invoice, SaleType } from "./types";
+import type { Customer, CustomerDetail, CustomerGroupMap, Invoice, SaleType } from "./types";
+import { EMPTY_GROUP_MAP, groupEntryOf } from "./customerGroups";
 
 /**
  * Aging Report aggregation — pure, UI-free.
@@ -230,7 +231,7 @@ const KEY_SEP = " ||| ";
 function dimsForCustomer(
   c: Customer,
   saleType: SaleType,
-  groupMapping: Record<string, string>,
+  groupMap: CustomerGroupMap,
 ): Record<AgingDimension, string> {
   // Per-ledger granularity for both customer lenses: every distinct ledger
   // (name + company + location) is its own row, so the same display name never
@@ -241,7 +242,7 @@ function dimsForCustomer(
     customer: perLedger,
     // Mapped customer-groups roll up deliberately (may span companies); unmapped
     // names fall back to the per-ledger key so same-name ledgers stay split.
-    group: groupMapping[c.name] || perLedger,
+    group: groupEntryOf(c, groupMap) || perLedger,
     salesperson: c.salesPerson || "Unassigned",
     category: categoryLabel(c.category),
     company: c.company || "—",
@@ -275,7 +276,7 @@ export function enumerateBills(
   asOfDate: string,
   filters: AgingFilters = {},
   /** customer name → parent group name (customer_groups.json). Unmapped = own group. */
-  groupMapping: Record<string, string> = {},
+  groupMap: CustomerGroupMap = EMPTY_GROUP_MAP,
 ): EnrichedBill[] {
   const byId = new Map<string, Customer>();
   for (const c of customers) byId.set(c.id, c);
@@ -300,7 +301,7 @@ export function enumerateBills(
         cust,
         ageGe180: age >= 180,
         overdueKey: overdueBucket(inv.overdueDays),
-        dims: dimsForCustomer(cust, inv.voucherType, groupMapping),
+        dims: dimsForCustomer(cust, inv.voucherType, groupMap),
       });
     }
   }
@@ -323,7 +324,7 @@ export function enumerateBills(
 export function ledgerAdjBill(
   c: Customer,
   amount: number,
-  groupMapping: Record<string, string> = {},
+  groupMap: CustomerGroupMap = EMPTY_GROUP_MAP,
 ): EnrichedBill {
   const inv: Invoice = {
     id: `__ledgeradj__${c.id}`,
@@ -350,7 +351,7 @@ export function ledgerAdjBill(
     ageGe180: false,
     overdueKey: null,
     isLedgerAdj: true,
-    dims: dimsForCustomer(c, "other", groupMapping),
+    dims: dimsForCustomer(c, "other", groupMap),
   };
 }
 

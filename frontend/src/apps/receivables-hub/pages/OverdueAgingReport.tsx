@@ -32,7 +32,7 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
 import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
@@ -187,13 +187,13 @@ function OverdueAgingInner() {
     [allCustomers],
   );
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)),
+    () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
 
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap),
     [customerGroupMap],
   );
 
@@ -209,7 +209,7 @@ function OverdueAgingInner() {
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length){ const s = new Set(customerNames);d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length){ const s = new Set(groupNamesSel);d = d.filter((c) => s.has(customerGroupMap.mapping[c.name] ?? c.name)); }
+    if (groupNamesSel.length){ const s = new Set(groupNamesSel);d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (segment !== "all") {
       const act = new Map<string, number>();
       for (const c of d) {
@@ -240,7 +240,7 @@ function OverdueAgingInner() {
   );
 
   const baseBills = useMemo(
-    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap.mapping),
+    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap],
   );
 
@@ -264,7 +264,7 @@ function OverdueAgingInner() {
     const extra: EnrichedBill[] = [];
     for (const c of scopedLedgers) {
       const adj = c.outstanding - (billNet.get(c.id) ?? 0);
-      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap.mapping));
+      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap));
     }
     return extra.length ? [...baseBills, ...extra] : baseBills;
   }, [baseBills, scopedLedgers, customerGroupMap, saleTypeActive]);

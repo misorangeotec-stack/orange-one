@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, Fra
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
+import { isAgainstInvoice } from "@hub/lib/allocation";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
@@ -25,9 +26,12 @@ import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { GroupByBuilder, type GroupByPreset } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from "@hub/components/ui/dialog";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
+import { useAppData, groupEntryOf, groupNameOf } from "@hub/lib/useAppData";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
@@ -75,17 +79,6 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
-/** Classify a receipt / other-payment allocation as applied AGAINST a specific invoice
- *  (true) vs ON ACCOUNT — an advance / unallocated payment (false). Mirrors the pipeline's
- *  normalized allocation labels ("AGST REF" / "ON ACCOUNT") used in OtherPaymentsReport,
- *  falling back to the presence of a reference invoice when the type is unlabelled. */
-function isAgainstInvoice(type: string | null | undefined, refInvoice: string | null | undefined): boolean {
-  const ty = (type ?? "").toUpperCase();
-  if (ty.includes("ON ACC") || ty.includes("ADVANCE")) return false;
-  if (ty.includes("AGST")) return true;
-  return !!(refInvoice && refInvoice.trim());
-}
-
 type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 type ViewMode = "customer" | "group";
@@ -97,8 +90,13 @@ const SALE_TYPE_LABELS: Record<string, string> = {
 };
 
 interface Metrics {
-  /** Sales raised this month (rupees). Sale-type-filterable via trend.salesByType. */
+  /** Sales raised this month (rupees), INCLUSIVE of GST — the full invoice value owed.
+   *  Sale-type-filterable via trend.salesByType. */
   sales: number;
+  /** GST contained in `sales` (rupees), so the taxable base is `sales - salesGst`.
+   *  Stays 0 when the source doesn't carry the split (the pipeline) — `gstKnown` on the
+   *  aggregate is what decides whether to render it, never the value itself. */
+  salesGst: number;
   outstanding: number;
   /** Portion of `outstanding` from parties with a net DEBIT balance (they owe → positive). */
   outstandingDebit: number;
@@ -113,6 +111,11 @@ interface Metrics {
   receivedOnAccount: number;
   /** Portion of `received` applied AGAINST a specific invoice. */
   receivedAgainst: number;
+  /** Portion of `received` that is manual Other Payments (money paid OUTSIDE Tally).
+   *  A DIFFERENT axis from the OnAccount/Against split above — that one is about how a payment was
+   *  allocated, this is about where it came from, and these rupees already sit inside both. Shown
+   *  as a footnote, deliberately not as a fourth column, so the two axes are never added together. */
+  receivedOther: number;
   pending: number;
   dueSoon: number;
 }
@@ -144,10 +147,11 @@ const spName = (s: string | undefined): string => {
 };
 
 const emptyMetrics = (): Metrics => ({
-  sales: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, pending: 0, dueSoon: 0,
+  sales: 0, salesGst: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, receivedOther: 0, pending: 0, dueSoon: 0,
 });
 const addInto = (t: Metrics, m: Metrics): void => {
   t.sales             += m.sales;
+  t.salesGst          += m.salesGst;
   t.outstanding       += m.outstanding;
   t.outstandingDebit  += m.outstandingDebit;
   t.outstandingCredit += m.outstandingCredit;
@@ -155,6 +159,7 @@ const addInto = (t: Metrics, m: Metrics): void => {
   t.received          += m.received;
   t.receivedOnAccount += m.receivedOnAccount;
   t.receivedAgainst   += m.receivedAgainst;
+  t.receivedOther     += m.receivedOther;
   t.pending           += m.pending;
   t.dueSoon           += m.dueSoon;
 };
@@ -232,6 +237,11 @@ export default function SalespersonCollectionReport() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Invoice drill-down popup (current month only).
   const [drill, setDrill] = useState<{ title: string; subtitle: string; rows: InvoiceDrillRow[]; ledgerFigures: Record<string, number> } | null>(null);
+  // "Less advances & credits" popup — a LEDGER-level list, not a bill-level one, so it does not
+  // reuse InvoiceDrilldownDialog. Groups start COLLAPSED: the point of the popup is which Tally
+  // groups the credits sit in, and 80+ ledger rows bury that.
+  const [creditDrill, setCreditDrill] = useState(false);
+  const [creditOpenGroups, setCreditOpenGroups] = useState<Set<string>>(new Set());
   const [sortKey, setSortKey] = useState<SortKey>("pending");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   // Month-wise panel: null = consolidated (all filtered rows), else a clicked top-level node.
@@ -379,15 +389,63 @@ export default function SalespersonCollectionReport() {
     return m;
   }, [allCustomers, customerDetail]);
 
+  // Per-customer → per-month RUNNING TOTAL of other payments: everything paid ON OR BEFORE that
+  // month's end. Distinct from the map above (which is "paid IN that month", a collections figure);
+  // this one is a balance figure, because what a customer owed at 30-Jun is reduced by every payment
+  // they had made by then — not just June's.
+  //
+  // Why it exists: Tally's month-end history has never seen these payments, so every past month reads
+  // HIGH by the running total. The current month escapes it (metricsForMonth reads live figures), and
+  // that gap is exactly what made a corrected July sit next to an uncorrected June. As of 2026-07-17
+  // all 56 payments are dated ≤ 01-Apr-2026, so every month of FY 26-27 nets the same ₹5,76,27,920 the
+  // current month does — but this is DATE-DRIVEN, not a fixed figure, so August and everything after
+  // it work themselves out with no maintenance.
+  //
+  // Live only: the pipeline's history is gross too, but netting it is out of scope here.
+  const otherPaymentsCumByCustomerMonth = useMemo(() => {
+    const out = new Map<string, Map<string, number>>();
+    if (!isLive || !months.length) return out;
+    const ends = months.map((m) => ({ m, end: monthLabelToEndDate(m).getTime() }));
+    for (const c of allCustomers) {
+      const txns = customerDetail[c.id]?.otherPaymentTransactions ?? [];
+      if (!txns.length) continue;
+      const byMonth = new Map<string, number>();
+      for (const { m, end } of ends) {
+        let cum = 0;
+        for (const t of txns) {
+          // A blank/unparseable date can't be placed in a month. Count it into EVERY month rather
+          // than none: it has already come off the live outstanding, so dropping it here would leave
+          // past months on a different basis and silently re-open the very June-vs-July gap this map
+          // closes. There are none today, but the date column is nullable.
+          const d = t.date ? new Date(t.date).getTime() : NaN;
+          if (Number.isNaN(d) || d <= end) cum += Math.abs(t.amount);
+        }
+        if (cum > 0) byMonth.set(m, cum);
+      }
+      if (byMonth.size) out.set(c.id, byMonth);
+    }
+    return out;
+  }, [isLive, months, allCustomers, customerDetail]);
+
   // Per-customer → per-month split of "Received" into ON ACCOUNT (advance / unallocated)
   // vs AGAINST a specific invoice, built from the receipt + manual other-payment
   // transactions (both carry an allocation type + ref invoice). Cheque-return rows
   // (type "check_return", negative) are excluded — they sit on the Due side, not Received.
   // Used only to derive the on-account SHARE of each month's receipts; the displayed total
   // stays anchored to trend.receipts (+ other payments) so the two columns sum exactly to it.
+  // Receipt evidence and other-payment evidence are kept in SEPARATE maps, and each is only
+  // ever used to split its OWN component of `received`. Pooling them was a real bug: the Live
+  // source carries no bulk receiptTransactions, so a customer with one manual other-payment had
+  // the ratio derived from that payment ALONE and then applied to the whole `received` figure —
+  // ₹1cr of against-invoice Tally receipts plus a ₹1L on-account other payment rendered the
+  // entire ₹1.01cr as On Account. Evidence must never speak for money it didn't observe.
   const receivedSplitByCustomerMonth = useMemo(() => {
-    const m = new Map<string, Map<string, { onAccount: number; against: number }>>();
-    const add = (cid: string, lbl: string, amt: number, against: boolean) => {
+    const receipts = new Map<string, Map<string, { onAccount: number; against: number }>>();
+    const other = new Map<string, Map<string, { onAccount: number; against: number }>>();
+    const add = (
+      m: Map<string, Map<string, { onAccount: number; against: number }>>,
+      cid: string, lbl: string, amt: number, against: boolean,
+    ) => {
       if (!lbl || amt <= 0) return;
       let byMonth = m.get(cid);
       if (!byMonth) { byMonth = new Map(); m.set(cid, byMonth); }
@@ -401,14 +459,14 @@ export default function SalespersonCollectionReport() {
       for (const r of det.receiptTransactions ?? []) {
         if ((r.type ?? "").toLowerCase() === "check_return") continue;
         if (!r.date) continue;
-        add(c.id, isoToMonthLabel(r.date), Math.abs(r.amount), isAgainstInvoice(r.type, r.refInvoice));
+        add(receipts, c.id, isoToMonthLabel(r.date), Math.abs(r.amount), isAgainstInvoice(r.type, r.refInvoice));
       }
       for (const o of det.otherPaymentTransactions ?? []) {
         if (!o.date) continue;
-        add(c.id, isoToMonthLabel(o.date), Math.abs(o.amount), isAgainstInvoice(o.type, o.refInvoice));
+        add(other, c.id, isoToMonthLabel(o.date), Math.abs(o.amount), isAgainstInvoice(o.type, o.refInvoice));
       }
     }
-    return m;
+    return { receipts, other };
   }, [allCustomers, customerDetail]);
 
   // Per-customer metrics for ONE month. Shared by the main table (selected month) and the
@@ -420,6 +478,10 @@ export default function SalespersonCollectionReport() {
   //  - openDue = bills due by month-end still OPEN (net of all receipts to date) = the true
   //    "still to collect". Current/as-of month uses live invoice pending + remaining opening
   //    balance; past months use the stored month-end snapshot (trend.overdue).
+  //  - Outstanding/openDue for a PAST month are net of every other payment made by that month-end
+  //    (Live only). The stored month-end snapshot is Tally's, which has never seen those payments,
+  //    so without this a past month reads HIGH while the current month reads correct — see
+  //    otherPaymentsCumByCustomerMonth.
   //  - Due is shown GROSS of the month's collections (openDue + receipts) so that
   //    Pending = Due − Received = openDue (no double-count of this month's receipts).
   const metricsForMonth = useCallback((c: Customer, month: string): Metrics => {
@@ -436,7 +498,8 @@ export default function SalespersonCollectionReport() {
       : mt?.receiptsByType
         ? saleTypes.reduce((s, t) => s + (mt.receiptsByType?.[t as SaleType] ?? 0), 0) * 100_000
         : projectAmt((mt?.receipts ?? 0) * 100_000, undefined, share); // fallback: pre-tagging snapshot
-    const received = tallyReceipts + projectAmt(opForMonth, undefined, share);
+    const opReceipts = projectAmt(opForMonth, undefined, share);
+    const received = tallyReceipts + opReceipts;
     // Sales this month, sale-type-filterable the SAME way as receipts: read the real
     // per-type monthly sales (trend.salesByType, lakhs) under a sale-type filter;
     // pre-tagging snapshots fall back to the sales-mix estimate.
@@ -445,6 +508,15 @@ export default function SalespersonCollectionReport() {
       : mt?.salesByType
         ? saleTypes.reduce((s, t) => s + (mt.salesByType?.[t as SaleType] ?? 0), 0) * 100_000
         : projectAmt((mt?.sales ?? 0) * 100_000, undefined, share); // fallback: pre-tagging snapshot
+    // GST inside those sales (they are booked inclusive of it), so the report can show the base.
+    // Same three-way shape as `sales` above: exact per-type under a filter, else the month total,
+    // else apportion by sales mix. 0 when the source carries no GST at all (the pipeline) — the
+    // KPI decides via `gstKnown`, so a missing split never renders as "base == total".
+    const salesGst = !saleTypeActive
+      ? (mt?.salesGst ?? 0) * 100_000
+      : mt?.salesGstByType
+        ? saleTypes.reduce((s, t) => s + (mt.salesGstByType?.[t as SaleType] ?? 0), 0) * 100_000
+        : projectAmt((mt?.salesGst ?? 0) * 100_000, undefined, share);
     let outstanding: number;
     let openDue: number;
     let dueSoon = 0; // not-yet-overdue bills coming due by month-end (current month only)
@@ -477,21 +549,53 @@ export default function SalespersonCollectionReport() {
         : undefined;
       outstanding = projectAmt((mt?.outstanding ?? 0) * 100_000, obByType, share);
       openDue = projectAmt((mt?.overdue ?? 0) * 100_000, undefined, share);
+      // Tally's month-end history never saw the manual Other Payments, so take off everything paid
+      // by month-end. The as-of branch above needs none of this: it reads c.outstanding/c.overdue,
+      // which liveOtherPayments already netted.
+      const cumOp = otherPaymentsCumByCustomerMonth.get(c.id)?.get(month) ?? 0;
+      if (cumOp > 0) {
+        // Other payments carry no bill, so they carry no sale type → project them by the sales mix,
+        // the same estimate opReceipts uses above. Subtract AFTER projecting `outstanding` rather
+        // than from the gross figure: obByType (when a snapshot supplies one) describes Tally's
+        // book, which does not contain these payments.
+        outstanding -= projectAmt(cumOp, undefined, share);
+        // Overdue drops by LESS than the full amount — money landing on a bill that wasn't due yet
+        // reduces outstanding but was never part of overdue. A past month has no bill-wise history
+        // to replay, so scale that month's payments by the overdue slice measured when they were
+        // applied (liveOtherPayments). When every payment predates the month (cumOp === total —
+        // true for every month of FY 26-27 today) this lands on the live figure EXACTLY, so June and
+        // July compare on one basis. It softens to a proportional estimate only for a month some
+        // payments hadn't been made in yet, i.e. viewing an earlier FY.
+        const opTotal = c.otherPayments ?? 0;
+        const overdueRatio = opTotal > 1e-9 ? (c.otherPaymentsOverdueAdj ?? 0) / opTotal : 0;
+        openDue = Math.max(0, openDue - projectAmt(cumOp * overdueRatio, undefined, share));
+      }
     }
     // Split `received` into on-account vs against-invoice by the month's raw allocation mix
     // (scale-invariant ratio, so the sale-type projection on `received` carries through).
-    // Unclassified receipts (no allocation/ref) default to against-invoice, the common case.
-    const split = receivedSplitByCustomerMonth.get(c.id)?.get(month);
-    const rawOn = split?.onAccount ?? 0;
-    const rawTotal = rawOn + (split?.against ?? 0);
-    const receivedOnAccount = rawTotal > 1e-9 ? received * (rawOn / rawTotal) : 0;
+    // Each component is apportioned by its OWN evidence — Tally receipts by the receipt
+    // transactions, manual other-payments by theirs — so neither can misrepresent the other.
+    // A component with no evidence at all contributes nothing to On Account, i.e. it falls to
+    // against-invoice: the documented default for unclassified receipts, and the common case.
+    // (Live has no bulk receipt transactions yet, so its Tally receipts take that default —
+    // an honest fallback, not a fabricated ratio. A source-true split needs the bill link.)
+    const onAccountOf = (
+      ev: { onAccount: number; against: number } | undefined,
+      amount: number,
+    ): number => {
+      const raw = (ev?.onAccount ?? 0) + (ev?.against ?? 0);
+      return raw > 1e-9 ? amount * ((ev?.onAccount ?? 0) / raw) : 0;
+    };
+    const receivedOnAccount =
+      onAccountOf(receivedSplitByCustomerMonth.receipts.get(c.id)?.get(month), tallyReceipts) +
+      onAccountOf(receivedSplitByCustomerMonth.other.get(c.id)?.get(month), opReceipts);
     const receivedAgainst = received - receivedOnAccount;
     // Partition the net balance onto exactly one side (debit if owing, credit if in advance).
     // `outstanding` is sign-preserving in every branch, so these roll up the tree via addInto.
     const outstandingDebit = outstanding > 0 ? outstanding : 0;
     const outstandingCredit = outstanding < 0 ? -outstanding : 0;
-    return { sales, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, pending: openDue, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, receivedSplitByCustomerMonth]);
+    return { sales, salesGst, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, receivedOther: opReceipts, pending: openDue, dueSoon };
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, otherPaymentsCumByCustomerMonth, receivedSplitByCustomerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {
@@ -518,7 +622,7 @@ export default function SalespersonCollectionReport() {
       case "salesperson": { const v = spName(c.salesPerson); return { value: v, label: v }; }
       case "customer":    return { value: perLedger, label: c.name || "—", sub: ledgerSub };
       case "group": {
-        const g = customerGroupMap.mapping[c.name];
+        const g = groupEntryOf(c, customerGroupMap);
         return g ? { value: `G:${g}`, label: g } : { value: perLedger, label: c.name || "—", sub: ledgerSub };
       }
       case "category": { const v = c.category?.trim() || "Uncategorized"; return { value: v, label: v }; }
@@ -658,7 +762,7 @@ export default function SalespersonCollectionReport() {
       for (const id of customerIds) {
         const c = customerById.get(id);
         if (!c) continue;
-        const groupName = customerGroupMap.mapping[c.name] ?? c.name;
+        const groupName = groupNameOf(c, customerGroupMap);
         const key = `${c.name}|||${c.company}|||${c.location}`;
         if (!ledgerInfo.has(key)) ledgerInfo.set(key, { c, groupName });
         const m = customerMetrics.get(id);
@@ -763,6 +867,21 @@ export default function SalespersonCollectionReport() {
   // filter exactly (via trend.salesByType), the same way Outstanding/Received do.
   const salesLabel = `Sales (${selectedMonth || "—"})`;
   const salesPrevLabel = prevMonth ? `Sales (${prevMonth})` : "Sales (prev)";
+  // Sales are booked INCLUSIVE of GST, so the Sales cards can show "Base · GST" beneath the total.
+  // Gate on whether the source SUPPLIES the split (the key exists), never on the amount: a genuine
+  // zero-GST month (exports) must still show "GST ₹0" rather than silently dropping the breakup.
+  // Only the live Tally mirror carries per-voucher tax; the pipeline omits the key, so the sub-line
+  // simply doesn't render there — no gap, no fabricated "base == total".
+  const gstKnown = useMemo(
+    () => Object.values(customerDetail).some((d) => d?.trend?.some((t) => t.salesGst !== undefined)),
+    [customerDetail],
+  );
+  /** "Base ₹13.34 Cr · GST ₹2.40 Cr" for a Sales card, or undefined when the split is unknown. */
+  const gstSub = useCallback(
+    (m: Metrics): string | undefined =>
+      gstKnown ? `Base ${fmt(m.sales - m.salesGst)} · GST ${fmt(m.salesGst)}` : undefined,
+    [gstKnown],
+  );
   // Outstanding (Today) = the live net balance as on asOfDate for the current month; for a past
   // month "today" doesn't apply, so it shows that month's closing (month-end) balance.
   const outstandingNowLabel = isCurrentMonth
@@ -859,13 +978,33 @@ export default function SalespersonCollectionReport() {
     );
   }
 
-  const kpiCards: { label: string; value: string; icon: typeof Coins; warn: boolean; sub?: string }[] = [
-    { label: salesLabel,          value: fmt(totals.sales),       icon: Coins,          warn: false },
-    { label: salesPrevLabel,      value: fmt(totalsPrev.sales),   icon: Coins,          warn: false },
+  const kpiCards: {
+    label: string; value: string; icon: typeof Coins; warn: boolean; sub?: string;
+    /** Optional reconciliation lines under the headline figure; a line with onClick is clickable. */
+    breakdown?: { label: string; value: string; onClick?: () => void }[];
+  }[] = [
+    { label: salesLabel,          value: fmt(totals.sales),       icon: Coins,          warn: false, sub: gstSub(totals) },
+    { label: salesPrevLabel,      value: fmt(totalsPrev.sales),   icon: Coins,          warn: false, sub: gstSub(totalsPrev) },
     { label: dueLabel,            value: fmt(totals.due),         icon: CalendarClock,  warn: false },
-    { label: receivedLabel,       value: fmt(totals.received),    icon: Coins,          warn: false },
+    // Received folds in manual Other Payments (money paid OUTSIDE Tally), which used to be
+    // invisible here — so the one figure a reader can't reconcile against Tally had nothing saying
+    // why. Name the portion rather than make them guess. Only when there is some.
+    { label: receivedLabel,       value: fmt(totals.received),    icon: Coins,          warn: false,
+      sub: totals.receivedOther > 0 ? `incl. ${fmt(totals.receivedOther)} other payments` : undefined },
+    // Outstanding is a NET figure: parties who owe, MINUS parties sitting in credit (machine
+    // advances, related-party balances, customer advances). On the Live source those credits are
+    // material — c. ₹11 Cr — and netting them silently is what makes this figure look wrong
+    // against the pipeline, which excludes those ledgers entirely. So show the reconciliation
+    // rather than a bare number, and let the credit line be opened. Nothing is recalculated here:
+    // outstanding === outstandingDebit − outstandingCredit by construction (see Metrics).
     { label: outstandingNowLabel,    value: fmt(totals.outstanding), icon: Wallet,         warn: true,
-      sub: `Dr ${fmt(totals.outstandingDebit)} · Cr ${fmt(totals.outstandingCredit)}` },
+      breakdown: totals.outstandingCredit > 0 ? [
+        { label: "Owed", value: fmt(totals.outstandingDebit) },
+        { label: "Less advances & credits", value: `−${fmt(totals.outstandingCredit)}`,
+          onClick: () => setCreditDrill(true) },
+      ] : undefined,
+      sub: totals.outstandingCredit > 0 ? undefined
+        : `Dr ${fmt(totals.outstandingDebit)} · Cr ${fmt(totals.outstandingCredit)}` },
     { label: "Due Pending",       value: fmt(totals.pending),     icon: TrendingDown,   warn: true  },
     {
       label: "Collection %",
@@ -873,6 +1012,31 @@ export default function SalespersonCollectionReport() {
       icon: Percent, warn: false,
     },
   ];
+
+  // Ledgers sitting in net credit, grouped by their TALLY group (master data — a new group in
+  // Tally appears here on its own; nothing is hardcoded). Same row set and same as-on basis the
+  // Outstanding card uses, so the popup total equals the card's credit line exactly.
+  const creditLedgers = useMemo(() => {
+    const rows = activeRows
+      .filter((c) => c.outstanding < 0)
+      .map((c) => ({
+        name: c.name,
+        group: c.tallyGroup || "—",
+        company: [c.company, c.location].filter(Boolean).join(" · "),
+        amount: -c.outstanding,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    const byGroup = new Map<string, { group: string; total: number; rows: typeof rows }>();
+    for (const r of rows) {
+      const g = byGroup.get(r.group) ?? { group: r.group, total: 0, rows: [] as typeof rows };
+      g.total += r.amount; g.rows.push(r); byGroup.set(r.group, g);
+    }
+    return {
+      groups: Array.from(byGroup.values()).sort((a, b) => b.total - a.total),
+      total: rows.reduce((s, r) => s + r.amount, 0),
+      count: rows.length,
+    };
+  }, [activeRows]);
 
   const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
     { key: "salesperson",   label: "Salesperson", wrap: true, width: "w-[110px]" },
@@ -1192,6 +1356,26 @@ export default function SalespersonCollectionReport() {
                   {kpi.value}
                 </p>
                 {kpi.sub && <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{kpi.sub}</p>}
+                {kpi.breakdown && (
+                  <div className="mt-1 space-y-0.5 border-t border-border/60 pt-1">
+                    {kpi.breakdown.map((b) => (
+                      <div key={b.label} className="flex items-baseline justify-between gap-2 text-[10px] leading-tight">
+                        <span className="text-muted-foreground">{b.label}</span>
+                        {b.onClick ? (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); b.onClick!(); }}
+                            className="font-mono underline decoration-dotted underline-offset-2 hover:text-foreground text-muted-foreground"
+                          >
+                            {b.value}
+                          </button>
+                        ) : (
+                          <span className="font-mono text-muted-foreground">{b.value}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           );
@@ -1542,6 +1726,114 @@ export default function SalespersonCollectionReport() {
         ledgerFigures={drill?.ledgerFigures}
         asOfDate={asOfDate}
       />
+
+      {/* "Less advances & credits" — the ledgers netted off the Outstanding figure */}
+      <Dialog
+        open={creditDrill}
+        onOpenChange={(o) => { setCreditDrill(o); if (o) setCreditOpenGroups(new Set()); }}
+      >
+        {/* Cap the dialog to the viewport and let ONLY the table scroll, so the header stays put
+            and the footnote never falls off the bottom. DialogContent's base style has no height
+            limit, so without this a long list overflows the screen in both directions. */}
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader className="shrink-0">
+            <DialogTitle className="text-base">Advances &amp; credit balances</DialogTitle>
+            <DialogDescription className="text-xs">
+              {creditLedgers.count} ledger(s) in net credit, totalling {fmt(creditLedgers.total)}, subtracted from
+              Outstanding. Grouped by their Tally group. These are parties whose money you hold — machine
+              advances, related-party balances, customer advances — not amounts owed to you.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-3 text-[11px]">
+            <button
+              type="button"
+              className="underline decoration-dotted underline-offset-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setCreditOpenGroups(new Set(creditLedgers.groups.map((g) => g.group)))}
+            >
+              Expand all
+            </button>
+            <button
+              type="button"
+              className="underline decoration-dotted underline-offset-2 text-muted-foreground hover:text-foreground"
+              onClick={() => setCreditOpenGroups(new Set())}
+            >
+              Collapse all
+            </button>
+          </div>
+          {/* ScrollableTable's `maxHeight` is a CLASS NAME, not a CSS length (it is interpolated
+              straight into className) — so it must be a Tailwind max-h-* utility. Cap it here
+              rather than via flex: the component wraps its scroll div in an outer container, so a
+              `flex-1 min-h-0` passed through className lands on the inner div and never resolves
+              to a height — which leaves the list unconstrained and unscrollable. */}
+          <ScrollableTable maxHeight="max-h-[60vh]" className="rounded-card border border-border">
+            <Table>
+              <TableHeader className="sticky top-0 bg-background z-10">
+                <TableRow>
+                  <TableHead className="text-xs">Ledger</TableHead>
+                  <TableHead className="text-xs">Company</TableHead>
+                  <TableHead className="text-xs text-right">Credit balance</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {creditLedgers.groups.map((g) => {
+                  const open = creditOpenGroups.has(g.group);
+                  return (
+                    <Fragment key={g.group}>
+                      <TableRow
+                        className="bg-muted/50 cursor-pointer hover:bg-muted"
+                        onClick={() => setCreditOpenGroups((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(g.group)) next.delete(g.group); else next.add(g.group);
+                          return next;
+                        })}
+                      >
+                        <TableCell colSpan={2} className="text-xs font-semibold">
+                          <span className="inline-flex items-center gap-1">
+                            <ChevronRight className={`h-3 w-3 transition-transform ${open ? "rotate-90" : ""}`} />
+                            {g.group}
+                            <span className="font-normal text-muted-foreground">
+                              ({g.rows.length} ledger{g.rows.length === 1 ? "" : "s"})
+                            </span>
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-right font-mono font-semibold">{fmt(g.total)}</TableCell>
+                      </TableRow>
+                      {open && g.rows.map((r) => (
+                        <TableRow key={`${g.group}|${r.name}|${r.company}`}>
+                          <TableCell className="text-xs pl-7">{r.name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{r.company}</TableCell>
+                          <TableCell className="text-xs text-right font-mono">{fmt(r.amount)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+                {creditLedgers.count === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-xs text-muted-foreground text-center py-6">
+                      No ledgers in credit for the current filters.
+                    </TableCell>
+                  </TableRow>
+                )}
+                {/* Total stays visible while scrolling — it is the figure this popup exists to
+                    explain, and it must tie exactly to the card's "Less advances & credits" line. */}
+                {creditLedgers.count > 0 && (
+                  <TableRow className="sticky bottom-0 bg-background border-t-2 border-border hover:bg-background">
+                    <TableCell colSpan={2} className="text-xs font-semibold">
+                      Total — {creditLedgers.count} ledger(s) across {creditLedgers.groups.length} group(s)
+                    </TableCell>
+                    <TableCell className="text-xs text-right font-mono font-bold">{fmt(creditLedgers.total)}</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </ScrollableTable>
+          <p className="text-[11px] text-muted-foreground shrink-0">
+            Why this matters: the default pipeline source excludes these ledgers entirely, so its Outstanding
+            is higher by roughly this amount. Neither figure is wrong — they count different things.
+          </p>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

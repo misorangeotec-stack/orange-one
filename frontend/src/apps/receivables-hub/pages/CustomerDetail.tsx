@@ -42,7 +42,7 @@ import { useQuery } from "@tanstack/react-query";
 import { utilizationPct } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
-import type { Customer, InvoiceStatus } from "@hub/lib/types";
+import type { Customer, CustomerGroupMap, InvoiceStatus } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -645,8 +645,15 @@ export default function CustomerDetail() {
       if (isGroupRoute) {
         const byName = consolidateByName(ents);
         if (byName.length === 0) return null;
-        const synthetic: Record<string, string> = {};
-        for (const c of byName) synthetic[c.name] = groupName;
+        // Force every selected child into the one group. Populate BOTH keys: groupNameOf()
+        // resolves by ledger id first, so a name-only synthetic map would let a child with a
+        // real muster entry escape into its own group.
+        const synthetic: CustomerGroupMap = { byLedgerId: {}, mapping: {}, groups: { [groupName]: [] } };
+        for (const c of byName) {
+          synthetic.mapping[c.name] = groupName;
+          synthetic.groups[groupName].push(c.name);
+          for (const id of c.constituentIds ?? []) synthetic.byLedgerId[id] = groupName;
+        }
         const grouped = consolidateByGroup(byName, synthetic);
         return grouped[0] ?? null;
       }
@@ -1045,6 +1052,10 @@ export default function CustomerDetail() {
 
     // Other payments (manual, non-Tally) — reduce outstanding like a receipt,
     // tracked separately. paymentRef shown as the voucher reference.
+    // They carry no sale type of their own, so take it from the bill they settle (same rule as
+    // receipts) — otherwise a sale-type filter would hide a payment that did settle a bill of
+    // that type. Truly on-account rows keep no type and drop out, like an on-account receipt.
+    const typeOfBill = new Map(invoices.map((inv) => [inv.billRefName, inv.voucherType]));
     otherPaymentTxns.forEach((o, i) => {
       const gross = Math.abs(o.amount);
       rows.push({
@@ -1056,6 +1067,7 @@ export default function CustomerDetail() {
         amount: gross,
         signedAmount: -gross,
         subType: o.type,
+        saleType: (o.refInvoice ? typeOfBill.get(o.refInvoice) : undefined) ?? undefined,
         narration: o.remark ?? undefined,
         appliedTo: classifyApplied(o.refInvoice),
         _company: o._company,

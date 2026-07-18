@@ -32,7 +32,7 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
 import { useHubBase, ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
@@ -255,7 +255,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   /** The REAL groups from the mapping sheet. Also decides customer-vs-group drill-through:
    *  a "group" bucket that isn't in here is just an ungrouped customer shown as its own row. */
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)),
+    () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
@@ -334,7 +334,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const outstandingByType = useMemo(() => buildOutstandingByType(allCustomers), [allCustomers]);
 
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap),
     [customerGroupMap],
   );
 

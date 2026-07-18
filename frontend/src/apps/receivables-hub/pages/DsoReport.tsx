@@ -36,7 +36,7 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
 import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
@@ -229,12 +229,12 @@ function DsoInner() {
     [allCustomers],
   );
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)),
+    () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap),
     [customerGroupMap],
   );
 
@@ -257,7 +257,7 @@ function DsoInner() {
     if (locations.length)     { const s = new Set(locations);     d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length)  { const s = new Set(salespersons);  d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(customerGroupMap.mapping[c.name] ?? c.name)); }
+    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (segment !== "all") {
       const act = new Map<string, number>();
       for (const c of d) {
@@ -286,7 +286,7 @@ function DsoInner() {
   // stated on the basis panel — Avg Age of Open Bills covers the BILLED portion of AR, not all
   // of it.
   const bills = useMemo(
-    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, {}, customerGroupMap.mapping),
+    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, {}, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, customerGroupMap],
   );
   const billsByLedger = useMemo(() => {

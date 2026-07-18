@@ -146,13 +146,29 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
  *  - Company / Location / Sales Person → single value if all children agree, else "Multiple"
  *  - Customers absent from mapping appear as their own single-child group.
  */
+/**
+ * Resolve a customer's parent group.
+ *
+ * Resolves by Tally ledger GUID first — the only stable identity. A ConsolidatedCustomer is
+ * already merged across companies, so it carries `constituentIds`: we take the first constituent
+ * with a muster entry. Falls back to the name-keyed view (which is all the default pipeline
+ * source has), then to the customer's own name, which means "ungrouped".
+ *
+ * Use this rather than indexing `mapping` directly: a name lookup can return another company's
+ * group (387 names repeat), and it detaches entirely when the ledger is renamed in Tally.
+ */
+// Group resolution lives in ./customerGroups (pure, React-free) so non-hook libs can use it.
+// Re-exported here because every page already imports from useAppData.
+export { groupEntryOf, groupNameOf, allGroupNames, EMPTY_GROUP_MAP } from "./customerGroups";
+import { groupNameOf, EMPTY_GROUP_MAP } from "./customerGroups";
+
 export function consolidateByGroup(
   customers: ConsolidatedCustomer[],
-  mapping: Record<string, string>,
+  map: CustomerGroupMap,
 ): GroupedCustomer[] {
   const groups = new Map<string, ConsolidatedCustomer[]>();
   for (const c of customers) {
-    const groupName = mapping[c.name] ?? c.name;
+    const groupName = groupNameOf(c, map);
     if (!groups.has(groupName)) groups.set(groupName, []);
     groups.get(groupName)!.push(c);
   }
@@ -377,9 +393,12 @@ async function loadFromJson(fySuffix: string): Promise<RawAppData> {
     custRes.json() as Promise<Customer[]>,
     invRes.json() as Promise<Record<string, CustomerDetail>>,
   ]);
-  const grp: CustomerGroupMap = grpRes.ok
-    ? await (grpRes.json() as Promise<CustomerGroupMap>)
-    : { mapping: {}, groups: {} };
+  // The static JSON predates ledger-id keying and carries only { mapping, groups }, so default
+  // byLedgerId — groupNameOf() then falls back to the name for this source.
+  const grp: CustomerGroupMap = {
+    byLedgerId: {}, mapping: {}, groups: {},
+    ...(grpRes.ok ? await (grpRes.json() as Promise<Partial<CustomerGroupMap>>) : {}),
+  };
   return { dash, cust, inv, grp };
 }
 
@@ -397,12 +416,11 @@ async function loadFromSupabase(fySuffix: string): Promise<RawAppData> {
   return { dash, cust, inv, grp };
 }
 
-async function loadFromConnectwaveSource(): Promise<RawAppData> {
+async function loadFromConnectwaveSource(fySuffix: string): Promise<RawAppData> {
   const { loadFromConnectwave } = await import("./connectwaveFetcher");
-  return loadFromConnectwave();
+  return loadFromConnectwave(fySuffix);
 }
 
-const EMPTY_GROUP_MAP: CustomerGroupMap = { mapping: {}, groups: {} };
 
 /**
  * Turn any thrown value into a readable message. Supabase/PostgREST rejections are
@@ -439,11 +457,19 @@ export function useAppData(filters: Filters = {}): AppData {
   // in App.tsx), so navigating between pages no longer triggers a refetch — the
   // second mount returns the cached result instantly.
   const { data: raw, isLoading, error: queryError } = useQuery<RawAppData>({
-    // ConnectWave is a distinct backend (live Tally snapshot) → its own cache key,
-    // and FY-agnostic (the snapshot is current-period only), so key by source.
-    queryKey: source === "connectwave" ? ["appData", "connectwave"] : ["appData", fySuffix],
+    // ConnectWave is a distinct backend (live Tally snapshot) → its own cache key. It is now FY-aware
+    // (connectwaveFetcher windows the monthly series + sales/receipts to the selected FY, mirroring the
+    // pipeline partitions), so the FY suffix is part of the key here too.
+    // The "v2" bump retired payloads cached before company/location were resolved from the
+    // ext_company_map master (2026-07-17): the IndexedDB cache below hydrates instantly, so without
+    // it a returning user would flash the old raw Tally book names ("ORANGE O TEC PRIVATE LIMITED
+    // (01-04-25TO31-03-27)") until the background refetch landed.
+    // "v3" (2026-07-17) retires payloads cached before Other Payments were netted from the
+    // ext_other_payments master — those hold outstanding figures that read HIGH by up to
+    // ₹5,76,27,920, and would paint for up to 24h on a returning browser.
+    queryKey: source === "connectwave" ? ["appData", "connectwave", "v3", fySuffix] : ["appData", fySuffix],
     queryFn: () => {
-      if (source === "connectwave") return loadFromConnectwaveSource();
+      if (source === "connectwave") return loadFromConnectwaveSource(fySuffix);
       const ds = (import.meta.env.VITE_DATA_SOURCE ?? "local").toLowerCase();
       return ds === "supabase" ? loadFromSupabase(fySuffix) : loadFromJson(fySuffix);
     },
@@ -658,10 +684,72 @@ export function useAppData(filters: Filters = {}): AppData {
     return result;
   }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson, filters.category]);
 
+  // ── customerDetail filtered by saleType — used by the overdue bridge, aging & trend ──
+  // Declared here (above its first consumer) rather than further down; only `customerDetail`
+  // and `saleTypeList` feed it, and both are defined well above.
+  const filteredCustomerDetail = useMemo(() => {
+    if (!saleTypeList.length) return customerDetail;
+    const typeSet = new Set<string>(saleTypeList);
+    const result: Record<string, CustomerDetail> = {};
+    for (const [id, detail] of Object.entries(customerDetail)) {
+      result[id] = {
+        ...detail,
+        invoices: detail.invoices.filter((inv) => typeSet.has(inv.voucherType)),
+      };
+    }
+    return result;
+  }, [customerDetail, saleTypeList]);
+
+  /**
+   * ── The Overdue bridge ───────────────────────────────────────────────────────
+   *
+   * The Dashboard's Total Overdue (`customers.overdue`, summed) has always disagreed with the
+   * bill-based reports (Aging / Overdue-120 / Category) — ₹35.26 cr vs ₹38.00 cr. Neither is
+   * wrong. The pipeline reports overdue NET of on-account money the customer has already paid
+   * us but that isn't matched to any bill yet. Measured against the live book, this holds for
+   * 1,776 of 1,780 ledgers (the 4 misses total ₹0.01 cr — rounding):
+   *
+   *     customers.overdue  ==  max(0, Σ overdue bills  +  Σ on-account credits)   // per ledger
+   *
+   * So the difference is not a defect to fix, it is a fact to SHOW. This computes both sides of
+   * the bridge here — not in the page — so it is derived from the SAME customer universe as
+   * `totalOverdue` (`segmentedConsolidatedCustomers` → `allowedIds`, exactly like the aging memo
+   * below) and therefore ties by construction under every filter, instead of agreeing today and
+   * drifting the first time someone filters by salesperson.
+   *
+   * 🔴 The cap is load-bearing. `applied` takes min(overdue, credits) PER LEDGER, because a
+   * customer's surplus credit cannot drive their own overdue below zero. Across the book,
+   * on-bill credits total ₹16.16 cr but only ₹2.75 cr is actually consumed — sum them globally
+   * instead of capping and the bridge over-deducts by ~6× and confidently shows a wrong number.
+   */
+  const overdueBridge = useMemo(() => {
+    const allowedIds = new Set(segmentedConsolidatedCustomers.flatMap((c) => c.constituentIds));
+
+    // ledgerId → { ovd: past-due bills, cred: on-account credits (positive magnitude) }
+    const perLedger = new Map<string, { ovd: number; cred: number }>();
+    for (const [custId, detail] of Object.entries(filteredCustomerDetail)) {
+      if (!allowedIds.has(custId)) continue;
+      let e = perLedger.get(custId);
+      if (!e) { e = { ovd: 0, cred: 0 }; perLedger.set(custId, e); }
+      for (const inv of detail.invoices) {
+        if (inv.pending > 0 && inv.overdueDays > 0) e.ovd += inv.pending;
+        else if (inv.pending < 0) e.cred += -inv.pending;
+      }
+    }
+
+    let onBills = 0, applied = 0;
+    for (const { ovd, cred } of perLedger.values()) {
+      onBills += ovd;
+      applied += Math.min(ovd, cred);   // ← the per-ledger cap. See above.
+    }
+    return { totalOverdueOnBills: onBills, totalOverdueCreditsApplied: applied };
+  }, [filteredCustomerDetail, segmentedConsolidatedCustomers]);
+
   // ── KPIs recomputed from filtered customers ──────────────────────────────────
   const kpis = useMemo<KPIs | null>(() => {
     if (!projectedCustomers.length && !allCustomers.length) return null;
     return {
+      ...overdueBridge,
       totalSales:                   segmentedConsolidatedCustomers.reduce((s, c) => s + c.sales, 0),
       totalReceipts:                segmentedConsolidatedCustomers.reduce((s, c) => s + c.receipts, 0),
       totalOtherPayments:           segmentedConsolidatedCustomers.reduce((s, c) => s + (c.otherPayments ?? 0), 0),
@@ -688,7 +776,7 @@ export function useAppData(filters: Filters = {}): AppData {
       overdue180Plus:               segmentedConsolidatedCustomers.filter((c) => c.maxOverdueDays > 180).length,
       blockedCustomers:             segmentedConsolidatedCustomers.filter((c) => c.blocked).length,
     };
-  }, [projectedCustomers, allCustomers.length, segmentedConsolidatedCustomers]);
+  }, [projectedCustomers, allCustomers.length, segmentedConsolidatedCustomers, overdueBridge]);
 
   // ── Consolidated customers with saleType + customerSegment applied ───────────
   // Used by Risk Register. Derived from projectedConsolidatedCustomers so that
@@ -725,20 +813,6 @@ export function useAppData(filters: Filters = {}): AppData {
 
     return result;
   }, [projectedConsolidatedCustomers, filters.customerSegment, filters.balanceFilter, filters.blockedFilter, filters.salesPerson, filters.category]);
-
-  // ── customerDetail filtered by saleType (moved up — used by aging & trend) ──
-  const filteredCustomerDetail = useMemo(() => {
-    if (!saleTypeList.length) return customerDetail;
-    const typeSet = new Set<string>(saleTypeList);
-    const result: Record<string, CustomerDetail> = {};
-    for (const [id, detail] of Object.entries(customerDetail)) {
-      result[id] = {
-        ...detail,
-        invoices: detail.invoices.filter((inv) => typeSet.has(inv.voucherType)),
-      };
-    }
-    return result;
-  }, [customerDetail, saleTypeList]);
 
   // ── Aging recomputed from filtered customers / invoices ─────────────────────
   const aging = useMemo<AgingPoint[]>(() => {
@@ -1282,8 +1356,8 @@ export function useAppData(filters: Filters = {}): AppData {
   // chain so toggling between Customer/Group view doesn't change which records
   // are included, only how they're aggregated).
   const groupedCustomers = useMemo<GroupedCustomer[]>(
-    () => consolidateByGroup(consolidatedCustomers, customerGroupMap.mapping),
-    [consolidatedCustomers, customerGroupMap.mapping],
+    () => consolidateByGroup(consolidatedCustomers, customerGroupMap),
+    [consolidatedCustomers, customerGroupMap],
   );
 
   return {

@@ -36,7 +36,7 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
 import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
@@ -206,10 +206,10 @@ function CustomerCategoryInner() {
   const customerOptions = useMemo(
     () => [...new Set(allCustomers.map((c) => c.name).filter(Boolean))].sort(), [allCustomers]);
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)), [customerGroupMap]);
+    () => allGroupNames(customerGroupMap), [customerGroupMap]);
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name, [customerGroupMap]);
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap), [customerGroupMap]);
 
   // ── Scope the RAW ledgers, then keep every money figure inside that scope ──────────
   const scopedLedgers = useMemo(() => {
@@ -218,7 +218,7 @@ function CustomerCategoryInner() {
     if (locations.length)     { const s = new Set(locations);     d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length)  { const s = new Set(salespersons);  d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(customerGroupMap.mapping[c.name] ?? c.name)); }
+    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (blockedOnly) d = d.filter((c) => c.blocked === true);
     return d;
   }, [allCustomers, categories, companies, locations, salespersons, customerNames, groupNamesSel,
@@ -232,7 +232,7 @@ function CustomerCategoryInner() {
     [companies, locations, salespersons, saleTypes, customerNames]);
 
   const baseBills = useMemo(
-    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, billFilters, customerGroupMap.mapping),
+    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, billFilters, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, billFilters, customerGroupMap]);
 
   /** Selecting every sale type means "no filter" — same guard as the Aging / Overdue reports. */
@@ -250,7 +250,7 @@ function CustomerCategoryInner() {
     const extra: EnrichedBill[] = [];
     for (const c of scopedLedgers) {
       const adj = c.outstanding - (billNet.get(c.id) ?? 0);
-      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap.mapping));
+      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap));
     }
     return extra.length ? [...baseBills, ...extra] : baseBills;
   }, [baseBills, scopedLedgers, customerGroupMap, saleTypeActive]);

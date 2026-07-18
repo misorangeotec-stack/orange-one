@@ -38,6 +38,16 @@ export interface Customer {
   salesPerson: string;
   /** Sales/finance tier: 'A' | 'B' | 'C' | 'D' | 'E' | 'AA'; '' when Uncategorized. */
   category: string;
+  /**
+   * The ledger's immediate parent GROUP in Tally (`v_ledger_detail.sub_group`) — e.g.
+   * "MACHINE DEBTORS", "BALANCE WITH RELATED PARTY(Debtors)", "Sundry Debtors", "Surat".
+   *
+   * Master data straight from Tally, NOT a category we assign. It is what lets the report explain
+   * a credit balance ("this is a machine advance", "this is a group company") without any
+   * hardcoded list of names: a new group created in Tally simply appears. Live (Tally) source
+   * only — undefined on the default pipeline source, which does not carry it.
+   */
+  tallyGroup?: string;
   creditPeriod: number;
   creditLimit: number;
   /** True when the source-sheet Credit Limit equals 1 (the "blocked" sentinel). */
@@ -55,6 +65,20 @@ export interface Customer {
   otherPaymentsApplied?: number;
   /** Other-payments with no invoice target (on account). */
   otherPaymentsOnAccount?: number;
+  /**
+   * The slice of `otherPayments` that actually came out of OVERDUE (not merely out of outstanding):
+   * only bills already past their due date were in the overdue total to begin with.
+   *
+   * Live (ConnectWave) only — liveOtherPayments sets it. The pipeline nets other-payments in Python
+   * and never reports this split, so it stays undefined there and readers MUST treat it as unknown
+   * rather than as zero.
+   *
+   * Why it exists: the current month's Pending drops by this amount (via c.overdue), while a PAST
+   * month has no bill-wise history to replay — so the report scales this same per-customer figure
+   * to each past month. Without it the two months would sit on different bases and June could read
+   * better than July for no real reason. See SalespersonCollectionReport.metricsForMonth.
+   */
+  otherPaymentsOverdueAdj?: number;
   creditNotes: number;
   debitNotes: number;
   journalDr: number;
@@ -149,14 +173,26 @@ export interface ConsolidatedCustomer extends Customer {
   proposedConstituents: ProposedConstituent[];
 }
 
-// ── customer_groups.json ─────────────────────────────────────────────────────
-// Maps a Tally customer name (UPPERCASE, as it appears in transaction sheets)
-// to a parent group name. Customers absent from `mapping` are ungrouped and
+// ── customer group muster ────────────────────────────────────────────────────
+// Maps a customer to its parent group. Customers with no entry are ungrouped and
 // treated as their own single-row "group" by the frontend.
+//
+// IDENTITY: the muster is stored against the Tally ledger GUID (`ext_ledger_group.ledger_id`),
+// which is the only stable key — 387 ledger NAMES repeat across companies, so a name-keyed
+// lookup silently returns another company's group, and a Tally rename detaches the row
+// entirely. Always prefer `byLedgerId`; resolve through `groupNameOf()` rather than indexing
+// a map directly.
+//
+// `mapping` is a name-keyed VIEW of the same data, derived from `byLedgerId`. It exists because
+// (a) the default pipeline source reads `customer_groups`, which has no ledger ids at all, and
+// (b) rollup/option lists are still keyed by name. Where one name carries different groups in
+// different companies, the derived entry is deterministic and the conflict is logged.
 export interface CustomerGroupMap {
-  /** Tally name (UPPERCASE) → group name */
+  /** Tally ledger GUID → group name. The source of truth. Empty on the pipeline source. */
+  byLedgerId: Record<string, string>;
+  /** Customer name → group name. Derived from `byLedgerId`; lossy where names repeat. */
   mapping: Record<string, string>;
-  /** Group name → list of Tally names that belong to it */
+  /** Group name → list of customer names that belong to it */
   groups: Record<string, string[]>;
 }
 
@@ -251,6 +287,17 @@ export interface MonthlyTrend {
    *  trend amounts). Σ per-type == this month's `sales`. Absent on pre-tagging
    *  snapshots — callers fall back to the plain `sales` total. */
   salesByType?: Partial<Record<SaleType, number>>;
+  /** GST contained in this month's `sales` (lakhs, like the other trend amounts).
+   *  `sales` is booked INCLUSIVE of GST — it is the full invoice value the customer
+   *  owes — so the taxable base is `sales - salesGst`.
+   *  ABSENT (not zero) when the source can't supply it: only the live Tally mirror
+   *  carries the per-voucher tax split, so the pipeline leaves this undefined and
+   *  callers must hide the breakup rather than render a base equal to the total. */
+  salesGst?: number;
+  /** The same GST split by the sale type of the voucher (lakhs). Σ per-type ==
+   *  `salesGst`. Lets a sale-type filter show that type's exact tax instead of
+   *  apportioning it by sales mix. Absent under the same conditions as `salesGst`. */
+  salesGstByType?: Partial<Record<SaleType, number>>;
 }
 
 export interface ReceiptTransaction {
@@ -300,7 +347,30 @@ export interface KPIs {
   totalAdvanceBalance: number;
   totalAdvanceBySource: AdvanceBreakdown;
   totalOutstanding: number;
+  /**
+   * Overdue NET of on-account money the customer has already paid us. This is the pipeline's
+   * figure and the one the Dashboard has always shown. It is NOT the same as the bill-based
+   * reports (Aging / Overdue-120 / Category), which show `totalOverdueOnBills` — see below.
+   */
   totalOverdue: number;
+  /**
+   * Σ pending of the open bills that are past due — the figure the BILL-BASED reports show.
+   *
+   * The two reconcile exactly, per ledger and in total:
+   *     totalOverdue  =  totalOverdueOnBills − totalOverdueCreditsApplied
+   * Verified against the live book (13-Jul-2026): ₹38.00 cr − ₹2.75 cr = ₹35.26 cr, residual ₹0.
+   * The Dashboard renders that bridge so the two views stop reading as a contradiction.
+   */
+  totalOverdueOnBills: number;
+  /**
+   * The on-account credits actually CONSUMED against those overdue bills.
+   *
+   * Capped per ledger (`min(overdue, credits)`) — a customer's surplus credit cannot push their
+   * own overdue below zero. That cap matters enormously: on-bill credits across the book total
+   * ₹16.16 cr, but only ₹2.75 cr of it is consumed. Summing the credits instead of capping them
+   * would over-deduct by ~6×.
+   */
+  totalOverdueCreditsApplied: number;
   totalCustomers: number;
   criticalCustomers: number;
   overCreditLimit: number;

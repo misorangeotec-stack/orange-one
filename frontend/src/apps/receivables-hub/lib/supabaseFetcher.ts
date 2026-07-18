@@ -286,7 +286,11 @@ export async function fetchCustomerGroupsFromSupabase(): Promise<CustomerGroupMa
     mapping[r.tally_name] = r.group_name;
     (groups[r.group_name] ??= []).push(r.tally_name);
   }
-  return { mapping, groups };
+  // `customer_groups` on the pipeline project carries no ledger GUID at all — its primary key IS
+  // the name. So this source stays name-keyed and `byLedgerId` is empty; groupNameOf() falls back
+  // to the name for it. Do not fabricate ids here: resolving name→GUID in the browser is exactly
+  // the guesswork the ledger-id work exists to remove.
+  return { byLedgerId: {}, mapping, groups };
 }
 
 // ── invoices (per-customer bundle: invoices + trend + 4 transaction types) ──
