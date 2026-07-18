@@ -54,7 +54,7 @@ export default function PoDetail() {
       .map((x) => {
         const poItem = items.find((it) => it.id === x.poItemId);
         const line = poItem ? s.lineById(poItem.requestItemId) : undefined;
-        return line ? s.itemById(line.itemId)?.name ?? s.itemLabel(line.itemId) : null;
+        return line ? s.itemLabel(line.itemId) : null;
       })
       .filter(Boolean)
       .join(", ");

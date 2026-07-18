@@ -216,7 +216,7 @@ interface ImportStoreValue {
   poById: (id: string | null) => PurchaseOrder | undefined;
   poItemsForPo: (poId: string) => PoItem[];
   poItemForLine: (requestItemId: string) => PoItem | undefined;
-  /** A short item label "Item · Group" for display. */
+  /** The item's name, for display. The group is implied by the requisition. */
   itemLabel: (itemId: string) => string;
   /** O(1) lookups over the current snapshot, shared with `lib/queues.ts` predicates. */
   importIndex: ImportIndex;
@@ -560,12 +560,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     }
     const poItemByLine = new Map(poItems.map((pi) => [pi.requestItemId, pi]));
 
-    const itemLabel = (itemId: string): string => {
-      const it = items.find((i) => i.id === itemId);
-      if (!it) return "Unknown item";
-      const g = itemGroups.find((gr) => gr.id === it.itemGroupId);
-      return g ? `${it.name} · ${g.name}` : it.name;
-    };
+    const itemLabel = (itemId: string): string =>
+      items.find((i) => i.id === itemId)?.name ?? "Unknown item";
 
     // --- notification fan-out helpers ---
     const ownerIdsOf = (stepKey: StepKey): string[] =>
