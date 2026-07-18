@@ -12,48 +12,103 @@ import ApprovalModal from "../../components/ApprovalModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
-import type { RequestItem } from "../../types";
+import type { PurchaseRequest, RequestItem } from "../../types";
 
-/** Approvals Stage — lines routed to me, plus the decisions already made. */
+/**
+ * Approvals Stage — REQUISITIONS routed to me, plus the decisions already made.
+ * One row per requisition: the band is picked on the requisition total, so the
+ * whole thing is approved or rejected together.
+ */
 export default function ApprovalsQueue() {
   const s = useProcurementStore();
   const { user } = useEffectiveIdentity();
-  const [approving, setApproving] = useState<RequestItem | null>(null);
-  const [editLine, setEditLine] = useState<RequestItem | null>(null);
-  const stage = useStageMode(s.completedApprovalEntries, user.id);
+  const [approving, setApproving] = useState<PurchaseRequest | null>(null);
+  const [editRequest, setEditRequest] = useState<PurchaseRequest | null>(null);
+  const stage = useStageMode(s.completedApprovalRequestEntries, user.id);
 
-  const requestNo = (l: RequestItem) => s.requestById(l.requestId)?.requestNo ?? "—";
-  const vendorName = (l: RequestItem) => s.vendorById(l.finalVendorId)?.name ?? "—";
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
-  const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
   /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
-  const dueIso = (l: RequestItem) => s.dueIsoForLine(l, "approval");
+  const dueIso = (r: PurchaseRequest) => s.dueIsoForRequest(r, "approval");
 
-  const columns: QueueColumn<RequestItem>[] = [
-    {
-      key: "request", header: "Request", sortValue: (l) => requestNo(l), filter: { kind: "text", get: (l) => requestNo(l) }, tdClassName: "whitespace-nowrap",
-      cell: (l) => {
-        const req = s.requestById(l.requestId);
-        return req ? <Link to={`/procurement/requests/${req.id}`} className="font-semibold text-navy hover:text-orange">{req.requestNo}</Link> : "—";
-      },
-    },
-    { key: "item", header: "Item", cell: (l) => <span className="font-medium text-navy">{s.itemLabel(l.itemId)}</span>, sortValue: (l) => s.itemLabel(l.itemId), filter: { kind: "text", get: (l) => s.itemLabel(l.itemId) } },
-    { key: "vendor", header: "Recommended Vendor", cell: (l) => vendorName(l), sortValue: (l) => vendorName(l), filter: { kind: "select", get: (l) => vendorName(l) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Line Value", cell: (l) => <span className="font-semibold text-navy">{inr(l.lineValue)}</span>, sortValue: (l) => l.lineValue ?? 0, filter: { kind: "number", get: (l) => l.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
-    { key: "status", header: "Status", cell: (l) => <span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span>, sortValue: (l) => LINE_STATUS_LABEL[l.status], filter: { kind: "select", get: (l) => LINE_STATUS_LABEL[l.status] } },
-    { key: "created", header: "Created", cell: (l) => formatDate(l.createdAt), sortValue: (l) => l.createdAt, filter: { kind: "date", get: (l) => l.createdAt }, tdClassName: "whitespace-nowrap" },
-    { key: "due", header: "Due", cell: (l) => <DueCell dueIso={dueIso(l)} />, sortValue: (l) => dueIso(l), filter: { kind: "date", get: (l) => dueIso(l) }, tdClassName: "whitespace-nowrap" },
+  const vendorOf = (r: PurchaseRequest) => {
+    const rec = s.vendorsForRequest(r.id).find((v) => v.isRecommended)?.vendorId;
+    const fallback = s.itemsForRequest(r.id).find((l) => l.finalVendorId)?.finalVendorId ?? null;
+    return s.vendorById(rec ?? fallback)?.name ?? "—";
+  };
+  const itemCount = (r: PurchaseRequest, match: (l: RequestItem) => boolean) =>
+    s.itemsForRequest(r.id).filter(match).length;
+  /** Lines on one requisition can differ, so the status cell is a rollup. */
+  const statusText = (r: PurchaseRequest) => {
+    const waiting = itemCount(r, (l) => l.status === "approval");
+    const held = itemCount(r, (l) => l.status === "on_hold");
+    return [waiting ? `${waiting} awaiting` : "", held ? `${held} on hold` : ""].filter(Boolean).join(" · ") || "—";
+  };
+  const decisionText = (r: PurchaseRequest) => {
+    const approved = itemCount(r, (l) => l.status === "approved_pending_po" || l.status === "po");
+    const rejected = itemCount(r, (l) => l.status === "rejected");
+    return [approved ? `${approved} approved` : "", rejected ? `${rejected} rejected` : ""].filter(Boolean).join(" · ") || "—";
+  };
+  const tierOf = (r: PurchaseRequest) => s.itemsForRequest(r.id).find((l) => l.approvalTier)?.approvalTier ?? "—";
+  const decidedValue = (r: PurchaseRequest) =>
+    s.itemsForRequest(r.id).reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+
+  /**
+   * Base (qty × rate, pre-GST) and the GST on it. GST is derived from the total
+   * rather than summed separately, so the three figures can never disagree.
+   * `total` is the figure the approval band is picked on.
+   */
+  const money = (r: PurchaseRequest, lines: RequestItem[]) => {
+    void r;
+    const total = Math.round(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0) * 100) / 100;
+    const base = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? 0) * (l.finalRate ?? 0), 0) * 100) / 100;
+    return { base, gst: Math.round((total - base) * 100) / 100, total };
+  };
+  /** Pending rows band on the lines under decision; completed rows on all of them. */
+  const pendingMoney = (r: PurchaseRequest) =>
+    money(r, s.itemsForRequest(r.id).filter((l) => l.status === "approval" || l.status === "on_hold"));
+  const doneMoney = (r: PurchaseRequest) => money(r, s.itemsForRequest(r.id));
+
+  const requestLink = (r: PurchaseRequest) => (
+    <Link to={`/procurement/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+      {r.requestNo}
+    </Link>
+  );
+  const itemsCell = (r: PurchaseRequest) => {
+    const lines = s.itemsForRequest(r.id);
+    const names = lines.slice(0, 2).map((l) => s.itemById(l.itemId)?.name ?? "—");
+    const rest = lines.length - names.length;
+    return (
+      <div className="min-w-0">
+        <span className="font-medium text-navy">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
+        <span className="ml-1.5 text-[11.5px] text-grey-2">{names.join(", ")}{rest > 0 ? ` +${rest} more` : ""}</span>
+      </div>
+    );
+  };
+  const itemsText = (r: PurchaseRequest) => s.itemsForRequest(r.id).map((l) => s.itemById(l.itemId)?.name ?? "").join(", ");
+
+  const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
+    { key: "items", header: "Items", cell: (r) => itemsCell(r), sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "text", get: (r) => itemsText(r) } },
+    { key: "vendor", header: "Recommended Vendor", cell: (r) => vendorOf(r), sortValue: (r) => vendorOf(r), filter: { kind: "select", get: (r) => vendorOf(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "base", header: "Base", cell: (r) => inr(pendingMoney(r).base), sortValue: (r) => pendingMoney(r).base, filter: { kind: "number", get: (r) => pendingMoney(r).base }, tdClassName: "whitespace-nowrap" },
+    { key: "gst", header: "GST", cell: (r) => inr(pendingMoney(r).gst), sortValue: (r) => pendingMoney(r).gst, filter: { kind: "number", get: (r) => pendingMoney(r).gst }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Total", cell: (r) => <span className="font-semibold text-navy">{inr(pendingMoney(r).total)}</span>, sortValue: (r) => pendingMoney(r).total, filter: { kind: "number", get: (r) => pendingMoney(r).total }, tdClassName: "whitespace-nowrap" },
+    { key: "status", header: "Status", cell: (r) => <span className="text-[12.5px] text-grey">{statusText(r)}</span>, sortValue: (r) => statusText(r), filter: { kind: "select", get: (r) => statusText(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt }, tdClassName: "whitespace-nowrap" },
+    { key: "due", header: "Due", cell: (r) => <DueCell dueIso={dueIso(r)} />, sortValue: (r) => dueIso(r), filter: { kind: "date", get: (r) => dueIso(r) }, tdClassName: "whitespace-nowrap" },
   ];
 
   // A rejection is a completed decision too — exactly the kind of thing an
   // approver looks back at — so it appears here, locked (there is no un-reject).
-  const completedColumns: QueueColumn<StageEntry<RequestItem>>[] = [
-    { key: "request", header: "Request", cell: (e) => <Link to={`/procurement/requests/${e.row.requestId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
-    { key: "item", header: "Item", cell: (e) => <span className="font-medium text-navy">{s.itemLabel(e.row.itemId)}</span>, sortValue: (e) => s.itemLabel(e.row.itemId), filter: { kind: "text", get: (e) => s.itemLabel(e.row.itemId) } },
-    { key: "vendor", header: "Vendor", cell: (e) => vendorName(e.row), sortValue: (e) => vendorName(e.row), filter: { kind: "select", get: (e) => vendorName(e.row) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Line Value", cell: (e) => <span className="font-semibold text-navy">{inr(e.row.lineValue)}</span>, sortValue: (e) => e.row.lineValue ?? 0, filter: { kind: "number", get: (e) => e.row.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
-    { key: "decision", header: "Decision", cell: (e) => <span className={lineBadge(e.row.status)}>{LINE_STATUS_LABEL[e.row.status]}</span>, sortValue: (e) => LINE_STATUS_LABEL[e.row.status], filter: { kind: "select", get: (e) => LINE_STATUS_LABEL[e.row.status] } },
-    { key: "tier", header: "Tier", cell: (e) => e.row.approvalTier ?? "—", sortValue: (e) => e.row.approvalTier ?? "", filter: { kind: "select", get: (e) => e.row.approvalTier ?? "—" }, tdClassName: "whitespace-nowrap" },
+  const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
+    { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
+    { key: "items", header: "Items", cell: (e) => itemsCell(e.row), sortValue: (e) => s.itemsForRequest(e.row.id).length, filter: { kind: "text", get: (e) => itemsText(e.row) } },
+    { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "base", header: "Base", cell: (e) => inr(doneMoney(e.row).base), sortValue: (e) => doneMoney(e.row).base, filter: { kind: "number", get: (e) => doneMoney(e.row).base }, tdClassName: "whitespace-nowrap" },
+    { key: "gst", header: "GST", cell: (e) => inr(doneMoney(e.row).gst), sortValue: (e) => doneMoney(e.row).gst, filter: { kind: "number", get: (e) => doneMoney(e.row).gst }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Total", cell: (e) => <span className="font-semibold text-navy">{inr(decidedValue(e.row))}</span>, sortValue: (e) => decidedValue(e.row), filter: { kind: "number", get: (e) => decidedValue(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "decision", header: "Decision", cell: (e) => <span className="text-[12.5px] text-grey">{decisionText(e.row)}</span>, sortValue: (e) => decisionText(e.row), filter: { kind: "select", get: (e) => decisionText(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "tier", header: "Tier", cell: (e) => tierOf(e.row), sortValue: (e) => tierOf(e.row), filter: { kind: "select", get: (e) => tierOf(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "decidedAt", header: "Decided On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     {
       key: "decidedBy", header: "By",
@@ -71,15 +126,15 @@ export default function ApprovalsQueue() {
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
             ? "Decisions already made. Each stays revisable until the PO is generated."
-            : "Sourced lines awaiting your vendor-price approval."}
+            : "Sourced requisitions awaiting your vendor-price approval — banded on the requisition total."}
         </p>
       </div>
 
       <StageTabs
         mode={stage.mode}
         onMode={stage.setMode}
-        pendingCount={s.approvalQueue.length}
-        completedCount={s.completedApprovalEntries.length}
+        pendingCount={s.approvalRequestQueue.length}
+        completedCount={s.completedApprovalRequestEntries.length}
         scope={stage.scope}
         onScope={stage.setScope}
         scopeNote={`Showing ${user.name}'s entries`}
@@ -92,7 +147,7 @@ export default function ApprovalsQueue() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            rowsLabel="lines"
+            rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Decisions you make will appear here, and stay revisable until the PO is generated."
             actions={(e) =>
@@ -100,10 +155,10 @@ export default function ApprovalsQueue() {
                 <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
                   <Lock className="w-3 h-3" aria-hidden /> Locked
                 </span>
-              ) : s.canApproveLine(e.row) ? (
-                <button onClick={() => setEditLine(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
+              ) : s.canApproveRequest(e.row) ? (
+                <button onClick={() => setEditRequest(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
               ) : (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only this line's approver can revise the decision.">
+                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only this requisition's approver can revise the decision.">
                   <Lock className="w-3 h-3" aria-hidden /> Locked
                 </span>
               )
@@ -111,17 +166,17 @@ export default function ApprovalsQueue() {
           />
         ) : (
           <QueueTable
-            rows={s.approvalQueue}
-            rowKey={(l) => l.id}
+            rows={s.approvalRequestQueue}
+            rowKey={(r) => r.id}
             columns={columns}
-            groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
-            rowClassName={(l) => overdueRowClass(dueIso(l))}
-            rowsLabel="lines"
+            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            rowClassName={(r) => overdueRowClass(dueIso(r))}
+            rowsLabel="requests"
             emptyTitle="Nothing to approve"
-            emptyMessage="Lines routed to you will appear here."
+            emptyMessage="Requisitions routed to you will appear here."
             initialSort={{ key: "value", dir: "desc" }}
-            actions={(l) => (
-              <button onClick={() => setApproving(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+            actions={(r) => (
+              <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
             )}
           />
         )}
@@ -153,8 +208,8 @@ export default function ApprovalsQueue() {
         </div>
       )}
 
-      <ApprovalModal line={approving} open={approving !== null} onClose={() => setApproving(null)} />
-      <ApprovalModal line={editLine} open={editLine !== null} editing onClose={() => setEditLine(null)} />
+      <ApprovalModal request={approving} open={approving !== null} onClose={() => setApproving(null)} />
+      <ApprovalModal request={editRequest} open={editRequest !== null} editing onClose={() => setEditRequest(null)} />
     </div>
   );
 }

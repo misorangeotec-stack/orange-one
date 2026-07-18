@@ -22,6 +22,8 @@ import type {
   ApprovalBand,
   PurchaseRequest,
   RequestItem,
+  RequestVendor,
+  VendorItemPrice,
   Quotation,
   PurchaseOrder,
   PoItem,
@@ -37,6 +39,7 @@ import type {
   ProcEntityType,
 } from "./types";
 import { STEPS, type StepKey } from "./lib/steps";
+import { ownerResolver } from "./lib/owners";
 import { masterTypeLabel } from "./lib/masterFields";
 import {
   buildProcIndex,
@@ -56,7 +59,15 @@ import {
   completedTallyEntries,
   completedSourcingEntries,
   completedApprovalEntries,
+  completedSourcingRequestEntries,
+  completedApprovalRequestEntries,
   completedPoGenEntries,
+  requestInSourcing,
+  requestInApproval,
+  requestApprovalTotal,
+  requestLockedVendorId,
+  requestHasMixedVendors,
+  requestDueIso,
   poShareLockReason,
   type ProcIndex,
   type ProcSnapshot,
@@ -75,6 +86,8 @@ import {
   updateItem,
   insertVendor,
   updateVendor,
+  insertVendorItemPrice,
+  updateVendorItemPrice,
   setMasterManagers as setMasterManagersWrite,
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
@@ -86,6 +99,9 @@ import {
   submitRequest as submitRequestWrite,
   saveSourcing as saveSourcingWrite,
   decideApproval as decideApprovalWrite,
+  saveSourcingRequest as saveSourcingRequestWrite,
+  decideApprovalRequest as decideApprovalRequestWrite,
+  updateApprovalRequest as updateApprovalRequestWrite,
   generatePo as generatePoWrite,
   cancelLine as cancelLineWrite,
   requestPoCancel as requestPoCancelWrite,
@@ -122,10 +138,13 @@ import {
   type ItemGroupInput,
   type ItemInput,
   type VendorInput,
+  type VendorItemPriceInput,
   type StepOwnerInput,
   type ApprovalBandInput,
   type NewRequestLine,
   type QuotationInput,
+  type SourcingVendorInput,
+  type SourcingLineInput,
   type ApprovalDecision,
   type PiItemInput,
   type GrnItemInput,
@@ -175,8 +194,12 @@ interface ProcurementStoreValue {
   stepOwners: StepOwner[];
   stepOwnerFor: (stepKey: string) => StepOwner | undefined;
   approvalBands: ApprovalBand[];
-  /** Resolve the approver for an amount via the active matrix bands (null if none). */
-  approverForAmount: (amount: number) => string | null;
+  /**
+   * Everyone who may approve this amount, via the active matrix bands (empty if
+   * no band covers it). A band can list several people and ANY ONE of them can
+   * decide — so this returns a list, not a winner.
+   */
+  approversForAmount: (amount: number) => string[];
   /** True when the current user is an approver in the matrix (or admin). */
   isApprover: boolean;
   processCoordinatorIds: string[];
@@ -194,6 +217,8 @@ interface ProcurementStoreValue {
   // workflow data (Stages 1–4)
   requests: PurchaseRequest[];
   requestItems: RequestItem[];
+  requestVendors: RequestVendor[];
+  vendorItemPrices: VendorItemPrice[];
   quotations: Quotation[];
   pos: PurchaseOrder[];
   poItems: PoItem[];
@@ -201,6 +226,16 @@ interface ProcurementStoreValue {
   itemsForRequest: (requestId: string) => RequestItem[];
   lineById: (id: string | null) => RequestItem | undefined;
   quotationsForLine: (lineId: string) => Quotation[];
+  /** The up-to-3 vendor shortlist captured at sourcing, in display order. */
+  vendorsForRequest: (requestId: string) => RequestVendor[];
+  /** The standing rate-card row for a (vendor, item), if one exists. */
+  priceFor: (vendorId: string, itemId: string) => VendorItemPrice | undefined;
+  /** Sum of the lines currently under approval — what the band is picked on. */
+  requestApprovalTotal: (requestId: string) => number;
+  /** The vendor already locked in by approved lines, if any. */
+  requestLockedVendorId: (requestId: string) => string | null;
+  /** A legacy requisition split across vendors — must use the per-line path. */
+  requestHasMixedVendors: (requestId: string) => boolean;
   poById: (id: string | null) => PurchaseOrder | undefined;
   poItemsForPo: (poId: string) => PoItem[];
   poItemForLine: (requestItemId: string) => PoItem | undefined;
@@ -225,15 +260,25 @@ interface ProcurementStoreValue {
   completedFollowupEntries: StageEntry<Followup>[];
   completedGrnEntries: StageEntry<Grn>[];
   completedTallyEntries: StageEntry<TallyBooking>[];
+  /** Per-LINE history. Retained for the legacy path; the queue pages use the request-level lists below. */
   completedSourcingEntries: StageEntry<RequestItem>[];
   completedApprovalEntries: StageEntry<RequestItem>[];
+  /** Requisition-level history — what the Sourcing / Approvals Completed tabs render. */
+  completedSourcingRequestEntries: StageEntry<PurchaseRequest>[];
+  completedApprovalRequestEntries: StageEntry<PurchaseRequest>[];
   completedPoGenEntries: StageEntry<PurchaseOrder>[];
   /** Display name for an actor id, resolvable org-wide (not just your department). */
   personName: (id: string | null) => string;
   // role-scoped queues
+  /** Requisitions awaiting sourcing / a decision — ONE row each, not one per item. */
+  sourcingRequestQueue: PurchaseRequest[];
+  approvalRequestQueue: PurchaseRequest[];
+  /** Per-LINE views. Retained for the legacy per-line path and internal reuse. */
   sourcingQueue: RequestItem[];
   approvalQueue: RequestItem[];
   poPool: RequestItem[];
+  /** Due date for a requisition at a request-scope step (earliest of its open lines). */
+  dueIsoForRequest: (r: PurchaseRequest, step: StepKey) => string;
   // PO lifecycle data (Stages 5–10)
   pis: Pi[];
   piItems: PiItem[];
@@ -276,6 +321,12 @@ interface ProcurementStoreValue {
   canSource: boolean;
   canGeneratePo: boolean;
   canApproveLine: (line: RequestItem) => boolean;
+  /**
+   * May the current user decide this whole requisition? Banded on the SAME total
+   * the server uses (sum of lines in approval/on_hold) — if these two ever drift,
+   * an approver sees a row they cannot submit.
+   */
+  canApproveRequest: (r: PurchaseRequest) => boolean;
   canSharePo: boolean;
   canCollectPi: boolean;
   canRecordPayment: boolean;
@@ -297,6 +348,19 @@ interface ProcurementStoreValue {
 
   // workflow mutations
   submitRequest: (input: { companyId: string; categoryId: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  /** Stage 2 — source a WHOLE requisition. Re-calling it is the edit path. */
+  saveSourcingRequest: (input: {
+    requestId: string;
+    vendors: SourcingVendorInput[];
+    recommendedVendorId: string;
+    lines: SourcingLineInput[];
+    sourcingReason: string | null;
+  }) => Promise<void>;
+  /** Stage 3 — one decision for the whole requisition, banded on its total. */
+  decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  /** Stage 3 correction — change an already-approved requisition's decision. */
+  updateApprovalRequest: (input: { requestId: string; decision: Exclude<ApprovalDecision, "hold" | "resume">; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  /** @deprecated per-LINE; kept for legacy mixed-vendor requisitions. */
   saveSourcing: (input: {
     requestItemId: string;
     quotations: QuotationInput[];
@@ -306,6 +370,7 @@ interface ProcurementStoreValue {
     gstPct: number | null;
     sourcingReason: string | null;
   }) => Promise<void>;
+  /** @deprecated per-LINE; kept for legacy mixed-vendor requisitions. */
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
@@ -379,6 +444,8 @@ interface ProcurementStoreValue {
   editItem: (id: string, input: ItemInput) => Promise<void>;
   createVendor: (input: VendorInput) => Promise<string>;
   editVendor: (id: string, input: VendorInput) => Promise<void>;
+  createVendorItemPrice: (input: VendorItemPriceInput) => Promise<string>;
+  editVendorItemPrice: (id: string, input: VendorItemPriceInput) => Promise<void>;
 
   // mutations — governance
   setMasterManagers: (masterType: MasterType, userIds: string[]) => Promise<void>;
@@ -442,6 +509,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
+  const requestVendors = data?.requestVendors ?? [];
+  const vendorItemPrices = data?.vendorItemPrices ?? [];
   const quotations = data?.quotations ?? [];
   const pos = data?.pos ?? [];
   const poItems = data?.poItems ?? [];
@@ -490,13 +559,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     };
     const isMasterUnassigned = (masterType: MasterType) => managerIdsFor(masterType).length === 0;
 
-    const approverForAmount = (amount: number): string | null => {
-      const band = [...approvalBands]
-        .filter((b) => b.active)
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.minAmount - b.minAmount)
-        .find((b) => amount >= b.minAmount && (b.maxAmount === null || amount <= b.maxAmount));
-      return band?.approverUserId ?? null;
-    };
+    // Band selection and step ownership live in lib/owners.ts — one rule, shared
+    // with the Control Center and the home screen's My Work list.
+    const owners = ownerResolver({ stepOwners, approvalBands, requestItems });
+    const approversForAmount = owners.approversForAmount;
 
     const isStepOwner = (stepKey: StepKey): boolean =>
       isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
@@ -512,7 +578,14 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     };
 
     const canApproveLine = (line: RequestItem): boolean =>
-      isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
+      isAdmin || (line.lineValue !== null && approversForAmount(line.lineValue).includes(user.id));
+
+    // The requisition total MUST be computed the same way the server does it —
+    // sum over lines currently in approval/on_hold — or the client and server
+    // land on different bands and an approver sees a row they cannot submit.
+    const requestApprovalTotalOf = (requestId: string) => requestApprovalTotal(procIndex, requestId);
+    const canApproveRequest = (r: PurchaseRequest): boolean =>
+      isAdmin || approversForAmount(requestApprovalTotalOf(r.id)).includes(user.id);
 
     // ---- PO cancellation helpers (approver-only, vendor-requested) ----
     const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
@@ -607,10 +680,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       designations,
       activeDesignations: designations.filter((d) => d.active).sort((a, b) => a.name.localeCompare(b.name)),
       stepOwners,
-      stepOwnerFor: (stepKey) => stepOwners.find((o) => o.stepKey === stepKey),
+      stepOwnerFor: owners.stepOwnerFor,
       approvalBands,
-      approverForAmount,
-      isApprover: isAdmin || approvalBands.some((b) => b.approverUserId === user.id),
+      approversForAmount,
+      isApprover: isAdmin || approvalBands.some((b) => b.approverUserIds.includes(user.id)),
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
       amountBasis,
@@ -627,6 +700,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         (itemsByGroupId.get(requestId) ?? []).slice().sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       lineById: (id) => (id ? requestItems.find((l) => l.id === id) : undefined),
       quotationsForLine: (lineId) => quotations.filter((q) => q.requestItemId === lineId),
+      requestVendors,
+      vendorItemPrices,
+      vendorsForRequest: (requestId) =>
+        requestVendors.filter((v) => v.requestId === requestId).sort((a, b) => a.sortOrder - b.sortOrder),
+      priceFor: (vendorId, itemId) =>
+        vendorItemPrices.find((p) => p.active && p.vendorId === vendorId && p.itemId === itemId),
+      requestApprovalTotal: requestApprovalTotalOf,
+      requestLockedVendorId: (requestId) => requestLockedVendorId(procIndex, requestId),
+      requestHasMixedVendors: (requestId) => requestHasMixedVendors(procIndex, requestId),
       poById: (id) => (id ? pos.find((p) => p.id === id) : undefined),
       poItemsForPo: (poId) => poItems.filter((pi) => pi.poId === poId),
       poItemForLine: (requestItemId) => poItemByLine.get(requestItemId),
@@ -641,17 +723,24 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       completedTallyEntries: completedTallyEntries(snapshot),
       completedSourcingEntries: completedSourcingEntries(snapshot, procIndex),
       completedApprovalEntries: completedApprovalEntries(snapshot, procIndex),
+      completedSourcingRequestEntries: completedSourcingRequestEntries(snapshot, procIndex),
+      completedApprovalRequestEntries: completedApprovalRequestEntries(snapshot, procIndex),
       completedPoGenEntries: completedPoGenEntries(snapshot),
       personName,
+      // Requisition-scoped queues — ONE row per requisition.
+      sourcingRequestQueue: requests.filter((r) => requestInSourcing(procIndex, r)),
+      // The ONE owner-scoped queue: an approver sees only what they may act on.
+      // The unfiltered predicate stays in lib/queues.ts for the Control Center.
+      approvalRequestQueue: requests.filter((r) => requestInApproval(procIndex, r) && canApproveRequest(r)),
+      dueIsoForRequest: (r, step) => requestDueIso(snapshot, procIndex, r, step),
       sourcingQueue: requestItems.filter(lineInSourcing),
-      // The ONE owner-scoped queue: an approver sees only the lines they may act
-      // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
       poPool: requestItems.filter(lineInPoDesk),
       isStepOwner,
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
       canApproveLine,
+      canApproveRequest,
 
       // ---- PO lifecycle data + selectors ----
       pis,
@@ -717,16 +806,73 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         await invalidate();
         return id;
       },
+      saveSourcingRequest: async (input) => {
+        await saveSourcingRequestWrite(input);
+        // Band on the requisition TOTAL — the same basis the server uses.
+        const total = input.lines.reduce(
+          (sum, l) => sum + Math.round(l.qty * l.rate * (1 + (l.gstPct ?? 0) / 100) * 100) / 100,
+          0
+        );
+        // Every approver on the band is notified — any one of them can decide.
+        await safeAnnounce({
+          entityType: "request",
+          entityId: input.requestId,
+          type: "sourced",
+          text: `A sourced requisition (${input.lines.length} item${input.lines.length === 1 ? "" : "s"}) needs your approval`,
+          recipients: approversForAmount(total),
+        });
+        await invalidate();
+      },
+      decideApprovalRequest: async (input) => {
+        await decideApprovalRequestWrite(input);
+        const requesterOfRequest = (requestId: string) => {
+          const r = requests.find((x) => x.id === requestId);
+          return r?.requesterId ? [r.requesterId] : [];
+        };
+        if (input.decision === "approve" || input.decision === "override") {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "approved",
+            text:
+              input.decision === "override"
+                ? `An approved requisition (vendor overridden) is ready for PO generation${input.reason ? ` — ${input.reason}` : ""}`
+                : "An approved requisition is ready for PO generation",
+            recipients: ownerIdsOf("po"),
+          });
+        } else if (input.decision === "reject") {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "rejected",
+            text: `A requisition was rejected${input.reason ? ` — ${input.reason}` : ""}`,
+            recipients: requesterOfRequest(input.requestId),
+          });
+        } else if (input.decision === "hold") {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "on_hold",
+            text: `A requisition was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
+            recipients: requesterOfRequest(input.requestId),
+          });
+        }
+        await invalidate();
+      },
+      updateApprovalRequest: async (input) => {
+        // The RPC announces the correction itself, in the same transaction.
+        await updateApprovalRequestWrite(input);
+        await invalidate();
+      },
       saveSourcing: async (input) => {
         await saveSourcingWrite(input);
         const lineValue = Math.round(input.finalQty * input.finalRate * (1 + (input.gstPct ?? 0) / 100) * 100) / 100;
-        const approver = approverForAmount(lineValue);
         await safeAnnounce({
           entityType: "line",
           entityId: input.requestItemId,
           type: "sourced",
           text: "A sourced line needs your approval",
-          recipients: approver ? [approver] : [],
+          recipients: approversForAmount(lineValue),
         });
         await invalidate();
       },
@@ -1015,6 +1161,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       },
       editVendor: async (id, input) => {
         await updateVendor(id, input);
+        await invalidate();
+      },
+      createVendorItemPrice: async (input) => {
+        const id = await insertVendorItemPrice({ ...input, createdBy: user.id });
+        await invalidate();
+        return id;
+      },
+      editVendorItemPrice: async (id, input) => {
+        await updateVendorItemPrice(id, input);
         await invalidate();
       },
 

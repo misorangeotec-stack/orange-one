@@ -4,7 +4,8 @@ import type { ComboOption } from "@/shared/components/ui/Combobox";
 import MasterCrud, { type MasterColumn } from "@/shared/components/ui/MasterCrud";
 import { emptyValuesFor, masterFields } from "../../lib/masterFields";
 import { useProcurementStore } from "../../store";
-import type { Company, Category, ItemGroup, Item, Vendor } from "../../types";
+import { inr } from "../../lib/format";
+import type { Company, Category, ItemGroup, Item, Vendor, VendorItemPrice } from "../../types";
 
 /**
  * Masters admin — Companies, Categories, Item Groups, Items, Vendors. Each tab
@@ -29,7 +30,16 @@ export default function Masters() {
     [s.itemGroups, s]
   );
 
-  const ctx = { categoryOptions, itemGroupOptions };
+  const vendorOptions: ComboOption[] = useMemo(
+    () => s.vendors.filter((v) => v.active).map((v) => ({ value: v.id, label: v.name })),
+    [s.vendors]
+  );
+  const itemOptions: ComboOption[] = useMemo(
+    () => s.items.filter((i) => i.active).map((i) => ({ value: i.id, label: i.name, sublabel: s.itemGroupById(i.itemGroupId)?.name })),
+    [s.items, s]
+  );
+
+  const ctx = { categoryOptions, itemGroupOptions, vendorOptions, itemOptions };
 
   const tabs = [
     { key: "company", label: "Companies", count: s.companies.length },
@@ -37,6 +47,7 @@ export default function Masters() {
     { key: "item_group", label: "Item Groups", count: s.itemGroups.length },
     { key: "item", label: "Items", count: s.items.length },
     { key: "vendor", label: "Vendors", count: s.vendors.length },
+    { key: "vendor_item_price", label: "Vendor-Item Rates", count: s.vendorItemPrices.length },
   ];
 
   return (
@@ -201,6 +212,60 @@ export default function Masters() {
               email: r.email,
               address: r.address,
               active,
+            })
+          }
+        />
+      )}
+
+      {tab === "vendor_item_price" && (
+        // The standing rate card the sourcing grid pre-fills from. It is a
+        // DEFAULT, never a lock — every cell stays editable when sourcing.
+        <MasterCrud<VendorItemPrice & { name: string }>
+          singular="Vendor-Item Rate"
+          rows={s.vendorItemPrices.map((p) => ({
+            ...p,
+            name: `${s.vendorById(p.vendorId)?.name ?? "?"} — ${s.itemById(p.itemId)?.name ?? "?"}`,
+          }))}
+          canManage={s.canManage("vendor_item_price")}
+          searchText={(r) => `${s.vendorById(r.vendorId)?.name ?? ""} ${s.itemById(r.itemId)?.name ?? ""}`}
+          columns={[
+            { header: "Vendor", render: (r) => <span className="font-medium text-navy">{s.vendorById(r.vendorId)?.name ?? "—"}</span> },
+            { header: "Item", render: (r) => s.itemById(r.itemId)?.name ?? <span className="text-grey-2">—</span> },
+            { header: "Rate", render: (r) => inr(r.rate) },
+            { header: "GST %", render: (r) => (r.gstPct != null ? `${r.gstPct}%` : <span className="text-grey-2">—</span>) },
+            { header: "Lead days", render: (r) => (r.leadTimeDays != null ? `${r.leadTimeDays}d` : <span className="text-grey-2">—</span>) },
+          ] as MasterColumn<VendorItemPrice>[]}
+          fields={masterFields("vendor_item_price", ctx)}
+          emptyValues={emptyValuesFor("vendor_item_price")}
+          toValues={(r) => ({
+            vendor_id: r.vendorId,
+            item_id: r.itemId,
+            rate: String(r.rate),
+            gst_pct: r.gstPct != null ? String(r.gstPct) : "",
+            lead_time_days: r.leadTimeDays != null ? String(r.leadTimeDays) : "",
+          })}
+          onSubmit={async (id, v, active) => {
+            const input = {
+              vendorId: v.vendor_id,
+              itemId: v.item_id,
+              rate: Number(v.rate) || 0,
+              gstPct: v.gst_pct.trim() ? Number(v.gst_pct) : null,
+              leadTimeDays: v.lead_time_days.trim() ? Number(v.lead_time_days) : null,
+              active,
+              sortOrder: 0,
+            };
+            if (id) await s.editVendorItemPrice(id, input);
+            else await s.createVendorItemPrice(input);
+          }}
+          onToggleActive={async (r, active) =>
+            s.editVendorItemPrice(r.id, {
+              vendorId: r.vendorId,
+              itemId: r.itemId,
+              rate: r.rate,
+              gstPct: r.gstPct,
+              leadTimeDays: r.leadTimeDays,
+              active,
+              sortOrder: r.sortOrder,
             })
           }
         />

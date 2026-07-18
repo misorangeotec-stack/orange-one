@@ -184,6 +184,54 @@ export async function updateVendor(id: string, input: VendorInput): Promise<void
   if (error) throw new Error(error.message);
 }
 
+/* -------------------------- vendor-item rate card ------------------------- */
+export interface VendorItemPriceInput {
+  vendorId: string;
+  itemId: string;
+  rate: number;
+  gstPct: number | null;
+  leadTimeDays: number | null;
+  active: boolean;
+  sortOrder: number;
+}
+
+export async function insertVendorItemPrice(
+  input: VendorItemPriceInput & { createdBy: string }
+): Promise<string> {
+  const { data, error } = await supabase
+    .from("fms_purchase_vendor_item_prices")
+    .insert({
+      vendor_id: input.vendorId,
+      item_id: input.itemId,
+      rate: input.rate,
+      gst_pct: input.gstPct,
+      lead_time_days: input.leadTimeDays,
+      active: input.active,
+      sort_order: input.sortOrder,
+      created_by: input.createdBy,
+    })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id as string;
+}
+
+export async function updateVendorItemPrice(id: string, input: VendorItemPriceInput): Promise<void> {
+  const { error } = await supabase
+    .from("fms_purchase_vendor_item_prices")
+    .update({
+      vendor_id: input.vendorId,
+      item_id: input.itemId,
+      rate: input.rate,
+      gst_pct: input.gstPct,
+      lead_time_days: input.leadTimeDays,
+      active: input.active,
+      sort_order: input.sortOrder,
+    })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
 /* ---------------------------- master managers ----------------------------- */
 /**
  * Replace the set of managers for a master type (admin-only under RLS): delete
@@ -278,22 +326,30 @@ export interface ApprovalBandInput {
   tierLabel: string;
   minAmount: number;
   maxAmount: number | null;
-  approverUserId: string;
+  /** Everyone who may approve in this band. Any one of them can decide. */
+  approverUserIds: string[];
   sortOrder: number;
   active: boolean;
 }
 
+/**
+ * `approver_user_id` is NOT NULL and older readers still reference it, so every
+ * write mirrors the first approver into it. `approver_user_ids` is the truth.
+ */
+const bandRow = (input: ApprovalBandInput) => ({
+  tier_label: input.tierLabel,
+  min_amount: input.minAmount,
+  max_amount: input.maxAmount,
+  approver_user_ids: input.approverUserIds,
+  approver_user_id: input.approverUserIds[0],
+  sort_order: input.sortOrder,
+  active: input.active,
+});
+
 export async function insertApprovalBand(input: ApprovalBandInput): Promise<string> {
   const { data, error } = await supabase
     .from("fms_purchase_approval_matrix")
-    .insert({
-      tier_label: input.tierLabel,
-      min_amount: input.minAmount,
-      max_amount: input.maxAmount,
-      approver_user_id: input.approverUserId,
-      sort_order: input.sortOrder,
-      active: input.active,
-    })
+    .insert(bandRow(input))
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -303,14 +359,7 @@ export async function insertApprovalBand(input: ApprovalBandInput): Promise<stri
 export async function updateApprovalBand(id: string, input: ApprovalBandInput): Promise<void> {
   const { error } = await supabase
     .from("fms_purchase_approval_matrix")
-    .update({
-      tier_label: input.tierLabel,
-      min_amount: input.minAmount,
-      max_amount: input.maxAmount,
-      approver_user_id: input.approverUserId,
-      sort_order: input.sortOrder,
-      active: input.active,
-    })
+    .update(bandRow(input))
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -368,7 +417,97 @@ export interface QuotationInput {
   remark: string | null;
 }
 
-/** Stage 2 — save sourcing for one line (quotations + recommendation + final qty/rate). */
+/* ------------------- stage 2/3 — WHOLE-REQUISITION variants ---------------- */
+
+export interface SourcingVendorInput {
+  vendorId: string;
+  remark: string | null;
+}
+
+export interface SourcingLineInput {
+  requestItemId: string;
+  qty: number;
+  rate: number;
+  gstPct: number | null;
+  leadTimeDays: number | null;
+}
+
+/**
+ * Stage 2 — source a whole requisition: shortlist up to 3 vendors, tick one, and
+ * set rate/GST/lead days PER ITEM. The rate typed against an item IS the final
+ * rate; there is no separate "final rate" any more.
+ *
+ * Re-calling this on an already-sourced requisition is the EDIT path — the RPC
+ * accepts lines in sourcing/approval/on_hold and refuses decided ones, so there
+ * is no separate update RPC for this step.
+ *
+ * The `""`-for-null convention matches the RPC's `nullif(...,'')` reads.
+ */
+export async function saveSourcingRequest(input: {
+  requestId: string;
+  vendors: SourcingVendorInput[];
+  recommendedVendorId: string;
+  lines: SourcingLineInput[];
+  sourcingReason: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_save_sourcing_request", {
+    p_request_id: input.requestId,
+    p_vendors: input.vendors.map((v) => ({
+      vendor_id: v.vendorId,
+      remark: v.remark ?? "",
+    })) as unknown as Json,
+    p_recommended_vendor_id: input.recommendedVendorId,
+    p_lines: input.lines.map((l) => ({
+      request_item_id: l.requestItemId,
+      qty: l.qty,
+      rate: l.rate,
+      gst_pct: l.gstPct ?? "",
+      lead_time_days: l.leadTimeDays ?? "",
+    })) as unknown as Json,
+    p_sourcing_reason: input.sourcingReason ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Stage 3 — one approval decision for the whole requisition, banded on its total. */
+export async function decideApprovalRequest(input: {
+  requestId: string;
+  decision: ApprovalDecision;
+  overrideVendorId?: string | null;
+  reason?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_decide_approval_request", {
+    p_request_id: input.requestId,
+    p_decision: input.decision,
+    p_override_vendor_id: input.overrideVendorId ?? undefined,
+    p_reason: input.reason ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Stage 3 correction — change an already-approved requisition's decision. */
+export async function updateApprovalRequest(input: {
+  requestId: string;
+  decision: Exclude<ApprovalDecision, "hold" | "resume">;
+  overrideVendorId?: string | null;
+  reason?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_approval_request", {
+    p_request_id: input.requestId,
+    p_decision: input.decision,
+    p_override_vendor_id: input.overrideVendorId ?? undefined,
+    p_reason: input.reason ?? "",
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Stage 2 — save sourcing for one line (quotations + recommendation + final qty/rate).
+ *
+ * @deprecated Per-LINE. Superseded by `saveSourcingRequest`. Retained because it
+ * is the only path that can source a requisition whose lines go to different
+ * vendors — a shape the per-requisition model cannot represent.
+ */
 export async function saveSourcing(input: {
   requestItemId: string;
   quotations: QuotationInput[];

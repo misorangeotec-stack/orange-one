@@ -1,35 +1,33 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
-import { Field } from "@/shared/components/ui/Readout";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
-import type { RequestItem } from "../types";
+import type { PurchaseRequest } from "../types";
 
 /**
- * Stage 3 — approval decision for one line. Shows the 3 quotes + recommendation
- * and lets the matched approver Approve · Override (pick another quoted vendor) ·
- * Reject (reason required) · On Hold (or Resume if held).
- */
-/**
- * Decide an approval, or — with `editing` — revise one already decided.
+ * Stage 3 — one approval decision for a WHOLE requisition.
  *
- * The two go through different RPCs on purpose. `decide_approval` only accepts a
- * line still awaiting a decision; revising an already-approved line is
- * `update_approval`, which accepts exactly `approved_pending_po` and refuses once
- * the PO exists. Hold/Resume are not offered when editing: the line is past the
- * point where holding it means anything.
+ * The band is picked on the requisition TOTAL, not per item: five ₹40k items are
+ * one ₹200k decision. Approve · Override (switch the vendor for every item) ·
+ * Reject (reason required) · On Hold / Resume.
+ *
+ * `editing` routes to a different RPC on purpose. `decide_approval_request` only
+ * accepts a requisition still awaiting a decision; revising an already-approved
+ * one is `update_approval_request`, which refuses once any PO exists. Hold/Resume
+ * are not offered when editing — the requisition is past the point where holding
+ * it means anything.
  */
 export default function ApprovalModal({
-  line,
+  request,
   open,
   onClose,
   onSaved,
   editing = false,
 }: {
-  line: RequestItem | null;
+  request: PurchaseRequest | null;
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
@@ -42,13 +40,54 @@ export default function ApprovalModal({
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const quotes = useMemo(() => (line ? s.quotationsForLine(line.id) : []), [line, s]);
-  const overrideOptions: ComboOption[] = useMemo(
-    () => quotes.map((q) => ({ value: q.vendorId, label: s.vendorById(q.vendorId)?.name ?? "Vendor", sublabel: inr(q.rate) })),
-    [quotes, s]
+  const requestId = request?.id ?? null;
+  const allLines = useMemo(() => (requestId ? s.itemsForRequest(requestId) : []), [requestId, s]);
+  /** Exactly the lines the server will act on — keep the two in step. */
+  const lines = useMemo(
+    () =>
+      allLines.filter((l) =>
+        editing ? l.status === "approved_pending_po" : l.status === "approval" || l.status === "on_hold"
+      ),
+    [allLines, editing]
   );
+  const total = lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+  // Base = qty × rate before GST; GST derived from the total so the three can
+  // never disagree with each other.
+  const base = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? 0) * (l.finalRate ?? 0), 0) * 100) / 100;
+  const gst = Math.round((total - base) * 100) / 100;
 
-  if (!line) return null;
+  /** The shortlist. Legacy requisitions predate it — fall back to who quoted. */
+  const shortlist = useMemo(() => (requestId ? s.vendorsForRequest(requestId) : []), [requestId, s]);
+  const legacy = shortlist.length === 0;
+  const overrideOptions: ComboOption[] = useMemo(() => {
+    if (!legacy) {
+      return shortlist.map((v) => ({
+        value: v.vendorId,
+        label: s.vendorById(v.vendorId)?.name ?? "Vendor",
+        sublabel: v.isRecommended ? "Recommended" : undefined,
+      }));
+    }
+    const seen = new Map<string, number>();
+    for (const l of lines) for (const q of s.quotationsForLine(l.id)) if (!seen.has(q.vendorId)) seen.set(q.vendorId, q.rate);
+    return [...seen].map(([vendorId, rate]) => ({
+      value: vendorId,
+      label: s.vendorById(vendorId)?.name ?? "Vendor",
+      sublabel: inr(rate),
+    }));
+  }, [legacy, shortlist, lines, s]);
+
+  useEffect(() => {
+    if (!open) return;
+    setMode("none");
+    setOverrideVendor("");
+    setReason("");
+    setErr(null);
+  }, [open, requestId]);
+
+  if (!request) return null;
+
+  const recommendedId = shortlist.find((v) => v.isRecommended)?.vendorId ?? lines[0]?.finalVendorId ?? null;
+  const onHold = lines.some((l) => l.status === "on_hold");
 
   const run = async (
     decision: "approve" | "override" | "reject" | "hold" | "resume",
@@ -58,9 +97,15 @@ export default function ApprovalModal({
     setBusy(true);
     try {
       if (editing) {
-        await s.updateApproval({ lineId: line.id, decision, overrideVendorId: extra?.overrideVendorId ?? null, reason: extra?.reason ?? null });
+        if (decision === "hold" || decision === "resume") throw new Error("Not available when revising a decision.");
+        await s.updateApprovalRequest({
+          requestId: request.id,
+          decision,
+          overrideVendorId: extra?.overrideVendorId ?? null,
+          reason: extra?.reason ?? null,
+        });
       } else {
-        await s.decideApproval({ requestItemId: line.id, decision, ...extra });
+        await s.decideApprovalRequest({ requestId: request.id, decision, ...extra });
       }
       setMode("none");
       setOverrideVendor("");
@@ -78,108 +123,216 @@ export default function ApprovalModal({
     <Modal
       open={open}
       onClose={onClose}
-      size="lg"
-      title={`${editing ? "Edit approval" : "Approve"} — ${s.itemLabel(line.itemId)}`}
-      subtitle={
-        editing
-          ? `Currently ${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)} — revise until the PO is generated.`
-          : `Recommended: ${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}`
-      }
+      size="2xl"
+      title={`${editing ? "Edit approval" : "Approve"} — ${request.requestNo}`}
+      subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${s.vendorById(recommendedId)?.name ?? "—"}`}
     >
       <div className="space-y-4">
-        {/* Quotes */}
-        <div className="rounded-xl border border-line overflow-hidden">
-          <table className="w-full text-[13px]">
+        {/* ---- the shortlist ---- */}
+        <div className="space-y-1.5">
+          <span className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+            Vendors shortlisted{legacy && " (from quotations)"}
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {overrideOptions.map((v) => (
+              <span
+                key={v.value}
+                className={`rounded-full px-2.5 py-1 text-[12px] ${
+                  v.value === recommendedId ? "bg-orange-soft font-semibold text-orange" : "bg-page text-grey"
+                }`}
+              >
+                {v.label}
+                {v.value === recommendedId && " · recommended"}
+              </span>
+            ))}
+            {overrideOptions.length === 0 && <span className="text-[12.5px] text-grey-2">No vendors recorded.</span>}
+          </div>
+          {!legacy && (
+            <p className="text-[11.5px] text-grey-2">
+              Only the recommended vendor quoted a price — the others are a shortlist. Overriding switches the vendor for
+              every item and keeps the sourced prices.
+            </p>
+          )}
+          {legacy && (
+            <p className="text-[11.5px] text-grey-2">
+              Sourced under the old per-item flow: overriding swaps in that vendor's own quoted rate.
+            </p>
+          )}
+        </div>
+
+        {request.sourcingReason && (
+          <p className="rounded-xl bg-page px-3.5 py-2.5 text-[12.5px] text-grey">
+            <strong className="text-navy">Single-source reason:</strong> {request.sourcingReason}
+          </p>
+        )}
+
+        {/* ---- the items, read-only ---- */}
+        <div className="overflow-x-auto rounded-xl border border-line">
+          <table className="w-full min-w-[560px] text-[13px]">
             <thead>
-              <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                <th className="font-medium px-3 py-2">Vendor</th>
-                <th className="font-medium px-3 py-2">Rate</th>
-                <th className="font-medium px-3 py-2">GST %</th>
-                <th className="font-medium px-3 py-2">Lead</th>
-                <th className="font-medium px-3 py-2"></th>
+              <tr className="border-b border-line bg-page/60 text-left text-grey-2">
+                <th className="px-3 py-2 font-medium">Item</th>
+                <th className="px-3 py-2 font-medium">Qty</th>
+                <th className="px-3 py-2 font-medium">Rate</th>
+                <th className="px-3 py-2 font-medium">GST %</th>
+                <th className="px-3 py-2 font-medium">Lead</th>
+                <th className="px-3 py-2 text-right font-medium">Value</th>
               </tr>
             </thead>
             <tbody>
-              {quotes.map((q) => (
-                <tr key={q.id} className="border-b border-line/70 last:border-0">
-                  <td className="px-3 py-2 font-medium text-navy">{s.vendorById(q.vendorId)?.name ?? "—"}</td>
-                  <td className="px-3 py-2">{inr(q.rate)}</td>
-                  <td className="px-3 py-2">{q.gstPct ?? "—"}</td>
-                  <td className="px-3 py-2">{q.leadTimeDays ?? "—"}d</td>
-                  <td className="px-3 py-2 text-right">
-                    {q.isRecommended && (
-                      <span className="text-[11px] font-semibold text-orange bg-orange-soft rounded-full px-2 py-0.5">Recommended</span>
-                    )}
+              {lines.map((l) => (
+                <tr key={l.id} className="border-b border-line/70 last:border-0">
+                  {/* Item NAME only — matches the sourcing grid. */}
+                  <td className="px-3 py-2 font-medium text-navy whitespace-nowrap">{s.itemById(l.itemId)?.name ?? "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {l.finalQty ?? l.quantity} {l.unit}
                   </td>
+                  <td className="px-3 py-2">{inr(l.finalRate)}</td>
+                  <td className="px-3 py-2">{l.gstPct ?? "—"}</td>
+                  <td className="px-3 py-2">{l.leadTimeDays === null ? "—" : `${l.leadTimeDays}d`}</td>
+                  <td className="px-3 py-2 text-right font-semibold text-navy whitespace-nowrap">{inr(l.lineValue)}</td>
                 </tr>
               ))}
-              {quotes.length === 0 && (
+              {lines.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-4 text-center text-grey-2 text-[12.5px]">No quotations.</td>
+                  <td colSpan={6} className="px-3 py-4 text-center text-[12.5px] text-grey-2">
+                    Nothing on this requisition is awaiting a decision.
+                  </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 text-[13px]">
-          <Info label="Final Qty" value={`${line.finalQty ?? "—"} ${line.unit}`} />
-          <Info label="Final Rate" value={inr(line.finalRate)} />
-          <Info label="Line Value" value={inr(line.lineValue)} />
+        <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-2 rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
+          <Money label="Base" value={base} />
+          <Money label="GST" value={gst} />
+          <Money label="Total (incl. GST)" value={total} strong />
         </div>
 
-        {/* Decision controls */}
+        {/* ---- decision controls ---- */}
         {mode === "override" ? (
           <div className="space-y-2.5">
-            <FieldLabel label="Override vendor (from quotations)" required>
-              <Combobox value={overrideVendor} onChange={setOverrideVendor} options={overrideOptions} placeholder="Pick a quoted vendor" autoAdvance />
+            <FieldLabel label="Override vendor" required hint="applies to every item on this requisition">
+              <Combobox
+                value={overrideVendor}
+                onChange={setOverrideVendor}
+                options={overrideOptions}
+                placeholder="Pick a shortlisted vendor"
+                autoAdvance
+              />
             </FieldLabel>
             <FieldLabel label="Remarks" hint="optional">
-              <TextArea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for overriding the recommendation…" />
+              <TextArea
+                rows={2}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason for overriding the recommendation…"
+              />
             </FieldLabel>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => overrideVendor ? run("override", { overrideVendorId: overrideVendor, reason: reason.trim() || undefined }) : setErr("Pick a vendor.")} disabled={busy}>
+              <Button
+                size="sm"
+                onClick={() =>
+                  overrideVendor
+                    ? run("override", { overrideVendorId: overrideVendor, reason: reason.trim() || undefined })
+                    : setErr("Pick a vendor.")
+                }
+                disabled={busy}
+              >
                 Confirm override
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>Back</Button>
+              <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>
+                Back
+              </Button>
             </div>
           </div>
         ) : mode === "reject" ? (
           <div className="space-y-2.5">
-            <FieldLabel label="Remarks" hint="optional">
+            <FieldLabel label="Remarks" required hint="a reason is required to reject">
               <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this being rejected?" />
             </FieldLabel>
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => run("reject", { reason: reason.trim() || undefined })} disabled={busy}>
+              <Button
+                size="sm"
+                onClick={() => (reason.trim() ? run("reject", { reason: reason.trim() }) : setErr("A reason is required to reject."))}
+                disabled={busy}
+              >
                 Confirm reject
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>Back</Button>
+              <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>
+                Back
+              </Button>
             </div>
           </div>
         ) : mode === "hold" ? (
           <div className="space-y-2.5">
             <FieldLabel label="Remarks" hint="optional">
-              <TextArea rows={2} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason for putting this line on hold…" />
+              <TextArea
+                rows={2}
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason for putting this requisition on hold…"
+              />
             </FieldLabel>
             <div className="flex gap-2">
               <Button size="sm" onClick={() => run("hold", { reason: reason.trim() || undefined })} disabled={busy}>
                 Confirm hold
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>Back</Button>
+              <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>
+                Back
+              </Button>
             </div>
           </div>
         ) : (
           <div className="flex flex-wrap gap-2">
-            <Button size="sm" onClick={() => run("approve")} disabled={busy}>{editing ? "Re-approve" : "Approve"}</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("override"); }} disabled={busy}>Override</Button>
-            <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("reject"); }} disabled={busy}>Reject</Button>
-            {/* Hold/Resume are decisions on an UNDECIDED line — meaningless once
-                one has been made, so they're absent when revising. */}
+            <Button size="sm" onClick={() => run("approve")} disabled={busy || lines.length === 0}>
+              {editing ? "Re-approve" : "Approve"}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setErr(null);
+                setReason("");
+                setMode("override");
+              }}
+              disabled={busy || lines.length === 0}
+            >
+              Override
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setErr(null);
+                setReason("");
+                setMode("reject");
+              }}
+              disabled={busy || lines.length === 0}
+            >
+              Reject
+            </Button>
+            {/* Hold/Resume are decisions on an UNDECIDED requisition — meaningless
+                once one has been made, so they're absent when revising. */}
             {!editing &&
-              (line.status === "on_hold" ? (
-                <Button variant="ghost" size="sm" onClick={() => run("resume")} disabled={busy}>Resume</Button>
+              (onHold ? (
+                <Button variant="ghost" size="sm" onClick={() => run("resume")} disabled={busy}>
+                  Resume
+                </Button>
               ) : (
-                <Button variant="ghost" size="sm" onClick={() => { setErr(null); setReason(""); setMode("hold"); }} disabled={busy}>On Hold</Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setErr(null);
+                    setReason("");
+                    setMode("hold");
+                  }}
+                  disabled={busy || lines.length === 0}
+                >
+                  On Hold
+                </Button>
               ))}
           </div>
         )}
@@ -190,7 +343,14 @@ export default function ApprovalModal({
   );
 }
 
-/** The boxed read-only stat. The shared Field carries the typography; the tint is local. */
-function Info({ label, value }: { label: string; value: string }) {
-  return <Field label={label} value={value} className="rounded-xl bg-page/60 px-3 py-2" />;
+/** One figure in the Base / GST / Total strip. */
+function Money({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <div className="text-right">
+      <div className="text-[11.5px] text-grey-2">{label}</div>
+      <div className={strong ? "text-[15px] font-bold text-navy" : "text-[13px] font-semibold text-grey"}>
+        {inr(value)}
+      </div>
+    </div>
+  );
 }

@@ -3,7 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import EmptyState from "@/shared/components/ui/EmptyState";
-import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useProcurementStore } from "../../store";
@@ -12,9 +12,13 @@ import type { ApprovalBand } from "../../types";
 const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
 
 /**
- * Approval Matrix config (admin). Each active band maps a value range to an
- * approver; a request line's value routes to the band that contains it. The top
- * band can be left open-ended (no max).
+ * Approval Matrix config (admin). Each active band maps a value range to one or
+ * more approvers; a requisition's value routes to the band that contains it. The
+ * top band can be left open-ended (no max).
+ *
+ * Several approvers on a band means ANY ONE of them can decide — it is a cover
+ * list so a single absence can't stall the queue, not a sequential or quorum
+ * approval. All of them are notified.
  */
 export default function ApprovalMatrixSection() {
   const s = useProcurementStore();
@@ -23,12 +27,12 @@ export default function ApprovalMatrixSection() {
   const [tierLabel, setTierLabel] = useState("");
   const [minAmount, setMinAmount] = useState("0");
   const [maxAmount, setMaxAmount] = useState("");
-  const [approver, setApprover] = useState("");
+  const [approvers, setApprovers] = useState<string[]>([]);
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const peopleOptions: ComboOption[] = useMemo(
+  const peopleOptions: MultiOption[] = useMemo(
     () =>
       [...s.profiles]
         .sort((a, b) => a.name.localeCompare(b.name))
@@ -45,7 +49,7 @@ export default function ApprovalMatrixSection() {
     setTierLabel("");
     setMinAmount("0");
     setMaxAmount("");
-    setApprover("");
+    setApprovers([]);
     setActive(true);
     setErr(null);
     setCreating(true);
@@ -55,7 +59,7 @@ export default function ApprovalMatrixSection() {
     setTierLabel(b.tierLabel);
     setMinAmount(String(b.minAmount));
     setMaxAmount(b.maxAmount === null ? "" : String(b.maxAmount));
-    setApprover(b.approverUserId);
+    setApprovers(b.approverUserIds);
     setActive(b.active);
     setErr(null);
     setEditing(b);
@@ -70,7 +74,7 @@ export default function ApprovalMatrixSection() {
   const save = async () => {
     setErr(null);
     if (!tierLabel.trim()) return setErr("Tier label is required.");
-    if (!approver) return setErr("An approver is required.");
+    if (approvers.length === 0) return setErr("At least one approver is required.");
     const min = Number(minAmount);
     const max = maxAmount.trim() === "" ? null : Number(maxAmount);
     if (Number.isNaN(min) || min < 0) return setErr("Min amount must be 0 or more.");
@@ -82,7 +86,7 @@ export default function ApprovalMatrixSection() {
         tierLabel: tierLabel.trim(),
         minAmount: min,
         maxAmount: max,
-        approverUserId: approver,
+        approverUserIds: approvers,
         sortOrder: editing?.sortOrder ?? bands.length,
         active,
       };
@@ -133,7 +137,7 @@ export default function ApprovalMatrixSection() {
                   <th className="font-medium px-4 py-3">Tier</th>
                   <th className="font-medium px-4 py-3">Min</th>
                   <th className="font-medium px-4 py-3">Max</th>
-                  <th className="font-medium px-4 py-3">Approver</th>
+                  <th className="font-medium px-4 py-3">Approvers</th>
                   <th className="font-medium px-4 py-3">Status</th>
                 </tr>
               </thead>
@@ -151,7 +155,18 @@ export default function ApprovalMatrixSection() {
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{b.tierLabel}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{inr(b.minAmount)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{b.maxAmount === null ? "No limit" : inr(b.maxAmount)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{s.profileById(b.approverUserId)?.name ?? "—"}</td>
+                    <td className="px-4 py-3">
+                      {b.approverUserIds.length === 0 ? (
+                        <span className="text-ryg-red">None — nobody can approve this band</span>
+                      ) : (
+                        <span title={b.approverUserIds.length > 1 ? "Any one of them can approve" : undefined}>
+                          {b.approverUserIds.map((id) => s.profileById(id)?.name ?? "Unknown").join(", ")}
+                          {b.approverUserIds.length > 1 && (
+                            <span className="ml-1.5 text-[11.5px] text-grey-2">· any one</span>
+                          )}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 ${
@@ -196,8 +211,13 @@ export default function ApprovalMatrixSection() {
               <TextInput type="number" min={0} value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} placeholder="No limit" />
             </FieldLabel>
           </div>
-          <FieldLabel label="Approver" required>
-            <Combobox value={approver} onChange={setApprover} options={peopleOptions} placeholder="Select approver" autoAdvance />
+          <FieldLabel label="Approvers" required hint="select one or more">
+            <MultiSelect values={approvers} onChange={setApprovers} options={peopleOptions} placeholder="Select approvers" />
+            <span className="mt-1 block text-[11px] leading-snug text-grey-2">
+              {approvers.length > 1
+                ? `${approvers.length} selected · ANY ONE of them can approve. All are notified.`
+                : "Add more than one so a single absence doesn't stall this band."}
+            </span>
           </FieldLabel>
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="w-4 h-4 accent-orange" />

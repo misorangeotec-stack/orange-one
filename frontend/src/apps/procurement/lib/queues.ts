@@ -23,7 +23,7 @@ import type { ProcurementData } from "../data/procFetch";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import type { StepKey } from "./steps";
 import { DEFAULT_STEP_SLA, addWorkingDays, localDateIso, type StepSla } from "./sla";
-import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, RequestItem, TallyBooking } from "../types";
+import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, PurchaseRequest, RequestItem, TallyBooking } from "../types";
 
 /**
  * The slice of `ProcurementData` these rules actually read. A structural subset
@@ -56,7 +56,13 @@ export type ProcSnapshot = Pick<
  * `inward`, which is untimed by design.
  */
 export interface QueueEntry extends QueueEntryBase<StepKey> {
-  entityType: "line" | "po";
+  /**
+   * `request` for the requisition-scoped steps (sourcing, approval), `line` for
+   * the PO desk, `po` for the six PO stages. Local to this app — `QueueEntryBase`
+   * in shared/lib/fmsQueue carries only stepKey/entityId/ref/dueIso, so widening
+   * this cannot affect the other FMS apps.
+   */
+  entityType: "line" | "po" | "request";
   companyId: string | null;
   value: number | null;
 }
@@ -80,6 +86,8 @@ export interface ProcIndex {
   requestById: Map<string, { companyId: string; requestNo: string }>;
   /** Needed to resolve a PO-scope step anchored on a request-scope step. */
   requestItemById: Map<string, RequestItem>;
+  /** Sourcing and approval are REQUISITION-scoped, so both need the lines of one. */
+  itemsByRequest: Map<string, RequestItem[]>;
 }
 
 const push = <T,>(m: Map<string, T[]>, k: string, v: T) => {
@@ -102,6 +110,7 @@ export function buildProcIndex(data: ProcSnapshot): ProcIndex {
     latestActivityByEntity: new Map(),
     requestById: new Map(),
     requestItemById: new Map(),
+    itemsByRequest: new Map(),
   };
 
   for (const it of data.poItems) push(idx.poItemsByPo, it.poId, it);
@@ -116,7 +125,10 @@ export function buildProcIndex(data: ProcSnapshot): ProcIndex {
   for (const p of data.payments) push(idx.paymentsByPo, p.poId, p);
   for (const f of data.followups) push(idx.followupsByPo, f.poId, f);
   for (const r of data.requests) idx.requestById.set(r.id, { companyId: r.companyId, requestNo: r.requestNo });
-  for (const l of data.requestItems) idx.requestItemById.set(l.id, l);
+  for (const l of data.requestItems) {
+    idx.requestItemById.set(l.id, l);
+    push(idx.itemsByRequest, l.requestId, l);
+  }
 
   // Only `po` / `pi` activity feeds the stage-entry timestamp (see sinceIso).
   for (const a of data.activity) {
@@ -643,6 +655,153 @@ function lineEntry(data: ProcSnapshot, idx: ProcIndex, stepKey: StepKey, line: R
   };
 }
 
+/* ----- REQUISITION-scoped sourcing & approval ----------------------------- */
+/*
+ * Sourcing and approval moved from per-LINE to per-REQUISITION: one shortlist of
+ * up to three vendors, one recommended vendor winning every line, one rate per
+ * item, and one approval banded on the requisition TOTAL.
+ *
+ * The per-line helpers above are KEPT: they still drive the PO desk, and they are
+ * the only thing that can express a legacy requisition whose lines went to
+ * different vendors (see `requestHasMixedVendors`).
+ */
+
+export const linesOf = (idx: ProcIndex, requestId: string): RequestItem[] =>
+  idx.itemsByRequest.get(requestId) ?? [];
+
+/** The lines a sourcing form may touch — the RPC accepts exactly these statuses. */
+export const sourceableLines = (lines: RequestItem[]): RequestItem[] =>
+  lines.filter((l) => l.status === "sourcing" || l.status === "approval" || l.status === "on_hold");
+
+export const requestInSourcing = (idx: ProcIndex, r: PurchaseRequest): boolean =>
+  linesOf(idx, r.id).some(lineInSourcing);
+
+export const requestInApproval = (idx: ProcIndex, r: PurchaseRequest): boolean =>
+  linesOf(idx, r.id).some(lineInApproval);
+
+/** What the approval band is picked on — the sum of the lines actually under decision. */
+export const requestApprovalTotal = (idx: ProcIndex, requestId: string): number =>
+  linesOf(idx, requestId)
+    .filter(lineInApproval)
+    .reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+
+/**
+ * Lines already decided against a vendor pin the rest of the requisition to that
+ * same vendor — the per-requisition model has exactly one. Returns it, or null.
+ */
+export const requestLockedVendorId = (idx: ProcIndex, requestId: string): string | null =>
+  linesOf(idx, requestId).find(
+    (l) => (l.status === "approved_pending_po" || l.status === "po") && l.finalVendorId
+  )?.finalVendorId ?? null;
+
+/**
+ * A legacy requisition whose OPEN lines point at more than one vendor. Such a
+ * requisition cannot be represented per-requisition, and sourcing it through the
+ * new form would silently repoint every line to a single vendor — rewriting a
+ * price someone already agreed. The UI refuses and offers the per-line path.
+ * (Live check when this shipped: zero such requisitions existed.)
+ */
+export const requestHasMixedVendors = (idx: ProcIndex, requestId: string): boolean => {
+  const vendors = new Set(
+    sourceableLines(linesOf(idx, requestId))
+      .map((l) => l.finalVendorId)
+      .filter((v): v is string => !!v)
+  );
+  return vendors.size > 1;
+};
+
+/**
+ * A requisition's due date for a request-scope step: the EARLIEST of its open
+ * lines' due dates. After the new RPC every line shares `createdAt` and
+ * `sourced_at`, so this is exact; on a legacy requisition with divergent stamps
+ * the minimum is the conservative choice.
+ */
+export function requestDueIso(data: ProcSnapshot, idx: ProcIndex, r: PurchaseRequest, step: StepKey): string {
+  const match = step === "sourcing" ? lineInSourcing : lineInApproval;
+  const open = linesOf(idx, r.id).filter(match);
+  const dues = (open.length ? open : linesOf(idx, r.id)).map((l) => lineDueIso(data, l, step));
+  return dues.length ? dues.reduce((a, b) => (a <= b ? a : b)) : localDateIso(new Date(r.createdAt));
+}
+
+function requestEntry(
+  idx: ProcIndex,
+  stepKey: StepKey,
+  r: PurchaseRequest,
+  actorId: string | null,
+  atIso: string,
+  lockReason: string | null,
+  editedAtIso: string | null,
+  editedById: string | null
+): StageEntry<PurchaseRequest> {
+  return {
+    id: r.id,
+    stepKey,
+    poId: "", // request-scope: no PO yet. Callers link to the requisition.
+    ref: r.requestNo,
+    companyId: r.companyId,
+    actorId,
+    atIso,
+    editedAtIso,
+    editedById,
+    lockReason,
+    row: r,
+  };
+}
+
+/**
+ * Requisitions that have been sourced. `sourcedAt` on the requisition is the
+ * authoritative stamp; legacy requisitions sourced line-by-line have none, so
+ * fall back to the latest line stamp.
+ *
+ * The entry stays UNLOCKED while at least one line is still editable — a partly
+ * approved requisition must not hide the Edit button for the lines still open,
+ * and the form filters to exactly those.
+ */
+export const completedSourcingRequestEntries = (data: ProcSnapshot, idx: ProcIndex): StageEntry<PurchaseRequest>[] => {
+  const out: StageEntry<PurchaseRequest>[] = [];
+  for (const r of data.requests) {
+    const lines = linesOf(idx, r.id);
+    const sourced = lines.filter((l) => !!l.sourcedAt);
+    if (!r.sourcedAt && sourced.length === 0) continue;
+
+    const latest = sourced.reduce<RequestItem | null>(
+      (best, l) => (!best || (l.sourcedAt ?? "") > (best.sourcedAt ?? "") ? l : best),
+      null
+    );
+    const atIso = r.sourcedAt ?? latest?.sourcedAt ?? r.createdAt;
+    const actorId = r.sourcedBy ?? latest?.sourcedBy ?? null;
+    const open = lines.filter((l) => sourcingLockReason(l) === null);
+    const lockReason = open.length > 0 ? null : sourcingLockReason(lines[0] ?? latest!);
+    const edited = lines.find((l) => !!l.editedAt) ?? null;
+
+    out.push(requestEntry(idx, "sourcing", r, actorId, atIso, lockReason, edited?.editedAt ?? null, edited?.editedBy ?? null));
+  }
+  return out;
+};
+
+/** Decided requisitions. A rejection is a completed decision too — included, locked. */
+export const completedApprovalRequestEntries = (data: ProcSnapshot, idx: ProcIndex): StageEntry<PurchaseRequest>[] => {
+  const out: StageEntry<PurchaseRequest>[] = [];
+  for (const r of data.requests) {
+    const lines = linesOf(idx, r.id);
+    const decided = lines.filter((l) => !!l.approvedAt || l.status === "rejected");
+    if (decided.length === 0) continue;
+
+    const latest = decided.reduce<RequestItem | null>(
+      (best, l) => (!best || (l.approvedAt ?? "") > (best.approvedAt ?? "") ? l : best),
+      null
+    )!;
+    const open = decided.filter((l) => approvalLockReason(l) === null);
+    const lockReason = open.length > 0 ? null : approvalLockReason(latest);
+    const edited = decided.find((l) => !!l.editedAt) ?? null;
+
+    out.push(
+      requestEntry(idx, "approval", r, latest.approverId, latest.approvedAt ?? latest.createdAt, lockReason, edited?.editedAt ?? null, edited?.editedBy ?? null)
+    );
+  }
+  return out;
+};
+
 export const completedSourcingEntries = (data: ProcSnapshot, idx: ProcIndex): StageEntry<RequestItem>[] =>
   data.requestItems
     .filter((l) => !!l.sourcedAt)
@@ -690,17 +849,47 @@ export const completedPoGenEntries = (data: ProcSnapshot): StageEntry<PurchaseOr
 export function buildQueueEntries(data: ProcSnapshot, idx: ProcIndex = buildProcIndex(data)): QueueEntry[] {
   const out: QueueEntry[] = [];
 
+  // Sourcing and approval are REQUISITION-scoped: a 7-item requisition is ONE
+  // piece of work, not seven. This deliberately drops the Control Center's
+  // sourcing/approval counts relative to the per-line era — the unit of work
+  // changed, the backlog did not.
+  for (const r of data.requests) {
+    if (requestInSourcing(idx, r)) {
+      out.push({
+        stepKey: "sourcing",
+        entityType: "request",
+        entityId: r.id,
+        ref: r.requestNo,
+        dueIso: requestDueIso(data, idx, r, "sourcing"),
+        companyId: r.companyId,
+        value: null, // not sourced yet — there is no value to route on
+      });
+    }
+    if (requestInApproval(idx, r)) {
+      out.push({
+        stepKey: "approval",
+        entityType: "request",
+        entityId: r.id,
+        ref: r.requestNo,
+        dueIso: requestDueIso(data, idx, r, "approval"),
+        companyId: r.companyId,
+        value: requestApprovalTotal(idx, r.id),
+      });
+    }
+  }
+
+  // The PO desk stays per LINE: it pools approved lines across requisitions and
+  // merges them into POs by vendor + company.
   for (const l of data.requestItems) {
-    const step = LINE_STEPS.find((s) => s.match(l));
-    if (!step) continue;
+    if (!lineInPoDesk(l)) continue;
     const req = idx.requestById.get(l.requestId);
     if (!req) continue;
     out.push({
-      stepKey: step.stepKey,
+      stepKey: "po",
       entityType: "line",
       entityId: l.id,
       ref: req.requestNo,
-      dueIso: lineDueIso(data, l, step.stepKey),
+      dueIso: lineDueIso(data, l, "po"),
       companyId: req.companyId,
       value: l.lineValue,
     });

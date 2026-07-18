@@ -19,8 +19,10 @@ import type { RequestItem } from "../../types";
 export default function RequestDetail() {
   const { id } = useParams();
   const s = useProcurementStore();
-  const [sourcing, setSourcing] = useState<RequestItem | null>(null);
-  const [approving, setApproving] = useState<RequestItem | null>(null);
+  // Sourcing and approval act on the WHOLE requisition now; only Cancel is still
+  // genuinely per line (cancel_line is unchanged).
+  const [sourcing, setSourcing] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [cancelling, setCancelling] = useState<RequestItem | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -32,6 +34,13 @@ export default function RequestDetail() {
   }
   const co = s.companyById(request.companyId);
   const lines = s.itemsForRequest(request.id);
+  const anyInSourcing = lines.some((l) => l.status === "sourcing");
+  const anyInApproval = lines.some((l) => l.status === "approval" || l.status === "on_hold");
+  const mixedVendors = s.requestHasMixedVendors(request.id);
+  /** Cancel is the only per-line action left — everything else acts on the whole
+   *  requisition from the header. No cancellable line ⇒ no Actions column at all. */
+  const canCancel = (l: RequestItem) => l.status === "approved_pending_po" && (s.canGeneratePo || s.canSource);
+  const showActions = lines.some(canCancel);
 
   // Activity for the request + all its lines, newest first.
   const lineIds = new Set(lines.map((l) => l.id));
@@ -68,7 +77,31 @@ export default function RequestDetail() {
             raised by {s.profileById(request.requesterId)?.name ?? "—"} on {formatDate(request.createdAt)}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ONE sourcing button. The modal always works on every open line at
+              once, so a separate "Re-source" would open the identical screen —
+              only the label changes once there is nothing left to source. */}
+          {(anyInSourcing || anyInApproval) && s.canSource && (
+            <Button
+              size="sm"
+              variant={anyInSourcing ? "primary" : "ghost"}
+              onClick={() => setSourcing(true)}
+            >
+              {anyInSourcing ? "Source" : "Re-source"}
+            </Button>
+          )}
+          {anyInApproval && s.canApproveRequest(request) && (
+            <Button size="sm" onClick={() => setApproving(true)}>Approve</Button>
+          )}
+        </div>
       </div>
+
+      {mixedVendors && (
+        <p className="rounded-xl bg-ryg-red/10 px-3.5 py-2.5 text-[12.5px] text-ryg-red">
+          This requisition's items were sourced to different vendors under the old per-item flow, so it can't be sourced as
+          one requisition. Contact an admin to re-source these items individually.
+        </p>
+      )}
 
       {request.note && (
         // Was inverted: the word "Note:" was navy and bold while the note itself sat in
@@ -83,12 +116,13 @@ export default function RequestDetail() {
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
-                <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
+                {showActions && <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>}
                 <th className="font-medium px-4 py-3">Item</th>
                 <th className="font-medium px-4 py-3">Qty</th>
                 <th className="font-medium px-4 py-3">Status</th>
                 <th className="font-medium px-4 py-3">Vendor</th>
                 <th className="font-medium px-4 py-3">Rate</th>
+                <th className="font-medium px-4 py-3">Lead</th>
                 <th className="font-medium px-4 py-3">Line Value</th>
                 <th className="font-medium px-4 py-3">PO</th>
               </tr>
@@ -99,31 +133,30 @@ export default function RequestDetail() {
                 const po = poItem ? s.poById(poItem.poId) : undefined;
                 return (
                   <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60 align-middle">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {(l.status === "sourcing") && s.canSource && (
-                        <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Source</button>
-                      )}
-                      {(l.status === "approval" || l.status === "on_hold") && (
-                        <>
-                          {s.canApproveLine(l) && (
-                            <button onClick={() => setApproving(l)} className="text-[12.5px] font-semibold text-orange hover:underline mr-3">Approve</button>
-                          )}
-                          {s.canSource && (
-                            <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-grey hover:text-navy">Re-source</button>
-                          )}
-                        </>
-                      )}
-                      {l.status === "approved_pending_po" && (s.canGeneratePo || s.canSource) && (
-                        <button onClick={() => { setReason(""); setErr(null); setCancelling(l); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">Cancel</button>
-                      )}
-                      {l.status === "rejected" && <span className="text-[12px] text-grey-2" title={l.rejectReason ?? ""}>Rejected</span>}
-                      {l.status === "cancelled" && <span className="text-[12px] text-grey-2" title={l.cancelReason ?? ""}>Cancelled</span>}
-                    </td>
+                    {showActions && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {/* Source / Approve moved to the requisition header — they act
+                            on every item at once. Cancel is the only per-line action
+                            left, so the whole column hides when nothing is cancellable. */}
+                        {canCancel(l) ? (
+                          <button onClick={() => { setReason(""); setErr(null); setCancelling(l); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">Cancel</button>
+                        ) : (
+                          <span className="text-[12px] text-grey-2">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
-                    <td className="px-4 py-3"><span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span></td>
+                    <td className="px-4 py-3">
+                      {/* The reject/cancel reason used to hang off a duplicate label in
+                          the Actions column; it belongs on the status itself. */}
+                      <span className={lineBadge(l.status)} title={l.rejectReason ?? l.cancelReason ?? undefined}>
+                        {LINE_STATUS_LABEL[l.status]}
+                      </span>
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{inr(l.finalRate)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{l.leadTimeDays === null ? "—" : `${l.leadTimeDays}d`}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{inr(l.lineValue)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {po ? <Link to={`/procurement/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
@@ -141,8 +174,8 @@ export default function RequestDetail() {
         <ActivityTimeline rows={activity} />
       </div>
 
-      <SourcingModal line={sourcing} open={sourcing !== null} onClose={() => setSourcing(null)} />
-      <ApprovalModal line={approving} open={approving !== null} onClose={() => setApproving(null)} />
+      <SourcingModal request={sourcing ? request : null} open={sourcing} onClose={() => setSourcing(false)} />
+      <ApprovalModal request={approving ? request : null} open={approving} onClose={() => setApproving(false)} />
 
       <Modal
         open={cancelling !== null}

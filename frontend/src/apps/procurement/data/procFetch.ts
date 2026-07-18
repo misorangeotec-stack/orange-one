@@ -17,6 +17,8 @@ import type {
   ApprovalBand,
   PurchaseRequest,
   RequestItem,
+  RequestVendor,
+  VendorItemPrice,
   Quotation,
   PurchaseOrder,
   PoItem,
@@ -64,6 +66,8 @@ type Tbl =
   | "designations"
   | "fms_purchase_requests"
   | "fms_purchase_request_items"
+  | "fms_purchase_request_vendors"
+  | "fms_purchase_vendor_item_prices"
   | "fms_purchase_quotations"
   | "fms_purchase_pos"
   | "fms_purchase_po_items"
@@ -125,6 +129,8 @@ export interface ProcurementData {
   config: ProcConfig;
   requests: PurchaseRequest[];
   requestItems: RequestItem[];
+  requestVendors: RequestVendor[];
+  vendorItemPrices: VendorItemPrice[];
   quotations: Quotation[];
   pos: PurchaseOrder[];
   poItems: PoItem[];
@@ -241,7 +247,12 @@ const mapApprovalBand = (r: any): ApprovalBand => ({
   tierLabel: r.tier_label,
   minAmount: Number(r.min_amount ?? 0),
   maxAmount: r.max_amount === null || r.max_amount === undefined ? null : Number(r.max_amount),
-  approverUserId: r.approver_user_id,
+  // Fall back to the legacy single column for bands written before the array existed.
+  approverUserIds: ((r.approver_user_ids ?? []) as string[]).length
+    ? (r.approver_user_ids as string[])
+    : r.approver_user_id
+      ? [r.approver_user_id as string]
+      : [],
   sortOrder: r.sort_order ?? 0,
   active: r.active,
 });
@@ -257,6 +268,30 @@ const mapRequest = (r: any): PurchaseRequest => ({
   status: r.status as RequestStatus,
   note: r.note ?? null,
   createdAt: r.created_at,
+  sourcingReason: r.sourcing_reason ?? null,
+  sourcedAt: r.sourced_at ?? null,
+  sourcedBy: r.sourced_by ?? null,
+});
+
+const mapRequestVendor = (r: any): RequestVendor => ({
+  id: r.id,
+  requestId: r.request_id,
+  vendorId: r.vendor_id,
+  isRecommended: !!r.is_recommended,
+  remark: r.remark ?? null,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapVendorItemPrice = (r: any): VendorItemPrice => ({
+  id: r.id,
+  vendorId: r.vendor_id,
+  itemId: r.item_id,
+  rate: Number(r.rate),
+  gstPct: num(r.gst_pct),
+  leadTimeDays: r.lead_time_days ?? null,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at,
 });
 
 const mapRequestItem = (r: any): RequestItem => ({
@@ -271,6 +306,7 @@ const mapRequestItem = (r: any): RequestItem => ({
   finalQty: num(r.final_qty),
   finalRate: num(r.final_rate),
   gstPct: num(r.gst_pct),
+  leadTimeDays: r.lead_time_days ?? null,
   lineValue: num(r.line_value),
   status: r.status as LineStatus,
   approverId: r.approver_id ?? null,
@@ -472,6 +508,8 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     configRows,
     requests,
     requestItems,
+    requestVendors,
+    vendorItemPrices,
     quotations,
     pos,
     poItems,
@@ -499,6 +537,8 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     fetchAll("fms_purchase_config", "key"),
     fetchAll("fms_purchase_requests"),
     fetchAll("fms_purchase_request_items"),
+    fetchAll("fms_purchase_request_vendors"),
+    fetchAll("fms_purchase_vendor_item_prices"),
     fetchAll("fms_purchase_quotations"),
     fetchAll("fms_purchase_pos"),
     fetchAll("fms_purchase_po_items"),
@@ -536,6 +576,8 @@ export async function fetchProcurementData(): Promise<ProcurementData> {
     config,
     requests: requests.map(mapRequest),
     requestItems: requestItems.map(mapRequestItem),
+    requestVendors: requestVendors.map(mapRequestVendor),
+    vendorItemPrices: vendorItemPrices.map(mapVendorItemPrice),
     quotations: quotations.map(mapQuotation),
     pos: pos.map(mapPo),
     poItems: poItems.map(mapPoItem),

@@ -13,6 +13,7 @@ import {
   masterTypeLabel,
   masterTypePlural,
   missingRequired,
+  parentIdOf,
   payloadFromValues,
   type MasterValues,
 } from "../lib/masterFields";
@@ -74,7 +75,18 @@ export default function RequestMasterModal({
         .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
     [s.itemGroups, s]
   );
-  const ctx = { categoryOptions, itemGroupOptions };
+  const vendorOptions: ComboOption[] = useMemo(
+    () => s.vendors.filter((v) => v.active).map((v) => ({ value: v.id, label: v.name })),
+    [s.vendors]
+  );
+  const itemOptions: ComboOption[] = useMemo(
+    () =>
+      s.items
+        .filter((i) => i.active)
+        .map((i) => ({ value: i.id, label: i.name, sublabel: s.itemGroupById(i.itemGroupId)?.name })),
+    [s.items, s]
+  );
+  const ctx = { categoryOptions, itemGroupOptions, vendorOptions, itemOptions };
 
   const typeOptions: ComboOption[] = MASTER_TYPES.map((m) => ({ value: m.value, label: m.label }));
 
@@ -90,7 +102,11 @@ export default function RequestMasterModal({
 
   /** Already in the master, or already sitting in someone's review queue? */
   const clash = useMemo(() => {
-    if (!mt || !values.name?.trim()) return null;
+    if (!mt) return null;
+    // vendor_item_price has no `name` — it is keyed on (vendor, item), so the
+    // name guard would skip its dup check entirely.
+    const keyed = mt === "vendor_item_price" ? !!(values.vendor_id && values.item_id) : !!values.name?.trim();
+    if (!keyed) return null;
 
     const existing = findExistingMaster(mt, values, {
       companies: s.companies,
@@ -98,21 +114,31 @@ export default function RequestMasterModal({
       itemGroups: s.itemGroups,
       items: s.items,
       vendors: s.vendors,
+      vendorItemPrices: s.vendorItemPrices,
     });
     if (existing) {
+      if (mt === "vendor_item_price") {
+        return existing.active
+          ? `A rate for this vendor and item already exists — edit that one instead of adding a second.`
+          : `A rate for this vendor and item exists but is deactivated. Ask a master manager to reactivate it rather than adding a duplicate.`;
+      }
       return existing.active
         ? `“${existing.name}” is already in ${masterTypePlural(mt)} — pick it from the list.`
         : `“${existing.name}” exists in ${masterTypePlural(mt)} but is deactivated. Ask a master manager to reactivate it rather than adding a duplicate.`;
     }
 
     const payload = payloadFromValues(mt, values);
+    // Mirrors the DB dup-guard index fms_purchase_master_requests_pending_uniq:
+    //   (master_type, coalesce(category_id, item_group_id, vendor_id, ''),
+    //                 coalesce(item_id, lower(name)))
+    // If this drifts from the index, the client and the database disagree about
+    // what a duplicate is.
+    const leafOf = (p: Record<string, unknown>) =>
+      String(p.item_id ?? "") || String(p.name ?? "").trim().toLowerCase();
     const dup = s.masterRequests.find((r) => {
       if (r.status !== "pending" || r.masterType !== mt) return false;
       const p = r.proposedPayload as Record<string, unknown>;
-      const sameName = String(p.name ?? "").trim().toLowerCase() === String(payload.name ?? "").trim().toLowerCase();
-      const sameParent =
-        String(p.category_id ?? p.item_group_id ?? "") === String(payload.category_id ?? payload.item_group_id ?? "");
-      return sameName && sameParent;
+      return leafOf(p) === leafOf(payload) && parentIdOf(p) === parentIdOf(payload);
     });
     if (dup) {
       const who = s.profileById(dup.requestedBy)?.name ?? "someone";

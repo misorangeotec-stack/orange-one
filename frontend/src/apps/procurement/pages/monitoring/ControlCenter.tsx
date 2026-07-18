@@ -13,6 +13,8 @@ import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
 import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import type { QueueEntry } from "../../lib/queues";
+import { ownerResolver } from "../../lib/owners";
+import { linkResolver } from "../../lib/links";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StepPipeline, { type StepPipelineNode } from "@/shared/components/ui/StepPipeline";
 import type { RequestItem } from "../../types";
@@ -84,6 +86,11 @@ export default function ControlCenter() {
   const lineOf = (e: QueueEntry) => s.lineById(e.entityId);
 
   const detailOf = (e: QueueEntry): string => {
+    if (e.entityType === "request") {
+      const lines = s.itemsForRequest(e.entityId);
+      const first = lines[0] ? s.itemById(lines[0].itemId)?.name ?? "" : "";
+      return lines.length === 1 ? first : `${lines.length} items${first ? ` · ${first}…` : ""}`;
+    }
     if (e.entityType === "line") {
       const l = lineOf(e);
       return l ? s.itemLabel(l.itemId) : "—";
@@ -91,25 +98,13 @@ export default function ControlCenter() {
     return s.vendorById(s.poById(e.entityId)?.vendorId ?? null)?.name ?? "—";
   };
 
-  const linkOf = (e: QueueEntry): string =>
-    e.entityType === "line" ? `/procurement/requests/${lineOf(e)?.requestId ?? ""}` : `/procurement/pos/${e.entityId}`;
-
-  /**
-   * Who owns this work-item. Every step reads its owners from `step_owners`,
-   * except `approval` — there the owner depends on the line's value (the
-   * approval matrix band), plus any manual reassign override.
-   */
-  const ownerIdsOf = (e: QueueEntry): string[] => {
-    if (e.stepKey === "approval") {
-      const l = lineOf(e);
-      const ids = new Set<string>();
-      const appr = s.approverForAmount(l?.lineValue ?? 0);
-      if (appr) ids.add(appr);
-      if (l?.assignedApproverId) ids.add(l.assignedApproverId);
-      return [...ids];
-    }
-    return s.stepOwnerFor(e.stepKey)?.employeeIds ?? [];
-  };
+  // Owner + link rules live in lib/ so the home screen's My Work list can reuse
+  // them without mounting this store. Memoised on the arrays they read.
+  const linkOf = useMemo(() => linkResolver(s.requestItems), [s.requestItems]);
+  const { ownerIdsOf } = useMemo(
+    () => ownerResolver({ stepOwners: s.stepOwners, approvalBands: s.approvalBands, requestItems: s.requestItems }),
+    [s.stepOwners, s.approvalBands, s.requestItems]
+  );
 
   const ownerNames = (e: QueueEntry): string => {
     const names = ownerIdsOf(e)
@@ -264,9 +259,18 @@ export default function ControlCenter() {
           emptyMessage="No work matches this step selection and filter."
           actions={(e) => (
             <div className="flex items-center gap-3 whitespace-nowrap">
+              {/* Reassign still targets a LINE (assigned_approver_id is per line).
+                  A requisition-scoped entry reassigns via its first line still
+                  under decision — the whole requisition is one decision anyway. */}
               {e.stepKey === "approval" && (
                 <button
-                  onClick={() => setReassign(lineOf(e) ?? null)}
+                  onClick={() =>
+                    setReassign(
+                      e.entityType === "request"
+                        ? s.itemsForRequest(e.entityId).find((l) => l.status === "approval" || l.status === "on_hold") ?? null
+                        : lineOf(e) ?? null
+                    )
+                  }
                   className="text-[12.5px] font-semibold text-grey hover:text-navy"
                 >
                   Reassign

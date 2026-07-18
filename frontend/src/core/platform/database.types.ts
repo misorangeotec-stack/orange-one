@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -808,373 +808,6 @@ export type Database = {
         }
         Relationships: []
       }
-      fms_supplies_step_owners: {
-        Row: {
-          created_at: string
-          department_ids: string[]
-          designation_id: string | null
-          employee_ids: string[]
-          id: string
-          step_key: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          department_ids?: string[]
-          designation_id?: string | null
-          employee_ids?: string[]
-          id?: string
-          step_key: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          department_ids?: string[]
-          designation_id?: string | null
-          employee_ids?: string[]
-          id?: string
-          step_key?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_config: {
-        Row: { key: string; updated_at: string; value: Json }
-        Insert: { key: string; updated_at?: string; value?: Json }
-        Update: { key?: string; updated_at?: string; value?: Json }
-        Relationships: []
-      }
-      fms_supplies_counters: {
-        Row: { last_value: number; scope: string; updated_at: string }
-        Insert: { last_value?: number; scope: string; updated_at?: string }
-        Update: { last_value?: number; scope?: string; updated_at?: string }
-        Relationships: []
-      }
-      fms_supplies_companies: {
-        Row: {
-          active: boolean
-          created_at: string
-          created_by: string | null
-          id: string
-          name: string
-          sort_order: number
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name?: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_departments: {
-        Row: {
-          active: boolean
-          created_at: string
-          created_by: string | null
-          hod_user_id: string | null
-          id: string
-          name: string
-          sort_order: number
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          hod_user_id?: string | null
-          id?: string
-          name: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          hod_user_id?: string | null
-          id?: string
-          name?: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_categories: {
-        Row: {
-          active: boolean
-          created_at: string
-          created_by: string | null
-          id: string
-          name: string
-          requires_approval: boolean
-          sort_order: number
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name: string
-          requires_approval?: boolean
-          sort_order?: number
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name?: string
-          requires_approval?: boolean
-          sort_order?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_items: {
-        Row: {
-          active: boolean
-          category_id: string
-          created_at: string
-          created_by: string | null
-          id: string
-          name: string
-          sort_order: number
-          unit: string | null
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          category_id: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name: string
-          sort_order?: number
-          unit?: string | null
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          category_id?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name?: string
-          sort_order?: number
-          unit?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_service_types: {
-        Row: {
-          active: boolean
-          created_at: string
-          created_by: string | null
-          id: string
-          name: string
-          sort_order: number
-          updated_at: string
-        }
-        Insert: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Update: {
-          active?: boolean
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          name?: string
-          sort_order?: number
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_master_managers: {
-        Row: {
-          created_at: string
-          id: string
-          manager_user_id: string
-          master_type: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          manager_user_id: string
-          master_type: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          manager_user_id?: string
-          master_type?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_master_requests: {
-        Row: {
-          created_at: string
-          id: string
-          master_type: string
-          proposed_payload: Json
-          requested_by: string | null
-          resolved_master_id: string | null
-          review_note: string | null
-          reviewed_by: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          master_type: string
-          proposed_payload?: Json
-          requested_by?: string | null
-          resolved_master_id?: string | null
-          review_note?: string | null
-          reviewed_by?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          master_type?: string
-          proposed_payload?: Json
-          requested_by?: string | null
-          resolved_master_id?: string | null
-          review_note?: string | null
-          reviewed_by?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      fms_supplies_requests: {
-        Row: {
-          actual_delivery_date: string | null
-          cancel_reason: string | null
-          cancelled_at: string | null
-          category_id: string | null
-          company_id: string
-          created_at: string
-          current_step: string
-          delivered_at: string | null
-          department_id: string
-          edited_at: string | null
-          edited_by: string | null
-          first_approved_at: string | null
-          first_approver_id: string | null
-          first_remarks: string | null
-          handed_over_at: string | null
-          handover_by: string | null
-          handover_remarks: string | null
-          hold_at: string | null
-          hold_reason: string | null
-          id: string
-          item_name: string | null
-          location: string
-          quantity: string
-          raised_by: string | null
-          raised_on_behalf: boolean
-          reason: string | null
-          reject_reason: string | null
-          reject_stage: string | null
-          rejected_at: string | null
-          req_no: string
-          request_type: string
-          requested_for_name: string
-          requested_for_user_id: string | null
-          requires_approval: boolean
-          second_approved_at: string | null
-          second_approver_id: string | null
-          second_remarks: string | null
-          service_type_id: string | null
-          status: string
-          submitted_at: string
-          tentative_delivery_date: string | null
-          updated_at: string
-        }
-        Insert: { [key: string]: Json | string | number | boolean | null }
-        Update: { [key: string]: Json | string | number | boolean | null }
-        Relationships: []
-      }
-      fms_supplies_activity: {
-        Row: {
-          actor_id: string | null
-          created_at: string
-          entity_id: string
-          entity_type: string
-          id: string
-          meta: Json
-          note: string | null
-          type: string
-        }
-        Insert: { [key: string]: Json | string | null }
-        Update: { [key: string]: Json | string | null }
-        Relationships: []
-      }
-      fms_supplies_notifications: {
-        Row: {
-          actor_id: string | null
-          created_at: string
-          entity_id: string
-          entity_type: string
-          id: string
-          read_at: string | null
-          text: string
-          type: string
-          user_id: string
-        }
-        Insert: {
-          actor_id?: string | null
-          created_at?: string
-          entity_id: string
-          entity_type: string
-          id?: string
-          read_at?: string | null
-          text: string
-          type: string
-          user_id: string
-        }
-        Update: {
-          actor_id?: string | null
-          created_at?: string
-          entity_id?: string
-          entity_type?: string
-          id?: string
-          read_at?: string | null
-          text?: string
-          type?: string
-          user_id?: string
-        }
-        Relationships: []
-      }
       fms_exit_config: {
         Row: {
           key: string
@@ -1899,6 +1532,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           current_company: string | null
+          decision_remarks: string | null
           disqualification_note: string | null
           disqualification_reason_id: string | null
           disqualified_at: string | null
@@ -1930,6 +1564,7 @@ export type Database = {
           skills: string[]
           source_platform_id: string | null
           stage: string
+          telephonic_at: string | null
           updated_at: string
           uploaded_at: string
         }
@@ -1938,6 +1573,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_company?: string | null
+          decision_remarks?: string | null
           disqualification_note?: string | null
           disqualification_reason_id?: string | null
           disqualified_at?: string | null
@@ -1969,6 +1605,7 @@ export type Database = {
           skills?: string[]
           source_platform_id?: string | null
           stage?: string
+          telephonic_at?: string | null
           updated_at?: string
           uploaded_at?: string
         }
@@ -1977,6 +1614,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           current_company?: string | null
+          decision_remarks?: string | null
           disqualification_note?: string | null
           disqualification_reason_id?: string | null
           disqualified_at?: string | null
@@ -2008,6 +1646,7 @@ export type Database = {
           skills?: string[]
           source_platform_id?: string | null
           stage?: string
+          telephonic_at?: string | null
           updated_at?: string
           uploaded_at?: string
         }
@@ -2117,6 +1756,7 @@ export type Database = {
           scheduled_on: string | null
           status: string
           updated_at: string
+          video_url: string | null
         }
         Insert: {
           candidate_id: string
@@ -2133,6 +1773,7 @@ export type Database = {
           scheduled_on?: string | null
           status?: string
           updated_at?: string
+          video_url?: string | null
         }
         Update: {
           candidate_id?: string
@@ -2149,6 +1790,7 @@ export type Database = {
           scheduled_on?: string | null
           status?: string
           updated_at?: string
+          video_url?: string | null
         }
         Relationships: [
           {
@@ -2928,6 +2570,1362 @@ export type Database = {
           },
         ]
       }
+      fms_import_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
+      fms_import_approval_matrix: {
+        Row: {
+          active: boolean
+          approver_user_id: string
+          created_at: string
+          id: string
+          max_amount: number | null
+          min_amount: number
+          sort_order: number
+          tier_label: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          approver_user_id: string
+          created_at?: string
+          id?: string
+          max_amount?: number | null
+          min_amount?: number
+          sort_order?: number
+          tier_label: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          approver_user_id?: string
+          created_at?: string
+          id?: string
+          max_amount?: number | null
+          min_amount?: number
+          sort_order?: number
+          tier_label?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_import_categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_import_companies: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          location: string | null
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          location?: string | null
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          location?: string | null
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_import_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      fms_import_counters: {
+        Row: {
+          last_value: number
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          last_value?: number
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          last_value?: number
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_import_followups: {
+        Row: {
+          actual_dispatch_date: string | null
+          created_at: string
+          created_by: string | null
+          dispatch_status: string
+          edited_at: string | null
+          edited_by: string | null
+          id: string
+          lr_no: string | null
+          pi_id: string | null
+          pi_remarks: string | null
+          po_id: string
+          remarks: string | null
+          revised_dispatch_date: string | null
+          transport_details: string | null
+        }
+        Insert: {
+          actual_dispatch_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          dispatch_status: string
+          edited_at?: string | null
+          edited_by?: string | null
+          id?: string
+          lr_no?: string | null
+          pi_id?: string | null
+          pi_remarks?: string | null
+          po_id: string
+          remarks?: string | null
+          revised_dispatch_date?: string | null
+          transport_details?: string | null
+        }
+        Update: {
+          actual_dispatch_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          dispatch_status?: string
+          edited_at?: string | null
+          edited_by?: string | null
+          id?: string
+          lr_no?: string | null
+          pi_id?: string | null
+          pi_remarks?: string | null
+          po_id?: string
+          remarks?: string | null
+          revised_dispatch_date?: string | null
+          transport_details?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_followups_pi_id_fkey"
+            columns: ["pi_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pis"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_followups_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_grn_items: {
+        Row: {
+          condition: string
+          created_at: string
+          grn_id: string
+          id: string
+          po_item_id: string
+          received_qty: number
+        }
+        Insert: {
+          condition?: string
+          created_at?: string
+          grn_id: string
+          id?: string
+          po_item_id: string
+          received_qty: number
+        }
+        Update: {
+          condition?: string
+          created_at?: string
+          grn_id?: string
+          id?: string
+          po_item_id?: string
+          received_qty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_grn_items_grn_id_fkey"
+            columns: ["grn_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_grns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_grn_items_po_item_id_fkey"
+            columns: ["po_item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_po_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_grns: {
+        Row: {
+          condition: string
+          created_at: string
+          edited_at: string | null
+          edited_by: string | null
+          gate_register_no: string | null
+          id: string
+          note: string | null
+          photo_name: string | null
+          photo_path: string | null
+          pi_id: string | null
+          pi_ref: string | null
+          po_id: string
+          po_ref: string | null
+          received_by: string | null
+        }
+        Insert: {
+          condition?: string
+          created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
+          gate_register_no?: string | null
+          id?: string
+          note?: string | null
+          photo_name?: string | null
+          photo_path?: string | null
+          pi_id?: string | null
+          pi_ref?: string | null
+          po_id: string
+          po_ref?: string | null
+          received_by?: string | null
+        }
+        Update: {
+          condition?: string
+          created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
+          gate_register_no?: string | null
+          id?: string
+          note?: string | null
+          photo_name?: string | null
+          photo_path?: string | null
+          pi_id?: string | null
+          pi_ref?: string | null
+          po_id?: string
+          po_ref?: string | null
+          received_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_grns_pi_id_fkey"
+            columns: ["pi_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pis"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_grns_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_item_groups: {
+        Row: {
+          active: boolean
+          category_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_item_groups_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_items: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          item_group_id: string
+          name: string
+          sort_order: number
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_group_id: string
+          name: string
+          sort_order?: number
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          item_group_id?: string
+          name?: string
+          sort_order?: number
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_items_item_group_id_fkey"
+            columns: ["item_group_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_item_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_master_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          master_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          master_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          master_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_import_master_requests: {
+        Row: {
+          created_at: string
+          id: string
+          master_type: string
+          proposed_payload: Json
+          requested_by: string | null
+          resolved_master_id: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          master_type: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          master_type?: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_import_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fms_import_payments: {
+        Row: {
+          advice_name: string | null
+          advice_path: string | null
+          amount: number
+          amount_fx: number | null
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          details: string | null
+          edited_at: string | null
+          edited_by: string | null
+          fx_rate: number | null
+          id: string
+          inr_amount: number | null
+          kind: string
+          paid_on: string
+          pi_id: string | null
+          pi_remarks: string | null
+          po_id: string
+          utr_ref: string | null
+        }
+        Insert: {
+          advice_name?: string | null
+          advice_path?: string | null
+          amount: number
+          amount_fx?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          details?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          fx_rate?: number | null
+          id?: string
+          inr_amount?: number | null
+          kind: string
+          paid_on?: string
+          pi_id?: string | null
+          pi_remarks?: string | null
+          po_id: string
+          utr_ref?: string | null
+        }
+        Update: {
+          advice_name?: string | null
+          advice_path?: string | null
+          amount?: number
+          amount_fx?: number | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          details?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          fx_rate?: number | null
+          id?: string
+          inr_amount?: number | null
+          kind?: string
+          paid_on?: string
+          pi_id?: string | null
+          pi_remarks?: string | null
+          po_id?: string
+          utr_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_payments_pi_id_fkey"
+            columns: ["pi_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pis"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_payments_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_pi_items: {
+        Row: {
+          created_at: string
+          id: string
+          pi_id: string
+          po_item_id: string
+          qty: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          pi_id: string
+          po_item_id: string
+          qty: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          pi_id?: string
+          po_item_id?: string
+          qty?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_pi_items_pi_id_fkey"
+            columns: ["pi_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pis"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_pi_items_po_item_id_fkey"
+            columns: ["po_item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_po_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_pis: {
+        Row: {
+          actual_dispatch_date: string | null
+          created_at: string
+          created_by: string | null
+          dispatch_date: string | null
+          dispatch_status: string
+          document_name: string | null
+          document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
+          id: string
+          lr_no: string | null
+          payment_terms: string
+          pi_value: number
+          po_id: string
+          revised_dispatch_date: string | null
+          status: string
+          transport_details: string | null
+          updated_at: string
+          vendor_pi_no: string
+        }
+        Insert: {
+          actual_dispatch_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          dispatch_date?: string | null
+          dispatch_status?: string
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          id?: string
+          lr_no?: string | null
+          payment_terms?: string
+          pi_value?: number
+          po_id: string
+          revised_dispatch_date?: string | null
+          status?: string
+          transport_details?: string | null
+          updated_at?: string
+          vendor_pi_no: string
+        }
+        Update: {
+          actual_dispatch_date?: string | null
+          created_at?: string
+          created_by?: string | null
+          dispatch_date?: string | null
+          dispatch_status?: string
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          id?: string
+          lr_no?: string | null
+          payment_terms?: string
+          pi_value?: number
+          po_id?: string
+          revised_dispatch_date?: string | null
+          status?: string
+          transport_details?: string | null
+          updated_at?: string
+          vendor_pi_no?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_pis_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_po_cancel_requests: {
+        Row: {
+          created_at: string
+          id: string
+          po_id: string
+          reason: string
+          requested_by: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          vendor_ref: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          po_id: string
+          reason: string
+          requested_by?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          vendor_ref?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          po_id?: string
+          reason?: string
+          requested_by?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          vendor_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_po_cancel_requests_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_po_items: {
+        Row: {
+          created_at: string
+          gst_pct: number | null
+          id: string
+          line_value: number
+          po_id: string
+          qty: number
+          rate: number
+          received_qty: number
+          request_item_id: string
+        }
+        Insert: {
+          created_at?: string
+          gst_pct?: number | null
+          id?: string
+          line_value: number
+          po_id: string
+          qty: number
+          rate: number
+          received_qty?: number
+          request_item_id: string
+        }
+        Update: {
+          created_at?: string
+          gst_pct?: number | null
+          id?: string
+          line_value?: number
+          po_id?: string
+          qty?: number
+          rate?: number
+          received_qty?: number
+          request_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_po_items_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_po_items_request_item_id_fkey"
+            columns: ["request_item_id"]
+            isOneToOne: true
+            referencedRelation: "fms_import_request_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_pos: {
+        Row: {
+          advance_paid: number
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          currency: string | null
+          current_stage: string
+          dispatch_date: string | null
+          document_name: string | null
+          document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
+          fx_rate: number | null
+          fx_rate_at: string | null
+          fx_source: string | null
+          id: string
+          payment_terms: string | null
+          po_no: string
+          share_remarks: string | null
+          shared_at: string | null
+          shared_by: string | null
+          status: string
+          tally_po_no: string | null
+          total_value: number
+          total_value_fx: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          advance_paid?: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          current_stage?: string
+          dispatch_date?: string | null
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          fx_rate?: number | null
+          fx_rate_at?: string | null
+          fx_source?: string | null
+          id?: string
+          payment_terms?: string | null
+          po_no: string
+          share_remarks?: string | null
+          shared_at?: string | null
+          shared_by?: string | null
+          status?: string
+          tally_po_no?: string | null
+          total_value?: number
+          total_value_fx?: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          advance_paid?: number
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string | null
+          current_stage?: string
+          dispatch_date?: string | null
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          fx_rate?: number | null
+          fx_rate_at?: string | null
+          fx_source?: string | null
+          id?: string
+          payment_terms?: string | null
+          po_no?: string
+          share_remarks?: string | null
+          shared_at?: string | null
+          shared_by?: string | null
+          status?: string
+          tally_po_no?: string | null
+          total_value?: number
+          total_value_fx?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_pos_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_pos_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_quotations: {
+        Row: {
+          created_at: string
+          gst_pct: number | null
+          id: string
+          is_recommended: boolean
+          lead_time_days: number | null
+          rate: number
+          remark: string | null
+          request_item_id: string
+          vendor_id: string
+        }
+        Insert: {
+          created_at?: string
+          gst_pct?: number | null
+          id?: string
+          is_recommended?: boolean
+          lead_time_days?: number | null
+          rate: number
+          remark?: string | null
+          request_item_id: string
+          vendor_id: string
+        }
+        Update: {
+          created_at?: string
+          gst_pct?: number | null
+          id?: string
+          is_recommended?: boolean
+          lead_time_days?: number | null
+          rate?: number
+          remark?: string | null
+          request_item_id?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_quotations_request_item_id_fkey"
+            columns: ["request_item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_request_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_quotations_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_request_items: {
+        Row: {
+          approval_tier: string | null
+          approved_at: string | null
+          approver_id: string | null
+          assigned_approver_id: string | null
+          cancel_reason: string | null
+          created_at: string
+          currency: string | null
+          edited_at: string | null
+          edited_by: string | null
+          final_qty: number | null
+          final_rate: number | null
+          final_vendor_id: string | null
+          fx_rate_at_request: number | null
+          gst_pct: number | null
+          id: string
+          item_id: string
+          line_remark: string | null
+          line_value: number | null
+          line_value_fx: number | null
+          quantity: number
+          reject_reason: string | null
+          request_id: string
+          sourced_at: string | null
+          sourcing_reason: string | null
+          status: string
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          approval_tier?: string | null
+          approved_at?: string | null
+          approver_id?: string | null
+          assigned_approver_id?: string | null
+          cancel_reason?: string | null
+          created_at?: string
+          currency?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          final_qty?: number | null
+          final_rate?: number | null
+          final_vendor_id?: string | null
+          fx_rate_at_request?: number | null
+          gst_pct?: number | null
+          id?: string
+          item_id: string
+          line_remark?: string | null
+          line_value?: number | null
+          line_value_fx?: number | null
+          quantity: number
+          reject_reason?: string | null
+          request_id: string
+          sourced_at?: string | null
+          sourcing_reason?: string | null
+          status?: string
+          unit?: string
+          updated_at?: string
+        }
+        Update: {
+          approval_tier?: string | null
+          approved_at?: string | null
+          approver_id?: string | null
+          assigned_approver_id?: string | null
+          cancel_reason?: string | null
+          created_at?: string
+          currency?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          final_qty?: number | null
+          final_rate?: number | null
+          final_vendor_id?: string | null
+          fx_rate_at_request?: number | null
+          gst_pct?: number | null
+          id?: string
+          item_id?: string
+          line_remark?: string | null
+          line_value?: number | null
+          line_value_fx?: number | null
+          quantity?: number
+          reject_reason?: string | null
+          request_id?: string
+          sourced_at?: string | null
+          sourcing_reason?: string | null
+          status?: string
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_request_items_final_vendor_id_fkey"
+            columns: ["final_vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_vendors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_request_items_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_request_items_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_requests: {
+        Row: {
+          category_id: string
+          company_id: string
+          created_at: string
+          currency: string | null
+          id: string
+          note: string | null
+          request_no: string
+          requester_id: string | null
+          status: string
+          updated_at: string
+          vendor_id: string | null
+        }
+        Insert: {
+          category_id: string
+          company_id: string
+          created_at?: string
+          currency?: string | null
+          id?: string
+          note?: string | null
+          request_no: string
+          requester_id?: string | null
+          status?: string
+          updated_at?: string
+          vendor_id?: string | null
+        }
+        Update: {
+          category_id?: string
+          company_id?: string
+          created_at?: string
+          currency?: string | null
+          id?: string
+          note?: string | null
+          request_no?: string
+          requester_id?: string | null
+          status?: string
+          updated_at?: string
+          vendor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_requests_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_requests_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_step_owners: {
+        Row: {
+          created_at: string
+          department_id: string | null
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_id?: string | null
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_id?: string | null
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_step_owners_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_tally_bookings: {
+        Row: {
+          booked_by: string | null
+          created_at: string
+          document_name: string | null
+          document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
+          grn_id: string | null
+          id: string
+          po_id: string
+          remarks: string | null
+          tally_pi_no: string
+        }
+        Insert: {
+          booked_by?: string | null
+          created_at?: string
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          grn_id?: string | null
+          id?: string
+          po_id: string
+          remarks?: string | null
+          tally_pi_no: string
+        }
+        Update: {
+          booked_by?: string | null
+          created_at?: string
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          grn_id?: string | null
+          id?: string
+          po_id?: string
+          remarks?: string | null
+          tally_pi_no?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_tally_bookings_grn_id_fkey"
+            columns: ["grn_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_grns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_tally_bookings_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_vendor_item_prices: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          currency: string
+          gst_pct: number | null
+          id: string
+          item_id: string
+          rate: number
+          sort_order: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          gst_pct?: number | null
+          id?: string
+          item_id: string
+          rate: number
+          sort_order?: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          gst_pct?: number | null
+          id?: string
+          item_id?: string
+          rate?: number
+          sort_order?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_import_vendor_item_prices_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_import_vendor_item_prices_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_import_vendors: {
+        Row: {
+          active: boolean
+          address: string | null
+          contact_name: string | null
+          created_at: string
+          created_by: string | null
+          default_currency: string | null
+          email: string | null
+          gstin: string | null
+          id: string
+          name: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          address?: string | null
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          default_currency?: string | null
+          email?: string | null
+          gstin?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          address?: string | null
+          contact_name?: string | null
+          created_at?: string
+          created_by?: string | null
+          default_currency?: string | null
+          email?: string | null
+          gstin?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fms_purchase_activity: {
         Row: {
           actor_id: string | null
@@ -2965,6 +3963,7 @@ export type Database = {
         Row: {
           active: boolean
           approver_user_id: string
+          approver_user_ids: string[]
           created_at: string
           id: string
           max_amount: number | null
@@ -2976,6 +3975,7 @@ export type Database = {
         Insert: {
           active?: boolean
           approver_user_id: string
+          approver_user_ids?: string[]
           created_at?: string
           id?: string
           max_amount?: number | null
@@ -2987,6 +3987,7 @@ export type Database = {
         Update: {
           active?: boolean
           approver_user_id?: string
+          approver_user_ids?: string[]
           created_at?: string
           id?: string
           max_amount?: number | null
@@ -3102,6 +4103,8 @@ export type Database = {
           created_at: string
           created_by: string | null
           dispatch_status: string
+          edited_at: string | null
+          edited_by: string | null
           id: string
           lr_no: string | null
           pi_id: string | null
@@ -3116,6 +4119,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           dispatch_status: string
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           lr_no?: string | null
           pi_id?: string | null
@@ -3130,6 +4135,8 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           dispatch_status?: string
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           lr_no?: string | null
           pi_id?: string | null
@@ -3202,6 +4209,8 @@ export type Database = {
         Row: {
           condition: string
           created_at: string
+          edited_at: string | null
+          edited_by: string | null
           gate_register_no: string | null
           id: string
           note: string | null
@@ -3216,6 +4225,8 @@ export type Database = {
         Insert: {
           condition?: string
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           gate_register_no?: string | null
           id?: string
           note?: string | null
@@ -3230,6 +4241,8 @@ export type Database = {
         Update: {
           condition?: string
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           gate_register_no?: string | null
           id?: string
           note?: string | null
@@ -3406,45 +4419,6 @@ export type Database = {
         }
         Relationships: []
       }
-      fms_purchase_po_cancel_requests: {
-        Row: {
-          created_at: string
-          id: string
-          po_id: string
-          reason: string
-          requested_by: string | null
-          review_note: string | null
-          reviewed_by: string | null
-          status: string
-          updated_at: string
-          vendor_ref: string | null
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          po_id: string
-          reason: string
-          requested_by?: string | null
-          review_note?: string | null
-          reviewed_by?: string | null
-          status?: string
-          updated_at?: string
-          vendor_ref?: string | null
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          po_id?: string
-          reason?: string
-          requested_by?: string | null
-          review_note?: string | null
-          reviewed_by?: string | null
-          status?: string
-          updated_at?: string
-          vendor_ref?: string | null
-        }
-        Relationships: []
-      }
       fms_purchase_notifications: {
         Row: {
           actor_id: string | null
@@ -3486,6 +4460,8 @@ export type Database = {
           amount: number
           created_at: string
           created_by: string | null
+          edited_at: string | null
+          edited_by: string | null
           id: string
           kind: string
           paid_on: string
@@ -3498,6 +4474,8 @@ export type Database = {
           amount: number
           created_at?: string
           created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           kind: string
           paid_on?: string
@@ -3510,6 +4488,8 @@ export type Database = {
           amount?: number
           created_at?: string
           created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           kind?: string
           paid_on?: string
@@ -3583,6 +4563,8 @@ export type Database = {
           dispatch_status: string
           document_name: string | null
           document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
           id: string
           lr_no: string | null
           payment_terms: string
@@ -3602,6 +4584,8 @@ export type Database = {
           dispatch_status?: string
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           lr_no?: string | null
           payment_terms?: string
@@ -3621,6 +4605,8 @@ export type Database = {
           dispatch_status?: string
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           lr_no?: string | null
           payment_terms?: string
@@ -3642,11 +4628,59 @@ export type Database = {
           },
         ]
       }
+      fms_purchase_po_cancel_requests: {
+        Row: {
+          created_at: string
+          id: string
+          po_id: string
+          reason: string
+          requested_by: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+          vendor_ref: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          po_id: string
+          reason: string
+          requested_by?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          vendor_ref?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          po_id?: string
+          reason?: string
+          requested_by?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+          vendor_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_po_cancel_requests_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_purchase_po_items: {
         Row: {
           created_at: string
           gst_pct: number | null
           id: string
+          lead_time_days: number | null
           line_value: number
           po_id: string
           qty: number
@@ -3658,6 +4692,7 @@ export type Database = {
           created_at?: string
           gst_pct?: number | null
           id?: string
+          lead_time_days?: number | null
           line_value: number
           po_id: string
           qty: number
@@ -3669,6 +4704,7 @@ export type Database = {
           created_at?: string
           gst_pct?: number | null
           id?: string
+          lead_time_days?: number | null
           line_value?: number
           po_id?: string
           qty?: number
@@ -3706,11 +4742,14 @@ export type Database = {
           dispatch_date: string | null
           document_name: string | null
           document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
           id: string
           payment_terms: string | null
           po_no: string
           share_remarks: string | null
           shared_at: string | null
+          shared_by: string | null
           status: string
           tally_po_no: string | null
           total_value: number
@@ -3729,11 +4768,14 @@ export type Database = {
           dispatch_date?: string | null
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           payment_terms?: string | null
           po_no: string
           share_remarks?: string | null
           shared_at?: string | null
+          shared_by?: string | null
           status?: string
           tally_po_no?: string | null
           total_value?: number
@@ -3752,11 +4794,14 @@ export type Database = {
           dispatch_date?: string | null
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           payment_terms?: string | null
           po_no?: string
           share_remarks?: string | null
           shared_at?: string | null
+          shared_by?: string | null
           status?: string
           tally_po_no?: string | null
           total_value?: number
@@ -3839,18 +4884,22 @@ export type Database = {
           assigned_approver_id: string | null
           cancel_reason: string | null
           created_at: string
+          edited_at: string | null
+          edited_by: string | null
           final_qty: number | null
           final_rate: number | null
           final_vendor_id: string | null
           gst_pct: number | null
           id: string
           item_id: string
+          lead_time_days: number | null
           line_remark: string | null
           line_value: number | null
           quantity: number
           reject_reason: string | null
           request_id: string
           sourced_at: string | null
+          sourced_by: string | null
           sourcing_reason: string | null
           status: string
           unit: string
@@ -3863,18 +4912,22 @@ export type Database = {
           assigned_approver_id?: string | null
           cancel_reason?: string | null
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           final_qty?: number | null
           final_rate?: number | null
           final_vendor_id?: string | null
           gst_pct?: number | null
           id?: string
           item_id: string
+          lead_time_days?: number | null
           line_remark?: string | null
           line_value?: number | null
           quantity: number
           reject_reason?: string | null
           request_id: string
           sourced_at?: string | null
+          sourced_by?: string | null
           sourcing_reason?: string | null
           status?: string
           unit?: string
@@ -3887,18 +4940,22 @@ export type Database = {
           assigned_approver_id?: string | null
           cancel_reason?: string | null
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           final_qty?: number | null
           final_rate?: number | null
           final_vendor_id?: string | null
           gst_pct?: number | null
           id?: string
           item_id?: string
+          lead_time_days?: number | null
           line_remark?: string | null
           line_value?: number | null
           quantity?: number
           reject_reason?: string | null
           request_id?: string
           sourced_at?: string | null
+          sourced_by?: string | null
           sourcing_reason?: string | null
           status?: string
           unit?: string
@@ -3928,6 +4985,51 @@ export type Database = {
           },
         ]
       }
+      fms_purchase_request_vendors: {
+        Row: {
+          created_at: string
+          id: string
+          is_recommended: boolean
+          remark: string | null
+          request_id: string
+          sort_order: number
+          vendor_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_recommended?: boolean
+          remark?: string | null
+          request_id: string
+          sort_order?: number
+          vendor_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_recommended?: boolean
+          remark?: string | null
+          request_id?: string
+          sort_order?: number
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_request_vendors_request_id_fkey"
+            columns: ["request_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_purchase_request_vendors_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_vendors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_purchase_requests: {
         Row: {
           category_id: string
@@ -3937,6 +5039,9 @@ export type Database = {
           note: string | null
           request_no: string
           requester_id: string | null
+          sourced_at: string | null
+          sourced_by: string | null
+          sourcing_reason: string | null
           status: string
           updated_at: string
         }
@@ -3948,6 +5053,9 @@ export type Database = {
           note?: string | null
           request_no: string
           requester_id?: string | null
+          sourced_at?: string | null
+          sourced_by?: string | null
+          sourcing_reason?: string | null
           status?: string
           updated_at?: string
         }
@@ -3959,6 +5067,9 @@ export type Database = {
           note?: string | null
           request_no?: string
           requester_id?: string | null
+          sourced_at?: string | null
+          sourced_by?: string | null
+          sourcing_reason?: string | null
           status?: string
           updated_at?: string
         }
@@ -4026,6 +5137,8 @@ export type Database = {
           created_at: string
           document_name: string | null
           document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
           grn_id: string | null
           id: string
           po_id: string
@@ -4037,6 +5150,8 @@ export type Database = {
           created_at?: string
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           grn_id?: string | null
           id?: string
           po_id: string
@@ -4048,6 +5163,8 @@ export type Database = {
           created_at?: string
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           grn_id?: string | null
           id?: string
           po_id?: string
@@ -4067,6 +5184,63 @@ export type Database = {
             columns: ["po_id"]
             isOneToOne: false
             referencedRelation: "fms_purchase_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_purchase_vendor_item_prices: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          gst_pct: number | null
+          id: string
+          item_id: string
+          lead_time_days: number | null
+          rate: number
+          sort_order: number
+          updated_at: string
+          vendor_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          gst_pct?: number | null
+          id?: string
+          item_id: string
+          lead_time_days?: number | null
+          rate: number
+          sort_order?: number
+          updated_at?: string
+          vendor_id: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          gst_pct?: number | null
+          id?: string
+          item_id?: string
+          lead_time_days?: number | null
+          rate?: number
+          sort_order?: number
+          updated_at?: string
+          vendor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_vendor_item_prices_item_id_fkey"
+            columns: ["item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_purchase_vendor_item_prices_vendor_id_fkey"
+            columns: ["vendor_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_vendors"
             referencedColumns: ["id"]
           },
         ]
@@ -4165,6 +5339,546 @@ export type Database = {
             columns: ["step_id"]
             isOneToOne: false
             referencedRelation: "fms_workflow_steps"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_supplies_activity: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          meta: Json
+          note: string | null
+          type: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          meta?: Json
+          note?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_categories: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          requires_approval: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          requires_approval?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          requires_approval?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_companies: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_config: {
+        Row: {
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
+      fms_supplies_counters: {
+        Row: {
+          last_value: number
+          scope: string
+          updated_at: string
+        }
+        Insert: {
+          last_value?: number
+          scope: string
+          updated_at?: string
+        }
+        Update: {
+          last_value?: number
+          scope?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_departments: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          hod_user_id: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          hod_user_id?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          hod_user_id?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_items: {
+        Row: {
+          active: boolean
+          category_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          unit: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          unit?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_supplies_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_supplies_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_supplies_master_managers: {
+        Row: {
+          created_at: string
+          id: string
+          manager_user_id: string
+          master_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          manager_user_id: string
+          master_type: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          manager_user_id?: string
+          master_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_master_requests: {
+        Row: {
+          created_at: string
+          id: string
+          master_type: string
+          proposed_payload: Json
+          requested_by: string | null
+          resolved_master_id: string | null
+          review_note: string | null
+          reviewed_by: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          master_type: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          master_type?: string
+          proposed_payload?: Json
+          requested_by?: string | null
+          resolved_master_id?: string | null
+          review_note?: string | null
+          reviewed_by?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_notifications: {
+        Row: {
+          actor_id: string | null
+          created_at: string
+          entity_id: string
+          entity_type: string
+          id: string
+          read_at: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id: string
+          entity_type: string
+          id?: string
+          read_at?: string | null
+          text: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          created_at?: string
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          read_at?: string | null
+          text?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_requests: {
+        Row: {
+          actual_delivery_date: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          category_id: string | null
+          company_id: string
+          created_at: string
+          current_step: string
+          delivered_at: string | null
+          department_id: string
+          edited_at: string | null
+          edited_by: string | null
+          first_approved_at: string | null
+          first_approver_id: string | null
+          first_remarks: string | null
+          handed_over_at: string | null
+          handover_by: string | null
+          handover_remarks: string | null
+          hold_at: string | null
+          hold_reason: string | null
+          id: string
+          item_name: string | null
+          location: string
+          quantity: string
+          raised_by: string | null
+          raised_on_behalf: boolean
+          reason: string | null
+          reject_reason: string | null
+          reject_stage: string | null
+          rejected_at: string | null
+          req_no: string
+          request_type: string
+          requested_for_name: string
+          requested_for_user_id: string | null
+          requires_approval: boolean
+          second_approved_at: string | null
+          second_approver_id: string | null
+          second_remarks: string | null
+          service_type_id: string | null
+          status: string
+          submitted_at: string
+          tentative_delivery_date: string | null
+          updated_at: string
+        }
+        Insert: {
+          actual_delivery_date?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          category_id?: string | null
+          company_id: string
+          created_at?: string
+          current_step: string
+          delivered_at?: string | null
+          department_id: string
+          edited_at?: string | null
+          edited_by?: string | null
+          first_approved_at?: string | null
+          first_approver_id?: string | null
+          first_remarks?: string | null
+          handed_over_at?: string | null
+          handover_by?: string | null
+          handover_remarks?: string | null
+          hold_at?: string | null
+          hold_reason?: string | null
+          id?: string
+          item_name?: string | null
+          location: string
+          quantity: string
+          raised_by?: string | null
+          raised_on_behalf?: boolean
+          reason?: string | null
+          reject_reason?: string | null
+          reject_stage?: string | null
+          rejected_at?: string | null
+          req_no: string
+          request_type: string
+          requested_for_name: string
+          requested_for_user_id?: string | null
+          requires_approval?: boolean
+          second_approved_at?: string | null
+          second_approver_id?: string | null
+          second_remarks?: string | null
+          service_type_id?: string | null
+          status: string
+          submitted_at?: string
+          tentative_delivery_date?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actual_delivery_date?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          category_id?: string | null
+          company_id?: string
+          created_at?: string
+          current_step?: string
+          delivered_at?: string | null
+          department_id?: string
+          edited_at?: string | null
+          edited_by?: string | null
+          first_approved_at?: string | null
+          first_approver_id?: string | null
+          first_remarks?: string | null
+          handed_over_at?: string | null
+          handover_by?: string | null
+          handover_remarks?: string | null
+          hold_at?: string | null
+          hold_reason?: string | null
+          id?: string
+          item_name?: string | null
+          location?: string
+          quantity?: string
+          raised_by?: string | null
+          raised_on_behalf?: boolean
+          reason?: string | null
+          reject_reason?: string | null
+          reject_stage?: string | null
+          rejected_at?: string | null
+          req_no?: string
+          request_type?: string
+          requested_for_name?: string
+          requested_for_user_id?: string | null
+          requires_approval?: boolean
+          second_approved_at?: string | null
+          second_approver_id?: string | null
+          second_remarks?: string | null
+          service_type_id?: string | null
+          status?: string
+          submitted_at?: string
+          tentative_delivery_date?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_supplies_requests_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_supplies_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_supplies_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "fms_supplies_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_supplies_requests_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "fms_supplies_departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_supplies_requests_service_type_id_fkey"
+            columns: ["service_type_id"]
+            isOneToOne: false
+            referencedRelation: "fms_supplies_service_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_supplies_service_types: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_supplies_step_owners: {
+        Row: {
+          created_at: string
+          department_ids: string[]
+          designation_id: string | null
+          employee_ids: string[]
+          id: string
+          step_key: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          department_ids?: string[]
+          designation_id?: string | null
+          employee_ids?: string[]
+          id?: string
+          step_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_supplies_step_owners_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
             referencedColumns: ["id"]
           },
         ]
@@ -5010,94 +6724,6 @@ export type Database = {
         }
         Returns: number
       }
-      fms_supplies_announce: {
-        Args: {
-          p_entity_id: string
-          p_entity_type: string
-          p_meta?: Json
-          p_text: string
-          p_type: string
-          p_user_ids?: string[]
-        }
-        Returns: undefined
-      }
-      fms_supplies_next_seq: { Args: { p_scope: string }; Returns: number }
-      fms_supplies_fy_code: { Args: { p_d: string }; Returns: string }
-      fms_supplies_is_step_owner: {
-        Args: { p_step_key: string; p_uid: string }
-        Returns: boolean
-      }
-      fms_supplies_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
-      fms_supplies_is_fulfilment_staff: { Args: { p_uid: string }; Returns: boolean }
-      fms_supplies_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
-      fms_supplies_request_hod: { Args: { p_req: string }; Returns: string }
-      fms_supplies_can_read_request: {
-        Args: { p_req: string; p_uid: string }
-        Returns: boolean
-      }
-      fms_supplies_can_act: {
-        Args: { p_req: string; p_step_key: string; p_uid: string }
-        Returns: boolean
-      }
-      fms_supplies_resume_status: { Args: { p_req: string }; Returns: string }
-      fms_supplies_submit_request: { Args: { p: Json }; Returns: string }
-      fms_supplies_decide_first_approval: {
-        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_decide_second_approval: {
-        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_record_handover: {
-        Args: { p: Json; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_update_first_approval: {
-        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_update_second_approval: {
-        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_update_handover: {
-        Args: { p: Json; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_first_approval_editable: {
-        Args: { p_req: string }
-        Returns: boolean
-      }
-      fms_supplies_second_approval_editable: {
-        Args: { p_req: string }
-        Returns: boolean
-      }
-      fms_supplies_handover_editable: {
-        Args: { p_req: string }
-        Returns: boolean
-      }
-      fms_supplies_hold_request: {
-        Args: { p_hold: boolean; p_reason?: string; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_cancel_request: {
-        Args: { p_reason: string; p_req: string }
-        Returns: undefined
-      }
-      fms_supplies_is_master_manager: {
-        Args: { p_master_type: string; p_uid: string }
-        Returns: boolean
-      }
-      fms_supplies_resolve_master_request: {
-        Args: {
-          p_approve: boolean
-          p_note?: string
-          p_payload?: Json
-          p_request_id: string
-        }
-        Returns: string
-      }
       fms_exit_announce: {
         Args: {
           p_entity_id: string
@@ -5113,10 +6739,7 @@ export type Database = {
         Args: { p_approve: boolean; p_case: string; p_remarks?: string }
         Returns: undefined
       }
-      fms_exit_archive_blockers: {
-        Args: { p_case: string }
-        Returns: string[]
-      }
+      fms_exit_archive_blockers: { Args: { p_case: string }; Returns: string[] }
       fms_exit_archive_case: {
         Args: { p?: Json; p_case: string }
         Returns: undefined
@@ -5162,8 +6785,7 @@ export type Database = {
         Args: { p_case: string; p_hold: boolean; p_reason?: string }
         Returns: undefined
       }
-      fms_exit_hr_verify: { Args: { p: Json; p_case: string }; Returns: undefined }
-      fms_exit_issue_documents: {
+      fms_exit_hr_verify: {
         Args: { p: Json; p_case: string }
         Returns: undefined
       }
@@ -5179,21 +6801,16 @@ export type Database = {
         Args: { p_step_key: string; p_uid: string }
         Returns: boolean
       }
+      fms_exit_issue_documents: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
       fms_exit_manager_review: {
         Args: { p_case: string; p_recommendation: string; p_remarks?: string }
         Returns: undefined
       }
       fms_exit_next_seq: { Args: { p_scope: string }; Returns: number }
       fms_exit_raise_case: { Args: { p: Json }; Returns: string }
-      fms_exit_resolve_master_request: {
-        Args: {
-          p_approve: boolean
-          p_note?: string
-          p_payload?: Json
-          p_request_id: string
-        }
-        Returns: string
-      }
       fms_exit_record_ack: {
         Args: { p: Json; p_case: string; p_document: string }
         Returns: undefined
@@ -5214,6 +6831,15 @@ export type Database = {
         Args: { p: Json; p_case: string }
         Returns: undefined
       }
+      fms_exit_resolve_master_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: string
+      }
       fms_exit_resume_status: { Args: { p_case: string }; Returns: string }
       fms_exit_seed_documents: { Args: { p_case: string }; Returns: number }
       fms_exit_set_clearance_na: {
@@ -5232,7 +6858,10 @@ export type Database = {
         Args: { p_case: string; p_step: string }
         Returns: boolean
       }
-      fms_exit_step_owner_ids: { Args: { p_step_key: string }; Returns: string[] }
+      fms_exit_step_owner_ids: {
+        Args: { p_step_key: string }
+        Returns: string[]
+      }
       fms_exit_toggle_clearance_check: {
         Args: {
           p_check: string
@@ -5252,7 +6881,10 @@ export type Database = {
         Args: { p: Json; p_asset: string }
         Returns: undefined
       }
-      fms_exit_update_case: { Args: { p: Json; p_case: string }; Returns: undefined }
+      fms_exit_update_case: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
       fms_exit_verify_leave: {
         Args: { p: Json; p_case: string }
         Returns: undefined
@@ -5404,10 +7036,6 @@ export type Database = {
         }
         Returns: undefined
       }
-      fms_hr_set_requisition_jd: {
-        Args: { p_name?: string; p_path?: string; p_req: string }
-        Returns: undefined
-      }
       fms_hr_seats_joined: { Args: { p_req: string }; Returns: number }
       fms_hr_seats_taken: {
         Args: { p_exclude?: string; p_req: string }
@@ -5423,6 +7051,10 @@ export type Database = {
       }
       fms_hr_set_onboarding_date: {
         Args: { p_date: string; p_onb: string }
+        Returns: undefined
+      }
+      fms_hr_set_requisition_jd: {
+        Args: { p_name?: string; p_path?: string; p_req: string }
         Returns: undefined
       }
       fms_hr_share_candidates_with_hod: {
@@ -5454,6 +7086,302 @@ export type Database = {
       }
       fms_hr_update_candidate: {
         Args: { p: Json; p_id: string }
+        Returns: undefined
+      }
+      fms_import_add_pi: {
+        Args: {
+          p_dispatch_date?: string
+          p_document_name?: string
+          p_document_path?: string
+          p_items: Json
+          p_payment_terms?: string
+          p_pi_value?: number
+          p_po_id: string
+          p_vendor_pi_no: string
+        }
+        Returns: string
+      }
+      fms_import_announce: {
+        Args: {
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
+        }
+        Returns: undefined
+      }
+      fms_import_approval_editable: {
+        Args: { p_line_id: string }
+        Returns: boolean
+      }
+      fms_import_book_tally: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_grn_id?: string
+          p_po_id: string
+          p_remarks?: string
+          p_tally_pi_no: string
+        }
+        Returns: string
+      }
+      fms_import_can_act_po: { Args: { p_uid: string }; Returns: boolean }
+      fms_import_cancel_line: {
+        Args: { p_reason: string; p_request_item_id: string }
+        Returns: undefined
+      }
+      fms_import_cancel_po: {
+        Args: { p_po_id: string; p_reason: string; p_request_id?: string }
+        Returns: undefined
+      }
+      fms_import_decide_approval: {
+        Args: {
+          p_decision: string
+          p_override_vendor_id?: string
+          p_reason?: string
+          p_request_item_id: string
+        }
+        Returns: undefined
+      }
+      fms_import_decline_po_cancel: {
+        Args: { p_note?: string; p_request_id: string }
+        Returns: undefined
+      }
+      fms_import_followup_editable: {
+        Args: { p_followup_id: string }
+        Returns: boolean
+      }
+      fms_import_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_import_generate_po: {
+        Args: {
+          p_company_id: string
+          p_po_no?: string
+          p_request_item_ids: string[]
+          p_vendor_id: string
+        }
+        Returns: string
+      }
+      fms_import_grn_editable: { Args: { p_grn_id: string }; Returns: boolean }
+      fms_import_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_import_is_master_manager: {
+        Args: { p_master_type: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_import_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_import_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_import_payment_editable: {
+        Args: { p_payment_id: string }
+        Returns: boolean
+      }
+      fms_import_pi_editable: { Args: { p_pi_id: string }; Returns: boolean }
+      fms_import_po_editable: { Args: { p_po_id: string }; Returns: boolean }
+      fms_import_po_open: { Args: { p_po_id: string }; Returns: boolean }
+      fms_import_reassign_line: {
+        Args: {
+          p_approver_id: string
+          p_note?: string
+          p_request_item_id: string
+        }
+        Returns: undefined
+      }
+      fms_import_record_followup: {
+        Args: {
+          p_actual_dispatch_date?: string
+          p_dispatch_status: string
+          p_lr_no?: string
+          p_pi_remarks?: string
+          p_po_id: string
+          p_remarks?: string
+          p_revised_dispatch_date?: string
+          p_transport?: string
+        }
+        Returns: undefined
+      }
+      fms_import_record_grn: {
+        Args: {
+          p_condition?: string
+          p_gate_register_no?: string
+          p_items: Json
+          p_note?: string
+          p_photo_name?: string
+          p_photo_path?: string
+          p_pi_id?: string
+          p_pi_ref?: string
+          p_po_id: string
+          p_po_ref?: string
+        }
+        Returns: string
+      }
+      fms_import_record_payment: {
+        Args: {
+          p_advice_name?: string
+          p_advice_path?: string
+          p_amount: number
+          p_amount_fx?: number
+          p_currency?: string
+          p_details?: string
+          p_fx_rate?: number
+          p_kind: string
+          p_paid_on?: string
+          p_pi_id?: string
+          p_pi_remarks?: string
+          p_po_id: string
+          p_utr?: string
+        }
+        Returns: string
+      }
+      fms_import_refresh_po: { Args: { p_po_id: string }; Returns: undefined }
+      fms_import_request_po_cancel: {
+        Args: { p_po_id: string; p_reason: string; p_vendor_ref?: string }
+        Returns: string
+      }
+      fms_import_resolve_master_request: {
+        Args: {
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
+        }
+        Returns: string
+      }
+      fms_import_save_sourcing: {
+        Args: {
+          p_final_qty: number
+          p_final_rate: number
+          p_gst_pct?: number
+          p_quotations: Json
+          p_recommended_vendor_id: string
+          p_request_item_id: string
+          p_sourcing_reason?: string
+        }
+        Returns: undefined
+      }
+      fms_import_share_po: {
+        Args: {
+          p_dispatch_date?: string
+          p_document_name?: string
+          p_document_path?: string
+          p_payment_terms?: string
+          p_po_id: string
+          p_remarks?: string
+          p_tally_po_no?: string
+        }
+        Returns: undefined
+      }
+      fms_import_share_po_editable: {
+        Args: { p_po_id: string }
+        Returns: boolean
+      }
+      fms_import_submit_request: {
+        Args: {
+          p_category_id: string
+          p_company_id: string
+          p_currency: string
+          p_fx_rate: number
+          p_items: Json
+          p_note: string
+          p_vendor_id: string
+        }
+        Returns: string
+      }
+      fms_import_tally_editable: {
+        Args: { p_booking_id: string }
+        Returns: boolean
+      }
+      fms_import_update_approval: {
+        Args: {
+          p_decision: string
+          p_line_id: string
+          p_override_vendor_id?: string
+          p_reason?: string
+        }
+        Returns: undefined
+      }
+      fms_import_update_followup: {
+        Args: {
+          p_actual_dispatch_date?: string
+          p_dispatch_status: string
+          p_followup_id: string
+          p_lr_no?: string
+          p_pi_remarks?: string
+          p_remarks?: string
+          p_revised_dispatch_date?: string
+          p_transport?: string
+        }
+        Returns: undefined
+      }
+      fms_import_update_grn: {
+        Args: {
+          p_condition?: string
+          p_gate_register_no?: string
+          p_grn_id: string
+          p_items: Json
+          p_note?: string
+          p_photo_name?: string
+          p_photo_path?: string
+          p_pi_ref?: string
+          p_po_ref?: string
+        }
+        Returns: undefined
+      }
+      fms_import_update_payment: {
+        Args: {
+          p_advice_name?: string
+          p_advice_path?: string
+          p_amount: number
+          p_amount_fx?: number
+          p_currency?: string
+          p_details?: string
+          p_fx_rate?: number
+          p_paid_on?: string
+          p_payment_id: string
+          p_pi_remarks?: string
+          p_utr?: string
+        }
+        Returns: undefined
+      }
+      fms_import_update_pi: {
+        Args: {
+          p_dispatch_date?: string
+          p_document_name?: string
+          p_document_path?: string
+          p_items: Json
+          p_payment_terms?: string
+          p_pi_id: string
+          p_pi_value?: number
+          p_vendor_pi_no: string
+        }
+        Returns: undefined
+      }
+      fms_import_update_po_no: {
+        Args: { p_po_id: string; p_po_no: string }
+        Returns: undefined
+      }
+      fms_import_update_share_po: {
+        Args: {
+          p_dispatch_date: string
+          p_document_name?: string
+          p_document_path?: string
+          p_payment_terms: string
+          p_po_id: string
+          p_remarks?: string
+          p_tally_po_no: string
+        }
+        Returns: undefined
+      }
+      fms_import_update_tally: {
+        Args: {
+          p_booking_id: string
+          p_document_name?: string
+          p_document_path?: string
+          p_remarks?: string
+          p_tally_pi_no: string
+        }
         Returns: undefined
       }
       fms_is_current_owner: {
@@ -5488,6 +7416,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_purchase_approval_editable: {
+        Args: { p_line_id: string }
+        Returns: boolean
+      }
       fms_purchase_book_tally: {
         Args: {
           p_document_name?: string
@@ -5508,14 +7440,6 @@ export type Database = {
         Args: { p_po_id: string; p_reason: string; p_request_id?: string }
         Returns: undefined
       }
-      fms_purchase_decline_po_cancel: {
-        Args: { p_note?: string; p_request_id: string }
-        Returns: undefined
-      }
-      fms_purchase_request_po_cancel: {
-        Args: { p_po_id: string; p_reason: string; p_vendor_ref?: string }
-        Returns: string
-      }
       fms_purchase_decide_approval: {
         Args: {
           p_decision: string
@@ -5524,6 +7448,23 @@ export type Database = {
           p_request_item_id: string
         }
         Returns: undefined
+      }
+      fms_purchase_decide_approval_request: {
+        Args: {
+          p_decision: string
+          p_override_vendor_id?: string
+          p_reason?: string
+          p_request_id: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_decline_po_cancel: {
+        Args: { p_note?: string; p_request_id: string }
+        Returns: undefined
+      }
+      fms_purchase_followup_editable: {
+        Args: { p_followup_id: string }
+        Returns: boolean
       }
       fms_purchase_fy_code: { Args: { p_d: string }; Returns: string }
       fms_purchase_generate_po: {
@@ -5535,6 +7476,10 @@ export type Database = {
         }
         Returns: string
       }
+      fms_purchase_grn_editable: {
+        Args: { p_grn_id: string }
+        Returns: boolean
+      }
       fms_purchase_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
       fms_purchase_is_master_manager: {
         Args: { p_master_type: string; p_uid: string }
@@ -5545,6 +7490,13 @@ export type Database = {
         Returns: boolean
       }
       fms_purchase_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_purchase_payment_editable: {
+        Args: { p_payment_id: string }
+        Returns: boolean
+      }
+      fms_purchase_pi_editable: { Args: { p_pi_id: string }; Returns: boolean }
+      fms_purchase_po_editable: { Args: { p_po_id: string }; Returns: boolean }
+      fms_purchase_po_open: { Args: { p_po_id: string }; Returns: boolean }
       fms_purchase_reassign_line: {
         Args: {
           p_approver_id: string
@@ -5594,6 +7546,10 @@ export type Database = {
         Returns: string
       }
       fms_purchase_refresh_po: { Args: { p_po_id: string }; Returns: undefined }
+      fms_purchase_request_po_cancel: {
+        Args: { p_po_id: string; p_reason: string; p_vendor_ref?: string }
+        Returns: string
+      }
       fms_purchase_resolve_master_request: {
         Args: {
           p_approve: boolean
@@ -5615,6 +7571,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_purchase_save_sourcing_request: {
+        Args: {
+          p_lines: Json
+          p_recommended_vendor_id: string
+          p_request_id: string
+          p_sourcing_reason?: string
+          p_vendors: Json
+        }
+        Returns: undefined
+      }
       fms_purchase_share_po: {
         Args: {
           p_dispatch_date?: string
@@ -5631,47 +7597,38 @@ export type Database = {
         Args: { p_po_id: string }
         Returns: boolean
       }
-      fms_purchase_po_open: { Args: { p_po_id: string }; Returns: boolean }
-      fms_purchase_pi_editable: { Args: { p_pi_id: string }; Returns: boolean }
-      fms_purchase_payment_editable: { Args: { p_payment_id: string }; Returns: boolean }
-      fms_purchase_followup_editable: { Args: { p_followup_id: string }; Returns: boolean }
-      fms_purchase_grn_editable: { Args: { p_grn_id: string }; Returns: boolean }
-      fms_purchase_tally_editable: { Args: { p_booking_id: string }; Returns: boolean }
-      fms_purchase_sourcing_editable: { Args: { p_line_id: string }; Returns: boolean }
-      fms_purchase_approval_editable: { Args: { p_line_id: string }; Returns: boolean }
-      fms_purchase_po_editable: { Args: { p_po_id: string }; Returns: boolean }
-      fms_purchase_update_share_po: {
-        Args: {
-          p_dispatch_date: string
-          p_document_name?: string
-          p_document_path?: string
-          p_payment_terms: string
-          p_po_id: string
-          p_remarks?: string
-          p_tally_po_no: string
-        }
-        Returns: undefined
+      fms_purchase_sourcing_editable: {
+        Args: { p_line_id: string }
+        Returns: boolean
       }
-      fms_purchase_update_pi: {
+      fms_purchase_submit_request: {
         Args: {
-          p_dispatch_date?: string
-          p_document_name?: string
-          p_document_path?: string
+          p_category_id: string
+          p_company_id: string
           p_items: Json
-          p_payment_terms?: string
-          p_pi_id: string
-          p_pi_value?: number
-          p_vendor_pi_no: string
+          p_note: string
+        }
+        Returns: string
+      }
+      fms_purchase_tally_editable: {
+        Args: { p_booking_id: string }
+        Returns: boolean
+      }
+      fms_purchase_update_approval: {
+        Args: {
+          p_decision: string
+          p_line_id: string
+          p_override_vendor_id?: string
+          p_reason?: string
         }
         Returns: undefined
       }
-      fms_purchase_update_payment: {
+      fms_purchase_update_approval_request: {
         Args: {
-          p_amount: number
-          p_paid_on?: string
-          p_payment_id: string
-          p_pi_remarks?: string
-          p_utr?: string
+          p_decision: string
+          p_override_vendor_id?: string
+          p_reason?: string
+          p_request_id: string
         }
         Returns: undefined
       }
@@ -5702,6 +7659,45 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_purchase_update_payment: {
+        Args: {
+          p_amount: number
+          p_paid_on?: string
+          p_payment_id: string
+          p_pi_remarks?: string
+          p_utr?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_pi: {
+        Args: {
+          p_dispatch_date?: string
+          p_document_name?: string
+          p_document_path?: string
+          p_items: Json
+          p_payment_terms?: string
+          p_pi_id: string
+          p_pi_value?: number
+          p_vendor_pi_no: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_po_no: {
+        Args: { p_po_id: string; p_po_no: string }
+        Returns: undefined
+      }
+      fms_purchase_update_share_po: {
+        Args: {
+          p_dispatch_date: string
+          p_document_name?: string
+          p_document_path?: string
+          p_payment_terms: string
+          p_po_id: string
+          p_remarks?: string
+          p_tally_po_no: string
+        }
+        Returns: undefined
+      }
       fms_purchase_update_tally: {
         Args: {
           p_booking_id: string
@@ -5712,27 +7708,99 @@ export type Database = {
         }
         Returns: undefined
       }
-      fms_purchase_update_approval: {
+      fms_supplies_announce: {
         Args: {
-          p_decision: string
-          p_line_id: string
-          p_override_vendor_id?: string
-          p_reason?: string
+          p_entity_id: string
+          p_entity_type: string
+          p_meta?: Json
+          p_text: string
+          p_type: string
+          p_user_ids?: string[]
         }
         Returns: undefined
       }
-      fms_purchase_update_po_no: {
-        Args: { p_po_id: string; p_po_no: string }
+      fms_supplies_can_act: {
+        Args: { p_req: string; p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_can_read_request: {
+        Args: { p_req: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_cancel_request: {
+        Args: { p_reason: string; p_req: string }
         Returns: undefined
       }
-      fms_purchase_submit_request: {
+      fms_supplies_decide_first_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_decide_second_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_first_approval_editable: {
+        Args: { p_req: string }
+        Returns: boolean
+      }
+      fms_supplies_fy_code: { Args: { p_d: string }; Returns: string }
+      fms_supplies_handover_editable: {
+        Args: { p_req: string }
+        Returns: boolean
+      }
+      fms_supplies_hold_request: {
+        Args: { p_hold: boolean; p_reason?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_supplies_is_fulfilment_staff: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_is_master_manager: {
+        Args: { p_master_type: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_is_step_owner: {
+        Args: { p_step_key: string; p_uid: string }
+        Returns: boolean
+      }
+      fms_supplies_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_supplies_record_handover: {
+        Args: { p: Json; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_request_hod: { Args: { p_req: string }; Returns: string }
+      fms_supplies_resolve_master_request: {
         Args: {
-          p_category_id: string
-          p_company_id: string
-          p_items: Json
-          p_note: string
+          p_approve: boolean
+          p_note?: string
+          p_payload?: Json
+          p_request_id: string
         }
         Returns: string
+      }
+      fms_supplies_resume_status: { Args: { p_req: string }; Returns: string }
+      fms_supplies_second_approval_editable: {
+        Args: { p_req: string }
+        Returns: boolean
+      }
+      fms_supplies_step_owner_ids: {
+        Args: { p_step_key: string }
+        Returns: string[]
+      }
+      fms_supplies_submit_request: { Args: { p: Json }; Returns: string }
+      fms_supplies_update_first_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_update_handover: {
+        Args: { p: Json; p_req: string }
+        Returns: undefined
+      }
+      fms_supplies_update_second_approval: {
+        Args: { p_approve: boolean; p_remarks?: string; p_req: string }
+        Returns: undefined
       }
       generate_recurring_task_now: {
         Args: { p_force?: boolean; p_recurring_id: string }
@@ -5755,8 +7823,8 @@ export type Database = {
       lead_master_usage: {
         Args: never
         Returns: {
-          master_type: string
           master_id: string
+          master_type: string
           uses: number
         }[]
       }

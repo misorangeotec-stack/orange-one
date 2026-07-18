@@ -1,13 +1,30 @@
 import type { MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
-import { MASTER_TYPES, type Category, type Company, type Item, type ItemGroup, type MasterType, type Vendor } from "../types";
+import {
+  MASTER_TYPES,
+  type Category,
+  type Company,
+  type Item,
+  type ItemGroup,
+  type MasterType,
+  type Vendor,
+  type VendorItemPrice,
+} from "../types";
 
 export type MasterValues = Record<string, string>;
 
-/** Relational dropdown options the item_group / item descriptors need. */
+/**
+ * Relational dropdown options the item_group / item / vendor_item_price
+ * descriptors need. `vendorOptions` / `itemOptions` are OPTIONAL so every
+ * existing caller keeps compiling — but the two screens that can reach the
+ * vendor_item_price type (Masters, MasterRequests / RequestMasterModal) MUST
+ * pass them, or its dropdowns render empty.
+ */
 export interface MasterFieldCtx {
   categoryOptions: ComboOption[];
   itemGroupOptions: ComboOption[];
+  vendorOptions?: ComboOption[];
+  itemOptions?: ComboOption[];
 }
 
 /** The live master rows, for the "does this already exist?" check. */
@@ -17,6 +34,7 @@ export interface MasterLists {
   itemGroups: ItemGroup[];
   items: Item[];
   vendors: Vendor[];
+  vendorItemPrices: VendorItemPrice[];
 }
 
 /**
@@ -25,9 +43,10 @@ export interface MasterLists {
  *
  * ⚠ WIRE CONTRACT: each `key` below is a jsonb key of
  * `fms_purchase_master_requests.proposed_payload`, read verbatim by the
- * SECURITY DEFINER RPC `fms_purchase_resolve_master_request` (migration
- * 20260630120000). Add a field here WITHOUT adding it to that RPC's insert
- * chain and it is silently dropped when the request is approved.
+ * SECURITY DEFINER RPC `fms_purchase_resolve_master_request` (migrations
+ * 20260630120000, extended by 20260720120000 for vendor_item_price). Add a field
+ * here WITHOUT adding it to that RPC's insert chain and it is silently dropped
+ * when the request is approved — with no error anywhere.
  */
 export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDef[] {
   switch (mt) {
@@ -57,6 +76,18 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         { key: "phone", label: "Phone", type: "text" },
         { key: "email", label: "Email", type: "text" },
         { key: "address", label: "Address", type: "textarea" },
+      ];
+    case "vendor_item_price":
+      // Keys must stay in lockstep with the vendor_item_price insert branch of
+      // fms_purchase_resolve_master_request (migration 20260720120000).
+      // MasterFieldDef has no "number" type — rate/GST/lead use "text", as the
+      // Import FMS's equivalent descriptor does.
+      return [
+        { key: "vendor_id", label: "Vendor", type: "select", required: true, options: ctx.vendorOptions ?? [], placeholder: "Select vendor" },
+        { key: "item_id", label: "Item", type: "select", required: true, options: ctx.itemOptions ?? [], placeholder: "Select item" },
+        { key: "rate", label: "Rate", type: "text", required: true, placeholder: "e.g. 250" },
+        { key: "gst_pct", label: "GST %", type: "text", placeholder: "e.g. 18" },
+        { key: "lead_time_days", label: "Lead days", type: "text", placeholder: "e.g. 15" },
       ];
   }
 }
@@ -93,11 +124,24 @@ export const masterTypePlural = (mt: MasterType) => MASTER_TYPES.find((m) => m.v
 export function describePayload(
   mt: MasterType,
   payload: Record<string, unknown>,
-  lookup: { categoryName: (id: string) => string | undefined; itemGroupName: (id: string) => string | undefined }
+  lookup: {
+    categoryName: (id: string) => string | undefined;
+    itemGroupName: (id: string) => string | undefined;
+    vendorName?: (id: string) => string | undefined;
+    itemName?: (id: string) => string | undefined;
+  }
 ): string {
   const s = (k: string) => (typeof payload[k] === "string" ? (payload[k] as string).trim() : "");
   const name = s("name") || "—";
   switch (mt) {
+    case "vendor_item_price": {
+      // Has no `name` — describe it by what it actually keys on.
+      const vend = lookup.vendorName?.(s("vendor_id")) ?? "—";
+      const item = lookup.itemName?.(s("item_id")) ?? "—";
+      const rate = s("rate");
+      const gst = s("gst_pct");
+      return `${vend} · ${item}${rate ? ` @ ${rate}` : ""}${gst ? ` +${gst}% GST` : ""}`;
+    }
     case "company":
       return s("location") ? `${name} — ${s("location")}` : name;
     case "item_group": {
@@ -133,6 +177,16 @@ export function findExistingMaster(
   v: MasterValues,
   lists: MasterLists
 ): { id: string; name: string; active: boolean } | undefined {
+  // vendor_item_price is keyed on (vendor_id, item_id) and carries NO name, so it
+  // must be handled BEFORE the name guard below — otherwise it would silently
+  // never dup-check and the clash would only surface at approve time, as a raw
+  // unique-violation. (The Import FMS's copy of this function has that gap; not
+  // reproducing it here.)
+  if (mt === "vendor_item_price") {
+    const hit = lists.vendorItemPrices.find((p) => p.vendorId === v.vendor_id && p.itemId === v.item_id);
+    return hit ? { id: hit.id, name: "this vendor-item rate", active: hit.active } : undefined;
+  }
+
   const name = v.name ?? "";
   if (!name.trim()) return undefined;
   switch (mt) {
@@ -149,6 +203,11 @@ export function findExistingMaster(
   }
 }
 
-/** The parent id a request hangs off, matching the DB dup-guard index. */
+/**
+ * The parent id a request hangs off. MUST mirror the DB dup-guard index
+ * `fms_purchase_master_requests_pending_uniq` (rekeyed in 20260720120000 to add
+ * the vendor_id arm) — if the two disagree, the client pre-check and the database
+ * guard disagree about what counts as a duplicate.
+ */
 export const parentIdOf = (payload: Record<string, unknown>): string =>
-  String(payload.category_id ?? payload.item_group_id ?? "");
+  String(payload.category_id ?? payload.item_group_id ?? payload.vendor_id ?? "");

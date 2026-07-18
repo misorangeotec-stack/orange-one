@@ -28,7 +28,7 @@ export function usePersonas(): Persona[] {
       step.key === "approval"
         ? // The first-tier approver (covers the lowest amounts) — the one who owns
           // the entry-level approval items; falls back to any band if none matches.
-          s.approverForAmount(1) ?? s.approvalBands[0]?.approverUserId
+          s.approversForAmount(1)[0] ?? s.approvalBands[0]?.approverUserIds[0]
         : s.stepOwnerFor(step.key)?.employeeIds[0];
     // Skip a step if its owner is a duplicate of one already listed (keeps the
     // switcher one-row-per-person while still labelling by the earliest step).

@@ -54,12 +54,24 @@ export default function MasterRequests() {
         .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
     [s.itemGroups, s]
   );
-  const ctx = { categoryOptions, itemGroupOptions };
+  const vendorOptions: ComboOption[] = useMemo(
+    () => s.vendors.filter((v) => v.active).map((v) => ({ value: v.id, label: v.name })),
+    [s.vendors]
+  );
+  const itemOptions: ComboOption[] = useMemo(
+    () => s.items.filter((i) => i.active).map((i) => ({ value: i.id, label: i.name, sublabel: s.itemGroupById(i.itemGroupId)?.name })),
+    [s.items, s]
+  );
+  // vendor_item_price's dropdowns come from here — without these two it would
+  // render an approve form with empty vendor/item pickers.
+  const ctx = { categoryOptions, itemGroupOptions, vendorOptions, itemOptions };
 
   const describe = (r: MasterRequest) =>
     describePayload(r.masterType, r.proposedPayload as Record<string, unknown>, {
       categoryName: (id) => s.categoryById(id)?.name,
       itemGroupName: (id) => s.itemGroupById(id)?.name,
+      vendorName: (id) => s.vendorById(id)?.name,
+      itemName: (id) => s.itemById(id)?.name,
     });
 
   const rows = useMemo(() => {

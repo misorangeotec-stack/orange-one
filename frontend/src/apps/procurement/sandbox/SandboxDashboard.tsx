@@ -27,8 +27,10 @@ export default function SandboxDashboard() {
   const stageCount = (stage: string) => openPos.filter((p) => p.currentStage === stage).length;
 
   const cards: QueueCard[] = [];
-  if (s.canSource) cards.push({ label: "Sourcing Queue", count: s.sourcingQueue.length, to: `${B}/queues/sourcing` });
-  if (s.isApprover) cards.push({ label: "Approvals", count: s.approvalQueue.length, to: `${B}/queues/approvals` });
+  // Counted per REQUISITION, matching the queue pages: a 7-item requisition is
+  // one piece of work.
+  if (s.canSource) cards.push({ label: "Sourcing Queue", count: s.sourcingRequestQueue.length, to: `${B}/queues/sourcing` });
+  if (s.isApprover) cards.push({ label: "Approvals", count: s.approvalRequestQueue.length, to: `${B}/queues/approvals` });
   if (s.canGeneratePo) cards.push({ label: "PO Workbench", count: s.poPool.length, to: `${B}/po/workbench` });
   if (s.canSharePo) cards.push({ label: "Share PO", count: stageCount("share_po"), to: `${B}/queues/share` });
   if (s.canCollectPi) cards.push({ label: "Collect PI", count: stageCount("collect_pi"), to: `${B}/queues/collect-pi` });
@@ -36,7 +38,7 @@ export default function SandboxDashboard() {
   if (s.canFollowup) cards.push({ label: "Follow-up", count: stageCount("follow_up"), to: `${B}/queues/follow-up` });
   if (s.canInward) cards.push({ label: "Inward", count: stageCount("inward"), to: `${B}/queues/inward` });
   if (s.canTally) cards.push({ label: "Tally", count: stageCount("tally"), to: `${B}/queues/tally` });
-  if (s.isProcessCoordinator) cards.push({ label: "Purchase FMS Control Center", count: openPos.length + s.sourcingQueue.length + s.approvalQueue.length + s.poPool.length, to: `${B}/monitoring` });
+  if (s.isProcessCoordinator) cards.push({ label: "Purchase FMS Control Center", count: openPos.length + s.sourcingRequestQueue.length + s.approvalRequestQueue.length + s.poPool.length, to: `${B}/monitoring` });
 
   const notifs = s.myNotifications.slice(0, 6);
   const firstAction = cards.find((c) => c.count > 0);

@@ -1,6 +1,6 @@
 /** Domain types for the Purchase FMS (procurement) module. */
 
-export type MasterType = "company" | "category" | "item_group" | "item" | "vendor";
+export type MasterType = "company" | "category" | "item_group" | "item" | "vendor" | "vendor_item_price";
 
 export const MASTER_TYPES: { value: MasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
@@ -8,6 +8,7 @@ export const MASTER_TYPES: { value: MasterType; label: string; plural: string }[
   { value: "item_group", label: "Item Group", plural: "Item Groups" },
   { value: "item", label: "Item", plural: "Items" },
   { value: "vendor", label: "Vendor", plural: "Vendors" },
+  { value: "vendor_item_price", label: "Vendor-Item Rate", plural: "Vendor-Item Rates" },
 ];
 
 export interface Company {
@@ -58,6 +59,23 @@ export interface Vendor {
   createdAt: string;
 }
 
+/**
+ * Standing rate card per (vendor, item). Pre-fills the sourcing grid's rate /
+ * GST / lead days — a DEFAULT, never a lock: every cell stays editable there,
+ * and nothing here is consulted again once a line is sourced.
+ */
+export interface VendorItemPrice {
+  id: string;
+  vendorId: string;
+  itemId: string;
+  rate: number;
+  gstPct: number | null;
+  leadTimeDays: number | null;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
+
 export interface MasterManager {
   id: string;
   masterType: MasterType;
@@ -87,7 +105,12 @@ export interface ApprovalBand {
   tierLabel: string;
   minAmount: number;
   maxAmount: number | null;
-  approverUserId: string;
+  /**
+   * Everyone who may approve in this band. ANY ONE of them can decide — this is
+   * not a sequential or quorum approval. The DB keeps `approver_user_id` in sync
+   * with the first entry purely as a legacy mirror; nothing here reads it.
+   */
+  approverUserIds: string[];
   sortOrder: number;
   active: boolean;
 }
@@ -103,6 +126,27 @@ export interface PurchaseRequest {
   status: RequestStatus;
   note: string | null;
   createdAt: string;
+  /** Why fewer than three vendors were shortlisted. Mandatory below three. */
+  sourcingReason: string | null;
+  /** When sourcing was saved for the whole requisition. Null on legacy requests
+   *  sourced per line — lib/queues.ts falls back to max(line.sourcedAt). */
+  sourcedAt: string | null;
+  sourcedBy: string | null;
+}
+
+/**
+ * One vendor on a requisition's shortlist (max 3). Captured ONCE per requisition
+ * at sourcing; exactly one row has `isRecommended`, and that vendor becomes the
+ * final vendor on every line. Rates are deliberately NOT here — they are per
+ * item, on RequestItem.
+ */
+export interface RequestVendor {
+  id: string;
+  requestId: string;
+  vendorId: string;
+  isRecommended: boolean;
+  remark: string | null;
+  sortOrder: number;
 }
 
 export type LineStatus =
@@ -126,6 +170,8 @@ export interface RequestItem {
   finalQty: number | null;
   finalRate: number | null;
   gstPct: number | null;
+  /** Lead days agreed at sourcing, typed per item (fill-down in the form). */
+  leadTimeDays: number | null;
   lineValue: number | null;
   status: LineStatus;
   approverId: string | null;

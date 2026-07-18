@@ -12,28 +12,76 @@ import SourcingModal from "../../components/SourcingModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
-import type { RequestItem } from "../../types";
+import type { PurchaseRequest } from "../../types";
 
-/** Sourcing Stage — lines awaiting quotations (Stage 2), plus what's been sourced. */
+/**
+ * Sourcing Stage — REQUISITIONS awaiting quotations (Stage 2), plus what's been
+ * sourced. One row per requisition, not one per item: a 7-item requisition is a
+ * single piece of work with a single vendor shortlist.
+ */
 export default function SourcingQueue() {
   const s = useProcurementStore();
   const { user } = useEffectiveIdentity();
-  const [sourcing, setSourcing] = useState<RequestItem | null>(null);
-  const [editLine, setEditLine] = useState<RequestItem | null>(null);
-  const stage = useStageMode(s.completedSourcingEntries, user.id);
+  const [sourcing, setSourcing] = useState<PurchaseRequest | null>(null);
+  const [editRequest, setEditRequest] = useState<PurchaseRequest | null>(null);
+  const stage = useStageMode(s.completedSourcingRequestEntries, user.id);
 
-  const requestNo = (l: RequestItem) => s.requestById(l.requestId)?.requestNo ?? "—";
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
-  const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
   /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
-  const dueIso = (l: RequestItem) => s.dueIsoForLine(l, "sourcing");
+  const dueIso = (r: PurchaseRequest) => s.dueIsoForRequest(r, "sourcing");
 
-  const completedColumns: QueueColumn<StageEntry<RequestItem>>[] = [
-    { key: "request", header: "Request", cell: (e) => <Link to={`/procurement/requests/${e.row.requestId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
-    { key: "item", header: "Item", cell: (e) => <span className="font-medium text-navy">{s.itemLabel(e.row.itemId)}</span>, sortValue: (e) => s.itemLabel(e.row.itemId), filter: { kind: "text", get: (e) => s.itemLabel(e.row.itemId) } },
-    { key: "vendor", header: "Vendor", cell: (e) => s.vendorById(e.row.finalVendorId)?.name ?? "—", sortValue: (e) => s.vendorById(e.row.finalVendorId)?.name ?? "", filter: { kind: "select", get: (e) => s.vendorById(e.row.finalVendorId)?.name ?? "—" }, tdClassName: "whitespace-nowrap" },
-    { key: "qty", header: "Final Qty", cell: (e) => <>{e.row.finalQty ?? "—"} {e.row.unit}</>, sortValue: (e) => e.row.finalQty ?? 0, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Line Value", cell: (e) => (e.row.lineValue !== null ? inr(e.row.lineValue) : "—"), sortValue: (e) => e.row.lineValue ?? 0, filter: { kind: "number", get: (e) => e.row.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
+  /** "3 items" plus the first couple of NAMES (no group — it only added noise). */
+  const itemSummary = (r: PurchaseRequest) => {
+    const lines = s.itemsForRequest(r.id);
+    const names = lines.slice(0, 2).map((l) => s.itemById(l.itemId)?.name ?? "—");
+    const rest = lines.length - names.length;
+    return { count: lines.length, text: names.join(", ") + (rest > 0 ? ` +${rest} more` : "") };
+  };
+  const totalQty = (r: PurchaseRequest) =>
+    s.itemsForRequest(r.id).reduce((sum, l) => sum + (l.finalQty ?? l.quantity), 0);
+  /**
+   * The quantity column SUMS across items, so it can only carry a unit when every
+   * item shares one. Mixing KGS and PCS into "2500 KGS" would be a plain lie, so
+   * a mixed requisition says so and lists the units on hover.
+   */
+  const qtyUnit = (r: PurchaseRequest) => {
+    const units = [...new Set(s.itemsForRequest(r.id).map((l) => l.unit).filter(Boolean))];
+    if (units.length === 1) return { label: units[0], title: undefined as string | undefined };
+    if (units.length === 0) return { label: "", title: undefined };
+    return { label: "mixed", title: `Different units on this requisition: ${units.join(", ")}` };
+  };
+  const sourcedValue = (r: PurchaseRequest) =>
+    s.itemsForRequest(r.id).reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+  const vendorOf = (r: PurchaseRequest) => {
+    const rec = s.vendorsForRequest(r.id).find((v) => v.isRecommended)?.vendorId;
+    const fallback = s.itemsForRequest(r.id).find((l) => l.finalVendorId)?.finalVendorId ?? null;
+    return s.vendorById(rec ?? fallback)?.name ?? "—";
+  };
+
+  const requestLink = (r: PurchaseRequest) => (
+    <Link to={`/procurement/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+      {r.requestNo}
+    </Link>
+  );
+
+  const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
+    { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
+    {
+      key: "items", header: "Items",
+      cell: (e) => {
+        const { count, text } = itemSummary(e.row);
+        return (
+          <div className="min-w-0">
+            <span className="font-medium text-navy">{count} item{count === 1 ? "" : "s"}</span>
+            <span className="ml-1.5 text-[11.5px] text-grey-2">{text}</span>
+          </div>
+        );
+      },
+      sortValue: (e) => itemSummary(e.row).count,
+      filter: { kind: "text", get: (e) => itemSummary(e.row).text },
+    },
+    { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Request Value", cell: (e) => inr(sourcedValue(e.row)), sortValue: (e) => sourcedValue(e.row), filter: { kind: "number", get: (e) => sourcedValue(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "sourcedAt", header: "Sourced On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     {
       key: "sourcedBy", header: "By",
@@ -44,18 +92,37 @@ export default function SourcingQueue() {
     },
   ];
 
-  const columns: QueueColumn<RequestItem>[] = [
+  const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     {
-      key: "request", header: "Request", sortValue: (l) => requestNo(l), filter: { kind: "text", get: (l) => requestNo(l) }, tdClassName: "whitespace-nowrap",
-      cell: (l) => {
-        const req = s.requestById(l.requestId);
-        return req ? <Link to={`/procurement/requests/${req.id}`} className="font-semibold text-navy hover:text-orange">{req.requestNo}</Link> : "—";
+      key: "items", header: "Items",
+      cell: (r) => {
+        const { count, text } = itemSummary(r);
+        return (
+          <div className="min-w-0">
+            <span className="font-medium text-navy">{count} item{count === 1 ? "" : "s"}</span>
+            <span className="ml-1.5 text-[11.5px] text-grey-2">{text}</span>
+          </div>
+        );
       },
+      sortValue: (r) => itemSummary(r).count,
+      filter: { kind: "text", get: (r) => itemSummary(r).text },
     },
-    { key: "item", header: "Item", cell: (l) => <span className="font-medium text-navy">{s.itemLabel(l.itemId)}</span>, sortValue: (l) => s.itemLabel(l.itemId), filter: { kind: "text", get: (l) => s.itemLabel(l.itemId) } },
-    { key: "qty", header: "Qty", cell: (l) => <>{l.quantity} {l.unit}</>, sortValue: (l) => l.quantity, filter: { kind: "number", get: (l) => l.quantity }, tdClassName: "whitespace-nowrap" },
-    { key: "created", header: "Created", cell: (l) => formatDate(l.createdAt), sortValue: (l) => l.createdAt, filter: { kind: "date", get: (l) => l.createdAt }, tdClassName: "whitespace-nowrap" },
-    { key: "due", header: "Due", cell: (l) => <DueCell dueIso={dueIso(l)} />, sortValue: (l) => dueIso(l), filter: { kind: "date", get: (l) => dueIso(l) }, tdClassName: "whitespace-nowrap" },
+    {
+      key: "qty", header: "Total Qty",
+      cell: (r) => {
+        const u = qtyUnit(r);
+        return (
+          <span title={u.title}>
+            {totalQty(r)}
+            {u.label && <span className="ml-1 text-[11.5px] text-grey-2">{u.label}</span>}
+          </span>
+        );
+      },
+      sortValue: (r) => totalQty(r), filter: { kind: "number", get: (r) => totalQty(r) }, tdClassName: "whitespace-nowrap",
+    },
+    { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt }, tdClassName: "whitespace-nowrap" },
+    { key: "due", header: "Due", cell: (r) => <DueCell dueIso={dueIso(r)} />, sortValue: (r) => dueIso(r), filter: { kind: "date", get: (r) => dueIso(r) }, tdClassName: "whitespace-nowrap" },
   ];
 
   return (
@@ -64,16 +131,16 @@ export default function SourcingQueue() {
         <h1 className="text-[22px] font-bold text-navy">Sourcing Stage</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
-            ? "Lines already sourced. Each stays editable until the approver decides."
-            : "Lines awaiting quotations and a vendor recommendation."}
+            ? "Requisitions already sourced. Each stays editable until the approver decides."
+            : "Requisitions awaiting a vendor shortlist and rates."}
         </p>
       </div>
 
       <StageTabs
         mode={stage.mode}
         onMode={stage.setMode}
-        pendingCount={s.sourcingQueue.length}
-        completedCount={s.completedSourcingEntries.length}
+        pendingCount={s.sourcingRequestQueue.length}
+        completedCount={s.completedSourcingRequestEntries.length}
         scope={stage.scope}
         onScope={stage.setScope}
         scopeNote={`Showing ${user.name}'s entries`}
@@ -86,19 +153,19 @@ export default function SourcingQueue() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            rowsLabel="lines"
+            rowsLabel="requests"
             emptyTitle="Nothing here yet"
-            emptyMessage="Lines you source will appear here, and stay editable until the approver decides."
+            emptyMessage="Requisitions you source will appear here, and stay editable until the approver decides."
             actions={(e) =>
-              // Re-sourcing IS the edit: save_sourcing already accepts an
-              // undecided line and refuses a decided one, so there is no separate
-              // update RPC for this step.
+              // Re-sourcing IS the edit: save_sourcing_request already accepts an
+              // undecided requisition and refuses a decided one, so there is no
+              // separate update RPC for this step.
               e.lockReason ? (
                 <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
                   <Lock className="w-3 h-3" aria-hidden /> Locked
                 </span>
               ) : s.canSource ? (
-                <button onClick={() => setEditLine(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
+                <button onClick={() => setEditRequest(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
               ) : (
                 <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only a Sourcing step owner can edit this entry.">
                   <Lock className="w-3 h-3" aria-hidden /> Locked
@@ -108,25 +175,25 @@ export default function SourcingQueue() {
           />
         ) : (
           <QueueTable
-            rows={s.sourcingQueue}
-            rowKey={(l) => l.id}
+            rows={s.sourcingRequestQueue}
+            rowKey={(r) => r.id}
             columns={columns}
-            groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
-            rowClassName={(l) => overdueRowClass(dueIso(l))}
-            rowsLabel="lines"
+            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            rowClassName={(r) => overdueRowClass(dueIso(r))}
+            rowsLabel="requests"
             emptyTitle="Nothing to source"
-            emptyMessage="New request lines will appear here."
+            emptyMessage="New requisitions will appear here."
             actions={
               s.canSource
-                ? (l) => <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Source</button>
+                ? (r) => <button onClick={() => setSourcing(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Source</button>
                 : () => <span className="text-[12px] text-grey-2">—</span>
             }
           />
         )}
       </Card>
 
-      <SourcingModal line={sourcing} open={sourcing !== null} onClose={() => setSourcing(null)} />
-      <SourcingModal line={editLine} open={editLine !== null} onClose={() => setEditLine(null)} />
+      <SourcingModal request={sourcing} open={sourcing !== null} onClose={() => setSourcing(null)} />
+      <SourcingModal request={editRequest} open={editRequest !== null} onClose={() => setEditRequest(null)} />
     </div>
   );
 }
