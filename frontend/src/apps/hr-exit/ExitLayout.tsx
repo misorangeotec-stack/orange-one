@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
 import { roleLabel, useSession } from "@/core/platform/session";
-import { timeAgo } from "@/shared/lib/time";
+import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { useSandbox } from "@/shared/sandbox/SandboxContext";
 import PersonaSwitcher from "@/shared/sandbox/PersonaSwitcher";
@@ -47,6 +47,7 @@ export default function ExitLayout() {
   const { active: demoActive } = useSandbox();
   const personas = usePersonas();
   const s = useExitStore();
+  const orgPersonById = useOrgPersonById();
 
   // A reporting manager owns `manager_review` PER CASE, never in the step-owner table,
   // so "do I have approvals?" cannot be answered by ownership alone — it is answered by
@@ -134,13 +135,23 @@ export default function ExitLayout() {
     ],
   );
 
-  const notifItems: NotificationItem[] = s.notifications.map((n) => ({
-    id: n.id,
-    text: n.text,
-    time: timeAgo(n.createdAt),
-    unread: !n.readAt,
-    to: linkFor(n),
-  }));
+  // Who did it used to be dropped entirely — the bell showed a bare sentence.
+  // Directory first, org-wide list as backup: profileById is RLS-scoped, so a
+  // colleague in another department resolves to nothing.
+  const notifItems: NotificationItem[] = s.notifications.map((n) => {
+    const actor = n.actorId ? s.profileById(n.actorId) ?? orgPersonById(n.actorId) : undefined;
+    return {
+      id: n.id,
+      actorName: n.actorId ? actor?.name ?? "Someone" : "System",
+      actorColor: actor?.avatarColor,
+      // Its own line under the name — these are whole sentences whose subject is
+      // the exit case, not the actor.
+      message: n.text,
+      createdAt: n.createdAt,
+      unread: !n.readAt,
+      to: linkFor(n),
+    };
+  });
 
   return (
     <AppShell

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
 import { useSession, roleLabel } from "@/core/platform/session";
-import { timeAgo } from "@/shared/lib/time";
+import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { useSandbox } from "@/shared/sandbox/SandboxContext";
 import PersonaSwitcher from "@/shared/sandbox/PersonaSwitcher";
@@ -44,6 +44,7 @@ export default function HrLayout() {
   const { active: demoActive } = useSandbox();
   const personas = usePersonas();
   const s = useHrStore();
+  const orgPersonById = useOrgPersonById();
 
   const nav = useMemo(
     () =>
@@ -81,13 +82,23 @@ export default function HrLayout() {
     [isAdmin, realAdmin, demoActive, s],
   );
 
-  const notifItems: NotificationItem[] = s.notifications.map((n) => ({
-    id: n.id,
-    text: n.text,
-    time: timeAgo(n.createdAt),
-    unread: !n.readAt,
-    to: linkFor(n),
-  }));
+  // Who did it used to be dropped entirely — the bell showed a bare sentence.
+  // Directory first, org-wide list as backup: profileById is RLS-scoped, so a
+  // colleague in another department resolves to nothing.
+  const notifItems: NotificationItem[] = s.notifications.map((n) => {
+    const actor = n.actorId ? s.profileById(n.actorId) ?? orgPersonById(n.actorId) : undefined;
+    return {
+      id: n.id,
+      actorName: n.actorId ? actor?.name ?? "Someone" : "System",
+      actorColor: actor?.avatarColor,
+      // Its own line under the name — these are whole sentences whose subject is
+      // a candidate or requisition, not the actor.
+      message: n.text,
+      createdAt: n.createdAt,
+      unread: !n.readAt,
+      to: linkFor(n),
+    };
+  });
 
   return (
     <AppShell

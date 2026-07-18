@@ -1,39 +1,53 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
+import Avatar from "@/shared/components/ui/Avatar";
+import { timeAgoShort, formatDateTime } from "@/shared/lib/time";
 import type { NotificationItem } from "./types";
 
-type Filter = "all" | "unread";
-
 /**
- * Topbar bell: unread COUNT badge + dropdown list of notifications.
+ * Topbar bell: unread COUNT badge + dropdown of what is still UNREAD.
  *
- * Shared by every app (task management and the five FMS apps), so anything added
- * here lands everywhere at once.
+ * Shared by every app (task management and the five FMS apps), so anything
+ * added here lands everywhere at once.
  *
- * It used to show a bare dot — "something is unread" but never how much, which is
- * the first thing anyone wants to know. It now shows the number, and the dropdown
- * carries the read/unread controls people expect: filter to unread, mark one
- * read, mark it back to unread, mark everything read.
+ * It is an inbox, not an archive. It used to list every notification ever
+ * received behind an All/Unread filter, which meant the bell never emptied and
+ * you could not tell at a glance what was new. Now reading something is how you
+ * clear it: the list is unread-only, so a row you click disappears.
+ *
+ * IMPORTANT: the unread filter lives HERE and must not be pushed down into the
+ * queries or stores. The task app's Tagged screen derives its whole task set
+ * from the same notification array INCLUDING read rows — filtering upstream
+ * would silently empty that screen without erroring.
+ *
+ * Nothing is deleted. Rows are marked read (`read_at`), which matters beyond
+ * tidiness: a 'mention' row is what grants read access to the task you were
+ * tagged in, so deleting one would revoke that access.
  */
 export default function NotificationsBell({
   items,
   onMarkRead,
-  onMarkUnread,
 }: {
   items: NotificationItem[];
   onMarkRead?: (ids: string[]) => void;
-  /** Optional: apps that haven't wired an "unread again" write simply omit it. */
-  onMarkUnread?: (ids: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<Filter>("all");
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  const unreadIds = useMemo(() => items.filter((i) => i.unread).map((i) => i.id), [items]);
+  // Newest first. Belt-and-braces: three of the FMS stores don't sort their own
+  // feed, so without this their bells read oldest-first.
+  const shown = useMemo(
+    () =>
+      items
+        .filter((i) => i.unread)
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [items]
+  );
+  const unreadIds = useMemo(() => shown.map((i) => i.id), [shown]);
   const unread = unreadIds.length;
-  const shown = filter === "unread" ? items.filter((i) => i.unread) : items;
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
@@ -43,11 +57,14 @@ export default function NotificationsBell({
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  // Nothing left to show under the unread lens: fall back rather than stranding
-  // the reader on a permanently empty list they have to notice and undo.
+  // Re-render the relative times once a minute WHILE OPEN, so a panel left
+  // sitting there doesn't freeze at "3m". Costs nothing when closed.
+  const [, setTick] = useState(0);
   useEffect(() => {
-    if (filter === "unread" && unread === 0) setFilter("all");
-  }, [filter, unread]);
+    if (!open) return;
+    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(t);
+  }, [open]);
 
   return (
     <div className="relative" ref={ref}>
@@ -75,92 +92,61 @@ export default function NotificationsBell({
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white border border-line rounded-card shadow-card overflow-hidden z-50">
-          <div className="px-4 py-3 border-b border-line">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-navy">Notifications</span>
-              {unread > 0 && onMarkRead && (
-                <button
-                  onClick={() => onMarkRead(unreadIds)}
-                  className="text-[11px] text-orange font-medium hover:underline"
-                >
-                  Mark all read
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1 mt-2">
-              {([
-                { key: "all", label: `All (${items.length})` },
-                { key: "unread", label: `Unread (${unread})` },
-              ] as { key: Filter; label: string }[]).map((o) => (
-                <button
-                  key={o.key}
-                  onClick={() => setFilter(o.key)}
-                  className={cn(
-                    "text-[11px] font-semibold px-2 py-1 rounded-pill transition",
-                    filter === o.key ? "bg-orange-soft text-orange" : "text-grey-2 hover:text-navy"
-                  )}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
+        <div className="absolute right-0 mt-2 w-96 bg-white border border-line rounded-card shadow-card overflow-hidden z-50">
+          <div className="px-4 py-3 border-b border-line flex items-center justify-between">
+            <span className="text-sm font-semibold text-navy">Notifications</span>
+            {unread > 0 && onMarkRead && (
+              <button
+                onClick={() => onMarkRead(unreadIds)}
+                className="text-[11px] text-orange font-medium hover:underline"
+              >
+                Mark all as read
+              </button>
+            )}
           </div>
 
           <div className="max-h-80 overflow-y-auto">
             {shown.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-grey-2">
-                {filter === "unread" ? "Nothing unread." : "You're all caught up 🎉"}
-              </p>
+              <div className="px-4 py-8 text-center">
+                <p className="text-sm text-ink">You're all caught up.</p>
+                <p className="text-[12px] text-grey-2 mt-1">New notifications will appear here.</p>
+              </div>
             ) : (
               shown.map((n) => (
-                <div
+                // The WHOLE row is the button — no nested interactive elements,
+                // so no click-swallowing and one obvious tap target.
+                <button
                   key={n.id}
-                  className={cn(
-                    "group w-full px-4 py-3 border-b border-line/70 last:border-0 hover:bg-page transition flex gap-3",
-                    n.unread && "bg-orange-soft/40"
-                  )}
+                  onClick={() => {
+                    // Mark first: the producer patches its cache synchronously,
+                    // so the row is gone before the write round-trips.
+                    onMarkRead?.([n.id]);
+                    setOpen(false);
+                    if (n.to) navigate(n.to);
+                  }}
+                  className="w-full px-4 py-3 border-b border-line/70 last:border-0 hover:bg-page transition flex gap-3 text-left"
                 >
-                  <button
-                    onClick={() => {
-                      if (n.unread) onMarkRead?.([n.id]);
-                      if (n.to) navigate(n.to);
-                      setOpen(false);
-                    }}
-                    className="flex gap-3 text-left min-w-0 flex-1"
-                  >
-                    <span className={cn("mt-1.5 w-1.5 h-1.5 rounded-full shrink-0", n.unread ? "bg-orange" : "bg-transparent")} />
-                    <span className="min-w-0">
-                      <span className="block text-[13px] text-ink leading-snug">{n.text}</span>
-                      <span className="block text-[11px] text-grey-2 mt-0.5">{n.time}</span>
+                  <Avatar name={n.actorName} color={n.actorColor} size={32} className="mt-0.5" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline gap-2">
+                      <span className="min-w-0 flex-1 text-[13px] font-semibold text-navy truncate">
+                        {n.actorName}
+                      </span>
+                      <span
+                        className="shrink-0 text-[11px] text-grey-2 tabular-nums"
+                        title={formatDateTime(n.createdAt)}
+                      >
+                        {timeAgoShort(n.createdAt)}
+                      </span>
                     </span>
-                  </button>
-
-                  {/* Per-row read/unread. Revealed on hover so the list stays calm,
-                      but kept focusable so it is reachable by keyboard. */}
-                  {n.unread
-                    ? onMarkRead && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onMarkRead([n.id]); }}
-                          title="Mark as read"
-                          aria-label="Mark as read"
-                          className="shrink-0 self-start text-[10px] font-semibold text-orange hover:underline opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
-                        >
-                          Read
-                        </button>
-                      )
-                    : onMarkUnread && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onMarkUnread([n.id]); }}
-                          title="Mark as unread"
-                          aria-label="Mark as unread"
-                          className="shrink-0 self-start text-[10px] font-semibold text-grey-2 hover:text-navy hover:underline opacity-0 group-hover:opacity-100 focus:opacity-100 transition"
-                        >
-                          Unread
-                        </button>
-                      )}
-                </div>
+                    {/* No `block` here: line-clamp-2 supplies its own
+                        display:-webkit-box, and a competing display utility can
+                        win the cascade and silently stop the clamp working. */}
+                    <span className="text-[13px] text-ink leading-snug line-clamp-2 mt-0.5">
+                      {n.message}
+                    </span>
+                  </span>
+                </button>
               ))
             )}
           </div>

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
 import { useSession, roleLabel } from "@/core/platform/session";
-import { timeAgo } from "@/shared/lib/time";
+import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildImportNav } from "./nav";
 import { useImportStore } from "./store";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
@@ -44,6 +44,7 @@ export default function ImportLayout() {
     profileById,
     markNotificationsRead,
   } = store;
+  const orgPersonById = useOrgPersonById();
 
   const nav = useMemo(
     () =>
@@ -91,15 +92,19 @@ export default function ImportLayout() {
   };
 
   const notifItems: NotificationItem[] = myNotifications.map((n) => {
-    const actor = n.actorId ? profileById(n.actorId)?.name ?? "Someone" : "System";
+    // Directory first, org-wide list as backup: profileById is RLS-scoped, so a
+    // colleague in another department resolves to nothing and would show as an
+    // anonymous tile.
+    const actor = n.actorId ? profileById(n.actorId) ?? orgPersonById(n.actorId) : undefined;
     return {
       id: n.id,
-      text: (
-        <span>
-          <b className="font-semibold text-navy">{actor}</b> {n.text}
-        </span>
-      ),
-      time: timeAgo(n.createdAt),
+      actorName: n.actorId ? actor?.name ?? "Someone" : "System",
+      actorColor: actor?.avatarColor,
+      // Rendered on its own line under the name, NOT after it: these strings are
+      // whole sentences about an entity, so inlining a name gave the sentence
+      // two subjects.
+      message: n.text,
+      createdAt: n.createdAt,
       unread: !n.readAt,
       to: linkFor(n),
     };

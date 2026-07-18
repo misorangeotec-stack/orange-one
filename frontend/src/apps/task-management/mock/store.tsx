@@ -9,7 +9,7 @@ import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
 import { fetchTaskData, fetchTaskActivity, type TaskData } from "../data/fetchTaskData";
-import { useMyNotifications, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
+import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -451,6 +451,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // Mark own notifications read (always allowed — RLS scopes to the caller).
       markNotificationsRead: async (ids) => {
         if (ids.length === 0) return;
+        // Patch first: the bell is unread-only, so this is what makes a clicked
+        // row vanish immediately rather than after the refetch lands.
+        markReadOptimistic(queryClient, ids);
         await markNotificationsReadWrite(ids);
         await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
       },
@@ -466,6 +469,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           .filter((n) => n.taskId === taskId && n.userId === user.id && !n.readAt)
           .map((n) => n.id);
         if (ids.length === 0) return;
+        markReadOptimistic(queryClient, ids);
         await markNotificationsReadWrite(ids);
         await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
       },

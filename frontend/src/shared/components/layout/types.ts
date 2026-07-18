@@ -34,11 +34,30 @@ export interface NavItem {
   groupIcon?: ReactNode;
 }
 
-/** Display shape for a notification row in the bell dropdown. */
+/**
+ * Display shape for a notification row in the bell dropdown.
+ *
+ * The actor is carried SEPARATELY from the message rather than baked into one
+ * ReactNode, because the bell renders them on two lines — name as a byline
+ * above, message below. That is not just cosmetic: the five FMS apps write
+ * `text` as a whole self-contained sentence whose subject is an entity ("Goods
+ * received (GRN) — book the entry in Tally", "EX-0042 (Ramesh) — HR has
+ * verified the notice period"). Prefixing a name inline produced sentences with
+ * two subjects; as a byline it reads correctly.
+ *
+ * `createdAt` is the raw ISO stamp, not a formatted string, so the bell can
+ * re-derive the age while the panel sits open instead of freezing at whatever
+ * the producer last rendered.
+ */
 export interface NotificationItem {
   id: string;
-  text: ReactNode;
-  time: string;
+  /** Who caused it. "Someone" when unresolvable, "System" when there's no actor. */
+  actorName: string;
+  /** Named palette key or raw hex; Avatar falls back to navy when omitted. */
+  actorColor?: string;
+  /** The sentence WITHOUT the actor's name. */
+  message: ReactNode;
+  createdAt: string;
   unread: boolean;
   to?: string;
 }
