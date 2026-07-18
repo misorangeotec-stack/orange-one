@@ -6,8 +6,8 @@ import ProcurementApp from "./ProcurementApp";
  * multi-vendor procurement workflow: Request → Sourcing → tiered Approval →
  * vendor-wise PO → PI → Advance → Follow-up → GRN → Tally → installment Final
  * Payment. Built as a dedicated relational module (tables prefixed
- * `fms_purchase_`); the app id stays `procurement` so it can run alongside the
- * legacy `purchase-fms` app until that one is retired.
+ * `fms_purchase_`). The app id stays `procurement` for historical reasons — it
+ * once ran alongside a since-deleted `purchase-fms` prototype.
  */
 export const procurementApp: AppManifest = {
   id: "procurement",

@@ -9,9 +9,6 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
-// Legacy `purchase-fms` (the older linear prototype) is retired from the portal —
-// the newer `procurement` app (also named "Purchase FMS") replaces it. Its folder
-// is kept as dead code; re-add `purchaseFmsApp` here to bring it back.
 
 /**
  * Central registry of all Orange One apps.
