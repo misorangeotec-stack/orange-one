@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
 import ImportApp from "./ImportApp";
 
 /**
@@ -15,10 +15,10 @@ export const importApp: AppManifest = {
   name: appName("import"),
   description:
     "Import procurement: fixed vendors + vendor-item price list, foreign-currency POs with a live exchange rate, amount-tiered approval, and a 100%-advance payment step.",
-  basePath: "/import",
+  basePath: appBasePath("import"),
   status: "live",
-  category: "fms",
-  subGroup: "Purchase",
+  category: appCategory("import"),
+  subGroup: appSubGroup("import"),
   order: 20,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

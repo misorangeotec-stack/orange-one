@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory } from "../appInfo";
 import ReceivablesHubApp from "./ReceivablesHubApp";
 
 /**
@@ -11,9 +11,9 @@ export const receivablesHubApp: AppManifest = {
   id: "outstanding-dashboard",
   name: appName("outstanding-dashboard"),
   description: "Receivables, risk register, aging, and salesperson collections across companies.",
-  basePath: "/outstanding-dashboard",
+  basePath: appBasePath("outstanding-dashboard"),
   status: "live",
-  category: "sales",
+  category: appCategory("outstanding-dashboard"),
   order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
