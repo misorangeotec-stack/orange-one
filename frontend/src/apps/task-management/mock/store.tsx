@@ -32,6 +32,7 @@ import {
   updateWorkspaceSettings as updateWorkspaceSettingsWrite,
   setTaskLocationDone as setTaskLocationDoneWrite,
   setTaskLocationNa as setTaskLocationNaWrite,
+  setTaskLocationsDone as setTaskLocationsDoneWrite,
   insertLocation as insertLocationWrite,
   updateLocation as updateLocationWrite,
   deleteLocation as deleteLocationWrite,
@@ -127,6 +128,8 @@ interface TaskStoreValue {
   setTaskLocationDone: (taskLocationId: string, done: boolean) => Promise<void>;
   /** Mark / unmark one location as Not Applicable (counts as resolved for completion). */
   setTaskLocationNa: (taskLocationId: string, na: boolean) => Promise<void>;
+  /** Select all / Clear all — tick every location at once, or reset them (done AND N/A cleared). */
+  setTaskLocationsDone: (taskLocationIds: string[], done: boolean) => Promise<void>;
   /** Admin location-master CRUD. */
   addLocation: (input: LocationWriteInput) => Promise<string>;
   editLocation: (id: string, input: LocationWriteInput) => Promise<void>;
@@ -545,6 +548,32 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           await setTaskLocationNaWrite(taskLocationId, na, user.id);
           await queryClient.invalidateQueries({ queryKey: ["taskData"] });
         } catch (e) {
+          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          throw e;
+        }
+      },
+      // Bulk tick / reset, same optimistic-first pattern as the single-row toggles:
+      // patch every row in the cache, then one `.in(...)` write for the whole set.
+      setTaskLocationsDone: async (taskLocationIds, done) => {
+        for (const id of taskLocationIds) {
+          patchTaskLocation(queryClient, id, (l) => ({
+            ...l,
+            completedAt: done ? new Date().toISOString() : null,
+            completedBy: done ? user.id : null,
+            naAt: null,
+            naBy: null,
+          }));
+        }
+        try {
+          await setTaskLocationsDoneWrite(taskLocationIds, done, user.id);
+          // Deliberately NOT awaited. The optimistic patch above already shows the
+          // final state, so awaiting the ["taskData"] refetch here only kept the
+          // Select all / Clear all buttons disabled for the length of a full
+          // reload. Let the cache reconcile timestamps/by-names in the background.
+          void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        } catch (e) {
+          // Failure path still awaits: the optimistic patch is wrong and must be
+          // rolled back to server truth before the caller surfaces the error.
           await queryClient.invalidateQueries({ queryKey: ["taskData"] });
           throw e;
         }

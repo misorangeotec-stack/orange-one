@@ -24,12 +24,22 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask } = useTaskStore();
   const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
   const [reopening, setReopening] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
+  const [bulkLoc, setBulkLoc] = useState(false);
+  const runBulkLocations = async (done: boolean, ids: string[]) => {
+    if (ids.length === 0) return;
+    setBulkLoc(true);
+    try {
+      await setTaskLocationsDone(ids, done);
+    } finally {
+      setBulkLoc(false);
+    }
+  };
   const [togglingNa, setTogglingNa] = useState(false);
   const [editOpen, setEditOpen] = useState(false); // personal ("Other") task edit
   const [editTaskOpen, setEditTaskOpen] = useState(false); // regular one-off edit
@@ -311,11 +321,37 @@ export default function TaskDetail() {
 
           {hasLocations && (
             <Card className="p-5">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between gap-3 mb-3">
                 <h3 className="text-[13px] font-semibold text-navy">Locations</h3>
-                <span className={cn("text-[12px] font-medium", locationsComplete ? "text-[#27AE60]" : "text-grey-2")}>
-                  {doneLocations}/{task.locations.length} done{naLocations > 0 ? ` · ${naLocations} N/A` : ""}
-                </span>
+                <div className="flex items-center gap-2">
+                  {/* Select all / Clear all — the shortcut for multi-location tasks, so a
+                      user doesn't have to tick four or ten rows one at a time. */}
+                  {!closed && canStatusActions && task.locations.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        disabled={bulkLoc || doneLocations === task.locations.length}
+                        title="Tick every location"
+                        onClick={() => runBulkLocations(true, task.locations.filter((l) => !l.completedAt).map((l) => l.id))}
+                        className="rounded-pill border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-grey-2 transition hover:border-grey-2/60 hover:text-grey disabled:opacity-40 disabled:hover:border-line disabled:hover:text-grey-2"
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bulkLoc || (doneLocations === 0 && naLocations === 0)}
+                        title="Reset every location — clears both done and N/A"
+                        onClick={() => runBulkLocations(false, task.locations.filter((l) => l.completedAt || l.naAt).map((l) => l.id))}
+                        className="rounded-pill border border-line bg-white px-2.5 py-1 text-[11px] font-semibold text-grey-2 transition hover:border-grey-2/60 hover:text-grey disabled:opacity-40 disabled:hover:border-line disabled:hover:text-grey-2"
+                      >
+                        Clear all
+                      </button>
+                    </>
+                  )}
+                  <span className={cn("text-[12px] font-medium", locationsComplete ? "text-[#27AE60]" : "text-grey-2")}>
+                    {doneLocations}/{task.locations.length} done{naLocations > 0 ? ` · ${naLocations} N/A` : ""}
+                  </span>
+                </div>
               </div>
               <ul className="space-y-1.5">
                 {task.locations.map((tl) => {
@@ -325,7 +361,7 @@ export default function TaskDetail() {
                   const na = !done && tl.naAt !== null; // done wins if a row somehow has both
                   const by = profileById(done ? tl.completedBy : tl.naBy);
                   const editable = !closed && canStatusActions;
-                  const busyRow = togglingLoc === tl.id;
+                  const busyRow = togglingLoc === tl.id || bulkLoc;
                   return (
                     <li
                       key={tl.id}

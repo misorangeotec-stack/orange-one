@@ -201,6 +201,32 @@ export async function setTaskLocationDone(
 }
 
 /**
+ * Tick (or reset) EVERY location on a task's checklist in one round-trip — the
+ * "Select all" / "Clear all" shortcut on a multi-location task. `done: true`
+ * ticks each row (clearing any N/A, same as the single-row toggle); `done: false`
+ * resets the rows to untouched, clearing BOTH the done and the N/A flags, so
+ * "Clear all" leaves a clean checklist rather than a mix of blank and N/A rows.
+ * Same task-scoped RLS as setTaskLocationDone.
+ */
+export async function setTaskLocationsDone(
+  taskLocationIds: string[],
+  done: boolean,
+  actorId: string
+): Promise<void> {
+  if (taskLocationIds.length === 0) return;
+  const { error } = await supabase
+    .from("task_locations")
+    .update({
+      completed_at: done ? new Date().toISOString() : null,
+      completed_by: done ? actorId : null,
+      na_at: null,
+      na_by: null,
+    })
+    .in("id", taskLocationIds);
+  if (error) throw new Error(error.message);
+}
+
+/**
  * Mark (or unmark) a single location as Not Applicable for the task. An N/A
  * location counts as resolved for the completion gate, so a task whose remaining
  * locations are all done-or-N/A can be completed. Marking N/A also clears any
