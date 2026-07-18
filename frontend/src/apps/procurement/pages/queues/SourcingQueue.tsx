@@ -9,6 +9,8 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
 import SourcingModal from "../../components/SourcingModal";
+import StageRowAction from "@/shared/components/ui/StageRowAction";
+import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
@@ -23,7 +25,7 @@ export default function SourcingQueue() {
   const s = useProcurementStore();
   const { user } = useEffectiveIdentity();
   const [sourcing, setSourcing] = useState<PurchaseRequest | null>(null);
-  const [editRequest, setEditRequest] = useState<PurchaseRequest | null>(null);
+  const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedSourcingRequestEntries, user.id);
 
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
@@ -156,22 +158,18 @@ export default function SourcingQueue() {
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Requisitions you source will appear here, and stay editable until the approver decides."
-            actions={(e) =>
+            actions={(e) => (
               // Re-sourcing IS the edit: save_sourcing_request already accepts an
               // undecided requisition and refuses a decided one, so there is no
               // separate update RPC for this step.
-              e.lockReason ? (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              ) : s.canSource ? (
-                <button onClick={() => setEditRequest(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
-              ) : (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only a Sourcing step owner can edit this entry.">
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              )
-            }
+              <StageRowAction
+                lockReason={e.lockReason}
+                canEdit={s.canSource}
+                permissionReason="Only a Sourcing step owner can edit this entry."
+                onEdit={() => editRequest.openEdit(e.row)}
+                onView={() => editRequest.openView(e.row)}
+              />
+            )}
           />
         ) : (
           <QueueTable
@@ -193,7 +191,12 @@ export default function SourcingQueue() {
       </Card>
 
       <SourcingModal request={sourcing} open={sourcing !== null} onClose={() => setSourcing(null)} />
-      <SourcingModal request={editRequest} open={editRequest !== null} onClose={() => setEditRequest(null)} />
+      <SourcingModal
+        request={editRequest.row}
+        open={editRequest.row !== null}
+        readOnly={editRequest.isView}
+        onClose={editRequest.close}
+      />
     </div>
   );
 }

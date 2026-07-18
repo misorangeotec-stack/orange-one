@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Lock } from "lucide-react";
 import { useSession } from "@/core/platform/session";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import StageRowAction from "@/shared/components/ui/StageRowAction";
+import { useEntryModal } from "@/shared/lib/useEntryModal";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
@@ -47,7 +48,7 @@ export default function RequestQueue({
   const s = useSuppliesStore();
   const session = useSession();
   const [acting, setActing] = useState<SupplyRequest | null>(null);
-  const [editing, setEditing] = useState<SupplyRequest | null>(null);
+  const editing = useEntryModal<SupplyRequest>();
 
   // This app has no sandbox/personas, so the real session user IS the effective
   // one — hence useSession rather than useEffectiveIdentity, and no scopeNote on
@@ -247,19 +248,16 @@ export default function RequestQueue({
           rowsLabel="requests"
           emptyTitle="Nothing here yet"
           emptyMessage={completedBlurb}
-          actions={(e) =>
-            e.lockReason ? (
-              <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
-                <Lock className="w-3 h-3" aria-hidden /> Locked
-              </span>
-            ) : s.canActOn(stepKey, e.row) ? (
-              <Button size="sm" variant="ghost" onClick={() => setEditing(e.row)}>Edit</Button>
-            ) : (
-              <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only an owner of this step can edit the entry.">
-                <Lock className="w-3 h-3" aria-hidden /> Locked
-              </span>
-            )
-          }
+          actions={(e) => (
+            <StageRowAction
+              as="button"
+              lockReason={e.lockReason}
+              canEdit={s.canActOn(stepKey, e.row)}
+              permissionReason="Only an owner of this step can edit the entry."
+              onEdit={() => editing.openEdit(e.row)}
+              onView={() => editing.openView(e.row)}
+            />
+          )}
         />
       ) : (
         <QueueTable<Row>
@@ -287,12 +285,25 @@ export default function RequestQueue({
       {isHandover ? (
         <>
           <HandoverModal open={acting !== null} onClose={() => setActing(null)} request={acting} />
-          <HandoverModal open={editing !== null} onClose={() => setEditing(null)} request={editing} editing />
+          <HandoverModal
+            open={editing.row !== null}
+            onClose={editing.close}
+            request={editing.row}
+            editing
+            readOnly={editing.isView}
+          />
         </>
       ) : (
         <>
           <ApprovalModal open={acting !== null} onClose={() => setActing(null)} request={acting} stage={mode} />
-          <ApprovalModal open={editing !== null} onClose={() => setEditing(null)} request={editing} stage={mode} editing />
+          <ApprovalModal
+            open={editing.row !== null}
+            onClose={editing.close}
+            request={editing.row}
+            stage={mode}
+            editing
+            readOnly={editing.isView}
+          />
         </>
       )}
     </div>

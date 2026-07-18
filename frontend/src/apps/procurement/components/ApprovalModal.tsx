@@ -5,7 +5,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
-import type { PurchaseRequest } from "../types";
+import type { PurchaseRequest, RequestItem } from "../types";
 
 /**
  * Stage 3 — one approval decision for a WHOLE requisition.
@@ -26,12 +26,20 @@ export default function ApprovalModal({
   onClose,
   onSaved,
   editing = false,
+  readOnly = false,
 }: {
   request: PurchaseRequest | null;
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
   editing?: boolean;
+  /**
+   * Show the decision that was made instead of offering to make one. Needed
+   * because this dialog's Approve / Override / Reject / Hold controls live in
+   * the BODY, not in a footer — left in place they would render as a row of
+   * dead grey buttons under Modal's disabled read-only fieldset.
+   */
+  readOnly?: boolean;
 }) {
   const s = useProcurementStore();
   const [mode, setMode] = useState<"none" | "override" | "reject" | "hold">("none");
@@ -45,10 +53,17 @@ export default function ApprovalModal({
   /** Exactly the lines the server will act on — keep the two in step. */
   const lines = useMemo(
     () =>
-      allLines.filter((l) =>
-        editing ? l.status === "approved_pending_po" : l.status === "approval" || l.status === "on_hold"
-      ),
-    [allLines, editing]
+      // A VIEW shows every line. The narrowed filters below track what the
+      // server will act on, but a decision is locked precisely BECAUSE the PO
+      // was generated — by then the lines have moved past `approved_pending_po`
+      // and the filter yields nothing, so a view built on it would claim the
+      // requisition had no items and a total of ₹0.
+      readOnly
+        ? allLines
+        : allLines.filter((l) =>
+            editing ? l.status === "approved_pending_po" : l.status === "approval" || l.status === "on_hold"
+          ),
+    [allLines, editing, readOnly]
   );
   const total = lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
   // Base = qty × rate before GST; GST derived from the total so the three can
@@ -124,7 +139,8 @@ export default function ApprovalModal({
       open={open}
       onClose={onClose}
       size="2xl"
-      title={`${editing ? "Edit approval" : "Approve"} — ${request.requestNo}`}
+      readOnly={readOnly}
+      title={`${readOnly ? "Approval" : editing ? "Edit approval" : "Approve"} — ${request.requestNo}`}
       subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${s.vendorById(recommendedId)?.name ?? "—"}`}
     >
       <div className="space-y-4">
@@ -210,8 +226,10 @@ export default function ApprovalModal({
           <Money label="Total (incl. GST)" value={total} strong />
         </div>
 
-        {/* ---- decision controls ---- */}
-        {mode === "override" ? (
+        {/* ---- the decision: what was made, or the controls to make one ---- */}
+        {readOnly ? (
+          <DecisionReadout lines={lines} tier={lines.find((l) => l.approvalTier)?.approvalTier ?? null} />
+        ) : mode === "override" ? (
           <div className="space-y-2.5">
             <FieldLabel label="Override vendor" required hint="applies to every item on this requisition">
               <Combobox
@@ -340,6 +358,38 @@ export default function ApprovalModal({
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>
+  );
+}
+
+/**
+ * What was decided, in place of the controls to decide it.
+ *
+ * Lines on one requisition can land differently (part approved, part rejected),
+ * so this is a rollup in the same shape as the Approvals queue's Decision
+ * column — plus the rejection reasons, which the queue has no room for and
+ * which are usually the reason someone opened the entry at all.
+ */
+function DecisionReadout({ lines, tier }: { lines: RequestItem[]; tier: string | null }) {
+  const approved = lines.filter((l) => l.status === "approved_pending_po" || l.status === "po").length;
+  const rejected = lines.filter((l) => l.status === "rejected");
+  const parts = [approved ? `${approved} approved` : "", rejected.length ? `${rejected.length} rejected` : ""].filter(Boolean);
+  // Identical reasons on every rejected line is the norm (one decision, many
+  // lines) — collapse them rather than repeating the same sentence six times.
+  const reasons = [...new Set(rejected.map((l) => l.rejectReason).filter(Boolean))] as string[];
+
+  return (
+    <div className="space-y-1.5 rounded-xl bg-page px-3.5 py-2.5">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Decision</span>
+        <span className="text-[13px] font-semibold text-navy">{parts.join(" · ") || "Not decided"}</span>
+        {tier && <span className="text-[11.5px] text-grey-2">tier {tier}</span>}
+      </div>
+      {reasons.map((r) => (
+        <p key={r} className="text-[12.5px] text-grey">
+          <strong className="text-navy">Reason:</strong> {r}
+        </p>
+      ))}
+    </div>
   );
 }
 

@@ -13,6 +13,7 @@ import { todayIso, formatDate } from "@/shared/lib/time";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
+import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "./DocLinks";
 import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, TallyBooking } from "../types";
 
 const PAYMENT_TERMS: ComboOption[] = [
@@ -46,7 +47,7 @@ function Hint({ children }: { children: ReactNode }) {
 }
 
 /* ----------------------------- Add PI ------------------------------------ */
-export function AddPiModal({ po, open, onClose, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi }) {
+export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi; readOnly?: boolean }) {
   const s = useProcurementStore();
   const items = s.poItemsForPo(po.id);
   const [vendorPiNo, setVendorPiNo] = useState("");
@@ -114,7 +115,7 @@ export function AddPiModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={editing ? "Edit PI" : "Add PI"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined} size="lg" title={editing ? (readOnly ? "PI" : "Edit PI") : "Add PI"}
       subtitle={editing
         ? `${po.poNo} · correct what was recorded. Editable until a payment lands against it or goods arrive.`
         : "Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."}
@@ -123,10 +124,11 @@ export function AddPiModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
           <FieldLabel label="PI Value (incl GST)" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
-            <TextInput type="number" value={String(piValue)} readOnly title="Auto-calculated from the covered lines (Cover Qty × rate incl GST)" className="bg-page/70 text-grey-2 cursor-not-allowed" />
+            <TextInput type="number" value={String(readOnly && editing ? editing.piValue : piValue)} readOnly title={readOnly ? "The PI value as it was recorded" : "Auto-calculated from the covered lines (Cover Qty × rate incl GST)"} className="bg-page/70 text-grey-2 cursor-not-allowed" />
           </FieldLabel>
         </div>
-        <FieldLabel label="Vendor PI Document" hint="PDF or any file · optional">
+        {!readOnly && (
+          <FieldLabel label="Vendor PI Document" hint="PDF or any file · optional">
           <div className="flex items-center gap-2.5">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
               <Upload className="h-4 w-4" />
@@ -144,6 +146,7 @@ export function AddPiModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
             )}
           </div>
         </FieldLabel>
+        )}
         <div className="rounded-xl border border-line overflow-hidden">
           <table className="w-full text-[13px]">
             <thead><tr className="text-left text-grey-2 border-b border-line bg-page/60"><th className="px-3 py-2 font-medium">Item</th><th className="px-3 py-2 font-medium">Ordered</th><th className="px-3 py-2 font-medium w-32">Cover Qty</th></tr></thead>
@@ -198,7 +201,7 @@ export function AddPiModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
  * recorded: the PDF is optional (keep the existing one), the original sharer and
  * moment are left alone, and the RPC refuses outright once the next step is done.
  */
-export function SharePoModal({ po, open, editing = false, onClose }: { po: PurchaseOrder; open: boolean; editing?: boolean; onClose: () => void }) {
+export function SharePoModal({ po, open, editing = false, onClose, readOnly = false }: { po: PurchaseOrder; open: boolean; editing?: boolean; onClose: () => void; readOnly?: boolean }) {
   const s = useProcurementStore();
   const [tallyPoNo, setTallyPoNo] = useState("");
   const [terms, setTerms] = useState("on_delivery");
@@ -258,7 +261,7 @@ export function SharePoModal({ po, open, editing = false, onClose }: { po: Purch
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={editing ? "Edit Share Details" : "Share PO"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<PoDocLink po={po} />} size="lg" title={editing ? (readOnly ? "Share Details" : "Edit Share Details") : "Share PO"}
       subtitle={editing
         ? `${po.poNo} · correct what was recorded when this PO was shared. Editable until the next step is done.`
         : `${po.poNo} · confirm the terms and dispatch date, attach the PO PDF, then mark it shared with the vendor.`}
@@ -281,7 +284,8 @@ export function SharePoModal({ po, open, editing = false, onClose }: { po: Purch
 
         <div className="border-t border-line/70" />
 
-        <FieldLabel label="PO PDF" required={!editing}>
+        {!readOnly && (
+          <FieldLabel label="PO PDF" required={!editing}>
           <div className="flex flex-wrap items-center gap-2.5">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
               <Upload className="h-4 w-4" />
@@ -304,6 +308,7 @@ export function SharePoModal({ po, open, editing = false, onClose }: { po: Purch
           </div>
           <Hint>{editing ? "Leave as-is to keep the attached file — the previous version is retained either way." : "PDF or any file — required to share"}</Hint>
         </FieldLabel>
+        )}
 
         <FieldLabel label="Remarks" hint="Optional">
           <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Anything the vendor should know about this PO." />
@@ -315,7 +320,7 @@ export function SharePoModal({ po, open, editing = false, onClose }: { po: Purch
 }
 
 /* --------------------------- Payment (adv/inst) -------------------------- */
-export function PaymentModal({ po, open, onClose, kind, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; kind: "advance" | "installment"; editing?: Payment }) {
+export function PaymentModal({ po, open, onClose, kind, editing, readOnly = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; kind: "advance" | "installment"; editing?: Payment; readOnly?: boolean }) {
   const s = useProcurementStore();
   // Payments are recorded against the PO; the whole-PO pending caps the amount.
   //
@@ -367,7 +372,7 @@ export function PaymentModal({ po, open, onClose, kind, editing }: { po: Purchas
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? "Edit payment" : isAdvance ? "Record advance" : "Record payment"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} title={editing ? (readOnly ? "Payment" : "Edit payment") : isAdvance ? "Record advance" : "Record payment"}
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until a follow-up is logged.` : `${po.poNo} · Pending ${inr(poPending)}`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Record"}</Button></>}>
       <div className="space-y-3.5">
@@ -391,7 +396,7 @@ export function PaymentModal({ po, open, onClose, kind, editing }: { po: Purchas
 }
 
 /* ----------------------------- Follow-up --------------------------------- */
-export function FollowupModal({ po, open, onClose, editing }: { po: PurchaseOrder | null; open: boolean; onClose: () => void; editing?: Followup }) {
+export function FollowupModal({ po, open, onClose, editing, readOnly = false }: { po: PurchaseOrder | null; open: boolean; onClose: () => void; editing?: Followup; readOnly?: boolean }) {
   const s = useProcurementStore();
   const [status, setStatus] = useState("pending");
   const [actual, setActual] = useState("");
@@ -473,7 +478,7 @@ export function FollowupModal({ po, open, onClose, editing }: { po: PurchaseOrde
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={editing ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} size="lg" title={editing && !readOnly ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
       subtitle={editing ? "Correct what was recorded. Editable until goods are received." : due ? `Dispatch due ${formatDate(due)}` : undefined}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Save"}</Button></>}>
       <div className="space-y-3.5">
@@ -539,7 +544,7 @@ export function FollowupModal({ po, open, onClose, editing }: { po: PurchaseOrde
 }
 
 /* ------------------------------- GRN ------------------------------------- */
-export function GrnModal({ po, open, onClose, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Grn }) {
+export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Grn; readOnly?: boolean }) {
   const s = useProcurementStore();
   const items = s.poItemsForPo(po.id);
   // The receipt is booked against the PO. Default to the reference the vendor
@@ -602,7 +607,7 @@ export function GrnModal({ po, open, onClose, editing }: { po: PurchaseOrder; op
   };
 
   return (
-    <Modal open={open} onClose={onClose} size="lg" title={editing ? "Edit GRN" : "Record GRN"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <GrnPhotoLink grn={editing} /> : undefined} size="lg" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until this receipt is booked in Tally.` : `${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : editing ? "Save Changes" : "Record receipt"}</Button></>}>
       <div className="space-y-3.5">
@@ -641,7 +646,8 @@ export function GrnModal({ po, open, onClose, editing }: { po: PurchaseOrder; op
           <Hint>Vendor PI number, kept as a remark only</Hint>
         </FieldLabel>
         <FieldLabel label="Note"><TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></FieldLabel>
-        <FieldLabel label="Photo" hint={damaged ? "recommended — capture the damage for records" : "optional"}>
+        {!readOnly && (
+          <FieldLabel label="Photo" hint={damaged ? "recommended — capture the damage for records" : "optional"}>
           <div className="flex items-center gap-2.5">
             <label className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-2.5 text-[13px] font-medium transition ${damaged && !photo ? "border-orange text-orange" : "border-line text-navy hover:border-orange hover:text-orange"}`}>
               <Upload className="h-4 w-4" />
@@ -658,6 +664,7 @@ export function GrnModal({ po, open, onClose, editing }: { po: PurchaseOrder; op
             )}
           </div>
         </FieldLabel>
+        )}
         <Err msg={err} />
       </div>
     </Modal>
@@ -665,7 +672,7 @@ export function GrnModal({ po, open, onClose, editing }: { po: PurchaseOrder; op
 }
 
 /* ------------------------------- Tally ----------------------------------- */
-export function TallyModal({ po, open, onClose, editing }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: TallyBooking }) {
+export function TallyModal({ po, open, onClose, editing, readOnly = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: TallyBooking; readOnly?: boolean }) {
   const s = useProcurementStore();
   // One Tally invoice per goods receipt — only receipts not yet booked are offered.
   const unbooked = s.unbookedGrnsForPo(po.id);
@@ -723,7 +730,7 @@ export function TallyModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
   const editedGrn = editing?.grnId ? s.grnsForPo(po.id).find((g) => g.id === editing.grnId) : undefined;
 
   return (
-    <Modal open={open} onClose={onClose} title={editing ? "Edit Tally Booking" : "Book in Tally"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <TallyDocLink booking={editing} /> : undefined} title={editing ? (readOnly ? "Tally Booking" : "Edit Tally Booking") : "Book in Tally"}
       subtitle={editing ? `${po.poNo} · correct the invoice details. The receipt it is booked against cannot be changed.` : `${po.poNo} · one invoice per goods receipt — partial receipts included.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Book"}</Button></>}>
       <div className="space-y-3.5">
@@ -745,7 +752,8 @@ export function TallyModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
           )}
         </FieldLabel>
         <FieldLabel label="Tally Invoice No." required><TextInput value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} placeholder="e.g. 2627/PUR/0123" /></FieldLabel>
-        <FieldLabel label="Tally Invoice Document" hint="PDF or any file · optional">
+        {!readOnly && (
+          <FieldLabel label="Tally Invoice Document" hint="PDF or any file · optional">
           <div className="flex items-center gap-2.5">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
               <Upload className="h-4 w-4" />
@@ -763,6 +771,7 @@ export function TallyModal({ po, open, onClose, editing }: { po: PurchaseOrder; 
             )}
           </div>
         </FieldLabel>
+        )}
         <FieldLabel label="Remarks" hint="Optional">
           <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
         </FieldLabel>

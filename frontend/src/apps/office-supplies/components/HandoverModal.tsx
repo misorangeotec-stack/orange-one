@@ -19,11 +19,14 @@ export default function HandoverModal({
   onClose,
   request,
   editing = false,
+  readOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
   request: SupplyRequest | null;
   editing?: boolean;
+  /** Show the handover as it was recorded, without offering to change it. */
+  readOnly?: boolean;
 }) {
   const s = useSuppliesStore();
   const [remarks, setRemarks] = useState("");
@@ -66,9 +69,10 @@ export default function HandoverModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`${editing ? "Edit handover" : "Handover"} — ${request?.reqNo ?? ""}`}
+      readOnly={readOnly}
+      title={`${editing && !readOnly ? "Edit handover" : "Handover"} — ${request?.reqNo ?? ""}`}
       subtitle={request
-        ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}${editing ? " · correct what was recorded" : ""}`
+        ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}${editing && !readOnly ? " · correct what was recorded" : ""}`
         : undefined}
       footer={
         <>

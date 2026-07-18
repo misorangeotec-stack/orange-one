@@ -5,7 +5,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { Field } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
-import { inr } from "../lib/format";
+import { inr, LINE_STATUS_LABEL } from "../lib/format";
 import type { RequestItem } from "../types";
 
 /**
@@ -19,12 +19,23 @@ export default function ApprovalModal({
   onClose,
   onSaved,
   editing = false,
+  readOnly = false,
 }: {
   line: RequestItem | null;
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
   editing?: boolean;
+  /**
+   * Show the decision that was made instead of offering to make one. This
+   * dialog's Approve / Override / Reject / Hold controls sit in the BODY, not a
+   * footer, so leaving them in place would render a row of dead grey buttons
+   * under Modal's disabled read-only fieldset.
+   *
+   * Unlike procurement's request-scoped twin there is no lines filter to widen:
+   * this modal is LINE-scoped, and the line it is given is the entry itself.
+   */
+  readOnly?: boolean;
 }) {
   const s = useImportStore();
   const [mode, setMode] = useState<"none" | "override" | "reject" | "hold">("none");
@@ -70,8 +81,11 @@ export default function ApprovalModal({
       open={open}
       onClose={onClose}
       size="lg"
-      title={`${editing ? "Edit approval" : "Approve"} — ${s.itemLabel(line.itemId)}`}
-      subtitle={`${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}${editing ? " · revisable until the PO is generated" : ""}`}
+      readOnly={readOnly}
+      title={`${readOnly ? "Approval" : editing ? "Edit approval" : "Approve"} — ${s.itemLabel(line.itemId)}`}
+      subtitle={`${s.vendorById(line.finalVendorId)?.name ?? "—"} · ${inr(line.lineValue)}${
+        editing && !readOnly ? " · revisable until the PO is generated" : ""
+      }`}
     >
       <div className="space-y-4">
         {/* Quotes */}
@@ -115,8 +129,21 @@ export default function ApprovalModal({
           <Info label="Line Value" value={inr(line.lineValue)} />
         </div>
 
-        {/* Decision controls */}
-        {mode === "override" ? (
+        {/* The decision: what was made, or the controls to make one */}
+        {readOnly ? (
+          <div className="space-y-1.5 rounded-xl bg-page px-3.5 py-2.5">
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Decision</span>
+              <span className="text-[13px] font-semibold text-navy">{LINE_STATUS_LABEL[line.status]}</span>
+              {line.approvalTier && <span className="text-[11.5px] text-grey-2">tier {line.approvalTier}</span>}
+            </div>
+            {line.rejectReason && (
+              <p className="text-[12.5px] text-grey">
+                <strong className="text-navy">Reason:</strong> {line.rejectReason}
+              </p>
+            )}
+          </div>
+        ) : mode === "override" ? (
           <div className="space-y-2.5">
             <FieldLabel label="Override vendor (from quotations)" required>
               <Combobox value={overrideVendor} onChange={setOverrideVendor} options={overrideOptions} placeholder="Pick a quoted vendor" autoAdvance />

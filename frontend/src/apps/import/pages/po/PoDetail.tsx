@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { FileText, Image } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -13,7 +12,8 @@ import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
-import type { Pi, PurchaseOrder, Grn, TallyBooking } from "../../types";
+import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "../../components/DocLinks";
+import type { PurchaseOrder } from "../../types";
 
 /** PO Detail — header + lifecycle stepper + action bar + PIs / GRNs / Payments tabs. */
 export default function PoDetail() {
@@ -293,106 +293,6 @@ export default function PoDetail() {
       <CancelPoModal po={po} request={cancelRequest ?? null} open={modal === "cancel"} onClose={() => setModal(null)} />
       <DeclineCancelModal request={cancelRequest ?? null} open={modal === "declinecancel"} onClose={() => setModal(null)} />
     </div>
-  );
-}
-
-/** Opens the stored Vendor PI document via a fresh short-lived signed URL. */
-function PiDocLink({ pi }: { pi: Pi }) {
-  const s = useImportStore();
-  const [busy, setBusy] = useState(false);
-  if (!pi.documentPath) return <span className="text-grey-2">—</span>;
-  const open = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const url = await s.piDocumentUrl(pi.documentPath!);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      /* surfaced by the store; keep the row quiet */
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button onClick={open} disabled={busy} className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
-      <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : pi.documentName || "View document"}</span>
-    </button>
-  );
-}
-
-/** Opens the stored GRN photo (e.g. damaged goods) via a short-lived signed URL. */
-function GrnPhotoLink({ grn }: { grn: Grn }) {
-  const s = useImportStore();
-  const [busy, setBusy] = useState(false);
-  if (!grn.photoPath) return <span className="text-grey-2">—</span>;
-  const open = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const url = await s.grnPhotoUrl(grn.photoPath!);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      /* surfaced by the store; keep the row quiet */
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button onClick={open} disabled={busy} className="inline-flex max-w-[200px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
-      <Image className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : grn.photoName || "View photo"}</span>
-    </button>
-  );
-}
-
-/** Opens the stored Tally invoice document via a fresh short-lived signed URL. */
-function TallyDocLink({ booking }: { booking: TallyBooking }) {
-  const s = useImportStore();
-  const [busy, setBusy] = useState(false);
-  if (!booking.documentPath) return null;
-  const open = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const url = await s.tallyDocumentUrl(booking.documentPath!);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      /* surfaced by the store; keep the card quiet */
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button onClick={open} disabled={busy} className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
-      <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : booking.documentName || "View invoice"}</span>
-    </button>
-  );
-}
-
-/** Opens the stored PO PDF via a fresh short-lived signed URL. */
-function PoDocLink({ po }: { po: PurchaseOrder }) {
-  const s = useImportStore();
-  const [busy, setBusy] = useState(false);
-  if (!po.documentPath) return null;
-  const open = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const url = await s.poDocumentUrl(po.documentPath!);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      /* surfaced by the store; keep the header quiet */
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button onClick={open} disabled={busy} className="inline-flex max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60">
-      <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : "PO PDF"}</span>
-    </button>
   );
 }
 

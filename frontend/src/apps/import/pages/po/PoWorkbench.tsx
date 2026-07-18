@@ -3,9 +3,10 @@ import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import EmptyState from "@/shared/components/ui/EmptyState";
-import { Lock } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import StageRowAction from "@/shared/components/ui/StageRowAction";
+import { useEntryModal } from "@/shared/lib/useEntryModal";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { formatDateTime } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
@@ -34,7 +35,7 @@ export default function PoWorkbench() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [editPo, setEditPo] = useState<PurchaseOrder | null>(null);
+  const editPo = useEntryModal<PurchaseOrder>();
   const [poNo, setPoNo] = useState("");
   const [savingNo, setSavingNo] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
@@ -136,19 +137,15 @@ export default function PoWorkbench() {
             rowsLabel="POs"
             emptyTitle="Nothing here yet"
             emptyMessage="POs you generate will appear here. Only the PO number is amendable — and only until the PO is shared."
-            actions={(e) =>
-              e.lockReason ? (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              ) : s.canGeneratePo ? (
-                <button onClick={() => { setEditPo(e.row); setPoNo(e.row.poNo); setEditErr(null); }} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
-              ) : (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only the PO Desk can edit a PO.">
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              )
-            }
+            actions={(e) => (
+              <StageRowAction
+                lockReason={e.lockReason}
+                canEdit={s.canGeneratePo}
+                permissionReason="Only the PO Desk can edit a PO."
+                onEdit={() => { editPo.openEdit(e.row); setPoNo(e.row.poNo); setEditErr(null); }}
+                onView={() => { editPo.openView(e.row); setPoNo(e.row.poNo); setEditErr(null); }}
+              />
+            )}
           />
         </Card>
       ) : (
@@ -230,20 +227,21 @@ export default function PoWorkbench() {
       {/* Only po_no is amendable: vendor / company / lines are what the PO IS,
           and changing them is a cancel-and-regenerate, not a correction. */}
       <Modal
-        open={editPo !== null}
-        onClose={() => setEditPo(null)}
-        title="Edit PO Number"
-        subtitle={editPo ? `${editPo.poNo} · editable until the PO is shared with the vendor.` : undefined}
+        open={editPo.row !== null}
+        readOnly={editPo.isView}
+        onClose={editPo.close}
+        title={editPo.isView ? "PO Number" : "Edit PO Number"}
+        subtitle={editPo.row ? `${editPo.row.poNo} · editable until the PO is shared with the vendor.` : undefined}
         footer={
           <>
-            <Button variant="ghost" size="sm" onClick={() => setEditPo(null)} disabled={savingNo}>Cancel</Button>
+            <Button variant="ghost" size="sm" onClick={editPo.close} disabled={savingNo}>Cancel</Button>
             <Button size="sm" disabled={savingNo || !poNo.trim()} onClick={async () => {
-              if (!editPo) return;
+              if (!editPo.row) return;
               setEditErr(null);
               setSavingNo(true);
               try {
-                await s.updatePoNo(editPo.id, poNo.trim());
-                setEditPo(null);
+                await s.updatePoNo(editPo.row.id, poNo.trim());
+                editPo.close();
               } catch (e) { setEditErr((e as Error).message); } finally { setSavingNo(false); }
             }}>{savingNo ? "Saving…" : "Save Changes"}</Button>
           </>

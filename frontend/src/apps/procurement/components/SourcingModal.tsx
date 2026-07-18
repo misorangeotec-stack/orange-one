@@ -48,16 +48,26 @@ export default function SourcingModal({
   open,
   onClose,
   onSaved,
+  readOnly = false,
 }: {
   request: PurchaseRequest | null;
   open: boolean;
   onClose: () => void;
   onSaved?: () => void;
+  /** Show what was sourced, without offering to change it — see `viewLines`. */
+  readOnly?: boolean;
 }) {
   const s = useProcurementStore();
   const [vendors, setVendors] = useState<VRow[]>([emptyVendor()]);
   const [recommended, setRecommended] = useState("");
   const [rows, setRows] = useState<LRow[]>([]);
+  /**
+   * Items being sourced in THIS pass. Everything starts ticked — sourcing the
+   * whole requisition is the normal case — but a buyer can untick the ones that
+   * aren't ready. An unticked item is simply left out of the save, so it stays
+   * in sourcing and can be done later; it is never rejected or cancelled.
+   */
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -80,6 +90,16 @@ export default function SourcingModal({
     [allLines]
   );
   const decidedLines = allLines.length - openLines.length;
+  /**
+   * What the grid is built from.
+   *
+   * Editing uses `openLines`, because those are the only ones the RPC accepts.
+   * A VIEW must use every line: a sourcing entry is locked precisely BECAUSE the
+   * approver decided, so by then its lines have moved on to approved/rejected
+   * and `openLines` is empty — showing "nothing left to source" and ₹0 for a
+   * requisition that was plainly sourced.
+   */
+  const viewLines = readOnly ? allLines : openLines;
 
   /** Approved lines pin the whole requisition to their vendor. */
   const lockedVendorId = requestId ? s.requestLockedVendorId(requestId) : null;
@@ -101,11 +121,11 @@ export default function SourcingModal({
     setRecommended(
       shortlist.find((v) => v.isRecommended)?.vendorId ??
         lockedVendorId ??
-        openLines.find((l) => l.finalVendorId)?.finalVendorId ??
+        viewLines.find((l) => l.finalVendorId)?.finalVendorId ??
         ""
     );
     setRows(
-      openLines.map((l) => ({
+      viewLines.map((l) => ({
         lineId: l.id,
         qty: String(l.finalQty ?? l.quantity),
         rate: l.finalRate === null ? "" : String(l.finalRate),
@@ -113,11 +133,12 @@ export default function SourcingModal({
         leadTimeDays: l.leadTimeDays === null ? "" : String(l.leadTimeDays),
       }))
     );
+    setSelected(new Set(viewLines.map((l) => l.id)));
     setReason(request.sourcingReason ?? "");
     // Anything already saved counts as deliberate — never auto-overwrite it.
     setTouched(
       new Set(
-        openLines.flatMap((l) => [
+        viewLines.flatMap((l) => [
           ...(l.finalRate !== null ? [`${l.id}:rate`] : []),
           ...(l.gstPct !== null ? [`${l.id}:gstPct`] : []),
           ...(l.leadTimeDays !== null ? [`${l.id}:leadTimeDays`] : []),
@@ -157,23 +178,33 @@ export default function SourcingModal({
     if (field !== "qty") markTouched(lineId, field);
   };
 
-  /** Type once, apply to every item — then adjust any individual cell after. */
-  const applyToAll = (field: keyof Omit<LRow, "lineId">, v: string) => {
+  /**
+   * Type once, apply to every TICKED item — then adjust any individual cell
+   * after. Qty is deliberately not fill-downable: it is always per item.
+   */
+  const applyToAll = (field: CellField, v: string) => {
     if (v === "") return;
-    setRows((prev) => prev.map((r) => ({ ...r, [field]: v })));
-    if (field !== "qty") {
-      setTouched((prev) => {
-        const next = new Set(prev);
-        for (const r of rows) next.add(`${r.lineId}:${field}`);
-        return next;
-      });
-      setFromMaster((prev) => {
-        const next = new Set(prev);
-        for (const r of rows) next.delete(`${r.lineId}:${field}`);
-        return next;
-      });
-    }
+    setRows((prev) => prev.map((r) => (selected.has(r.lineId) ? { ...r, [field]: v } : r)));
+    const hit = rows.filter((r) => selected.has(r.lineId));
+    setTouched((prev) => {
+      const next = new Set(prev);
+      for (const r of hit) next.add(`${r.lineId}:${field}`);
+      return next;
+    });
+    setFromMaster((prev) => {
+      const next = new Set(prev);
+      for (const r of hit) next.delete(`${r.lineId}:${field}`);
+      return next;
+    });
   };
+
+  const toggleRow = (lineId: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
 
   /**
    * Picking the recommended vendor pulls its standing rates in — but ONLY into
@@ -221,8 +252,10 @@ export default function SourcingModal({
     const gst = r.gstPct === "" ? 0 : Number(r.gstPct);
     return Math.round(base * (1 + gst / 100) * 100) / 100;
   };
-  const requestBase = rows.reduce((sum, r) => sum + (baseOf(r) ?? 0), 0);
-  const requestValue = rows.reduce((sum, r) => sum + (valueOf(r) ?? 0), 0);
+  /** Everything downstream — totals, validation, save — is the ticked set only. */
+  const pickedRows = rows.filter((r) => selected.has(r.lineId));
+  const requestBase = pickedRows.reduce((sum, r) => sum + (baseOf(r) ?? 0), 0);
+  const requestValue = pickedRows.reduce((sum, r) => sum + (valueOf(r) ?? 0), 0);
   // Derived rather than summed per line, so it can never disagree with the total.
   const requestGst = Math.round((requestValue - requestBase) * 100) / 100;
   const masterHits = fromMaster.size;
@@ -250,7 +283,8 @@ export default function SourcingModal({
       return setErr(`Give a reason for shortlisting fewer than ${MAX_VENDORS} vendors.`);
     }
     if (rows.length === 0) return setErr("There is nothing left to source on this requisition.");
-    for (const r of rows) {
+    if (pickedRows.length === 0) return setErr("Tick at least one item to source.");
+    for (const r of pickedRows) {
       const name = s.itemLabel(lineById.get(r.lineId)?.itemId ?? "");
       if (!(Number(r.qty) > 0)) return setErr(`Quantity must be greater than 0 — ${name}.`);
       if (r.rate === "" || !(Number(r.rate) >= 0)) return setErr(`Enter a rate for ${name}.`);
@@ -262,7 +296,7 @@ export default function SourcingModal({
         requestId: request.id,
         vendors: filledVendors.map((v) => ({ vendorId: v.vendorId, remark: v.remark.trim() || null })),
         recommendedVendorId: recommended,
-        lines: rows.map((r) => ({
+        lines: pickedRows.map((r) => ({
           requestItemId: r.lineId,
           qty: Number(r.qty),
           rate: Number(r.rate),
@@ -287,8 +321,13 @@ export default function SourcingModal({
       open={open}
       onClose={onClose}
       size="2xl"
+      readOnly={readOnly}
       title={`Sourcing — ${request.requestNo}`}
-      subtitle={`${openLines.length} item${openLines.length === 1 ? "" : "s"} to source. Shortlist up to ${MAX_VENDORS} vendors, tick the one that wins, then set the rate for each item.`}
+      subtitle={
+        readOnly
+          ? `${viewLines.length} item${viewLines.length === 1 ? "" : "s"} · the vendor shortlist and the rates that were sourced.`
+          : `${openLines.length} item${openLines.length === 1 ? "" : "s"} to source. Shortlist up to ${MAX_VENDORS} vendors, tick the one that wins, then set the rate for each item.`
+      }
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
@@ -308,7 +347,10 @@ export default function SourcingModal({
             requisition page instead.
           </p>
         )}
-        {decidedLines > 0 && (
+        {/* Not in a view: there, every line is shown deliberately, so "already
+            decided and can't be changed here" is noise about a form that isn't
+            being offered. */}
+        {decidedLines > 0 && !readOnly && (
           <p className="rounded-xl bg-page px-3.5 py-2.5 text-[12.5px] text-grey">
             {decidedLines} item{decidedLines === 1 ? " is" : "s are"} already decided and can't be changed here.
             {lockedVendorId && (
@@ -325,7 +367,7 @@ export default function SourcingModal({
         <div className="space-y-2">
           <div className="flex items-baseline justify-between">
             <span className={SECTION_HEADING_CLASS}>Vendors</span>
-            <span className="text-[11.5px] text-grey-2">Tick the one you recommend — it supplies every item</span>
+            {!readOnly && <span className="text-[11.5px] text-grey-2">Tick the one you recommend — it supplies every item</span>}
           </div>
           {vendors.map((v, i) => (
             <div key={i} className="flex items-center gap-2.5 rounded-xl border border-line bg-page/40 p-2.5">
@@ -360,7 +402,7 @@ export default function SourcingModal({
                   onChange={(e) => setVendorRow(i, { remark: e.target.value })}
                 />
               </div>
-              {vendors.length > 1 && (
+              {!readOnly && vendors.length > 1 && (
                 <button
                   type="button"
                   onClick={() => removeVendor(i)}
@@ -372,7 +414,7 @@ export default function SourcingModal({
               )}
             </div>
           ))}
-          {vendors.length < MAX_VENDORS && (
+          {!readOnly && vendors.length < MAX_VENDORS && (
             <button type="button" onClick={addVendor} className="text-[12.5px] font-semibold text-orange hover:underline">
               + Add vendor
             </button>
@@ -389,7 +431,7 @@ export default function SourcingModal({
           {filledVendors.length < MAX_VENDORS && (
             <FieldLabel
               label={`Why fewer than ${MAX_VENDORS} vendors?`}
-              required
+              required={!readOnly}
               hint={`${filledVendors.length} of ${MAX_VENDORS} shortlisted`}
             >
               <TextInput
@@ -403,9 +445,35 @@ export default function SourcingModal({
 
         {/* ---- items: one rate each, with fill-down ---- */}
         <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between">
-            <span className={SECTION_HEADING_CLASS}>Items</span>
-            {masterHits > 0 && (
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <div className="flex items-baseline gap-2.5">
+              <span className={SECTION_HEADING_CLASS}>Items</span>
+              {/* Ticking chooses what to SUBMIT — meaningless once it's history. */}
+              {!readOnly && (
+                <>
+              <span className="text-[11.5px] text-grey-2">
+                {pickedRows.length} of {rows.length} ticked
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set(rows.map((r) => r.lineId)))}
+                disabled={pickedRows.length === rows.length}
+                className="text-[11.5px] font-semibold text-orange hover:underline disabled:text-grey-2 disabled:no-underline"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                disabled={pickedRows.length === 0}
+                className="text-[11.5px] font-semibold text-orange hover:underline disabled:text-grey-2 disabled:no-underline"
+              >
+                Clear all
+              </button>
+                </>
+              )}
+            </div>
+            {masterHits > 0 && !readOnly && (
               <span className="text-[11.5px] text-grey-2">
                 <span className="inline-block h-2.5 w-2.5 rounded-sm bg-orange-soft/70 align-middle" /> shaded = filled from
                 the rate master · edit freely
@@ -416,6 +484,20 @@ export default function SourcingModal({
             <table className="w-full min-w-[640px] text-[13px]">
               <thead>
                 <tr className="bg-page text-left text-[11.5px] uppercase tracking-wide text-grey-2">
+                  {!readOnly && (
+                  <th className="w-9 px-3 py-2">
+                    <input
+                      type="checkbox"
+                      className="accent-orange"
+                      aria-label="Tick every item"
+                      checked={rows.length > 0 && pickedRows.length === rows.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = pickedRows.length > 0 && pickedRows.length < rows.length;
+                      }}
+                      onChange={(e) => setSelected(e.target.checked ? new Set(rows.map((r) => r.lineId)) : new Set())}
+                    />
+                  </th>
+                  )}
                   <th className="px-3 py-2 font-semibold">Item</th>
                   <th className="w-28 px-2 py-2 font-semibold">Qty</th>
                   <th className="w-28 px-2 py-2 font-semibold">Rate</th>
@@ -423,10 +505,15 @@ export default function SourcingModal({
                   <th className="w-28 px-2 py-2 font-semibold">Lead days</th>
                   <th className="w-32 px-3 py-2 text-right font-semibold">Value</th>
                 </tr>
-                {/* Type once here, then adjust any individual cell below. */}
+                {/* Type once here, then adjust any individual cell below. Qty is
+                    NOT here on purpose — it is always per item, never one number
+                    pushed across the requisition. */}
+                {!readOnly && (
                 <tr className="border-t border-line bg-page/60">
-                  <th className="px-3 py-1.5 text-right text-[11.5px] font-medium text-grey-2">fill down to all →</th>
-                  {(["qty", "rate", "gstPct", "leadTimeDays"] as const).map((f) => (
+                  <th colSpan={3} className="px-3 py-1.5 text-right text-[11.5px] font-medium text-grey-2">
+                    fill down to ticked items →
+                  </th>
+                  {(["rate", "gstPct", "leadTimeDays"] as const).map((f) => (
                     <th key={f} className="px-2 py-1.5">
                       <input
                         type="number"
@@ -439,13 +526,26 @@ export default function SourcingModal({
                   ))}
                   <th />
                 </tr>
+                )}
               </thead>
               <tbody>
                 {rows.map((r) => {
                   const line = lineById.get(r.lineId) as RequestItem | undefined;
                   const v = valueOf(r);
+                  const on = selected.has(r.lineId);
                   return (
-                    <tr key={r.lineId} className="border-t border-line">
+                    <tr key={r.lineId} className={`border-t border-line ${on ? "" : "opacity-45"}`}>
+                      {!readOnly && (
+                      <td className="px-3 py-1.5">
+                        <input
+                          type="checkbox"
+                          className="accent-orange"
+                          checked={on}
+                          onChange={() => toggleRow(r.lineId)}
+                          aria-label={`Source ${s.itemById(line?.itemId ?? null)?.name ?? "this item"}`}
+                        />
+                      </td>
+                      )}
                       {/* Item NAME only — the group is already implied by the
                           requisition and only made these rows wrap. */}
                       <td className="px-3 py-1.5 whitespace-nowrap">
@@ -455,7 +555,13 @@ export default function SourcingModal({
                         </span>
                       </td>
                       <td className="px-2 py-1.5">
-                        <input type="number" className={num} value={r.qty} onChange={(e) => setCell(r.lineId, "qty", e.target.value)} />
+                        <input
+                          type="number"
+                          className={num}
+                          value={r.qty}
+                          disabled={!on}
+                          onChange={(e) => setCell(r.lineId, "qty", e.target.value)}
+                        />
                       </td>
                       {(["rate", "gstPct", "leadTimeDays"] as const).map((f) => (
                         <td key={f} className="px-2 py-1.5">
@@ -464,6 +570,7 @@ export default function SourcingModal({
                             className={`${num} ${cellClass(r.lineId, f) ?? ""}`}
                             title={cellTitle(r.lineId, f)}
                             value={r[f]}
+                            disabled={!on}
                             onChange={(e) => setCell(r.lineId, f, e.target.value)}
                           />
                         </td>
@@ -476,7 +583,7 @@ export default function SourcingModal({
                 })}
                 {rows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-3 py-6 text-center text-[12.5px] text-grey-2">
+                    <td colSpan={readOnly ? 6 : 7} className="px-3 py-6 text-center text-[12.5px] text-grey-2">
                       Nothing left to source on this requisition.
                     </td>
                   </tr>
@@ -484,6 +591,14 @@ export default function SourcingModal({
               </tbody>
             </table>
           </div>
+          {/* Unticked ≠ rejected — say so, or "submit" looks like it drops them. */}
+          {!readOnly && rows.length > 0 && pickedRows.length < rows.length && (
+            <p className="text-[11.5px] text-grey-2">
+              {rows.length - pickedRows.length} unticked item{rows.length - pickedRows.length === 1 ? "" : "s"} won't be
+              submitted — {rows.length - pickedRows.length === 1 ? "it stays" : "they stay"} in sourcing and can be done
+              later.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-2 rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
@@ -496,7 +611,10 @@ export default function SourcingModal({
       </div>
 
       {/* Opens on top of this dialog — `stacked` keeps the sourcing form intact
-          underneath (no scroll unlock, ESC closes only this one). */}
+          underneath (no scroll unlock, ESC closes only this one). Never offered
+          in a view: it's a write, and it renders inside Modal's disabled
+          read-only fieldset, so it would come up inert anyway. */}
+      {!readOnly && (
       <RequestMasterModal
         stacked
         open={raiseVendor !== null}
@@ -506,6 +624,7 @@ export default function SourcingModal({
         prefill={{ name: raiseVendor ?? "" }}
         onRequested={(_id, _mt, name) => setRequested(name)}
       />
+      )}
     </Modal>
   );
 }

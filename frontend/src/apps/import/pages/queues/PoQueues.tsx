@@ -25,6 +25,8 @@ import {
 import type { StepKey } from "../../lib/steps";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import StageRowAction from "@/shared/components/ui/StageRowAction";
+import { useEntryModal } from "@/shared/lib/useEntryModal";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
 import type { PurchaseOrder, Pi, Payment, Followup, Grn, TallyBooking } from "../../types";
 
@@ -197,16 +199,6 @@ function ActionButton({ label, onClick }: { label: string; onClick: () => void }
   );
 }
 
-/** A disabled Edit with the server's own reason as its tooltip. */
-function LockedAction({ reason }: { reason: string }) {
-  return (
-    <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={reason}>
-      <Lock className="w-3 h-3" aria-hidden />
-      Locked
-    </span>
-  );
-}
-
 const TERMS_LABEL: Record<string, string> = {
   full_advance: "Full advance",
   partial_advance: "Partial advance",
@@ -277,21 +269,33 @@ function poRefColumns<T>(s: ReturnType<typeof useImportStore>, vendorOf: (e: Sta
 }
 
 /**
- * The Edit / Locked action. Two gates, both shown honestly: the entry's own lock
+ * The Edit / View action. Two gates, both shown honestly: the entry's own lock
  * rule, then whether this user owns the step at all. Either way the server
  * re-checks and refuses — this only decides what the button looks like.
  */
-function editAction<T>(e: StageEntry<T>, canEditStep: boolean, onEdit: () => void): ReactNode {
-  if (e.lockReason) return <LockedAction reason={e.lockReason} />;
-  if (!canEditStep) return <LockedAction reason="Only an owner of this step can edit the entry." />;
-  return <ActionButton label="Edit" onClick={onEdit} />;
+function editAction<T>(
+  e: StageEntry<T>,
+  canEditStep: boolean,
+  onEdit: () => void,
+  onView: () => void,
+): ReactNode {
+  return (
+    <StageRowAction
+      lockReason={e.lockReason}
+      canEdit={canEditStep}
+      permissionReason="Only an owner of this step can edit the entry."
+      onEdit={onEdit}
+      onView={onView}
+      tone="navy"
+    />
+  );
 }
 
 /* ----------------------------- Step 5: Share PO --------------------------- */
 export function SharePoQueue() {
   const s = useImportStore();
   const [sharePo, setSharePo] = useState<PurchaseOrder | null>(null);
-  const [editPo, setEditPo] = useState<PurchaseOrder | null>(null);
+  const editPo = useEntryModal<PurchaseOrder>();
 
   // The completed side of this stage: the POs shared. The entry IS the PO — the
   // share details live on the PO row, not on a child of their own.
@@ -316,11 +320,11 @@ export function SharePoQueue() {
           columns: completedColumns,
           subtitle: "POs already shared. Details stay editable until the next step is done.",
           emptyMessage: "POs you share will appear here, and stay editable until a PI, payment, follow-up or goods receipt lands against them.",
-          renderAction: (e) => editAction(e, s.canSharePo, () => setEditPo(e.row)),
+          renderAction: (e) => editAction(e, s.canSharePo, () => editPo.openEdit(e.row), () => editPo.openView(e.row)),
         }}
       />
       {sharePo && <SharePoModal po={sharePo} open onClose={() => setSharePo(null)} />}
-      {editPo && <SharePoModal po={editPo} open editing onClose={() => setEditPo(null)} />}
+      {editPo.row && <SharePoModal po={editPo.row} open editing readOnly={editPo.isView} onClose={editPo.close} />}
     </>
   );
 }
@@ -329,7 +333,7 @@ export function SharePoQueue() {
 export function CollectPiQueue() {
   const s = useImportStore();
   const [piPo, setPiPo] = useState<PurchaseOrder | null>(null);
-  const [editPi, setEditPi] = useState<Pi | null>(null);
+  const editPi = useEntryModal<Pi>();
   const piStatusLabel = (p: PurchaseOrder) => (piCoverage(s.importIndex, p).hasPi ? "Partial PI" : "Awaiting PI");
 
   // Entries are PI ROWS, not POs — a PO with two of three lines covered is
@@ -355,7 +359,7 @@ export function CollectPiQueue() {
           columns: piColumns,
           subtitle: "PIs already collected. Each stays editable until a payment lands against it or goods arrive.",
           emptyMessage: "PIs you collect will appear here, and stay editable until a payment or a goods receipt lands.",
-          renderAction: (e) => editAction(e, s.canCollectPi, () => setEditPi(e.row)),
+          renderAction: (e) => editAction(e, s.canCollectPi, () => editPi.openEdit(e.row), () => editPi.openView(e.row)),
         }}
         extraColumns={[
           {
@@ -380,7 +384,7 @@ export function CollectPiQueue() {
         renderAction={(p) => <ActionButton label="Add PI" onClick={() => setPiPo(p)} />}
       />
       {piPo && <AddPiModal po={piPo} open onClose={() => setPiPo(null)} />}
-      {editPi && <AddPiModal po={s.poById(editPi.poId)!} open editing={editPi} onClose={() => setEditPi(null)} />}
+      {editPi.row && <AddPiModal po={s.poById(editPi.row.poId)!} open editing={editPi.row} readOnly={editPi.isView} onClose={editPi.close} />}
     </>
   );
 }
@@ -389,7 +393,7 @@ export function CollectPiQueue() {
 export function AdvanceQueue() {
   const s = useImportStore();
   const [advPo, setAdvPo] = useState<PurchaseOrder | null>(null);
-  const [editPay, setEditPay] = useState<Payment | null>(null);
+  const editPay = useEntryModal<Payment>();
 
   // Import pays in the vendor's currency, so the foreign amount is the number
   // that matters here — the INR figure is a derived equivalent at the day's rate.
@@ -418,11 +422,11 @@ export function AdvanceQueue() {
           columns: payColumns,
           subtitle: "Payments already recorded. Each stays editable until a follow-up is logged against the PO.",
           emptyMessage: "Payments you record will appear here, and stay editable until a follow-up is logged.",
-          renderAction: (e) => editAction(e, s.canRecordPayment, () => setEditPay(e.row)),
+          renderAction: (e) => editAction(e, s.canRecordPayment, () => editPay.openEdit(e.row), () => editPay.openView(e.row)),
         }}
       />
       {advPo && <PaymentModal po={advPo} open onClose={() => setAdvPo(null)} kind="advance" />}
-      {editPay && <PaymentModal po={s.poById(editPay.poId)!} open editing={editPay} onClose={() => setEditPay(null)} kind={editPay.kind} />}
+      {editPay.row && <PaymentModal po={s.poById(editPay.row.poId)!} open editing={editPay.row} readOnly={editPay.isView} onClose={editPay.close} kind={editPay.row.kind} />}
     </>
   );
 }
@@ -431,7 +435,7 @@ export function AdvanceQueue() {
 export function FollowUpQueue() {
   const s = useImportStore();
   const [followPo, setFollowPo] = useState<PurchaseOrder | null>(null);
-  const [editFollowup, setEditFollowup] = useState<Followup | null>(null);
+  const editFollowup = useEntryModal<Followup>();
   const dispatchDue = (p: PurchaseOrder): string | null => s.dispatchDueForPo(p.id);
 
   // ANY follow-up is editable until goods arrive — not merely "the latest".
@@ -464,7 +468,7 @@ export function FollowUpQueue() {
           columns: fupColumns,
           subtitle: "Follow-ups already logged. Each stays editable until goods are received against the PO.",
           emptyMessage: "Follow-ups you log will appear here, and stay editable until goods arrive.",
-          renderAction: (e) => editAction(e, s.canFollowup, () => setEditFollowup(e.row)),
+          renderAction: (e) => editAction(e, s.canFollowup, () => editFollowup.openEdit(e.row), () => editFollowup.openView(e.row)),
         }}
         extraColumns={[
           {
@@ -500,8 +504,14 @@ export function FollowUpQueue() {
         renderAction={(p) => <ActionButton label="Follow-up" onClick={() => setFollowPo(p)} />}
       />
       <FollowupModal po={followPo} open={followPo !== null} onClose={() => setFollowPo(null)} />
-      {editFollowup && (
-        <FollowupModal po={s.poById(editFollowup.poId) ?? null} open editing={editFollowup} onClose={() => setEditFollowup(null)} />
+      {editFollowup.row && (
+        <FollowupModal
+          po={s.poById(editFollowup.row.poId) ?? null}
+          open
+          editing={editFollowup.row}
+          readOnly={editFollowup.isView}
+          onClose={editFollowup.close}
+        />
       )}
     </>
   );
@@ -511,7 +521,7 @@ export function FollowUpQueue() {
 export function InwardQueue() {
   const s = useImportStore();
   const [grnPo, setGrnPo] = useState<PurchaseOrder | null>(null);
-  const [editGrn, setEditGrn] = useState<Grn | null>(null);
+  const editGrn = useEntryModal<Grn>();
   // Goods quantities (summed across the PO's lines) — the meaningful numbers for inward.
   const qty = (p: PurchaseOrder) => poQty(s.importIndex, p);
 
@@ -543,7 +553,7 @@ export function InwardQueue() {
           columns: grnColumns,
           subtitle: "Goods receipts already recorded. Each stays editable until it is booked in Tally.",
           emptyMessage: "Receipts you record will appear here, and stay editable until they are booked in Tally.",
-          renderAction: (e) => editAction(e, s.canInward, () => setEditGrn(e.row)),
+          renderAction: (e) => editAction(e, s.canInward, () => editGrn.openEdit(e.row), () => editGrn.openView(e.row)),
         }}
         extraColumns={[
           { key: "ordered", header: "Ordered", after: "vendor", cell: (p) => numFmt(qty(p).ordered), sortValue: (p) => qty(p).ordered, filter: { kind: "number", get: (p) => qty(p).ordered }, tdClassName: "whitespace-nowrap" },
@@ -567,7 +577,7 @@ export function InwardQueue() {
         renderAction={(p) => <ActionButton label="Record GRN" onClick={() => setGrnPo(p)} />}
       />
       {grnPo && <GrnModal po={grnPo} open onClose={() => setGrnPo(null)} />}
-      {editGrn && <GrnModal po={s.poById(editGrn.poId)!} open editing={editGrn} onClose={() => setEditGrn(null)} />}
+      {editGrn.row && <GrnModal po={s.poById(editGrn.row.poId)!} open editing={editGrn.row} readOnly={editGrn.isView} onClose={editGrn.close} />}
     </>
   );
 }
@@ -576,7 +586,7 @@ export function InwardQueue() {
 export function TallyQueue() {
   const s = useImportStore();
   const [tallyPo, setTallyPo] = useState<PurchaseOrder | null>(null);
-  const [editBooking, setEditBooking] = useState<TallyBooking | null>(null);
+  const editBooking = useEntryModal<TallyBooking>();
 
   const vendorOf = (e: StageEntry<TallyBooking>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
   const tallyColumns: QueueColumn<StageEntry<TallyBooking>>[] = [
@@ -599,7 +609,7 @@ export function TallyQueue() {
           // here — the invoice number, document and remarks are.
           subtitle: "Invoices already booked. The invoice number, document and remarks stay editable until the PO closes.",
           emptyMessage: "Invoices you book will appear here. Note a booking that closes the PO is final immediately — the PO is then locked.",
-          renderAction: (e) => editAction(e, s.canTally, () => setEditBooking(e.row)),
+          renderAction: (e) => editAction(e, s.canTally, () => editBooking.openEdit(e.row), () => editBooking.openView(e.row)),
         }}
         extraColumns={[
           // Quantities mirror the Inward queue's columns so the two screens reconcile:
@@ -652,7 +662,7 @@ export function TallyQueue() {
         renderAction={(p) => <ActionButton label="Book in Tally" onClick={() => setTallyPo(p)} />}
       />
       {tallyPo && <TallyModal po={tallyPo} open onClose={() => setTallyPo(null)} />}
-      {editBooking && <TallyModal po={s.poById(editBooking.poId)!} open editing={editBooking} onClose={() => setEditBooking(null)} />}
+      {editBooking.row && <TallyModal po={s.poById(editBooking.row.poId)!} open editing={editBooking.row} readOnly={editBooking.isView} onClose={editBooking.close} />}
     </>
   );
 }

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Lock } from "lucide-react";
 import Card from "@/shared/components/ui/Card";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
@@ -9,6 +8,8 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { useImportStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
+import StageRowAction from "@/shared/components/ui/StageRowAction";
+import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
@@ -19,10 +20,21 @@ export default function ApprovalsQueue() {
   const s = useImportStore();
   const { user } = useEffectiveIdentity();
   const [approving, setApproving] = useState<RequestItem | null>(null);
-  const [editLine, setEditLine] = useState<RequestItem | null>(null);
+  const editLine = useEntryModal<RequestItem>();
   const stage = useStageMode(s.completedApprovalEntries, user.id);
 
   const requestNo = (l: RequestItem) => s.requestById(l.requestId)?.requestNo ?? "—";
+  /**
+   * How much is being bought — the Line Value column only shows the money side.
+   * This queue is LINE-scoped, so there is nothing to sum and no mixed-unit
+   * problem: it is simply the sourced qty (falling back to what was asked).
+   */
+  const qtyCell = (l: RequestItem) => (
+    <span>
+      {l.finalQty ?? l.quantity}
+      {l.unit && <span className="ml-1 text-[11.5px] text-grey-2">{l.unit}</span>}
+    </span>
+  );
   const vendorName = (l: RequestItem) => s.vendorById(l.finalVendorId)?.name ?? "—";
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
   const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
@@ -38,6 +50,7 @@ export default function ApprovalsQueue() {
       },
     },
     { key: "item", header: "Item", cell: (l) => <span className="font-medium text-navy">{s.itemLabel(l.itemId)}</span>, sortValue: (l) => s.itemLabel(l.itemId), filter: { kind: "text", get: (l) => s.itemLabel(l.itemId) } },
+    { key: "qty", header: "Qty", cell: (l) => qtyCell(l), sortValue: (l) => l.finalQty ?? l.quantity, filter: { kind: "number", get: (l) => l.finalQty ?? l.quantity }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Recommended Vendor", cell: (l) => vendorName(l), sortValue: (l) => vendorName(l), filter: { kind: "select", get: (l) => vendorName(l) }, tdClassName: "whitespace-nowrap" },
     { key: "value", header: "Line Value", cell: (l) => <span className="font-semibold text-navy">{inr(l.lineValue)}</span>, sortValue: (l) => l.lineValue ?? 0, filter: { kind: "number", get: (l) => l.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
     { key: "status", header: "Status", cell: (l) => <span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span>, sortValue: (l) => LINE_STATUS_LABEL[l.status], filter: { kind: "select", get: (l) => LINE_STATUS_LABEL[l.status] } },
@@ -50,6 +63,7 @@ export default function ApprovalsQueue() {
   const completedColumns: QueueColumn<StageEntry<RequestItem>>[] = [
     { key: "request", header: "Request", cell: (e) => <Link to={`/import/requests/${e.row.requestId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "item", header: "Item", cell: (e) => <span className="font-medium text-navy">{s.itemLabel(e.row.itemId)}</span>, sortValue: (e) => s.itemLabel(e.row.itemId), filter: { kind: "text", get: (e) => s.itemLabel(e.row.itemId) } },
+    { key: "qty", header: "Qty", cell: (e) => qtyCell(e.row), sortValue: (e) => e.row.finalQty ?? e.row.quantity, filter: { kind: "number", get: (e) => e.row.finalQty ?? e.row.quantity }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => vendorName(e.row), sortValue: (e) => vendorName(e.row), filter: { kind: "select", get: (e) => vendorName(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "value", header: "Line Value", cell: (e) => <span className="font-semibold text-navy">{inr(e.row.lineValue)}</span>, sortValue: (e) => e.row.lineValue ?? 0, filter: { kind: "number", get: (e) => e.row.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
     { key: "decision", header: "Decision", cell: (e) => <span className={lineBadge(e.row.status)}>{LINE_STATUS_LABEL[e.row.status]}</span>, sortValue: (e) => LINE_STATUS_LABEL[e.row.status], filter: { kind: "select", get: (e) => LINE_STATUS_LABEL[e.row.status] } },
@@ -95,19 +109,15 @@ export default function ApprovalsQueue() {
             rowsLabel="lines"
             emptyTitle="Nothing here yet"
             emptyMessage="Decisions you make will appear here, and stay revisable until the PO is generated."
-            actions={(e) =>
-              e.lockReason ? (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              ) : s.canApproveLine(e.row) ? (
-                <button onClick={() => setEditLine(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
-              ) : (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only this line's approver can revise the decision.">
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              )
-            }
+            actions={(e) => (
+              <StageRowAction
+                lockReason={e.lockReason}
+                canEdit={s.canApproveLine(e.row)}
+                permissionReason="Only this line's approver can revise the decision."
+                onEdit={() => editLine.openEdit(e.row)}
+                onView={() => editLine.openView(e.row)}
+              />
+            )}
           />
         ) : (
           <QueueTable
@@ -154,7 +164,13 @@ export default function ApprovalsQueue() {
       )}
 
       <ApprovalModal line={approving} open={approving !== null} onClose={() => setApproving(null)} />
-      <ApprovalModal line={editLine} open={editLine !== null} editing onClose={() => setEditLine(null)} />
+      <ApprovalModal
+        line={editLine.row}
+        open={editLine.row !== null}
+        editing
+        readOnly={editLine.isView}
+        onClose={editLine.close}
+      />
     </div>
   );
 }

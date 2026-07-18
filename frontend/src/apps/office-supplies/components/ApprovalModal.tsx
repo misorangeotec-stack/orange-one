@@ -18,12 +18,16 @@ export default function ApprovalModal({
   request,
   stage,
   editing = false,
+  readOnly = false,
 }: {
   open: boolean;
   onClose: () => void;
   request: SupplyRequest | null;
   stage: "first" | "second";
   editing?: boolean;
+  /** Show the decision that was made. Its body is one Remarks box, so a bare
+   *  disabled textarea would say nothing — hence the decision readout. */
+  readOnly?: boolean;
 }) {
   const s = useSuppliesStore();
   const [remarks, setRemarks] = useState("");
@@ -70,9 +74,14 @@ export default function ApprovalModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`${editing ? "Edit " : ""}${editing ? label.charAt(0).toLowerCase() + label.slice(1) : label} — ${request?.reqNo ?? ""}`}
+      readOnly={readOnly}
+      title={
+        readOnly
+          ? `${label} — ${request?.reqNo ?? ""}`
+          : `${editing ? "Edit " : ""}${editing ? label.charAt(0).toLowerCase() + label.slice(1) : label} — ${request?.reqNo ?? ""}`
+      }
       subtitle={request
-        ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}${editing ? " · revisable until the next step is done" : ""}`
+        ? `${request.itemName ?? "Service request"} · Qty ${request.quantity}${editing && !readOnly ? " · revisable until the next step is done" : ""}`
         : undefined}
       footer={
         <>
@@ -95,8 +104,23 @@ export default function ApprovalModal({
       }
     >
       <div className="space-y-3">
-        <FieldLabel label="Remarks" hint="required if not approving">
-          <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Add a remark…" />
+        {readOnly && (
+          <div className="rounded-xl bg-page px-3.5 py-2.5">
+            <span className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Decision</span>{" "}
+            <span
+              className={`text-[13px] font-semibold ${request?.status === "rejected" ? "text-ryg-red" : "text-ryg-green"}`}
+            >
+              {request?.status === "rejected" ? "Not approved" : "Approved"}
+            </span>
+          </div>
+        )}
+        <FieldLabel label="Remarks" hint={readOnly ? "as recorded" : "required if not approving"}>
+          <TextArea
+            rows={3}
+            value={remarks}
+            onChange={(e) => setRemarks(e.target.value)}
+            placeholder={readOnly ? "No remark was recorded." : "Add a remark…"}
+          />
         </FieldLabel>
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>

@@ -9,6 +9,8 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
+import StageRowAction from "@/shared/components/ui/StageRowAction";
+import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
@@ -23,7 +25,7 @@ export default function ApprovalsQueue() {
   const s = useProcurementStore();
   const { user } = useEffectiveIdentity();
   const [approving, setApproving] = useState<PurchaseRequest | null>(null);
-  const [editRequest, setEditRequest] = useState<PurchaseRequest | null>(null);
+  const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedApprovalRequestEntries, user.id);
 
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
@@ -68,6 +70,35 @@ export default function ApprovalsQueue() {
     money(r, s.itemsForRequest(r.id).filter((l) => l.status === "approval" || l.status === "on_hold"));
   const doneMoney = (r: PurchaseRequest) => money(r, s.itemsForRequest(r.id));
 
+  /**
+   * How much is being bought — the other half of the decision the money columns
+   * only show one side of.
+   *
+   * Quantity SUMS across items, so it can carry a unit only when every item
+   * shares one; folding KGS and PCS into "2500 KGS" would be a plain lie, so a
+   * mixed requisition says so and lists its units on hover. Same treatment as
+   * the Sourcing queue's Total Qty column, deliberately.
+   *
+   * Scoped to the SAME lines the money columns sum, so a row can never disagree
+   * with itself: pending counts the lines under decision, completed counts all.
+   */
+  const qtyOf = (lines: RequestItem[]) => {
+    const total = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? l.quantity), 0) * 1000) / 1000;
+    const units = [...new Set(lines.map((l) => l.unit).filter(Boolean))];
+    if (units.length === 1) return { total, label: units[0], title: undefined as string | undefined };
+    if (units.length === 0) return { total, label: "", title: undefined };
+    return { total, label: "mixed", title: `Different units on this requisition: ${units.join(", ")}` };
+  };
+  const pendingQty = (r: PurchaseRequest) =>
+    qtyOf(s.itemsForRequest(r.id).filter((l) => l.status === "approval" || l.status === "on_hold"));
+  const doneQty = (r: PurchaseRequest) => qtyOf(s.itemsForRequest(r.id));
+  const qtyCell = (q: ReturnType<typeof qtyOf>) => (
+    <span title={q.title}>
+      {q.total}
+      {q.label && <span className="ml-1 text-[11.5px] text-grey-2">{q.label}</span>}
+    </span>
+  );
+
   const requestLink = (r: PurchaseRequest) => (
     <Link to={`/procurement/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
       {r.requestNo}
@@ -89,6 +120,7 @@ export default function ApprovalsQueue() {
   const columns: QueueColumn<PurchaseRequest>[] = [
     { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => itemsCell(r), sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "text", get: (r) => itemsText(r) } },
+    { key: "qty", header: "Total Qty", cell: (r) => qtyCell(pendingQty(r)), sortValue: (r) => pendingQty(r).total, filter: { kind: "number", get: (r) => pendingQty(r).total }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Recommended Vendor", cell: (r) => vendorOf(r), sortValue: (r) => vendorOf(r), filter: { kind: "select", get: (r) => vendorOf(r) }, tdClassName: "whitespace-nowrap" },
     { key: "base", header: "Base", cell: (r) => inr(pendingMoney(r).base), sortValue: (r) => pendingMoney(r).base, filter: { kind: "number", get: (r) => pendingMoney(r).base }, tdClassName: "whitespace-nowrap" },
     { key: "gst", header: "GST", cell: (r) => inr(pendingMoney(r).gst), sortValue: (r) => pendingMoney(r).gst, filter: { kind: "number", get: (r) => pendingMoney(r).gst }, tdClassName: "whitespace-nowrap" },
@@ -103,6 +135,7 @@ export default function ApprovalsQueue() {
   const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
     { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (e) => itemsCell(e.row), sortValue: (e) => s.itemsForRequest(e.row.id).length, filter: { kind: "text", get: (e) => itemsText(e.row) } },
+    { key: "qty", header: "Total Qty", cell: (e) => qtyCell(doneQty(e.row)), sortValue: (e) => doneQty(e.row).total, filter: { kind: "number", get: (e) => doneQty(e.row).total }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "base", header: "Base", cell: (e) => inr(doneMoney(e.row).base), sortValue: (e) => doneMoney(e.row).base, filter: { kind: "number", get: (e) => doneMoney(e.row).base }, tdClassName: "whitespace-nowrap" },
     { key: "gst", header: "GST", cell: (e) => inr(doneMoney(e.row).gst), sortValue: (e) => doneMoney(e.row).gst, filter: { kind: "number", get: (e) => doneMoney(e.row).gst }, tdClassName: "whitespace-nowrap" },
@@ -150,19 +183,15 @@ export default function ApprovalsQueue() {
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Decisions you make will appear here, and stay revisable until the PO is generated."
-            actions={(e) =>
-              e.lockReason ? (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title={e.lockReason}>
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              ) : s.canApproveRequest(e.row) ? (
-                <button onClick={() => setEditRequest(e.row)} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</button>
-              ) : (
-                <span className="text-[12.5px] font-semibold text-grey-2 cursor-not-allowed inline-flex items-center gap-1" title="Only this requisition's approver can revise the decision.">
-                  <Lock className="w-3 h-3" aria-hidden /> Locked
-                </span>
-              )
-            }
+            actions={(e) => (
+              <StageRowAction
+                lockReason={e.lockReason}
+                canEdit={s.canApproveRequest(e.row)}
+                permissionReason="Only this requisition's approver can revise the decision."
+                onEdit={() => editRequest.openEdit(e.row)}
+                onView={() => editRequest.openView(e.row)}
+              />
+            )}
           />
         ) : (
           <QueueTable
@@ -209,7 +238,13 @@ export default function ApprovalsQueue() {
       )}
 
       <ApprovalModal request={approving} open={approving !== null} onClose={() => setApproving(null)} />
-      <ApprovalModal request={editRequest} open={editRequest !== null} editing onClose={() => setEditRequest(null)} />
+      <ApprovalModal
+        request={editRequest.row}
+        open={editRequest.row !== null}
+        editing
+        readOnly={editRequest.isView}
+        onClose={editRequest.close}
+      />
     </div>
   );
 }

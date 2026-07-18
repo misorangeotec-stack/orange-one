@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { cn } from "@/shared/lib/cn";
+import Button from "./Button";
 
 /** Centered modal dialog with backdrop, themed to the Orange One surfaces. */
 export default function Modal({
@@ -12,6 +13,8 @@ export default function Modal({
   footer,
   size = "md",
   stacked = false,
+  readOnly = false,
+  readOnlyHeader,
 }: {
   open: boolean;
   onClose: () => void;
@@ -30,6 +33,31 @@ export default function Modal({
    * takes Escape on the capture phase so it closes only the top dialog.
    */
   stacked?: boolean;
+  /**
+   * Render this dialog as a VIEW of what was recorded, not a form.
+   *
+   * The body goes inside a native `<fieldset disabled>`, which disables every
+   * descendant form control in one shot — so a modal opts into read-only by
+   * forwarding one prop, instead of threading `disabled` through dozens of
+   * inputs it would be easy to miss one of. The caller's `footer` is dropped
+   * (its Save has nothing to save) in favour of a single Close.
+   *
+   * Two things to know before using it:
+   *  • A `stacked` child modal rendered inside `children` is inside the fieldset
+   *    too, so it comes up disabled. Render it outside, or don't offer it.
+   *  • Controls disabled by the FIELDSET never get their own `disabled:`
+   *    styling — the prop is still unset — so anything whose greyed-out look is
+   *    keyed on that prop (Combobox's trigger, file-picker labels) stays looking
+   *    live while being inert. Hence the cursor overrides below.
+   */
+  readOnly?: boolean;
+  /**
+   * Rendered above the body and OUTSIDE the disabled fieldset, so it stays
+   * clickable in read-only mode. This exists for the stored-document links: they
+   * mint a signed URL on click, so they must be real buttons, and viewing the
+   * attached file is usually the point of viewing the entry at all.
+   */
+  readOnlyHeader?: ReactNode;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -62,7 +90,14 @@ export default function Modal({
       <div role="dialog" aria-modal="true" className={cn("relative w-full bg-white rounded-card-lg shadow-card border border-line animate-fade-up flex flex-col max-h-[calc(100dvh-2rem)]", width)}>
         <div className="flex items-start justify-between p-5 pb-3 shrink-0">
           <div>
-            <h2 className="text-[18px] font-bold text-navy">{title}</h2>
+            <h2 className="text-[18px] font-bold text-navy">
+              {title}
+              {readOnly && (
+                <span className="ml-2 align-middle rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">
+                  View only
+                </span>
+              )}
+            </h2>
             {subtitle && <p className="text-[12.5px] text-grey mt-0.5 leading-relaxed">{subtitle}</p>}
           </div>
           <button
@@ -74,8 +109,35 @@ export default function Modal({
           </button>
         </div>
         {/* pt-1 so the first field's label isn't shaved by the scroll edge. */}
-        <div className="px-5 pt-1 pb-3 overflow-y-auto grow min-h-0">{children}</div>
-        {footer && <div className="flex items-center justify-end gap-2.5 p-5 pt-4 shrink-0 border-t border-line/60">{footer}</div>}
+        <div className="px-5 pt-1 pb-3 overflow-y-auto grow min-h-0">
+          {readOnly ? (
+            <>
+              {readOnlyHeader && <div className="mb-3">{readOnlyHeader}</div>}
+              {/* `min-w-0` is load-bearing: Preflight resets a fieldset's margin,
+                  padding and border but NOT its `min-width: min-content`, which
+                  would let a wide inner grid push straight past the dialog's
+                  max-width. The cursor overrides stop now-inert controls from
+                  still advertising themselves as clickable. */}
+              <fieldset
+                disabled
+                className="min-w-0 m-0 p-0 border-0 [&_label]:cursor-default [&_button]:cursor-default"
+              >
+                {children}
+              </fieldset>
+            </>
+          ) : (
+            children
+          )}
+        </div>
+        {readOnly ? (
+          <div className="flex items-center justify-end gap-2.5 p-5 pt-4 shrink-0 border-t border-line/60">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        ) : (
+          footer && <div className="flex items-center justify-end gap-2.5 p-5 pt-4 shrink-0 border-t border-line/60">{footer}</div>
+        )}
       </div>
     </div>
   );
