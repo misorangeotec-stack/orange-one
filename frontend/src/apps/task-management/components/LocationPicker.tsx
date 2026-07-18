@@ -31,7 +31,9 @@ export default function LocationPicker({
   }
 
   return (
-    <FieldLabel label="Locations" hint="optional — task can't be completed until every selected location is ticked off">
+    // The "what this does" sentence sits under the chips, not in the label hint —
+    // inline it wrapped onto two lines and crowded the label.
+    <FieldLabel label="Locations" hint="optional">
       <div className="flex flex-wrap gap-2">
         {activeLocations.map((loc) => {
           const on = value.includes(loc.id);
@@ -50,6 +52,9 @@ export default function LocationPicker({
           );
         })}
       </div>
+      <p className="mt-2 text-[11.5px] text-grey-2 leading-snug">
+        The task can't be completed until every selected location is ticked off.
+      </p>
     </FieldLabel>
   );
 }

@@ -85,7 +85,7 @@ export default function EditTaskModal({
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         <FieldLabel label="Task title" required>
           <TextInput
             value={title}
@@ -96,19 +96,24 @@ export default function EditTaskModal({
         </FieldLabel>
 
         <FieldLabel label="Description" hint="optional">
-          <TextArea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add any details, context, or links…" />
+          <TextArea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add any details, context, or links…" />
         </FieldLabel>
 
         <div className="grid sm:grid-cols-2 gap-4">
           {/* Read-only: to move a task to someone else, delete it and create a new one. */}
           <div className="block">
-            <span className="flex items-center justify-between mb-1.5">
-              <span className="text-[13px] font-medium text-navy">Assigned to</span>
-              <span className="text-[11px] text-grey-2">{departmentName ? `Dept: ${departmentName}` : "can't be changed"}</span>
+            <span className="flex items-baseline justify-between gap-3 mb-1.5">
+              <span className="text-[13px] font-medium text-navy shrink-0">Assigned to</span>
+              <span className="text-[11px] text-grey-2">can't be changed</span>
             </span>
-            <div className="w-full rounded-xl border border-line bg-page px-3.5 py-2.5 flex items-center gap-2 min-w-0">
-              {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={22} />}
-              <span className="text-[14px] text-grey truncate">{assignee?.name ?? "Unassigned"}</span>
+            {/* The department is a second line inside the box — as a label hint it
+                was long enough to wrap and shunt "Assigned to" out of line. */}
+            <div className="w-full rounded-xl border border-line bg-page px-3.5 py-2 flex items-center gap-2 min-w-0">
+              {assignee && <Avatar name={assignee.name} color={assignee.avatarColor} size={26} />}
+              <span className="min-w-0">
+                <span className="block text-[14px] text-grey truncate leading-tight">{assignee?.name ?? "Unassigned"}</span>
+                {departmentName && <span className="block text-[11px] text-grey-2 truncate leading-tight mt-0.5">{departmentName}</span>}
+              </span>
             </div>
           </div>
 

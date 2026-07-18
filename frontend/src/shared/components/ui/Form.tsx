@@ -10,12 +10,14 @@ const fieldBase =
 export function FieldLabel({ label, required, hint, children }: { label: string; required?: boolean; hint?: ReactNode; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="flex items-center justify-between mb-1.5">
-        <span className="text-[13px] font-medium text-navy">
+      {/* Baseline-aligned with the label pinned: a hint long enough to wrap used to
+          vertically re-centre the label and collide with it. */}
+      <span className="flex items-baseline justify-between gap-3 mb-1.5">
+        <span className="text-[13px] font-medium text-navy shrink-0">
           {label}
           {required && <span className="text-orange"> *</span>}
         </span>
-        {hint && <span className="text-[11px] text-grey-2">{hint}</span>}
+        {hint && <span className="text-[11px] text-grey-2 text-right leading-snug min-w-0">{hint}</span>}
       </span>
       {children}
     </label>
