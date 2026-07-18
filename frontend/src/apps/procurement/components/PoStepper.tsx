@@ -1,4 +1,7 @@
-import { cn } from "@/shared/lib/cn";
+import { useMemo } from "react";
+import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
+import { useProcurementStore } from "../store";
+import { stageStepKey } from "../lib/steps";
 import type { PurchaseOrder } from "../types";
 
 /** The PO lifecycle stages, in order, for the detail stepper. */
@@ -22,40 +25,52 @@ function activeIndex(po: PurchaseOrder): number {
   return i < 1 ? 1 : i;
 }
 
-/** Horizontal lifecycle stepper for a PO. */
+/**
+ * Horizontal lifecycle stepper for a PO, captioned with the department and
+ * people responsible for each stage.
+ *
+ * This is the adapter: it maps stepper stages to workflow step_keys and
+ * resolves owner ids to names. The rendering lives in the shared PoStageRail,
+ * which Import uses too.
+ */
 export default function PoStepper({ po }: { po: PurchaseOrder }) {
-  const active = activeIndex(po);
-  // A 'closed' PO has finished its final stage — the last node is DONE (green
-  // check), not an in-progress step. (Cancelled stays highlighted, not ticked.)
-  const finished = po.currentStage === "closed";
+  const s = useProcurementStore();
+
+  const nodes: PoStageRailNode[] = useMemo(
+    () =>
+      STAGES.map((st) => {
+        const stepKey = stageStepKey(st.key);
+        // `closed` has no backing step, so it has no owners to show.
+        if (!stepKey) {
+          return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
+        }
+        const owner = s.stepOwnerFor(stepKey);
+        return {
+          key: st.key,
+          label: st.label,
+          departments: (owner?.departmentIds ?? [])
+            .map((id) => s.departmentById(id)?.name)
+            .filter((n): n is string => !!n),
+          // personName, NOT profileById: the directory is RLS-scoped to self +
+          // downline + same-department peers, and every step here spans 1-3
+          // departments, so profileById would render cross-department owners
+          // blank. See store.tsx personName.
+          people: (owner?.employeeIds ?? [])
+            .map((id) => s.personName(id))
+            .filter((n) => n !== "—"),
+          hasStep: true,
+        };
+      }),
+    [s]
+  );
+
   return (
-    <div className="flex items-center overflow-x-auto py-1">
-      {STAGES.map((st, i) => {
-        const done = i < active || (finished && i === active);
-        const current = i === active && !finished;
-        return (
-          <div key={st.key} className="flex items-center shrink-0">
-            <div className="flex flex-col items-center gap-1 px-1">
-              <div
-                className={cn(
-                  "w-7 h-7 rounded-full flex items-center justify-center text-[12px] font-semibold border-2",
-                  done && "bg-ryg-green border-ryg-green text-white",
-                  current && "bg-orange border-orange text-white",
-                  !done && !current && "bg-white border-line text-grey-2"
-                )}
-              >
-                {done ? (
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-                ) : (
-                  i + 1
-                )}
-              </div>
-              <span className={cn("text-[10.5px] whitespace-nowrap", current ? "text-orange font-semibold" : "text-grey-2")}>{st.label}</span>
-            </div>
-            {i < STAGES.length - 1 && <div className={cn("w-8 h-0.5 mt-[-14px]", i < active ? "bg-ryg-green" : "bg-line")} />}
-          </div>
-        );
-      })}
-    </div>
+    <PoStageRail
+      nodes={nodes}
+      activeIndex={activeIndex(po)}
+      // A 'closed' PO has finished its final stage — the last node is DONE
+      // (green check), not in progress. (Cancelled stays highlighted, not ticked.)
+      finished={po.currentStage === "closed"}
+    />
   );
 }

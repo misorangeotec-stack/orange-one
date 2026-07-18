@@ -38,3 +38,22 @@ export const STEPS: StepDef[] = [
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
+
+/**
+ * Maps a PO-detail *stepper stage* to the workflow *step* whose owners are
+ * responsible for it. The two lists are deliberately different: the stepper is
+ * a PO-lifecycle view, so it opens on `generated` (the PO already exists) and
+ * closes on `closed` (past the last real step).
+ *
+ *   generated → `po`   — the step that PRODUCES this PO; its owners are the
+ *                        people who raised it.
+ *   closed    → null   — no step tracks it; the flow ends at `tally`.
+ *
+ * Everything in between maps 1:1. Unknown stages resolve to null rather than
+ * throwing, matching how `activeIndex` degrades in PoStepper.
+ */
+export const stageStepKey = (stage: string): StepKey | null => {
+  if (stage === "generated") return "po";
+  if (stage === "closed") return null;
+  return stepByKey(stage)?.key ?? null;
+};
