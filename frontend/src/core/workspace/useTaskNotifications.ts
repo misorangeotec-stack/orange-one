@@ -2,10 +2,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { NotificationItem } from "@/shared/components/layout/types";
-import { timeAgo } from "@/shared/lib/time";
-import { useMyNotifications, TASK_NOTIF_KEY } from "@/apps/task-management/lib/useMyNotifications";
-import { notificationText, notificationLink } from "@/apps/task-management/lib/notifyText";
-import { markNotificationsRead, markNotificationsUnread } from "@/apps/task-management/data/taskWrites";
+import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "@/apps/task-management/lib/useMyNotifications";
+import { notificationMessage, notificationLink } from "@/apps/task-management/lib/notifyText";
+import { markNotificationsRead } from "@/apps/task-management/data/taskWrites";
 
 /**
  * Task notifications for the PORTAL home screen's bell.
@@ -27,7 +26,6 @@ import { markNotificationsRead, markNotificationsUnread } from "@/apps/task-mana
 export function useTaskNotifications(): {
   items: NotificationItem[];
   onMarkRead: (ids: string[]) => void;
-  onMarkUnread: (ids: string[]) => void;
 } {
   const { user } = useSession();
   const queryClient = useQueryClient();
@@ -43,29 +41,32 @@ export function useTaskNotifications(): {
     staleTime: 5 * 60 * 1000,
   });
 
-  const nameById = new Map((orgPeople ?? []).map((p) => [p.id, p.name] as const));
+  const personById = new Map((orgPeople ?? []).map((p) => [p.id, p] as const));
 
-  const items: NotificationItem[] = notifications.map((n) => ({
-    id: n.id,
-    // No tasks array here — the builder falls back to the title carried on the
-    // row itself by fetchMyNotifications' embedded join.
-    text: notificationText(n, { actorName: nameById.get(n.actorId ?? "") ?? "Someone" }),
-    time: timeAgo(n.createdAt),
-    unread: !n.readAt,
-    to: notificationLink(n),
-  }));
+  const items: NotificationItem[] = notifications.map((n) => {
+    const actor = n.actorId ? personById.get(n.actorId) : undefined;
+    return {
+      id: n.id,
+      actorName: actor?.name ?? "Someone",
+      actorColor: actor?.avatarColor,
+      // No tasks array here — the builder falls back to the title carried on the
+      // row itself by fetchMyNotifications' embedded join.
+      message: notificationMessage(n, {}),
+      createdAt: n.createdAt,
+      unread: !n.readAt,
+      to: notificationLink(n),
+    };
+  });
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
 
   const onMarkRead = (ids: string[]) => {
     if (ids.length === 0) return;
+    // Same optimistic patch the task store uses, so a clicked row leaves the
+    // bell here too rather than waiting on the round-trip.
+    markReadOptimistic(queryClient, ids);
     void markNotificationsRead(ids).then(refresh);
   };
 
-  const onMarkUnread = (ids: string[]) => {
-    if (ids.length === 0) return;
-    void markNotificationsUnread(ids).then(refresh);
-  };
-
-  return { items, onMarkRead, onMarkUnread };
+  return { items, onMarkRead };
 }

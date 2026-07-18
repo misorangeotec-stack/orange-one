@@ -304,7 +304,11 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       activityByEntity.set(k, list);
     }
 
-    const mine = notifications.filter((n) => n.userId === uid);
+    // Newest first. The base fetch orders ascending, so without this the bell
+    // read oldest-first — the stalest ping at the top.
+    const mine = notifications
+      .filter((n) => n.userId === uid)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
     const safeAnnounce = async (input: Parameters<typeof announceWrite>[0]) => {
       try {

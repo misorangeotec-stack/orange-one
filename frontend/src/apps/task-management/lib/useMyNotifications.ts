@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { supabase } from "@/core/platform/supabase";
 import { fetchMyNotifications } from "../data/fetchTaskData";
 import type { Notification } from "../types";
@@ -23,6 +23,30 @@ export const TASK_NOTIF_KEY = "taskNotifications";
 export interface MyNotifications {
   notifications: Notification[];
   isLoading: boolean;
+}
+
+/**
+ * Flip `readAt` in the cache immediately, before the write round-trips.
+ *
+ * The bell is unread-only, so this is what makes a clicked row disappear in the
+ * same frame instead of a few hundred ms later. Both callers (the task store and
+ * the /home hook) go through here so they can't drift.
+ *
+ * MAPS, never filters. Removing entries would look identical in the bell and
+ * silently break the Tagged screen, which derives its whole task set from this
+ * same array — read rows included.
+ *
+ * No rollback needed on failure: the caller invalidates, and the refetch is the
+ * server's word on it either way. The realtime subscription also echoes our own
+ * UPDATE back and invalidates, which just confirms this patch.
+ */
+export function markReadOptimistic(queryClient: QueryClient, ids: string[]): void {
+  if (ids.length === 0) return;
+  const now = new Date().toISOString();
+  const target = new Set(ids);
+  queryClient.setQueriesData<Notification[]>({ queryKey: [TASK_NOTIF_KEY] }, (prev) =>
+    prev?.map((n) => (target.has(n.id) && !n.readAt ? { ...n, readAt: now } : n))
+  );
 }
 
 /**

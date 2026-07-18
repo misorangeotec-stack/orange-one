@@ -1,3 +1,4 @@
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "./supabase";
 
 /**
@@ -38,4 +39,27 @@ export async function fetchOrgPeople(): Promise<OrgPerson[]> {
     avatarColor: p.avatar_color ?? "navy",
     role: p.role ?? "employee",
   }));
+}
+
+/**
+ * Look an actor up by id, org-wide.
+ *
+ * Every app's own `profileById` reads the RLS-scoped directory, so a colleague
+ * in another department resolves to undefined and renders as "Someone". That
+ * was survivable while the bell showed grey text; it is not once the name sits
+ * next to an avatar. The task app already worked around it by hand (its store's
+ * `actorById` falls back to this same list) — this is that fallback, extracted
+ * so the five FMS layouts can use it in one line instead of five copies.
+ *
+ * Same key and staleTime every other consumer uses, so it shares ONE cache
+ * entry with the mention picker and the task store: no extra network call.
+ */
+export function useOrgPersonById(): (id: string | null) => OrgPerson | undefined {
+  const { data } = useQuery({
+    queryKey: ["orgPeople"],
+    queryFn: fetchOrgPeople,
+    staleTime: 5 * 60 * 1000,
+  });
+  const byId = new Map((data ?? []).map((p) => [p.id, p] as const));
+  return (id) => (id ? byId.get(id) : undefined);
 }

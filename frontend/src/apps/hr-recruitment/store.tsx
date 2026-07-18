@@ -433,7 +433,11 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       activityByEntity.set(k, list);
     }
 
-    const mine = notifications.filter((n) => n.userId === user.id);
+    // Newest first. The base fetch orders ascending, so without this the bell
+    // read oldest-first — the stalest ping at the top.
+    const mine = notifications
+      .filter((n) => n.userId === user.id)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
     /** Fan out a transition notification; never let it break the workflow action. */
     const safeAnnounce = async (input: Parameters<typeof announceWrite>[0]) => {
