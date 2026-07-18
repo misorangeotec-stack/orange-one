@@ -15,6 +15,13 @@ import { rygCounts } from "../components/RygCells";
 import RygBar from "../components/RygBar";
 import { useReportsToSuffix } from "../components/ReportsToTag";
 import { taskListLink, type RygColour, type TaskKind } from "../lib/taskLink";
+import {
+  buildScorecardRow,
+  buildTeamRow,
+  exportWeeklyScorecard,
+  groupTasksByAssignee,
+} from "../lib/exportWeeklyScorecard";
+import ScorecardExportModal, { type ExportScope } from "../components/ScorecardExportModal";
 import type { AppRole, Profile, Task, WeeklyPlan } from "../types";
 
 const GREEN = "text-[#1f8a4d]";
@@ -40,7 +47,7 @@ const roleMeta = (role: string) => ROLE_GROUP[role] ?? { label: "Employees", ran
  */
 export default function WeeklyScorecard() {
   const { user, role, isAdmin, isHod } = useSession();
-  const { tasks, profiles, profileById, weeklyPlanFor } = useTaskStore();
+  const { tasks, profiles, profileById, departmentById, weeklyPlanFor } = useTaskStore();
   // Optional deep-link from Master Analysis: ?user=<id>&week=<yyyy-mm-dd>.
   const [searchParams] = useSearchParams();
   const linkedUser = searchParams.get("user");
@@ -109,6 +116,38 @@ export default function WeeklyScorecard() {
 
   const { isoYear, isoWeek } = isoWeekOf(weekStart);
 
+  const [exportOpen, setExportOpen] = useState(false);
+
+  /**
+   * Build the workbook for one person or the whole visible team. `pool` is the same
+   * role-scoped list that fills the dropdown above, so the export can never reach a
+   * person this viewer isn't allowed to see — deliberately not `profiles`.
+   */
+  const runExport = (scope: ExportScope) => {
+    const people = scope === "all" ? pool : [selected];
+    const byPerson = groupTasksByAssignee(tasks);
+    const rows = people.map((p) =>
+      buildScorecardRow({
+        profile: p,
+        departmentName: departmentById(p.departmentId)?.name ?? "Unassigned",
+        tasks: byPerson.get(p.id) ?? [],
+        weekStart,
+        weeklyPlanFor,
+      })
+    );
+    // A roll-up over a single person would just restate the row below it.
+    const all = people.length > 1 ? [buildTeamRow({ rows, people, allTasks: tasks, weekStart, weeklyPlanFor }), ...rows] : rows;
+    exportWeeklyScorecard({
+      rows: all,
+      weekStart,
+      singleName: people.length === 1 ? people[0].name : undefined,
+      filters: [
+        `Week: ${formatDate(weekStart)} to ${formatDate(weekEndOf(weekStart))} (W${isoWeek} ${isoYear})`,
+        people.length === 1 ? `Scope: ${people[0].name} only` : `Scope: all ${people.length} team members visible to ${user.name}`,
+      ],
+    });
+  };
+
   // Deep-link from an "Other tasks" counter into the role-appropriate task list,
   // showing only this person's self-tracking tasks of that status. These are
   // counted all-time (not week-planned), so the link is week-agnostic and never
@@ -140,7 +179,31 @@ export default function WeeklyScorecard() {
           <label className="block text-[10.5px] font-semibold uppercase tracking-wide text-grey-2 mb-1.5">Week</label>
           <WeekNav weekStart={weekStart} onChange={setWeekStart} isoYear={isoYear} isoWeek={isoWeek} />
         </div>
+        {/* Export. With only yourself to export, "one or all?" has no answer worth
+            asking — download straight away, matching the disabled member dropdown. */}
+        <button
+          type="button"
+          onClick={() => (pool.length > 1 ? setExportOpen(true) : runExport("one"))}
+          title="Download this week's scorecard as an Excel file"
+          className="ml-auto inline-flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-semibold text-grey-2 rounded-lg border border-line bg-white hover:text-orange hover:border-orange/50 transition"
+        >
+          <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Export
+        </button>
       </div>
+
+      <ScorecardExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        selectedName={selected.name}
+        poolCount={pool.length}
+        weekStart={weekStart}
+        onExport={runExport}
+      />
 
       {/* three cards */}
       <div className="grid gap-4 lg:grid-cols-3">
