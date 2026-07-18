@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
 import ProcurementApp from "./ProcurementApp";
 
 /**
@@ -15,10 +15,10 @@ export const procurementApp: AppManifest = {
   name: appName("procurement"),
   description:
     "Master-driven procurement: multi-item requests, 3-quote sourcing, amount-tiered approval, vendor-wise POs, receipts and installment payments.",
-  basePath: "/procurement",
+  basePath: appBasePath("procurement"),
   status: "live",
-  category: "fms",
-  subGroup: "Purchase",
+  category: appCategory("procurement"),
+  subGroup: appSubGroup("procurement"),
   order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

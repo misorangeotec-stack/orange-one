@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory } from "../appInfo";
 import TaskManagementApp from "./TaskManagementApp";
 
 /** Manifest for the Task Management app. */
@@ -7,9 +7,9 @@ export const taskManagementApp: AppManifest = {
   id: "task-management",
   name: appName("task-management"),
   description: "Track assignments, revisions, follow-ups, and weekly execution accountability.",
-  basePath: "/task-management",
+  basePath: appBasePath("task-management"),
   status: "live",
-  category: "productivity",
+  category: appCategory("task-management"),
   order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

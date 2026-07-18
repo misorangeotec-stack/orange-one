@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
+import { pageLabelFor } from "@/apps/currentApp";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
 import { HOME_LABEL, HOME_PATH, type NavItem, type NotificationItem, type ShellUser } from "./types";
@@ -58,13 +59,14 @@ export default function AppShell({
 
   const items = useMemo(() => (showHomeLink ? [HOME_ITEM, ...nav] : nav), [showHomeLink, nav]);
 
-  // Page title = the deepest matching nav item's label. Adding the home item is
-  // safe here: "/home" only matches when you are actually on it, and inside an app
-  // that app's own deeper path always wins the longest-match sort.
-  const match = [...items]
-    .filter((i) => pathname === i.to || pathname.startsWith(i.to + "/"))
-    .sort((a, b) => b.to.length - a.to.length)[0];
-  const title = match?.label ?? "Dashboard";
+  // Name of the current page — the breadcrumb's last step. Shared with the
+  // Outstanding Dashboard's separate top strip so the two can't disagree.
+  //
+  // NULL when no menu item owns the page, and that matters: this used to fall
+  // back to the literal "Dashboard", so a user without the Exit Cases menu who
+  // opened an exit case read "Dashboard" at the top of the screen. The trail now
+  // stops at the module rather than naming the page wrongly.
+  const pageLabel = useMemo(() => pageLabelFor(pathname, items), [pathname, items]);
 
   return (
     <div className="h-screen flex bg-page-grad overflow-hidden">
@@ -92,7 +94,7 @@ export default function AppShell({
       {/* main column */}
       <div className="flex-1 min-w-0 flex flex-col">
         <Topbar
-          title={title}
+          pageLabel={pageLabel}
           user={user}
           notifications={notifications}
           onMarkRead={onMarkRead}

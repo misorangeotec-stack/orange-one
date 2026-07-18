@@ -7,6 +7,9 @@ import { FYMultiSelect } from "@hub/components/FYMultiSelect";
 import { useFY } from "@hub/lib/fyContext";
 import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
+import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
+import { RECEIVABLES_MENUS } from "@hub/lib/menus";
+import { pageLabelFor } from "@/apps/currentApp";
 import { useSession } from "@/core/platform/session";
 import type { AppRole } from "@/core/platform/types";
 
@@ -80,6 +83,18 @@ export default function UserLayout() {
   const { pathname } = useLocation();
   const fyPinned = FY_PINNED_ROUTES.some((r) => pathname.startsWith(r));
 
+  // Page name for the breadcrumb's last step, by the same longest-match the rest
+  // of the portal uses. Deliberately reads the UNFILTERED menu list: menus can be
+  // hidden per user, and matching the filtered list would blank the trail for
+  // someone sitting on a page whose menu entry is hidden from them.
+  //
+  // Null when nothing matches (a customer, a group, Saved Views, Profile) — the
+  // trail then stops at the module rather than inventing a page name.
+  const pageLabel = pageLabelFor(
+    pathname,
+    RECEIVABLES_MENUS.map((m) => ({ label: m.title, to: m.url }))
+  );
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full bg-surface-alt">
@@ -87,7 +102,9 @@ export default function UserLayout() {
         <div className="flex-1 flex flex-col min-w-0">
           <header className={`h-14 flex items-center gap-3 border-b px-4 ${liveMode ? "border-emerald-300 bg-emerald-50/60" : "border-border bg-surface"}`}>
             <SidebarTrigger className="text-foreground" />
-            <span className="text-sm font-semibold text-foreground">Dashboard</span>
+            {/* This used to be a hard-typed "Dashboard", shown on every page — so the
+                Risk Register, Reports and Settings all claimed to be the Dashboard. */}
+            <Breadcrumbs pageLabel={pageLabel} />
             {liveMode && (
               <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-100 border border-emerald-300 rounded px-1.5 py-0.5">
                 Live · Tally

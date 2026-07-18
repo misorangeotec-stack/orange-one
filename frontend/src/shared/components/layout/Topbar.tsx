@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
+import Breadcrumbs from "./Breadcrumbs";
 import NotificationsBell from "./NotificationsBell";
 import UserMenu from "./UserMenu";
 import type { NotificationItem, ShellUser } from "./types";
 
-/** Application top bar: page title, dev role switcher, notifications, user menu. */
+/** Application top bar: breadcrumb trail, dev role switcher, notifications, user menu. */
 export default function Topbar({
-  title,
+  pageLabel,
   user,
   notifications,
   onMarkRead,
@@ -13,7 +14,12 @@ export default function Topbar({
   roleSwitcher,
   onMenu,
 }: {
-  title: string;
+  /**
+   * Name of the current page — the last step of the trail. `null` when no menu
+   * item matched (a purchase order, a customer), and the trail then stops at the
+   * module rather than guessing. See buildTrail() in apps/currentApp.ts.
+   */
+  pageLabel: string | null;
   user: ShellUser;
   notifications: NotificationItem[];
   onMarkRead?: (ids: string[]) => void;
@@ -37,7 +43,7 @@ export default function Topbar({
           </svg>
         </button>
 
-        <h1 className="text-[17px] font-semibold text-navy truncate">{title}</h1>
+        <Breadcrumbs pageLabel={pageLabel} />
 
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           {roleSwitcher}

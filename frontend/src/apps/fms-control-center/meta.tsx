@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory } from "../appInfo";
 import FmsControlCenterApp from "./FmsControlCenterApp";
 
 /**
@@ -14,9 +14,9 @@ export const fmsControlCenterApp: AppManifest = {
   id: "fms-control-center",
   name: appName("fms-control-center"),
   description: "Pending work across every business process, by the day it falls due — spot delays before they compound.",
-  basePath: "/fms-control-center",
+  basePath: appBasePath("fms-control-center"),
   status: "live",
-  category: "control",
+  category: appCategory("fms-control-center"),
   order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

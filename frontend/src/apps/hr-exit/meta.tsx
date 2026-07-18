@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
 import ExitApp from "./ExitApp";
 
 /**
@@ -21,10 +21,10 @@ export const hrExitApp: AppManifest = {
   name: appName("hr-exit"),
   description:
     "Employee separation end to end: resignation, manager review, HR approval, the last working day, departmental clearance, asset return, handover, the exit interview, the full & final settlement and the relieving letter.",
-  basePath: "/hr-exit",
+  basePath: appBasePath("hr-exit"),
   status: "live",
-  category: "fms",
-  subGroup: "HR",
+  category: appCategory("hr-exit"),
+  subGroup: appSubGroup("hr-exit"),
   order: 50,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

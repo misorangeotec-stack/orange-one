@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory } from "../appInfo";
 import LeadsDashboardApp from "./LeadsDashboardApp";
 
 /** Manifest for the Leads Dashboard app (analytics over captured exhibition leads). */
@@ -7,9 +7,9 @@ export const leadsDashboardApp: AppManifest = {
   id: "leads-dashboard",
   name: appName("leads-dashboard"),
   description: "Analyze exhibition leads captured on mobile — KPIs, trends, and salesperson performance.",
-  basePath: "/leads-dashboard",
+  basePath: appBasePath("leads-dashboard"),
   status: "live",
-  category: "sales",
+  category: appCategory("leads-dashboard"),
   order: 20,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

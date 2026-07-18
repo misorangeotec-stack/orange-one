@@ -9,6 +9,7 @@ import {
   Settings as SettingsIcon,
   type LucideIcon,
 } from "lucide-react";
+import { appBasePath } from "@/apps/appInfo";
 
 /**
  * Single source of truth for the Receivables Control left-nav menus.
@@ -23,8 +24,10 @@ import {
  * column to the permission matrix. Removing access is then per-user.
  */
 
-// Base path of this app inside Orange One (see meta.tsx).
-export const BASE = "/outstanding-dashboard";
+// Base path of this app inside Orange One. Read from the shared app list rather
+// than retyped — this literal used to appear in four separate places across the
+// hub, which is exactly the drift the shared list exists to prevent.
+export const BASE = appBasePath("outstanding-dashboard");
 
 export interface ReceivablesMenu {
   /** Stable id stored in the deny-list. Never reuse/rename without a data migration. */

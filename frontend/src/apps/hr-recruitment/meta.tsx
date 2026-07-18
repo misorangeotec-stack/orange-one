@@ -1,5 +1,5 @@
 import type { AppManifest } from "../types";
-import { appName } from "../appInfo";
+import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
 import HrApp from "./HrApp";
 
 /**
@@ -16,10 +16,10 @@ export const hrRecruitmentApp: AppManifest = {
   name: appName("hr-recruitment"),
   description:
     "Manpower requisitions, two-stage approval, job posting, a drag-and-drop candidate board with three interview rounds, the onboarding checklist and monthly probation reviews.",
-  basePath: "/hr-recruitment",
+  basePath: appBasePath("hr-recruitment"),
   status: "live",
-  category: "fms",
-  subGroup: "HR",
+  category: appCategory("hr-recruitment"),
+  subGroup: appSubGroup("hr-recruitment"),
   order: 40,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

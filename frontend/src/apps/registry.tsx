@@ -10,6 +10,7 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
+import { appCategory, appName } from "./appInfo";
 
 /**
  * Central registry of all Orange One apps.
@@ -75,5 +76,5 @@ export const grantableModules: GrantableModule[] = [
   })),
   // Virtual module: no web app, no launcher entry, no menu item — it only gates
   // login to the mobile Leads app. Categorised so it isn't stranded in "Other".
-  { id: "mobile-app", name: "Mobile App", status: "live", category: "mobile", order: 10 },
+  { id: "mobile-app", name: appName("mobile-app"), status: "live", category: appCategory("mobile-app"), order: 10 },
 ];
