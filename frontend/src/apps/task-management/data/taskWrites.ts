@@ -100,6 +100,63 @@ export async function updatePersonalTask(
 }
 
 /**
+ * Edit a pending one-off task's basics: title, description, due date, locations.
+ * Deliberately never touches assigned_to / department_id / status — reassignment
+ * stays a delete-and-recreate, so there's no downline (RLS WITH CHECK) question.
+ *
+ * NOTE the guard set (pending, non-personal, non-recurring, caller is creator /
+ * assignee / admin) is enforced in the UI only — see canEditRow in TaskTable and
+ * canEditOneOff in TaskDetail. Unlike DELETE, the `tasks_update` policy carries no
+ * status guard, and it can't be tightened additively: Postgres ORs permissive
+ * policies, and a RESTRICTIVE one would break start / complete / revise.
+ */
+export async function updateTask(
+  taskId: string,
+  patch: { title: string; description?: string | null; dueDate: string | null; locationIds: string[] }
+): Promise<void> {
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      title: patch.title,
+      description: patch.description ?? null,
+      due_date: patch.dueDate,
+      // Scorecards bucket on week_start, so it must follow the due date.
+      week_start: mondayOf(patch.dueDate ?? new Date().toISOString()),
+    })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+
+  // Reconcile the checklist by DIFF, not wipe-and-reinsert: a kept location must
+  // keep its completed_at / na_at. (syncRecurringLocations can be blunt — those
+  // rows carry no state — this one can't.)
+  const { data: existing, error: readErr } = await supabase
+    .from("task_locations")
+    .select("location_id")
+    .eq("task_id", taskId);
+  if (readErr) throw new Error(readErr.message);
+
+  const before = new Set((existing ?? []).map((r) => r.location_id as string));
+  const after = new Set(patch.locationIds);
+  const removed = [...before].filter((id) => !after.has(id));
+  const added = [...after].filter((id) => !before.has(id));
+
+  if (removed.length) {
+    const { error: delErr } = await supabase
+      .from("task_locations")
+      .delete()
+      .eq("task_id", taskId)
+      .in("location_id", removed);
+    if (delErr) throw new Error(delErr.message);
+  }
+  if (added.length) {
+    const { error: insErr } = await supabase
+      .from("task_locations")
+      .insert(added.map((location_id) => ({ task_id: taskId, location_id })));
+    if (insErr) throw new Error(insErr.message);
+  }
+}
+
+/**
  * Delete a personal task. RLS (policy `tasks_delete_personal`) restricts this to
  * the creator's own is_personal rows, so standard assigned tasks can't be deleted
  * this way even if the id is passed.

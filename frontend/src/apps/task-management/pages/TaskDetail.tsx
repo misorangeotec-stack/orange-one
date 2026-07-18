@@ -17,6 +17,7 @@ import RemarkComposer from "../components/RemarkComposer";
 import ReviseModal from "../components/ReviseModal";
 import CompleteModal from "../components/CompleteModal";
 import PersonalTaskModal from "../components/PersonalTaskModal";
+import EditTaskModal from "../components/EditTaskModal";
 
 type ModalKind = "revise" | "complete" | null;
 
@@ -30,7 +31,8 @@ export default function TaskDetail() {
   const [reopening, setReopening] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
   const [togglingNa, setTogglingNa] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false); // personal ("Other") task edit
+  const [editTaskOpen, setEditTaskOpen] = useState(false); // regular one-off edit
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -85,6 +87,12 @@ export default function TaskDetail() {
     task.status === "pending" &&
     canStatusActions &&
     (task.createdBy === user.id || task.assignedTo === user.id || role === "admin");
+
+  // Edit gate — deliberately identical to the delete gate, and mirrored in
+  // TaskTable's canEditRow. Editing changes title/description/due date/locations
+  // only; the assignee is fixed. Unlike delete there's no server-side status
+  // guard (tasks_update RLS is wider), so this predicate is the enforcement.
+  const canEditOneOff = canDeleteOneOff;
 
   // Location checklist + completion gate. A task with locations can't be completed
   // until every one is RESOLVED — ticked done OR marked Not Applicable (the DB
@@ -245,6 +253,12 @@ export default function TaskDetail() {
                 Mark complete{completeBlocked ? ` (${pendingLocations} left)` : ""}
               </Button>
             </span>
+            {canEditOneOff && (
+              <Button variant="ghost" size="sm" onClick={() => setEditTaskOpen(true)} title="Edit this pending task">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                Edit
+              </Button>
+            )}
             {canDeleteOneOff && (
               <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(true)} title="Delete this pending task">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" /></svg>
@@ -486,6 +500,7 @@ export default function TaskDetail() {
       <ReviseModal task={task} open={modal === "revise"} onClose={() => setModal(null)} />
       <CompleteModal task={task} open={modal === "complete"} onClose={() => setModal(null)} onCompleted={() => navigate("/task-management/tasks")} />
       <PersonalTaskModal task={task} open={editOpen} onClose={() => setEditOpen(false)} />
+      <EditTaskModal task={task} open={editTaskOpen} onClose={() => setEditTaskOpen(false)} />
       <Modal
         open={confirmDelete}
         onClose={() => setConfirmDelete(false)}

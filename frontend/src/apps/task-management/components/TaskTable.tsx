@@ -12,6 +12,8 @@ import { isRecurringTask } from "../mock/selectors";
 import { taskDetailPath } from "../lib/taskLink";
 import { RECURRENCE_LABEL, type Task } from "../types";
 import StatusChip from "./StatusChip";
+import EditTaskModal from "./EditTaskModal";
+import PersonalTaskModal from "./PersonalTaskModal";
 
 export type TaskSortKey = "title" | "createdBy" | "assignedTo" | "createdAt" | "dueDate" | "status";
 export type SortDir = "asc" | "desc";
@@ -103,6 +105,10 @@ export default function TaskTable({ tasks, sort, onSort }: {
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // One modal instance for the whole table, driven by an id (like confirmId) —
+  // not one per row. EditTaskModal re-prefills on each open.
+  const [editId, setEditId] = useState<string | null>(null);
+  const [personalEditId, setPersonalEditId] = useState<string | null>(null);
 
   /**
    * Open a row's task. A plain click navigates IN THIS TAB — the list's filters,
@@ -135,7 +141,20 @@ export default function TaskTable({ tasks, sort, onSort }: {
     canStatusActions &&
     (t.createdBy === user.id || t.assignedTo === user.id || role === "admin");
 
+  // Edit mirrors delete exactly: a genuine one-off, still PENDING, and you're its
+  // creator, assignee, or an admin. A HOD who assigned the task IS the creator, so
+  // they're covered without a wider grant. Note the pending guard is UI-only —
+  // tasks_update RLS has no status check (see updateTask in data/taskWrites).
+  const canEditRow = (t: Task) => canDeleteRow(t);
+
+  // Personal ("Other") tasks aren't in canDeleteRow's world at all — they're
+  // creator-only at any status, and have no locations, so they get the simpler
+  // PersonalTaskModal. Their rows had no actions before this.
+  const canEditPersonalRow = (t: Task) => t.isPersonal && t.createdBy === user.id && canStatusActions;
+
   const confirmTask = confirmId ? tasks.find((t) => t.id === confirmId) : undefined;
+  const editTask = editId ? tasks.find((t) => t.id === editId) : undefined;
+  const personalEditTask = personalEditId ? tasks.find((t) => t.id === personalEditId) : undefined;
 
   return (
     <>
@@ -149,7 +168,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
             <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[110px]" />
             <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[110px]" />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" />
-            <th className="w-[70px]" />
+            <th className="w-[96px]" />
           </tr>
         </thead>
         <tbody className="divide-y divide-line">
@@ -256,8 +275,22 @@ export default function TaskTable({ tasks, sort, onSort }: {
                   <StatusChip status={task.status} notApplicable={task.notApplicable} />
                 </td>
 
-                {/* Delete (pending one-offs only) + chevron */}
+                {/* Edit + Delete (pending one-offs only) + chevron */}
                 <td className="px-2 py-3 align-middle text-right whitespace-nowrap">
+                  {(canEditRow(task) || canEditPersonalRow(task)) && (
+                    <button
+                      type="button"
+                      title={canEditPersonalRow(task) ? "Edit this task" : "Edit this pending task"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (task.isPersonal) setPersonalEditId(task.id);
+                        else setEditId(task.id);
+                      }}
+                      className="align-middle text-grey-2 hover:text-orange transition p-1 opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
+                    </button>
+                  )}
                   {canDeleteRow(task) && (
                     <button
                       type="button"
@@ -310,6 +343,14 @@ export default function TaskTable({ tasks, sort, onSort }: {
     >
       <p className="text-[13px] text-grey">This permanently removes this pending task. This can't be undone.</p>
     </Modal>
+
+    {/* Both edit modals prefill on open, so a single instance serves every row. */}
+    {editTask && (
+      <EditTaskModal task={editTask} open={!!editId} onClose={() => setEditId(null)} />
+    )}
+    {personalEditTask && (
+      <PersonalTaskModal task={personalEditTask} open={!!personalEditId} onClose={() => setPersonalEditId(null)} />
+    )}
     </>
   );
 }

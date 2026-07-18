@@ -13,6 +13,7 @@ import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
   deletePersonalTask as deletePersonalTaskWrite,
+  updateTask as updateTaskWrite,
   deleteTask as deleteTaskWrite,
   startTask as startTaskWrite,
   completeTask as completeTaskWrite,
@@ -81,6 +82,12 @@ interface TaskStoreValue {
   updatePersonalTask: (id: string, patch: { title: string; description?: string; dueDate: string | null }) => Promise<void>;
   /** Delete a personal task (creator only, RLS-enforced). */
   deletePersonalTask: (id: string) => Promise<void>;
+  /**
+   * Edit a pending one-off task: title, description, due date, locations. Never
+   * reassigns. Pending-only + creator/assignee/admin is a UI-level guard (see
+   * canEditRow / canEditOneOff) — `tasks_update` RLS is deliberately wider.
+   */
+  updateTask: (id: string, patch: { title: string; description?: string; dueDate: string | null; locationIds: string[] }) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
   startTask: (id: string) => Promise<void>;
   completeTask: (id: string, note?: string) => Promise<void>;
@@ -329,6 +336,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       },
       deletePersonalTask: async (id) => {
         await deletePersonalTaskWrite(id);
+        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      },
+      updateTask: async (id, patch) => {
+        await updateTaskWrite(id, patch);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       deleteTask: async (id) => {

@@ -6,6 +6,7 @@ const ROLES = ["Admin", "HOD", "Sub-HOD", "Employee"] as const;
 // [capability, [admin, hod, sub_hod, employee]]
 const MATRIX: [string, boolean[]][] = [
   ["View & create own tasks", [true, true, true, true]],
+  ["Edit / delete own pending tasks", [true, true, true, true]],
   ["Revise tasks (max/week limit)", [true, true, true, true]],
   ["Shift / reschedule own tasks", [true, true, true, true]],
   ["Assign tasks to others", [true, true, true, false]],
