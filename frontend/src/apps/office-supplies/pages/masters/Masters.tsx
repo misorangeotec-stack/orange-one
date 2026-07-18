@@ -146,12 +146,18 @@ function CompaniesMaster() {
   );
 }
 
-/** Departments — carry the HOD (first approver). */
+/**
+ * Departments — carry the HOD, who is the ONLY first approver for requests raised
+ * under them. Live rows mirror the portal department list (the same one on every
+ * profile), which is what lets a requester's department be derived instead of typed.
+ * Rows with no `orgDepartmentId` are retired pre-mirror entries, kept so the older
+ * requests still resolve a name.
+ */
 function DepartmentsMaster() {
   const s = useSuppliesStore();
   const peopleOptions: ComboOption[] = useMemo(
     () =>
-      [{ value: "", label: "No HOD (falls back to First Approval owners)" }].concat(
+      [{ value: "", label: "No HOD — approvals for this department are blocked" }].concat(
         [...s.profiles]
           .sort((a, b) => a.name.localeCompare(b.name))
           .map((p) => ({ value: p.id, label: p.designation ? `${p.name} · ${p.designation}` : p.name })),
@@ -159,10 +165,25 @@ function DepartmentsMaster() {
     [s.profiles],
   );
   const columns: MasterColumn<Department>[] = [
-    { header: "Department", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
     {
-      header: "HOD (first approver)",
-      render: (r) => (r.hodUserId ? <span className="text-navy">{s.profileById(r.hodUserId)?.name ?? "Unknown"}</span> : <span className="text-grey-2">Unassigned</span>),
+      header: "Department",
+      render: (r) => (
+        <span className="font-medium text-navy">
+          {r.name}
+          {!r.orgDepartmentId && <span className="ml-2 text-[11px] font-normal text-grey-2">retired</span>}
+        </span>
+      ),
+    },
+    {
+      header: "HOD (only approver)",
+      render: (r) =>
+        r.hodUserId ? (
+          <span className="text-navy">{s.profileById(r.hodUserId)?.name ?? "Unknown"}</span>
+        ) : r.orgDepartmentId ? (
+          <span className="text-ryg-red">Not set</span>
+        ) : (
+          <span className="text-grey-2">—</span>
+        ),
       className: "w-64",
     },
     { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-20" },
@@ -171,9 +192,9 @@ function DepartmentsMaster() {
     { key: "name", label: "Department", type: "text", required: true },
     {
       key: "hodUserId",
-      label: "HOD (first approver)",
+      label: "HOD (only approver)",
       type: "custom",
-      hint: "Requests raised under this department route their first approval to this person.",
+      hint: "Every request raised by someone in this department goes to this person for first approval — and to nobody else. Leave it empty and those requests cannot be raised at all.",
       render: (value, onChange) => (
         <Combobox value={value} onChange={onChange} options={peopleOptions} placeholder="Select the HOD" />
       ),
@@ -188,6 +209,8 @@ function DepartmentsMaster() {
       fields={fields}
       searchText={(r) => r.name}
       canManage={s.canManage("department")}
+      canCreate={false}
+      createHint="Departments mirror the portal list — add one in Admin → Departments"
       emptyValues={{ name: "", hodUserId: "", sortOrder: "0" }}
       toValues={(r) => ({ name: r.name, hodUserId: r.hodUserId ?? "", sortOrder: String(r.sortOrder) })}
       onSubmit={async (id, v, active) => {

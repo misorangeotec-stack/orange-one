@@ -93,6 +93,7 @@ const mapDepartment = (r: any): Department => ({
   id: r.id,
   name: r.name,
   hodUserId: r.hod_user_id ?? null,
+  orgDepartmentId: r.org_department_id ?? null,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
 });

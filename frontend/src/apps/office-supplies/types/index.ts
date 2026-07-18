@@ -30,6 +30,13 @@ export interface Department {
   id: string;
   name: string;
   hodUserId: string | null;
+  /**
+   * The portal department (`public.departments`) this row mirrors — the same list
+   * that sits on every profile. Set → live, and a requester whose
+   * `profiles.departmentId` matches lands here automatically. Null → a retired
+   * pre-mirror row, kept only so historical requests still resolve a name.
+   */
+  orgDepartmentId: string | null;
   active: boolean;
   sortOrder: number;
 }

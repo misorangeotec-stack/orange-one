@@ -52,6 +52,8 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   fields,
   searchText,
   canManage,
+  canCreate,
+  createHint,
   emptyValues,
   toValues,
   onSubmit,
@@ -63,6 +65,14 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   fields: MasterFieldDef[];
   searchText: (row: T) => string;
   canManage: boolean;
+  /**
+   * Whether NEW rows may be added. Defaults to `canManage` — pass false for a master
+   * whose rows mirror another system (Office Supplies departments mirror the portal
+   * department list), where a hand-added row could never be matched to anything.
+   */
+  canCreate?: boolean;
+  /** Shown in place of the Add button when `canCreate` is false. */
+  createHint?: string;
   emptyValues: Values;
   toValues: (row: T) => Values;
   onSubmit: (id: string | null, values: Values, active: boolean) => Promise<void>;
@@ -76,6 +86,8 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const mayCreate = canManage && canCreate !== false;
 
   const filtered = useMemo(() => {
     const list = q.trim() ? rows.filter((r) => matchesSearch(q, searchText(r))) : rows;
@@ -150,11 +162,13 @@ export default function MasterCrud<T extends { id: string; name: string; active:
             className="w-full rounded-xl border border-line bg-white pl-9 pr-3 py-2.5 text-[14px] text-ink placeholder:text-grey-2 outline-none focus:border-orange focus:ring-4 focus:ring-orange/10"
           />
         </div>
-        {canManage && (
+        {mayCreate ? (
           <Button size="sm" onClick={openCreate}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
             Add {singular}
           </Button>
+        ) : (
+          createHint && <p className="text-[12px] text-grey-2 whitespace-nowrap">{createHint}</p>
         )}
       </div>
 
@@ -162,9 +176,9 @@ export default function MasterCrud<T extends { id: string; name: string; active:
         {filtered.length === 0 ? (
           <EmptyState
             title={`No ${singular.toLowerCase()} yet`}
-            message={canManage ? `Add your first ${singular.toLowerCase()} to get started.` : "Nothing to show."}
-            actionLabel={canManage ? `Add ${singular}` : undefined}
-            onAction={canManage ? openCreate : undefined}
+            message={mayCreate ? `Add your first ${singular.toLowerCase()} to get started.` : (createHint ?? "Nothing to show.")}
+            actionLabel={mayCreate ? `Add ${singular}` : undefined}
+            onAction={mayCreate ? openCreate : undefined}
           />
         ) : (
           <>

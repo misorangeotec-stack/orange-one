@@ -101,6 +101,8 @@ interface SuppliesStoreValue {
   itemsForCategory: (categoryId: string) => Item[];
   companyById: (id: string) => Company | undefined;
   departmentById: (id: string) => Department | undefined;
+  /** The signed-in user's own department, from their profile. Null when unmapped. */
+  myDepartment: Department | null;
   categoryById: (id: string) => Category | undefined;
   serviceTypeById: (id: string) => ServiceType | undefined;
 
@@ -213,6 +215,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const userId = session.user?.id ?? null;
   const isAdmin = session.isAdmin;
+  const myOrgDepartmentId = session.user?.departmentId ?? null;
 
   const { data, isLoading, error } = useQuery({
     queryKey: suppliesQueryKey(userId),
@@ -261,13 +264,24 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
     const departmentById = (id: string) => departments.find((d) => d.id === id);
 
+    // The requester's own department, derived from their portal profile rather than
+    // typed. Null when the profile has no department, or its portal department has
+    // no live mirror row — the form then falls back to a picker so nobody is stuck.
+    // fms_supplies_submit_request re-derives this server-side; the lock is not the gate.
+    const myDepartment =
+      departments.find((d) => d.active && d.orgDepartmentId && d.orgDepartmentId === myOrgDepartmentId) ?? null;
+
     // Mirrors fms_supplies_can_act(step, req, uid) — the same rule the update_*
     // RPCs enforce, so the greyed-out button and the server agree.
+    //
+    // first_approval is the department's HOD and NOBODY else — there is no
+    // fall-through to the step-owner list. That list once granted org-wide reach,
+    // which is exactly what let one department's HOD see another's requests.
     const canActOn = (stepKey: StepKey, r: SupplyRequest): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
       if (stepKey === "first_approval") {
         const hod = departmentById(r.departmentId)?.hodUserId;
-        if (hod && hod === uid) return true;
+        return !!hod && hod === uid;
       }
       return isStepOwner(stepKey);
     };
@@ -345,12 +359,13 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         return r ? canActOn(stepKey, r) : false;
       });
 
+    // "Pending with" — for first_approval that is the department's HOD alone.
+    // Merging in the step-owner list here would name people who can no longer act.
     const queueOwnerIds = (e: QueueEntry): string[] => {
       if (e.stepKey === "first_approval") {
         const r = requestMap.get(e.requestId);
         const hod = r ? departmentById(r.departmentId)?.hodUserId : null;
-        const owners = ownerIdsOf("first_approval");
-        return Array.from(new Set([...(hod ? [hod] : []), ...owners]));
+        return hod ? [hod] : [];
       }
       return ownerIdsOf(e.stepKey);
     };
@@ -379,6 +394,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       itemsForCategory: (categoryId) => (itemsByCategory.get(categoryId) ?? []).filter((i) => i.active),
       companyById: (id) => companies.find((c) => c.id === id),
       departmentById,
+      myDepartment,
       categoryById: (id) => categories.find((c) => c.id === id),
       serviceTypeById: (id) => serviceTypes.find((c) => c.id === id),
 
