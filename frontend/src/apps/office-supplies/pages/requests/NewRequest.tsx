@@ -51,6 +51,19 @@ export default function NewRequest() {
 
   const companyOptions: ComboOption[] = s.activeCompanies.map((c) => ({ value: c.id, label: c.name }));
   const deptOptions: ComboOption[] = s.activeDepartments.map((d) => ({ value: d.id, label: d.name }));
+
+  // THE DEPARTMENT IS NOT CHOSEN, IT IS DERIVED — it decides which HOD sees the
+  // request, so letting a requester pick it would let them route around their own
+  // HOD. Raising FOR someone else uses THEIR department, so it reaches their HOD.
+  // The picker survives only as a fallback for a profile with no department mapped.
+  // fms_supplies_submit_request re-derives all of this; this is display, not the gate.
+  const deptForUser = (uid: string) => {
+    const orgId = s.profileById(uid)?.departmentId ?? null;
+    return orgId ? (s.activeDepartments.find((d) => d.orgDepartmentId === orgId) ?? null) : null;
+  };
+  const beneficiaryDept = onBehalf && beneficiaryUserId ? deptForUser(beneficiaryUserId) : null;
+  const resolvedDept = beneficiaryDept ?? (onBehalf && beneficiaryUserId ? null : s.myDepartment);
+  const effectiveDeptId = resolvedDept?.id ?? departmentId;
   const categoryOptions: ComboOption[] = s.activeCategories.map((c) => ({
     value: c.id,
     label: c.name,
@@ -89,7 +102,7 @@ export default function NewRequest() {
     // Client-side pre-checks mirror the RPC.
     if (!companyId) return setErr("Company is required.");
     if (!location) return setErr("Location is required.");
-    if (!departmentId) return setErr("Department is required.");
+    if (!effectiveDeptId) return setErr("Department is required.");
     if (onBehalf && !beneficiaryName.trim()) return setErr("Name of the person you're requesting for is required.");
     if (!quantity.trim()) return setErr("Quantity is required.");
 
@@ -110,7 +123,7 @@ export default function NewRequest() {
       const id = await s.submitRequest({
         companyId,
         location: location as "Plant" | "Office",
-        departmentId,
+        departmentId: effectiveDeptId,
         requestedForName: onBehalf ? beneficiaryName.trim() : session.user.name,
         requestedForUserId: onBehalf ? (beneficiaryUserId || null) : session.user.id,
         requestType,
@@ -144,10 +157,6 @@ export default function NewRequest() {
         <FieldLabel label="Location" required>
           <Combobox value={location} onChange={setLocation} options={LOCATIONS} placeholder="Plant or Office" autoAdvance />
         </FieldLabel>
-        <FieldLabel label="Department" required>
-          <Combobox value={departmentId} onChange={setDepartmentId} options={deptOptions} placeholder="Select department" autoAdvance />
-        </FieldLabel>
-
         <label className="flex items-center gap-2.5 cursor-pointer select-none">
           <input type="checkbox" checked={onBehalf} onChange={(e) => setOnBehalf(e.target.checked)} className="w-4 h-4 accent-orange" />
           <span className="text-[13px] text-navy">I'm requesting this for someone else</span>
@@ -161,6 +170,25 @@ export default function NewRequest() {
               <Combobox value={beneficiaryUserId} onChange={setBeneficiaryUserId} options={peopleOptions} placeholder="Select a colleague" />
             </FieldLabel>
           </div>
+        )}
+
+        {/* Sits AFTER the beneficiary, because it follows from them. */}
+        {resolvedDept ? (
+          <FieldLabel
+            label="Department"
+            hint={beneficiaryDept ? "from their profile" : "from your profile"}
+          >
+            <div className="w-full rounded-xl border border-line bg-page/60 px-3.5 py-2.5 text-[13.5px] text-navy">
+              {resolvedDept.name}
+            </div>
+            <p className="text-[11.5px] text-grey-2 mt-1">
+              Approval goes to this department's HOD. To change it, ask an admin to update the profile.
+            </p>
+          </FieldLabel>
+        ) : (
+          <FieldLabel label="Department" required hint="no department on the profile">
+            <Combobox value={departmentId} onChange={setDepartmentId} options={deptOptions} placeholder="Select department" autoAdvance />
+          </FieldLabel>
         )}
 
         <FieldLabel label="Type of request" required>

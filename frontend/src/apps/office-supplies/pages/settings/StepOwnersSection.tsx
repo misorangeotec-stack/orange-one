@@ -9,9 +9,14 @@ import { useSuppliesStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
 /**
- * Step Owners (admin). `request` is never owned (every employee may raise one).
- * `first_approval` routes per-request to the department HOD; the owners set here are an
- * ADDITIVE fallback for a department with no HOD.
+ * Step Owners (admin). Two steps are deliberately absent:
+ *   `request`        — every employee may raise one, so it is never owned.
+ *   `first_approval` — belongs to the request's department HOD and ONLY to them
+ *                      (fms_supplies_departments.hod_user_id, set in Masters).
+ *                      It used to be listed here as an "additive fallback", but a
+ *                      name in that list could read EVERY request in EVERY
+ *                      department — which is exactly how one department's HOD
+ *                      ended up seeing another's requests. The list is gone.
  */
 export default function StepOwnersSection() {
   const s = useSuppliesStore();
@@ -21,7 +26,15 @@ export default function StepOwnersSection() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const assignableSteps = useMemo(() => STEPS.filter((st) => st.key !== "request"), []);
+  const assignableSteps = useMemo(
+    () => STEPS.filter((st) => st.key !== "request" && st.key !== "first_approval"),
+    [],
+  );
+
+  const deptsWithoutHod = useMemo(
+    () => s.activeDepartments.filter((d) => !d.hodUserId),
+    [s.activeDepartments],
+  );
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.orgDepartments.map((d) => ({ value: d.id, label: d.name })),
@@ -68,14 +81,24 @@ export default function StepOwnersSection() {
 
   const editingStep = STEPS.find((st) => st.key === editing);
   const hint = (key: StepKey) =>
-    key === "first_approval"
-      ? "Fallback for a department with no HOD set — the HOD is the primary approver."
-      : key === "second_approval"
-        ? "The Management approvers."
-        : "The fulfilment / handover team.";
+    key === "second_approval" ? "The Management approvers." : "The fulfilment / handover team.";
 
   return (
     <div className="space-y-3">
+      <Card className="px-4 py-3">
+        <p className="text-[13px] text-navy font-medium">First Approval is the department&apos;s HOD</p>
+        <p className="text-[12.5px] text-grey-2 mt-0.5">
+          It is not assigned here. Each request goes to the HOD of the requester&apos;s own department, and to
+          nobody else — set that in <span className="font-medium text-navy">Masters → Departments</span>.
+        </p>
+        {deptsWithoutHod.length > 0 && (
+          <p className="text-[12.5px] text-ryg-red mt-1.5">
+            No HOD set for: {deptsWithoutHod.map((d) => d.name).join(", ")}. Requests needing approval cannot be
+            raised for {deptsWithoutHod.length === 1 ? "it" : "them"} until one is chosen.
+          </p>
+        )}
+      </Card>
+
       <Card className="overflow-hidden">
         <ScrollableTable>
           <table className="w-full text-[13.5px]">

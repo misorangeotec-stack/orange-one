@@ -31,11 +31,9 @@ export default function SuppliesLayout() {
   const s = useSuppliesStore();
   const orgPersonById = useOrgPersonById();
 
+  // No step-owner clause: first approval belongs to the department's HOD alone.
   const canFirstApprove =
-    s.isProcessCoordinator ||
-    s.isStepOwner("first_approval") ||
-    s.hodDepartmentIds.length > 0 ||
-    s.myQueue("first_approval").length > 0;
+    s.isProcessCoordinator || s.hodDepartmentIds.length > 0 || s.myQueue("first_approval").length > 0;
   const canSecondApprove =
     s.isProcessCoordinator || s.isStepOwner("second_approval") || s.myQueue("second_approval").length > 0;
   const canHandover = s.isProcessCoordinator || s.isStepOwner("handover") || s.myQueue("handover").length > 0;
