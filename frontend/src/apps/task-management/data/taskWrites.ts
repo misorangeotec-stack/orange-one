@@ -412,6 +412,20 @@ export async function markNotificationsRead(ids: string[]): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Put notifications back to unread (read_at = null) — the "I'll deal with this
+ * later" escape hatch, and the undo for the auto-mark-read that fires when you
+ * open a task. Same RLS as above: the caller can only touch their own rows.
+ */
+export async function markNotificationsUnread(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: null })
+    .in("id", ids);
+  if (error) throw new Error(error.message);
+}
+
 export async function addRemark(taskId: string, note: string, mentionedIds: string[]): Promise<string> {
   const { data, error } = await supabase.rpc("add_task_remark", {
     p_task_id: taskId,

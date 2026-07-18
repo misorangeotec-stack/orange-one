@@ -6,6 +6,24 @@ import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
 import { grantableModules } from "@/apps/registry";
+import { groupByCategory } from "@/apps/categories";
+import { useState } from "react";
+
+/** Category filter pill above the matrix. */
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "text-[12px] font-medium rounded-pill px-3 py-1.5 border transition",
+        active ? "bg-orange text-white border-orange" : "bg-white text-grey border-line hover:border-orange/40"
+      )}
+    >
+      {label}
+    </button>
+  );
+}
 
 /**
  * Per-user module access matrix. Each cell grants/revokes one app for one user
@@ -20,17 +38,53 @@ export default function ModuleAccess() {
 
   const pg = usePagination(profiles);
 
+  // This table has ONE COLUMN PER MODULE, so it is the screen that degrades
+  // fastest as the portal grows — at fifty modules it is a fifty-column sideways
+  // scroll. Grouping the columns and letting an admin narrow to one category at a
+  // time is what keeps it usable. Categories are the same ones the home menu uses
+  // (apps/categories.ts), so the two screens always read alike.
+  const groups = groupByCategory(grantableModules);
+  const [activeGroup, setActiveGroup] = useState<string>("all");
+  const shownGroups = activeGroup === "all" ? groups : groups.filter((g) => g.key === activeGroup);
+  const shownModules = shownGroups.flatMap((g) => g.rows);
+
   return (
     <div className="space-y-4">
       <p className="text-[13px] text-grey">Choose which apps each person can open. Admins always have access to every app.</p>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <FilterChip label="All" active={activeGroup === "all"} onClick={() => setActiveGroup("all")} />
+        {groups.map((g) => (
+          <FilterChip
+            key={g.key}
+            label={`${g.label} (${g.rows.length})`}
+            active={activeGroup === g.key}
+            onClick={() => setActiveGroup(g.key)}
+          />
+        ))}
+      </div>
 
       <Card>
       <ScrollableTable>
         <table className="w-full border-collapse">
           <thead>
+            {/* Category band above the module names — without it, a wide scroll
+                loses all sense of which family a column belongs to. */}
+            <tr className="border-b border-line/60">
+              <th className="sticky left-0 bg-white" />
+              {shownGroups.map((g) => (
+                <th
+                  key={g.key}
+                  colSpan={g.rows.length}
+                  className="text-center text-[10.5px] font-semibold uppercase tracking-wider text-grey-2 px-4 pt-3 pb-1 border-l border-line/60"
+                >
+                  {g.label}
+                </th>
+              ))}
+            </tr>
             <tr className="border-b border-line">
               <th className="text-left text-[12px] font-semibold text-grey-2 uppercase tracking-wide px-4 py-3 sticky left-0 bg-white">User</th>
-              {grantableModules.map((a) => (
+              {shownModules.map((a) => (
                 <th key={a.id} className="text-center text-[12px] font-semibold text-navy px-4 py-3 whitespace-nowrap">
                   {a.name}
                   {a.status !== "live" && <span className="block text-[10px] font-normal text-grey-2">coming soon</span>}
@@ -53,7 +107,7 @@ export default function ModuleAccess() {
                       </div>
                     </div>
                   </td>
-                  {grantableModules.map((a) => {
+                  {shownModules.map((a) => {
                     // A universal app is granted implicitly (apps/universal.ts), so its cell is
                     // on and locked for everyone — an empty box the user could still open would
                     // be a lie about who has access.

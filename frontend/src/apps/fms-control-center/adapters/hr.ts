@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
+import { appName } from "@/apps/appInfo";
 import { fetchHrData, hrQueryKey } from "@/apps/hr-recruitment/data/hrFetch";
 import { buildQueueEntries, hrSnapshotFrom } from "@/apps/hr-recruitment/lib/queues";
 import { STAGES, STEPS } from "@/apps/hr-recruitment/lib/steps";
@@ -27,7 +28,8 @@ import type { FmsAdapter } from "./types";
  */
 export const hrAdapter: FmsAdapter = {
   key: "hr",
-  name: "HR Recruitment FMS",
+  appId: "hr-recruitment",
+  name: appName("hr-recruitment"),
   controlCenterPath: "/hr-recruitment/monitoring",
   status: "live",
   useSnapshot() {

@@ -56,7 +56,12 @@ export type ImportSnapshot = Pick<
  * `inward`, which is untimed by design.
  */
 export interface QueueEntry extends QueueEntryBase<StepKey> {
-  entityType: "line" | "po";
+  /**
+   * Note the asymmetry: sourcing and approval are still per LINE here, but the
+   * PO desk is per REQUISITION — a PO never spans two requisitions, so a
+   * requisition is one piece of PO work however many vendors it needs.
+   */
+  entityType: "line" | "po" | "request";
   companyId: string | null;
   value: number | null;
 }
@@ -390,11 +395,22 @@ const PO_STEPS: { stepKey: StepKey; match: (idx: ImportIndex, p: PurchaseOrder) 
   { stepKey: "tally", match: poInTally },
 ];
 
+/** Sourcing and approval only — the PO desk is requisition-scoped (see below). */
 const LINE_STEPS: { stepKey: StepKey; match: (l: RequestItem) => boolean }[] = [
   { stepKey: "sourcing", match: lineInSourcing },
   { stepKey: "approval", match: lineInApproval },
-  { stepKey: "po", match: lineInPoDesk },
 ];
+
+/** The lines the PO workbench may act on — exactly what the RPC accepts. */
+export const poDeskLinesOf = (lines: RequestItem[]): RequestItem[] => lines.filter(lineInPoDesk);
+
+/**
+ * A requisition's PO due date: the EARLIEST of its pool lines' due dates. On a
+ * legacy requisition with divergent stamps the minimum is the conservative
+ * choice.
+ */
+export const requestPoDueIso = (data: ImportSnapshot, poolLines: RequestItem[]): string | null =>
+  poolLines.map((l) => lineDueIso(data, l, "po")).reduce<string | null>((a, b) => (a === null || b <= a ? b : a), null);
 
 /* -------------------------------------------------------------------------- */
 /*  Completed entries — the "what I did here" side of a stage                  */
@@ -690,6 +706,24 @@ export function buildQueueEntries(data: ImportSnapshot, idx: ImportIndex = build
       dueIso: lineDueIso(data, l, step.stepKey),
       companyId: req.companyId,
       value: l.lineValue,
+    });
+  }
+
+  // The PO desk is REQUISITION-scoped: a PO never spans two requisitions, so a
+  // requisition is one piece of PO work however many vendors it needs.
+  const poolByRequest = new Map<string, RequestItem[]>();
+  for (const l of data.requestItems) if (lineInPoDesk(l)) push(poolByRequest, l.requestId, l);
+  for (const r of data.requests) {
+    const pool = poolByRequest.get(r.id);
+    if (!pool?.length) continue;
+    out.push({
+      stepKey: "po",
+      entityType: "request",
+      entityId: r.id,
+      ref: r.requestNo,
+      dueIso: requestPoDueIso(data, pool),
+      companyId: r.companyId,
+      value: pool.reduce((sum, l) => sum + (l.lineValue ?? 0), 0),
     });
   }
 

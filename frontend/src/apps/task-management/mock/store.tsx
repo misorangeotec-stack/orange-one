@@ -9,6 +9,7 @@ import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
 import { fetchTaskData, fetchTaskActivity, type TaskData } from "../data/fetchTaskData";
+import { useMyNotifications, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
 import {
   insertTask,
   updatePersonalTask as updatePersonalTaskWrite,
@@ -23,6 +24,7 @@ import {
   rescheduleTask as rescheduleTaskWrite,
   addRemark as addRemarkWrite,
   markNotificationsRead as markNotificationsReadWrite,
+  markNotificationsUnread as markNotificationsUnreadWrite,
   insertRecurring as insertRecurringWrite,
   updateRecurring as updateRecurringWrite,
   setRecurringActive as setRecurringActiveWrite,
@@ -107,6 +109,23 @@ interface TaskStoreValue {
   rescheduleTask: (id: string, newDueDate: string) => Promise<string | null>;
   addRemark: (id: string, note: string, mentionedIds: string[]) => Promise<void>;
   markNotificationsRead: (ids: string[]) => Promise<void>;
+  /** Put notifications back to unread (the undo for opening a task). */
+  markNotificationsUnread: (ids: string[]) => Promise<void>;
+  /** My notifications, newest first — the bell, the Notifications page, the dashboard panel. */
+  myNotifications: Notification[];
+  /** How many of mine are unread (bell dot, nav badge, dashboard count). */
+  unreadCount: number;
+  /**
+   * Task ids I've been assigned but not yet looked at — drives the task-list row
+   * highlight. A Set because TaskTable tests it once per rendered row.
+   */
+  unreadAssignedTaskIds: Set<string>;
+  /**
+   * Mark every unread notification for one task read. Called when the assignee
+   * OPENS the task, which is what clears the row highlight. No-ops when there is
+   * nothing unread, so re-opening a task doesn't spend a write.
+   */
+  markTaskNotificationsRead: (taskId: string) => Promise<void>;
 
   recurringTasks: RecurringTask[];
   getRecurring: (id: string) => RecurringTask | undefined;
@@ -237,16 +256,20 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     queryFn: fetchTaskData,
     enabled: !!user,
   });
-  // Deferred, NON-blocking slice: the org-scale activity timeline + notification
-  // bell. Nested under the ["taskData"] prefix so every existing
-  // invalidateQueries(["taskData"]) (remarks, status changes, realtime bell) and
-  // the IndexedDB persistence auto-cover it — but the "Loading tasks…" gate below
-  // waits only on the core query, so a cold load paints without this history.
+  // Deferred, NON-blocking slice: the org-scale activity timeline. Nested under
+  // the ["taskData"] prefix so every existing invalidateQueries(["taskData"])
+  // (remarks, status changes) and the IndexedDB persistence auto-cover it — but
+  // the "Loading tasks…" gate below waits only on the core query, so a cold load
+  // paints without this history.
   const { data: activityData } = useQuery({
     queryKey: ["taskData", "activity", user?.id ?? null],
     queryFn: fetchTaskActivity,
     enabled: !!user,
   });
+  // The notification feed is its OWN root key (not under ["taskData"]) and owns
+  // its realtime subscription — see lib/useMyNotifications for why. Consequence:
+  // writes that touch notifications must invalidate BOTH keys.
+  const { notifications } = useMyNotifications(user?.id);
   // Org-wide people list for @mention pickers (see mentionablePeople). Cached
   // for 5 min; safe to share across the app since it carries no sensitive fields.
   const { data: orgPeople } = useQuery({
@@ -258,7 +281,6 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
 
   const tasks = data?.tasks ?? [];
   const activity = activityData?.activity ?? [];
-  const notifications = activityData?.notifications ?? [];
   const recurringTasks = data?.recurringTasks ?? [];
   const weeklyPlans = data?.weeklyPlans ?? [];
   const workspace = data?.workspace ?? DEFAULT_WORKSPACE;
@@ -300,10 +322,21 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       return { usedThisWeek, remaining, allowed, max };
     };
 
+    // The feed is already user-scoped by RLS and by the query's own .eq(), but
+    // filter defensively so a cached row from another session can never surface.
+    const myNotifications = notifications.filter((n) => n.userId === user.id);
+    const unread = myNotifications.filter((n) => !n.readAt);
+    const unreadAssignedTaskIds = new Set(
+      unread.filter((n) => n.type === "assigned" && n.taskId).map((n) => n.taskId as string)
+    );
+
     return {
       tasks,
       activity,
       notifications,
+      myNotifications,
+      unreadCount: unread.length,
+      unreadAssignedTaskIds,
       getTask: (id) => tasks.find((t) => t.id === id),
       activityFor: (taskId) => activity.filter((a) => a.taskId === taskId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
       revisionInfo,
@@ -412,11 +445,29 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       addRemark: async (id, note, mentionedIds) => {
         await addRemarkWrite(id, note, mentionedIds);
         await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        // Fans out @mention notifications, so refresh the feed's own key too.
+        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
       },
       // Mark own notifications read (always allowed — RLS scopes to the caller).
       markNotificationsRead: async (ids) => {
+        if (ids.length === 0) return;
         await markNotificationsReadWrite(ids);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
+      },
+      markNotificationsUnread: async (ids) => {
+        if (ids.length === 0) return;
+        await markNotificationsUnreadWrite(ids);
+        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
+      },
+      // Clearing a task's highlight when its assignee opens it. Guarded: with
+      // nothing unread this is a no-op, so revisiting a task costs no write.
+      markTaskNotificationsRead: async (taskId) => {
+        const ids = notifications
+          .filter((n) => n.taskId === taskId && n.userId === user.id && !n.readAt)
+          .map((n) => n.id);
+        if (ids.length === 0) return;
+        await markNotificationsReadWrite(ids);
+        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
       },
 
       recurringTasks,
@@ -665,22 +716,10 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, orgPeople, dir, user, role, queryClient]);
 
-  // Realtime: push the bell + task data when one of my notifications changes
-  // (e.g. someone @mentions me). RLS scopes the stream to my own rows; we also
-  // filter server-side by user_id. Any event just refetches the task query.
-  const userId = user?.id;
-  useEffect(() => {
-    if (!userId) return;
-    const channel = supabase
-      .channel(`notifications:${userId}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "notifications", filter: `user_id=eq.${userId}` },
-        () => { void queryClient.invalidateQueries({ queryKey: ["taskData"] }); }
-      )
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [userId, queryClient]);
+  // The realtime notification subscription used to live here. It now belongs to
+  // useMyNotifications (called above) so the portal home screen gets the same
+  // live bell without mounting this provider — and so there is only ever one
+  // subscription to the `notifications:<uid>` channel.
 
   if (isLoading) {
     return (

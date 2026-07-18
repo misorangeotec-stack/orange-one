@@ -1,4 +1,5 @@
 import type { NavItem } from "@/shared/components/layout/types";
+import { appName } from "@/apps/appInfo";
 
 const B = "/hr-recruitment";
 
@@ -121,7 +122,7 @@ export function buildHrNav(opts: {
     nav.push({ label, to, icon, badge, section: adminSectionUsed ? undefined : "Administration" });
     adminSectionUsed = true;
   };
-  if (opts.canMonitor) admin("HR FMS Control Center", `${B}/monitoring`, ic.monitor);
+  if (opts.canMonitor) admin(`${appName("hr-recruitment")} Control Center`, `${B}/monitoring`, ic.monitor);
   if (opts.canManageMasters) {
     admin("Masters", `${B}/masters`, ic.masters);
     admin("Master Requests", `${B}/master-requests`, ic.inbox, opts.pendingReviews || undefined);

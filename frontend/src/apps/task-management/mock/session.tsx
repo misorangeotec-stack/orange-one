@@ -4,4 +4,4 @@
  * The provider now wraps the whole app, so it is no longer mounted inside the
  * Task Management app itself.
  */
-export { SessionProvider, MockSessionProvider, useSession, ALL_ROLES } from "@/core/platform/session";
+export { SessionProvider, MockSessionProvider, useSession, ALL_ROLES, roleLabel } from "@/core/platform/session";

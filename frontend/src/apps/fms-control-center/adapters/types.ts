@@ -43,6 +43,14 @@ export interface FmsSnapshot {
 export interface FmsAdapter {
   /** Stable identifier, e.g. "purchase". */
   key: string;
+  /**
+   * The REGISTRY app id — deliberately separate from `key`, which is this
+   * scoreboard's own short handle. They differ for two apps (`purchase` →
+   * `procurement`, `hr` → `hr-recruitment`), so reusing `key` to look up a display
+   * name would silently miss and print the raw id.
+   */
+  appId: string;
+  /** Display name — always `appName(appId)`, never a hand-typed string. */
   name: string;
   /** Where a click on the row lands — that FMS's own control center. */
   controlCenterPath: string;

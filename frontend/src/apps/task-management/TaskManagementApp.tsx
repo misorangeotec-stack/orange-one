@@ -5,6 +5,7 @@ import RequireRole from "./components/RequireRole";
 import Dashboard from "./pages/Dashboard";
 import TasksList from "./pages/TasksList";
 import TaggedTasks from "./pages/TaggedTasks";
+import Notifications from "./pages/Notifications";
 import CreateTask from "./pages/CreateTask";
 import TaskDetail from "./pages/TaskDetail";
 import TeamTasks from "./pages/TeamTasks";
@@ -36,6 +37,8 @@ export default function TaskManagementApp() {
             <Route index element={<Dashboard />} />
             <Route path="tasks" element={<TasksList />} />
             <Route path="tagged" element={<TaggedTasks />} />
+            {/* Not role-guarded — everyone has notifications. */}
+            <Route path="notifications" element={<Notifications />} />
             <Route path="tasks/new" element={<CreateTask />} />
             <Route path="tasks/:id" element={<TaskDetail />} />
 

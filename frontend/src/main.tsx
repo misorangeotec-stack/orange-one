@@ -33,6 +33,7 @@ const persister = createIDBPersister();
 const PERSISTED_QUERY_ROOTS = new Set([
   "appData", // receivables hub payload
   "taskData", // task-management: tasks + activity + recurring + locations
+  "taskNotifications", // task-management: the bell feed (also rendered on /home)
   "orgPeople", // task-management: org people directory
   "directory", // platform directory (profiles/roles/hods/app_access)
 ]);

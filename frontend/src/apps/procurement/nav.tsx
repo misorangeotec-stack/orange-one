@@ -1,4 +1,5 @@
 import type { NavItem } from "@/shared/components/layout/types";
+import { appName } from "@/apps/appInfo";
 
 const B = "/procurement";
 
@@ -104,7 +105,7 @@ export function buildProcurementNav(opts: {
   }
 
   if (opts.canMonitor) {
-    nav.push({ label: "Purchase FMS Control Center", to: `${B}/monitoring`, icon: ic.monitor, section: "Administration" });
+    nav.push({ label: `${appName("procurement")} Control Center`, to: `${B}/monitoring`, icon: ic.monitor, section: "Administration" });
   }
   if (opts.canManageMasters) {
     nav.push(

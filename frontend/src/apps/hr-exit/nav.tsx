@@ -1,4 +1,5 @@
 import type { NavItem } from "@/shared/components/layout/types";
+import { appName } from "@/apps/appInfo";
 
 const B = "/hr-exit";
 
@@ -179,7 +180,7 @@ export function buildExitNav(opts: {
     nav.push({ label, to, icon, badge, section: adminSectionUsed ? undefined : "Administration" });
     adminSectionUsed = true;
   };
-  if (opts.canMonitor) admin("Exit FMS Control Center", `${B}/monitoring`, ic.monitor);
+  if (opts.canMonitor) admin(`${appName("hr-exit")} Control Center`, `${B}/monitoring`, ic.monitor);
   if (opts.canManageMasters) {
     admin("Masters", `${B}/masters`, ic.masters);
     // Badge only what THIS user can actually resolve — an Exit Reasons owner must not

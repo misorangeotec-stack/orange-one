@@ -8,11 +8,28 @@ import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
 import { grantableModules } from "@/apps/registry";
+import { groupByCategory } from "@/apps/categories";
 import type { AppRole } from "@/core/platform/types";
 import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
 import ShareLoginModal from "./ShareLoginModal";
 
 const RECEIVABLES_APP_ID = "outstanding-dashboard";
+
+/**
+ * Split a category's modules by their optional sub-group, preserving order and
+ * keeping ungrouped ones in a leading unlabelled block — the same two-level split
+ * the home menu renders (FMS → Purchase / HR).
+ */
+function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string | null; rows: T[] }[] {
+  const out: { label: string | null; rows: T[] }[] = [];
+  for (const row of rows) {
+    const label = row.subGroup ?? null;
+    const last = out[out.length - 1];
+    if (last && last.label === label) last.rows.push(row);
+    else out.push({ label, rows: [row] });
+  }
+  return out;
+}
 
 const ROLES: { value: AppRole; label: string; hint: string }[] = [
   { value: "employee", label: "Employee", hint: "Own tasks only" },
@@ -51,6 +68,9 @@ export default function UserForm() {
   const candidateHods = profiles.filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== id);
   const toggleHod = (hid: string) => setHodIds((prev) => (prev.includes(hid) ? prev.filter((h) => h !== hid) : [...prev, hid]));
   const toggleModule = (mid: string) => setModuleAccess((prev) => (prev.includes(mid) ? prev.filter((m) => m !== mid) : [...prev, mid]));
+  /** Grant or revoke a whole category at once — the common "all the FMS apps" case. */
+  const setGroupModules = (ids: string[], on: boolean) =>
+    setModuleAccess((prev) => (on ? [...new Set([...prev, ...ids])] : prev.filter((m) => !ids.includes(m))));
   const toggleSalesperson = (n: string) =>
     setReceivablesSalespersons((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
 
@@ -230,28 +250,64 @@ export default function UserForm() {
             {role === "admin" ? (
               <p className="text-[12.5px] text-grey-2">Admins have full access to all current and future apps.</p>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-2">
-                {grantableModules.map((a) => {
-                  const on = moduleAccess.includes(a.id);
-                  const soon = a.status !== "live";
+              /* Grouped by the SAME categories as the home menu (apps/categories.ts).
+                 A flat list of every module was already hard to scan at ten; the
+                 portal is heading for dozens. Per-group select-all is here because
+                 "give this person all the FMS apps" is the common admin action. */
+              <div className="space-y-4">
+                {groupByCategory(grantableModules).map((group) => {
+                  const ids = group.rows.map((a) => a.id);
+                  const allOn = ids.every((id) => moduleAccess.includes(id));
                   return (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => toggleModule(a.id)}
-                      className={cn(
-                        "flex items-center gap-2.5 text-left rounded-xl border px-3 py-2.5 transition",
-                        on ? "border-orange bg-orange-soft/50 ring-2 ring-orange/15" : "border-line hover:border-orange/40"
+                    <div key={group.key}>
+                      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                        <span className="text-[11px] font-semibold uppercase tracking-wider text-grey-2">
+                          {group.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setGroupModules(ids, !allOn)}
+                          className="text-[11.5px] font-medium text-orange hover:underline"
+                        >
+                          {allOn ? "Clear all" : "Select all"}
+                        </button>
+                      </div>
+                      {/* Second level (FMS → Purchase / HR), same split as the menu. */}
+                      {bySubGroup(group.rows).map((sub) => (
+                      <div key={sub.label ?? "_"} className={sub.label ? "mt-2" : undefined}>
+                      {sub.label && (
+                        <div className="text-[10.5px] font-semibold uppercase tracking-wider text-grey-2/70 mb-1">
+                          {sub.label}
+                        </div>
                       )}
-                    >
-                      <span className={cn("w-4 h-4 rounded-[5px] border flex items-center justify-center shrink-0", on ? "bg-orange border-orange text-white" : "border-grey-2")}>
-                        {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-[13px] font-medium text-navy truncate">{a.name}</span>
-                        {soon && <span className="block text-[10.5px] text-grey-2">Coming soon</span>}
-                      </span>
-                    </button>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {sub.rows.map((a) => {
+                          const on = moduleAccess.includes(a.id);
+                          const soon = a.status !== "live";
+                          return (
+                            <button
+                              key={a.id}
+                              type="button"
+                              onClick={() => toggleModule(a.id)}
+                              className={cn(
+                                "flex items-center gap-2.5 text-left rounded-xl border px-3 py-2.5 transition",
+                                on ? "border-orange bg-orange-soft/50 ring-2 ring-orange/15" : "border-line hover:border-orange/40"
+                              )}
+                            >
+                              <span className={cn("w-4 h-4 rounded-[5px] border flex items-center justify-center shrink-0", on ? "bg-orange border-orange text-white" : "border-grey-2")}>
+                                {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block text-[13px] font-medium text-navy truncate">{a.name}</span>
+                                {soon && <span className="block text-[10.5px] text-grey-2">Coming soon</span>}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      </div>
+                      ))}
+                    </div>
                   );
                 })}
               </div>

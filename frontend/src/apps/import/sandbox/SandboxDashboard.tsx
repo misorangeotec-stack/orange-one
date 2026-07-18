@@ -4,6 +4,7 @@ import { timeAgo } from "@/shared/lib/time";
 import { useImportStore } from "../store";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import type { ImportNotification } from "../types";
+import { appName } from "@/apps/appInfo";
 
 const B = "/import";
 
@@ -29,14 +30,14 @@ export default function SandboxDashboard() {
   const cards: QueueCard[] = [];
   if (s.canSource) cards.push({ label: "Sourcing Queue", count: s.sourcingQueue.length, to: `${B}/queues/sourcing` });
   if (s.isApprover) cards.push({ label: "Approvals", count: s.approvalQueue.length, to: `${B}/queues/approvals` });
-  if (s.canGeneratePo) cards.push({ label: "PO Workbench", count: s.poPool.length, to: `${B}/po/workbench` });
+  if (s.canGeneratePo) cards.push({ label: "PO Workbench", count: s.poRequestQueue.length, to: `${B}/po/workbench` });
   if (s.canSharePo) cards.push({ label: "Share PO", count: stageCount("share_po"), to: `${B}/queues/share` });
   if (s.canCollectPi) cards.push({ label: "Collect PI", count: stageCount("collect_pi"), to: `${B}/queues/collect-pi` });
   if (s.canAdvancePayment) cards.push({ label: "Advance", count: stageCount("advance_payment"), to: `${B}/queues/advance` });
   if (s.canFollowup) cards.push({ label: "Follow-up", count: stageCount("follow_up"), to: `${B}/queues/follow-up` });
   if (s.canInward) cards.push({ label: "Inward", count: stageCount("inward"), to: `${B}/queues/inward` });
   if (s.canTally) cards.push({ label: "Tally", count: stageCount("tally"), to: `${B}/queues/tally` });
-  if (s.isProcessCoordinator) cards.push({ label: "Purchase FMS Control Center", count: openPos.length + s.sourcingQueue.length + s.approvalQueue.length + s.poPool.length, to: `${B}/monitoring` });
+  if (s.isProcessCoordinator) cards.push({ label: `${appName("import")} Control Center`, count: openPos.length + s.sourcingQueue.length + s.approvalQueue.length + s.poRequestQueue.length, to: `${B}/monitoring` });
 
   const notifs = s.myNotifications.slice(0, 6);
   const firstAction = cards.find((c) => c.count > 0);

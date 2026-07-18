@@ -18,6 +18,7 @@ import { linkResolver } from "../../lib/links";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StepPipeline, { type StepPipelineNode } from "@/shared/components/ui/StepPipeline";
 import type { RequestItem } from "../../types";
+import { appName } from "@/apps/appInfo";
 
 /** What the table is currently showing. Clicking a pipeline step pins this to "delayed". */
 type Scope = "delayed" | "today" | "noDate" | "all";
@@ -186,7 +187,7 @@ export default function ControlCenter() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">Purchase FMS Control Center</h1>
+        <h1 className="text-[22px] font-bold text-navy">{appName("procurement")} Control Center</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Pending work by the day it falls due. Each count is one <strong>step</strong> of work on one entry — the same PO can
           be waiting at two steps. Click a step to see what's late there, then call the owner.

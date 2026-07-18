@@ -38,6 +38,7 @@ import type {
   ImportEntityType,
 } from "./types";
 import { STEPS, type StepKey } from "./lib/steps";
+import { ownerResolver } from "./lib/owners";
 import { masterTypeLabel } from "./lib/masterFields";
 import {
   buildImportIndex,
@@ -47,6 +48,8 @@ import {
   lineDueIso,
   lineInApproval,
   lineInPoDesk,
+  poDeskLinesOf,
+  requestPoDueIso,
   lineInSourcing,
   poDueIso,
   poShareLockReason,
@@ -229,6 +232,20 @@ interface ImportStoreValue {
   sourcingQueue: RequestItem[];
   approvalQueue: RequestItem[];
   poPool: RequestItem[];
+  /**
+   * Requisitions with at least one approved item still waiting for a PO — ONE
+   * row each. Sourcing and approval here are still per line; only the PO desk is
+   * requisition-scoped, because a PO never spans two requisitions.
+   */
+  poRequestQueue: PurchaseRequest[];
+  /** This requisition's approved lines still waiting for a PO. */
+  poDeskLinesForRequest: (requestId: string) => RequestItem[];
+  /** Sum of the above — what the workbench's money columns show. */
+  poDeskTotalForRequest: (requestId: string) => number;
+  /** Distinct vendors on those lines = how many POs "Generate" will create. */
+  poDeskVendorIdsForRequest: (requestId: string) => string[];
+  /** Earliest PO due date across a requisition's pool lines. */
+  dueIsoForPoRequest: (r: PurchaseRequest) => string | null;
   /**
    * The "what I did here" side of each stage — every COMPLETED entry, unscoped.
    * Owner-agnostic on purpose (the Control Center needs the full set); the pages
@@ -509,13 +526,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     };
     const isMasterUnassigned = (masterType: MasterType) => managerIdsFor(masterType).length === 0;
 
-    const approverForAmount = (amount: number): string | null => {
-      const band = [...approvalBands]
-        .filter((b) => b.active)
-        .sort((a, b) => a.sortOrder - b.sortOrder || a.minAmount - b.minAmount)
-        .find((b) => amount >= b.minAmount && (b.maxAmount === null || amount <= b.maxAmount));
-      return band?.approverUserId ?? null;
-    };
+    // Band selection and step ownership live in lib/owners.ts — one rule, shared
+    // with the Control Center and the home screen's My Work list.
+    const owners = ownerResolver({ stepOwners, approvalBands, requestItems });
+    const approverForAmount = owners.approverForAmount;
 
     const isStepOwner = (stepKey: StepKey): boolean =>
       isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
@@ -633,7 +647,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       designations,
       activeDesignations: designations.filter((d) => d.active).sort((a, b) => a.name.localeCompare(b.name)),
       stepOwners,
-      stepOwnerFor: (stepKey) => stepOwners.find((o) => o.stepKey === stepKey),
+      stepOwnerFor: owners.stepOwnerFor,
       approvalBands,
       approverForAmount,
       isApprover: isAdmin || approvalBands.some((b) => b.approverUserId === user.id),
@@ -664,6 +678,18 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
       poPool: requestItems.filter(lineInPoDesk),
+      poRequestQueue: requests.filter((r) => (itemsByGroupId.get(r.id) ?? []).some(lineInPoDesk)),
+      poDeskLinesForRequest: (requestId) => poDeskLinesOf(itemsByGroupId.get(requestId) ?? []),
+      poDeskTotalForRequest: (requestId) =>
+        poDeskLinesOf(itemsByGroupId.get(requestId) ?? []).reduce((sum, l) => sum + (l.lineValue ?? 0), 0),
+      poDeskVendorIdsForRequest: (requestId) => [
+        ...new Set(
+          poDeskLinesOf(itemsByGroupId.get(requestId) ?? [])
+            .map((l) => l.finalVendorId)
+            .filter((v): v is string => !!v)
+        ),
+      ],
+      dueIsoForPoRequest: (r) => requestPoDueIso(snapshot, poDeskLinesOf(itemsByGroupId.get(r.id) ?? [])),
       completedShareEntries: completedShareEntries(snapshot, importIndex),
       completedPiEntries: completedPiEntries(snapshot, importIndex),
       completedAdvanceEntries: completedAdvanceEntries(snapshot, importIndex),

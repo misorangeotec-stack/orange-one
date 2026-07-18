@@ -19,7 +19,7 @@ import { anchorOptions, TRIGGER_STEPS, type StepSlaMap } from "../../lib/sla";
  * Rows come in three shapes:
  *  • Fully inert — no rule of their own, nothing to edit:
  *     · `request` — raising the order IS the event; it never sits in a queue waiting
- *       to be done (see LINE_STEPS in lib/queues.ts), so no due date is ever computed
+ *       to be done (see `buildQueueEntries` in lib/queues.ts), so no due date is ever computed
  *       for it. It exists here only because later steps anchor on it (it resolves to
  *       the line's creation date, and is Sourcing's default anchor).
  *     · `follow_up` — its due date is the vendor's promised dispatch date, captured

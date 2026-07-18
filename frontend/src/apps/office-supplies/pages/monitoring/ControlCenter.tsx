@@ -4,6 +4,7 @@ import { snapshotFrom } from "@/apps/fms-control-center/lib/buckets";
 import type { Bucket } from "@/shared/lib/dueBuckets";
 import { useSuppliesStore } from "../../store";
 import { STAGES, STEPS } from "../../lib/steps";
+import { appName } from "@/apps/appInfo";
 
 const BUCKETS: { key: Bucket; label: string; tone: string }[] = [
   { key: "delayed", label: "Delayed", tone: "text-ryg-red" },
@@ -25,7 +26,7 @@ export default function ControlCenter() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">Supplies Control Center</h1>
+        <h1 className="text-[22px] font-bold text-navy">{appName("office-supplies")} Control Center</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">Open work across the whole supply process, by how close it is to its due date.</p>
       </div>
 

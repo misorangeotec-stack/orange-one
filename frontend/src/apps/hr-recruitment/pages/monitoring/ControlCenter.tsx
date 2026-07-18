@@ -10,6 +10,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useHrStore } from "../../store";
 import { STAGES, STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import type { QueueEntry } from "../../lib/queues";
+import { appName } from "@/apps/appInfo";
 
 /**
  * HR Recruitment Control Center — the process coordinator's view of what is late,
@@ -218,7 +219,7 @@ export default function ControlCenter() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">HR Recruitment Control Center</h1>
+        <h1 className="text-[22px] font-bold text-navy">{appName("hr-recruitment")} Control Center</h1>
         <p className="mt-1 text-[13.5px] text-grey-2">
           Pending recruitment work by the day it falls due. Each row is one <strong>step</strong> of work on one thing —
           the same vacancy can be waiting at two steps at once. Find what's late, then call the owner.
@@ -317,7 +318,7 @@ export default function ControlCenter() {
           emptyTitle="Nothing here"
           emptyMessage="No recruitment work matches this step selection and filter."
           exportName="HR_Control_Center"
-          exportTitle="HR work items"
+          exportTitle={`${appName("hr-recruitment")} work items`}
           exportNotes={[
             "One row = one step of work on one requisition, candidate or new hire. The same vacancy can appear twice if it is waiting at two steps.",
             "Due dates come from the step's configured rule (Setup → Due Dates). Probation reviews are counted in calendar months from the joining date, everything else in working days (Mon–Sat).",

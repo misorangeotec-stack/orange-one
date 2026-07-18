@@ -164,12 +164,27 @@ export interface TaskActivity {
   createdAt: string;
 }
 
+/**
+ * `mention` = someone @mentioned you in a remark (written by the add_task_remark
+ * RPC). `assigned` = someone assigned you a task (written by the
+ * trg_tasks_notify_assignee trigger; see supabase/migrations/20260721120100).
+ */
+export type NotificationType = "mention" | "assigned";
+
 export interface Notification {
   id: string;
   userId: string;
-  type: "mention";
+  type: NotificationType;
   taskId: string | null;
   actorId: string | null;
+  /**
+   * Title of the linked task, carried by the fetch's embedded join rather than
+   * looked up in the tasks array — so `/home` can render the bell without
+   * loading the whole task payload. NULL when the task is no longer readable
+   * (e.g. it was reassigned away after this notification was created), which the
+   * message builder renders as a generic fallback.
+   */
+  taskTitle: string | null;
   readAt: string | null;
   createdAt: string;
 }

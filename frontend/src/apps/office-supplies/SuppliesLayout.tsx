@@ -1,13 +1,12 @@
 import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
-import { ALL_ROLES, useSession } from "@/core/platform/session";
+import { roleLabel, useSession } from "@/core/platform/session";
 import { timeAgo } from "@/shared/lib/time";
 import { buildSuppliesNav } from "./nav";
 import { useSuppliesStore } from "./store";
 import type { SupplyNotification } from "./types";
 
-const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
 const B = "/office-supplies";
 

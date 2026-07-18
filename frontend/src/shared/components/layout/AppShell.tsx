@@ -1,10 +1,20 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
 import Sidebar from "./Sidebar";
 import Topbar from "./Topbar";
-import type { NavItem, NotificationItem, ShellUser } from "./types";
+import { HOME_LABEL, HOME_PATH, type NavItem, type NotificationItem, type ShellUser } from "./types";
+
+/** Route back to the portal home, first item in every app's menu. */
+const homeIcon = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 10.5 12 3l9 7.5" />
+    <path d="M5 9.5V20a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5" />
+    <path d="M9.5 21v-6h5v6" />
+  </svg>
+);
+const HOME_ITEM: NavItem = { label: HOME_LABEL, to: HOME_PATH, icon: homeIcon };
 
 /**
  * Generic application shell: dark sidebar + sticky topbar + scrollable content.
@@ -18,9 +28,11 @@ export default function AppShell({
   user,
   notifications,
   onMarkRead,
+  onMarkUnread,
   roleSwitcher,
   banner,
-  logoTo = "/home",
+  logoTo = HOME_PATH,
+  showHomeLink = true,
 }: {
   nav: NavItem[];
   role: string;
@@ -28,25 +40,37 @@ export default function AppShell({
   notifications: NotificationItem[];
   /** Mark the given notification ids read (omit if the shell has no live notifications). */
   onMarkRead?: (ids: string[]) => void;
+  /** Mark them unread again (omit if the app has no such write). */
+  onMarkUnread?: (ids: string[]) => void;
   roleSwitcher?: ReactNode;
   /** Optional banner rendered above the page content (e.g. a read-only notice). */
   banner?: ReactNode;
   logoTo?: string;
+  /**
+   * The home screen sets this false — it would otherwise link to itself. Every
+   * other app leaves it on, which is the point: adding the route home HERE means
+   * all eleven apps get it at once and a twelfth cannot forget it.
+   */
+  showHomeLink?: boolean;
 }) {
   const [drawer, setDrawer] = useState(false);
   const { pathname } = useLocation();
 
-  // Page title = the deepest matching nav item's label.
-  const match = [...nav]
+  const items = useMemo(() => (showHomeLink ? [HOME_ITEM, ...nav] : nav), [showHomeLink, nav]);
+
+  // Page title = the deepest matching nav item's label. Adding the home item is
+  // safe here: "/home" only matches when you are actually on it, and inside an app
+  // that app's own deeper path always wins the longest-match sort.
+  const match = [...items]
     .filter((i) => pathname === i.to || pathname.startsWith(i.to + "/"))
     .sort((a, b) => b.to.length - a.to.length)[0];
   const title = match?.label ?? "Dashboard";
 
   return (
     <div className="h-screen flex bg-page-grad overflow-hidden">
-      {/* desktop sidebar */}
-      <aside className="hidden lg:block shrink-0">
-        <Sidebar nav={nav} role={role} logoTo={logoTo} />
+      {/* desktop sidebar — owns its own width (resizable / collapsible to a rail) */}
+      <aside className="hidden lg:block shrink-0 h-full">
+        <Sidebar nav={items} role={role} logoTo={logoTo} />
       </aside>
 
       {/* mobile drawer */}
@@ -61,7 +85,7 @@ export default function AppShell({
             drawer ? "translate-x-0" : "-translate-x-full"
           )}
         >
-          <Sidebar nav={nav} role={role} logoTo={logoTo} onNavigate={() => setDrawer(false)} />
+          <Sidebar nav={items} role={role} logoTo={logoTo} onNavigate={() => setDrawer(false)} variant="drawer" />
         </div>
       </div>
 
@@ -72,6 +96,7 @@ export default function AppShell({
           user={user}
           notifications={notifications}
           onMarkRead={onMarkRead}
+          onMarkUnread={onMarkUnread}
           roleSwitcher={roleSwitcher}
           onMenu={() => setDrawer(true)}
         />

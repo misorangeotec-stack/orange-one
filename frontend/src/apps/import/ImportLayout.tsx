@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
-import { useSession, ALL_ROLES } from "@/core/platform/session";
+import { useSession, roleLabel } from "@/core/platform/session";
 import { timeAgo } from "@/shared/lib/time";
 import { buildImportNav } from "./nav";
 import { useImportStore } from "./store";
@@ -12,7 +12,6 @@ import DemoBanner from "@/shared/sandbox/DemoBanner";
 import { usePersonas } from "./sandbox/personas";
 import type { ImportNotification } from "./types";
 
-const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
 const B = "/import";
 

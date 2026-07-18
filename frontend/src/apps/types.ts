@@ -1,9 +1,10 @@
 import type { ComponentType, ReactNode } from "react";
+import type { AppCategory } from "./categories";
 
 /**
  * Every business app in the Orange One portal is described by an AppManifest.
- * The workspace launcher renders a card per manifest; the router mounts each
- * live app's component at `${basePath}/*`. Adding a new app = create a folder
+ * The home screen renders a grouped menu entry per manifest; the router mounts
+ * each live app's component at `${basePath}/*`. Adding a new app = create a folder
  * under src/apps/<name>/ that exports a manifest, then register it in registry.tsx.
  */
 export interface AppManifest {
@@ -21,4 +22,17 @@ export interface AppManifest {
   icon: ReactNode;
   /** Root component for a live app; it renders its own internal <Routes>. */
   Component?: ComponentType;
+  /**
+   * Which menu group this app belongs to (apps/categories.ts). Optional so adding
+   * the field broke no manifest — but leave it off and the app lands in a trailing
+   * "Other" group on every screen that lists apps. Tag new apps.
+   */
+  category?: AppCategory;
+  /** Sort position within the category; ties fall back to name. Default 100. */
+  order?: number;
+  /**
+   * Optional second level inside the category, e.g. FMS → Purchase → these apps.
+   * Untagged apps sit directly under the category heading.
+   */
+  subGroup?: string;
 }

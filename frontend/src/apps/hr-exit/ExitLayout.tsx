@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
-import { ALL_ROLES, useSession } from "@/core/platform/session";
+import { roleLabel, useSession } from "@/core/platform/session";
 import { timeAgo } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { useSandbox } from "@/shared/sandbox/SandboxContext";
@@ -12,7 +12,6 @@ import { usePersonas } from "./sandbox/personas";
 import { useExitStore } from "./store";
 import type { ExitNotification } from "./types";
 
-const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
 const B = "/hr-exit";
 

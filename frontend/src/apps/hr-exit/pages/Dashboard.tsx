@@ -13,6 +13,7 @@ import ReportTable, { type ReportColumn } from "../components/ReportTable";
 import { ChartCard, DonutChart, HBarChart, MonthBarChart, NoData, StuckByStageChart } from "../components/ExitCharts";
 import { useExitStore } from "../store";
 import { STAGES, STEPS, stepByKey, type StepKey } from "../lib/steps";
+import { appName } from "@/apps/appInfo";
 import {
   attritionMtd,
   caseSummary,
@@ -205,7 +206,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">HR Exit</h1>
+        <h1 className="text-[22px] font-bold text-navy">{appName("hr-exit")}</h1>
         <p className="mt-1 text-[13.5px] text-grey-2">
           Welcome, {user.name.split(" ")[0]}.
           {myOverdue > 0 && (

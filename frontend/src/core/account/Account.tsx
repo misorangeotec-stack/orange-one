@@ -4,6 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Avatar from "@/shared/components/ui/Avatar";
 import Logo from "@/shared/components/ui/Logo";
+import { HOME_LABEL } from "@/shared/components/layout/types";
 import { FieldLabel, TextInput, PasswordInput } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
@@ -72,7 +73,7 @@ export default function Account() {
           <Logo variant="light" height={32} to="/home" />
           <button onClick={() => navigate("/home")} className="text-sm text-grey hover:text-orange font-medium transition inline-flex items-center gap-1.5">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg>
-            Back to workspace
+            {HOME_LABEL}
           </button>
         </div>
       </header>

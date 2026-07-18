@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
+import { appName } from "@/apps/appInfo";
 import { fetchSuppliesData, suppliesQueryKey } from "@/apps/office-supplies/data/suppliesFetch";
 import { buildQueueEntries, supplySnapshotFrom } from "@/apps/office-supplies/lib/queues";
 import { STAGES, STEPS } from "@/apps/office-supplies/lib/steps";
@@ -20,7 +21,8 @@ import type { FmsAdapter } from "./types";
  */
 export const officeSuppliesAdapter: FmsAdapter = {
   key: "office-supplies",
-  name: "Office Supplies FMS",
+  appId: "office-supplies",
+  name: appName("office-supplies"),
   controlCenterPath: "/office-supplies/monitoring",
   status: "live",
   useSnapshot() {

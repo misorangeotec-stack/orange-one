@@ -402,12 +402,6 @@ const PO_STEPS: { stepKey: StepKey; match: (idx: ProcIndex, p: PurchaseOrder) =>
   { stepKey: "tally", match: poInTally },
 ];
 
-const LINE_STEPS: { stepKey: StepKey; match: (l: RequestItem) => boolean }[] = [
-  { stepKey: "sourcing", match: lineInSourcing },
-  { stepKey: "approval", match: lineInApproval },
-  { stepKey: "po", match: lineInPoDesk },
-];
-
 /* -------------------------------------------------------------------------- */
 /*  Completed entries — the "what I did here" side of a stage                  */
 /* -------------------------------------------------------------------------- */
@@ -655,15 +649,15 @@ function lineEntry(data: ProcSnapshot, idx: ProcIndex, stepKey: StepKey, line: R
   };
 }
 
-/* ----- REQUISITION-scoped sourcing & approval ----------------------------- */
+/* ----- REQUISITION-scoped sourcing, approval & PO desk -------------------- */
 /*
- * Sourcing and approval moved from per-LINE to per-REQUISITION: one shortlist of
- * up to three vendors, one recommended vendor winning every line, one rate per
- * item, and one approval banded on the requisition TOTAL.
+ * All three request-side stages are per-REQUISITION, not per-LINE: one shortlist
+ * of up to three vendors, one recommended vendor winning every line, one approval
+ * banded on the requisition TOTAL, and one PO desk row per requisition.
  *
- * The per-line helpers above are KEPT: they still drive the PO desk, and they are
- * the only thing that can express a legacy requisition whose lines went to
- * different vendors (see `requestHasMixedVendors`).
+ * The per-line predicates above are KEPT as the primitives these are built on,
+ * and they are the only thing that can express a legacy requisition whose lines
+ * went to different vendors (see `requestHasMixedVendors`).
  */
 
 export const linesOf = (idx: ProcIndex, requestId: string): RequestItem[] =>
@@ -684,6 +678,35 @@ export const requestApprovalTotal = (idx: ProcIndex, requestId: string): number 
   linesOf(idx, requestId)
     .filter(lineInApproval)
     .reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+
+/** The lines the PO workbench may act on — exactly what the RPC accepts. */
+export const poDeskLines = (idx: ProcIndex, requestId: string): RequestItem[] =>
+  linesOf(idx, requestId).filter(lineInPoDesk);
+
+/** A requisition with at least one approved line still waiting for a PO. */
+export const requestInPoDesk = (idx: ProcIndex, r: PurchaseRequest): boolean =>
+  linesOf(idx, r.id).some(lineInPoDesk);
+
+/**
+ * What this requisition's pool is worth. Scoped to the pool lines ONLY, so a
+ * rejected sibling can never inflate the figure — same discipline as
+ * `requestApprovalTotal`.
+ */
+export const requestPoDeskTotal = (idx: ProcIndex, requestId: string): number =>
+  poDeskLines(idx, requestId).reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+
+/**
+ * The distinct vendors this requisition's pool will produce a PO for — one entry
+ * per PO that "Generate" will create. A line with no vendor is excluded: it
+ * cannot be turned into a PO, and the modal says so rather than dropping it.
+ */
+export const poDeskVendorIds = (idx: ProcIndex, requestId: string): string[] => [
+  ...new Set(
+    poDeskLines(idx, requestId)
+      .map((l) => l.finalVendorId)
+      .filter((v): v is string => !!v)
+  ),
+];
 
 /**
  * Lines already decided against a vendor pin the rest of the requisition to that
@@ -710,6 +733,13 @@ export const requestHasMixedVendors = (idx: ProcIndex, requestId: string): boole
   return vendors.size > 1;
 };
 
+/** Which lines count as "open" at each request-scoped step. */
+const REQUEST_STEP_MATCH: Partial<Record<StepKey, (l: RequestItem) => boolean>> = {
+  sourcing: lineInSourcing,
+  approval: lineInApproval,
+  po: lineInPoDesk,
+};
+
 /**
  * A requisition's due date for a request-scope step: the EARLIEST of its open
  * lines' due dates. After the new RPC every line shares `createdAt` and
@@ -717,7 +747,7 @@ export const requestHasMixedVendors = (idx: ProcIndex, requestId: string): boole
  * the minimum is the conservative choice.
  */
 export function requestDueIso(data: ProcSnapshot, idx: ProcIndex, r: PurchaseRequest, step: StepKey): string {
-  const match = step === "sourcing" ? lineInSourcing : lineInApproval;
+  const match = REQUEST_STEP_MATCH[step] ?? lineInApproval;
   const open = linesOf(idx, r.id).filter(match);
   const dues = (open.length ? open : linesOf(idx, r.id)).map((l) => lineDueIso(data, l, step));
   return dues.length ? dues.reduce((a, b) => (a <= b ? a : b)) : localDateIso(new Date(r.createdAt));
@@ -849,9 +879,9 @@ export const completedPoGenEntries = (data: ProcSnapshot): StageEntry<PurchaseOr
 export function buildQueueEntries(data: ProcSnapshot, idx: ProcIndex = buildProcIndex(data)): QueueEntry[] {
   const out: QueueEntry[] = [];
 
-  // Sourcing and approval are REQUISITION-scoped: a 7-item requisition is ONE
-  // piece of work, not seven. This deliberately drops the Control Center's
-  // sourcing/approval counts relative to the per-line era — the unit of work
+  // Sourcing, approval and the PO desk are all REQUISITION-scoped: a 7-item
+  // requisition is ONE piece of work, not seven. This deliberately drops the
+  // Control Center's counts relative to the per-line era — the unit of work
   // changed, the backlog did not.
   for (const r of data.requests) {
     if (requestInSourcing(idx, r)) {
@@ -876,23 +906,19 @@ export function buildQueueEntries(data: ProcSnapshot, idx: ProcIndex = buildProc
         value: requestApprovalTotal(idx, r.id),
       });
     }
-  }
-
-  // The PO desk stays per LINE: it pools approved lines across requisitions and
-  // merges them into POs by vendor + company.
-  for (const l of data.requestItems) {
-    if (!lineInPoDesk(l)) continue;
-    const req = idx.requestById.get(l.requestId);
-    if (!req) continue;
-    out.push({
-      stepKey: "po",
-      entityType: "line",
-      entityId: l.id,
-      ref: req.requestNo,
-      dueIso: lineDueIso(data, l, "po"),
-      companyId: req.companyId,
-      value: l.lineValue,
-    });
+    // A PO never spans two requisitions, so a requisition is one piece of PO
+    // work however many vendors it needs — even though it may produce N POs.
+    if (requestInPoDesk(idx, r)) {
+      out.push({
+        stepKey: "po",
+        entityType: "request",
+        entityId: r.id,
+        ref: r.requestNo,
+        dueIso: requestDueIso(data, idx, r, "po"),
+        companyId: r.companyId,
+        value: requestPoDeskTotal(idx, r.id),
+      });
+    }
   }
 
   for (const p of data.pos) {

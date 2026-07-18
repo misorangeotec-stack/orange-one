@@ -9,6 +9,7 @@ import { WEEK_START } from "../mock/data";
 import { computeStats, actualRygFor, aggregateRyg } from "../mock/selectors";
 import type { ActivityType, AppRole, StatusFilter, Task } from "../types";
 import { taskListLink, taskDetailPath } from "../lib/taskLink";
+import { notificationText, notificationLink } from "../lib/notifyText";
 import StatCard from "../components/StatCard";
 import StatusChip from "../components/StatusChip";
 import RygBar from "../components/RygBar";
@@ -119,6 +120,9 @@ export default function Dashboard() {
         </div>
 
         <div className="space-y-4">
+          {/* Above the fold in the side column: what's waiting on you comes
+              before how you're doing. Renders nothing when there's no unread. */}
+          <UnreadNotificationsCard />
           {!isAdmin && !isHod && <WeeklyRygCard doerId={user.id} />}
           <StatusBreakdownCard stats={stats} role={role} weekly={weekly} />
           <RecentActivityCard list={list} />
@@ -246,6 +250,66 @@ function StatusBreakdownCard({ stats, role, weekly }: { stats: ReturnType<typeof
   return (
     <SectionCard title="Status Breakdown">
       {segments.length === 0 ? <Empty>No tasks yet.</Empty> : <DonutChart segments={segments} />}
+    </SectionCard>
+  );
+}
+
+/* ---------------- Unread notifications ---------------- */
+/**
+ * What's waiting on you: unread assignments and mentions. Deliberately renders
+ * NOTHING when the count is zero — an empty "you have no notifications" card
+ * every day is just noise on the most-visited screen in the app.
+ */
+function UnreadNotificationsCard() {
+  const { myNotifications, unreadCount, getTask, actorById, markNotificationsRead } = useTaskStore();
+  if (unreadCount === 0) return null;
+
+  const unread = myNotifications.filter((n) => !n.readAt);
+  const shown = unread.slice(0, 5);
+
+  return (
+    <SectionCard
+      title={`Unread (${unreadCount})`}
+      action={
+        <button
+          type="button"
+          onClick={() => void markNotificationsRead(unread.map((n) => n.id))}
+          className="text-orange text-[12px] font-semibold hover:underline"
+        >
+          Mark all read
+        </button>
+      }
+    >
+      <ul className="space-y-3">
+        {shown.map((n) => {
+          const to = notificationLink(n);
+          const body = (
+            <span className="text-grey leading-snug">
+              {notificationText(n, {
+                actorName: actorById(n.actorId)?.name ?? "Someone",
+                taskTitle: getTask(n.taskId ?? "")?.title,
+              })}
+              <span className="block text-[11px] text-grey-2 mt-0.5">{timeAgo(n.createdAt)}</span>
+            </span>
+          );
+          return (
+            <li key={n.id} className="flex gap-2.5 text-[12.5px]">
+              <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-orange shrink-0" />
+              {/* A real link, so ctrl/cmd/middle-click still open a new tab.
+                  Reading is handled on arrival by TaskDetail, not here. */}
+              {to ? <Link to={to} className="min-w-0 group">{body}</Link> : body}
+            </li>
+          );
+        })}
+      </ul>
+      {unread.length > shown.length && (
+        <Link
+          to="/task-management/notifications"
+          className="block mt-3 text-orange text-[12px] font-semibold hover:underline"
+        >
+          See all {unread.length}
+        </Link>
+      )}
     </SectionCard>
   );
 }

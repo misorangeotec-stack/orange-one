@@ -100,7 +100,7 @@ export default function TaskTable({ tasks, sort, onSort }: {
   sort: TaskSort;
   onSort: (k: TaskSortKey) => void;
 }) {
-  const { profileById, departmentById, getRecurring, canStatusActions, deleteTask } = useTaskStore();
+  const { profileById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
   const { user, role } = useSession();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -180,6 +180,8 @@ export default function TaskTable({ tasks, sort, onSort }: {
             const overdue = isOverdue(task.dueDate) && !closed;
             const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
             const recurring = isRecurringTask(task);
+            // Assigned to me and not yet opened. Cleared by TaskDetail on open.
+            const unseen = unreadAssignedTaskIds.has(task.id);
             return (
               <tr
                 key={task.id}
@@ -194,9 +196,23 @@ export default function TaskTable({ tasks, sort, onSort }: {
                 )}
               >
                 {/* Task */}
-                <td className="px-4 py-3 align-top">
+                {/*
+                  The "new to you" accent goes on this CELL, not the row: the
+                  table is border-collapse + table-fixed, where a <tr> border is
+                  unreliable. A left border also survives the row's hover:bg-page,
+                  which would otherwise wash out a background tint on hover.
+                */}
+                <td className={cn("px-4 py-3 align-top", unseen && "border-l-2 border-orange")}>
                   <div className="flex items-center gap-2">
                     <span className="text-[14px] font-medium text-navy truncate group-hover:text-orange transition">{task.title}</span>
+                    {unseen && (
+                      <span
+                        title="Newly assigned to you — opening the task clears this"
+                        className="shrink-0 inline-flex items-center text-[10px] font-semibold uppercase tracking-wide text-white bg-orange rounded-pill px-1.5 py-0.5"
+                      >
+                        New
+                      </span>
+                    )}
                     {task.isPersonal && (
                       <span
                         title="Other task — for your own tracking; excluded from all scores"

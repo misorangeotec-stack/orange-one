@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
+import { appName } from "@/apps/appInfo";
 import { fetchProcurementData, procurementQueryKey } from "@/apps/procurement/data/procFetch";
 import { buildQueueEntries } from "@/apps/procurement/lib/queues";
 import { STEPS } from "@/apps/procurement/lib/steps";
@@ -20,7 +21,8 @@ import type { FmsAdapter } from "./types";
  */
 export const purchaseAdapter: FmsAdapter = {
   key: "purchase",
-  name: "Purchase FMS",
+  appId: "procurement",
+  name: appName("procurement"),
   controlCenterPath: "/procurement/monitoring",
   status: "live",
   useSnapshot() {

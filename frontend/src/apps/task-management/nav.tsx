@@ -39,13 +39,29 @@ const ic = {
   account: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.5-6 8-6s8 2 8 6" /></svg>
   ),
+  notifications: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+  ),
 };
 
-/** Task Management sidebar nav. `roles` controls visibility; omitted = all roles. */
-export const taskNav: NavItem[] = [
+/**
+ * Task Management sidebar nav. `roles` controls visibility; omitted = all roles.
+ *
+ * A function rather than a constant because the Notifications entry carries a
+ * per-user unread badge — the same reason procurement has buildProcurementNav.
+ * Call it from a useMemo so the array isn't rebuilt on every render.
+ *
+ * Note the badge is invisible while the sidebar is collapsed to its rail, which
+ * deliberately renders no badges (see Sidebar.tsx). The topbar bell still shows
+ * the dot there, so unread is never entirely hidden.
+ */
+export function buildTaskNav(opts: { unreadCount: number }): NavItem[] {
+  return [
   { label: "Dashboard", to: `${B}`, icon: ic.dashboard, section: "Workspace" },
   { label: "My Tasks", to: `${B}/tasks`, icon: ic.myTasks },
   { label: "Tagged", to: `${B}/tagged`, icon: ic.tagged },
+  // `|| undefined` so a zero count renders no badge at all, not a "0" pill.
+  { label: "Notifications", to: `${B}/notifications`, icon: ic.notifications, badge: opts.unreadCount || undefined },
   { label: "Team Tasks", to: `${B}/team`, icon: ic.team, roles: ["hod", "sub_hod"] },
   { label: "All Tasks", to: `${B}/all`, icon: ic.all, roles: ["admin"] },
   { label: "Recurring", to: `${B}/recurring`, icon: ic.recurring, roles: ["admin", "hod", "sub_hod"], section: "Manage" },
@@ -54,4 +70,5 @@ export const taskNav: NavItem[] = [
   { label: "Activity", to: `${B}/history`, icon: ic.activity, roles: ["admin", "hod", "sub_hod"] },
   { label: "Settings", to: `${B}/settings`, icon: ic.settings, roles: ["admin"], section: "Administration" },
   { label: "My Account", to: "/account", icon: ic.account },
-];
+  ];
+}

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import AppShell from "@/shared/components/layout/AppShell";
 import type { NotificationItem } from "@/shared/components/layout/types";
-import { useSession, ALL_ROLES } from "@/core/platform/session";
+import { useSession, roleLabel } from "@/core/platform/session";
 import { timeAgo } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { useSandbox } from "@/shared/sandbox/SandboxContext";
@@ -12,7 +12,6 @@ import { usePersonas } from "./sandbox/personas";
 import { useHrStore } from "./store";
 import type { HrNotification } from "./types";
 
-const roleLabel = (role: string) => ALL_ROLES.find((r) => r.value === role)?.label ?? role;
 
 const B = "/hr-recruitment";
 

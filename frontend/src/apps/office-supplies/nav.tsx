@@ -1,4 +1,5 @@
 import type { NavItem } from "@/shared/components/layout/types";
+import { appName } from "@/apps/appInfo";
 
 const B = "/office-supplies";
 
@@ -78,7 +79,7 @@ export function buildSuppliesNav(opts: {
     nav.push({ label, to, icon, badge, section: adminUsed ? undefined : "Administration" });
     adminUsed = true;
   };
-  if (opts.canMonitor) admin("Supplies Control Center", `${B}/monitoring`, ic.monitor);
+  if (opts.canMonitor) admin(`${appName("office-supplies")} Control Center`, `${B}/monitoring`, ic.monitor);
   if (opts.canManageMasters) {
     admin("Masters", `${B}/masters`, ic.masters);
     admin("Master Requests", `${B}/master-requests`, ic.inbox, opts.pendingReviews || undefined);

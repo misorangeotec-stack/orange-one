@@ -12,6 +12,7 @@ import { useExitStore } from "../../store";
 import { STAGES, STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import type { QueueEntry } from "../../lib/queues";
 import { exportSheetParity } from "../../lib/sheetExport";
+import { appName } from "@/apps/appInfo";
 
 /**
  * The HR Exit Control Center — the process coordinator's view of what is late, across
@@ -323,7 +324,7 @@ export default function ControlCenter() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-[22px] font-bold text-navy">HR Exit Control Center</h1>
+          <h1 className="text-[22px] font-bold text-navy">{appName("hr-exit")} Control Center</h1>
           <p className="mt-1 text-[13.5px] text-grey-2">
             Pending exit work by the day it falls due. Each row is one <strong>step</strong> of work on one exit — the
             same exit is owed at several steps at once, and every outstanding clearance item is its own row, because
@@ -441,7 +442,7 @@ export default function ControlCenter() {
           emptyTitle="Nothing here"
           emptyMessage="No exit work matches this step selection and filter."
           exportName="HR_Exit_Control_Center"
-          exportTitle="HR Exit work items"
+          exportTitle={`${appName("hr-exit")} work items`}
           exportNotes={[
             "One row = one STEP of work on one exit. The same exit appears several times if it is owed at several steps — between the last working day and the F&F it owes clearance, the asset return, the handover, the exit interview, leave verification and payroll inputs simultaneously, to six different people.",
             "Every OUTSTANDING CLEARANCE ITEM is its own row, carrying its own owner and its own due date. An exit with three items still open contributes three rows: they are three different people's work.",

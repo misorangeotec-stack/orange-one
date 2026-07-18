@@ -1,4 +1,5 @@
 import EmptyState from "@/shared/components/ui/EmptyState";
+import { appName } from "@/apps/appInfo";
 
 /**
  * Placeholder behind the two ungated nav items ("Raise an Exit / Resign", "My
@@ -12,7 +13,7 @@ export default function ComingSoon({ what }: { what: string }) {
     <EmptyState
       title={`${what} is not open yet`}
       message="The exit process is being brought into the portal. Until it is, raise your resignation with HR directly — this screen will take over shortly."
-      actionLabel="Back to HR Exit"
+      actionLabel={`Back to ${appName("hr-exit")}`}
       actionTo="/hr-exit"
       icon={
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

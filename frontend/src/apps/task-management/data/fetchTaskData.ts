@@ -3,6 +3,7 @@ import type {
   ActivityType,
   Location,
   Notification,
+  NotificationType,
   RecurrenceType,
   RecurringTask,
   Task,
@@ -28,14 +29,18 @@ export interface TaskData {
 }
 
 /**
- * The two org-scale history tables (activity/remarks timeline + the notification
- * bell) that the task list and dashboard don't need in order to first-paint.
- * These are fetched by `fetchTaskActivity` in a SEPARATE, non-blocking query so
- * the "Loading tasks…" gate clears without waiting for the whole org's history.
+ * The org-scale activity/remarks timeline, which the task list and dashboard
+ * don't need in order to first-paint. Fetched by `fetchTaskActivity` in a
+ * SEPARATE, non-blocking query so the "Loading tasks…" gate clears without
+ * waiting for the whole org's history.
+ *
+ * Notifications USED to ride along here. They now have their own narrow,
+ * user-scoped query (`fetchMyNotifications`) because the bell is also rendered
+ * from `/home`, which must not pay for the org's whole history — and because two
+ * sources for one list is how they drift.
  */
 export interface TaskActivityData {
   activity: TaskActivity[];
-  notifications: Notification[];
 }
 
 const DEFAULT_WORKSPACE: WorkspaceSettings = { workspaceName: "Orange O Tec", weekStart: "mon", maxRevisionsPerWeek: 2 };
@@ -99,9 +104,13 @@ const mapActivity = (r: any): TaskActivity => ({
 const mapNotification = (r: any): Notification => ({
   id: r.id,
   userId: r.user_id,
-  type: r.type as "mention",
+  type: r.type as NotificationType,
   taskId: r.task_id,
   actorId: r.actor_id,
+  // PostgREST returns the embedded row as an object (or null when the task is no
+  // longer readable under RLS). Older callers that didn't request the join get
+  // undefined, which normalises to null too.
+  taskTitle: r.tasks?.title ?? null,
   readAt: r.read_at,
   createdAt: r.created_at,
 });
@@ -224,12 +233,44 @@ export async function fetchTaskData(): Promise<TaskData> {
  * tolerates these being empty (`?? []`), so they render empty then fill in.
  */
 export async function fetchTaskActivity(): Promise<TaskActivityData> {
-  const [actData, notifData] = await Promise.all([
-    fetchAll("task_activity"),
-    fetchAll("notifications"),
-  ]);
-  return {
-    activity: actData.map(mapActivity),
-    notifications: notifData.map(mapNotification),
-  };
+  const actData = await fetchAll("task_activity");
+  return { activity: actData.map(mapActivity) };
+}
+
+/**
+ * My notification feed — the source for the bell (in-app AND on /home), the
+ * Notifications page, the dashboard panel and the task-list highlight.
+ *
+ * Deliberately NOT the paged `fetchAll` used above: this is one narrow, indexed
+ * read (idx_notif_user_unread covers user_id + created_at) rather than a walk of
+ * every RLS-visible row. `tasks(title)` is an embedded join so a caller with no
+ * tasks array — i.e. the portal home screen — can still render the text; it
+ * resolves to null if the task stopped being readable, which the message builder
+ * handles.
+ *
+ * PAGED, not capped. An earlier version took the first 200, which looked safe —
+ * the bell shows a handful and the page paginates. But the Tagged screen derives
+ * its whole task set from this list (every task I've ever been @mentioned in), so
+ * a cap silently drops old tagged tasks once the count is exceeded. That is the
+ * same silent-truncation trap documented on `fetchAll` above, and assignment
+ * notifications make it reachable: one per task assigned, forever.
+ *
+ * Paged by `id` (stable + unique, so ranges never skip or duplicate) and sorted
+ * newest-first here, since every consumer wants it in that order.
+ */
+export async function fetchMyNotifications(userId: string): Promise<Notification[]> {
+  const out: any[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("notifications")
+      .select("id,user_id,type,task_id,actor_id,read_at,created_at,tasks(title)")
+      .eq("user_id", userId)
+      .order("id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+  }
+  return out.map(mapNotification).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }

@@ -2,7 +2,8 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import type { ReactNode } from "react";
 import Landing from "@/core/landing/Landing";
 import Login from "@/core/auth/Login";
-import WorkspaceHome from "@/core/workspace/WorkspaceHome";
+import HomeLayout from "@/core/workspace/HomeLayout";
+import MyWorkToday from "@/core/workspace/MyWorkToday";
 import Account from "@/core/account/Account";
 import AdminApp from "@/core/admin/AdminApp";
 import RequireRole from "@/core/platform/RequireRole";
@@ -25,7 +26,10 @@ export default function App() {
       <Route path="/login" element={<Login />} />
 
       {/* ---- Signed-in portal (launcher + account + admin) ---- */}
-      <Route path="/home" element={<RequireAuth><WorkspaceHome /></RequireAuth>} />
+      {/* Nested: HomeLayout renders the shared AppShell, whose <Outlet/> is the page. */}
+      <Route path="/home" element={<RequireAuth><HomeLayout /></RequireAuth>}>
+        <Route index element={<MyWorkToday />} />
+      </Route>
       <Route path="/account" element={<RequireAuth><Account /></RequireAuth>} />
       <Route path="/admin/*" element={<RequireAuth><RequireRole roles={["admin"]}><AdminApp /></RequireRole></RequireAuth>} />
 

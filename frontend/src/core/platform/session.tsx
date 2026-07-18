@@ -67,3 +67,10 @@ export const ALL_ROLES: { value: AppRole; label: string }[] = [
   { value: "sub_hod", label: "Sub-HOD" },
   { value: "employee", label: "Employee" },
 ];
+
+/**
+ * Human label for a role — what every app layout passes to AppShell as
+ * `user.roleLabel`. Lives here beside ALL_ROLES because it was copy-pasted
+ * identically into nine layout files, so a new role meant nine edits.
+ */
+export const roleLabel = (role: string): string => ALL_ROLES.find((r) => r.value === role)?.label ?? role;

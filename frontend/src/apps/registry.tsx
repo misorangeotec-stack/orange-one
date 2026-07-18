@@ -1,4 +1,5 @@
 import type { AppManifest } from "./types";
+import type { AppCategory } from "./categories";
 import { taskManagementApp } from "./task-management/meta";
 import { receivablesHubApp } from "./receivables-hub/meta";
 import { procurementApp } from "./procurement/meta";
@@ -56,9 +57,23 @@ export interface GrantableModule {
   status: AppManifest["status"];
   /** Granted to everyone implicitly (see apps/universal.ts) — the matrix shows it as locked-on. */
   universal?: boolean;
+  /** Same grouping the home menu uses, so the permission screens read identically. */
+  category?: AppCategory;
+  order?: number;
+  subGroup?: string;
 }
 
 export const grantableModules: GrantableModule[] = [
-  ...apps.map((a) => ({ id: a.id, name: a.name, status: a.status, universal: isUniversalApp(a.id) })),
-  { id: "mobile-app", name: "Mobile App", status: "live" },
+  ...apps.map((a) => ({
+    id: a.id,
+    name: a.name,
+    status: a.status,
+    universal: isUniversalApp(a.id),
+    category: a.category,
+    order: a.order,
+    subGroup: a.subGroup,
+  })),
+  // Virtual module: no web app, no launcher entry, no menu item — it only gates
+  // login to the mobile Leads app. Categorised so it isn't stranded in "Other".
+  { id: "mobile-app", name: "Mobile App", status: "live", category: "mobile", order: 10 },
 ];

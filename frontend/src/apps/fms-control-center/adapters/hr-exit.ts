@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
+import { appName } from "@/apps/appInfo";
 import { exitQueryKey, fetchExitData } from "@/apps/hr-exit/data/exitFetch";
 import { buildQueueEntries, exitSnapshotFrom } from "@/apps/hr-exit/lib/queues";
 import { STAGES, STEPS } from "@/apps/hr-exit/lib/steps";
@@ -47,7 +48,8 @@ import type { FmsAdapter } from "./types";
  */
 export const hrExitAdapter: FmsAdapter = {
   key: "hr-exit",
-  name: "HR Exit FMS",
+  appId: "hr-exit",
+  name: appName("hr-exit"),
   controlCenterPath: "/hr-exit/monitoring",
   status: "live",
   useSnapshot() {

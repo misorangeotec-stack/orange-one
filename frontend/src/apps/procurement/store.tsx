@@ -64,7 +64,11 @@ import {
   completedPoGenEntries,
   requestInSourcing,
   requestInApproval,
+  requestInPoDesk,
   requestApprovalTotal,
+  poDeskLines,
+  requestPoDeskTotal,
+  poDeskVendorIds,
   requestLockedVendorId,
   requestHasMixedVendors,
   requestDueIso,
@@ -270,9 +274,16 @@ interface ProcurementStoreValue {
   /** Display name for an actor id, resolvable org-wide (not just your department). */
   personName: (id: string | null) => string;
   // role-scoped queues
-  /** Requisitions awaiting sourcing / a decision — ONE row each, not one per item. */
+  /** Requisitions awaiting sourcing / a decision / a PO — ONE row each, not one per item. */
   sourcingRequestQueue: PurchaseRequest[];
   approvalRequestQueue: PurchaseRequest[];
+  poRequestQueue: PurchaseRequest[];
+  /** This requisition's approved lines still waiting for a PO. */
+  poDeskLinesForRequest: (requestId: string) => RequestItem[];
+  /** Sum of the above — what the workbench's money columns show. */
+  poDeskTotalForRequest: (requestId: string) => number;
+  /** Distinct vendors on those lines = how many POs "Generate" will create. */
+  poDeskVendorIdsForRequest: (requestId: string) => string[];
   /** Per-LINE views. Retained for the legacy per-line path and internal reuse. */
   sourcingQueue: RequestItem[];
   approvalQueue: RequestItem[];
@@ -728,6 +739,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       // The ONE owner-scoped queue: an approver sees only what they may act on.
       // The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalRequestQueue: requests.filter((r) => requestInApproval(procIndex, r) && canApproveRequest(r)),
+      poRequestQueue: requests.filter((r) => requestInPoDesk(procIndex, r)),
+      poDeskLinesForRequest: (requestId) => poDeskLines(procIndex, requestId),
+      poDeskTotalForRequest: (requestId) => requestPoDeskTotal(procIndex, requestId),
+      poDeskVendorIdsForRequest: (requestId) => poDeskVendorIds(procIndex, requestId),
       dueIsoForRequest: (r, step) => requestDueIso(snapshot, procIndex, r, step),
       sourcingQueue: requestItems.filter(lineInSourcing),
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),

@@ -1,4 +1,5 @@
 import type { AppManifest } from "../types";
+import { appName } from "../appInfo";
 import SuppliesApp from "./SuppliesApp";
 
 /**
@@ -18,11 +19,14 @@ import SuppliesApp from "./SuppliesApp";
  */
 export const officeSuppliesApp: AppManifest = {
   id: "office-supplies",
-  name: "Office Supplies FMS",
+  name: appName("office-supplies"),
   description:
     "Office-supply requisitions end to end: raise a request, first and second approval for computer & tech accessories, straight-to-handover for stationery, maintenance and services, and delivery tracking.",
   basePath: "/office-supplies",
   status: "live",
+  category: "fms",
+  subGroup: "Purchase",
+  order: 30,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 7l8-4 8 4v10l-8 4-8-4V7z" />

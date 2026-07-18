@@ -1,4 +1,5 @@
 import type { AppManifest } from "../types";
+import { appName } from "../appInfo";
 import ImportApp from "./ImportApp";
 
 /**
@@ -11,11 +12,14 @@ import ImportApp from "./ImportApp";
  */
 export const importApp: AppManifest = {
   id: "import",
-  name: "Import Purchase FMS",
+  name: appName("import"),
   description:
     "Import procurement: fixed vendors + vendor-item price list, foreign-currency POs with a live exchange rate, amount-tiered approval, and a 100%-advance payment step.",
   basePath: "/import",
   status: "live",
+  category: "fms",
+  subGroup: "Purchase",
+  order: 20,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 3h6a1 1 0 0 1 1 1v1h2a1 1 0 0 1 1 1v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1h2V4a1 1 0 0 1 1-1z" />

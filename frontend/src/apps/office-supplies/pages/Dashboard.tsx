@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useSuppliesStore } from "../store";
 import type { RequestStatus } from "../types";
+import { appName } from "@/apps/appInfo";
 
 function Tile({ label, value, tone }: { label: string; value: number; tone?: string }) {
   return (
@@ -26,7 +27,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[22px] font-bold text-navy">Office Supplies</h1>
+          <h1 className="text-[22px] font-bold text-navy">{appName("office-supplies")}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
             Raise and track office-supply requests — stationery, computer &amp; tech accessories, maintenance and services.
           </p>

@@ -22,6 +22,7 @@ import {
 import { useHrStore } from "../store";
 import { STEPS, isHodStep, stepByKey, type StepKey } from "../lib/steps";
 import { CANDIDATE_WINDOW_MONTHS } from "../data/hrFetch";
+import { appName } from "@/apps/appInfo";
 import {
   candidatesInWindow,
   offerAcceptance,
@@ -126,7 +127,7 @@ export default function Dashboard() {
     return (
       <EmptyState
         title="Nothing assigned to you yet"
-        message="You have access to HR Recruitment, but no workflow step is assigned to you. An administrator can assign one in Setup → Step Owners."
+        message={`You have access to ${appName("hr-recruitment")}, but no workflow step is assigned to you. An administrator can assign one in Setup → Step Owners.`}
       />
     );
   }
@@ -240,7 +241,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">HR Recruitment</h1>
+        <h1 className="text-[22px] font-bold text-navy">{appName("hr-recruitment")}</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Welcome, {user.name.split(" ")[0]}.
           {myOverdue > 0 && (

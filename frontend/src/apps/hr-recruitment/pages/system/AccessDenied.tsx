@@ -1,4 +1,5 @@
 import EmptyState from "@/shared/components/ui/EmptyState";
+import { appName } from "@/apps/appInfo";
 
 /** Shown when a user reaches an HR route their role can't see. */
 export default function AccessDenied() {
@@ -6,7 +7,7 @@ export default function AccessDenied() {
     <EmptyState
       title="Access denied"
       message="You don't have permission to view this screen. If you think this is a mistake, contact an administrator."
-      actionLabel="Back to HR Recruitment"
+      actionLabel={`Back to ${appName("hr-recruitment")}`}
       actionTo="/hr-recruitment"
       icon={
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">

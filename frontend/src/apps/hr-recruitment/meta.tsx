@@ -1,4 +1,5 @@
 import type { AppManifest } from "../types";
+import { appName } from "../appInfo";
 import HrApp from "./HrApp";
 
 /**
@@ -12,11 +13,14 @@ import HrApp from "./HrApp";
  */
 export const hrRecruitmentApp: AppManifest = {
   id: "hr-recruitment",
-  name: "HR Recruitment FMS",
+  name: appName("hr-recruitment"),
   description:
     "Manpower requisitions, two-stage approval, job posting, a drag-and-drop candidate board with three interview rounds, the onboarding checklist and monthly probation reviews.",
   basePath: "/hr-recruitment",
   status: "live",
+  category: "fms",
+  subGroup: "HR",
+  order: 40,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="9" cy="8" r="3.5" />

@@ -44,6 +44,7 @@ import { formatDateDMY } from "@/shared/lib/date";
 import { formatDate } from "@/shared/lib/time";
 import { CASE_STATUS_LABEL, CASE_TYPE_LABEL, RECOMMENDATION_LABEL, money, noticeLabel } from "./format";
 import type { StepKey } from "./steps";
+import { appName } from "@/apps/appInfo";
 import type {
   ClearanceCheck,
   ExitAsset,
@@ -430,7 +431,7 @@ export function exportSheetParity(ctx: SheetParityContext): void {
   exportRowsToXlsx<ExitCase>({
     fileName: "HR_Exit_Sheet_Parity",
     sheetName: "FMS",
-    title: "HR Exit — sheet parity (FMS tab layout)",
+    title: `${appName("hr-exit")} — sheet parity (FMS tab layout)`,
     columns: sheetParityColumns(ctx),
     // Every case this user may read, oldest first — the order the sheet grows in.
     rows: [...ctx.cases].sort((a, b) => a.submittedAt.localeCompare(b.submittedAt)),
