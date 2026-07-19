@@ -54,7 +54,6 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
     case "vendor":
       return [
         { key: "name", label: "Vendor name", type: "text", required: true, placeholder: "e.g. Acme Chemicals Pvt Ltd" },
-        { key: "gstin", label: "GSTIN", type: "text", placeholder: "15-digit GSTIN (optional)" },
         { key: "contact_name", label: "Contact person", type: "text" },
         { key: "phone", label: "Phone", type: "text" },
         { key: "email", label: "Email", type: "text" },
@@ -67,7 +66,6 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         { key: "item_id", label: "Item", type: "select", required: true, options: ctx.itemOptions ?? [], placeholder: "Select item" },
         { key: "currency", label: "Currency", type: "text", required: true, placeholder: "e.g. USD" },
         { key: "rate", label: "Rate (per unit, foreign)", type: "text", required: true, placeholder: "e.g. 12.50" },
-        { key: "gst_pct", label: "GST %", type: "text", placeholder: "optional, e.g. 18" },
       ];
   }
 }
@@ -121,7 +119,7 @@ export function describePayload(
       return `${name}${grp ? ` (${grp})` : ""}${unit ? ` · ${unit}` : ""}`;
     }
     case "vendor":
-      return s("gstin") ? `${name} · ${s("gstin")}` : name;
+      return name;
     case "category":
       return name;
     case "vendor_item_price": {

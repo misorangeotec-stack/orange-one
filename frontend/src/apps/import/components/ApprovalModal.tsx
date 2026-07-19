@@ -95,7 +95,6 @@ export default function ApprovalModal({
               <tr className="text-left text-grey-2 border-b border-line bg-page/60">
                 <th className="font-medium px-3 py-2">Vendor</th>
                 <th className="font-medium px-3 py-2">Rate</th>
-                <th className="font-medium px-3 py-2">GST %</th>
                 <th className="font-medium px-3 py-2">Lead</th>
                 <th className="font-medium px-3 py-2"></th>
               </tr>
@@ -105,7 +104,6 @@ export default function ApprovalModal({
                 <tr key={q.id} className="border-b border-line/70 last:border-0">
                   <td className="px-3 py-2 font-medium text-navy">{s.vendorById(q.vendorId)?.name ?? "—"}</td>
                   <td className="px-3 py-2">{inr(q.rate)}</td>
-                  <td className="px-3 py-2">{q.gstPct ?? "—"}</td>
                   <td className="px-3 py-2">{q.leadTimeDays ?? "—"}d</td>
                   <td className="px-3 py-2 text-right">
                     {q.isRecommended && (

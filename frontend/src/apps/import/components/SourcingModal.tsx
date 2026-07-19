@@ -12,16 +12,15 @@ import type { RequestItem } from "../types";
 interface QRow {
   vendorId: string;
   rate: string;
-  gstPct: string;
   leadTimeDays: string;
   remark: string;
 }
 
-const emptyRow = (): QRow => ({ vendorId: "", rate: "", gstPct: "", leadTimeDays: "", remark: "" });
+const emptyRow = (): QRow => ({ vendorId: "", rate: "", leadTimeDays: "", remark: "" });
 
 /**
  * Stage 2 — sourcing for one request line: capture up to 3 vendor quotations,
- * mark one recommended, set final qty/rate/GST, then route to approval. A line
+ * mark one recommended, set final qty/rate, then route to approval. A line
  * value preview shows the amount the approval will route on.
  */
 export default function SourcingModal({
@@ -40,7 +39,6 @@ export default function SourcingModal({
   const [recommended, setRecommended] = useState("");
   const [finalQty, setFinalQty] = useState("");
   const [finalRate, setFinalRate] = useState("");
-  const [gstPct, setGstPct] = useState("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -66,7 +64,6 @@ export default function SourcingModal({
         ? existing.map((q) => ({
             vendorId: q.vendorId,
             rate: String(q.rate),
-            gstPct: q.gstPct === null ? "" : String(q.gstPct),
             leadTimeDays: q.leadTimeDays === null ? "" : String(q.leadTimeDays),
             remark: q.remark ?? "",
           }))
@@ -75,7 +72,6 @@ export default function SourcingModal({
     setRecommended(line.finalVendorId ?? existing.find((q) => q.isRecommended)?.vendorId ?? "");
     setFinalQty(String(line.finalQty ?? line.quantity));
     setFinalRate(line.finalRate === null ? "" : String(line.finalRate));
-    setGstPct(line.gstPct === null ? "" : String(line.gstPct));
     setReason(line.sourcingReason ?? "");
     setErr(null);
     setRequested(null);
@@ -89,21 +85,18 @@ export default function SourcingModal({
   const addRow = () => setRows((prev) => (prev.length >= 3 ? prev : [...prev, emptyRow()]));
   const removeRow = (i: number) => setRows((prev) => prev.filter((_, idx) => idx !== i));
 
-  // Auto-fill final rate/GST from the recommended quotation when picked.
+  // Auto-fill the final rate from the recommended quotation when picked.
   const pickRecommended = (vendorId: string) => {
     setRecommended(vendorId);
     const row = rows.find((r) => r.vendorId === vendorId);
-    if (row) {
-      if (row.rate) setFinalRate(row.rate);
-      if (row.gstPct) setGstPct(row.gstPct);
-    }
+    if (row?.rate) setFinalRate(row.rate);
   };
 
   const filledRows = rows.filter((r) => r.vendorId && r.rate !== "");
   const qty = Number(finalQty);
   const rate = Number(finalRate);
-  const gst = gstPct === "" ? 0 : Number(gstPct);
-  const lineValue = qty > 0 && rate >= 0 ? Math.round(qty * rate * (1 + gst / 100) * 100) / 100 : null;
+  // No GST on an import line.
+  const lineValue = qty > 0 && rate >= 0 ? Math.round(qty * rate * 100) / 100 : null;
 
   const save = async () => {
     setErr(null);
@@ -122,14 +115,12 @@ export default function SourcingModal({
         quotations: filledRows.map((r) => ({
           vendorId: r.vendorId,
           rate: Number(r.rate),
-          gstPct: r.gstPct === "" ? null : Number(r.gstPct),
           leadTimeDays: r.leadTimeDays === "" ? null : Number(r.leadTimeDays),
           remark: r.remark.trim() || null,
         })),
         recommendedVendorId: recommended,
         finalQty: qty,
         finalRate: rate,
-        gstPct: gstPct === "" ? null : gst,
         sourcingReason: reason.trim() || null,
       });
       onSaved?.();
@@ -191,9 +182,8 @@ export default function SourcingModal({
                 createLabel={(q) => `Request new vendor “${q}”`}
                 autoAdvance
               />
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 <TextInput type="number" placeholder="Rate" value={r.rate} onChange={(e) => setRow(i, { rate: e.target.value })} />
-                <TextInput type="number" placeholder="GST %" value={r.gstPct} onChange={(e) => setRow(i, { gstPct: e.target.value })} />
                 <TextInput type="number" placeholder="Lead days" value={r.leadTimeDays} onChange={(e) => setRow(i, { leadTimeDays: e.target.value })} />
               </div>
               <TextInput placeholder="Remark (optional)" value={r.remark} onChange={(e) => setRow(i, { remark: e.target.value })} />
@@ -209,20 +199,17 @@ export default function SourcingModal({
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Final Qty" required>
             <TextInput type="number" value={finalQty} onChange={(e) => setFinalQty(e.target.value)} />
           </FieldLabel>
           <FieldLabel label="Final Rate" required>
             <TextInput type="number" value={finalRate} onChange={(e) => setFinalRate(e.target.value)} />
           </FieldLabel>
-          <FieldLabel label="GST %">
-            <TextInput type="number" value={gstPct} onChange={(e) => setGstPct(e.target.value)} />
-          </FieldLabel>
         </div>
 
         <div className="flex items-center justify-between rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
-          <span className="text-[12.5px] text-grey">Line value (incl. GST) — routes the approval</span>
+          <span className="text-[12.5px] text-grey">Line value — routes the approval</span>
           <span className="text-[15px] font-bold text-navy">{inr(lineValue)}</span>
         </div>
 

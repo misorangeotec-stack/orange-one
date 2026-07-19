@@ -15,7 +15,6 @@ interface Line {
   unit: string;
   /** Rate in the vendor's foreign currency (prefilled from the price master, editable). */
   rate: string;
-  gstPct: string;
   remark: string;
 }
 
@@ -115,7 +114,6 @@ export default function NewRequest() {
         qty: "1",
         unit: it.unit,
         rate: price ? String(price.rate) : "",
-        gstPct: price?.gstPct != null ? String(price.gstPct) : "",
         remark: "",
       },
     ]);
@@ -137,15 +135,15 @@ export default function NewRequest() {
     setRaise({ mt: "vendor_item_price", prefill: { vendor_id: vendorId, currency: currency || "USD" } });
   };
 
+  // No GST on an import line — the value is simply qty × rate (× fx for INR).
   const lineInr = (l: Line): number => {
     const qty = Number(l.qty) || 0;
     const rate = Number(l.rate) || 0;
-    const gst = Number(l.gstPct) || 0;
     const fx = Number(fxRate) || 0;
-    return qty * rate * (1 + gst / 100) * fx;
+    return qty * rate * fx;
   };
   const totalInr = lines.reduce((a, l) => a + lineInr(l), 0);
-  const totalFx = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.rate) || 0) * (1 + (Number(l.gstPct) || 0) / 100), 0);
+  const totalFx = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.rate) || 0), 0);
   const inr = (n: number) => `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
 
   const submit = async () => {
@@ -173,7 +171,6 @@ export default function NewRequest() {
           quantity: Number(l.qty),
           unit: l.unit,
           rate: Number(l.rate),
-          gstPct: l.gstPct.trim() ? Number(l.gstPct) : null,
           lineRemark: l.remark.trim() || null,
         })),
       });
@@ -281,7 +278,6 @@ export default function NewRequest() {
                   <th className="font-medium px-3 py-2">Item</th>
                   <th className="font-medium px-3 py-2 w-20">Qty</th>
                   <th className="font-medium px-3 py-2 w-28">Rate ({currency || "—"})</th>
-                  <th className="font-medium px-3 py-2 w-20">GST %</th>
                   <th className="font-medium px-3 py-2">Line (₹)</th>
                   <th className="px-3 py-2"></th>
                 </tr>
@@ -295,9 +291,6 @@ export default function NewRequest() {
                     </td>
                     <td className="px-3 py-2">
                       <TextInput type="number" className="w-24" value={l.rate} onChange={(e) => setLines((p) => p.map((x, idx) => (idx === i ? { ...x, rate: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <TextInput type="number" className="w-16" value={l.gstPct} onChange={(e) => setLines((p) => p.map((x, idx) => (idx === i ? { ...x, gstPct: e.target.value } : x)))} />
                     </td>
                     <td className="px-3 py-2 text-grey">{inr(lineInr(l))}</td>
                     <td className="px-3 py-2 text-right">

@@ -50,7 +50,6 @@ export interface Item {
 export interface Vendor {
   id: string;
   name: string;
-  gstin: string | null;
   contactName: string | null;
   phone: string | null;
   email: string | null;
@@ -68,7 +67,6 @@ export interface VendorItemPrice {
   itemId: string;
   currency: string;
   rate: number;
-  gstPct: number | null;
   active: boolean;
   sortOrder: number;
   createdAt: string;
@@ -146,12 +144,11 @@ export interface RequestItem {
   finalQty: number | null;
   /** The chosen rate in the vendor's foreign currency (from the price master, editable). */
   finalRate: number | null;
-  gstPct: number | null;
   /** The line's foreign currency (e.g. USD). */
   currency: string | null;
   /** Exchange rate (foreign→INR) captured at submit; used to derive lineValue (INR). */
   fxRateAtRequest: number | null;
-  /** Line value in the vendor currency (qty × rate × (1+gst/100)). */
+  /** Line value in the vendor currency (qty × rate). GST does not apply to imports. */
   lineValueFx: number | null;
   /** Line value in INR (foreign × fxRateAtRequest) — the approval-tier basis. */
   lineValue: number | null;
@@ -176,7 +173,6 @@ export interface Quotation {
   requestItemId: string;
   vendorId: string;
   rate: number;
-  gstPct: number | null;
   leadTimeDays: number | null;
   remark: string | null;
   isRecommended: boolean;
@@ -237,7 +233,6 @@ export interface PoItem {
   requestItemId: string;
   qty: number;
   rate: number;
-  gstPct: number | null;
   lineValue: number;
   receivedQty: number;
 }

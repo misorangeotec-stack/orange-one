@@ -57,7 +57,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
   const [err, setErr] = useState<string | null>(null);
 
   // Per-line coverage: how much of each PO line is already on an existing PI, how
-  // much is still to collect, and its per-unit (incl-GST) value.
+  // much is still to collect, and its per-unit value.
   //
   // When EDITING, this PI's own lines are excluded from `covered` — they are what
   // we are replacing, so counting them would show a line as fully covered and
@@ -69,7 +69,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
     return { pi, covered, remaining: Math.max(0, pi.qty - covered), unit: pi.qty > 0 ? pi.lineValue / pi.qty : 0 };
   });
   const unitById = new Map(coverage.map((c) => [c.pi.id, c.unit]));
-  // PI value auto-matches the lines this PI covers (Σ coverQty × per-unit incl GST).
+  // PI value auto-matches the lines this PI covers (Σ coverQty × per-unit).
   const piValue = Math.round(items.reduce((sum, pi) => sum + (Number(qty[pi.id]) || 0) * (unitById.get(pi.id) ?? 0), 0) * 100) / 100;
 
   useEffect(() => {
@@ -123,8 +123,8 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
       <div className="space-y-3.5">
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
-          <FieldLabel label="PI Value (incl GST)" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
-            <TextInput type="number" value={String(readOnly && editing ? editing.piValue : piValue)} readOnly title={readOnly ? "The PI value as it was recorded" : "Auto-calculated from the covered lines (Cover Qty × rate incl GST)"} className="bg-page/70 text-grey-2 cursor-not-allowed" />
+          <FieldLabel label="PI Value" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
+            <TextInput type="number" value={String(readOnly && editing ? editing.piValue : piValue)} readOnly title={readOnly ? "The PI value as it was recorded" : "Auto-calculated from the covered lines (Cover Qty × rate)"} className="bg-page/70 text-grey-2 cursor-not-allowed" />
           </FieldLabel>
         </div>
         {!readOnly && (

@@ -196,7 +196,6 @@ interface ImportStoreValue {
   isApprover: boolean;
   processCoordinatorIds: string[];
   isProcessCoordinator: boolean;
-  amountBasis: string;
   /** Per-step due-date rules (anchor step + working days), merged over the defaults. */
   stepSla: StepSlaMap;
   /** The due date for a request line sitting in `step` (never null). */
@@ -332,7 +331,6 @@ interface ImportStoreValue {
     recommendedVendorId: string;
     finalQty: number;
     finalRate: number;
-    gstPct: number | null;
     sourcingReason: string | null;
   }) => Promise<void>;
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
@@ -474,7 +472,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const approvalBands = data?.approvalBands ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
-  const amountBasis = data?.config.amountBasis ?? "line_incl_gst";
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
@@ -499,7 +496,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     // `config` rides along so the pure due-date rules can read the admin's per-step SLA.
     const snapshot: ImportSnapshot = {
       requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings, payments, followups, activity,
-      config: { processCoordinatorIds, amountBasis, stepSla },
+      config: { processCoordinatorIds, stepSla },
     };
     const importIndex = buildImportIndex(snapshot);
     const byName = <T extends { name: string; sortOrder: number }>(a: T, b: T) =>
@@ -653,7 +650,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       isApprover: isAdmin || approvalBands.some((b) => b.approverUserId === user.id),
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
-      amountBasis,
       canConfigure: isAdmin,
 
       // ---- workflow data + selectors (Stages 1–4) ----
@@ -762,7 +758,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         // approver(s) matched to each line's INR-equivalent value directly.
         const approvers = new Set<string>();
         for (const l of input.items) {
-          const inr = Math.round(l.quantity * l.rate * (1 + (l.gstPct ?? 0) / 100) * input.fxRate * 100) / 100;
+          // Mirrors the RPC's value math exactly — no GST on an import line.
+          const inr = Math.round(l.quantity * l.rate * input.fxRate * 100) / 100;
           const who = approverForAmount(inr);
           if (who) approvers.add(who);
         }
@@ -778,7 +775,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       },
       saveSourcing: async (input) => {
         await saveSourcingWrite(input);
-        const lineValue = Math.round(input.finalQty * input.finalRate * (1 + (input.gstPct ?? 0) / 100) * 100) / 100;
+        const lineValue = Math.round(input.finalQty * input.finalRate * 100) / 100;
         const approver = approverForAmount(lineValue);
         await safeAnnounce({
           entityType: "line",
@@ -1172,7 +1169,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     stepOwners,
     approvalBands,
     processCoordinatorIds,
-    amountBasis,
     requests,
     requestItems,
     quotations,

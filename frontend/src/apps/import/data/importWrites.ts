@@ -145,7 +145,6 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
 /* -------------------------------- vendors --------------------------------- */
 export interface VendorInput {
   name: string;
-  gstin: string | null;
   contactName: string | null;
   phone: string | null;
   email: string | null;
@@ -159,7 +158,6 @@ export async function insertVendor(input: VendorInput & { createdBy: string }): 
     .from("fms_import_vendors")
     .insert({
       name: input.name,
-      gstin: input.gstin,
       contact_name: input.contactName,
       phone: input.phone,
       email: input.email,
@@ -179,7 +177,6 @@ export async function updateVendor(id: string, input: VendorInput): Promise<void
     .from("fms_import_vendors")
     .update({
       name: input.name,
-      gstin: input.gstin,
       contact_name: input.contactName,
       phone: input.phone,
       email: input.email,
@@ -197,7 +194,6 @@ export interface VendorItemPriceInput {
   itemId: string;
   currency: string;
   rate: number;
-  gstPct: number | null;
   active: boolean;
   sortOrder: number;
 }
@@ -210,7 +206,6 @@ export async function insertVendorItemPrice(input: VendorItemPriceInput & { crea
       item_id: input.itemId,
       currency: input.currency,
       rate: input.rate,
-      gst_pct: input.gstPct,
       active: input.active,
       sort_order: input.sortOrder,
       created_by: input.createdBy,
@@ -229,7 +224,6 @@ export async function updateVendorItemPrice(id: string, input: VendorItemPriceIn
       item_id: input.itemId,
       currency: input.currency,
       rate: input.rate,
-      gst_pct: input.gstPct,
       active: input.active,
       sort_order: input.sortOrder,
     })
@@ -404,7 +398,6 @@ export interface NewRequestLine {
   unit: string;
   /** Rate in the vendor's foreign currency (auto-filled from the price master, editable). */
   rate: number;
-  gstPct: number | null;
   lineRemark: string | null;
 }
 
@@ -435,7 +428,6 @@ export async function submitRequest(input: {
       quantity: l.quantity,
       unit: l.unit,
       rate: l.rate,
-      gst_pct: l.gstPct ?? "",
       line_remark: l.lineRemark ?? "",
     })) as unknown as Json,
   });
@@ -446,7 +438,6 @@ export async function submitRequest(input: {
 export interface QuotationInput {
   vendorId: string;
   rate: number;
-  gstPct: number | null;
   leadTimeDays: number | null;
   remark: string | null;
 }
@@ -458,7 +449,6 @@ export async function saveSourcing(input: {
   recommendedVendorId: string;
   finalQty: number;
   finalRate: number;
-  gstPct: number | null;
   sourcingReason: string | null;
 }): Promise<void> {
   const { error } = await db.rpc("fms_import_save_sourcing", {
@@ -466,14 +456,12 @@ export async function saveSourcing(input: {
     p_quotations: input.quotations.map((q) => ({
       vendor_id: q.vendorId,
       rate: q.rate,
-      gst_pct: q.gstPct ?? "",
       lead_time_days: q.leadTimeDays ?? "",
       remark: q.remark ?? "",
     })) as unknown as Json,
     p_recommended_vendor_id: input.recommendedVendorId,
     p_final_qty: input.finalQty,
     p_final_rate: input.finalRate,
-    p_gst_pct: input.gstPct ?? undefined,
     p_sourcing_reason: input.sourcingReason ?? undefined,
   });
   if (error) throw new Error(error.message);

@@ -101,7 +101,6 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 
 export interface ImportConfig {
   processCoordinatorIds: string[];
-  amountBasis: string;
   /** Per-step due-date rules (anchor + working days), merged over the code defaults. */
   stepSla: StepSlaMap;
 }
@@ -185,7 +184,6 @@ const mapItem = (r: any): Item => ({
 const mapVendor = (r: any): Vendor => ({
   id: r.id,
   name: r.name,
-  gstin: r.gstin ?? null,
   contactName: r.contact_name ?? null,
   phone: r.phone ?? null,
   email: r.email ?? null,
@@ -201,7 +199,6 @@ const mapVendorItemPrice = (r: any): VendorItemPrice => ({
   itemId: r.item_id,
   currency: r.currency ?? "USD",
   rate: Number(r.rate ?? 0),
-  gstPct: r.gst_pct === null || r.gst_pct === undefined ? null : Number(r.gst_pct),
   active: r.active,
   sortOrder: r.sort_order ?? 0,
   createdAt: r.created_at,
@@ -292,7 +289,6 @@ const mapRequestItem = (r: any): RequestItem => ({
   finalVendorId: r.final_vendor_id ?? null,
   finalQty: num(r.final_qty),
   finalRate: num(r.final_rate),
-  gstPct: num(r.gst_pct),
   currency: r.currency ?? null,
   fxRateAtRequest: num(r.fx_rate_at_request),
   lineValueFx: num(r.line_value_fx),
@@ -315,7 +311,6 @@ const mapQuotation = (r: any): Quotation => ({
   requestItemId: r.request_item_id,
   vendorId: r.vendor_id,
   rate: Number(r.rate),
-  gstPct: num(r.gst_pct),
   leadTimeDays: r.lead_time_days ?? null,
   remark: r.remark ?? null,
   isRecommended: r.is_recommended,
@@ -357,7 +352,6 @@ const mapPoItem = (r: any): PoItem => ({
   requestItemId: r.request_item_id,
   qty: Number(r.qty),
   rate: Number(r.rate),
-  gstPct: num(r.gst_pct),
   lineValue: Number(r.line_value),
   receivedQty: Number(r.received_qty ?? 0),
 });
@@ -554,7 +548,6 @@ export async function fetchImportData(): Promise<ImportData> {
   const configByKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: ImportConfig = {
     processCoordinatorIds: (configByKey.get("process_coordinators")?.user_ids ?? []) as string[],
-    amountBasis: (configByKey.get("amount_basis")?.value ?? "line_incl_gst") as string,
     // Unset or partially-stored rules fall back to the code defaults.
     stepSla: resolveStepSla(configByKey.get("step_sla")),
   };

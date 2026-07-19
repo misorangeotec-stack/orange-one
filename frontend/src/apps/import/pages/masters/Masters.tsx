@@ -171,11 +171,10 @@ export default function Masters() {
           singular="Vendor"
           rows={s.vendors}
           canManage={s.canManage("vendor")}
-          searchText={(r) => `${r.name} ${r.gstin ?? ""} ${r.contactName ?? ""} ${r.phone ?? ""} ${r.email ?? ""}`}
+          searchText={(r) => `${r.name} ${r.contactName ?? ""} ${r.phone ?? ""} ${r.email ?? ""}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
             { header: "Currency", render: (r) => r.defaultCurrency || <span className="text-grey-2">—</span> },
-            { header: "GSTIN", render: (r) => r.gstin || <span className="text-grey-2">—</span> },
             { header: "Contact", render: (r) => r.contactName || <span className="text-grey-2">—</span> },
             { header: "Phone", render: (r) => r.phone || <span className="text-grey-2">—</span> },
             { header: "Email", render: (r) => r.email || <span className="text-grey-2">—</span> },
@@ -184,7 +183,6 @@ export default function Masters() {
           emptyValues={emptyValuesFor("vendor")}
           toValues={(r) => ({
             name: r.name,
-            gstin: r.gstin ?? "",
             contact_name: r.contactName ?? "",
             phone: r.phone ?? "",
             email: r.email ?? "",
@@ -194,7 +192,6 @@ export default function Masters() {
           onSubmit={async (id, v, active) => {
             const input = {
               name: v.name.trim(),
-              gstin: v.gstin.trim() || null,
               contactName: v.contact_name.trim() || null,
               phone: v.phone.trim() || null,
               email: v.email.trim() || null,
@@ -208,7 +205,6 @@ export default function Masters() {
           onToggleActive={async (r, active) =>
             s.editVendor(r.id, {
               name: r.name,
-              gstin: r.gstin,
               contactName: r.contactName,
               phone: r.phone,
               email: r.email,
@@ -234,7 +230,6 @@ export default function Masters() {
             { header: "Item", render: (r) => s.itemById(r.itemId)?.name ?? <span className="text-grey-2">—</span> },
             { header: "Currency", render: (r) => r.currency },
             { header: "Rate", render: (r) => r.rate },
-            { header: "GST %", render: (r) => (r.gstPct != null ? `${r.gstPct}%` : <span className="text-grey-2">—</span>) },
           ] as MasterColumn<VendorItemPrice>[]}
           fields={masterFields("vendor_item_price", ctx)}
           emptyValues={emptyValuesFor("vendor_item_price")}
@@ -243,7 +238,6 @@ export default function Masters() {
             item_id: r.itemId,
             currency: r.currency,
             rate: String(r.rate),
-            gst_pct: r.gstPct != null ? String(r.gstPct) : "",
           })}
           onSubmit={async (id, v, active) => {
             const input = {
@@ -251,7 +245,6 @@ export default function Masters() {
               itemId: v.item_id,
               currency: v.currency.trim().toUpperCase() || "USD",
               rate: Number(v.rate) || 0,
-              gstPct: v.gst_pct.trim() ? Number(v.gst_pct) : null,
               active,
               sortOrder: 0,
             };
@@ -264,7 +257,6 @@ export default function Masters() {
               itemId: r.itemId,
               currency: r.currency,
               rate: r.rate,
-              gstPct: r.gstPct,
               active,
               sortOrder: r.sortOrder,
             })

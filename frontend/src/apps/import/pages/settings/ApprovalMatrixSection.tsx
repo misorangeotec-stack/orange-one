@@ -108,7 +108,7 @@ export default function ApprovalMatrixSection() {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[12.5px] text-grey-2">
-          A line's value (Final Qty × Final Rate, incl. GST) routes to the band that contains it.
+          A line's value (Final Qty × Final Rate) routes to the band that contains it.
         </p>
         <Button size="sm" onClick={openCreate}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
