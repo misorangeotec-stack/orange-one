@@ -80,6 +80,7 @@ import {
   updateVendor,
   insertVendorItemPrice,
   updateVendorItemPrice,
+  upsertVendorItemPrice,
   fetchFxRate as fetchFxRateWrite,
   setMasterManagers as setMasterManagersWrite,
   requestNewMaster as requestNewMasterWrite,
@@ -90,6 +91,8 @@ import {
   deleteApprovalBand,
   setConfig as setConfigWrite,
   submitRequest as submitRequestWrite,
+  updateRequest as updateRequestWrite,
+  cancelRequest as cancelRequestWrite,
   saveSourcing as saveSourcingWrite,
   decideApproval as decideApprovalWrite,
   generatePo as generatePoWrite,
@@ -134,6 +137,7 @@ import {
   type StepOwnerInput,
   type ApprovalBandInput,
   type NewRequestLine,
+  type EditRequestLine,
   type QuotationInput,
   type ApprovalDecision,
   type PiItemInput,
@@ -165,6 +169,9 @@ interface ImportStoreValue {
   priceFor: (vendorId: string | null, itemId: string | null) => VendorItemPrice | undefined;
   /** Items that have an active price for the given vendor (drives the request item picker). */
   pricedItemsForVendor: (vendorId: string | null) => Item[];
+  /** Every active item under a category, priced or not — the New Request grid lets
+   *  you order an unpriced item and supply its rate on the spot. */
+  itemsForCategory: (categoryId: string | null) => Item[];
 
   // governance
   masterManagers: MasterManager[];
@@ -196,7 +203,6 @@ interface ImportStoreValue {
   isApprover: boolean;
   processCoordinatorIds: string[];
   isProcessCoordinator: boolean;
-  amountBasis: string;
   /** Per-step due-date rules (anchor step + working days), merged over the defaults. */
   stepSla: StepSlaMap;
   /** The due date for a request line sitting in `step` (never null). */
@@ -305,6 +311,12 @@ interface ImportStoreValue {
   canSource: boolean;
   canGeneratePo: boolean;
   canApproveLine: (line: RequestItem) => boolean;
+  /**
+   * May the current user edit / cancel this request? Requester-or-admin AND
+   * nothing decided yet. Derived from the REAL session, not the demo persona —
+   * see the implementation comment.
+   */
+  canEditRequest: (request: PurchaseRequest) => boolean;
   canSharePo: boolean;
   canCollectPi: boolean;
   canRecordPayment: boolean;
@@ -325,14 +337,17 @@ interface ImportStoreValue {
   canCancelPo: (po: PurchaseOrder) => boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string; currency: string; fxRate: number; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; fxRate: number; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  /** Correct an already-submitted request. Pre-approval only — the RPC re-checks. */
+  updateRequest: (input: { requestId: string; note: string | null; fxRate: number; items: EditRequestLine[] }) => Promise<void>;
+  /** Cancel a whole request (kept, marked cancelled). Pre-approval only. */
+  cancelRequest: (requestId: string, reason: string) => Promise<void>;
   saveSourcing: (input: {
     requestItemId: string;
     quotations: QuotationInput[];
     recommendedVendorId: string;
     finalQty: number;
     finalRate: number;
-    gstPct: number | null;
     sourcingReason: string | null;
   }) => Promise<void>;
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
@@ -414,6 +429,9 @@ interface ImportStoreValue {
   editVendor: (id: string, input: VendorInput) => Promise<void>;
   createVendorItemPrice: (input: VendorItemPriceInput) => Promise<string>;
   editVendorItemPrice: (id: string, input: VendorItemPriceInput) => Promise<void>;
+  /** Insert-or-update a price by (vendor, item) — the New Request grid's
+   *  "save to price list" tick. Admins / vendor_item_price managers only. */
+  saveVendorItemPrice: (input: { vendorId: string; itemId: string; currency: string; rate: number }) => Promise<void>;
 
   // mutations — governance
   setMasterManagers: (masterType: MasterType, userIds: string[]) => Promise<void>;
@@ -474,7 +492,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const approvalBands = data?.approvalBands ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
-  const amountBasis = data?.config.amountBasis ?? "line_incl_gst";
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const requests = data?.requests ?? [];
   const requestItems = data?.requestItems ?? [];
@@ -499,7 +516,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     // `config` rides along so the pure due-date rules can read the admin's per-step SLA.
     const snapshot: ImportSnapshot = {
       requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings, payments, followups, activity,
-      config: { processCoordinatorIds, amountBasis, stepSla },
+      config: { processCoordinatorIds, stepSla },
     };
     const importIndex = buildImportIndex(snapshot);
     const byName = <T extends { name: string; sortOrder: number }>(a: T, b: T) =>
@@ -546,6 +563,26 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
+
+    /**
+     * May the current user still edit / cancel this request? Mirrors the SQL
+     * predicate `fms_import_request_editable` exactly, plus the RPCs' authz.
+     *
+     * NOTE the identity source: this is the ONE capability flag here that uses
+     * the REAL session rather than the effective persona. The RPCs authorise
+     * against `auth.uid()`, which stays the real user even in demo mode, so a
+     * persona-derived gate would show an enabled button the server then
+     * rejects. Both halves must come from `session` — taking the real id but
+     * the persona's `isAdmin` is the subtle version of the same bug. The cost
+     * is that Edit/Cancel don't appear while impersonating; that is deliberate.
+     */
+    const requestEditable = (r: PurchaseRequest): boolean => {
+      if (r.status !== "open") return false;
+      const ls = requestItems.filter((l) => l.requestId === r.id);
+      return ls.length > 0 && ls.every((l) => l.status === "approval" || l.status === "on_hold");
+    };
+    const canEditRequest = (r: PurchaseRequest): boolean =>
+      (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
 
     // ---- PO cancellation helpers (approver-only, vendor-requested) ----
     const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
@@ -629,6 +666,11 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         const priced = new Set(vendorItemPrices.filter((p) => p.vendorId === vendorId && p.active).map((p) => p.itemId));
         return items.filter((i) => i.active && priced.has(i.id)).sort(byName);
       },
+      itemsForCategory: (categoryId) => {
+        if (!categoryId) return [];
+        const groupIds = new Set(itemGroups.filter((g) => g.categoryId === categoryId && g.active).map((g) => g.id));
+        return items.filter((i) => i.active && groupIds.has(i.itemGroupId)).sort(byName);
+      },
 
       masterManagers,
       masterRequests,
@@ -653,7 +695,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       isApprover: isAdmin || approvalBands.some((b) => b.approverUserId === user.id),
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
-      amountBasis,
       canConfigure: isAdmin,
 
       // ---- workflow data + selectors (Stages 1–4) ----
@@ -703,6 +744,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
       canApproveLine,
+      canEditRequest,
 
       // ---- PO lifecycle data + selectors ----
       pis,
@@ -762,7 +804,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         // approver(s) matched to each line's INR-equivalent value directly.
         const approvers = new Set<string>();
         for (const l of input.items) {
-          const inr = Math.round(l.quantity * l.rate * (1 + (l.gstPct ?? 0) / 100) * input.fxRate * 100) / 100;
+          // Mirrors the RPC's value math exactly — no GST on an import line.
+          const inr = Math.round(l.quantity * l.rate * input.fxRate * 100) / 100;
           const who = approverForAmount(inr);
           if (who) approvers.add(who);
         }
@@ -776,9 +819,21 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         await invalidate();
         return id;
       },
+      // Both of these announce SERVER-side, inside the RPC's own transaction —
+      // deliberately unlike submitRequest above, which uses best-effort
+      // safeAnnounce. Do NOT add a safeAnnounce here: it would write a second
+      // activity row for one action.
+      updateRequest: async (input) => {
+        await updateRequestWrite(input);
+        await invalidate();
+      },
+      cancelRequest: async (requestId, reason) => {
+        await cancelRequestWrite(requestId, reason);
+        await invalidate();
+      },
       saveSourcing: async (input) => {
         await saveSourcingWrite(input);
-        const lineValue = Math.round(input.finalQty * input.finalRate * (1 + (input.gstPct ?? 0) / 100) * 100) / 100;
+        const lineValue = Math.round(input.finalQty * input.finalRate * 100) / 100;
         const approver = approverForAmount(lineValue);
         await safeAnnounce({
           entityType: "line",
@@ -1086,6 +1141,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         await updateVendorItemPrice(id, input);
         await invalidate();
       },
+      saveVendorItemPrice: async (input) => {
+        await upsertVendorItemPrice({ ...input, createdBy: user.id });
+        await invalidate();
+      },
 
       // ---- governance mutations ----
       setMasterManagers: async (masterType, userIds) => {
@@ -1172,7 +1231,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     stepOwners,
     approvalBands,
     processCoordinatorIds,
-    amountBasis,
     requests,
     requestItems,
     quotations,

@@ -2,25 +2,40 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
-import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import Combobox, { type ComboOption, type ComboboxHandle } from "@/shared/components/ui/Combobox";
+import LineGrid, { newUid, type LineGridColumn, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import RequestMasterModal from "../../components/RequestMasterModal";
 import { masterTypeLabel, type MasterValues } from "../../lib/masterFields";
 import type { MasterType } from "../../types";
 import { useProcurementStore } from "../../store";
 
-interface Line {
+interface Line extends LineGridRow {
+  /** Item Group of THIS line — rows can draw from different groups. */
+  groupId: string;
   itemId: string;
   qty: string;
   unit: string;
   remark: string;
 }
 
+const makeEmptyLine = (): Line => ({
+  uid: newUid(),
+  groupId: "",
+  itemId: "",
+  // Genuinely empty: LineGrid appends a blank row whenever the last stops being
+  // blank, so a default here would append forever.
+  qty: "",
+  unit: "",
+  remark: "",
+});
+
+const isLineBlank = (l: Line) => !l.groupId && !l.itemId && !l.qty && !l.remark;
+
 /**
  * Stage 1 — raise a Purchase Request. Pick the buyer Company + one Category, then
- * add item lines from the category's Item Groups. Picking a group exposes a
- * searchable **Item dropdown**; each pick adds one line (groups can hold many
- * items, so it's a dropdown, not a checklist). Missing masters requested inline.
+ * fill the grid: each row picks its Item Group and Item, and Tab/Enter off the
+ * end of a row starts the next one. Missing masters requested inline.
  */
 export default function NewRequest() {
   const s = useProcurementStore();
@@ -28,8 +43,7 @@ export default function NewRequest() {
 
   const [companyId, setCompanyId] = useState("");
   const [categoryId, setCategoryId] = useState("");
-  const [groupId, setGroupId] = useState("");
-  const [lines, setLines] = useState<Line[]>([]);
+  const [lines, setLines] = useState<Line[]>([makeEmptyLine()]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -48,26 +62,14 @@ export default function NewRequest() {
     () => (categoryId ? s.itemGroupsByCategory(categoryId).filter((g) => g.active).map((g) => ({ value: g.id, label: g.name })) : []),
     [categoryId, s]
   );
-  const groupItems = useMemo(() => (groupId ? s.itemsByGroup(groupId).filter((i) => i.active) : []), [groupId, s]);
-
-  // Item dropdown options = the group's items not already added as a line.
-  const itemOptions: ComboOption[] = useMemo(() => {
-    const added = new Set(lines.map((l) => l.itemId));
-    return groupItems
-      .filter((it) => !added.has(it.id))
+  /** Item options for a row = its group's items, minus ones another row already took. */
+  const itemOptionsFor = (line: Line): ComboOption[] => {
+    if (!line.groupId) return [];
+    const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.itemId).map((l) => l.itemId));
+    return s
+      .itemsByGroup(line.groupId)
+      .filter((it) => it.active && !taken.has(it.id))
       .map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || undefined }));
-  }, [groupItems, lines]);
-
-  const pickGroup = (gid: string) => setGroupId(gid);
-
-  /** A dropdown pick adds one line (qty defaults to 1; edited in the list below). */
-  const addItemLine = (itemId: string) => {
-    if (!itemId) return;
-    const it = s.itemById(itemId);
-    if (!it) return;
-    if (lines.some((l) => l.itemId === itemId)) return;
-    setLines((prev) => [...prev, { itemId, qty: "1", unit: it.unit, remark: "" }]);
-    setErr(null);
   };
 
   /** Missing from a dropdown? Raise it as a master request, prefilled with what
@@ -79,17 +81,108 @@ export default function NewRequest() {
     }
     setRaise({ mt: "item_group", prefill: { name, category_id: categoryId } });
   };
-  const raiseItem = (name: string) => {
-    if (!groupId) return;
-    setRaise({ mt: "item", prefill: { name, item_group_id: groupId } });
+  const raiseItem = (line: Line) => (name: string) => {
+    if (!line.groupId) return;
+    setRaise({ mt: "item", prefill: { name, item_group_id: line.groupId } });
   };
+
+  const filled = lines.filter((l) => !isLineBlank(l));
+
+  const columns: LineGridColumn<Line>[] = [
+    {
+      key: "group",
+      header: "Item Group",
+      className: "w-48",
+      cell: (row, api) => (
+        <Combobox
+          ref={api.focusRef as (el: ComboboxHandle | null) => void}
+          value={row.groupId}
+          onChange={(v) => {
+            // A new group invalidates the item chosen under the old one.
+            api.patch({ groupId: v, itemId: "", unit: "" });
+            api.advance();
+          }}
+          options={groupOptions}
+          placeholder={categoryId ? "Item group…" : "Pick a category first"}
+          disabled={!categoryId}
+          searchable
+          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
+          onTriggerKeyDown={api.keyHandler}
+          onCreate={raiseGroup}
+          createLabel={(q) => `Request new item group “${q}”`}
+        />
+      ),
+    },
+    {
+      key: "item",
+      header: "Item",
+      className: "min-w-[240px]",
+      cell: (row, api) => (
+        <Combobox
+          ref={api.focusRef as (el: ComboboxHandle | null) => void}
+          value={row.itemId}
+          onChange={(v) => {
+            const it = s.itemById(v);
+            if (it) api.patch({ itemId: v, unit: it.unit, qty: row.qty || "1" });
+            api.advance();
+          }}
+          options={itemOptionsFor(row)}
+          placeholder={row.groupId ? "Search & select an item…" : "Pick a group first"}
+          disabled={!row.groupId}
+          searchable
+          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
+          onTriggerKeyDown={api.keyHandler}
+          onCreate={raiseItem(row)}
+          createLabel={(q) => `Request new item “${q}”`}
+        />
+      ),
+    },
+    {
+      key: "qty",
+      header: <span className="block text-right">Qty</span>,
+      className: "w-32",
+      cell: (row, api) => (
+        <TextInput
+          ref={api.focusRef as (el: HTMLInputElement | null) => void}
+          type="number"
+          className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums"
+          value={row.qty}
+          onChange={(e) => api.patch({ qty: e.target.value })}
+          onKeyDown={api.keyHandler}
+        />
+      ),
+    },
+    {
+      key: "unit",
+      header: "Unit",
+      className: "w-20",
+      skipFocus: true,
+      cell: (row) => <span className="text-grey">{row.unit || "—"}</span>,
+    },
+    {
+      key: "remark",
+      header: "Remark",
+      className: "min-w-[160px]",
+      cell: (row, api) => (
+        <TextInput
+          ref={api.focusRef as (el: HTMLInputElement | null) => void}
+          className="w-full px-2.5 py-1.5 text-[13.5px]"
+          placeholder="optional"
+          value={row.remark}
+          onChange={(e) => api.patch({ remark: e.target.value })}
+          onKeyDown={api.keyHandler}
+        />
+      ),
+    },
+  ];
 
   const submit = async () => {
     setErr(null);
     if (!companyId) return setErr("Select a company.");
     if (!categoryId) return setErr("Select a category.");
-    if (lines.length === 0) return setErr("Add at least one item line.");
-    if (lines.some((l) => !(Number(l.qty) > 0))) return setErr("Every line needs a quantity > 0.");
+    if (filled.length === 0) return setErr("Add at least one item line.");
+    if (filled.some((l) => !l.itemId)) return setErr("Every line needs an item.");
+    if (filled.some((l) => !(Number(l.qty) > 0))) return setErr("Every line needs a quantity > 0.");
 
     setBusy(true);
     try {
@@ -97,7 +190,7 @@ export default function NewRequest() {
         companyId,
         categoryId,
         note: note.trim() || null,
-        items: lines.map((l) => ({ itemId: l.itemId, quantity: Number(l.qty), unit: l.unit, lineRemark: l.remark.trim() || null })),
+        items: filled.map((l) => ({ itemId: l.itemId, quantity: Number(l.qty), unit: l.unit, lineRemark: l.remark.trim() || null })),
       });
       navigate(`/procurement/requests/${id}`);
     } catch (e) {
@@ -130,8 +223,9 @@ export default function NewRequest() {
             <Combobox
               value={categoryId}
               onChange={(v) => {
+                // Groups are category-scoped, so the whole grid resets with it.
                 setCategoryId(v);
-                setGroupId("");
+                setLines([makeEmptyLine()]);
               }}
               options={categoryOptions}
               placeholder="Select category"
@@ -143,68 +237,18 @@ export default function NewRequest() {
         </div>
 
         {categoryId && (
-          <div className="rounded-xl border border-line p-4 space-y-3 bg-page/30">
-            <FieldLabel label="Add items from an Item Group">
-              <Combobox
-                value={groupId}
-                onChange={pickGroup}
-                options={groupOptions}
-                placeholder="Select item group"
-                onCreate={raiseGroup}
-                createLabel={(q) => `Request new item group “${q}”`}
-                autoAdvance
-              />
-            </FieldLabel>
-
-            {groupId && (
-              <FieldLabel label="Item">
-                <Combobox
-                  value=""
-                  onChange={addItemLine}
-                  options={itemOptions}
-                  placeholder={groupItems.length === 0 ? "No items in this group yet" : itemOptions.length === 0 ? "All items in this group added" : "Search & select an item…"}
-                  onCreate={raiseItem}
-                  createLabel={(q) => `Request new item “${q}”`}
-                  searchable
-                />
-                <p className="text-[12px] text-grey-2 mt-1">Pick items one at a time — set quantities in the list below. Missing one? Type its name to request it.</p>
-              </FieldLabel>
-            )}
+          <div className="space-y-2">
+            <LineGrid
+              rows={lines}
+              onRowsChange={setLines}
+              columns={columns}
+              makeEmptyRow={makeEmptyLine}
+              isRowBlank={isLineBlank}
+            />
+            <p className="text-[12px] text-grey-2">
+              Press Tab or Enter at the end of a row to start the next one. Missing an item or group? Type its name to request it.
+            </p>
             {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>}
-          </div>
-        )}
-
-        {/* Lines */}
-        {lines.length > 0 && (
-          <div className="rounded-xl border border-line overflow-hidden">
-            <table className="w-full text-[13.5px]">
-              <thead>
-                <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                  <th className="font-medium px-3 py-2">Item</th>
-                  <th className="font-medium px-3 py-2 w-28">Qty</th>
-                  <th className="font-medium px-3 py-2">Unit</th>
-                  <th className="font-medium px-3 py-2">Remark</th>
-                  <th className="px-3 py-2"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l, i) => (
-                  <tr key={l.itemId} className="border-b border-line/70 last:border-0">
-                    <td className="px-3 py-2 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
-                    <td className="px-3 py-2">
-                      <TextInput type="number" className="w-24" value={l.qty} onChange={(e) => setLines((p) => p.map((x, idx) => (idx === i ? { ...x, qty: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2 text-grey">{l.unit || "—"}</td>
-                    <td className="px-3 py-2">
-                      <TextInput value={l.remark} placeholder="optional" onChange={(e) => setLines((p) => p.map((x, idx) => (idx === i ? { ...x, remark: e.target.value } : x)))} />
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button onClick={() => setLines((p) => p.filter((_, idx) => idx !== i))} className="text-grey-2 hover:text-ryg-red" aria-label="Remove">✕</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
 
