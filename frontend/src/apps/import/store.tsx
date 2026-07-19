@@ -80,6 +80,7 @@ import {
   updateVendor,
   insertVendorItemPrice,
   updateVendorItemPrice,
+  upsertVendorItemPrice,
   fetchFxRate as fetchFxRateWrite,
   setMasterManagers as setMasterManagersWrite,
   requestNewMaster as requestNewMasterWrite,
@@ -90,6 +91,8 @@ import {
   deleteApprovalBand,
   setConfig as setConfigWrite,
   submitRequest as submitRequestWrite,
+  updateRequest as updateRequestWrite,
+  cancelRequest as cancelRequestWrite,
   saveSourcing as saveSourcingWrite,
   decideApproval as decideApprovalWrite,
   generatePo as generatePoWrite,
@@ -134,6 +137,7 @@ import {
   type StepOwnerInput,
   type ApprovalBandInput,
   type NewRequestLine,
+  type EditRequestLine,
   type QuotationInput,
   type ApprovalDecision,
   type PiItemInput,
@@ -165,6 +169,9 @@ interface ImportStoreValue {
   priceFor: (vendorId: string | null, itemId: string | null) => VendorItemPrice | undefined;
   /** Items that have an active price for the given vendor (drives the request item picker). */
   pricedItemsForVendor: (vendorId: string | null) => Item[];
+  /** Every active item under a category, priced or not — the New Request grid lets
+   *  you order an unpriced item and supply its rate on the spot. */
+  itemsForCategory: (categoryId: string | null) => Item[];
 
   // governance
   masterManagers: MasterManager[];
@@ -304,6 +311,12 @@ interface ImportStoreValue {
   canSource: boolean;
   canGeneratePo: boolean;
   canApproveLine: (line: RequestItem) => boolean;
+  /**
+   * May the current user edit / cancel this request? Requester-or-admin AND
+   * nothing decided yet. Derived from the REAL session, not the demo persona —
+   * see the implementation comment.
+   */
+  canEditRequest: (request: PurchaseRequest) => boolean;
   canSharePo: boolean;
   canCollectPi: boolean;
   canRecordPayment: boolean;
@@ -324,7 +337,11 @@ interface ImportStoreValue {
   canCancelPo: (po: PurchaseOrder) => boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string; currency: string; fxRate: number; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; fxRate: number; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  /** Correct an already-submitted request. Pre-approval only — the RPC re-checks. */
+  updateRequest: (input: { requestId: string; note: string | null; fxRate: number; items: EditRequestLine[] }) => Promise<void>;
+  /** Cancel a whole request (kept, marked cancelled). Pre-approval only. */
+  cancelRequest: (requestId: string, reason: string) => Promise<void>;
   saveSourcing: (input: {
     requestItemId: string;
     quotations: QuotationInput[];
@@ -412,6 +429,9 @@ interface ImportStoreValue {
   editVendor: (id: string, input: VendorInput) => Promise<void>;
   createVendorItemPrice: (input: VendorItemPriceInput) => Promise<string>;
   editVendorItemPrice: (id: string, input: VendorItemPriceInput) => Promise<void>;
+  /** Insert-or-update a price by (vendor, item) — the New Request grid's
+   *  "save to price list" tick. Admins / vendor_item_price managers only. */
+  saveVendorItemPrice: (input: { vendorId: string; itemId: string; currency: string; rate: number }) => Promise<void>;
 
   // mutations — governance
   setMasterManagers: (masterType: MasterType, userIds: string[]) => Promise<void>;
@@ -544,6 +564,26 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
 
+    /**
+     * May the current user still edit / cancel this request? Mirrors the SQL
+     * predicate `fms_import_request_editable` exactly, plus the RPCs' authz.
+     *
+     * NOTE the identity source: this is the ONE capability flag here that uses
+     * the REAL session rather than the effective persona. The RPCs authorise
+     * against `auth.uid()`, which stays the real user even in demo mode, so a
+     * persona-derived gate would show an enabled button the server then
+     * rejects. Both halves must come from `session` — taking the real id but
+     * the persona's `isAdmin` is the subtle version of the same bug. The cost
+     * is that Edit/Cancel don't appear while impersonating; that is deliberate.
+     */
+    const requestEditable = (r: PurchaseRequest): boolean => {
+      if (r.status !== "open") return false;
+      const ls = requestItems.filter((l) => l.requestId === r.id);
+      return ls.length > 0 && ls.every((l) => l.status === "approval" || l.status === "on_hold");
+    };
+    const canEditRequest = (r: PurchaseRequest): boolean =>
+      (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
+
     // ---- PO cancellation helpers (approver-only, vendor-requested) ----
     const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
     // The approver(s) of a PO = the distinct users stamped as approver_id on the
@@ -626,6 +666,11 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         const priced = new Set(vendorItemPrices.filter((p) => p.vendorId === vendorId && p.active).map((p) => p.itemId));
         return items.filter((i) => i.active && priced.has(i.id)).sort(byName);
       },
+      itemsForCategory: (categoryId) => {
+        if (!categoryId) return [];
+        const groupIds = new Set(itemGroups.filter((g) => g.categoryId === categoryId && g.active).map((g) => g.id));
+        return items.filter((i) => i.active && groupIds.has(i.itemGroupId)).sort(byName);
+      },
 
       masterManagers,
       masterRequests,
@@ -699,6 +744,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
       canApproveLine,
+      canEditRequest,
 
       // ---- PO lifecycle data + selectors ----
       pis,
@@ -772,6 +818,18 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
         return id;
+      },
+      // Both of these announce SERVER-side, inside the RPC's own transaction —
+      // deliberately unlike submitRequest above, which uses best-effort
+      // safeAnnounce. Do NOT add a safeAnnounce here: it would write a second
+      // activity row for one action.
+      updateRequest: async (input) => {
+        await updateRequestWrite(input);
+        await invalidate();
+      },
+      cancelRequest: async (requestId, reason) => {
+        await cancelRequestWrite(requestId, reason);
+        await invalidate();
       },
       saveSourcing: async (input) => {
         await saveSourcingWrite(input);
@@ -1081,6 +1139,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       },
       editVendorItemPrice: async (id, input) => {
         await updateVendorItemPrice(id, input);
+        await invalidate();
+      },
+      saveVendorItemPrice: async (input) => {
+        await upsertVendorItemPrice({ ...input, createdBy: user.id });
         await invalidate();
       },
 

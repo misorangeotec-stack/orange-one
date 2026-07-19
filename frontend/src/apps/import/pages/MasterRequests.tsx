@@ -21,6 +21,7 @@ import {
   missingRequired,
   type MasterValues,
 } from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * Master Requests — one page, two audiences.
@@ -43,18 +44,7 @@ export default function MasterRequests() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const categoryOptions: ComboOption[] = useMemo(
-    () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
-    [s.activeCategories]
-  );
-  const itemGroupOptions: ComboOption[] = useMemo(
-    () =>
-      s.itemGroups
-        .filter((g) => g.active)
-        .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
-    [s.itemGroups, s]
-  );
-  const ctx = { categoryOptions, itemGroupOptions };
+  const ctx = useMasterFieldCtx();
 
   const describe = (r: MasterRequest) =>
     describePayload(r.masterType, r.proposedPayload as Record<string, unknown>, {

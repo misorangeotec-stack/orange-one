@@ -276,12 +276,18 @@ const mapRequest = (r: any): PurchaseRequest => ({
   status: r.status as RequestStatus,
   note: r.note ?? null,
   createdAt: r.created_at,
+  cancelReason: r.cancel_reason ?? null,
+  cancelledAt: r.cancelled_at ?? null,
+  cancelledBy: r.cancelled_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
 });
 
 const mapRequestItem = (r: any): RequestItem => ({
   id: r.id,
   requestId: r.request_id,
   itemId: r.item_id,
+  categoryId: r.category_id ?? null,
   quantity: Number(r.quantity),
   unit: r.unit ?? "",
   lineRemark: r.line_remark ?? null,

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
@@ -15,24 +15,12 @@ export interface ComboOption {
   group?: string;
 }
 
-/**
- * Searchable single-select dropdown used across the app instead of native <select>.
- * Shows a search box automatically when the list is long (configurable). Closes on
- * outside-click / Escape. Themed to match the form fields.
- */
-export default function Combobox({
-  value,
-  onChange,
-  options,
-  placeholder = "Select…",
-  disabled,
-  searchable,
-  className,
-  align = "left",
-  onCreate,
-  createLabel = (q) => `Add “${q}”`,
-  autoAdvance = false,
-}: {
+/** Imperative handle — lets a parent focus the trigger (LineGrid drives cell focus). */
+export interface ComboboxHandle {
+  focus: () => void;
+}
+
+export interface ComboboxProps {
   value: string;
   onChange: (value: string) => void;
   options: ComboOption[];
@@ -41,6 +29,8 @@ export default function Combobox({
   /** Force search box on/off; default: show when > 6 options. */
   searchable?: boolean;
   className?: string;
+  /** Extra classes on the trigger button — used to slim it down inside a grid cell. */
+  triggerClassName?: string;
   align?: "left" | "right";
   /**
    * After a selection, move focus to the next form field (so keyboard users can
@@ -55,7 +45,30 @@ export default function Combobox({
   onCreate?: (label: string) => string | void;
   /** Render text for the create row; defaults to `Add “<query>”`. */
   createLabel?: (q: string) => string;
-}) {
+  /** Fires on the trigger button. LineGrid uses it for Enter / Tab cell chaining. */
+  onTriggerKeyDown?: (e: ReactKeyboardEvent<HTMLButtonElement>) => void;
+}
+
+/**
+ * Searchable single-select dropdown used across the app instead of native <select>.
+ * Shows a search box automatically when the list is long (configurable). Closes on
+ * outside-click / Escape. Themed to match the form fields.
+ */
+const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
+  value,
+  onChange,
+  options,
+  placeholder = "Select…",
+  disabled,
+  searchable,
+  className,
+  triggerClassName,
+  align = "left",
+  onCreate,
+  createLabel = (q) => `Add “${q}”`,
+  autoAdvance = false,
+  onTriggerKeyDown,
+}, handleRef) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0); // keyboard-highlighted row
@@ -63,6 +76,9 @@ export default function Combobox({
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+
+  useImperativeHandle(handleRef, () => ({ focus: () => triggerRef.current?.focus() }), []);
 
   const showSearch = searchable ?? (!!onCreate || options.length > 6);
   const selected = options.find((o) => o.value === value);
@@ -200,6 +216,7 @@ export default function Combobox({
     <div className={cn("relative", className)} ref={ref}>
       <button
         type="button"
+        ref={triggerRef}
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
         onKeyDown={(e) => {
@@ -207,14 +224,20 @@ export default function Combobox({
           // Open with the arrow keys (native Enter/Space already toggles the button).
           if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
             e.preventDefault();
+            // An arrow key inside a scroll container would otherwise ALSO scroll it
+            // (ScrollableTable only bails for inputs, not buttons).
+            e.stopPropagation();
             setOpen(true);
+            return;
           }
+          if (!open) onTriggerKeyDown?.(e);
         }}
         className={cn(
           "w-full flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-left transition",
           "outline-none focus:border-orange focus:ring-4 focus:ring-orange/10",
           disabled ? "bg-page text-grey-2 cursor-not-allowed" : "text-ink hover:border-[#d9e2f0] cursor-pointer",
-          open && "border-orange ring-4 ring-orange/10"
+          open && "border-orange ring-4 ring-orange/10",
+          triggerClassName
         )}
       >
         {selected?.icon && <span className="shrink-0 flex items-center">{selected.icon}</span>}
@@ -311,4 +334,6 @@ export default function Combobox({
       )}
     </div>
   );
-}
+});
+
+export default Combobox;

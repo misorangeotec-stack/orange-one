@@ -16,6 +16,7 @@ import {
   payloadFromValues,
   type MasterValues,
 } from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * "Request a new master entry" — the single raise surface for every import
@@ -63,18 +64,7 @@ export default function RequestMasterModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const categoryOptions: ComboOption[] = useMemo(
-    () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
-    [s.activeCategories]
-  );
-  const itemGroupOptions: ComboOption[] = useMemo(
-    () =>
-      s.itemGroups
-        .filter((g) => g.active)
-        .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
-    [s.itemGroups, s]
-  );
-  const ctx = { categoryOptions, itemGroupOptions };
+  const ctx = useMasterFieldCtx();
 
   const typeOptions: ComboOption[] = MASTER_TYPES.map((m) => ({ value: m.value, label: m.label }));
 

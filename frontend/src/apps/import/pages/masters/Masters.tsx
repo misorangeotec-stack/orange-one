@@ -3,6 +3,7 @@ import Tabs from "@/shared/components/ui/Tabs";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import MasterCrud, { type MasterColumn } from "@/shared/components/ui/MasterCrud";
 import { emptyValuesFor, masterFields } from "../../lib/masterFields";
+import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
 import { useImportStore } from "../../store";
 import type { Company, Category, ItemGroup, Item, Vendor, VendorItemPrice } from "../../types";
 
@@ -17,28 +18,8 @@ export default function Masters() {
   const s = useImportStore();
   const [tab, setTab] = useState("company");
 
-  const categoryOptions: ComboOption[] = useMemo(
-    () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
-    [s.activeCategories]
-  );
-  const itemGroupOptions: ComboOption[] = useMemo(
-    () =>
-      s.itemGroups
-        .filter((g) => g.active)
-        .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
-    [s.itemGroups, s]
-  );
-
-  const vendorOptions: ComboOption[] = useMemo(
-    () => s.activeVendors.map((v) => ({ value: v.id, label: v.defaultCurrency ? `${v.name} (${v.defaultCurrency})` : v.name })),
-    [s.activeVendors]
-  );
-  const itemOptions: ComboOption[] = useMemo(
-    () => s.items.filter((i) => i.active).map((i) => ({ value: i.id, label: i.name, sublabel: s.itemGroupById(i.itemGroupId)?.name })),
-    [s.items, s]
-  );
-
-  const ctx = { categoryOptions, itemGroupOptions, vendorOptions, itemOptions };
+  const ctx = useMasterFieldCtx();
+  const { categoryOptions, itemGroupOptions } = ctx;
 
   const tabs = [
     { key: "company", label: "Companies", count: s.companies.length },

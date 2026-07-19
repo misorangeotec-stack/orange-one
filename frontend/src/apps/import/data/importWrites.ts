@@ -216,6 +216,34 @@ export async function insertVendorItemPrice(input: VendorItemPriceInput & { crea
   return data.id as string;
 }
 
+/**
+ * Save a price straight from the New Request grid ("save to price list").
+ * The table is unique (vendor_id, item_id), so a plain insert would 23505 the
+ * moment someone re-prices an item — upsert instead. sort_order is deliberately
+ * left untouched so an existing row keeps its place in the Masters list.
+ * RLS restricts this to admins and vendor_item_price managers.
+ */
+export async function upsertVendorItemPrice(input: {
+  vendorId: string;
+  itemId: string;
+  currency: string;
+  rate: number;
+  createdBy: string;
+}): Promise<void> {
+  const { error } = await db.from("fms_import_vendor_item_prices").upsert(
+    {
+      vendor_id: input.vendorId,
+      item_id: input.itemId,
+      currency: input.currency,
+      rate: input.rate,
+      active: true,
+      created_by: input.createdBy,
+    },
+    { onConflict: "vendor_id,item_id" }
+  );
+  if (error) throw new Error(error.message);
+}
+
 export async function updateVendorItemPrice(id: string, input: VendorItemPriceInput): Promise<void> {
   const { error } = await db
     .from("fms_import_vendor_item_prices")
@@ -394,6 +422,8 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 
 export interface NewRequestLine {
   itemId: string;
+  /** Category of THIS line — a request may mix categories across its lines. */
+  categoryId: string;
   quantity: number;
   unit: string;
   /** Rate in the vendor's foreign currency (auto-filled from the price master, editable). */
@@ -410,7 +440,9 @@ export interface NewRequestLine {
 export async function submitRequest(input: {
   companyId: string;
   vendorId: string;
-  categoryId: string;
+  /** Header category. Pass null to let the server take the FIRST line's — the
+   *  header column is NOT NULL and exists only so pre-existing reads keep working. */
+  categoryId: string | null;
   currency: string;
   fxRate: number;
   note: string | null;
@@ -425,6 +457,7 @@ export async function submitRequest(input: {
     p_fx_rate: input.fxRate,
     p_items: input.items.map((l) => ({
       item_id: l.itemId,
+      category_id: l.categoryId,
       quantity: l.quantity,
       unit: l.unit,
       rate: l.rate,
@@ -433,6 +466,58 @@ export async function submitRequest(input: {
   });
   if (error) throw new Error(error.message);
   return data as string;
+}
+
+/** A line as sent to `fms_import_update_request`. `id` null ⇒ a brand-new line. */
+export interface EditRequestLine extends NewRequestLine {
+  /** The existing `fms_import_request_items.id`, or null for a row just added. */
+  id: string | null;
+}
+
+/**
+ * Correct a request the requester already submitted. Only legal while the
+ * request is open and EVERY line is still awaiting approval — the RPC re-checks
+ * that server-side and raises if not, so this can be called optimistically.
+ *
+ * Lines are matched by `id`: an existing line is updated in place (keeping its
+ * history, SLA anchor and any manual approver routing), a null-id line is
+ * inserted, and any line omitted from `items` is removed.
+ */
+export async function updateRequest(input: {
+  requestId: string;
+  note: string | null;
+  fxRate: number;
+  items: EditRequestLine[];
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_request", {
+    p_request_id: input.requestId,
+    p_note: input.note ?? "",
+    p_fx_rate: input.fxRate,
+    p_items: input.items.map((l) => ({
+      id: l.id,
+      item_id: l.itemId,
+      category_id: l.categoryId,
+      quantity: l.quantity,
+      unit: l.unit,
+      rate: l.rate,
+      line_remark: l.lineRemark ?? "",
+    })) as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Cancel a whole request (requester or admin, pre-approval only). The request is
+ * KEPT and marked cancelled — never hard-deleted. The RPC also cascades every
+ * still-open line to cancelled, which is what actually removes it from the
+ * approver's queue; the header status alone is read by nothing.
+ */
+export async function cancelRequest(requestId: string, reason: string): Promise<void> {
+  const { error } = await db.rpc("fms_import_cancel_request", {
+    p_request_id: requestId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
 }
 
 export interface QuotationInput {

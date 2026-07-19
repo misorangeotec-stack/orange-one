@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { forwardRef, useState } from "react";
 import type { ReactNode, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/shared/lib/cn";
@@ -24,9 +24,12 @@ export function FieldLabel({ label, required, hint, children }: { label: string;
   );
 }
 
-export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn(fieldBase, className)} {...props} />;
-}
+/** forwardRef so a parent can drive focus — LineGrid moves the caret cell to cell. */
+export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function TextInput({ className, ...props }, ref) {
+    return <input ref={ref} className={cn(fieldBase, className)} {...props} />;
+  }
+);
 
 /** Password field with a show/hide toggle. Pass the same props as TextInput (minus `type`). */
 export function PasswordInput({ className, type: _type, ...props }: InputHTMLAttributes<HTMLInputElement>) {
@@ -47,9 +50,11 @@ export function PasswordInput({ className, type: _type, ...props }: InputHTMLAtt
   );
 }
 
-export function TextArea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={cn(fieldBase, "resize-none", className)} {...props} />;
-}
+export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
+  function TextArea({ className, ...props }, ref) {
+    return <textarea ref={ref} className={cn(fieldBase, "resize-none", className)} {...props} />;
+  }
+);
 
 export function Select({ className, children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (

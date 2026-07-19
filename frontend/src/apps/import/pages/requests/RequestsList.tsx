@@ -29,7 +29,28 @@ export default function RequestsList() {
     const co = s.companyById(id);
     return co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—";
   };
-  const categoryName = (r: PurchaseRequest) => s.categoryById(r.categoryId)?.name ?? "—";
+  /**
+   * A request may now span categories, so the header's category (which is just
+   * the first line's) is no longer the whole truth. Collect every distinct one
+   * its lines carry; lines predating per-line category fall back to the header.
+   */
+  const categoryNames = (r: PurchaseRequest): string[] => {
+    const names = new Set(
+      s.itemsForRequest(r.id).map((l) => s.categoryById(l.categoryId ?? r.categoryId)?.name ?? "")
+    );
+    names.delete("");
+    if (names.size === 0) {
+      const own = s.categoryById(r.categoryId)?.name;
+      if (own) names.add(own);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  };
+  /** Compact display: "INK" for one, "INK +2" for a mixed request. */
+  const categoryName = (r: PurchaseRequest) => {
+    const names = categoryNames(r);
+    if (names.length === 0) return "—";
+    return names.length === 1 ? names[0]! : `${names[0]} +${names.length - 1}`;
+  };
   const requesterName = (r: PurchaseRequest) => s.profileById(r.requesterId)?.name ?? "—";
   const statusOf = (r: PurchaseRequest) => rollupStatus(s.itemsForRequest(r.id));
   const statusLabel = (r: PurchaseRequest) => { const st = statusOf(r); return st ? LINE_STATUS_LABEL[st] : "—"; };
@@ -50,7 +71,9 @@ export default function RequestsList() {
 
   const columns: QueueColumn<PurchaseRequest>[] = [
     { key: "request", header: "Request No.", cell: (r) => <span className="font-semibold text-navy">{r.requestNo}</span>, sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
-    { key: "category", header: "Category", cell: (r) => categoryName(r), sortValue: (r) => categoryName(r), filter: { kind: "select", get: (r) => categoryName(r) }, tdClassName: "whitespace-nowrap" },
+    // Filter on the FULL list, not the compact label — typing "SPARES" must still
+    // find a request where SPARES is only the second category.
+    { key: "category", header: "Category", cell: (r) => <span title={categoryNames(r).join(", ")}>{categoryName(r)}</span>, sortValue: (r) => categoryName(r), filter: { kind: "text", get: (r) => categoryNames(r).join(", ") }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => s.itemsForRequest(r.id).length, sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "number", get: (r) => s.itemsForRequest(r.id).length } },
     { key: "requester", header: "Requester", cell: (r) => requesterName(r), sortValue: (r) => requesterName(r), filter: { kind: "select", get: (r) => requesterName(r) }, tdClassName: "whitespace-nowrap" },
     { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
@@ -92,8 +115,16 @@ export default function RequestsList() {
           rowsLabel="requests"
           emptyTitle="No requests"
           emptyMessage="Raise a purchase request to get started."
+          // Cancel is deliberately NOT here: cancelling a whole multi-line
+          // request from a list row, without seeing the lines it takes with it,
+          // is a footgun. It lives on the detail page behind a reason prompt.
           actions={(r) => (
-            <Link to={`/import/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">View</Link>
+            <>
+              <Link to={`/import/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">View</Link>
+              {s.canEditRequest(r) && (
+                <Link to={`/import/requests/${r.id}/edit`} className="text-[12.5px] font-semibold text-grey hover:text-navy ml-3">Edit</Link>
+              )}
+            </>
           )}
         />
       </Card>

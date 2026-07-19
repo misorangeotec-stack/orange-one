@@ -121,6 +121,13 @@ export interface PurchaseRequest {
   status: RequestStatus;
   note: string | null;
   createdAt: string;
+  /** Set when the requester (or an admin) cancelled it before any approval. */
+  cancelReason: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  /** Set when the requester corrected the request after submitting it. */
+  editedAt: string | null;
+  editedBy: string | null;
 }
 
 export type LineStatus =
@@ -136,6 +143,9 @@ export interface RequestItem {
   id: string;
   requestId: string;
   itemId: string;
+  /** Category of THIS line. Null only on rows predating per-line category —
+   *  fall back to the request header's in that case. */
+  categoryId: string | null;
   quantity: number;
   unit: string;
   lineRemark: string | null;
