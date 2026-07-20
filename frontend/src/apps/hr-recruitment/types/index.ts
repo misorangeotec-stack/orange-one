@@ -209,6 +209,8 @@ export interface Requisition {
   rejectReason: string | null;
   /** When the job_posting STEP completed (drives the SLA). */
   postedAt: string | null;
+  /** Who posted the job. Null on rows posted before attribution was captured. */
+  postedBy: string | null;
   /** The business date HR typed — the sheet's "Date of Job Posted". Not the same fact. */
   postedOn: string | null;
   holdReason: string | null;
@@ -216,6 +218,9 @@ export interface Requisition {
   holdAt: string | null;
   cancelReason: string | null;
   closedAt: string | null;
+  /** When a COMPLETED approval step was last corrected via the Completed tab. Distinct from updatedAt. */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -326,6 +331,11 @@ export interface Interview {
   documentName: string | null;
   /** A meeting / recording link for an online interview (used most for Round 2). */
   videoUrl: string | null;
+  /** Who recorded the round's outcome. Null on rows recorded before attribution was captured. */
+  resultRecordedBy: string | null;
+  /** When the recorded result was last corrected. Distinct from the row's updatedAt. */
+  editedAt: string | null;
+  editedBy: string | null;
 }
 
 /* ------------------------------- onboarding ------------------------------- */
@@ -348,16 +358,22 @@ export interface Onboarding {
   /** HR sets this first — it unlocks the checklist, and every item's due date hangs off it. */
   joiningDate: string | null;
   joiningDateSetAt: string | null;
+  joiningDateBy: string | null;
 
   offerStatus: OfferStatus;
   offerStatusReason: string | null;
   offerDecidedAt: string | null;
+  offerDecidedBy: string | null;
 
   employeeCode: string | null;
   employeeCodeAt: string | null;
+  employeeCodeBy: string | null;
 
   /** They joined. Set only when the offer was accepted AND every item is done. */
   completedAt: string | null;
+  /** When an onboarding sub-event was last corrected. Distinct from updatedAt. */
+  editedAt: string | null;
+  editedBy: string | null;
   createdAt: string;
 }
 
@@ -448,6 +464,9 @@ export interface Probation {
   permanentFrom: string | null;
   /** Captured on approval: the ID they are confirmed under. */
   employeeCode: string | null;
+  /** When an 'extend' decision was last corrected. Distinct from updatedAt. */
+  editedAt: string | null;
+  editedBy: string | null;
 }
 
 /** One monthly review. Month 4 exists only after an extension. */
@@ -462,4 +481,7 @@ export interface ProbationReview {
   /** Stamped by the RPC — the HOD never types a date. */
   reviewedAt: string;
   reviewerId: string | null;
+  /** When this monthly review was last re-recorded. Distinct from updatedAt. */
+  editedAt: string | null;
+  editedBy: string | null;
 }

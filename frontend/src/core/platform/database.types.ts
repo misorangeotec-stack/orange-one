@@ -1747,11 +1747,14 @@ export type Database = {
           created_by: string | null
           document_name: string | null
           document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
           held_at: string | null
           id: string
           interviewer_id: string | null
           interviewer_name: string | null
           remarks: string | null
+          result_recorded_by: string | null
           round: number
           scheduled_on: string | null
           status: string
@@ -1764,11 +1767,14 @@ export type Database = {
           created_by?: string | null
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           held_at?: string | null
           id?: string
           interviewer_id?: string | null
           interviewer_name?: string | null
           remarks?: string | null
+          result_recorded_by?: string | null
           round: number
           scheduled_on?: string | null
           status?: string
@@ -1781,11 +1787,14 @@ export type Database = {
           created_by?: string | null
           document_name?: string | null
           document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           held_at?: string | null
           id?: string
           interviewer_id?: string | null
           interviewer_name?: string | null
           remarks?: string | null
+          result_recorded_by?: string | null
           round?: number
           scheduled_on?: string | null
           status?: string
@@ -2120,12 +2129,17 @@ export type Database = {
           completed_at: string | null
           created_at: string
           created_by: string | null
+          edited_at: string | null
+          edited_by: string | null
           employee_code: string | null
           employee_code_at: string | null
+          employee_code_by: string | null
           id: string
           joining_date: string | null
+          joining_date_by: string | null
           joining_date_set_at: string | null
           offer_decided_at: string | null
+          offer_decided_by: string | null
           offer_status: string
           offer_status_reason: string | null
           requisition_id: string
@@ -2136,12 +2150,17 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_code_by?: string | null
           id?: string
           joining_date?: string | null
+          joining_date_by?: string | null
           joining_date_set_at?: string | null
           offer_decided_at?: string | null
+          offer_decided_by?: string | null
           offer_status?: string
           offer_status_reason?: string | null
           requisition_id: string
@@ -2152,12 +2171,17 @@ export type Database = {
           completed_at?: string | null
           created_at?: string
           created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           employee_code?: string | null
           employee_code_at?: string | null
+          employee_code_by?: string | null
           id?: string
           joining_date?: string | null
+          joining_date_by?: string | null
           joining_date_set_at?: string | null
           offer_decided_at?: string | null
+          offer_decided_by?: string | null
           offer_status?: string
           offer_status_reason?: string | null
           requisition_id?: string
@@ -2183,6 +2207,8 @@ export type Database = {
       fms_hr_probation_reviews: {
         Row: {
           created_at: string
+          edited_at: string | null
+          edited_by: string | null
           file_name: string | null
           file_path: string | null
           id: string
@@ -2196,6 +2222,8 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           file_name?: string | null
           file_path?: string | null
           id?: string
@@ -2209,6 +2237,8 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           file_name?: string | null
           file_path?: string | null
           id?: string
@@ -2234,6 +2264,8 @@ export type Database = {
         Row: {
           candidate_id: string
           created_at: string
+          edited_at: string | null
+          edited_by: string | null
           employee_code: string | null
           extension_months: number
           extension_outcome: string | null
@@ -2257,6 +2289,8 @@ export type Database = {
         Insert: {
           candidate_id: string
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           employee_code?: string | null
           extension_months?: number
           extension_outcome?: string | null
@@ -2280,6 +2314,8 @@ export type Database = {
         Update: {
           candidate_id?: string
           created_at?: string
+          edited_at?: string | null
+          edited_by?: string | null
           employee_code?: string | null
           extension_months?: number
           extension_outcome?: string | null
@@ -2366,6 +2402,8 @@ export type Database = {
           current_step: string
           decided_by: string | null
           department_id: string
+          edited_at: string | null
+          edited_by: string | null
           expected_start_date: string | null
           hiring_manager_ids: string[]
           hold_at: string | null
@@ -2388,6 +2426,7 @@ export type Database = {
           position_kind: string
           positions_required: number
           posted_at: string | null
+          posted_by: string | null
           posted_on: string | null
           preferred_experience: string | null
           previous_employee_name: string | null
@@ -2416,6 +2455,8 @@ export type Database = {
           current_step?: string
           decided_by?: string | null
           department_id: string
+          edited_at?: string | null
+          edited_by?: string | null
           expected_start_date?: string | null
           hiring_manager_ids?: string[]
           hold_at?: string | null
@@ -2438,6 +2479,7 @@ export type Database = {
           position_kind?: string
           positions_required?: number
           posted_at?: string | null
+          posted_by?: string | null
           posted_on?: string | null
           preferred_experience?: string | null
           previous_employee_name?: string | null
@@ -2466,6 +2508,8 @@ export type Database = {
           current_step?: string
           decided_by?: string | null
           department_id?: string
+          edited_at?: string | null
+          edited_by?: string | null
           expected_start_date?: string | null
           hiring_manager_ids?: string[]
           hold_at?: string | null
@@ -2488,6 +2532,7 @@ export type Database = {
           position_kind?: string
           positions_required?: number
           posted_at?: string | null
+          posted_by?: string | null
           posted_on?: string | null
           preferred_experience?: string | null
           previous_employee_name?: string | null
@@ -7098,6 +7143,29 @@ export type Database = {
       }
       fms_hr_update_candidate: {
         Args: { p: Json; p_id: string }
+        Returns: undefined
+      }
+      fms_hr_update_decide_mrf: {
+        Args: {
+          p_decision: string
+          p_remarks?: string
+          p_req: string
+          p_stage: string
+        }
+        Returns: undefined
+      }
+      fms_hr_update_post_job: {
+        Args: { p_platform_ids: string[]; p_posted_on?: string; p_req: string }
+        Returns: undefined
+      }
+      fms_hr_update_probation_decision: {
+        Args: {
+          p_decision: string
+          p_employee_code?: string
+          p_permanent_from?: string
+          p_probation: string
+          p_remarks?: string
+        }
         Returns: undefined
       }
       fms_import_add_pi: {

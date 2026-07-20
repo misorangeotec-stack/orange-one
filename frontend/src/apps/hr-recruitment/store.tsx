@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
+import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import { candidateWindowStartIso, fetchHrData, HR_QK, hrQueryKey } from "./data/hrFetch";
@@ -25,6 +26,9 @@ import {
   insertOnboardingItem as insertOnboardingItemWrite,
   markNotificationsRead as markNotificationsReadWrite,
   postJob as postJobWrite,
+  updateDecideMrf as updateDecideMrfWrite,
+  updatePostJob as updatePostJobWrite,
+  updateDecideProbation as updateDecideProbationWrite,
   resubmitMrf as resubmitMrfWrite,
   setConfig as setConfigWrite,
   setEmployeeCode as setEmployeeCodeWrite,
@@ -69,8 +73,18 @@ import {
   seatsJoined,
   seatsTaken,
   STAGE_PENDING_STEP,
+  stageEntryOf,
+  hrApprovalLockReason,
+  mgmtApprovalLockReason,
+  jobPostingLockReason,
+  interviewResultLockReason,
+  onboardingLockReason,
+  reviewLockReason,
+  probationDecisionLockReason,
   type HrSnapshot,
   type QueueEntry,
+  type StageEntry,
+  type CompletedRow,
 } from "./lib/queues";
 import type {
   Candidate,
@@ -261,6 +275,14 @@ interface HrStoreValue {
     permanentFrom?: string | null,
     employeeCode?: string | null,
   ) => Promise<void>;
+  /** Correct the 3-month decision while it is still an 'extend' (before the month-4 review). */
+  updateDecideProbation: (
+    probation: Probation,
+    decision: ProbationDecision,
+    remarks: string,
+    permanentFrom?: string | null,
+    employeeCode?: string | null,
+  ) => Promise<void>;
 
   // queues — the SAME entries the Control Center counts, so they cannot disagree
   queueEntries: QueueEntry[];
@@ -275,6 +297,16 @@ interface HrStoreValue {
    * it — which the reports surface rather than hide.
    */
   queueOwnerIds: (entry: QueueEntry) => string[];
+
+  // the Completed tab — "what I did here", edit-until-next-step
+  /** Completed entries for one step, newest computed here; the store attaches canEdit + names. */
+  completedFor: (stepKey: StepKey) => StageEntry<CompletedRow>[];
+  /** Actor id → display name, resolving people outside the RLS directory (org-wide). */
+  personName: (id: string | null) => string;
+  /** The EFFECTIVE user id — what "Mine" means on a Completed tab. */
+  userId: string;
+  /** Set in persona mode so the Completed tab can say whose work "Mine" is showing. */
+  stageScopeNote: string | undefined;
 
   // reporting
   probationReviews: ProbationReview[];
@@ -323,7 +355,11 @@ interface HrStoreValue {
   /** Upload a JD file to jd/<id>/… and record its path on the requisition. */
   attachRequisitionJd: (requisitionId: string, file: File) => Promise<void>;
   decideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
+  /** Correct a completed approval (or flip it) while the next gate has not acted. */
+  updateDecideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
   postJob: (requisitionId: string, platformIds: string[], postedOn: string) => Promise<void>;
+  /** Correct the platforms / posting date while the job is posted but no candidate has landed. */
+  updatePostJob: (requisitionId: string, platformIds: string[], postedOn: string) => Promise<void>;
   holdRequisition: (requisitionId: string, hold: boolean, reason: string) => Promise<void>;
   cancelRequisition: (requisitionId: string, reason: string) => Promise<void>;
 
@@ -365,6 +401,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     queryFn: fetchHrData,
     enabled: !!session.user,
   });
+
+  // The Completed tab names people the RLS directory cannot reach (a cross-department
+  // hiring manager, an external actor stamped by id). Org people is the org-wide roster.
+  const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
@@ -614,6 +654,135 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       return ownerIdsOf(e.stepKey);
     };
 
+    /* -------------------------- the Completed tab -------------------------- */
+
+    // Actor id → display name. The Completed tab names people outside the RLS
+    // directory's reach (a cross-department hiring manager), so it goes through org
+    // people, not profileById.
+    const personName = (id: string | null): string => {
+      if (!id) return "Not recorded";
+      if (id === user.id) return user.name;
+      return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
+    };
+
+    const deptOfReq = (requisitionId: string | null): string | null =>
+      requisitionId ? (reqById.get(requisitionId)?.departmentId ?? null) : null;
+
+    /**
+     * "What I did here", one entry per (step, entity). Each entry carries its own
+     * lockReason (pure, mirrors the server guard) and a precomputed canEdit (this
+     * user owns the step AND its window is open) — canActOn is not uniform across the
+     * four entities, so the builder that knows the entity resolves ownership once.
+     */
+    const completedFor = (stepKey: StepKey): StageEntry<CompletedRow>[] => {
+      switch (stepKey) {
+        case "hr_head_approval":
+          return requisitions
+            .filter((r) => r.hrApprovedAt)
+            .map((r) => {
+              const lock = hrApprovalLockReason(r);
+              return stageEntryOf(
+                "hr_head_approval",
+                { id: `hr_head_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+                r.hrApproverId, r.hrApprovedAt!, lock, canActOn("hr_head_approval", r) && !lock,
+              );
+            });
+        case "mgmt_approval":
+          return requisitions
+            .filter((r) => r.mgmtApprovedAt)
+            .map((r) => {
+              const lock = mgmtApprovalLockReason(r);
+              return stageEntryOf(
+                "mgmt_approval",
+                { id: `mgmt_approval:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+                r.mgmtApproverId, r.mgmtApprovedAt!, lock, canActOn("mgmt_approval", r) && !lock,
+              );
+            });
+        case "job_posting":
+          return requisitions
+            .filter((r) => r.postedAt)
+            .map((r) => {
+              const hasCandidate = (cansByReq.get(r.id)?.length ?? 0) > 0;
+              const lock = jobPostingLockReason(r, hasCandidate);
+              return stageEntryOf(
+                "job_posting",
+                { id: `job_posting:${r.id}`, entityId: r.id, requisitionId: r.id, departmentId: r.departmentId, ref: r.mrfNo, editedAtIso: r.editedAt, editedById: r.editedBy, row: r },
+                r.postedBy, r.postedAt!, lock, canActOn("job_posting", r) && !lock,
+              );
+            });
+        case "telephonic_screening":
+        case "interview_1":
+        case "interview_2":
+        case "interview_3": {
+          const round = (stepKey === "telephonic_screening" ? 0 : Number(stepKey.slice(-1))) as 0 | 1 | 2 | 3;
+          const out: StageEntry<CompletedRow>[] = [];
+          for (const c of candidates) {
+            const iv = (ivsByCan.get(c.id) ?? []).find((v) => v.round === round && v.heldAt);
+            if (!iv) continue;
+            const lock = interviewResultLockReason(c, round);
+            out.push(
+              stageEntryOf(
+                stepKey,
+                { id: `${stepKey}:${c.id}`, entityId: c.id, requisitionId: c.requisitionId, departmentId: deptOfReq(c.requisitionId), ref: c.name, editedAtIso: iv.editedAt, editedById: iv.editedBy, row: c },
+                iv.resultRecordedBy, iv.heldAt!, lock, canActOnCandidate(c) && !lock,
+              ),
+            );
+          }
+          return out;
+        }
+        case "onboarding":
+          // Reaches Completed only once the person joined — a record, view-only.
+          return onboardings
+            .filter((o) => o.completedAt)
+            .map((o) =>
+              stageEntryOf(
+                "onboarding",
+                { id: `onboarding:${o.id}`, entityId: o.id, requisitionId: o.requisitionId, departmentId: deptOfReq(o.requisitionId), ref: canById.get(o.candidateId)?.name ?? "New hire", editedAtIso: o.editedAt, editedById: o.editedBy, row: o },
+                o.joiningDateBy ?? o.offerDecidedBy, o.completedAt!, onboardingLockReason(), false,
+              ),
+            );
+        case "probation_m1":
+        case "probation_m2":
+        case "probation_m3":
+        case "probation_extension": {
+          const month = stepKey === "probation_extension" ? 4 : Number(stepKey.slice(-1));
+          const out: StageEntry<CompletedRow>[] = [];
+          for (const p of probations) {
+            const review = (reviewsByProb.get(p.id) ?? []).find((rv) => rv.month === month);
+            if (!review) continue;
+            const lock = reviewLockReason(p, review);
+            out.push(
+              stageEntryOf(
+                stepKey,
+                { id: `${stepKey}:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: review.editedAt, editedById: review.editedBy, row: p },
+                review.reviewerId, review.reviewedAt, lock, canActOnProbation(p) && !lock,
+              ),
+            );
+          }
+          return out;
+        }
+        case "probation_final":
+          // The decision is VIEW-ONLY in the Completed tab: it is taken (and, for an
+          // 'extend', corrected) from the probation panel while it is the pending work —
+          // there is no standalone decision editor. onView opens the panel.
+          return probations
+            .filter((p) => p.outcome)
+            .map((p) => {
+              const hasM4 = (reviewsByProb.get(p.id) ?? []).some((rv) => rv.month === 4);
+              const lock =
+                probationDecisionLockReason(p, hasM4) ??
+                "Open the probation to change an extended decision while the month-4 review is pending.";
+              return stageEntryOf(
+                "probation_final",
+                { id: `probation_final:${p.id}`, entityId: p.id, requisitionId: p.requisitionId, departmentId: deptOfReq(p.requisitionId), ref: canById.get(p.candidateId)?.name ?? "New hire", editedAtIso: p.editedAt, editedById: p.editedBy, row: p },
+                p.outcomeBy, p.outcomeAt!, lock, false,
+              );
+            });
+        default:
+          return [];
+      }
+    };
+
     /* ---------------------------------------------------------------------- */
 
     return {
@@ -735,12 +904,21 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
+      updateDecideProbation: async (p, decision, remarks, permanentFrom, employeeCode) => {
+        await updateDecideProbationWrite(p.id, decision, remarks, permanentFrom ?? null, employeeCode ?? null);
+        await invalidate();
+      },
 
       queueEntries,
       myQueue,
       dueIsoFor: (r, stepKey) => requisitionDueIso(snapshot, r, stepKey),
       canActOn,
       queueOwnerIds,
+
+      completedFor,
+      personName,
+      userId: user.id,
+      stageScopeNote: user.id !== realUserId ? `Showing ${user.name}'s work` : undefined,
 
       probationReviews,
       candidateWindowStartIso: candidateWindowStartIso(),
@@ -899,6 +1077,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
+      updateDecideMrf: async (id, stage, decision, remarks) => {
+        await updateDecideMrfWrite(id, stage, decision, remarks);
+        await invalidate();
+      },
       postJob: async (id, platformIds, postedOn) => {
         await postJobWrite(id, platformIds, postedOn);
         const r = reqById.get(id);
@@ -909,6 +1091,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           text: `${r?.mrfNo ?? "Requisition"} posted on ${platformIds.length} platform${platformIds.length === 1 ? "" : "s"}`,
           recipients: ownerIdsOf("resume_upload"),
         });
+        await invalidate();
+      },
+      updatePostJob: async (id, platformIds, postedOn) => {
+        await updatePostJobWrite(id, platformIds, postedOn);
         await invalidate();
       },
       holdRequisition: async (id, hold, reason) => {
@@ -1058,7 +1244,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
     onboardingItems, stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, notifications,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
-    probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, realUserId, queryClient,
+    probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
+    // `orgPeople` — personName closes over it; without it the memo would not recompute
+    // when the org roster arrives and Completed-tab "By" names would stay "Unknown user".
+    orgPeople,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

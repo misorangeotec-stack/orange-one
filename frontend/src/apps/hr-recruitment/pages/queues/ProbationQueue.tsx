@@ -3,8 +3,11 @@ import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import ProbationPanel from "../../components/probation/ProbationPanel";
+import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { stepByKey } from "../../lib/steps";
@@ -48,6 +51,9 @@ export default function ProbationQueue() {
     }
     return out;
   }, [s]);
+
+  const completed = useMemo(() => PROBATION_STEPS.flatMap((step) => s.completedFor(step)), [s]);
+  const stage = useStageMode(completed, s.userId);
 
   // Coordinators chase everything, and fms_hr_can_act already lets them act — so the
   // page must not lock out someone whose own queue has rows in it.
@@ -156,41 +162,64 @@ export default function ProbationQueue() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Probation Reviews</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Everyone who has joined and is still on probation. Review them in month 1, month 2 and month 3, then
-          approve, reject, or extend by a month. Each review is due one calendar month after they joined — so a
-          31-Jan joiner is due on 28-Feb, not three days into March.
+          {stage.showingCompleted
+            ? "Reviews and decisions you have recorded. A recorded review stays editable until the decision closes the probation; the decision itself is taken from the panel."
+            : "Everyone who has joined and is still on probation. Review them in month 1, month 2 and month 3, then approve, reject, or extend by a month. Each review is due one calendar month after they joined — so a 31-Jan joiner is due on 28-Feb, not three days into March."}
         </p>
       </div>
 
-      <QueueTable<Probation>
-        rows={rows}
-        rowKey={(p) => p.id}
-        columns={columns}
-        groupBy={{
-          idOf: (p) => reqOf(p)?.departmentId ?? null,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
-        rowsLabel="people on probation"
-        rowClassName={(p) => overdueRowClass(dueOf(p))}
-        emptyTitle="Nobody on probation"
-        emptyMessage="Once a new hire's onboarding is complete — they actually joined — their three monthly reviews open here."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Probation"
-        exportTitle="Probation reviews"
-        exportNotes={[
-          "People who have JOINED and are still on probation. A probation with a final verdict is history, not a work item, so it drops off this list.",
-          "Each review is due one CALENDAR month after the joining date, not N working days — a 31-Jan joiner's Month-1 review is due 28-Feb.",
-          "'Waiting on' is the single next thing owed: the earliest unwritten review, or the decision once all three are in.",
-          "Contains employee names — treat the file as personal data.",
-        ]}
-        actions={(p) => (
-          <Button size="sm" onClick={() => setOpen(p)}>
-            Open
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedTable
+          rows={stage.rows}
+          subjectHeader="On probation"
+          subject={(e) => <span className="font-medium text-navy">{e.ref}</span>}
+          subjectText={(e) => e.ref}
+          exportName="HR_Probation_Completed"
+          emptyMessage="Reviews and decisions you record will appear here."
+          onEdit={(e) => setOpen(e.row as Probation)}
+          onView={(e) => setOpen(e.row as Probation)}
+        />
+      ) : (
+        <QueueTable<Probation>
+          rows={rows}
+          rowKey={(p) => p.id}
+          columns={columns}
+          groupBy={{
+            idOf: (p) => reqOf(p)?.departmentId ?? null,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Department",
+          }}
+          rowsLabel="people on probation"
+          rowClassName={(p) => overdueRowClass(dueOf(p))}
+          emptyTitle="Nobody on probation"
+          emptyMessage="Once a new hire's onboarding is complete — they actually joined — their three monthly reviews open here."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Probation"
+          exportTitle="Probation reviews"
+          exportNotes={[
+            "People who have JOINED and are still on probation. A probation with a final verdict is history, not a work item, so it drops off this list.",
+            "Each review is due one CALENDAR month after the joining date, not N working days — a 31-Jan joiner's Month-1 review is due 28-Feb.",
+            "'Waiting on' is the single next thing owed: the earliest unwritten review, or the decision once all three are in.",
+            "Contains employee names — treat the file as personal data.",
+          ]}
+          actions={(p) => (
+            <Button size="sm" onClick={() => setOpen(p)}>
+              Open
+            </Button>
+          )}
+        />
+      )}
 
       {open && <ProbationPanel probation={open} open={!!open} onClose={() => setOpen(null)} />}
     </div>
