@@ -114,6 +114,17 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 const daysText = (v: number): string =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : `${v}d`;
 
+/**
+ * True when a bill reference is an ADVANCE / on-account RECEIPT rather than a real sales invoice —
+ * money the customer paid us early, not a bill they owe. In Tally these carry no credit period, so
+ * they surface with no due date; but they must NOT appear in the "undated bills worth chasing" note
+ * (chasing a customer for their own advance is nonsense). Detected by reference pattern because the
+ * Live snapshot carries no advance flag: a bare "ADV", an "…_ADV" suffix, an "Advance …" note, or a
+ * "Receipt …" ref. A genuine undated invoice (INK/…, HD/…, SPARE/…) is left in the note on purpose.
+ */
+const ADVANCE_REF = /(^|[^a-z])adv([^a-z]|$)|advance|^receipt\b/i;
+const isAdvanceRef = (ref: string): boolean => ADVANCE_REF.test(ref.trim());
+
 /** Map an enumerated bill to the drill-down dialog's row shape. */
 function toDrillRow(b: EnrichedBill): InvoiceDrillRow {
   return {
@@ -287,11 +298,14 @@ function OverdueAgingInner() {
 
   /**
    * Open bills with NO due date. The pipeline scores them overdue_days = 0, so they can never be
-   * aged — they are invisible on every aging report in the product. ₹0.71 cr of them today. Rather
-   * than let them stay lost, the report says out loud that it excluded them and shows the list.
+   * aged — they are invisible on every aging report in the product. Rather than let them stay lost,
+   * the report says out loud that it excluded them and shows the list.
+   *
+   * ADVANCES / on-account receipts are dropped here (isAdvanceRef): they too carry no due date, but
+   * they are the customer's money paid early — listing them as "worth chasing" was pure confusion.
    */
   const undatedBills = useMemo(
-    () => bills.filter((b) => !b.isLedgerAdj && b.inv.pending > 0 && !b.inv.dueDate),
+    () => bills.filter((b) => !b.isLedgerAdj && b.inv.pending > 0 && !b.inv.dueDate && !isAdvanceRef(b.inv.number)),
     [bills],
   );
   const undatedTotal = useMemo(
