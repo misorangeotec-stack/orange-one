@@ -20,7 +20,7 @@ export interface DirectoryData {
 
 export async function fetchDirectory(): Promise<DirectoryData> {
   const [profilesRes, deptsRes, rolesRes, hodsRes, accessRes] = await Promise.all([
-    supabase.from("profiles").select("id,name,email,phone,designation,avatar_color,department_id,receivables_salespersons,receivables_hidden_menus,last_active_at"),
+    supabase.from("profiles").select("id,name,email,phone,designation,avatar_color,department_id,receivables_salespersons,receivables_hidden_menus,receivables_allow_pipeline,last_active_at"),
     supabase.from("departments").select("id,name,description"),
     supabase.from("user_roles").select("user_id,role"),
     supabase.from("user_hods").select("employee_id,hod_id"),
@@ -57,7 +57,7 @@ export async function fetchDirectory(): Promise<DirectoryData> {
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const profiles: Profile[] = ((profilesRes.data ?? []) as {
-    id: string; name: string; email: string | null; phone: string | null; designation: string | null; avatar_color: string | null; department_id: string | null; receivables_salespersons: string[] | null; receivables_hidden_menus: string[] | null; last_active_at: string | null;
+    id: string; name: string; email: string | null; phone: string | null; designation: string | null; avatar_color: string | null; department_id: string | null; receivables_salespersons: string[] | null; receivables_hidden_menus: string[] | null; receivables_allow_pipeline: boolean | null; last_active_at: string | null;
   }[])
     .map((p) => ({
       id: p.id,
@@ -72,6 +72,7 @@ export async function fetchDirectory(): Promise<DirectoryData> {
       moduleAccess: accessByUser.get(p.id) ?? [],
       receivablesSalespersons: p.receivables_salespersons ?? [],
       receivablesHiddenMenus: p.receivables_hidden_menus ?? [],
+      receivablesAllowPipeline: p.receivables_allow_pipeline ?? false,
       lastActiveAt: p.last_active_at,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));

@@ -89,7 +89,7 @@ export default function UserLayout() {
   const { dashboard } = useAppData({});
   const { label: fyLabel } = useFY();
   const { user, role } = useSession();
-  const { liveMode, setLiveMode, canUseLive } = useLiveMode();
+  const { liveMode, setLiveMode, canUsePipeline } = useLiveMode();
   const { pathname, search } = useLocation();
   const fyPinned = FY_PINNED_ROUTES.some((r) => pathname.startsWith(r));
 
@@ -132,21 +132,23 @@ export default function UserLayout() {
               · {fyPinned ? "Both FYs" : fyLabel}
             </span>
             <div className="ml-auto flex items-center gap-3">
-              {/* Admin-only: flip the WHOLE hub between the pipeline source and the ConnectWave
-                  live-Tally snapshot. One switch instead of duplicating every menu (see lib/liveMode). */}
-              {canUseLive && (
+              {/* Permitted users only (admins + profiles.receivables_allow_pipeline): flip the WHOLE
+                  hub between the default Live-Tally view and the legacy pipeline source. One switch
+                  instead of duplicating every menu (see lib/liveMode). Live is the default; the amber
+                  state flags the deviation into the old pipeline. */}
+              {canUsePipeline && (
                 <button
                   type="button"
                   onClick={() => setLiveMode(!liveMode)}
-                  title={liveMode ? "Showing live Tally data — click to return to the standard view" : "Switch to live Tally data"}
+                  title={liveMode ? "Showing live Tally data — click to view the legacy pipeline" : "Showing legacy pipeline data — click to return to Live (Tally)"}
                   className={`inline-flex items-center gap-1.5 h-8 rounded-full border px-3 text-xs font-semibold transition-colors ${
                     liveMode
                       ? "bg-emerald-600 border-emerald-600 text-white hover:bg-emerald-700"
-                      : "bg-transparent border-border text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                      : "bg-amber-500 border-amber-500 text-white hover:bg-amber-600"
                   }`}
                 >
                   <Radio className={`h-3.5 w-3.5 ${liveMode ? "animate-pulse" : ""}`} />
-                  {liveMode ? "Live (Tally) ON" : "Live (Tally)"}
+                  {liveMode ? "Live (Tally)" : "Legacy pipeline"}
                 </button>
               )}
               {(dashboard?.lastUpdated || dashboard?.asOfDate) && (

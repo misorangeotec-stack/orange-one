@@ -46,7 +46,7 @@ export async function deleteDepartment(id: string): Promise<void> {
 /** Update an existing user's profile fields (admin-only under RLS). */
 export async function updateUserProfile(
   id: string,
-  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; departmentId?: string | null; avatarColor?: string; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[] }
+  patch: { name?: string; email?: string | null; phone?: string | null; designation?: string | null; departmentId?: string | null; avatarColor?: string; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAllowPipeline?: boolean }
 ): Promise<void> {
   const fields: ProfileUpdate = {};
   if (patch.name !== undefined) fields.name = patch.name;
@@ -57,6 +57,7 @@ export async function updateUserProfile(
   if (patch.avatarColor !== undefined) fields.avatar_color = patch.avatarColor;
   if (patch.receivablesSalespersons !== undefined) fields.receivables_salespersons = patch.receivablesSalespersons;
   if (patch.receivablesHiddenMenus !== undefined) fields.receivables_hidden_menus = patch.receivablesHiddenMenus;
+  if (patch.receivablesAllowPipeline !== undefined) fields.receivables_allow_pipeline = patch.receivablesAllowPipeline;
   if (Object.keys(fields).length === 0) return;
   const { error } = await supabase.from("profiles").update(fields).eq("id", id);
   if (error) throw new Error(error.message);

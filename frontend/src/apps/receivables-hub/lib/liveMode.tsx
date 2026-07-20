@@ -2,40 +2,50 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 import { useSession } from "@/core/platform/session";
 
 /**
- * Global "Live (Tally)" view toggle for the Receivables Hub (admin-only).
+ * Data-source view for the Receivables Hub. Live (Tally) is now the DEFAULT for everyone;
+ * the old pipeline-fed source is an opt-in "legacy" view a user may switch to only if
+ * permitted (admins always; a non-admin needs profiles.receivables_allow_pipeline).
  *
- * When ON, the whole hub reads from the ConnectWave live-Tally snapshot instead of the
- * pipeline-fed source — the SAME screens/URLs, just a different backend (see sourceContext).
- * This replaces the earlier idea of duplicating every left-menu item with a "Live …" copy:
- * one switch in the topbar flips the entire view, so the nav stays a single clean set.
+ * When ON (the default), the whole hub reads from the ConnectWave live-Tally snapshot; when
+ * a permitted user toggles OFF, the SAME screens/URLs read from the legacy pipeline source
+ * instead (see sourceContext). One switch flips the entire view, so the nav stays a single
+ * clean set rather than duplicating every menu.
  *
- * Live data is admin-only, so the effective flag is forced off for non-admins regardless of the
- * persisted value. The choice is remembered across reloads (localStorage) but is always visibly
- * indicated in the topbar so it's never a silent surprise.
+ * The exported `liveMode` is "currently viewing Live". It is forced ON for anyone who can't
+ * use the legacy source, regardless of a stale stored preference — so a user without
+ * permission always sees Live, never a silent fallback to the old pipeline.
+ *
+ * NEW storage key (v2): the previous "receivables.liveMode" key stored "is Live ON" under the
+ * old admin-opt-in-to-Live model. Its persisted 0/1 values are ambiguous now that the default
+ * has flipped, so we start fresh here — "never chosen" unambiguously means Live.
  */
-const KEY = "receivables.liveMode";
+const KEY = "receivables.source.v2";
 
 interface LiveModeValue {
-  /** Effective flag (admin AND toggled on). Drives the data source. */
+  /** Effective flag — true when the hub is currently showing Live (Tally). Drives the data source. */
   liveMode: boolean;
+  /** Set the view: true → Live (Tally), false → legacy pipeline. No-op for users who can't use legacy. */
   setLiveMode: (v: boolean) => void;
-  /** Whether this user may use Live mode at all (admins only). */
-  canUseLive: boolean;
+  /** Whether this user may switch to the legacy pipeline source at all (admins + permitted non-admins). */
+  canUsePipeline: boolean;
 }
 
-const Ctx = createContext<LiveModeValue>({ liveMode: false, setLiveMode: () => {}, canUseLive: false });
+const Ctx = createContext<LiveModeValue>({ liveMode: true, setLiveMode: () => {}, canUsePipeline: false });
 
 export function LiveModeProvider({ children }: { children: ReactNode }) {
-  const { isAdmin } = useSession();
-  const [raw, setRaw] = useState<boolean>(() => {
-    try { return localStorage.getItem(KEY) === "1"; } catch { return false; }
+  const { isAdmin, user } = useSession();
+  const canUsePipeline = isAdmin || user.receivablesAllowPipeline;
+  // Persisted preference: has the user chosen to view the legacy pipeline? Default (unset) = Live.
+  const [prefersPipeline, setPrefersPipeline] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEY) === "pipeline"; } catch { return false; }
   });
-  const setLiveMode = useCallback((v: boolean) => {
-    setRaw(v);
-    try { localStorage.setItem(KEY, v ? "1" : "0"); } catch { /* private mode */ }
+  const setLiveMode = useCallback((live: boolean) => {
+    setPrefersPipeline(!live);
+    try { localStorage.setItem(KEY, live ? "live" : "pipeline"); } catch { /* private mode */ }
   }, []);
-  const liveMode = isAdmin && raw;
-  return <Ctx.Provider value={{ liveMode, setLiveMode, canUseLive: isAdmin }}>{children}</Ctx.Provider>;
+  // Live by default; only a permitted user who explicitly picked the legacy source leaves Live.
+  const liveMode = !(canUsePipeline && prefersPipeline);
+  return <Ctx.Provider value={{ liveMode, setLiveMode, canUsePipeline }}>{children}</Ctx.Provider>;
 }
 
 export function useLiveMode(): LiveModeValue {
