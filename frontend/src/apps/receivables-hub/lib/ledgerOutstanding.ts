@@ -77,23 +77,31 @@ export async function loadLedgerList(companyGuids: string[]): Promise<LedgerList
   return out;
 }
 
-/** Name + group + closing for a single ledger — so the detail screen works on a bookmarked URL,
- *  not only when arrived at from the list. Fast: filtered to one guid on the indexed view. */
+/** Name + group + opening + closing for a single ledger — so the detail screen works on a bookmarked
+ *  URL, not only when arrived at from the list. Fast: filtered to one guid on the indexed view.
+ *  `opening`/`closing` are Dr-positive (v_ledger_detail sign-flips them). */
 export async function loadLedgerMeta(
   tenantId: string,
   ledgerGuid: string,
-): Promise<{ ledger: string; grouping: string | null; closing: number } | null> {
+): Promise<{ ledger: string; grouping: string | null; opening: number; closing: number } | null> {
   const cw = getConnectwaveSupabase();
   const { data, error } = await cw
     .from("v_ledger_detail")
-    .select("ledger,grouping,closing")
+    .select("ledger,grouping,opening,closing")
     .eq("tenant_id", tenantId)
     .eq("guid", ledgerGuid)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  const row = data as { ledger: string; grouping: string | null; closing: number | string | null };
-  return { ledger: row.ledger, grouping: row.grouping, closing: Number(row.closing) || 0 };
+  const row = data as {
+    ledger: string; grouping: string | null; opening: number | string | null; closing: number | string | null;
+  };
+  return {
+    ledger: row.ledger,
+    grouping: row.grouping,
+    opening: Number(row.opening) || 0,
+    closing: Number(row.closing) || 0,
+  };
 }
 
 /** One ledger's pending bills, Tally-exact, as of `asOn` (yyyy-mm-dd). */

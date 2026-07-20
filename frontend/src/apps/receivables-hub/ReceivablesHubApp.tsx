@@ -27,6 +27,8 @@ import ProfitLossReport from "@hub/pages/ProfitLossReport";
 import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
 import LedgerOutstandingList from "@hub/pages/LedgerOutstandingList";
 import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
+import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
+import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -101,6 +103,9 @@ function HubRoutes() {
           <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
           <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
           <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
+          {/* Live (Tally) only — the pages render a "Not applicable" panel on the default pipeline. */}
+          <Route path="reports/ledger-voucher" element={<LedgerVoucherList />} />
+          <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

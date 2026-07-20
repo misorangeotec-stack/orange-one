@@ -13,6 +13,7 @@ import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxSt
 import type { FsCompany, FsNode, BalanceSheetView, PnlView } from "./financialStatements";
 import type { TbNode, TbView } from "./trialBalance";
 import type { LedgerBillRow } from "./ledgerOutstanding";
+import type { LedgerVoucherRow } from "./ledgerVouchers";
 
 const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
 
@@ -287,4 +288,66 @@ export function exportLedgerOutstandingXlsx(input: {
   XLSX.utils.book_append_sheet(wb, ws, "Ledger Outstanding");
 
   finish(wb, `Ledger_Outstanding_${ledgerName}`);
+}
+
+export function exportLedgerVouchersXlsx(input: {
+  ledgerName: string;
+  company?: FsCompany;
+  periodLabel: string;
+  opening: number;
+  closing: number;
+  rows: { row: LedgerVoucherRow; balance: number }[];
+}): void {
+  const { ledgerName, company, periodLabel, opening, closing, rows } = input;
+  const wb = XLSX.utils.book_new();
+  const aoa: Cell[][] = [];
+
+  aoa.push([`Ledger Vouchers — ${ledgerName}`]);
+  aoa.push(["Ledger", ledgerName]);
+  if (company) {
+    aoa.push(["Company", company.location ? `${company.company} (${company.location})` : company.company]);
+  }
+  aoa.push(["Period", periodLabel]);
+  aoa.push(["Source", "Tally vouchers via ConnectWave (running balance folds from the opening balance)"]);
+  aoa.push([]);
+
+  const headerRow0 = aoa.length;
+  aoa.push(["Date", "Particulars", "Vch Type", "Vch No", "Debit", "Credit", "Balance"]);
+
+  const openRow0 = aoa.length;
+  aoa.push(["", "Opening Balance", "", "", "", "", drcrCell(opening)]);
+
+  let debitTot = 0;
+  let creditTot = 0;
+  for (const { row, balance } of rows) {
+    if (row.amount > 0) debitTot += row.amount;
+    else creditTot += -row.amount;
+    aoa.push([
+      ymd(row.date),
+      row.particulars ?? "",
+      row.voucherType ?? "",
+      row.voucherNo ?? "",
+      row.amount > 0.5 ? Math.round(row.amount) : "",
+      row.amount < -0.5 ? Math.round(-row.amount) : "",
+      drcrCell(balance),
+    ]);
+  }
+
+  const totalRow0 = aoa.length;
+  aoa.push(["", "Current Total", "", "", Math.round(debitTot), Math.round(creditTot), ""]);
+  const closeRow0 = aoa.length;
+  aoa.push(["", "Closing Balance", "", "", "", "", drcrCell(closing)]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 12 }, { wch: 40 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+  formatMoneyCells(ws, headerRow0 + 2, rows.length, [4, 5]);
+  formatMoneyCells(ws, totalRow0, 1, [4, 5]);
+  styleRow(ws, 0, 7, HEADER_STYLE);
+  styleRow(ws, headerRow0, 7, HEADER_STYLE);
+  styleRow(ws, openRow0, 7, TOTAL_STYLE);
+  styleRow(ws, totalRow0, 7, TOTAL_STYLE);
+  styleRow(ws, closeRow0, 7, GRAND_TOTAL_STYLE);
+  XLSX.utils.book_append_sheet(wb, ws, "Ledger Vouchers");
+
+  finish(wb, `Ledger_Vouchers_${ledgerName}`);
 }

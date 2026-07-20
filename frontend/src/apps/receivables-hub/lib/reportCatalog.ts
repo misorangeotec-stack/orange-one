@@ -320,10 +320,11 @@ export const REPORTS: ReportEntry[] = [
     purpose: "One ledger's full statement — every voucher against it, with a running balance.",
     category: "tally",
     subcategory: "books-registers",
+    path: "reports/ledger-voucher",
     icon: ScrollText,
     source: "tally",
-    status: "soon",
-    keywords: ["ledger statement", "account"],
+    status: "live",
+    keywords: ["ledger statement", "account", "vouchers", "running balance"],
   },
   {
     id: "group-summary",
@@ -428,19 +429,24 @@ export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
     return cat ? [root, { label: cat.title }] : null;
   }
 
-  // Ledger Outstandings has a /:ledgerId detail sub-route with no catalogue entry of its own.
-  // Give it the same trail as the list, with "Ledger Outstandings" linking back to the list (the
-  // detail page's own Tally-style header carries the ledger name). The list itself (exact path)
-  // falls through to findReport below and ends at a non-link "Ledger Outstandings".
-  const loList = `${BASE}/reports/ledger-outstanding`;
-  if (pathname.startsWith(`${loList}/`)) {
-    const entry = REPORTS.find((r) => r.id === "ledger-outstanding");
-    const cat = entry ? categoryById(entry.category) : undefined;
-    return [
-      root,
-      ...(cat ? [{ label: cat.title, to: categoryHref(cat.id), collapsible: true }] : []),
-      { label: entry?.title ?? "Ledger Outstandings", to: loList },
-    ];
+  // Ledger Outstandings and Ledger Vouchers each have a /:ledgerId detail sub-route with no catalogue
+  // entry of its own. Give it the same trail as the list, with the report title linking back to the
+  // list (the detail page's own Tally-style header carries the ledger name). The list itself (exact
+  // path) falls through to findReport below and ends at a non-link title.
+  for (const detail of [
+    { id: "ledger-outstanding", fallback: "Ledger Outstandings" },
+    { id: "ledger-voucher", fallback: "Ledger Vouchers" },
+  ]) {
+    const listPath = `${BASE}/reports/${detail.id}`;
+    if (pathname.startsWith(`${listPath}/`)) {
+      const entry = REPORTS.find((r) => r.id === detail.id);
+      const cat = entry ? categoryById(entry.category) : undefined;
+      return [
+        root,
+        ...(cat ? [{ label: cat.title, to: categoryHref(cat.id), collapsible: true }] : []),
+        { label: entry?.title ?? detail.fallback, to: listPath },
+      ];
+    }
   }
 
   const report = findReport(pathname, search);
