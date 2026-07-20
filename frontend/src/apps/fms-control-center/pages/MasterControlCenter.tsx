@@ -1,4 +1,5 @@
 import Card from "@/shared/components/ui/Card";
+import { useSession } from "@/core/platform/session";
 import { formatDate } from "@/shared/lib/time";
 import { fmsAdapters } from "../adapters/registry";
 import { addDaysIso, todayLocalIso } from "../lib/buckets";
@@ -15,6 +16,13 @@ const TH = "px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-gre
  */
 export default function MasterControlCenter() {
   const today = todayLocalIso();
+  const { hasModule } = useSession();
+
+  // Only score the FMS this viewer is actually granted (admins keep all, since
+  // hasModule returns true for them). Without this a coordinator with the
+  // fms-control-center grant would see rows — names and counts — for FMS apps
+  // they were never given, e.g. Employee Exit / Office Supplies.
+  const rows = fmsAdapters.filter((a) => hasModule(a.appId));
 
   return (
     <div className="space-y-5">
@@ -55,7 +63,7 @@ export default function MasterControlCenter() {
               </tr>
             </thead>
             <tbody>
-              {fmsAdapters.map((a) => (
+              {rows.map((a) => (
                 <FmsRow key={a.key} adapter={a} />
               ))}
             </tbody>

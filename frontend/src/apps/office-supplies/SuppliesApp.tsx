@@ -41,10 +41,11 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
- * Root of the Office Supplies FMS. There is no <RequireModule> and no per-user grant:
- * this is a universal app (apps/universal.ts), so App.tsx mounts it for every signed-in
- * user. What each person can see is decided by the nav, the store's capability flags
- * and — authoritatively — RLS.
+ * Root of the Office Supplies FMS. App.tsx already wraps this whole app in
+ * <RequireModule appId="office-supplies">, so only admins and users granted the module
+ * in Module access reach it — this file adds no further gate of its own. What each
+ * person then sees inside is decided by the nav, the store's capability flags and —
+ * authoritatively — RLS.
  */
 export default function SuppliesApp() {
   return (

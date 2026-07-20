@@ -21,12 +21,22 @@ const RECEIVABLES_APP_ID = "outstanding-dashboard";
  * the home menu renders (FMS → Purchase / HR).
  */
 function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string | null; rows: T[] }[] {
+  // Merge by label GLOBALLY, not just consecutively: apps in the same sub-group
+  // (e.g. FMS → Purchase) need not be adjacent in registry order — Office Supplies
+  // sorts after the HR apps — and a consecutive-only merge would render a second
+  // "Purchase" heading. Keep each sub-group in first-appearance order, matching the
+  // sidebar's buildNodes (shared/components/layout/Sidebar.tsx).
   const out: { label: string | null; rows: T[] }[] = [];
+  const byLabel = new Map<string | null, { label: string | null; rows: T[] }>();
   for (const row of rows) {
     const label = row.subGroup ?? null;
-    const last = out[out.length - 1];
-    if (last && last.label === label) last.rows.push(row);
-    else out.push({ label, rows: [row] });
+    let bucket = byLabel.get(label);
+    if (!bucket) {
+      bucket = { label, rows: [] };
+      byLabel.set(label, bucket);
+      out.push(bucket);
+    }
+    bucket.rows.push(row);
   }
   return out;
 }

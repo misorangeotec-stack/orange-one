@@ -11,10 +11,10 @@ import ExitApp from "./ExitApp";
  * working day → departmental clearance, asset return, handover and the exit
  * interview → leave, payroll and the full & final settlement → letters and archive.
  *
- * It is a UNIVERSAL app (apps/universal.ts): every signed-in user reaches it with no
- * per-user module grant, because any employee must be able to raise their own
- * resignation and there is no bulk grant to fall back on. The nav and RLS are what
- * scope it — a person with no step ownership sees only their own case.
+ * Access is granted per user in Module access, like every other module (it used to be
+ * a universal app — see apps/universal.ts — but that let everyone reach it regardless
+ * of their grant, which admins didn't want). The nav and RLS scope it further — a
+ * person with no step ownership sees only their own case.
  */
 export const hrExitApp: AppManifest = {
   id: "hr-exit",
