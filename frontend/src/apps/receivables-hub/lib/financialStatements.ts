@@ -361,6 +361,112 @@ export function findings(roots: FsNode[], companyLabel: string, only?: FsStateme
     .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
 }
 
+/**
+ * AS-OF DATE SUPPORT
+ *
+ * Our `ours` column is each ledger's full CLOSINGBALANCE, which in Tally's ledger export includes
+ * vouchers dated anywhere in the open book — INCLUDING future/post-dated entries (annual insurance,
+ * scheduled EMIs, etc.). Tally's own Trial Balance / P&L report, however, is run "as of" a date and
+ * excludes anything dated after it. So the two legitimately disagree by exactly the out-of-window
+ * vouchers (verified to the paisa on the Surat book, 20-Jul-2026: every P&L gap = its future-dated
+ * entries).
+ *
+ * To make our column line up with Tally, we let the user pick a window [from, to] (to defaults to the
+ * snapshot's as-of date) and subtract each ledger's vouchers dated OUTSIDE it. This is done entirely
+ * in the web view — no connector or DB change — reading the anon-granted tally_voucher_line directly.
+ * The Tally column itself is a fixed snapshot and cannot be re-sliced, so the comparison is exact only
+ * at to = the snapshot date; other dates move our side alone (documented in the UI).
+ */
+const OOW_PAGE = 1000;
+
+/** yyyy-mm-dd → yyyymmdd (tally_voucher_line.vch_date is a yyyymmdd string, sorts lexically). */
+const isoToYmd = (iso: string): string => iso.replace(/-/g, "");
+
+/** A company to trim: its guid and the statement's from_date, which is the FY-start FLOOR (see below). */
+export interface OowCompany {
+  companyGuid: string;
+  fromDate: string; // yyyy-mm-dd — the trial balance's from_date
+}
+
+/**
+ * Per-company, per-ledger Dr-positive sum of vouchers dated OUTSIDE the window [fromIso, toIso] — the
+ * amount to remove from that ledger's `ours` so the column reads "as of" the window. Keyed by
+ * company_guid then ledger_guid.
+ *
+ * CRITICAL — the FY-start floor. A company's book can span more than one financial year (Surat runs
+ * 1-Apr-25 → 31-Mar-27), so tally_voucher_line holds prior-FY lines too. But a P&L ledger's closing
+ * balance is the CURRENT FY's net only — it never contained those prior-FY lines. Subtracting them
+ * would corrupt `ours` (and pulling 150k+ prior-FY rows would blow the anon timeout). So every query is
+ * clamped `vch_date >= from_date` (the statement's own basis): we only ever touch this-FY vouchers, and
+ * by default (from = from_date) the pre-`from` branch is empty, leaving just the small future set.
+ */
+export async function fetchOutOfWindow(
+  companies: OowCompany[],
+  fromIso: string | null,
+  toIso: string | null,
+): Promise<Record<string, Record<string, number>>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (companies.length === 0 || (!fromIso && !toIso)) return out;
+
+  const cw = getConnectwaveSupabase();
+  const toYmd = toIso ? isoToYmd(toIso) : null;
+  const fromYmd = fromIso ? isoToYmd(fromIso) : null;
+
+  await Promise.all(
+    companies.map(async (c) => {
+      const floor = isoToYmd(c.fromDate); // never subtract anything before the statement's FY start
+      const bucket: Record<string, number> = (out[c.companyGuid] = {});
+
+      for (let from = 0; ; from += OOW_PAGE) {
+        // Outside window, within this FY = vch_date >= floor AND (vch_date > to OR vch_date < from).
+        const clauses: string[] = [];
+        if (toYmd) clauses.push(`vch_date.gt.${toYmd}`);
+        if (fromYmd) clauses.push(`vch_date.lt.${fromYmd}`);
+        const { data, error } = await cw
+          .from("tally_voucher_line")
+          .select("ledger_guid,amount,is_cancelled,is_optional")
+          .eq("tenant_id", `acct_orange::${c.companyGuid}`)
+          .gte("vch_date", floor)
+          .or(clauses.join(","))
+          .order("voucher_guid", { ascending: true })
+          .range(from, from + OOW_PAGE - 1);
+        if (error) throw new Error(error.message);
+        const rows = (data ?? []) as {
+          ledger_guid: string | null; amount: number | string | null;
+          is_cancelled: boolean | null; is_optional: boolean | null;
+        }[];
+        for (const r of rows) {
+          if (r.is_cancelled || r.is_optional || !r.ledger_guid) continue;
+          // Dr-positive convention matches v_ledger_detail.closing = -1 × the raw voucher amount.
+          bucket[r.ledger_guid] = (bucket[r.ledger_guid] ?? 0) - (Number(r.amount) || 0);
+        }
+        if (rows.length < OOW_PAGE) break;
+      }
+    }),
+  );
+  return out;
+}
+
+/**
+ * Return a copy of the tree with every node's `ours` (and `gap`) reduced by its subtree's out-of-window
+ * vouchers, so the statement reads "as of" the chosen window. A group's adjustment is the sum of its
+ * descendant ledgers' — matching how the server rolls `our_closing` up the group chain. With an empty
+ * map the values are unchanged (only the objects are new).
+ */
+export function adjustRootsAsOf(roots: FsNode[], adjByGuid: Record<string, number>): FsNode[] {
+  const build = (n: FsNode): { node: FsNode; subtree: number } => {
+    const own = n.ledgerGuid ? adjByGuid[n.ledgerGuid] ?? 0 : 0;
+    const kids = n.children.map(build);
+    const subtree = own + kids.reduce((s, k) => s + k.subtree, 0);
+    const ours = n.ours === null ? null : n.ours - subtree;
+    return {
+      node: { ...n, children: kids.map((k) => k.node), ours, gap: ours === null ? null : n.tally - ours },
+      subtree,
+    };
+  };
+  return roots.map((r) => build(r).node);
+}
+
 /** Sum of a top-level group's Tally figure, 0 when the company has no such group. */
 function topLevelTally(roots: FsNode[], name: string): number {
   return roots.filter((n) => n.name === name).reduce((s, n) => s + n.tally, 0);
