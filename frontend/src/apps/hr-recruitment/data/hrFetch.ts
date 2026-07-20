@@ -235,11 +235,14 @@ const mapRequisition = (r: any): Requisition => ({
   rejectedAt: r.rejected_at ?? null,
   rejectReason: r.reject_reason ?? null,
   postedAt: r.posted_at ?? null,
+  postedBy: r.posted_by ?? null,
   postedOn: r.posted_on ?? null,
   holdReason: r.hold_reason ?? null,
   holdAt: r.hold_at ?? null,
   cancelReason: r.cancel_reason ?? null,
   closedAt: r.closed_at ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -302,6 +305,9 @@ const mapInterview = (r: any): Interview => ({
   documentPath: r.document_path ?? null,
   documentName: r.document_name ?? null,
   videoUrl: r.video_url ?? null,
+  resultRecordedBy: r.result_recorded_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
 });
 
 const mapOnboarding = (r: any): Onboarding => ({
@@ -310,12 +316,17 @@ const mapOnboarding = (r: any): Onboarding => ({
   requisitionId: r.requisition_id,
   joiningDate: r.joining_date ?? null,
   joiningDateSetAt: r.joining_date_set_at ?? null,
+  joiningDateBy: r.joining_date_by ?? null,
   offerStatus: (r.offer_status ?? "pending") as OfferStatus,
   offerStatusReason: r.offer_status_reason ?? null,
   offerDecidedAt: r.offer_decided_at ?? null,
+  offerDecidedBy: r.offer_decided_by ?? null,
   employeeCode: r.employee_code ?? null,
   employeeCodeAt: r.employee_code_at ?? null,
+  employeeCodeBy: r.employee_code_by ?? null,
   completedAt: r.completed_at ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 
@@ -359,6 +370,8 @@ const mapProbation = (r: any): Probation => ({
   finalStatusAt: r.final_status_at ?? null,
   permanentFrom: r.permanent_from ?? null,
   employeeCode: r.employee_code ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
 });
 
 const mapProbationReview = (r: any): ProbationReview => ({
@@ -371,6 +384,8 @@ const mapProbationReview = (r: any): ProbationReview => ({
   fileName: r.file_name ?? null,
   reviewedAt: r.reviewed_at,
   reviewerId: r.reviewer_id ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
 });
 
 const mapMaster = (r: any) => ({

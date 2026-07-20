@@ -3,14 +3,24 @@ import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import CandidateDrawer from "../../components/kanban/CandidateDrawer";
 import InterviewResultModal from "../../components/kanban/InterviewResultModal";
 import ScheduleInterviewModal from "../../components/kanban/ScheduleInterviewModal";
+import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { roundOf } from "../../lib/board";
+import type { StepKey } from "../../lib/steps";
+import type { StageEntry, CompletedRow } from "../../lib/queues";
 import type { Candidate, Interview, Requisition } from "../../types";
+
+const INTERVIEW_STEPS: StepKey[] = ["telephonic_screening", "interview_1", "interview_2", "interview_3"];
+/** The round an interview step records. */
+const roundOfStep = (step: StepKey): 0 | 1 | 2 | 3 =>
+  (step === "telephonic_screening" ? 0 : Number(step.slice(-1))) as 0 | 1 | 2 | 3;
 
 /** One interview that has not happened yet: the candidate, the round, and its booking (if any). */
 interface Row {
@@ -73,7 +83,13 @@ export default function InterviewsQueue() {
     return out.filter((r) => !mineOnly || r.mine);
   }, [s, mineOnly]);
 
+  const completed = useMemo(() => INTERVIEW_STEPS.flatMap((step) => s.completedFor(step)), [s]);
+  const stage = useStageMode(completed, s.userId);
+
   if (!canSee) return <AccessDenied />;
+
+  const onEditCompleted = (e: StageEntry<CompletedRow>) =>
+    setResult({ c: e.row as Candidate, round: roundOfStep(e.stepKey) });
 
   const dueOf = (r: Row) => s.candidateDueIso(r.candidate);
   const interviewerOf = (r: Row) =>
@@ -186,18 +202,44 @@ export default function InterviewsQueue() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-[22px] font-bold text-navy">Interviews</h1>
-          <p className="mt-1 text-[13.5px] text-grey">
-            Every interview still to happen. A round leaves this list once its result is recorded.
-          </p>
-        </div>
-        <Button size="sm" variant={mineOnly ? "primary" : "ghost"} onClick={() => setMineOnly((v) => !v)}>
-          {mineOnly ? "Showing only mine" : "Show only mine"}
-        </Button>
+      <div>
+        <h1 className="text-[22px] font-bold text-navy">Interviews</h1>
+        <p className="mt-1 text-[13.5px] text-grey">
+          {stage.showingCompleted
+            ? "Rounds you have recorded. A selected/rejected result moves the candidate on, so most are a record now — an on-hold or no-show can still be corrected."
+            : "Every interview still to happen. A round leaves this list once its result is recorded."}
+        </p>
       </div>
 
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
+        right={
+          stage.showingCompleted ? undefined : (
+            <Button size="sm" variant={mineOnly ? "primary" : "ghost"} onClick={() => setMineOnly((v) => !v)}>
+              {mineOnly ? "Showing only mine" : "Show only mine"}
+            </Button>
+          )
+        }
+      />
+
+      {stage.showingCompleted ? (
+        <CompletedTable
+          rows={stage.rows}
+          subjectHeader="Candidate"
+          subject={(e) => <span className="font-medium text-navy">{e.ref}</span>}
+          subjectText={(e) => e.ref}
+          exportName="HR_Interviews_Completed"
+          emptyMessage="Interview rounds you record will appear here."
+          onEdit={onEditCompleted}
+          onView={(e) => setOpen(e.row as Candidate)}
+        />
+      ) : (
       <QueueTable<Row>
         rows={rows}
         rowKey={(r) => `${r.candidate.id}-${r.round}`}
@@ -238,6 +280,7 @@ export default function InterviewsQueue() {
           ) : null
         }
       />
+      )}
 
       {open && <CandidateDrawer candidate={open} open={!!open} onClose={() => setOpen(null)} />}
       {book && (

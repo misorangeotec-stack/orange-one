@@ -3,8 +3,11 @@ import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
+import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { inr } from "../../lib/format";
@@ -39,6 +42,9 @@ export default function OnboardingQueue() {
         .filter((o): o is Onboarding => !!o),
     [s],
   );
+
+  const completed = useMemo(() => s.completedFor("onboarding"), [s]);
+  const stage = useStageMode(completed, s.userId);
 
   // Coordinators chase everything, and fms_hr_can_act already lets them act — so the
   // page must not lock out someone whose own queue has rows in it.
@@ -159,41 +165,64 @@ export default function OnboardingQueue() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Onboarding</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Everyone who has been offered the job. Set the joining date to open their checklist, record whether
-          they accepted, then work the list. If someone drops out, their seat goes straight back to the
-          vacancy.
+          {stage.showingCompleted
+            ? "People who have joined — their onboarding is complete. Open one to see the record."
+            : "Everyone who has been offered the job. Set the joining date to open their checklist, record whether they accepted, then work the list. If someone drops out, their seat goes straight back to the vacancy."}
         </p>
       </div>
 
-      <QueueTable<Onboarding>
-        rows={rows}
-        rowKey={(o) => o.id}
-        columns={columns}
-        groupBy={{
-          idOf: (o) => reqOf(o)?.departmentId ?? null,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
-        rowsLabel="new hires"
-        rowClassName={(o) => overdueRowClass(dueOf(o))}
-        emptyTitle="Nobody to onboard"
-        emptyMessage="Once a candidate is finalized on the board, their onboarding appears here."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Onboarding"
-        exportTitle="Onboarding"
-        exportNotes={[
-          "Onboardings still in progress. Someone who declined or never turned up drops off deliberately — their seat has gone back to the vacancy, and filling it is the open work now.",
-          "'Checklist' is items ticked out of items seeded from the master at the time HR set the joining date. 'Locked' means the joining date has not been set yet.",
-          "Every checklist item's own due date is counted in working days from the joining date.",
-          "Contains candidate names, phone numbers and agreed salaries — treat the file as personal data.",
-        ]}
-        actions={(o) => (
-          <Button size="sm" onClick={() => setOpen(o)}>
-            Open
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedTable
+          rows={stage.rows}
+          subjectHeader="New hire"
+          subject={(e) => <span className="font-medium text-navy">{e.ref}</span>}
+          subjectText={(e) => e.ref}
+          exportName="HR_Onboarding_Completed"
+          emptyMessage="Once a hire joins, their completed onboarding appears here."
+          onEdit={(e) => setOpen(e.row as Onboarding)}
+          onView={(e) => setOpen(e.row as Onboarding)}
+        />
+      ) : (
+        <QueueTable<Onboarding>
+          rows={rows}
+          rowKey={(o) => o.id}
+          columns={columns}
+          groupBy={{
+            idOf: (o) => reqOf(o)?.departmentId ?? null,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Department",
+          }}
+          rowsLabel="new hires"
+          rowClassName={(o) => overdueRowClass(dueOf(o))}
+          emptyTitle="Nobody to onboard"
+          emptyMessage="Once a candidate is finalized on the board, their onboarding appears here."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Onboarding"
+          exportTitle="Onboarding"
+          exportNotes={[
+            "Onboardings still in progress. Someone who declined or never turned up drops off deliberately — their seat has gone back to the vacancy, and filling it is the open work now.",
+            "'Checklist' is items ticked out of items seeded from the master at the time HR set the joining date. 'Locked' means the joining date has not been set yet.",
+            "Every checklist item's own due date is counted in working days from the joining date.",
+            "Contains candidate names, phone numbers and agreed salaries — treat the file as personal data.",
+          ]}
+          actions={(o) => (
+            <Button size="sm" onClick={() => setOpen(o)}>
+              Open
+            </Button>
+          )}
+        />
+      )}
 
       {open && <OnboardingPanel onboarding={open} open={!!open} onClose={() => setOpen(null)} />}
     </div>

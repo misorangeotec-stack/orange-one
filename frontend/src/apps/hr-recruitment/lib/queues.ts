@@ -649,3 +649,133 @@ export function buildQueueEntries(snap: HrSnapshot): QueueEntry[] {
 
   return out;
 }
+
+/* ========================================================================== */
+/*  THE COMPLETED TAB — "what I did here", edit-until-next-step.               */
+/*                                                                            */
+/*  A pending queue shows work still OWED; a Completed tab shows work already  */
+/*  DONE, still editable until the next step locks it. These are the pure      */
+/*  pieces (the row shape + the lock reasons); the store builds the arrays,     */
+/*  because "whose work is this" (canEdit) and the name/department lookups need */
+/*  the signed-in user and the id maps it already holds. Mirrors hr-exit.      */
+/* ========================================================================== */
+
+/**
+ * One completed work-item, for the Completed tab. HR Recruitment has four entities,
+ * so `row` is generic and `entityId` / `requisitionId` / `ref` are supplied by the
+ * builder rather than assumed to be a case.
+ *
+ * `canEdit` is precomputed (unlike hr-exit, which asks one `canActOn` in the table):
+ * ownership here is entity-specific — `canActOn` is for requisitions, and candidates
+ * / onboardings / probations each have their own predicate — so the builder that
+ * knows the entity resolves it once.
+ *
+ * `id` is composite so a Completed tab that concatenates several steps' entries (and,
+ * for interviews / reviews, several rounds per candidate) stays unique.
+ */
+/** The four things a Completed entry can carry — one per HR Recruitment entity. */
+export type CompletedRow = Requisition | Candidate | Onboarding | Probation;
+
+export interface StageEntry<T> {
+  id: string;
+  stepKey: StepKey;
+  entityId: string;
+  requisitionId: string | null;
+  departmentId: string | null;
+  /** The display label — MRF no, or the candidate / hire's name. */
+  ref: string;
+  /** Who did the step. Null = not recorded (an old row, before attribution). */
+  actorId: string | null;
+  /** When the step completed. */
+  atIso: string;
+  /** When it was last corrected, if ever. */
+  editedAtIso: string | null;
+  editedById: string | null;
+  /** Null ⇒ the entry may still be corrected; otherwise WHY it cannot be. */
+  lockReason: string | null;
+  /** Whether THIS user owns the step — precomputed per entity by the builder. */
+  canEdit: boolean;
+  row: T;
+}
+
+/** The constructor. The store supplies the pure `lockReason` and the user-scoped `canEdit`. */
+export function stageEntryOf<T>(
+  stepKey: StepKey,
+  base: {
+    id: string;
+    entityId: string;
+    requisitionId: string | null;
+    departmentId: string | null;
+    ref: string;
+    editedAtIso: string | null;
+    editedById: string | null;
+    row: T;
+  },
+  actorId: string | null,
+  atIso: string,
+  lockReason: string | null,
+  canEdit: boolean,
+): StageEntry<T> {
+  return { stepKey, ...base, actorId, atIso, lockReason, canEdit };
+}
+
+/*  Lock reasons — each mirrors its server guard in 20260721120000. The DATABASE is
+ *  the gate; these exist so the button can grey and SAY WHY. All are pure. */
+
+/** A terminal / parked requisition bars every approval edit. */
+export function reqTerminalBar(r: Requisition, what: string): string | null {
+  if (r.status === "on_hold") return `This requisition is on hold — take it off hold before editing its ${what}.`;
+  if (r.status === "cancelled" || r.status === "rejected" || r.status === "closed") {
+    return `This requisition was ${r.status} — its ${what} can no longer be changed.`;
+  }
+  return null;
+}
+
+/** HR Head approval — editable only while the requisition sits at Management (status mgmt_review). */
+export const hrApprovalLockReason = (r: Requisition): string | null =>
+  r.status === "mgmt_review"
+    ? null
+    : (reqTerminalBar(r, "HR approval") ?? "Management has already acted — the HR approval can no longer be changed.");
+
+/** Management approval — editable only while the job has not been posted (status posting). */
+export const mgmtApprovalLockReason = (r: Requisition): string | null =>
+  r.status === "posting"
+    ? null
+    : (reqTerminalBar(r, "Management approval") ?? "The job has been posted — the approval can no longer be changed.");
+
+/** Job posting — editable while sourcing and no candidate has landed yet. */
+export const jobPostingLockReason = (r: Requisition, hasCandidate: boolean): string | null => {
+  if (r.status === "sourcing" && !hasCandidate) return null;
+  return (
+    reqTerminalBar(r, "job posting") ??
+    (hasCandidate
+      ? "Candidates have already been added — the job posting can no longer be edited."
+      : "The job posting can no longer be edited.")
+  );
+};
+
+/** A recorded interview round is editable only while the card is STILL at that round. */
+export const interviewResultLockReason = (c: Candidate, round: 0 | 1 | 2 | 3): string | null => {
+  const want: CandidateStage = round === 0 ? "telephonic" : (`interview_${round}` as CandidateStage);
+  return c.stage === want ? null : "The candidate has moved on from this round — its result can no longer be changed.";
+};
+
+/** An onboarding only reaches the Completed tab once the person joined — a record now. */
+export const onboardingLockReason = (): string | null =>
+  "This person has joined — the onboarding is a record now, not editable.";
+
+/** A monthly review is editable (re-record) until the probation decision closes it. */
+export const reviewLockReason = (p: Probation, review: ProbationReview): string | null => {
+  if (p.finalStatus) return "The probation decision has been taken — this review can no longer be changed.";
+  if (review.month <= 3 && p.outcome !== null) {
+    return "The three-month decision has been taken — this review can no longer be changed.";
+  }
+  return null;
+};
+
+/** The three-month decision — only an 'extend' is editable (approve/reject conclude it). */
+export const probationDecisionLockReason = (p: Probation, hasMonth4Review: boolean): string | null => {
+  if (p.outcome === "extended" && !p.finalStatus && !hasMonth4Review) return null;
+  if (hasMonth4Review) return "The month-4 review has been recorded — the extension decision can no longer be re-opened.";
+  return "The probation decision is final — it can no longer be changed.";
+};

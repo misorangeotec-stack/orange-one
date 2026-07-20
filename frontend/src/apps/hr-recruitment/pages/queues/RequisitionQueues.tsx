@@ -1,16 +1,27 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import { JobPostingModal, MrfDecisionModal } from "../../components/MrfModals";
+import CompletedTable from "../../components/CompletedTable";
 import StatusPill from "../../components/StatusPill";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { salaryLabel } from "../../lib/format";
 import type { StepKey } from "../../lib/steps";
+import type { StageEntry, CompletedRow } from "../../lib/queues";
 import type { Requisition } from "../../types";
+
+/** The MRF-link cell + its plain text, shared by every requisition Completed tab. */
+const mrfSubject = (e: StageEntry<CompletedRow>) => (
+  <Link to={`/hr-recruitment/requisitions/${e.entityId}`} className="font-semibold text-orange hover:underline">
+    {e.ref}
+  </Link>
+);
 
 /**
  * One generic requisition-queue page, parameterised per step — the HR twin of
@@ -27,6 +38,7 @@ function StepQueuePage({
   subtitle,
   exportName,
   renderAction,
+  onEditCompleted,
 }: {
   step: StepKey;
   title: string;
@@ -34,8 +46,11 @@ function StepQueuePage({
   /** File-name stem for the Excel export. */
   exportName: string;
   renderAction: (r: Requisition) => React.ReactNode;
+  /** Open a completed entry's edit surface. Omit ⇒ the Completed tab is view-only. */
+  onEditCompleted?: (r: Requisition) => void;
 }) {
   const s = useHrStore();
+  const navigate = useNavigate();
 
   const rows = useMemo(
     () =>
@@ -45,6 +60,9 @@ function StepQueuePage({
         .filter((r): r is Requisition => !!r),
     [s, step],
   );
+
+  const completed = useMemo(() => s.completedFor(step), [s, step]);
+  const stage = useStageMode(completed, s.userId);
 
   const dueOf = (r: Requisition) => s.dueIsoFor(r, step);
   const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
@@ -112,27 +130,52 @@ function StepQueuePage({
     <div className="space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">{title}</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">{subtitle}</p>
+        <p className="text-[13.5px] text-grey-2 mt-1">
+          {stage.showingCompleted ? "What you did here — revisable until the next step is done." : subtitle}
+        </p>
       </div>
 
-      <QueueTable<Requisition>
-        rows={rows}
-        rowKey={(r) => r.id}
-        columns={columns}
-        groupBy={{ idOf: (r) => r.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
-        rowsLabel="requisitions"
-        rowClassName={(r) => overdueRowClass(dueOf(r))}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="When a requisition reaches this step, it will appear here."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName={exportName}
-        exportTitle={title}
-        exportNotes={[
-          "Only the requisitions waiting on YOU at this step — not every requisition in the system.",
-          "The due date comes from this step's rule in Setup → Due Dates, counted in working days (Mon–Sat; only Sunday is skipped).",
-        ]}
-        actions={renderAction}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedTable
+          rows={stage.rows}
+          subjectHeader="MRF"
+          subject={mrfSubject}
+          subjectText={(e) => e.ref}
+          exportName={`${exportName}_Completed`}
+          emptyMessage="Steps you complete here will appear here, editable until the next step is done."
+          onEdit={(e) => onEditCompleted?.(e.row as Requisition)}
+          onView={(e) => navigate(`/hr-recruitment/requisitions/${e.entityId}`)}
+        />
+      ) : (
+        <QueueTable<Requisition>
+          rows={rows}
+          rowKey={(r) => r.id}
+          columns={columns}
+          groupBy={{ idOf: (r) => r.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
+          rowsLabel="requisitions"
+          rowClassName={(r) => overdueRowClass(dueOf(r))}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="When a requisition reaches this step, it will appear here."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName={exportName}
+          exportTitle={title}
+          exportNotes={[
+            "Only the requisitions waiting on YOU at this step — not every requisition in the system.",
+            "The due date comes from this step's rule in Setup → Due Dates, counted in working days (Mon–Sat; only Sunday is skipped).",
+          ]}
+          actions={renderAction}
+        />
+      )}
     </div>
   );
 }
@@ -140,13 +183,13 @@ function StepQueuePage({
 /** HR Head + Management approvals. One page, because a person may own either gate. */
 export function MrfApprovalsQueue() {
   const s = useHrStore();
-  const [decide, setDecide] = useState<{ r: Requisition; stage: "hr" | "mgmt" } | null>(null);
+  const navigate = useNavigate();
+  const [decide, setDecide] = useState<{ r: Requisition; stage: "hr" | "mgmt"; editing: boolean } | null>(null);
 
   // Coordinators chase everything, and fms_hr_can_act() already lets them act — so
   // gating on step ownership alone would lock them out of a page holding their own work.
   const canHr = s.isStepOwner("hr_head_approval") || s.isProcessCoordinator;
   const canMgmt = s.isStepOwner("mgmt_approval") || s.isProcessCoordinator;
-  if (!canHr && !canMgmt) return <AccessDenied />;
 
   const rows = useMemo(() => {
     const hr = canHr ? s.myQueue("hr_head_approval") : [];
@@ -155,6 +198,18 @@ export function MrfApprovalsQueue() {
       .map((e) => s.requisitionById(e.entityId))
       .filter((r): r is Requisition => !!r);
   }, [s, canHr, canMgmt]);
+
+  // The Completed tab spans both gates a person might own.
+  const completed = useMemo(
+    () => [...s.completedFor("hr_head_approval"), ...s.completedFor("mgmt_approval")],
+    [s],
+  );
+  const stage = useStageMode(completed, s.userId);
+
+  const onEditCompleted = (e: StageEntry<CompletedRow>) =>
+    setDecide({ r: e.row as Requisition, stage: e.stepKey === "hr_head_approval" ? "hr" : "mgmt", editing: true });
+
+  if (!canHr && !canMgmt) return <AccessDenied />;
 
   const stageOf = (r: Requisition): "hr" | "mgmt" => (r.status === "hr_review" ? "hr" : "mgmt");
   const stepOf = (r: Requisition): StepKey =>
@@ -223,32 +278,57 @@ export function MrfApprovalsQueue() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">MRF Approvals</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Requisitions waiting on your decision. Approve, send back for a fix, or reject.
+          {stage.showingCompleted
+            ? "Decisions you have made — revisable until the next gate acts."
+            : "Requisitions waiting on your decision. Approve, send back for a fix, or reject."}
         </p>
       </div>
 
-      <QueueTable<Requisition>
-        rows={rows}
-        rowKey={(r) => r.id}
-        columns={columns}
-        groupBy={{ idOf: (r) => r.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
-        rowsLabel="requisitions"
-        rowClassName={(r) => overdueRowClass(dueOf(r))}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="Requisitions needing your approval will appear here."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_MRF_Approvals"
-        exportTitle="MRF approvals"
-        exportNotes={[
-          "Only the requisitions waiting on YOUR decision — the HR Head gate, the Management gate, or both if you own both.",
-          "'Waiting on' says which of the two gates it currently sits at. Each gate has its own due date (Setup → Due Dates).",
-        ]}
-        actions={(r) => (
-          <Button size="sm" onClick={() => setDecide({ r, stage: stageOf(r) })}>
-            Decide
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedTable
+          rows={stage.rows}
+          subjectHeader="MRF"
+          subject={mrfSubject}
+          subjectText={(e) => e.ref}
+          exportName="HR_MRF_Approvals_Completed"
+          emptyMessage="Decisions you make here will appear here, revisable until the next gate acts."
+          onEdit={onEditCompleted}
+          onView={(e) => navigate(`/hr-recruitment/requisitions/${e.entityId}`)}
+        />
+      ) : (
+        <QueueTable<Requisition>
+          rows={rows}
+          rowKey={(r) => r.id}
+          columns={columns}
+          groupBy={{ idOf: (r) => r.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
+          rowsLabel="requisitions"
+          rowClassName={(r) => overdueRowClass(dueOf(r))}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="Requisitions needing your approval will appear here."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_MRF_Approvals"
+          exportTitle="MRF approvals"
+          exportNotes={[
+            "Only the requisitions waiting on YOUR decision — the HR Head gate, the Management gate, or both if you own both.",
+            "'Waiting on' says which of the two gates it currently sits at. Each gate has its own due date (Setup → Due Dates).",
+          ]}
+          actions={(r) => (
+            <Button size="sm" onClick={() => setDecide({ r, stage: stageOf(r), editing: false })}>
+              Decide
+            </Button>
+          )}
+        />
+      )}
 
       {decide && (
         <MrfDecisionModal
@@ -256,6 +336,7 @@ export function MrfApprovalsQueue() {
           stage={decide.stage}
           open={!!decide}
           onClose={() => setDecide(null)}
+          editing={decide.editing}
         />
       )}
     </div>
@@ -265,7 +346,7 @@ export function MrfApprovalsQueue() {
 /** Approved and waiting for HR to advertise it. */
 export function JobPostingQueue() {
   const s = useHrStore();
-  const [posting, setPosting] = useState<Requisition | null>(null);
+  const [posting, setPosting] = useState<{ r: Requisition; editing: boolean } | null>(null);
 
   if (!s.isStepOwner("job_posting") && !s.isProcessCoordinator) return <AccessDenied />;
 
@@ -277,12 +358,20 @@ export function JobPostingQueue() {
         subtitle="Approved requisitions waiting to be advertised. Tick every platform you posted on."
         exportName="HR_Job_Posting_Queue"
         renderAction={(r) => (
-          <Button size="sm" onClick={() => setPosting(r)}>
+          <Button size="sm" onClick={() => setPosting({ r, editing: false })}>
             Post
           </Button>
         )}
+        onEditCompleted={(r) => setPosting({ r, editing: true })}
       />
-      {posting && <JobPostingModal requisition={posting} open={!!posting} onClose={() => setPosting(null)} />}
+      {posting && (
+        <JobPostingModal
+          requisition={posting.r}
+          open={!!posting}
+          onClose={() => setPosting(null)}
+          editing={posting.editing}
+        />
+      )}
     </>
   );
 }

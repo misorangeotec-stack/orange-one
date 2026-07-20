@@ -301,9 +301,39 @@ export async function decideMrf(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Correct a COMPLETED approval (its remark) or flip it to reject/send-back, while the
+ * next gate has not acted. Editable window: HR approval → status 'mgmt_review';
+ * Mgmt approval → status 'posting'. Server-enforced (fms_hr_update_decide_mrf).
+ */
+export async function updateDecideMrf(
+  requisitionId: string,
+  stage: MrfStage,
+  decision: MrfDecision,
+  remarks: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_update_decide_mrf", {
+    p_req: requisitionId,
+    p_stage: stage,
+    p_decision: decision,
+    p_remarks: remarks,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** Requires at least one platform. Stamps posted_at (the step) AND posted_on (the date HR typed). */
 export async function postJob(requisitionId: string, platformIds: string[], postedOn: string): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_post_job", {
+    p_req: requisitionId,
+    p_platform_ids: platformIds,
+    p_posted_on: postedOn,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Correct the platforms / posting date while the job is posted but no candidate has landed yet. */
+export async function updatePostJob(requisitionId: string, platformIds: string[], postedOn: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_update_post_job", {
     p_req: requisitionId,
     p_platform_ids: platformIds,
     p_posted_on: postedOn,
@@ -601,6 +631,28 @@ export async function decideProbation(
   employeeCode: string | null = null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_decide_probation", {
+    p_probation: probationId,
+    p_decision: decision,
+    p_remarks: remarks,
+    p_permanent_from: permanentFrom ?? undefined,
+    p_employee_code: employeeCode ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Correct the 3-month decision while it is still an 'extend' (approve/reject conclude
+ * it in the same call → terminal). Editable until a month-4 review has been recorded.
+ * `extend` edits the remark; `approve`/`reject` conclude it with the permanent details.
+ */
+export async function updateDecideProbation(
+  probationId: string,
+  decision: ProbationDecision,
+  remarks: string,
+  permanentFrom: string | null = null,
+  employeeCode: string | null = null,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_update_probation_decision", {
     p_probation: probationId,
     p_decision: decision,
     p_remarks: remarks,

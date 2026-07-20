@@ -21,15 +21,21 @@ export function MrfDecisionModal({
   stage,
   open,
   onClose,
+  editing = false,
 }: {
   requisition: Requisition;
   stage: MrfStage;
   open: boolean;
   onClose: () => void;
+  /** Correcting a decision already taken (Completed tab), not deciding a pending one. */
+  editing?: boolean;
 }) {
   const s = useHrStore();
   const [decision, setDecision] = useState<MrfDecision>("approve");
-  const [remarks, setRemarks] = useState("");
+  // When editing an approval, start from the remark that was recorded with it.
+  const [remarks, setRemarks] = useState(() =>
+    editing ? ((stage === "hr" ? requisition.hrRemarks : requisition.mgmtRemarks) ?? "") : "",
+  );
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -40,7 +46,8 @@ export function MrfDecisionModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.decideMrf(requisition.id, stage, decision, remarks.trim());
+      if (editing) await s.updateDecideMrf(requisition.id, stage, decision, remarks.trim());
+      else await s.decideMrf(requisition.id, stage, decision, remarks.trim());
       onClose();
       setRemarks("");
       setDecision("approve");
@@ -63,7 +70,7 @@ export function MrfDecisionModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`${label} decision — ${requisition.mrfNo}`}
+      title={`${editing ? "Edit " : ""}${label} decision — ${requisition.mrfNo}`}
       subtitle={`${requisition.jobTitle} · ${requisition.positionsRequired} ${requisition.positionsRequired === 1 ? "seat" : "seats"}`}
       footer={
         <>
@@ -120,17 +127,21 @@ export function JobPostingModal({
   requisition,
   open,
   onClose,
+  editing = false,
 }: {
   requisition: Requisition;
   open: boolean;
   onClose: () => void;
+  /** Correcting a posting already made (Completed tab), not posting a fresh one. */
+  editing?: boolean;
 }) {
   const s = useHrStore();
   const [platformIds, setPlatformIds] = useState<string[]>(() => s.platformIdsFor(requisition.id));
   /** Platform not in the master? Raise it for review without losing this form. */
   const [raisePlatform, setRaisePlatform] = useState(false);
   const [requested, setRequested] = useState<string | null>(null);
-  const [postedOn, setPostedOn] = useState(todayIso());
+  // Editing keeps the date HR originally typed, not today.
+  const [postedOn, setPostedOn] = useState(() => (editing ? (requisition.postedOn ?? todayIso()) : todayIso()));
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -143,7 +154,8 @@ export function JobPostingModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.postJob(requisition.id, platformIds, postedOn);
+      if (editing) await s.updatePostJob(requisition.id, platformIds, postedOn);
+      else await s.postJob(requisition.id, platformIds, postedOn);
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -156,7 +168,7 @@ export function JobPostingModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Post the job — ${requisition.mrfNo}`}
+      title={`${editing ? "Edit job posting" : "Post the job"} — ${requisition.mrfNo}`}
       subtitle={requisition.jobTitle}
       footer={
         <>
@@ -164,7 +176,7 @@ export function JobPostingModal({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={busy || platformIds.length === 0}>
-            {busy ? "Posting…" : "Mark as posted"}
+            {busy ? (editing ? "Saving…" : "Posting…") : editing ? "Save changes" : "Mark as posted"}
           </Button>
         </>
       }
