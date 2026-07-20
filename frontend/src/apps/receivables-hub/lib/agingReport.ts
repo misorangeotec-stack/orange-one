@@ -60,6 +60,15 @@ const SALE_TYPE_LABEL: Record<SaleType, string> = {
   other: "Other",
 };
 
+/**
+ * Sale-type-dimension label for the ledger reconciliation line. A net ledger adjustment belongs to
+ * no product, so it gets its OWN row when grouping by sale type — rather than being tagged "other",
+ * which dragged the whole adjustment into the "Other" product row and pushed it negative. Only the
+ * sale-type lens is affected; under every other dimension the adjustment still rolls into its own
+ * customer's row.
+ */
+export const LEDGER_ADJ_SALE_TYPE_LABEL = "Unbilled adjustment";
+
 /** Single-value customer-category label for the group-by (blank → Uncategorized). */
 function categoryLabel(category: string): string {
   return category && category.trim() ? category : "Uncategorized";
@@ -318,8 +327,9 @@ export function enumerateBills(
  * "Outstanding (Today)". It absorbs everything the bill-wise list can't represent: advances
  * with no bill line, cheque returns that didn't re-open a bill, opening-balance residue, and
  * bill-wise sync gaps / duplicates. Routed to the dedicated "Unbilled Adj." column (flagged
- * isLedgerAdj) so it never distorts the age / on-account / overdue buckets. Sale type "other"
- * (a net adjustment belongs to no product).
+ * isLedgerAdj) so it never distorts the age / on-account / overdue buckets. Under the sale-type
+ * lens it forms its OWN "Unbilled adjustment" row (a net adjustment belongs to no product) instead
+ * of dragging the "Other" product row negative.
  */
 export function ledgerAdjBill(
   c: Customer,
@@ -345,13 +355,16 @@ export function ledgerAdjBill(
     voucherType: "other",
     isCarryforward: false,
   };
+  // Its own row under the sale-type lens; unchanged under every other dimension.
+  const dims = dimsForCustomer(c, "other", groupMap);
+  dims.saleType = LEDGER_ADJ_SALE_TYPE_LABEL;
   return {
     inv,
     cust: c,
     ageGe180: false,
     overdueKey: null,
     isLedgerAdj: true,
-    dims: dimsForCustomer(c, "other", groupMap),
+    dims,
   };
 }
 
