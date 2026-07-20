@@ -80,6 +80,9 @@ const FY_PINNED_ROUTES = [
   "/outstanding-dashboard/reports/balance-sheet",
   "/outstanding-dashboard/reports/profit-loss",
   "/outstanding-dashboard/reports/trial-balance",
+  // The list and its /:ledgerId detail both hide the FY selector — the report has its own "As on"
+  // date control, and the mirror holds one snapshot per company. startsWith covers the sub-route.
+  "/outstanding-dashboard/reports/ledger-outstanding",
 ];
 
 export default function UserLayout() {

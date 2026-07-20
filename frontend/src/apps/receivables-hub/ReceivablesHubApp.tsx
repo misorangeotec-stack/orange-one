@@ -24,6 +24,8 @@ import DsoReport from "@hub/pages/DsoReport";
 import BalanceSheetReport from "@hub/pages/BalanceSheetReport";
 import ProfitLossReport from "@hub/pages/ProfitLossReport";
 import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
+import LedgerOutstandingList from "@hub/pages/LedgerOutstandingList";
+import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -95,6 +97,8 @@ function HubRoutes() {
           <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
           <Route path="reports/profit-loss" element={<ProfitLossReport />} />
           <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
+          <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
+          <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

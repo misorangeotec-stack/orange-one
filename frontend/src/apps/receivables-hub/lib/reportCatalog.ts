@@ -325,15 +325,16 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["groups", "rollup"],
   },
   {
-    id: "bill-outstanding",
-    title: "Bill-wise Outstanding",
-    purpose: "Every open bill with its due date and overdue days, straight from Tally's bill allocations.",
+    id: "ledger-outstanding",
+    title: "Ledger Outstandings",
+    purpose: "Every ledger's pending bills — opening, pending, due date and overdue days, exactly as Tally shows them.",
     category: "tally",
     subcategory: "outstanding",
+    path: "reports/ledger-outstanding",
     icon: ReceiptText,
     source: "tally",
-    status: "soon",
-    keywords: ["bills", "receivables", "due date"],
+    status: "live",
+    keywords: ["bills", "receivables", "due date", "overdue", "pending", "bill-wise"],
   },
 ];
 
@@ -413,6 +414,21 @@ export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
   if (pathname === `${BASE}/reports`) {
     const cat = categoryById(new URLSearchParams(search).get("cat") ?? "");
     return cat ? [root, { label: cat.title }] : null;
+  }
+
+  // Ledger Outstandings has a /:ledgerId detail sub-route with no catalogue entry of its own.
+  // Give it the same trail as the list, with "Ledger Outstandings" linking back to the list (the
+  // detail page's own Tally-style header carries the ledger name). The list itself (exact path)
+  // falls through to findReport below and ends at a non-link "Ledger Outstandings".
+  const loList = `${BASE}/reports/ledger-outstanding`;
+  if (pathname.startsWith(`${loList}/`)) {
+    const entry = REPORTS.find((r) => r.id === "ledger-outstanding");
+    const cat = entry ? categoryById(entry.category) : undefined;
+    return [
+      root,
+      ...(cat ? [{ label: cat.title, to: categoryHref(cat.id), collapsible: true }] : []),
+      { label: entry?.title ?? "Ledger Outstandings", to: loList },
+    ];
   }
 
   const report = findReport(pathname, search);

@@ -12,6 +12,7 @@ import { formatDateDMY } from "./utils";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import type { FsCompany, FsNode, BalanceSheetView, PnlView } from "./financialStatements";
 import type { TbNode, TbView } from "./trialBalance";
+import type { LedgerBillRow } from "./ledgerOutstanding";
 
 const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
 
@@ -224,4 +225,66 @@ export function exportTrialBalanceXlsx(
   }
 
   finish(wb, "Trial_Balance");
+}
+
+/** yyyymmdd → dd-mm-yyyy for the sheet (Tally date columns). */
+function ymd(s: string | null): string {
+  if (!s || !/^\d{8}$/.test(s)) return "";
+  return `${s.slice(6, 8)}-${s.slice(4, 6)}-${s.slice(0, 4)}`;
+}
+/** Dr-positive amount → "<n> Dr" / "<n> Cr" text; blank at zero. Written as text (mixed Dr/Cr sign). */
+function drcrCell(n: number): string {
+  if (Math.abs(n) < 0.5) return "";
+  return `${Math.round(Math.abs(n)).toLocaleString("en-IN")} ${n >= 0 ? "Dr" : "Cr"}`;
+}
+
+export function exportLedgerOutstandingXlsx(input: {
+  ledgerName: string;
+  company?: FsCompany;
+  asOn: string;
+  bills: LedgerBillRow[];
+}): void {
+  const { ledgerName, company, asOn, bills } = input;
+  const wb = XLSX.utils.book_new();
+  const aoa: Cell[][] = [];
+
+  aoa.push([`Ledger Outstandings — ${ledgerName}`]);
+  aoa.push(["Ledger", ledgerName]);
+  if (company) {
+    aoa.push(["Company", company.location ? `${company.company} (${company.location})` : company.company]);
+    aoa.push(["Period", `${formatDateDMY(company.fromDate)} to ${formatDateDMY(company.asOf)}`]);
+  }
+  aoa.push(["As on", formatDateDMY(asOn)]);
+  aoa.push(["Source", "Tally pending bills via ConnectWave (bill's own credit period; overdue as of 'As on')"]);
+  aoa.push([]);
+
+  const headerRow0 = aoa.length;
+  aoa.push(["Date", "Ref No.", "Opening Amount", "Pending Amount", "Due on", "Overdue by days"]);
+
+  let openTot = 0;
+  let pendTot = 0;
+  for (const b of bills) {
+    openTot += b.openingAmount;
+    pendTot += b.pendingAmount;
+    aoa.push([
+      ymd(b.billDate),
+      b.isOnAccount ? "On Account" : b.billRef ?? "",
+      b.isOnAccount ? "" : drcrCell(b.openingAmount),
+      drcrCell(b.pendingAmount),
+      ymd(b.dueDate),
+      b.overdueDays && b.overdueDays > 0 ? b.overdueDays : "",
+    ]);
+  }
+
+  const totalRow0 = aoa.length;
+  aoa.push(["Grand Total", "", drcrCell(openTot), drcrCell(pendTot), "", ""]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 14 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 16 }];
+  styleRow(ws, 0, 6, HEADER_STYLE);
+  styleRow(ws, headerRow0, 6, HEADER_STYLE);
+  styleRow(ws, totalRow0, 6, GRAND_TOTAL_STYLE);
+  XLSX.utils.book_append_sheet(wb, ws, "Ledger Outstanding");
+
+  finish(wb, `Ledger_Outstanding_${ledgerName}`);
 }
