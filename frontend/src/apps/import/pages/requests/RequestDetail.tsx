@@ -12,6 +12,7 @@ import { useImportStore } from "../../store";
 import { inr, fxMoney, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
+import QtyTotal from "../../components/QtyTotal";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import type { RequestItem } from "../../types";
 
@@ -39,6 +40,10 @@ export default function RequestDetail() {
   }
   const co = s.companyById(request.companyId);
   const lines = s.itemsForRequest(request.id);
+  // Totals for the footer: value sums (FCY + INR) and a mixed-unit-aware qty sum
+  // over every line the table shows.
+  const totalFx = lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0);
+  const totalInr = lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
 
   // A request may span categories, so the header lists every distinct one its
   // lines carry. Lines predating per-line category fall back to the header's.
@@ -199,6 +204,23 @@ export default function RequestDetail() {
                 );
               })}
             </tbody>
+            {lines.length > 0 && (
+              <tfoot>
+                {/* Totals align under their own columns: Qty under Qty, and the two
+                    value totals under Value (FCY) / Value (INR). The label span
+                    absorbs the leading Actions column. */}
+                <tr className="border-t-2 border-line bg-orange-soft/50">
+                  <td colSpan={3} className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">
+                    <QtyTotal entries={lines.map((l) => ({ qty: l.quantity, unit: l.unit }))} />
+                  </td>
+                  <td colSpan={3} />
+                  <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">{fxMoney(totalFx, request.currency)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">{inr(totalInr)}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </ScrollableTable>
       </Card>

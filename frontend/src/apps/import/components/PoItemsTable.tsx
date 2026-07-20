@@ -1,4 +1,5 @@
 import { inr, fxMoney } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import { useImportStore } from "../store";
 import type { PurchaseOrder } from "../types";
 
@@ -50,9 +51,13 @@ export default function PoItemsTable({ po }: { po: PurchaseOrder }) {
         {items.length > 0 && (
           <tfoot>
             <tr className="border-t-2 border-line bg-orange-soft/50">
-              <td colSpan={3} className="px-3 py-2.5 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+              <td className="px-3 py-2.5 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
                 Total
               </td>
+              <td className="whitespace-nowrap px-3 py-2.5 font-bold text-navy">
+                <QtyTotal entries={items.map((it) => ({ qty: it.qty, unit: s.lineById(it.requestItemId)?.unit }))} />
+              </td>
+              <td />
               <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold text-navy">{fxMoney(po.totalValueFx, ccy)}</td>
               <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold text-navy">{inr(po.totalValue)}</td>
             </tr>

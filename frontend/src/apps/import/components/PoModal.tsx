@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
 import { inr, fxMoney } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 interface VendorGroup {
@@ -222,9 +223,13 @@ export default function PoModal({
                         (FCY) / Total (INR) align exactly under their columns. */}
                     <tr className="border-t-2 border-line bg-orange-soft/50">
                       {actionable && <td className="px-3 py-2" />}
-                      <td colSpan={3} className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                      <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
                         Total
                       </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-bold text-navy">
+                        <QtyTotal entries={picked.map((l) => ({ qty: l.finalQty ?? l.quantity, unit: l.unit }))} />
+                      </td>
+                      <td />
                       <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-navy">{fxMoney(totalFx, request.currency)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-navy">{inr(total)}</td>
                     </tr>

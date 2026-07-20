@@ -4,6 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useImportStore } from "../store";
 import { inr, fxMoney } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 /**
@@ -210,9 +211,13 @@ export default function ApprovalModal({
                 {/* Grand totals sit in the SAME columns as the line values, so they
                     align exactly under Value (FCY) / Value (INR). */}
                 <tr className="border-t-2 border-line bg-orange-soft/50">
-                  <td colSpan={3} className="px-3 py-2.5 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                  <td className="px-3 py-2.5 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
                     Total
                   </td>
+                  <td className="px-3 py-2.5 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={lines.map((l) => ({ qty: qtyOf(l), unit: l.unit }))} />
+                  </td>
+                  <td />
                   <td className="px-3 py-2.5 text-right font-bold text-navy whitespace-nowrap">{fxMoney(totalFx, currency)}</td>
                   <td className="px-3 py-2.5 text-right font-bold text-navy whitespace-nowrap">{inr(total)}</td>
                 </tr>

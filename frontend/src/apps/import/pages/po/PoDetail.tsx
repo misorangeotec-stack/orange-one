@@ -8,7 +8,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
-import { inr, fxMoney, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
+import { inr, fxMoney, qtyText, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -139,7 +139,12 @@ export default function PoDetail() {
         <Kpi label="Value" value={inr(po.totalValue)} hint={fxMoney(po.totalValueFx, po.currency)} size="sm" />
         <Kpi label="Advance / Paid" value={inr(po.advancePaid)} hint={fxMoney(s.paidFxForPo(po.id), po.currency)} size="sm" />
         <Kpi label="Pending" value={inr(pending)} hint={fxMoney(s.pendingFxAmount(po), po.currency)} size="sm" />
-        <Stat label="Items" value={String(items.length)} />
+        <Kpi
+          label="Items"
+          value={String(items.length)}
+          hint={qtyText(items.map((it) => ({ qty: it.qty, unit: s.lineById(it.requestItemId)?.unit })))}
+          size="sm"
+        />
       </div>
 
       {/* Action bar */}
@@ -305,9 +310,4 @@ export default function PoDetail() {
       <DeclineCancelModal request={cancelRequest ?? null} open={modal === "declinecancel"} onClose={() => setModal(null)} />
     </div>
   );
-}
-
-/** The compact 4-up strip. `size="sm"` keeps its 16px value — typography changes, layout doesn't. */
-function Stat({ label, value }: { label: string; value: string }) {
-  return <Kpi label={label} value={value} size="sm" />;
 }

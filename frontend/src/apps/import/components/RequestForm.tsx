@@ -6,6 +6,7 @@ import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import RequestMasterModal from "./RequestMasterModal";
+import QtyTotal from "./QtyTotal";
 import { masterTypeLabel } from "../lib/masterFields";
 import { isLineBlank, makeEmptyLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
 
@@ -240,14 +241,18 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
               makeEmptyRow={makeEmptyLine}
               isRowBlank={isLineBlank}
               footer={
-                // colSpan spans Category+Item+Qty+Rate; the two totals sit under
-                // their own columns and the last <td> is LineGrid's ✕ column.
-                // Adding a column here means bumping this number.
+                // Label spans Category+Item; the Qty total sits under Qty, the two
+                // money totals under their own columns, and the last <td> is
+                // LineGrid's ✕ column. Adding a column here means re-checking these.
                 <tfoot className="border-t-2 border-line bg-page/60">
                   <tr>
-                    <td colSpan={4} className="px-2.5 py-2.5 text-right text-[12.5px] text-grey-2">
+                    <td colSpan={2} className="px-2.5 py-2.5 text-right text-[12.5px] text-grey-2">
                       {filled.length} line{filled.length === 1 ? "" : "s"} · Total
                     </td>
+                    <td className="px-2.5 py-2.5 text-right font-semibold text-navy tabular-nums whitespace-nowrap">
+                      <QtyTotal entries={filled.map((l) => ({ qty: Number(l.qty) || 0, unit: l.unit }))} />
+                    </td>
+                    <td />
                     <td className="px-2.5 py-2.5 text-right font-semibold text-navy tabular-nums whitespace-nowrap">
                       {fx(totalFx)}
                     </td>
