@@ -10,7 +10,8 @@
  * On top of Tally's static print this screen adds: a default oldest→newest sort (any column is
  * sortable), and a per-column filter row — date-range on the two date columns, text on Ref No., and
  * numeric min/max on the three amount/overdue columns. The Grand Total and the stat strip always foot
- * the *currently shown* (filtered) rows. The On Account plug row is pinned to the bottom.
+ * the *currently shown* (filtered) rows. The On Account plug row bypasses every filter and stays
+ * pinned to the bottom, so the total always ties back to the ledger.
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -77,8 +78,8 @@ function numInRange(v: number, min: string, max: string): boolean {
   if (max.trim() !== "" && v > Number(max)) return false;
   return true;
 }
-/** yyyymmdd against a yyyy-mm-dd range. A dated bill outside the range fails; a *dateless* row (On
- *  Account) is excluded once any bound is set — a date filter is asking for dated bills. */
+/** yyyymmdd against a yyyy-mm-dd range. A dated bill outside the range fails; a dateless bill fails
+ *  once any bound is set. (The On Account plug never reaches here — it bypasses all filters.) */
 function dateInRange(yyyymmdd: string | null, from: string, to: string): boolean {
   if (!from && !to) return true;
   const iso = isoOf(yyyymmdd);
@@ -209,10 +210,10 @@ export default function LedgerOutstandingBills() {
   const filtered = useMemo(() => {
     const q = refQ.trim().toLowerCase();
     return rows.filter((b) => {
-      if (q) {
-        const hay = b.isOnAccount ? "on account" : (b.billRef ?? "");
-        if (!hay.toLowerCase().includes(q)) return false;
-      }
+      // The On Account plug (net advances / unallocated) has no date, ref or overdue of its own; keep
+      // it visible under every filter so the Grand Total always ties back to the ledger.
+      if (b.isOnAccount) return true;
+      if (q && !(b.billRef ?? "").toLowerCase().includes(q)) return false;
       if (dateActive && !dateInRange(b.billDate, dateFrom, dateTo)) return false;
       if (dueActive && !dateInRange(b.dueDate, dueFrom, dueTo)) return false;
       if (openActive && !numInRange(b.openingAmount, openMin, openMax)) return false;
