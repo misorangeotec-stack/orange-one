@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   TrendingUp, TrendingDown, AlertTriangle, Users, DollarSign, Receipt,
   Clock, ShieldAlert, Filter, Download, RefreshCw, ChevronRight, ChevronDown, ChevronUp,
-  FileMinus, FilePlus, RotateCcw, BookOpen, Wallet, PhoneCall,
+  FileMinus, FilePlus, RotateCcw, BookOpen, Wallet, PhoneCall, PiggyBank,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
@@ -18,7 +18,7 @@ import {
 } from "@hub/components/ui/select";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
-import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
+import { useHubBase } from "@hub/lib/sourceContext";
 import { useFollowups } from "@hub/lib/useFollowups";
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY, formatDateTimeDMY } from "@hub/lib/utils";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
@@ -56,6 +56,9 @@ const riskBadgeClass: Record<string, string> = {
 
 type ViewMode = "customer" | "group";
 
+/** The KPI cards that expand into a breakdown panel below the grid. */
+type PanelKey = "buildup" | "advance";
+
 export default function Dashboard() {
   const { toast } = useToast();
   const navigate  = useNavigate();
@@ -66,8 +69,9 @@ export default function Dashboard() {
   const hubBase = useHubBase();
   const rebase = (p: string) => p.replace(/^\/outstanding-dashboard/, hubBase);
 
-  // Follow-ups are a normal-dashboard feature — hidden under the Live (Tally) source toggle.
-  const followupsEnabled = useReceivablesSource() === "default";
+  // Follow-ups are available on both the default pipeline and the Live (Tally) source — the log is
+  // a shared ConnectWave store (see lib/followupsApi.ts), so the due-today banner shows on either.
+  const followupsEnabled = true;
   const { due: followupsDue } = useFollowups();
 
   const [riskLevels,      setRiskLevels]      = useState<string[]>([]);
@@ -77,7 +81,10 @@ export default function Dashboard() {
   const [salesPersons,    setSalesPersons]    = useState<string[]>([]);
   const [categories,      setCategories]      = useState<string[]>([]);
   const [saleTypes,       setSaleTypes]       = useState<string[]>([]);
-  const [showBuildup,     setShowBuildup]     = useState(false);
+  // Which drill-down panel a KPI card has opened, if any. Was a single `showBuildup` boolean;
+  // widened when the Advance card arrived. They are alternatives — opening one closes the other.
+  const [openPanel,       setOpenPanel]       = useState<PanelKey | null>(null);
+  const showBuildup = openPanel === "buildup";
   const [viewMode,        setViewMode]        = useState<ViewMode>(
     searchParams.get("view") === "group" ? "group" : "customer",
   );
@@ -211,7 +218,7 @@ export default function Dashboard() {
       onRemove: () => setBalanceFilter("all"),
     },
     blockedFilter !== "all" && {
-      label: blockedFilter === "blocked" ? "Blocked" : "Not Blocked",
+      label: blockedFilter === "blocked" ? "Red Mark" : "Not Red Mark",
       onRemove: () => setBlockedFilter("all"),
     },
     salesPersons.length > 0 && {
@@ -256,23 +263,30 @@ export default function Dashboard() {
   const blockedValue      = String(isGroupMode ? groupCounts.blocked    : kpis?.blockedCustomers   ?? 0);
   const totalCountLabel   = isGroupMode ? "Total Groups"       : "Total Customers";
   const criticalLabel     = isGroupMode ? "Critical Groups"    : "Critical Customers";
-  const blockedLabel      = isGroupMode ? "Blocked Groups" : "Blocked Customers";
+  const blockedLabel      = isGroupMode ? "Red Mark Groups" : "Red Mark Customers";
 
-  const kpiCards = kpis ? [
-    { label: totalCountLabel,      value: totalCountValue,                icon: Users,         warn: false, link: buildRRUrl(riskLevels.length > 0 ? `/outstanding-dashboard/risk-register?risk=${riskLevels.join(",")}` : "/outstanding-dashboard/risk-register"), toggle: null },
-    { label: "Total Sales",        value: fmt(kpis.totalSales),           icon: DollarSign,    warn: false, link: null,                                                                   toggle: null },
-    { label: "Total Receipts",     value: fmt(kpis.totalReceipts),        icon: Receipt,       warn: false, link: null,                                                                   toggle: null },
-    { label: "Total Other Payments", value: fmt(kpis.totalOtherPayments ?? 0), icon: Wallet,      warn: false, link: "/outstanding-dashboard/reports/other-payments",                       toggle: null },
-    { label: "Total Outstanding",  value: fmt(kpis.totalOutstanding),     icon: TrendingDown,  warn: true,  link: null,                                                                   toggle: () => setShowBuildup((v) => !v) },
-    { label: "Total Overdue",      value: fmt(kpis.totalOverdue),         icon: Clock,         warn: true,  link: null,                                                                   toggle: null },
-    { label: "Credit Notes",       value: fmtINRMoney(kpis.totalCreditNotes),       icon: FileMinus,     warn: false, link: null,                                                                   toggle: null },
-    { label: "Debit Notes",        value: fmtINRMoney(kpis.totalDebitNotes ?? 0),   icon: FilePlus,      warn: true,  link: null,                                                                   toggle: null },
-    { label: "Journal Adj (Net)",  value: fmtINRDrCr(kpis.totalJournalAdjustments ?? 0), icon: BookOpen, warn: (kpis.totalJournalAdjustments ?? 0) > 0, link: null,                              toggle: null },
-    { label: "Cheque Returns",     value: fmtINRMoney(kpis.totalCheckReturns),      icon: RotateCcw,     warn: true,  link: null,                                                                   toggle: null },
-    { label: criticalLabel,        value: criticalValue,                  icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?risk=critical"),                   toggle: null },
-    { label: "Over Credit Limit",  value: overLimitValue,                 icon: AlertTriangle, warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?filter=over_credit_limit"),         toggle: null },
-    { label: "180+ Overdue",       value: overdue180Value,                icon: Users,         warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?aging=180%2B"),                    toggle: null },
-    { label: blockedLabel,         value: blockedValue,                   icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?blocked=1"),                       toggle: null },
+  const kpiCards: {
+    label: string; value: string; icon: typeof Users; warn: boolean;
+    link: string | null; panel: PanelKey | null;
+  }[] = kpis ? [
+    { label: totalCountLabel,      value: totalCountValue,                icon: Users,         warn: false, link: buildRRUrl(riskLevels.length > 0 ? `/outstanding-dashboard/risk-register?risk=${riskLevels.join(",")}` : "/outstanding-dashboard/risk-register"), panel: null },
+    { label: "Total Sales",        value: fmt(kpis.totalSales),           icon: DollarSign,    warn: false, link: null,                                                                   panel: null },
+    { label: "Total Receipts",     value: fmt(kpis.totalReceipts),        icon: Receipt,       warn: false, link: null,                                                                   panel: null },
+    { label: "Total Other Payments", value: fmt(kpis.totalOtherPayments ?? 0), icon: Wallet,      warn: false, link: "/outstanding-dashboard/reports/other-payments",                       panel: null },
+    { label: "Total Outstanding",  value: fmt(kpis.totalOutstanding),     icon: TrendingDown,  warn: true,  link: null,                                                                   panel: "buildup" },
+    { label: "Total Overdue",      value: fmt(kpis.totalOverdue),         icon: Clock,         warn: true,  link: null,                                                                   panel: null },
+    // Money customers have ALREADY PAID us that isn't matched to a bill yet. Deliberately not
+    // `warn` — this is cash in hand, not a risk. Sits next to Total Overdue because it is the
+    // number that explains why Overdue reads lower here than on the bill-based reports.
+    { label: "Advance (Unapplied)", value: fmt(kpis.totalAdvanceBalance), icon: PiggyBank,     warn: false, link: null,                                                                   panel: "advance" },
+    { label: "Credit Notes",       value: fmtINRMoney(kpis.totalCreditNotes),       icon: FileMinus,     warn: false, link: null,                                                                   panel: null },
+    { label: "Debit Notes",        value: fmtINRMoney(kpis.totalDebitNotes ?? 0),   icon: FilePlus,      warn: true,  link: null,                                                                   panel: null },
+    { label: "Journal Adj (Net)",  value: fmtINRDrCr(kpis.totalJournalAdjustments ?? 0), icon: BookOpen, warn: (kpis.totalJournalAdjustments ?? 0) > 0, link: null,                              panel: null },
+    { label: "Cheque Returns",     value: fmtINRMoney(kpis.totalCheckReturns),      icon: RotateCcw,     warn: true,  link: null,                                                                   panel: null },
+    { label: criticalLabel,        value: criticalValue,                  icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?risk=critical"),                   panel: null },
+    { label: "Over Credit Limit",  value: overLimitValue,                 icon: AlertTriangle, warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?filter=over_credit_limit"),         panel: null },
+    { label: "180+ Overdue",       value: overdue180Value,                icon: Users,         warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?aging=180%2B"),                    panel: null },
+    { label: blockedLabel,         value: blockedValue,                   icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?redmark=1"),                       panel: null },
   ] : [];
 
   const lastSync = dashboard?.lastUpdated
@@ -286,7 +300,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-[11px] text-muted-foreground/80 italic mt-1">
-            Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
+            Note: "Red Mark" customers are hand-picked in Masters → Red Mark (Live/Tally). On the default view it still reflects the legacy credit-limit=1 marker.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -351,15 +365,15 @@ export default function Dashboard() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Blocked</span>
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Red Mark</span>
           <Select value={blockedFilter} onValueChange={(v) => setBlockedFilter(v as "all" | "blocked" | "not_blocked")}>
             <SelectTrigger className="w-36 rounded-input h-9 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="blocked">Blocked only</SelectItem>
-              <SelectItem value="not_blocked">Not blocked</SelectItem>
+              <SelectItem value="blocked">Red Mark only</SelectItem>
+              <SelectItem value="not_blocked">Not Red Mark</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -382,13 +396,17 @@ export default function Dashboard() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon;
-          const clickable = !!(kpi.link || kpi.toggle);
-          const isActive  = kpi.toggle && showBuildup;
+          const clickable = !!(kpi.link || kpi.panel);
+          const isActive  = kpi.panel !== null && openPanel === kpi.panel;
           return (
             <Card
               key={kpi.label}
               className={`rounded-card transition-colors ${clickable ? "cursor-pointer hover:bg-muted/40 hover:border-primary/30" : ""} ${isActive ? "border-primary/40 bg-primary/5" : ""}`}
-              onClick={kpi.link ? () => navigate(kpi.link!) : kpi.toggle ?? undefined}
+              onClick={
+                kpi.link ? () => navigate(kpi.link!)
+                : kpi.panel ? () => setOpenPanel((p) => (p === kpi.panel ? null : kpi.panel))
+                : undefined
+              }
             >
               <CardContent className="px-3 py-2">
                 <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -396,8 +414,8 @@ export default function Dashboard() {
                     <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
                     <span className="text-[11px] text-muted-foreground leading-tight">{kpi.label}</span>
                   </div>
-                  {kpi.link   && <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
-                  {kpi.toggle && (showBuildup
+                  {kpi.link  && <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
+                  {kpi.panel && (isActive
                     ? <ChevronUp   className="h-3 w-3 text-primary/70 shrink-0" />
                     : <ChevronDown className="h-3 w-3 text-muted-foreground/50 shrink-0" />)}
                 </div>
@@ -438,8 +456,24 @@ export default function Dashboard() {
 
       {/* Outstanding Build-up — shown on demand */}
       {showBuildup && kpis && (() => {
-        const openingPart     = kpis.totalRemainingOpeningBalance;
-        const currentYearPart = kpis.totalOutstanding - openingPart;
+        const openingPart = kpis.totalRemainingOpeningBalance;
+        // Other Payments are money paid OUTSIDE Tally, so no Tally-sourced figure knows about them.
+        // Every customer's outstanding drops by their FULL amount (liveOtherPayments step 3 /
+        // process_data.py), so across the book this identity is EXACT, with nothing estimated:
+        //     opening + currentYear(before OP) − otherPayments = totalOutstanding
+        // Showing it is the point: this panel exists to explain the final figure, and until now it
+        // hid the deduction inside "collected / adjusted" — the one number a reader most wants to
+        // see was the one number missing.
+        const otherPayments = kpis.totalOtherPayments ?? 0;
+        // totalRemainingOpeningBalance is Tally-sourced and NOT netted, so the current-year part
+        // must carry the whole deduction back to stay honest — otherwise an Other Payment settling
+        // an OPENING bill would silently shrink the current-year box instead.
+        const currentYearPart = kpis.totalOutstanding + otherPayments - openingPart;
+        // Same rule as the advance panel below: a breakdown that doesn't reconcile to its own total
+        // is the exact class of bug this whole exercise uncovered. Say so rather than render numbers
+        // that don't reach the answer.
+        const residual = kpis.totalOutstanding - (openingPart + currentYearPart - otherPayments);
+        const showResidual = Math.abs(residual) >= 1_000;
         return (
           <Card className="rounded-card">
             <CardContent className="p-4">
@@ -474,6 +508,29 @@ export default function Dashboard() {
                   </span>
                 </div>
 
+                {/* Other Payments — the deduction Tally cannot know about. Only rendered when there
+                    are any, so the panel stays a two-box sum for a book that has none. */}
+                {otherPayments > 0 && (
+                  <>
+                    <div className="flex items-center">
+                      <span className="text-xl font-semibold text-muted-foreground">−</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/outstanding-dashboard/reports/other-payments")}
+                      className="flex flex-col bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 min-w-[180px] flex-1 text-left hover:border-emerald-400 transition-colors"
+                    >
+                      <span className="text-[10px] text-emerald-700 font-semibold uppercase tracking-wide mb-1">
+                        Other Payments
+                      </span>
+                      <span className="text-base font-bold text-emerald-800">{fmt(otherPayments)}</span>
+                      <span className="text-[10px] text-emerald-600 mt-1">
+                        paid outside Tally · already deducted
+                      </span>
+                    </button>
+                  </>
+                )}
+
                 <div className="flex items-center">
                   <span className="text-xl font-semibold text-muted-foreground">=</span>
                 </div>
@@ -488,6 +545,118 @@ export default function Dashboard() {
                 </div>
 
               </div>
+              {showResidual && (
+                <p className="text-xs text-destructive mt-3">
+                  These parts don't add up to the total ({fmt(residual)} unexplained). Please report this —
+                  the build-up is meant to reconcile exactly.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Advance / Unapplied — shown on demand.
+          Green, not red, on purpose: this is our customers' cash sitting with us. */}
+      {openPanel === "advance" && kpis && (() => {
+        const total = kpis.totalAdvanceBalance;
+
+        // The bridge. Suppress it entirely when there are no invoice rows to derive it from
+        // (the Live/Tally snapshot) — showing ₹0.00 Cr as though it were a fact would be a lie.
+        const onBills   = kpis.totalOverdueOnBills;
+        const applied   = kpis.totalOverdueCreditsApplied;
+        const canBridge = onBills > 0 || kpis.totalOverdue <= 0;
+        const unrec     = onBills - applied - kpis.totalOverdue;
+        /**
+         * Flag a mismatch only when it is MATERIAL — relative, not absolute.
+         *
+         * An absolute cut-off cannot tell rounding from a real break. Measured under a sale-type
+         * filter: "ink" is out by ₹1 L on ₹21.97 cr (0.05% — pure rounding, must stay quiet),
+         * while "other" is out by ₹32 L on ₹1.42 cr (18% — genuinely does not reconcile, because
+         * the pipeline's overdue_by_type["other"] carries opening-balance residue that no bill
+         * backs). A flat ₹50 k threshold screams on both. 1%-of-the-figure separates them.
+         */
+        const showUnrec = Math.abs(unrec) >= Math.max(100_000, onBills * 0.01);
+        // The rest of the pool sits with customers who have nothing overdue — so it never shows
+        // up in the difference. Without this line someone will try to subtract the whole advance.
+        const elsewhere = total - applied;
+
+        return (
+          <Card className="rounded-card">
+            <CardContent className="p-4 space-y-4">
+
+              {/* Block 1 — what the advance is made of */}
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1 uppercase tracking-wide">
+                  Advance / Unapplied Money We Are Holding
+                </p>
+                <p className="text-[11px] text-muted-foreground mb-3">
+                  Money customers have <strong className="text-foreground">already paid us</strong> that isn’t
+                  matched to any specific bill yet. It reduces what they owe — so it is cash in hand, not a problem.
+                </p>
+
+                <div className="flex flex-wrap items-stretch gap-x-2 gap-y-3">
+                  {/* Just the total. The by-source split (on-account / excess / credit notes / other)
+                      isn't something the business acts on, and it can't be sourced on Live at all, so
+                      it's deliberately not shown — the headline total is the number that matters. */}
+                  <div className="flex flex-col bg-emerald-100 border border-emerald-300 rounded-lg px-4 py-3 min-w-[150px] flex-1">
+                    <span className="text-[10px] text-emerald-800 font-semibold uppercase tracking-wide mb-1">
+                      Total Advance Held
+                    </span>
+                    <span className="text-base font-bold text-emerald-900">{fmt(total)}</span>
+                    <span className="text-[10px] text-emerald-700 mt-1">
+                      as of {formatDateDMY(dashboard?.asOfDate)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Block 2 — why Overdue reads lower here than on the bill-based reports */}
+              {canBridge && (
+                <div className="border-t border-border pt-3">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">
+                    Why Overdue differs from the Aging / Overdue / Category reports
+                  </p>
+                  <div className="max-w-xl space-y-1 text-[13px]">
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-muted-foreground">Overdue on the open bills</span>
+                      <span className="font-mono font-medium text-foreground">{fmt(onBills)}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4">
+                      <span className="text-muted-foreground">less on-account money already paid to us</span>
+                      <span className="font-mono font-medium text-emerald-700">− {fmt(applied)}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between gap-4 border-t border-border pt-1 mt-1">
+                      <span className="font-semibold text-foreground">= Total Overdue shown here</span>
+                      <span className="font-mono font-bold text-destructive">{fmt(kpis.totalOverdue)}</span>
+                    </div>
+                  </div>
+                  {/* When the two sides genuinely don't reconcile, say so rather than dressing it
+                      up as arithmetic that adds. Fires only on a material gap — see showUnrec. */}
+                  {showUnrec && (
+                    <p className="text-[11px] text-amber-700 mt-2 max-w-xl leading-relaxed">
+                      These two lines don’t fully reconcile under the current filter —{" "}
+                      <strong>{fmt(Math.abs(unrec))}</strong> apart. Under a sale-type filter the
+                      Dashboard’s overdue is split by type from the ledger, while the bills are split
+                      by voucher type; the two bases differ. Clear the sale-type filter to see the
+                      figures tie exactly.
+                    </p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground mt-2 max-w-xl leading-relaxed">
+                    The bill-based reports show <strong className="text-foreground">{fmt(onBills)}</strong> because
+                    they list the invoices you would actually chase. This Dashboard shows{" "}
+                    <strong className="text-foreground">{fmt(kpis.totalOverdue)}</strong> because it deducts money
+                    the customer has already sent us. Both are right — they answer different questions.
+                    {elsewhere > 0 && (
+                      <>
+                        {" "}The other <strong className="text-foreground">{fmt(elsewhere)}</strong> of advance sits
+                        with customers who have nothing overdue, which is why it does not appear in the difference.
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+
             </CardContent>
           </Card>
         );

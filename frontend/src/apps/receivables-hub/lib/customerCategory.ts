@@ -733,7 +733,7 @@ export const CC_COLUMNS: CCColumn[] = [
   { key: "utilPct",     label: "Utilisation %", kind: "pct", value: (m) => pctOf(m.owed, m.creditLimit) },
 
   { key: "riskCritical", label: "Critical",     kind: "count", value: (m) => m.riskCritical, alarm: true },
-  { key: "blocked",      label: "Blocked",      kind: "count", value: (m) => m.blocked },
+  { key: "blocked",      label: "Red Mark",     kind: "count", value: (m) => m.blocked },
   { key: "overLimit",    label: "Over Limit",   kind: "count", value: (m) => m.overLimit, alarm: true },
   { key: "neverPaid",    label: "Never Paid",   kind: "count", value: (m) => m.neverPaid, alarm: true },
   { key: "stillBuying",  label: "Still Buying", kind: "count", value: (m) => m.stillBuying },
@@ -823,7 +823,7 @@ export const CC_FOCUS_LABELS: Record<CCFocus, string> = {
   untagged: "Untagged", conflict: "Conflicting tags",
   overdue: "Has overdue", over180: "Has 180+ debt",
   neverPaid: "Never paid", zeroCollected: "Collected nothing",
-  overLimit: "Over credit limit", blocked: "Blocked",
+  overLimit: "Over credit limit", blocked: "Red Mark",
   critical: "Critical risk", stillBuying: "Still buying",
   dormant: "Dormant ledger", holdsAdvance: "Holds advance",
 };

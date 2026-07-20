@@ -80,8 +80,13 @@ function matchApp(pathname: string) {
  * deliberate: the shell used to fall back to the literal word "Dashboard", which
  * is how someone opening an exit case could end up reading "Dashboard" at the top
  * of the screen. Stopping short is honest; guessing is worse than saying nothing.
+ *
+ * Pass a `Crumb[]` instead of a string when the page needs MORE than one step — the
+ * Receivables reports read "Reports → Tally Reports → Balance Sheet", which a single
+ * label cannot express. Steps carry `to`/`collapsible` like any other crumb, so the
+ * intermediate ones can be real links and can drop first on a narrow screen.
  */
-export function buildTrail(pathname: string, pageLabel?: string | null): Crumb[] {
+export function buildTrail(pathname: string, pageLabel?: string | Crumb[] | null): Crumb[] {
   const stat = STATIC_TRAILS.find((s) => pathname === s.prefix || pathname.startsWith(`${s.prefix}/`));
   if (stat) return appendPage(stat.crumbs, pageLabel);
 
@@ -99,7 +104,18 @@ export function buildTrail(pathname: string, pageLabel?: string | null): Crumb[]
   // page "<module> Control Center", which the trail would render as
   // "RM Import → Purchase RM Import Control Center". The module is already two
   // steps to the left, so drop it and read "RM Import → Control Center".
-  return appendPage(crumbs, pageLabel ? trimPrefix(pageLabel, app.name) : pageLabel);
+  return appendPage(crumbs, trimPageLabel(pageLabel, app.name));
+}
+
+/** Apply `trimPrefix` to a page step, whether it arrived as one label or several. */
+function trimPageLabel(
+  pageLabel: string | Crumb[] | null | undefined,
+  appName: string
+): string | Crumb[] | null | undefined {
+  if (!pageLabel) return pageLabel;
+  return typeof pageLabel === "string"
+    ? trimPrefix(pageLabel, appName)
+    : pageLabel.map((c) => ({ ...c, label: trimPrefix(c.label, appName) }));
 }
 
 /**
@@ -134,9 +150,17 @@ export function pageLabelFor(
   );
 }
 
-/** Add the page step, unless there isn't one or it just repeats the module. */
-function appendPage(crumbs: Crumb[], pageLabel?: string | null): Crumb[] {
-  const last = crumbs[crumbs.length - 1];
-  if (!pageLabel || pageLabel === last?.label) return crumbs;
-  return [...crumbs, { label: pageLabel }];
+/**
+ * Add the page step(s), skipping any that just repeat the step before them.
+ *
+ * The repeat rule is applied per step, not once: a multi-step trail can collide with the
+ * module at its head ("Receivables Hub → Reports") and with itself further along.
+ */
+function appendPage(crumbs: Crumb[], pageLabel?: string | Crumb[] | null): Crumb[] {
+  if (!pageLabel) return crumbs;
+  const steps: Crumb[] = typeof pageLabel === "string" ? [{ label: pageLabel }] : pageLabel;
+  return steps.reduce<Crumb[]>((acc, step) => {
+    const last = acc[acc.length - 1];
+    return step.label === last?.label ? acc : [...acc, step];
+  }, crumbs);
 }

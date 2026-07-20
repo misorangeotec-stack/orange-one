@@ -17,10 +17,16 @@ import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import AgingReport from "@hub/pages/AgingReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
+import RedMarkCustomersReport from "@hub/pages/RedMarkCustomersReport";
 import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
 import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
 import CustomerCategoryReport from "@hub/pages/CustomerCategoryReport";
 import DsoReport from "@hub/pages/DsoReport";
+import BalanceSheetReport from "@hub/pages/BalanceSheetReport";
+import ProfitLossReport from "@hub/pages/ProfitLossReport";
+import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
+import LedgerOutstandingList from "@hub/pages/LedgerOutstandingList";
+import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -84,11 +90,17 @@ function HubRoutes() {
           {/* The book pivoted by the A/B/C/D/E tier, plus the tag-hygiene lens. Pinned to the
               pipeline source AND to Both FYs — see the header of pages/CustomerCategoryReport.tsx. */}
           <Route path="reports/category" element={<CustomerCategoryReport />} />
+          <Route path="reports/red-mark" element={<RedMarkCustomersReport />} />
           {/* How long each customer takes to turn a sale into cash: ?over=90 (the card), 60 / 120 /
               any custom cutoff. A COUNTBACK, not AR/Sales — and a group's DSO is never the average
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
               a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
           <Route path="reports/dso" element={<DsoReport />} />
+          <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
+          <Route path="reports/profit-loss" element={<ProfitLossReport />} />
+          <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
+          <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
+          <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

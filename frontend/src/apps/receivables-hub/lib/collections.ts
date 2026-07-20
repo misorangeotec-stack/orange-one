@@ -176,6 +176,37 @@ export function buildMonthlySeries(
       if (m) m.receipts += Math.abs(o.amount);
     }
 
+    // ── Live only: spread the YEARLY notes across the months ──────────────────────────
+    // The ConnectWave snapshot carries sales and receipts month-by-month, but credit notes,
+    // debit notes, journals and cheque returns ONLY as a per-customer yearly total (the trend
+    // loop above therefore left those four at 0 under Live). The opening balance is derived by
+    // winding today's outstanding back through movementOf(), which reads all four — so without
+    // them Below-30%'s opening drifts (mostly by the year's credit notes) and reads too soft,
+    // and the Bounced card sits at 0. Fill the gap by apportioning each yearly total across the
+    // customer's own months: notes by SALES weight (they arise from billing), bounces by RECEIPT
+    // weight (a returned cheque reverses a receipt). Rate clamped to ±95% so a returns-heavy — or
+    // single-FY-scoped — ledger can't push a month negative. Pipeline is untouched: it already
+    // carries the real month-by-month figures. Same estimate the DSO report uses (dso.ts). When
+    // the Tally refresh gains month-by-month notes, delete this block.
+    if (source === "live") {
+      let totSales = 0, totReceipts = 0;
+      for (const m of byMonth.values()) { totSales += m.sales; totReceipts += m.receipts; }
+      const rate = (annual: number, base: number): number =>
+        base > 0.5 ? Math.min(Math.max((Number(annual) || 0) / base, -0.95), 0.95) : 0;
+      const cnRate     = rate(c.creditNotes, totSales);
+      const dnRate     = rate(c.debitNotes, totSales);
+      const jnlRate    = rate(c.journalAdjustments, totSales);
+      const bounceRate = rate(c.checkReturns, totReceipts);
+      if (cnRate || dnRate || jnlRate || bounceRate) {
+        for (const m of byMonth.values()) {
+          m.creditNotes   += m.sales * cnRate;
+          m.debitNotes    += m.sales * dnRate;
+          m.journals      += m.sales * jnlRate;
+          m.chequeReturns += m.receipts * bounceRate;
+        }
+      }
+    }
+
     out.set(c.id, byMonth);
   }
 

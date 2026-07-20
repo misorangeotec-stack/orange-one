@@ -9,6 +9,7 @@ import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
 import { RECEIVABLES_MENUS } from "@hub/lib/menus";
+import { reportCrumbs } from "@hub/lib/reportCatalog";
 import { pageLabelFor } from "@/apps/currentApp";
 import { useSession } from "@/core/platform/session";
 import type { AppRole } from "@/core/platform/types";
@@ -73,6 +74,15 @@ const FY_PINNED_ROUTES = [
   // DSO reads a 12-month lookback. Inside a single young FY that would silently collapse to the
   // months elapsed so far and every DSO would be wrong — so the report reads the whole book.
   "/outstanding-dashboard/reports/dso",
+  // The financial statements are whatever Tally held at the connector's last sync — the mirror stores
+  // exactly ONE statement per company, with its own as-of date shown on each block. An FY selector
+  // would promise a period the data cannot be re-cut to.
+  "/outstanding-dashboard/reports/balance-sheet",
+  "/outstanding-dashboard/reports/profit-loss",
+  "/outstanding-dashboard/reports/trial-balance",
+  // The list and its /:ledgerId detail both hide the FY selector — the report has its own "As on"
+  // date control, and the mirror holds one snapshot per company. startsWith covers the sub-route.
+  "/outstanding-dashboard/reports/ledger-outstanding",
 ];
 
 export default function UserLayout() {
@@ -80,20 +90,28 @@ export default function UserLayout() {
   const { label: fyLabel } = useFY();
   const { user, role } = useSession();
   const { liveMode, setLiveMode, canUseLive } = useLiveMode();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const fyPinned = FY_PINNED_ROUTES.some((r) => pathname.startsWith(r));
 
-  // Page name for the breadcrumb's last step, by the same longest-match the rest
-  // of the portal uses. Deliberately reads the UNFILTERED menu list: menus can be
-  // hidden per user, and matching the filtered list would blank the trail for
-  // someone sitting on a page whose menu entry is hidden from them.
+  // Page step(s) for the breadcrumb.
   //
-  // Null when nothing matches (a customer, a group, Saved Views, Profile) — the
-  // trail then stops at the module rather than inventing a page name.
-  const pageLabel = pageLabelFor(
-    pathname,
-    RECEIVABLES_MENUS.map((m) => ({ label: m.title, to: m.url }))
-  );
+  // Reports get a THREE-step tail from the catalogue ("Reports → Tally Reports → Balance
+  // Sheet"); a single menu label could only ever say "Reports", which is what every
+  // /reports/* page used to read as. `reportCrumbs` returns null off the catalogue, and
+  // we fall back to the same longest-match the rest of the portal uses.
+  //
+  // That fallback deliberately reads the UNFILTERED menu list: menus can be hidden per
+  // user, and matching the filtered list would blank the trail for someone sitting on a
+  // page whose menu entry is hidden from them.
+  //
+  // Null when nothing matches (a customer, a group, Saved Views, Profile) — the trail
+  // then stops at the module rather than inventing a page name.
+  const pageLabel =
+    reportCrumbs(pathname, search) ??
+    pageLabelFor(
+      pathname,
+      RECEIVABLES_MENUS.map((m) => ({ label: m.title, to: m.url }))
+    );
 
   return (
     <SidebarProvider>

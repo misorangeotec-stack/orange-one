@@ -21,7 +21,6 @@ import {
 } from "@hub/components/ui/pagination";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useSession } from "@/core/platform/session";
-import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { useFollowups, type DueItem } from "@hub/lib/useFollowups";
 import { FollowupModal } from "@hub/components/FollowupModal";
 import { FollowupEntityPicker } from "@hub/components/FollowupEntityPicker";
@@ -42,9 +41,10 @@ import {
  *   "Activity Log" — what follow-ups did the team actually do? (defaults to TODAY, which is
  *                    the question management asks; filter by person, customer or outcome)
  *
- * This page is force-wrapped in <ReceivablesSourceProvider value="default"> so it always
- * reads the pipeline data even when an admin has the "Live (Tally)" topbar toggle on —
- * follow-ups are a normal-dashboard feature by design.
+ * Follow-up RECORDS live on ConnectWave now (see lib/followupsApi.ts) and are shared across both
+ * sources, so this page follows the topbar "Live (Tally)" toggle like every other screen: the customer
+ * universe + the frozen at-entry stats (statsFor via useAppData) come from whichever source is active.
+ * It used to be pinned to the pipeline; that pin was lifted when the store moved to ConnectWave.
  */
 
 const PAGE_SIZE = 25;
@@ -155,7 +155,7 @@ function EntityLink({ type, name }: { type: FollowupEntityType; name: string }) 
   );
 }
 
-function FollowupsInner() {
+export default function FollowupsPage() {
   const { user, isAdmin } = useSession();
   const {
     loading, error, all, due, brokenPromises, promisedTotal, personName, canModify, remove,
@@ -622,12 +622,3 @@ function FollowupsInner() {
   );
 }
 
-export default function FollowupsPage() {
-  // Follow-ups are a normal-dashboard feature: force the pipeline source even if the admin
-  // has flipped the topbar "Live (Tally)" switch on.
-  return (
-    <ReceivablesSourceProvider value="default">
-      <FollowupsInner />
-    </ReceivablesSourceProvider>
-  );
-}

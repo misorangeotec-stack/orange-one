@@ -2,10 +2,10 @@ import { useCallback, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
-import { useAppData } from "./useAppData";
+import { useAppData, groupNameOf } from "./useAppData";
 import { fetchFollowups, insertFollowup, updateFollowup, deleteFollowup } from "./followupsApi";
 import {
-  entityKey, dueBucketFor, todayISO,
+  entityKey, dueBucketFor, todayISO, latestByEntity as latestByEntityOf,
   type DueBucket, type Followup, type FollowupEntityType, type FollowupInput, type FollowupPatch,
 } from "./followupTypes";
 
@@ -74,9 +74,12 @@ export function useFollowups() {
     if (isAdmin) return null; // unrestricted
     const customers = new Set(allCustomers.map((c) => c.name));
     const groups = new Set<string>();
-    for (const name of customers) groups.add(customerGroupMap.mapping[name] ?? name);
+    // Resolve each visible LEDGER to its group (by ledger id), not each distinct name: where a
+    // name repeats across companies its group can differ, and a name-keyed pass would grant or
+    // withhold visibility based on whichever company happened to win the derived map.
+    for (const c of allCustomers) groups.add(groupNameOf(c, customerGroupMap));
     return { customers, groups };
-  }, [isAdmin, allCustomers, customerGroupMap.mapping]);
+  }, [isAdmin, allCustomers, customerGroupMap]);
 
   /** Scoped follow-ups, newest first (the API already orders by created_at desc). */
   const all = useMemo<Followup[]>(() => {
@@ -102,15 +105,7 @@ export function useFollowups() {
   }, [all]);
 
   /** The most recent entry per entity — the one that defines the open follow-up. */
-  const latestByEntity = useMemo(() => {
-    const map = new Map<string, Followup>();
-    // `all` is newest-first, so the first row seen for a key is the latest.
-    for (const f of all) {
-      const key = entityKey(f.entityType, f.entityName);
-      if (!map.has(key)) map.set(key, f);
-    }
-    return map;
-  }, [all]);
+  const latestByEntity = useMemo(() => latestByEntityOf(all), [all]);
 
   /** Current figures for an entity, used to stamp the frozen at-entry context on a new row. */
   const statsFor = useCallback(

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Save, RefreshCw, Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronDown } from "lucide-react";
+import {
+  ClipboardCheck, Save, RefreshCw, Search, ArrowUpDown, ArrowDown, ArrowUp, ChevronDown,
+  Plus, Trash2, Check,
+} from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@hub/components/ui/card";
 import { Input } from "@hub/components/ui/input";
@@ -14,12 +17,28 @@ import {
   Pagination, PaginationContent, PaginationItem,
   PaginationLink, PaginationPrevious, PaginationNext, PaginationEllipsis,
 } from "@hub/components/ui/pagination";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@hub/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@hub/components/ui/alert-dialog";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@hub/components/ui/command";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@hub/components/ui/select";
+import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useToast } from "@hub/hooks/use-toast";
 import { useSession } from "@/core/platform/session";
 import {
-  fetchTagRows, fetchGroupRows, fetchSnapshot, saveTag, saveGroup,
-  type TagRow, type GroupRow, type SnapRow,
+  fetchTagRows, fetchGroupRows, fetchSnapshot, fetchOtherPaymentRows, fetchRedMarkRows,
+  saveTag, saveGroup, saveCompanyMap,
+  insertOtherPayment, saveOtherPayment, deleteOtherPayment,
+  insertRedMark, saveRedMark, deleteRedMark,
+  type TagRow, type GroupRow, type SnapRow, type OtherPaymentRow, type OtherPaymentInput,
+  type RedMarkRow,
 } from "@hub/lib/musterApi";
+import { fetchCompanyMap, makeCompanyResolver, companyGuidOf, type CompanyMapRow } from "@hub/lib/companyMap";
+import { formatDateDMY } from "@hub/lib/utils";
 
 const PAGE_SIZE = 25;
 type FilterMode = "all" | "unchecked" | "new";
@@ -32,16 +51,9 @@ function fmtINR(n: number): string {
   return `${n < 0 ? "-" : ""}₹${s}`;
 }
 
-/**
- * Location for a Tally company. ConnectWave doesn't carry a location field, but the
- * company name encodes it (the finance company→location mapping): any "…NOIDA…" book
- * is Noida, everything else (Surat books + COLORIX) is Surat.
- */
-function locationForCompany(company?: string | null): string {
-  const c = (company ?? "").toUpperCase();
-  if (!c) return "";
-  return c.includes("NOIDA") ? "Noida" : "Surat";
-}
+// NOTE: this file used to derive location here with `company.includes("NOIDA") ? "Noida" : "Surat"`.
+// That guess is gone — company + location now come from the ext_company_map master (companyMap.ts),
+// resolved once in MusterPanel so every SnapRow below already carries the finance-facing pair.
 
 /** Compact page-number window with ellipses (mirrors the other Hub tables). */
 function getPageWindow(current: number, total: number): (number | "...")[] {
@@ -259,9 +271,9 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload
       if (f.balanceOnly && Math.abs(out(r)) < 1) return false;
       const s = snap(r);
       if (f.companies.length && !f.companies.includes(s?.company ?? "")) return false;
-      if (f.locations.length && !f.locations.includes(locationForCompany(s?.company))) return false;
+      if (f.locations.length && !f.locations.includes(s?.location ?? "")) return false;
       if (q) {
-        const hay = `${s?.name ?? r.tally_name ?? ""} ${r.salesperson ?? ""} ${s?.company ?? ""} ${locationForCompany(s?.company)}`.toLowerCase();
+        const hay = `${s?.name ?? r.tally_name ?? ""} ${r.salesperson ?? ""} ${s?.company ?? ""} ${s?.location ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -343,7 +355,7 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload
                 <TableRow key={r.ledger_id}>
                   <TableCell className="font-medium">{s?.name ?? r.tally_name ?? "—"}</TableCell>
                   <TableCell className="text-muted-foreground whitespace-nowrap">{s?.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">{locationForCompany(s?.company) || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground whitespace-nowrap">{s?.location || "—"}</TableCell>
                   <TableCell>
                     <Input list="muster-salespersons" value={d.salesperson}
                       onChange={(e) => patch(r, { salesperson: e.target.value })} placeholder="OTHERS" className="h-8" />
@@ -414,9 +426,9 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
       if (f.balanceOnly && Math.abs(out(r)) < 1) return false;
       const s = snap(r);
       if (f.companies.length && !f.companies.includes(s?.company ?? "")) return false;
-      if (f.locations.length && !f.locations.includes(locationForCompany(s?.company))) return false;
+      if (f.locations.length && !f.locations.includes(s?.location ?? "")) return false;
       if (q) {
-        const hay = `${s?.name ?? r.tally_name ?? ""} ${r.group_name ?? ""} ${r.collection_team ?? ""} ${s?.company ?? ""} ${locationForCompany(s?.company)}`.toLowerCase();
+        const hay = `${s?.name ?? r.tally_name ?? ""} ${r.group_name ?? ""} ${r.collection_team ?? ""} ${s?.company ?? ""} ${s?.location ?? ""}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -497,7 +509,7 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
                 <TableRow key={r.ledger_id}>
                   <TableCell className="font-medium">{name(r)}</TableCell>
                   <TableCell className="text-muted-foreground whitespace-nowrap">{s?.company ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground whitespace-nowrap">{locationForCompany(s?.company) || "—"}</TableCell>
+                  <TableCell className="text-muted-foreground whitespace-nowrap">{s?.location || "—"}</TableCell>
                   <TableCell>
                     <Input list="muster-groups" value={d.group_name}
                       onChange={(e) => patch(r, { group_name: e.target.value })} placeholder={name(r)} className="h-8" />
@@ -537,6 +549,864 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
 }
 
 /**
+ * Company master — maps each Tally BOOK to the finance-facing (Company, Location) pair every
+ * report renders. One row per Tally company (a handful), so no search/pagination here.
+ *
+ * Keyed by the company GUID, never the name: the raw book name embeds the financial year
+ * ("…-FY 26-27", "…(from 1-Apr-25)") and Tally re-mints it every April, so a name-keyed mapping
+ * silently drifts once a year. A book added since the last refresh shows as New with its raw name
+ * and no location — until it is mapped here, its Other Payments cannot be applied.
+ */
+function CompanyMuster({ rows, custCounts, onReload }: {
+  rows: CompanyMapRow[];
+  custCounts: Map<string, number>;
+  onReload: () => void;
+}) {
+  const { toast } = useToast();
+  const [draft, setDraft] = useState<Record<string, { company: string; location: string; checked: boolean }>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const cur = (r: CompanyMapRow) =>
+    draft[r.company_guid] ?? { company: r.company ?? "", location: r.location ?? "", checked: r.checked };
+  const isDirty = (r: CompanyMapRow) => {
+    const d = cur(r);
+    return d.company !== (r.company ?? "") || d.location !== (r.location ?? "") || d.checked !== r.checked;
+  };
+  const patch = (guid: string, r: CompanyMapRow, p: Partial<{ company: string; location: string; checked: boolean }>) =>
+    setDraft((prev) => ({ ...prev, [guid]: { ...cur(r), ...p } }));
+
+  const save = async (r: CompanyMapRow) => {
+    const d = cur(r);
+    if (!d.company.trim()) {
+      toast({ title: "Company is required", description: "Every Tally book must map to a company.", variant: "destructive" });
+      return;
+    }
+    setSaving(r.company_guid);
+    try {
+      await saveCompanyMap({
+        company_guid: r.company_guid,
+        tally_company: r.tally_company,
+        company: d.company.trim(),
+        location: d.location.trim(),
+        checked: d.checked,
+      });
+      toast({ title: "Saved", description: `${d.company}${d.location ? ` · ${d.location}` : ""}` });
+      onReload();
+    } catch (e) {
+      toast({ title: "Save failed", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <>
+      <div className="rounded-md border overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Tally company (as named in Tally)</TableHead>
+              <TableHead className="w-[160px]">Company</TableHead>
+              <TableHead className="w-[140px]">Location</TableHead>
+              <TableHead className="w-[110px] text-right">Customers</TableHead>
+              <TableHead className="w-[110px]">Status</TableHead>
+              <TableHead className="w-[90px]">Checked</TableHead>
+              <TableHead className="w-[90px]" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => {
+              const d = cur(r);
+              return (
+                <TableRow key={r.company_guid}>
+                  <TableCell className="text-muted-foreground">{r.tally_company ?? "—"}</TableCell>
+                  <TableCell>
+                    <Input value={d.company} onChange={(e) => patch(r.company_guid, r, { company: e.target.value })} placeholder="O-tec" />
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.location} onChange={(e) => patch(r.company_guid, r, { location: e.target.value })} placeholder="Surat" />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {custCounts.get(r.company_guid) ?? 0}
+                  </TableCell>
+                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
+                  <TableCell>
+                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r.company_guid, r, { checked: v === true })} />
+                  </TableCell>
+                  <TableCell>
+                    <Button size="sm" variant={isDirty(r) ? "default" : "outline"} disabled={!isDirty(r) || saving === r.company_guid}
+                      onClick={() => save(r)} className="gap-1.5">
+                      <Save className="h-3.5 w-3.5" />
+                      Save
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {rows.length === 0 && (
+              <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">No Tally companies found.</TableCell></TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+      <p className="text-xs text-muted-foreground pt-2">
+        One row per Tally company, keyed by its permanent Tally ID — so next year's renamed book keeps
+        its mapping. These two values drive the Company and Location filters on every Live report.
+        {" "}<button className="underline" onClick={onReload}>Reload</button> to discard unsaved edits.
+      </p>
+    </>
+  );
+}
+
+// ── Other Payments muster ───────────────────────────────────────────────────────
+// The odd one out: the three tabs above are ONE ROW PER LEDGER, this one is one row per
+// TRANSACTION. So rows are keyed by the bigint `id`, and it is the only tab with Add / Delete.
+// `ledger_id` (the Tally GUID) says whose money it is — that is the key liveOtherPayments groups
+// by, which is why the picker below resolves a GUID and never a name.
+
+const ALLOC_TYPES = ["AGST REF", "ON ACCOUNT"] as const;
+const allocLabel = (t: string | null) => (t === "AGST REF" ? "Against Invoice" : t === "ON ACCOUNT" ? "On Account" : "—");
+
+interface OpDraft {
+  payment_date: string; amount: string; allocation_type: string;
+  ref_invoice: string; payment_ref: string; remarks: string; checked: boolean;
+}
+const draftOf = (r: OtherPaymentRow): OpDraft => ({
+  payment_date: r.payment_date ?? "",
+  amount: String(r.amount ?? ""),
+  allocation_type: r.allocation_type ?? "",
+  ref_invoice: r.ref_invoice ?? "",
+  payment_ref: r.payment_ref ?? "",
+  remarks: r.remarks ?? "",
+  checked: r.checked,
+});
+
+/**
+ * Type-to-search customer picker resolving to a Tally GUID.
+ *
+ * Caps the rendered list at 50 matches: the snapshot is ~1,800 rows and mounting them all is a
+ * jank machine. Each option shows company/location because the SAME customer name legitimately
+ * exists in two books — which is exactly why the GUID, not the name, is the key.
+ */
+function CustomerPicker({ snap, value, onPick }: {
+  snap: SnapRow[]; value: string | null; onPick: (s: SnapRow) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const picked = value ? snap.find((s) => s.ledger_id === value) : undefined;
+  const matches = useMemo(() => {
+    const needle = q.trim().toUpperCase();
+    const pool = needle
+      ? snap.filter((s) => (s.name ?? "").toUpperCase().includes(needle))
+      : snap;
+    return pool.slice(0, 50);
+  }, [snap, q]);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button variant="outline" className="w-full justify-between font-normal">
+          <span className={picked ? "" : "text-muted-foreground"}>
+            {picked ? `${picked.name} · ${picked.company}/${picked.location}` : "Search a customer…"}
+          </span>
+          <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="p-0 w-[--radix-popover-trigger-width] min-w-[320px]" align="start">
+        <Command shouldFilter={false}>
+          <CommandInput placeholder="Type a customer name…" value={q} onValueChange={setQ} />
+          <CommandList>
+            <CommandEmpty>No customer matches.</CommandEmpty>
+            <CommandGroup>
+              {matches.map((s) => (
+                <CommandItem
+                  key={s.ledger_id}
+                  value={s.ledger_id}
+                  onSelect={() => { onPick(s); setOpen(false); setQ(""); }}
+                >
+                  <Check className={`mr-2 h-4 w-4 ${value === s.ledger_id ? "opacity-100" : "opacity-0"}`} />
+                  <span className="truncate">{s.name}</span>
+                  <span className="ml-auto pl-2 text-xs text-muted-foreground shrink-0">
+                    {s.company}/{s.location}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** Add-payment dialog. A dialog, not an inline blank row: a new row in a filtered+sorted+paginated
+ *  table vanishes the moment its draft stops matching the active filter. */
+function AddOtherPaymentDialog({ open, onOpenChange, snap, onAdded }: {
+  open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[];
+  onAdded: (r: OtherPaymentRow) => void;
+}) {
+  const { toast } = useToast();
+  const [ledger, setLedger] = useState<SnapRow | null>(null);
+  const [d, setD] = useState<OpDraft>({
+    payment_date: "", amount: "", allocation_type: "AGST REF",
+    ref_invoice: "", payment_ref: "", remarks: "", checked: true,
+  });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLedger(null);
+      setD({ payment_date: "", amount: "", allocation_type: "AGST REF", ref_invoice: "", payment_ref: "", remarks: "", checked: true });
+    }
+  }, [open]);
+
+  const amt = Number(d.amount);
+  const valid = !!ledger && Number.isFinite(amt) && amt > 0 && !!d.allocation_type;
+
+  const submit = async () => {
+    if (!ledger) return;
+    setSaving(true);
+    try {
+      const { row } = await insertOtherPayment({
+        ledger_id: ledger.ledger_id,
+        tally_name: ledger.name,
+        payment_date: d.payment_date || null,
+        amount: amt,
+        allocation_type: d.allocation_type,
+        ref_invoice: d.ref_invoice.trim() || null,
+        payment_ref: d.payment_ref.trim() || null,
+        remarks: d.remarks.trim() || null,
+        checked: d.checked,
+      });
+      onAdded(row);
+      onOpenChange(false);
+      toast({ title: "Payment added", description: `${ledger.name} · ${fmtINR(amt)}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Could not add", description: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add an Other Payment</DialogTitle>
+          <DialogDescription>
+            Money paid outside Tally. It is deducted from the customer's outstanding on the
+            Live (Tally) screens — against the named invoice when there is one, oldest bills first otherwise.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Customer</span>
+            <CustomerPicker snap={snap} value={ledger?.ledger_id ?? null} onPick={setLedger} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Date</span>
+              <Input type="date" value={d.payment_date} onChange={(e) => setD({ ...d, payment_date: e.target.value })} />
+            </div>
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Amount (₹)</span>
+              <Input type="number" inputMode="decimal" min="0" step="0.01" value={d.amount}
+                onChange={(e) => setD({ ...d, amount: e.target.value })} placeholder="0.00" />
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Allocation</span>
+            <Select value={d.allocation_type} onValueChange={(v) => setD({ ...d, allocation_type: v })}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ALLOC_TYPES.map((t) => <SelectItem key={t} value={t}>{allocLabel(t)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Ref invoice</span>
+              <Input value={d.ref_invoice} onChange={(e) => setD({ ...d, ref_invoice: e.target.value })}
+                placeholder="e.g. HEAD/24-25/327" />
+            </div>
+            <div className="grid gap-1.5">
+              <span className="text-xs font-medium text-muted-foreground">Payment ref</span>
+              <Input value={d.payment_ref} onChange={(e) => setD({ ...d, payment_ref: e.target.value })} />
+            </div>
+          </div>
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Remarks</span>
+            <Input value={d.remarks} onChange={(e) => setD({ ...d, remarks: e.target.value })} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={!valid || saving} className="gap-1.5">
+            <Plus className="h-4 w-4" />{saving ? "Adding…" : "Add payment"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, onReload }: {
+  rows: OtherPaymentRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
+  companyOptions: string[]; locationOptions: string[]; onReload: () => void;
+}) {
+  const { toast } = useToast();
+  const [draft, setDraft] = useState<Record<string, OpDraft>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<OtherPaymentRow | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [allocs, setAllocs] = useState<string[]>([]);
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [search, allocs, companies, locations]);
+
+  const cur = (r: OtherPaymentRow): OpDraft => draft[String(r.id)] ?? draftOf(r);
+  const isDirty = (r: OtherPaymentRow) => {
+    const d = draft[String(r.id)];
+    if (!d) return false;
+    const o = draftOf(r);
+    return (Object.keys(o) as (keyof OpDraft)[]).some((k) => d[k] !== o[k]);
+  };
+  const patch = (r: OtherPaymentRow, p: Partial<OpDraft>) =>
+    setDraft((prev) => ({ ...prev, [String(r.id)]: { ...cur(r), ...p } }));
+
+  const nameOf = (r: OtherPaymentRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
+  const isOrphan = (r: OtherPaymentRow) => !snapByGuid.has(r.ledger_id);
+
+  const view = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    return rows
+      .filter((r) => {
+        const s = snapByGuid.get(r.ledger_id);
+        if (q && !`${nameOf(r)} ${r.ref_invoice ?? ""} ${r.payment_ref ?? ""}`.toUpperCase().includes(q)) return false;
+        if (allocs.length && !allocs.includes(allocLabel(r.allocation_type))) return false;
+        if (companies.length && !companies.includes((s?.company ?? "").trim())) return false;
+        if (locations.length && !locations.includes((s?.location ?? "").trim())) return false;
+        return true;
+      })
+      // Newest payment first; id breaks ties so the order is stable across renders.
+      .sort((a, b) => (b.payment_date ?? "").localeCompare(a.payment_date ?? "") || b.id - a.id);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [rows, search, allocs, companies, locations, snapByGuid]);
+
+  const total = view.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sumShown = view.reduce((s, r) => s + Number(r.amount || 0), 0);
+
+  const save = async (r: OtherPaymentRow) => {
+    const d = cur(r);
+    const amt = Number(d.amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      toast({ variant: "destructive", title: "Amount must be a number greater than 0" });
+      return;
+    }
+    setSavingId(r.id);
+    try {
+      const input: OtherPaymentInput & { id: number } = {
+        id: r.id,
+        ledger_id: r.ledger_id,
+        tally_name: r.tally_name,
+        payment_date: d.payment_date || null,
+        amount: amt,
+        allocation_type: d.allocation_type,
+        ref_invoice: d.ref_invoice.trim() || null,
+        payment_ref: d.payment_ref.trim() || null,
+        remarks: d.remarks.trim() || null,
+        checked: d.checked,
+      };
+      await saveOtherPayment(input);
+      // Mutate in place so the row reflects the save without a full reload (same idiom as the
+      // tag/group tabs above).
+      r.payment_date = input.payment_date; r.amount = amt; r.allocation_type = input.allocation_type;
+      r.ref_invoice = input.ref_invoice; r.payment_ref = input.payment_ref;
+      r.remarks = input.remarks; r.checked = input.checked;
+      setDraft((prev) => { const { [String(r.id)]: _omit, ...rest } = prev; return rest; });
+      toast({ title: "Saved", description: `${nameOf(r)} · ${fmtINR(amt)}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Save failed", description: (e as Error).message });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const doDelete = async (r: OtherPaymentRow) => {
+    try {
+      await deleteOtherPayment(r.id);
+      setConfirmDelete(null);
+      toast({ title: "Deleted", description: `${nameOf(r)} · ${fmtINR(Number(r.amount))}` });
+      onReload();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Delete failed", description: (e as Error).message });
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customer / invoice / ref…" className="pl-8" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <MultiSelect label="Allocation" options={["Against Invoice", "On Account"]} selected={allocs} onChange={setAllocs} />
+            <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
+            <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
+            <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
+              <Plus className="h-4 w-4" />Add payment
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{total}</span> payment{total === 1 ? "" : "s"} ·
+          {" "}<span className="font-medium text-foreground tabular-nums">{fmtINR(sumShown)}</span> shown
+        </p>
+      </div>
+
+      <ScrollableTable className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[220px]">Customer</TableHead>
+              <TableHead className="w-28">Company</TableHead>
+              <TableHead className="w-24">Location</TableHead>
+              <TableHead className="w-36">Date</TableHead>
+              <TableHead className="w-32 text-right">Amount</TableHead>
+              <TableHead className="w-40">Allocation</TableHead>
+              <TableHead className="w-44">Ref Invoice</TableHead>
+              <TableHead className="w-36">Payment Ref</TableHead>
+              <TableHead className="min-w-[180px]">Remarks</TableHead>
+              <TableHead className="w-24">Status</TableHead>
+              <TableHead className="w-20 text-center">Checked</TableHead>
+              <TableHead className="w-28 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pageRows.map((r) => {
+              const d = cur(r);
+              const s = snapByGuid.get(r.ledger_id);
+              const dirty = isDirty(r);
+              return (
+                <TableRow key={r.id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{nameOf(r)}</span>
+                      {isOrphan(r) && (
+                        <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{s?.company ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{s?.location ?? "—"}</TableCell>
+                  <TableCell>
+                    <Input type="date" value={d.payment_date} className="h-8 min-w-[140px]"
+                      onChange={(e) => patch(r, { payment_date: e.target.value })} />
+                  </TableCell>
+                  <TableCell>
+                    {/* min-w, not just the column's w-32: 12 columns squeeze the flex layout hard
+                        enough that the field collapsed to ~57px and rendered "2000000" as "20" —
+                        an unreadable amount is worse than a scrollbar, and ScrollableTable is
+                        already here to carry the extra width. */}
+                    <Input type="number" inputMode="decimal" min="0" step="0.01" value={d.amount}
+                      className="h-8 text-right tabular-nums min-w-[120px]"
+                      onChange={(e) => patch(r, { amount: e.target.value })} />
+                    <span className="block text-[10px] text-muted-foreground text-right tabular-nums pt-0.5">
+                      {fmtINR(Number(d.amount) || 0)}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <Select value={d.allocation_type} onValueChange={(v) => patch(r, { allocation_type: v })}>
+                      <SelectTrigger className="h-8 min-w-[140px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {ALLOC_TYPES.map((t) => <SelectItem key={t} value={t}>{allocLabel(t)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.ref_invoice} className="h-8 min-w-[150px]"
+                      onChange={(e) => patch(r, { ref_invoice: e.target.value })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.payment_ref} className="h-8 min-w-[120px]"
+                      onChange={(e) => patch(r, { payment_ref: e.target.value })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.remarks} className="h-8 min-w-[200px]"
+                      onChange={(e) => patch(r, { remarks: e.target.value })} />
+                  </TableCell>
+                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
+                  <TableCell className="text-center">
+                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || savingId === r.id}
+                        onClick={() => save(r)} className="gap-1">
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
+                        className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {pageRows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={12} className="text-center text-muted-foreground py-8">
+                  No payments {rows.length ? "match the filters" : "recorded yet"}.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </ScrollableTable>
+
+      <PagerBar
+        page={page} totalPages={totalPages}
+        rangeStart={(page - 1) * PAGE_SIZE + 1} rangeEnd={Math.min(page * PAGE_SIZE, total)}
+        total={total} noun="payments" onPage={setPage}
+      />
+
+      <p className="text-xs text-muted-foreground pt-2">
+        Money paid outside Tally, kept here because Tally has never seen it. Deducted from Outstanding
+        on the Live (Tally) screens — against the named invoice, then oldest bills first, and anything
+        left over sits on account. Keyed by the Tally GUID, so a rename never orphans a payment.
+        <br />
+        <span className="font-medium">This list is independent of the Google Sheet</span> that feeds the
+        other (pipeline) view — a payment added here does not appear there, and vice versa. That is deliberate.
+      </p>
+
+      <AddOtherPaymentDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} onAdded={() => onReload()} />
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this payment?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete && (
+                <>
+                  {nameOf(confirmDelete)} · {fmtINR(Number(confirmDelete.amount))} ·{" "}
+                  {formatDateDMY(confirmDelete.payment_date)}.
+                  <br />
+                  Their outstanding will go UP by this amount on the Live (Tally) screens. This cannot be undone.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => confirmDelete && doDelete(confirmDelete)}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+// ── Red Mark master ────────────────────────────────────────────────────────────────────────────
+// A per-ledger flag (presence = flagged), keyed by the Tally GUID. Drives the "Red Mark" badge/KPI/
+// filter on the Live (Tally) screens. Add = pick a customer; Delete = un-flag.
+
+type RmDraft = { salesperson: string; reason: string; checked: boolean };
+const rmDraftOf = (r: RedMarkRow): RmDraft => ({
+  salesperson: r.salesperson ?? "", reason: r.reason ?? "", checked: r.checked,
+});
+
+/** Add-red-mark dialog: pick a customer + optional reason, then flag them. */
+function AddRedMarkDialog({ open, onOpenChange, snap, onAdded }: {
+  open: boolean; onOpenChange: (v: boolean) => void; snap: SnapRow[]; onAdded: () => void;
+}) {
+  const { toast } = useToast();
+  const [ledger, setLedger] = useState<SnapRow | null>(null);
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (open) { setLedger(null); setReason(""); } }, [open]);
+
+  const submit = async () => {
+    if (!ledger) return;
+    setSaving(true);
+    try {
+      await insertRedMark({
+        ledger_id: ledger.ledger_id,
+        tally_name: ledger.name,
+        company: ledger.company,
+        location: ledger.location,
+        salesperson: null,
+        reason: reason.trim() || null,
+        checked: true,
+      });
+      onAdded();
+      onOpenChange(false);
+      toast({ title: "Red Mark added", description: `${ledger.name}` });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Could not add", description: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Add a Red Mark customer</DialogTitle>
+          <DialogDescription>
+            Flags the customer as Red Mark across the Live (Tally) screens (KPI, badge, filter, and
+            the Red Mark report). Keyed by the Tally GUID, so a rename never loses the flag.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-3">
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Customer</span>
+            <CustomerPicker snap={snap} value={ledger?.ledger_id ?? null} onPick={setLedger} />
+          </div>
+          <div className="grid gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Reason (optional)</span>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. long overdue, disputed…" />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={submit} disabled={!ledger || saving} className="gap-1.5">
+            <Plus className="h-4 w-4" />{saving ? "Adding…" : "Add Red Mark"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions, onReload }: {
+  rows: RedMarkRow[]; snap: SnapRow[]; snapByGuid: Map<string, SnapRow>;
+  companyOptions: string[]; locationOptions: string[]; onReload: () => void;
+}) {
+  const { toast } = useToast();
+  const [draft, setDraft] = useState<Record<string, RmDraft>>({});
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<RedMarkRow | null>(null);
+
+  const [search, setSearch] = useState("");
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [search, companies, locations]);
+
+  const cur = (r: RedMarkRow): RmDraft => draft[r.ledger_id] ?? rmDraftOf(r);
+  const isDirty = (r: RedMarkRow) => {
+    const d = draft[r.ledger_id];
+    if (!d) return false;
+    const o = rmDraftOf(r);
+    return (Object.keys(o) as (keyof RmDraft)[]).some((k) => d[k] !== o[k]);
+  };
+  const patch = (r: RedMarkRow, p: Partial<RmDraft>) =>
+    setDraft((prev) => ({ ...prev, [r.ledger_id]: { ...cur(r), ...p } }));
+
+  const nameOf = (r: RedMarkRow) => snapByGuid.get(r.ledger_id)?.name ?? r.tally_name ?? "—";
+  const isOrphan = (r: RedMarkRow) => !snapByGuid.has(r.ledger_id);
+
+  const view = useMemo(() => {
+    const q = search.trim().toUpperCase();
+    return rows
+      .filter((r) => {
+        const s = snapByGuid.get(r.ledger_id);
+        if (q && !`${nameOf(r)} ${r.salesperson ?? ""} ${r.reason ?? ""}`.toUpperCase().includes(q)) return false;
+        if (companies.length && !companies.includes((s?.company ?? r.company ?? "").trim())) return false;
+        if (locations.length && !locations.includes((s?.location ?? r.location ?? "").trim())) return false;
+        return true;
+      })
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [rows, search, companies, locations, snapByGuid]);
+
+  const total = view.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageRows = view.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const save = async (r: RedMarkRow) => {
+    const d = cur(r);
+    setSavingId(r.ledger_id);
+    try {
+      await saveRedMark({
+        ledger_id: r.ledger_id,
+        salesperson: d.salesperson.trim() || null,
+        reason: d.reason.trim() || null,
+        checked: d.checked,
+      });
+      r.salesperson = d.salesperson.trim() || null;
+      r.reason = d.reason.trim() || null;
+      r.checked = d.checked;
+      setDraft((prev) => { const { [r.ledger_id]: _omit, ...rest } = prev; return rest; });
+      toast({ title: "Saved", description: nameOf(r) });
+    } catch (e) {
+      toast({ variant: "destructive", title: "Save failed", description: (e as Error).message });
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const doDelete = async (r: RedMarkRow) => {
+    try {
+      await deleteRedMark(r.ledger_id);
+      setConfirmDelete(null);
+      toast({ title: "Removed", description: nameOf(r) });
+      onReload();
+    } catch (e) {
+      toast({ variant: "destructive", title: "Remove failed", description: (e as Error).message });
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex flex-col gap-3 pb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search customer / salesperson / reason…" className="pl-8" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
+            <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
+            <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
+              <Plus className="h-4 w-4" />Add Red Mark
+            </Button>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{total}</span> Red Mark customer{total === 1 ? "" : "s"} shown
+        </p>
+      </div>
+
+      <ScrollableTable className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[220px]">Customer</TableHead>
+              <TableHead className="w-28">Company</TableHead>
+              <TableHead className="w-24">Location</TableHead>
+              <TableHead className="w-40">Salesperson</TableHead>
+              <TableHead className="min-w-[200px]">Reason</TableHead>
+              <TableHead className="w-24">Status</TableHead>
+              <TableHead className="w-20 text-center">Checked</TableHead>
+              <TableHead className="w-28 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pageRows.map((r) => {
+              const d = cur(r);
+              const s = snapByGuid.get(r.ledger_id);
+              const dirty = isDirty(r);
+              return (
+                <TableRow key={r.ledger_id}>
+                  <TableCell className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">{nameOf(r)}</span>
+                      {isOrphan(r) && (
+                        <Badge variant="outline" className="border-destructive/40 text-destructive shrink-0">Orphan</Badge>
+                      )}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">{s?.company ?? r.company ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{s?.location ?? r.location ?? "—"}</TableCell>
+                  <TableCell>
+                    <Input value={d.salesperson} className="h-8 min-w-[140px]"
+                      onChange={(e) => patch(r, { salesperson: e.target.value })} />
+                  </TableCell>
+                  <TableCell>
+                    <Input value={d.reason} className="h-8 min-w-[200px]"
+                      onChange={(e) => patch(r, { reason: e.target.value })} />
+                  </TableCell>
+                  <TableCell><StatusBadge checked={r.checked} source={r.source} /></TableCell>
+                  <TableCell className="text-center">
+                    <Checkbox checked={d.checked} onCheckedChange={(v) => patch(r, { checked: v === true })} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <Button size="sm" variant={dirty ? "default" : "ghost"} disabled={!dirty || savingId === r.ledger_id}
+                        onClick={() => save(r)} className="gap-1">
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(r)}
+                        className="text-destructive hover:text-destructive">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+            {pageRows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                  No Red Mark customers {rows.length ? "match the filters" : "yet"}.
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </ScrollableTable>
+
+      <PagerBar
+        page={page} totalPages={totalPages}
+        rangeStart={(page - 1) * PAGE_SIZE + 1} rangeEnd={Math.min(page * PAGE_SIZE, total)}
+        total={total} noun="customers" onPage={setPage}
+      />
+
+      <p className="text-xs text-muted-foreground pt-2">
+        Hand-picked customers flagged <span className="font-medium">Red Mark</span>. The flag shows as a
+        red badge, a Dashboard KPI, a filter, and the Red Mark report on the Live (Tally) screens.
+        Keyed by the Tally GUID, so a rename never loses the flag. Delete a row to un-flag the customer.
+      </p>
+
+      <AddRedMarkDialog open={addOpen} onOpenChange={setAddOpen} snap={snap} onAdded={onReload} />
+
+      <AlertDialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this Red Mark?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete && (
+                <>
+                  {nameOf(confirmDelete)} will no longer be flagged as Red Mark on the Live (Tally) screens.
+                  This cannot be undone (you can re-add them).
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => confirmDelete && doDelete(confirmDelete)}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+/**
  * The Master panel — a self-contained admin section (rendered INSIDE Settings). Reads
  * the ConnectWave musters + snapshot directly; writes go through the muster-write Edge
  * Function. Renders nothing for non-admins (Settings also gates it).
@@ -546,14 +1416,28 @@ export function MusterPanel() {
   const [tags, setTags] = useState<TagRow[] | null>(null);
   const [groups, setGroups] = useState<GroupRow[] | null>(null);
   const [snap, setSnap] = useState<SnapRow[] | null>(null);
+  const [companyMap, setCompanyMap] = useState<CompanyMapRow[] | null>(null);
+  const [otherPayments, setOtherPayments] = useState<OtherPaymentRow[] | null>(null);
+  const [redMarks, setRedMarks] = useState<RedMarkRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = () => {
     setLoading(true);
     setError(null);
-    Promise.all([fetchTagRows(), fetchGroupRows(), fetchSnapshot()])
-      .then(([t, g, s]) => { setTags(t); setGroups(g); setSnap(s); })
+    Promise.all([fetchTagRows(), fetchGroupRows(), fetchSnapshot(), fetchCompanyMap(), fetchOtherPaymentRows(), fetchRedMarkRows()])
+      .then(([t, g, s, cm, op, rm]) => {
+        // Resolve each snapshot row's company/location from the master ONCE, here, so every
+        // consumer below (filters, search, columns) sees the same finance-facing pair the reports
+        // show — the snapshot itself only carries the raw Tally book name and a blank location.
+        const resolve = makeCompanyResolver(cm);
+        setTags(t);
+        setGroups(g);
+        setCompanyMap(cm);
+        setOtherPayments(op);
+        setRedMarks(rm);
+        setSnap(s.map((row) => ({ ...row, ...resolve(row.tenant_id, row.company) })));
+      })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   };
@@ -570,9 +1454,19 @@ export function MusterPanel() {
     [snap],
   );
   const locationOptions = useMemo(
-    () => [...new Set((snap ?? []).map((s) => locationForCompany(s.company)).filter(Boolean))].sort(),
+    () => [...new Set((snap ?? []).map((s) => (s.location ?? "").trim()).filter(Boolean))].sort(),
     [snap],
   );
+
+  // Customers per Tally book — shown in the company master so a mapping's blast radius is visible.
+  const custCountByGuid = useMemo(() => {
+    const m = new Map<string, number>();
+    (snap ?? []).forEach((s) => {
+      const g = companyGuidOf(s.tenant_id);
+      m.set(g, (m.get(g) ?? 0) + 1);
+    });
+    return m;
+  }, [snap]);
 
   if (!isAdmin) return null;
 
@@ -607,12 +1501,30 @@ export function MusterPanel() {
             <TabsList>
               <TabsTrigger value="tags">Salesperson &amp; Category</TabsTrigger>
               <TabsTrigger value="groups">Customer Groups</TabsTrigger>
+              <TabsTrigger value="companies">Companies &amp; Locations</TabsTrigger>
+              <TabsTrigger value="other-payments">Other Payments</TabsTrigger>
+              <TabsTrigger value="redmark">Red Mark</TabsTrigger>
             </TabsList>
             <TabsContent value="tags" className="mt-4">
               <TagMuster rows={tags} snapByGuid={snapByGuid} companyOptions={companyOptions} locationOptions={locationOptions} onReload={load} />
             </TabsContent>
             <TabsContent value="groups" className="mt-4">
               <GroupMuster rows={groups} snapByGuid={snapByGuid} companyOptions={companyOptions} locationOptions={locationOptions} onReload={load} />
+            </TabsContent>
+            <TabsContent value="companies" className="mt-4">
+              <CompanyMuster rows={companyMap ?? []} custCounts={custCountByGuid} onReload={load} />
+            </TabsContent>
+            <TabsContent value="other-payments" className="mt-4">
+              <OtherPaymentMuster
+                rows={otherPayments ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
+                companyOptions={companyOptions} locationOptions={locationOptions} onReload={load}
+              />
+            </TabsContent>
+            <TabsContent value="redmark" className="mt-4">
+              <RedMarkMuster
+                rows={redMarks ?? []} snap={snap ?? []} snapByGuid={snapByGuid}
+                companyOptions={companyOptions} locationOptions={locationOptions} onReload={load}
+              />
             </TabsContent>
           </Tabs>
         )}

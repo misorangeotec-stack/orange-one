@@ -36,8 +36,8 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
-import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
+import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
@@ -74,14 +74,18 @@ import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
  * why the grade is a QUINTILE and not a fixed threshold; and why 604 dormant ledgers are gated out
  * by default rather than counted.
  *
- * PINNED TWICE, both deliberate, exactly like OverdueAgingReport:
+ * SOURCE → follows the "Live (Tally)" topbar toggle. Under Live the report's SPINE is exact: the
+ * tier tag, Owed/Advances/Net (Net ties to the Live Dashboard) and the behaviour grade + aging +
+ * overdue, which are all bill-wise (enumerateBills, same path the Overdue report uses under Live).
+ * Only the three flow COLUMNS — Opening, Collection % and Credit Notes — lean on an estimate under
+ * Live: the ConnectWave feed carries credit/debit notes only as a per-customer yearly total, which
+ * buildMonthlySeries spreads across the months (see its header). Collection % is deliberately NOT a
+ * grade input, so the estimate never moves a grade.
  *
- *  1. SOURCE → the pipeline. The admin "Live (Tally)" topbar toggle must not be able to move a
- *     number on a report that goes to management.
- *
- *  2. SCOPE → Both FYs. The balance/aging half of this report is a property of the WHOLE BOOK, and
- *     the flow half has its own period selector on the page. An FY selector in the topbar would be
- *     claiming to drive both, and would drive neither. UserLayout hides it on this route.
+ * PINNED to Both FYs (still deliberate, exactly like OverdueAgingReport). The balance/aging half of
+ * this report is a property of the WHOLE BOOK, and the flow half has its own period selector on the
+ * page. An FY selector in the topbar would be claiming to drive both, and would drive neither.
+ * UserLayout hides it on this route.
  */
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
@@ -206,10 +210,10 @@ function CustomerCategoryInner() {
   const customerOptions = useMemo(
     () => [...new Set(allCustomers.map((c) => c.name).filter(Boolean))].sort(), [allCustomers]);
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)), [customerGroupMap]);
+    () => allGroupNames(customerGroupMap), [customerGroupMap]);
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name, [customerGroupMap]);
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap), [customerGroupMap]);
 
   // ── Scope the RAW ledgers, then keep every money figure inside that scope ──────────
   const scopedLedgers = useMemo(() => {
@@ -218,7 +222,7 @@ function CustomerCategoryInner() {
     if (locations.length)     { const s = new Set(locations);     d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length)  { const s = new Set(salespersons);  d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(customerGroupMap.mapping[c.name] ?? c.name)); }
+    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (blockedOnly) d = d.filter((c) => c.blocked === true);
     return d;
   }, [allCustomers, categories, companies, locations, salespersons, customerNames, groupNamesSel,
@@ -232,7 +236,7 @@ function CustomerCategoryInner() {
     [companies, locations, salespersons, saleTypes, customerNames]);
 
   const baseBills = useMemo(
-    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, billFilters, customerGroupMap.mapping),
+    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, billFilters, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, billFilters, customerGroupMap]);
 
   /** Selecting every sale type means "no filter" — same guard as the Aging / Overdue reports. */
@@ -250,7 +254,7 @@ function CustomerCategoryInner() {
     const extra: EnrichedBill[] = [];
     for (const c of scopedLedgers) {
       const adj = c.outstanding - (billNet.get(c.id) ?? 0);
-      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap.mapping));
+      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap));
     }
     return extra.length ? [...baseBills, ...extra] : baseBills;
   }, [baseBills, scopedLedgers, customerGroupMap, saleTypeActive]);
@@ -267,12 +271,17 @@ function CustomerCategoryInner() {
   const bucketsByLedger = useMemo(() => buildBucketsByLedger(baseBills), [baseBills]);
 
   // ── The engine ────────────────────────────────────────────────────────────────────
+  // Follow the topbar Live toggle (same one-liner as Overdue/DSO/Collections). Under Live,
+  // buildMonthlySeries spreads each customer's yearly notes across the months, so the Opening /
+  // Collection % / Credit Notes columns stay honest; the grade/aging spine is bill-wise and exact.
+  const collSource = useReceivablesSource() === "connectwave" ? "live" : "pipeline";
+  const isLive = collSource === "live";
   const series = useMemo(
-    () => buildMonthlySeries(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail]);
+    () => buildMonthlySeries(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource]);
   const lastDates = useMemo(
-    () => buildLastReceiptDates(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail]);
+    () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource]);
   const balances = useMemo(() => buildLedgerBalances(allCustomers), [allCustomers]);
   const obt = useMemo(() => buildOutstandingByType(allCustomers), [allCustomers]);
   const ledgerById = useMemo(
@@ -663,7 +672,7 @@ function CustomerCategoryInner() {
     ...(saleTypes.length ? [{ label: `Sale Type: ${saleTypes.length}`, onRemove: () => setSaleTypes([]) }] : []),
     ...(minOwed !== "0" ? [{ label: `Min Owed: ${MIN_OWED_OPTIONS.find((o) => o.key === minOwed)?.label}`, onRemove: () => setMinOwed("0") }] : []),
     ...(activity !== "active" ? [{ label: ACTIVITY_LABELS[activity], onRemove: () => setActivity("active") }] : []),
-    ...(blockedOnly ? [{ label: "Blocked only", onRemove: () => setBlockedOnly(false) }] : []),
+    ...(blockedOnly ? [{ label: "Red Mark only", onRemove: () => setBlockedOnly(false) }] : []),
     ...(tierFilter.size ? [{ label: `Tier: ${[...tierFilter].join(", ")}`, onRemove: () => setTierFilter(new Set()) }] : []),
     ...(mxCell ? [{ label: `Cell: ${mxCell.tier} × ${mxCell.col}`, onRemove: () => setMxCell(null) }] : []),
     ...[...focus].map((f) => ({ label: CC_FOCUS_LABELS[f], onRemove: () => toggleFocus(f) })),
@@ -685,7 +694,8 @@ function CustomerCategoryInner() {
       viewLabel: viewLabel || "Category",
       scopeLabel,
       periodLabel,
-      basis: "Owed, Advances, Net, Overdue, Aging and Credit Limit are the whole book as it stands today. Sales, Collected and Collection % cover the selected period only.",
+      basis: "Owed, Advances, Net, Overdue, Aging and Credit Limit are the whole book as it stands today. Sales, Collected and Collection % cover the selected period only."
+        + (isLive ? " Source: the live Tally feed (ConnectWave) — grade, aging, overdue and Owed/Advances/Net are exact; Opening, Collection % and Credit Notes are estimated from each customer's yearly notes total (the live feed doesn't carry them month by month)." : ""),
       reconciliation: "Net Outstanding ties to the Dashboard's Total Outstanding. Overdue and the aging buckets are summed from individual open bills (like the Aging and Overdue-120 reports), so they read slightly ABOVE the Dashboard's Overdue, which sums the stored ledger column.",
       gradeBasis: `Behaviour grade = every customer who owes money, ranked on a risk score (45% share of balance past 180 days + 30% share overdue + 25% max days overdue) and cut into five equal quintiles. Collection % is deliberately NOT an input: it is 41-48% across every tier and carries no signal. Mismatch = tagged tier vs behaviour grade differing by ${gap} or more grades.`,
       mismatchGap: gap,
@@ -1096,7 +1106,7 @@ function CustomerCategoryInner() {
                 </div>
                 <label className="flex items-center gap-2 text-xs cursor-pointer">
                   <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(!!v)} />
-                  Blocked customers only
+                  Red Mark customers only
                 </label>
               </PopoverContent>
             </Popover>
@@ -1121,6 +1131,17 @@ function CustomerCategoryInner() {
         {basisOpen && (
           <CardContent className="px-4 pb-4 pt-0">
             <ul className="space-y-2 text-xs text-muted-foreground leading-relaxed list-disc pl-4">
+              {isLive && (
+                <li>
+                  <strong className="text-foreground">Source: the live Tally feed (ConnectWave).</strong>{" "}
+                  The tier tag, Owed / Advances / Net, and the whole grade / aging / overdue side are read
+                  straight from the live book — exact. Only <strong className="text-foreground">Opening</strong>,{" "}
+                  <strong className="text-foreground">Collection %</strong> and{" "}
+                  <strong className="text-foreground">Credit Notes</strong> are estimated: the live feed carries
+                  credit and debit notes only as each customer's yearly total, spread across the months by sales.
+                  Since Collection % never feeds the grade, this never moves anyone's tier.
+                </li>
+              )}
               <li>
                 <strong className="text-foreground">The tier comes from the Credit-Limit sheet.</strong>{" "}
                 It is typed by hand by Sales/Finance, not computed. Every customer lands in exactly one tier, so
@@ -1337,13 +1358,11 @@ function CustomerCategoryInner() {
   );
 }
 
-/** Pinned twice — see the file header. */
+/** Follows the source toggle; pinned to Both FYs — see the file header. */
 export default function CustomerCategoryReport() {
   return (
-    <ReceivablesSourceProvider value="default">
-      <FYProvider>
-        <CustomerCategoryInner />
-      </FYProvider>
-    </ReceivablesSourceProvider>
+    <FYProvider>
+      <CustomerCategoryInner />
+    </FYProvider>
   );
 }

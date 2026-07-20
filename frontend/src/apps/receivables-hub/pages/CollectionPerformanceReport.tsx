@@ -32,8 +32,8 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
-import { useHubBase, ReceivablesSourceProvider } from "@hub/lib/sourceContext";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
+import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { sumOutstanding } from "@hub/lib/receivables";
@@ -72,13 +72,14 @@ import type { ConsolidatedCustomer } from "@hub/lib/types";
  * the window is month-granular, and for the three traps in the pipeline data
  * (gross-of-cheque-return receipts, the clamped opening, FY scoping).
  *
- * PINNED TO THE PIPELINE DATA. The page is force-wrapped in
- * <ReceivablesSourceProvider value="default"> so it reads the normal receivables Supabase
- * even when an admin has the "Live (Tally)" topbar toggle on. Live is a later, separate
- * piece of work — until then it is impossible for a ConnectWave number to reach a report
- * that goes to management. (Same pattern as pages/Followups.tsx.)
+ * FOLLOWS THE SOURCE TOGGLE. With the admin "Live (Tally)" toggle on, the page reads the
+ * ConnectWave snapshot. The predicate that decides each report is exact under Live — Zero
+ * Collections and Dormant read live receipts / live monthly sales directly. Only Below-30%
+ * needs the opening balance, and the live feed carries credit notes / debit notes / journals /
+ * bounces only as a per-customer YEARLY total; buildMonthlySeries spreads those across the
+ * months (see its header) so Below-30% stays honest instead of reading soft.
  *
- * The DORMANT variant is pinned a second time, to Both FYs — see the default export.
+ * The DORMANT variant is still pinned to Both FYs — see the default export.
  */
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
@@ -255,7 +256,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   /** The REAL groups from the mapping sheet. Also decides customer-vs-group drill-through:
    *  a "group" bucket that isn't in here is just an ungrouped customer shown as its own row. */
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)),
+    () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
@@ -319,13 +320,19 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // Built from RAW ledgers (allCustomers) — a ConsolidatedCustomer's monthlyReceipts /
   // lastReceiptDate / openingBalance carry only its FIRST ledger's values (consolidateByName
   // spreads ...entries[0] and doesn't override them). See lib/collections.ts.
+  // Follow the topbar "Live (Tally)" toggle, same as Overdue/DSO. Under Live the engine reads
+  // receipts + last-receipt from the live customer row (buildMonthlySeries/buildLastReceiptDates),
+  // and buildMonthlySeries spreads the yearly notes across months so Below-30%'s opening stays
+  // honest. Zero + Dormant are exact under Live; only Below-30% uses the note estimate.
+  const collSource = useReceivablesSource() === "connectwave" ? "live" : "pipeline";
+  const isLive = collSource === "live";
   const series = useMemo(
-    () => buildMonthlySeries(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail],
+    () => buildMonthlySeries(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
   );
   const lastDates = useMemo(
-    () => buildLastReceiptDates(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail],
+    () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
   );
   // The anchor for Opening: the CANONICAL outstanding, rolled backwards through the window's
   // movements. Never customer_trend.outstanding — see the openingForLedger header.
@@ -334,7 +341,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const outstandingByType = useMemo(() => buildOutstandingByType(allCustomers), [allCustomers]);
 
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap),
     [customerGroupMap],
   );
 
@@ -996,7 +1003,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       label: `Segment: ${segment === "active" ? "Active" : "No Activity"}`,
       onRemove: () => setSegment("all"),
     },
-    blockedOnly && { label: "Blocked only", onRemove: () => setBlockedOnly(false) },
+    blockedOnly && { label: "Red Mark only", onRemove: () => setBlockedOnly(false) },
     includeNonDebtors && { label: "Incl. zero & credit balances", onRemove: () => setIncludeNonDebtors(false) },
   ].filter(Boolean) as FilterChip[];
 
@@ -1034,16 +1041,25 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       );
     if (minOut !== "0") s.push(`Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`);
     if (segment !== "all") s.push(`Segment: ${segment === "active" ? "Active" : "No Activity"}`);
-    if (blockedOnly) s.push("Blocked only");
+    if (blockedOnly) s.push("Red Mark only");
     if (includeNonDebtors) s.push("Incl. zero & credit balances");
     return s;
   }, [focus, bands, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, isDormantMode, saleTypes]);
 
-  const basis = isDormantMode
+  // Live (Tally) caveat, appended only under the ConnectWave source. Zero + Dormant are exact —
+  // they read live receipts / live monthly sales — so they say so. Below-30% leans on the opening
+  // balance, whose per-month notes the live feed doesn't carry, so it's honest about the estimate.
+  const liveNote = !isLive
+    ? ""
+    : isDormantMode || mode === "zero"
+      ? " Source: the live Tally feed (ConnectWave) — read directly, no estimate."
+      : " Source: the live Tally feed (ConnectWave). Credit notes, debit notes, journals and bounced cheques are estimated from each customer's yearly total (the live feed doesn't carry them month by month), so the Opening balance and % are close, not exact.";
+
+  const basis = (isDormantMode
     ? `A customer is listed when they owe money (Outstanding > ₹0) and billed NO sales at all in the period. Sales are read at month grain from the customer trend and summed over every ledger the customer consolidates. Months Since Sale counts back to the most recent month with any billing; "None" means nothing billed anywhere in the available data, which begins ${horizonLabel} — it does NOT mean the customer never bought from us. A group row shows its deadest member. "Paid Nothing Either" narrows to those who also collected ₹0 in the period; "Recently Gone Quiet" to those who were still buying in the previous period of the same length. The Sale Type filter scopes the report to customers whose outstanding is DOMINATED by the selected types (the single largest type wins; untagged balances count as Other). MACHINE IS EXCLUDED BY DEFAULT: a machine is a one-time capital sale paid down over months, so a machine customer not re-ordering is normal rather than a warning — select it in the Sale Type filter to bring those customers back in.`
     : mode === "zero"
       ? "No receipt voucher and no Other Payment in the period. Cheque returns are reported, not netted."
-      : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`;
+      : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`) + liveNote;
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
   // `focusedRows` (not `rows`) feeds the flat Customers sheet: otherwise the roll-up sheet
@@ -1561,7 +1577,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(v === true)} />
-                    <span className="text-xs text-foreground">Blocked customers only</span>
+                    <span className="text-xs text-foreground">Red Mark customers only</span>
                   </label>
                   <label className="flex items-start gap-2 cursor-pointer">
                     <Checkbox className="mt-0.5" checked={includeNonDebtors} onCheckedChange={(v) => setIncludeNonDebtors(v === true)} />
@@ -1849,21 +1865,18 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 }
 
 export default function CollectionPerformanceReport({ variant }: { variant?: "dormant" }) {
-  // All three reports go to management, so they are pinned to the pipeline data: the admin
-  // "Live (Tally)" topbar toggle must not be able to change a number here. Live is a later,
-  // separate piece of work.
+  // Follows the source toggle. The three predicates that DECIDE each report are exact under Live:
+  // Zero Collections ("paid nothing") reads live receipts, Dormant ("billed nothing") reads live
+  // monthly sales. Only Below-30% needs the opening balance, whose per-month credit/debit notes,
+  // journals and bounces the live feed lacks — buildMonthlySeries estimates those from each
+  // customer's yearly total (see its header), so Below-30% stays honest rather than reading soft.
   //
-  // DORMANT is pinned a SECOND time, to Both FYs — the same reasoning as OverdueAgingReport.
-  // Its window is `months.slice(-6)` over the FY-scoped month vocabulary, so on a young FY
-  // "no sales in the last 6 months" would silently become "in the last 3", and a customer who
-  // last bought in Feb would be reported as never having bought at all. A dormancy question is
-  // a property of the whole book, so it reads the whole book. The nested FYProvider re-bases
-  // the FY context to its default (Both FYs); UserLayout hides the topbar FY selector on the
-  // route so the two can never disagree on screen.
+  // DORMANT is still pinned to Both FYs — the same reasoning as OverdueAgingReport. Its window is
+  // `months.slice(-6)` over the FY-scoped month vocabulary, so on a young FY "no sales in the last
+  // 6 months" would silently become "in the last 3", and a customer who last bought in Feb would
+  // be reported as never having bought at all. A dormancy question is a property of the whole
+  // book, so it reads the whole book. The nested FYProvider re-bases the FY context to its default
+  // (Both FYs); UserLayout hides the topbar FY selector on the route so the two can never disagree.
   const inner = <CollectionPerformanceInner variant={variant} />;
-  return (
-    <ReceivablesSourceProvider value="default">
-      {variant === "dormant" ? <FYProvider>{inner}</FYProvider> : inner}
-    </ReceivablesSourceProvider>
-  );
+  return variant === "dormant" ? <FYProvider>{inner}</FYProvider> : inner;
 }

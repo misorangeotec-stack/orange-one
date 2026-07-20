@@ -222,7 +222,7 @@ export default function AgingReport() {
         customerDetail,
         asOfDate,
         filters,
-        customerGroupMap.mapping,
+        customerGroupMap,
       ),
     [scopedCustomers, customerDetail, asOfDate, filters, customerGroupMap],
   );
@@ -241,7 +241,7 @@ export default function AgingReport() {
     const extra: EnrichedBill[] = [];
     for (const c of scopedCustomers) {
       const adj = c.outstanding - (billNet.get(c.id) ?? 0);
-      if (Math.abs(adj) >= 0.5) extra.push(ledgerAdjBill(c, adj, customerGroupMap.mapping));
+      if (Math.abs(adj) >= 0.5) extra.push(ledgerAdjBill(c, adj, customerGroupMap));
     }
     return extra.length ? [...baseBills, ...extra] : baseBills;
   }, [baseBills, scopedCustomers, customerGroupMap, saleTypes]);

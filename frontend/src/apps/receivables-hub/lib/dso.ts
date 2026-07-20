@@ -245,6 +245,14 @@ export interface BuildDsoRowsInput {
   dayVec: number[];
   asOfDate: string;
   groupOf: (c: ConsolidatedCustomer) => string;
+  /**
+   * Live (ConnectWave) only: the monthly trend has NO per-month credit/debit notes there, so
+   * netBillingsOf(trend) collapses to GROSS and every DSO reads optimistically low. When set, the
+   * engine estimates each ledger's per-month notes from its REAL annual totals (Customer.creditNotes /
+   * .debitNotes over .sales — same period on the live book, verified 1:1 vs Σ monthly sales),
+   * apportioned by each month's sales. Pipeline leaves this off and uses the trend's real notes.
+   */
+  estimateNotesFromFy?: boolean;
 }
 
 const daysBetween = (fromIso: string, toIso: string): number | null => {
@@ -265,7 +273,7 @@ const daysBetween = (fromIso: string, toIso: string): number | null => {
 export function buildDsoRows(input: BuildDsoRowsInput): DsoRow[] {
   const {
     customers, series, balances, billsByLedger, lastReceiptByLedger, ledgerById,
-    inScopeLedgerIds, months, lookbackMonths, dayVec, asOfDate, groupOf,
+    inScopeLedgerIds, months, lookbackMonths, dayVec, asOfDate, groupOf, estimateNotesFromFy,
   } = input;
 
   const lookbackDays = lookbackDaysOf(dayVec);
@@ -289,14 +297,38 @@ export function buildDsoRows(input: BuildDsoRowsInput): DsoRow[] {
     for (const id of ids) {
       ar += balances.get(id) ?? 0;
 
+      // Live only: derive this ledger's credit/debit-note RATE from its real annual totals, to be
+      // apportioned onto each month's sales below (the live trend has no per-month notes). Clamped so
+      // a returns-heavy ledger can't drive a month's net billing negative and skew the countback.
+      let cnRate = 0, dnRate = 0;
+      if (estimateNotesFromFy) {
+        const led0 = ledgerById.get(id);
+        const fySales = led0?.sales ?? 0;
+        if (fySales > EPS) {
+          cnRate = Math.min(Math.max((led0?.creditNotes ?? 0) / fySales, 0), 0.95);
+          dnRate = Math.min(Math.max((led0?.debitNotes ?? 0) / fySales, 0), 0.95);
+        }
+      }
+
       const byMonth = series.get(id);
       for (let i = 0; i < recentFirst.length; i++) {
         const f = byMonth?.get(recentFirst[i]);
         if (!f) continue;
-        salesVec[i] += netBillingsOf(f);
-        grossSales += f.sales;
-        creditNotes += f.creditNotes;
-        debitNotes += f.debitNotes;
+        if (estimateNotesFromFy) {
+          // Estimate this month's notes from the annual rate × this month's sales, keeping salesVec
+          // (net) and the Gross / Credit Notes columns internally consistent under Live.
+          const cn = f.sales * cnRate;
+          const dn = f.sales * dnRate;
+          salesVec[i] += f.sales + dn - cn;
+          grossSales += f.sales;
+          creditNotes += cn;
+          debitNotes += dn;
+        } else {
+          salesVec[i] += netBillingsOf(f);
+          grossSales += f.sales;
+          creditNotes += f.creditNotes;
+          debitNotes += f.debitNotes;
+        }
       }
 
       // Most recent month with ANY billing, across the FULL horizon (not just the lookback) —

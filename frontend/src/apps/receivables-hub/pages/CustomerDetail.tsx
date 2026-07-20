@@ -38,11 +38,12 @@ import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleType
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData, consolidateByName, consolidateByGroup } from "@hub/lib/useAppData";
 import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
+import { useFY } from "@hub/lib/fyContext";
 import { useQuery } from "@tanstack/react-query";
 import { utilizationPct } from "@hub/lib/receivables";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
-import type { Customer, InvoiceStatus } from "@hub/lib/types";
+import type { Customer, CustomerGroupMap, InvoiceStatus } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -197,6 +198,18 @@ const TXN_TYPE_META: Record<TxnKind, { label: string; cls: string }> = {
   check_return: { label: "Chq Return",  cls: "bg-blue-100 text-blue-700 border-blue-200" },
   other_payment: { label: "Other Pmt",  cls: "bg-indigo-100 text-indigo-700 border-indigo-200" },
 };
+
+// Kept local (not imported from connectwaveFetcher) so the page doesn't pull that whole module
+// into the main bundle and defeat the lazy import() below. Must stay in step with the copies
+// exported there — normBillRef is the same trim+uppercase rule, LIVE_PERIOD_START the same date.
+const normBillRef = (s: string | null | undefined): string => (s ?? "").trim().toUpperCase();
+/** Bills raised on/after this settle current invoices; earlier ones settle the opening balance. */
+const LIVE_PERIOD_START = "2025-04-01";
+
+/** Monthly figures the ConnectWave snapshot simply does not carry per month (its `monthly` jsonb
+ *  holds sales / receipts / outstanding / overdue only). Shown on the pipeline, hidden on Live —
+ *  they used to render a fabricated "₹0" in every month directly under a non-zero KPI card. */
+const LIVE_UNAVAILABLE_MONTHLY = new Set(["creditNotes", "debitNotes", "journalAdjustments", "checkReturns"]);
 
 const APPLIED_TO_META: Record<AppliedTo, { label: string; cls: string }> = {
   opening:    { label: "Opening Balance", cls: "bg-amber-100 text-amber-700 border-amber-200" },
@@ -478,7 +491,16 @@ export default function CustomerDetail() {
   // The raw `saleTypeFilter` is kept as-is so the multi-select stays visually
   // checked; only the derived value below drives the data so the headline cards
   // and the trend reconcile. See normalizeSaleType for the why.
-  const effectiveSaleType = normalizeSaleType(saleTypeFilter);
+  //
+  // FORCED OFF on Live (Tally). The mirror can't tag a receipt/credit note/journal with the sale
+  // type of the bill it settled — collection_invoice_snapshot holds OPEN bills only, i.e. exactly
+  // the wrong population, since receipts settle bills that are now closed. With saleType null on
+  // every non-sales row, the filter below silently removed ALL of them and left a sales-only list
+  // still captioned "Transactions (N of M)" — a biased subset that looked like a filter result.
+  // Better to offer no filter than a filter that quietly lies. Tracked: needs a mirror-side
+  // bill_ref → sale_type map covering closed bills.
+  const saleTypeFilterAvailable = source !== "connectwave";
+  const effectiveSaleType = saleTypeFilterAvailable ? normalizeSaleType(saleTypeFilter) : "all";
   const [activeTrendKeys, setActiveTrendKeys] = useState<Set<string>>(new Set());
   const [ledgerMonth, setLedgerMonth] = useState<string | null>(null);
   const [trendOpen, setTrendOpen] = useState(true);
@@ -495,6 +517,26 @@ export default function CustomerDetail() {
   // Transactions table column visibility (defaults to all columns shown).
   const [txnCols, setTxnCols] = useState<Set<string>>(
     () => new Set(TXN_COLUMNS.map((c) => c.key)),
+  );
+  // Monthly columns actually obtainable from the current source. The Live snapshot has no per-month
+  // credit notes / debit notes / journal net / cheque returns, and printing ₹0 for them under a
+  // non-zero KPI card is worse than not offering the column. Filtered here rather than at the state
+  // level so flipping the Live toggle re-evaluates without resetting the user's other choices.
+  const availableMonthlyCols = useMemo(
+    () => (source === "connectwave"
+      ? MONTHLY_COLS.filter((c) => !LIVE_UNAVAILABLE_MONTHLY.has(c.key))
+      : [...MONTHLY_COLS]),
+    [source],
+  );
+  const visibleMonthlyKeys = useMemo(
+    () => new Set(availableMonthlyCols.filter((c) => monthlyCols.has(c.key)).map((c) => c.key)),
+    [availableMonthlyCols, monthlyCols],
+  );
+  const availableTrendLines = useMemo(
+    () => (source === "connectwave"
+      ? allLines.filter((t) => !LIVE_UNAVAILABLE_MONTHLY.has(t.key))
+      : [...allLines]),
+    [source],
   );
   const exportTopRef = useRef<HTMLDivElement>(null);
   const exportMonthlyRef = useRef<HTMLDivElement>(null);
@@ -540,7 +582,7 @@ export default function CustomerDetail() {
   // ── Follow-ups ───────────────────────────────────────────────────────────────
   // The entity follows the ROUTE: /group/:id logs against the group, /customer/:id against
   // the customer. Keyed by name — never by Customer.id, which is a pipeline surrogate.
-  const followupsEnabled = useReceivablesSource() === "default";
+  const followupsEnabled = true; // shared ConnectWave log — available on default AND Live (Tally)
   const followupEntityType: FollowupEntityType = isGroupRoute ? "group" : "customer";
   const followupEntityName = isGroupRoute ? groupName : customerName;
   const { latestByEntity } = useFollowups();
@@ -562,7 +604,16 @@ export default function CustomerDetail() {
   const allEntities = useMemo(() => {
     if (isGroupRoute) {
       const childSet = new Set(groupChildNames);
-      return allCustomers.filter((c) => childSet.has(c.name));
+      // Prefer the GUID-keyed muster: `groups` is a name-keyed view derived from it, and 387 ledger
+      // names repeat across companies — so a pure name match drags in every same-named ledger,
+      // including ones whose own muster row says a DIFFERENT group, and then sums them. Where a
+      // ledger has an explicit mapping we trust that; only ledgers with no mapping at all fall back
+      // to the name list (which is what covers an ungrouped customer reached via /group/:name).
+      const byLedgerId = customerGroupMap.byLedgerId ?? {};
+      return allCustomers.filter((c) => {
+        const mapped = byLedgerId[c.id];
+        return mapped ? mapped === groupName : childSet.has(c.name);
+      });
     }
     return allCustomers.filter((c) => c.name === customerName);
   }, [allCustomers, customerName, isGroupRoute, groupChildNames]);
@@ -572,17 +623,39 @@ export default function CustomerDetail() {
   // viewed one customer at a time). Fetch them on demand for this customer's constituent ledgers
   // and merge into the detail map the transaction tabs read. No-op on the default source.
   const entityIds = useMemo(() => [...allEntities.map((e) => e.id)].sort(), [allEntities]);
+  // The ledger RPCs return a ledger's WHOLE history, so the FY has to be applied here — without it
+  // the table listed years the KPI cards above it excluded and the FY selector did nothing to it.
+  const { suffix: fySuffix } = useFY();
   const { data: liveTxns } = useQuery({
-    queryKey: ["cwLedgerTxns", entityIds],
-    queryFn: () => import("@hub/lib/connectwaveFetcher").then((m) => m.fetchConnectwaveLedgerTxns(entityIds)),
+    queryKey: ["cwLedgerTxns", entityIds, fySuffix],
+    queryFn: () => import("@hub/lib/connectwaveFetcher").then((m) => m.fetchConnectwaveLedgerTxns(entityIds, fySuffix)),
     enabled: source === "connectwave" && entityIds.length > 0,
     staleTime: 5 * 60 * 1000,
   });
   const customerDetail = useMemo(() => {
     if (source !== "connectwave" || !liveTxns) return baseCustomerDetail;
     const merged: typeof baseCustomerDetail = { ...baseCustomerDetail };
-    for (const [id, lists] of Object.entries(liveTxns)) {
-      merged[id] = { ...(baseCustomerDetail[id] ?? { invoices: [], trend: [], receiptTransactions: [] }), ...lists };
+    for (const [id, lists] of Object.entries(liveTxns.byLedger)) {
+      const base = baseCustomerDetail[id] ?? { invoices: [], trend: [], receiptTransactions: [] };
+      // Fold in the bills rebuilt from Tally's allocations so SETTLED invoices appear too — the
+      // ConnectWave snapshot carries open bills only, so the Live sales list was "unpaid invoices
+      // only". The snapshot's row WINS wherever a bill is in both: it is authoritative for
+      // pending / dueDate / overdueDays, which the rebuilt row cannot know.
+      const rebuilt = liveTxns.invoicesByLedger[id] ?? [];
+      const open = new Set(base.invoices.map((inv) => (inv.number ?? "").trim().toUpperCase()));
+      const settled = rebuilt.filter((inv) => !open.has((inv.number ?? "").trim().toUpperCase()));
+      // Sale type is taken from the rebuilt row for OPEN bills too. Both come from ConnectWave, but
+      // the rebuilt one is resolved against the mirror's own sale_type_rule using the voucher type
+      // that actually raised the bill, while the snapshot's column falls back to 'other' on bills
+      // its refresh couldn't match (e.g. SPARE/25-26/2530 — snapshot 'other', voucher
+      // 'GST SALES - SPARE PARTS'). Without this the same column would read Spare Parts on a settled
+      // bill and Other on the open one right beside it.
+      const typeByRef = new Map(rebuilt.map((inv) => [(inv.number ?? "").trim().toUpperCase(), inv.voucherType]));
+      const openWithType = base.invoices.map((inv) => {
+        const t = typeByRef.get((inv.number ?? "").trim().toUpperCase());
+        return t && t !== inv.voucherType ? { ...inv, voucherType: t } : inv;
+      });
+      merged[id] = { ...base, ...lists, invoices: [...openWithType, ...settled] };
     }
     return merged;
   }, [source, liveTxns, baseCustomerDetail]);
@@ -645,8 +718,15 @@ export default function CustomerDetail() {
       if (isGroupRoute) {
         const byName = consolidateByName(ents);
         if (byName.length === 0) return null;
-        const synthetic: Record<string, string> = {};
-        for (const c of byName) synthetic[c.name] = groupName;
+        // Force every selected child into the one group. Populate BOTH keys: groupNameOf()
+        // resolves by ledger id first, so a name-only synthetic map would let a child with a
+        // real muster entry escape into its own group.
+        const synthetic: CustomerGroupMap = { byLedgerId: {}, mapping: {}, groups: { [groupName]: [] } };
+        for (const c of byName) {
+          synthetic.mapping[c.name] = groupName;
+          synthetic.groups[groupName].push(c.name);
+          for (const id of c.constituentIds ?? []) synthetic.byLedgerId[id] = groupName;
+        }
         const grouped = consolidateByGroup(byName, synthetic);
         return grouped[0] ?? null;
       }
@@ -708,8 +788,12 @@ export default function CustomerDetail() {
   const [extraInvoiceRefs, setExtraInvoiceRefs] = useState<Set<string>>(new Set());
   useEffect(() => {
     const ids = entityIdsKey ? entityIdsKey.split(",") : [];
-    const source = (import.meta.env.VITE_DATA_SOURCE ?? "local").toLowerCase();
-    if (ids.length === 0 || source !== "supabase") {
+    // `envSource`, NOT `source` — this local used to be called `source` and SHADOWED the active
+    // source from useReceivablesSource() above, so on Live it queried the legacy pipeline project
+    // with ConnectWave ledger GUIDs, matched nothing, and returned an empty set with no error.
+    // The Live path gets its bill dates from liveTxns.billMeta instead (see classifyApplied).
+    const envSource = (import.meta.env.VITE_DATA_SOURCE ?? "local").toLowerCase();
+    if (source === "connectwave" || ids.length === 0 || envSource !== "supabase") {
       setExtraInvoiceRefs(new Set());
       return;
     }
@@ -719,7 +803,9 @@ export default function CustomerDetail() {
       .then((set) => { if (!cancelled) setExtraInvoiceRefs(set); })
       .catch(() => { if (!cancelled) setExtraInvoiceRefs(new Set()); });
     return () => { cancelled = true; };
-  }, [entityIdsKey]);
+    // `source` is a dependency: without it, toggling Live off without navigating away left the
+    // pipeline path running on a stale (empty) set.
+  }, [entityIdsKey, source]);
 
   // Union of the authoritative cross-FY fetch and the currently-loaded invoices
   // (the latter keeps JSON-mode / pre-fetch renders reasonable).
@@ -734,13 +820,34 @@ export default function CustomerDetail() {
 
   // Classify a bill reference: empty / sentinel → on-account; present in the
   // current-period universe → current invoice; otherwise → opening-balance bill.
+  //
+  // Live (Tally) uses a different, stronger rule. Set membership can't work there: the invoice
+  // snapshot holds OPEN bills only, so every settled bill would look absent and be mislabelled
+  // "opening". Instead the fetcher returns each bill's actual raise-date (the date of the voucher
+  // that created it), gathered across ALL of the company's books — which is what makes this correct
+  // for a customer whose current book starts part-way through their history.
+  const liveBillMeta = source === "connectwave" ? liveTxns?.billMeta : undefined;
   const classifyApplied = useMemo(() => {
+    if (liveBillMeta) {
+      return (ref: string | null | undefined): AppliedTo => {
+        const n = normBillRef(ref);
+        // On Live the fetcher already emitted null for anything Tally itself called
+        // On Account / Advance, so an empty ref here is authoritative, not a guess.
+        if (!n || n === "ON ACCOUNT" || n === "UNALLOCATED") return "on_account";
+        const raised = liveBillMeta[n];
+        // No raise-date in ANY of the company's books ⇒ the bill predates the mirror ⇒ opening.
+        if (!raised) return "opening";
+        return raised >= LIVE_PERIOD_START ? "current" : "opening";
+      };
+    }
     return (ref: string | null | undefined): AppliedTo => {
       const n = (ref ?? "").trim().toUpperCase();
       if (!n || n === "ON ACCOUNT" || n === "UNALLOCATED") return "on_account";
       return billRefUniverse.has(n) ? "current" : "opening";
     };
-  }, [billRefUniverse]);
+    // Gated on billMeta being LOADED rather than on `source`, so an in-flight render falls through
+    // to the pipeline lambda instead of flashing every row as "opening".
+  }, [liveBillMeta, billRefUniverse]);
 
   // Merged debit-note transactions
   const debitNoteTxns = useMemo(() =>
@@ -1045,6 +1152,10 @@ export default function CustomerDetail() {
 
     // Other payments (manual, non-Tally) — reduce outstanding like a receipt,
     // tracked separately. paymentRef shown as the voucher reference.
+    // They carry no sale type of their own, so take it from the bill they settle (same rule as
+    // receipts) — otherwise a sale-type filter would hide a payment that did settle a bill of
+    // that type. Truly on-account rows keep no type and drop out, like an on-account receipt.
+    const typeOfBill = new Map(invoices.map((inv) => [inv.billRefName, inv.voucherType]));
     otherPaymentTxns.forEach((o, i) => {
       const gross = Math.abs(o.amount);
       rows.push({
@@ -1056,6 +1167,7 @@ export default function CustomerDetail() {
         amount: gross,
         signedAmount: -gross,
         subType: o.type,
+        saleType: (o.refInvoice ? typeOfBill.get(o.refInvoice) : undefined) ?? undefined,
         narration: o.remark ?? undefined,
         appliedTo: classifyApplied(o.refInvoice),
         _company: o._company,
@@ -1180,8 +1292,8 @@ export default function CustomerDetail() {
   }, [invoices, ledgerMonth]);
 
   const activeLines = activeTrendKeys.size === 0
-    ? allLines
-    : allLines.filter((t) => activeTrendKeys.has(t.key));
+    ? availableTrendLines
+    : availableTrendLines.filter((t) => activeTrendKeys.has(t.key));
 
   /* ── Loading / Error ─────────────────────────────────── */
   if (loading) {
@@ -1286,7 +1398,7 @@ export default function CustomerDetail() {
       active: isKpiActive("sales", "overdue"),
     },
     { label: "Credit Limit",   value: fmt(customer.creditLimit) },
-    { label: "Utilization",    value: customer.blocked ? "—" : `${utilization}%`,  destructive: !customer.blocked && utilization > 100 },
+    { label: "Utilization",    value: customer.creditLimit === 1 ? "—" : `${utilization}%`,  destructive: customer.creditLimit !== 1 && utilization > 100 },
     { label: "Credit Period",  value: `${customer.creditPeriod} days` },
     {
       label: "Opening Balance",
@@ -1369,7 +1481,7 @@ export default function CustomerDetail() {
 
       // Monthly Analysis — only the columns currently shown on screen (in ₹).
       const toRupees = (lakhs: number) => Math.round(lakhs * 100_000);
-      const selectedCols = MONTHLY_COLS.filter((c) => monthlyCols.has(c.key));
+      const selectedCols = availableMonthlyCols.filter((c) => visibleMonthlyKeys.has(c.key));
       const monthlyColumns = ["Month", ...selectedCols.map((c) => c.label)];
       const monthlyRows = trendData.map((row) => [
         row.month,
@@ -1495,9 +1607,9 @@ export default function CustomerDetail() {
                   <Badge
                     variant="outline"
                     className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30"
-                    title="Source-sheet credit limit is set to 1 (blocked sentinel — typically INK customers only)"
+                    title="Flagged as Red Mark (managed in Masters → Red Mark on the Live/Tally view)"
                   >
-                    Blocked
+                    Red Mark
                   </Badge>
                 )}
                 {isGroupRoute ? (
@@ -1520,7 +1632,7 @@ export default function CustomerDetail() {
               )}
               {customer.blocked && (
                 <p className="text-[11px] text-muted-foreground/80 italic mt-1">
-                  Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
+                  Note: "Red Mark" customers are hand-picked in Masters → Red Mark (Live/Tally). On the default view it still reflects the legacy credit-limit=1 marker.
                 </p>
               )}
               {effectiveSaleType !== "all" && (
@@ -1530,22 +1642,24 @@ export default function CustomerDetail() {
               )}
               {/* Combined filters row: sale type + child multi-select (groups) + company/location */}
               <div className="flex items-end gap-2 mt-1.5 flex-wrap">
-                <div className="flex flex-col gap-0.5">
-                  <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
-                  <SaleTypeMultiSelect
-                    value={saleTypeFilter === "all" ? [] : saleTypeFilter.split(",").filter(Boolean)}
-                    onChange={(arr) => {
-                      const next = arr.length === 0 ? "all" : arr.join(",");
-                      setSaleTypeFilter(next);
-                      setSearchParams((prev) => {
-                        const p = new URLSearchParams(prev);
-                        if (next === "all") p.delete("saleType"); else p.set("saleType", next);
-                        return p;
-                      }, { replace: true });
-                    }}
-                    triggerClassName="h-7 w-[160px] text-xs rounded-input border-border"
-                  />
-                </div>
+                {saleTypeFilterAvailable && (
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Sale Type</span>
+                    <SaleTypeMultiSelect
+                      value={saleTypeFilter === "all" ? [] : saleTypeFilter.split(",").filter(Boolean)}
+                      onChange={(arr) => {
+                        const next = arr.length === 0 ? "all" : arr.join(",");
+                        setSaleTypeFilter(next);
+                        setSearchParams((prev) => {
+                          const p = new URLSearchParams(prev);
+                          if (next === "all") p.delete("saleType"); else p.set("saleType", next);
+                          return p;
+                        }, { replace: true });
+                      }}
+                      triggerClassName="h-7 w-[160px] text-xs rounded-input border-border"
+                    />
+                  </div>
+                )}
                 {((isGroupRoute && groupChildNames.length > 1 && selectedChildren) || allEntities.length > 1) && (
                   <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0 mb-2" />
                 )}
@@ -1782,7 +1896,7 @@ export default function CustomerDetail() {
               All
             </Button>
             {/* Individual toggles — multi-select */}
-            {allLines.map((t) => {
+            {availableTrendLines.map((t) => {
               const active = activeTrendKeys.has(t.key);
               return (
                 <Button
@@ -1848,15 +1962,18 @@ export default function CustomerDetail() {
               value: string;
               color: string;
               filter: { voucherType: string; status: string };
+              /** Monthly-trend key this tile totals, when it has one. Tiles whose key the current
+               *  source can't supply per month are dropped rather than shown summing zeros. */
+              monthlyKey?: string;
             }> = [
               { label: "Total Sales",       value: fmtL(trendData.reduce((s, r) => s + r.sales, 0)),                              color: "text-primary",                 filter: { voucherType: "sales",        status: "all" }     },
               { label: "Total Receipts",    value: fmtL(trendData.reduce((s, r) => s + r.receipts, 0)),                           color: "text-[hsl(142,71%,45%)]",      filter: { voucherType: "receipt",      status: "all" }     },
-              { label: "Total Cr. Notes",   value: fmtL(trendData.reduce((s, r) => s + r.creditNotes, 0)),                        color: "text-[hsl(271,75%,58%)]",      filter: { voucherType: "credit_note",  status: "all" }     },
-              { label: "Total Dr. Notes",   value: fmtL(trendData.reduce((s, r) => s + (r.debitNotes ?? 0), 0)),                  color: "text-[hsl(28,80%,55%)]",       filter: { voucherType: "debit_note",   status: "all" }     },
-              { label: "Journal Adj (Net)", value: fmtLDrCr(trendData.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0)),      color: "text-[hsl(231,65%,55%)]",      filter: { voucherType: "journal",      status: "all" }     },
-              { label: "Total Chq Returns", value: fmtL(trendData.reduce((s, r) => s + r.checkReturns, 0)),                       color: "text-[hsl(213,94%,52%)]",      filter: { voucherType: "check_return", status: "all" }     },
+              { label: "Total Cr. Notes",   value: fmtL(trendData.reduce((s, r) => s + r.creditNotes, 0)),                        color: "text-[hsl(271,75%,58%)]",      filter: { voucherType: "credit_note",  status: "all" }, monthlyKey: "creditNotes"        },
+              { label: "Total Dr. Notes",   value: fmtL(trendData.reduce((s, r) => s + (r.debitNotes ?? 0), 0)),                  color: "text-[hsl(28,80%,55%)]",       filter: { voucherType: "debit_note",   status: "all" }, monthlyKey: "debitNotes"         },
+              { label: "Journal Adj (Net)", value: fmtLDrCr(trendData.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0)),      color: "text-[hsl(231,65%,55%)]",      filter: { voucherType: "journal",      status: "all" }, monthlyKey: "journalAdjustments" },
+              { label: "Total Chq Returns", value: fmtL(trendData.reduce((s, r) => s + r.checkReturns, 0)),                       color: "text-[hsl(213,94%,52%)]",      filter: { voucherType: "check_return", status: "all" }, monthlyKey: "checkReturns"       },
               { label: "Outstanding",       value: fmtL(Math.abs(trendData[trendData.length - 1]?.outstanding ?? 0)),                       color: "text-secondary",               filter: { voucherType: "sales",        status: "all" }     },
-            ];
+            ].filter((t) => !t.monthlyKey || !(source === "connectwave" && LIVE_UNAVAILABLE_MONTHLY.has(t.monthlyKey)));
 
             const overdueFilter = { voucherType: "sales", status: "overdue" };
             const isOverdueActive = isKpiActive(overdueFilter.voucherType, overdueFilter.status);
@@ -2061,7 +2178,7 @@ export default function CustomerDetail() {
               <DropdownMenuContent align="end" className="w-44">
                 <DropdownMenuLabel className="text-xs">Show columns</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {MONTHLY_COLS.map((col) => (
+                {availableMonthlyCols.map((col) => (
                   <DropdownMenuCheckboxItem
                     key={col.key}
                     className="text-xs"
@@ -2089,7 +2206,7 @@ export default function CustomerDetail() {
             <TableHeader>
               <TableRow className="bg-muted/50">
                 <TableHead className="text-xs font-semibold text-foreground/70">Month</TableHead>
-                {MONTHLY_COLS.filter((c) => monthlyCols.has(c.key)).map((c) => (
+                {availableMonthlyCols.filter((c) => visibleMonthlyKeys.has(c.key)).map((c) => (
                   <TableHead key={c.key} className="text-xs font-semibold text-foreground/70 text-right">{c.label}</TableHead>
                 ))}
               </TableRow>
@@ -2097,7 +2214,7 @@ export default function CustomerDetail() {
             <TableBody>
               {trendData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={monthlyCols.size + 1} className="text-center py-8 text-muted-foreground text-sm">
+                  <TableCell colSpan={visibleMonthlyKeys.size + 1} className="text-center py-8 text-muted-foreground text-sm">
                     No monthly data available.
                   </TableCell>
                 </TableRow>
@@ -2115,27 +2232,27 @@ export default function CustomerDetail() {
                           <BookOpen className="h-3 w-3 text-muted-foreground opacity-60" />
                         </span>
                       </TableCell>
-                      {monthlyCols.has("sales") && <TableCell className="text-sm text-right font-mono">{fmtL(row.sales)}</TableCell>}
-                      {monthlyCols.has("receipts") && <TableCell className="text-sm text-right font-mono">{fmtL(row.receipts)}</TableCell>}
-                      {monthlyCols.has("creditNotes") && <TableCell className="text-sm text-right font-mono">{fmtL(row.creditNotes)}</TableCell>}
-                      {monthlyCols.has("debitNotes") && <TableCell className="text-sm text-right font-mono text-[hsl(28,80%,55%)]">{fmtL(row.debitNotes ?? 0)}</TableCell>}
-                      {monthlyCols.has("journalAdjustments") && (
+                      {visibleMonthlyKeys.has("sales") && <TableCell className="text-sm text-right font-mono">{fmtL(row.sales)}</TableCell>}
+                      {visibleMonthlyKeys.has("receipts") && <TableCell className="text-sm text-right font-mono">{fmtL(row.receipts)}</TableCell>}
+                      {visibleMonthlyKeys.has("creditNotes") && <TableCell className="text-sm text-right font-mono">{fmtL(row.creditNotes)}</TableCell>}
+                      {visibleMonthlyKeys.has("debitNotes") && <TableCell className="text-sm text-right font-mono text-[hsl(28,80%,55%)]">{fmtL(row.debitNotes ?? 0)}</TableCell>}
+                      {visibleMonthlyKeys.has("journalAdjustments") && (
                         <TableCell className={`text-sm text-right font-mono ${(row.journalAdjustments ?? 0) > 0 ? "text-destructive" : (row.journalAdjustments ?? 0) < 0 ? "text-emerald-700" : "text-muted-foreground"}`}>
                           {fmtLDrCr(row.journalAdjustments ?? 0)}
                         </TableCell>
                       )}
-                      {monthlyCols.has("checkReturns") && <TableCell className="text-sm text-right font-mono text-[hsl(213,94%,52%)] font-semibold">{fmtL(row.checkReturns)}</TableCell>}
-                      {monthlyCols.has("outstanding") && <TableCell className="text-sm text-right font-mono">{fmtL(Math.abs(row.outstanding))}</TableCell>}
-                      {monthlyCols.has("overdue") && <TableCell className="text-sm text-right font-mono text-destructive font-semibold">{fmtL(row.overdue)}</TableCell>}
+                      {visibleMonthlyKeys.has("checkReturns") && <TableCell className="text-sm text-right font-mono text-[hsl(213,94%,52%)] font-semibold">{fmtL(row.checkReturns)}</TableCell>}
+                      {visibleMonthlyKeys.has("outstanding") && <TableCell className="text-sm text-right font-mono">{fmtL(Math.abs(row.outstanding))}</TableCell>}
+                      {visibleMonthlyKeys.has("overdue") && <TableCell className="text-sm text-right font-mono text-destructive font-semibold">{fmtL(row.overdue)}</TableCell>}
                     </TableRow>
                   ))}
                   <TableRow className="bg-muted/50 font-semibold border-t-2 border-border">
                     <TableCell className="text-sm font-bold">Summary</TableCell>
-                    {monthlyCols.has("sales") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(trendData.reduce((s, r) => s + r.sales, 0))}</TableCell>}
-                    {monthlyCols.has("receipts") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(trendData.reduce((s, r) => s + r.receipts, 0))}</TableCell>}
-                    {monthlyCols.has("creditNotes") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(trendData.reduce((s, r) => s + r.creditNotes, 0))}</TableCell>}
-                    {monthlyCols.has("debitNotes") && <TableCell className="text-sm text-right font-mono font-bold text-[hsl(28,80%,55%)]">{fmtL(trendData.reduce((s, r) => s + (r.debitNotes ?? 0), 0))}</TableCell>}
-                    {monthlyCols.has("journalAdjustments") && (() => {
+                    {visibleMonthlyKeys.has("sales") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(trendData.reduce((s, r) => s + r.sales, 0))}</TableCell>}
+                    {visibleMonthlyKeys.has("receipts") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(trendData.reduce((s, r) => s + r.receipts, 0))}</TableCell>}
+                    {visibleMonthlyKeys.has("creditNotes") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(trendData.reduce((s, r) => s + r.creditNotes, 0))}</TableCell>}
+                    {visibleMonthlyKeys.has("debitNotes") && <TableCell className="text-sm text-right font-mono font-bold text-[hsl(28,80%,55%)]">{fmtL(trendData.reduce((s, r) => s + (r.debitNotes ?? 0), 0))}</TableCell>}
+                    {visibleMonthlyKeys.has("journalAdjustments") && (() => {
                       const totJ = trendData.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0);
                       return (
                         <TableCell className={`text-sm text-right font-mono font-bold ${totJ > 0 ? "text-destructive" : totJ < 0 ? "text-emerald-700" : ""}`}>
@@ -2143,9 +2260,9 @@ export default function CustomerDetail() {
                         </TableCell>
                       );
                     })()}
-                    {monthlyCols.has("checkReturns") && <TableCell className="text-sm text-right font-mono font-bold text-[hsl(213,94%,52%)]">{fmtL(trendData.reduce((s, r) => s + r.checkReturns, 0))}</TableCell>}
-                    {monthlyCols.has("outstanding") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(Math.abs(trendData[trendData.length - 1]?.outstanding ?? 0))}</TableCell>}
-                    {monthlyCols.has("overdue") && <TableCell className="text-sm text-right font-mono font-bold text-destructive">{fmtL(trendData[trendData.length - 1]?.overdue ?? 0)}</TableCell>}
+                    {visibleMonthlyKeys.has("checkReturns") && <TableCell className="text-sm text-right font-mono font-bold text-[hsl(213,94%,52%)]">{fmtL(trendData.reduce((s, r) => s + r.checkReturns, 0))}</TableCell>}
+                    {visibleMonthlyKeys.has("outstanding") && <TableCell className="text-sm text-right font-mono font-bold">{fmtL(Math.abs(trendData[trendData.length - 1]?.outstanding ?? 0))}</TableCell>}
+                    {visibleMonthlyKeys.has("overdue") && <TableCell className="text-sm text-right font-mono font-bold text-destructive">{fmtL(trendData[trendData.length - 1]?.overdue ?? 0)}</TableCell>}
                   </TableRow>
                 </>
               )}

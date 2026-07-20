@@ -36,8 +36,8 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
-import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
+import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
@@ -78,10 +78,14 @@ import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
  * element-wise-summed billing vector. On the live book the two answers differ on every single
  * salesperson node — one by 91 days.
  *
- * PINNED TWICE, both deliberate:
- *  1. SOURCE → the pipeline. The admin "Live (Tally)" toggle must not move a management number.
+ * FOLLOWS THE SOURCE TOGGLE, PINNED TO ONE SCOPE:
+ *  1. SOURCE → follows the admin "Live (Tally)" topbar toggle (like Overdue / Aging). No source
+ *     wrapper below — it inherits the app-level provider. One Live caveat: the ConnectWave monthly
+ *     feed has no per-month credit notes, so the engine estimates each customer's notes from their
+ *     REAL annual totals (estimateNotesFromFy) — else Live DSO would read optimistically low. The
+ *     basis strip says so on screen under Live.
  *  2. SCOPE → Both FYs. Load-bearing: inside a young FY the 12-month lookback would silently
- *     collapse to ~3 months and EVERY DSO would be wrong.
+ *     collapse to ~3 months and EVERY DSO would be wrong. The nested FYProvider keeps this pinned.
  */
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
@@ -229,12 +233,12 @@ function DsoInner() {
     [allCustomers],
   );
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)),
+    () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap),
     [customerGroupMap],
   );
 
@@ -257,7 +261,7 @@ function DsoInner() {
     if (locations.length)     { const s = new Set(locations);     d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length)  { const s = new Set(salespersons);  d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length) { const s = new Set(customerNames); d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(customerGroupMap.mapping[c.name] ?? c.name)); }
+    if (groupNamesSel.length) { const s = new Set(groupNamesSel); d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (segment !== "all") {
       const act = new Map<string, number>();
       for (const c of d) {
@@ -286,7 +290,7 @@ function DsoInner() {
   // stated on the basis panel — Avg Age of Open Bills covers the BILLED portion of AR, not all
   // of it.
   const bills = useMemo(
-    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, {}, customerGroupMap.mapping),
+    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, {}, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, customerGroupMap],
   );
   const billsByLedger = useMemo(() => {
@@ -299,15 +303,19 @@ function DsoInner() {
     return m;
   }, [bills]);
 
-  // ── Source-aware month-grain adapters, pinned to "pipeline" ───────────────────────
+  // ── Source-aware month-grain adapters ─────────────────────────────────────────────
+  // Follow the topbar Live toggle: "live" reads receipts/last-receipt off the ConnectWave snapshot
+  // fields, "pipeline" derives them from the transaction arrays (see lib/collections.ts).
+  const collSource = useReceivablesSource() === "connectwave" ? "live" : "pipeline";
+  const isLive = collSource === "live";
   const series = useMemo(
-    () => buildMonthlySeries(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail],
+    () => buildMonthlySeries(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
   );
   const balances = useMemo(() => buildLedgerBalances(allCustomers), [allCustomers]);
   const lastReceiptByLedger = useMemo(
-    () => buildLastReceiptDates(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail],
+    () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
   );
   const outstandingByType = useMemo(() => buildOutstandingByType(allCustomers), [allCustomers]);
   const ledgerById = useMemo(
@@ -343,10 +351,11 @@ function DsoInner() {
       buildDsoRows({
         customers: eligible, series, balances, billsByLedger, lastReceiptByLedger, ledgerById,
         inScopeLedgerIds, months, lookbackMonths, dayVec, asOfDate, groupOf,
+        estimateNotesFromFy: isLive,
       }),
     [
       eligible, series, balances, billsByLedger, lastReceiptByLedger, ledgerById,
-      inScopeLedgerIds, months, lookbackMonths, dayVec, asOfDate, groupOf,
+      inScopeLedgerIds, months, lookbackMonths, dayVec, asOfDate, groupOf, isLive,
     ],
   );
 
@@ -741,7 +750,7 @@ function DsoInner() {
     ...(saleTypeActive ? [{ label: `Sale Type: ${saleTypes.length} of ${SALE_TYPES.length}${machineExcluded ? " (Machine excluded)" : ""}`, onRemove: () => setSaleTypes([]) }] : []),
     ...(minAr !== "0" ? [{ label: `Min Outstanding: ${MIN_AR_OPTIONS.find((o) => o.key === minAr)?.label}`, onRemove: () => setMinAr("0") }] : []),
     ...(segment !== "all" ? [{ label: `Segment: ${segment === "active" ? "Active" : "Dormant"}`, onRemove: () => setSegment("all") }] : []),
-    ...(blockedOnly ? [{ label: "Blocked only", onRemove: () => setBlockedOnly(false) }] : []),
+    ...(blockedOnly ? [{ label: "Red Mark only", onRemove: () => setBlockedOnly(false) }] : []),
     // The chart drill-downs get chips like any other filter, so a narrowed report can always be
     // explained — and undone — from one place.
     ...(spFocus ? [{ label: `Salesperson (chart): ${spFocus}`, onRemove: () => setSpFocus(null) }] : []),
@@ -930,9 +939,21 @@ function DsoInner() {
             <span className="opacity-70"> — the as-of month counts elapsed days only</span>
           </div>
           <div className="text-xs text-muted-foreground ml-auto">
-            Pinned to <span className="font-semibold text-foreground/70">Both FYs</span> and the{" "}
-            <span className="font-semibold text-foreground/70">pipeline</span> — a 12-month lookback
-            cannot be read inside a single young financial year.
+            Pinned to <span className="font-semibold text-foreground/70">Both FYs</span>
+            {isLive ? (
+              <>
+                {" "}·{" "}
+                <span className="font-semibold text-foreground/70">Live (Tally)</span> — credit notes
+                are estimated from each customer's annual total (the live feed carries no month-by-month
+                credit notes), so DSO is very close to, not identical to, the pipeline figure.
+              </>
+            ) : (
+              <>
+                {" "}and the{" "}
+                <span className="font-semibold text-foreground/70">pipeline</span> — a 12-month lookback
+                cannot be read inside a single young financial year.
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1194,7 +1215,7 @@ function DsoInner() {
                   </div>
                   <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
                     <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(v === true)} />
-                    Blocked customers only
+                    Red Mark customers only
                   </label>
                 </PopoverContent>
               </Popover>
@@ -1439,13 +1460,11 @@ function DsoInner() {
   );
 }
 
-/** Pinned twice — see the file header. */
+/** Follows the Live toggle; FY pinned to Both FYs — see the file header. */
 export default function DsoReport() {
   return (
-    <ReceivablesSourceProvider value="default">
-      <FYProvider>
-        <DsoInner />
-      </FYProvider>
-    </ReceivablesSourceProvider>
+    <FYProvider>
+      <DsoInner />
+    </FYProvider>
   );
 }

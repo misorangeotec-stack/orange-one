@@ -32,8 +32,8 @@ import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
 import { InvoiceDrilldownDialog, type InvoiceDrillRow } from "@hub/components/InvoiceDrilldownDialog";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { useAppData } from "@hub/lib/useAppData";
-import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
+import { useAppData, groupNameOf, allGroupNames } from "@hub/lib/useAppData";
+import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
@@ -65,17 +65,23 @@ import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
  * every rupee is bill-wise rather than read off Customer.agingBuckets, why the cutoffs 90/120/180
  * reconcile exactly to the Aging Report's columns, and why % Aged divides by billed outstanding.
  *
- * PINNED TWICE, both deliberate:
+ * FOLLOWS THE SOURCE TOGGLE, PINNED TO ONE SCOPE:
  *
- *  1. SOURCE → the pipeline. The admin "Live (Tally)" topbar toggle must not be able to change a
- *     number on a report that goes to management. (Same as CollectionPerformanceReport / Followups.)
+ *  1. SOURCE → follows the admin "Live (Tally)" topbar toggle (like the Aging Report / Dashboard).
+ *     There is no source wrapper below, so the report inherits the app-level ReceivablesSourceProvider
+ *     that ReceivablesHubApp binds to the toggle: pipeline numbers when Live is OFF, ConnectWave
+ *     (live Tally) numbers when Live is ON. The bill-wise engine is source-agnostic — under Live the
+ *     same invoices come from collection_invoice_snapshot (Other Payments already netted into pending),
+ *     so the aged slice ties to the Live Aging Report and dashboard. (This used to be pinned to the
+ *     pipeline; that pin was lifted so the report exists under Live too.)
  *
  *  2. SCOPE → Both FYs. This is the subtle one. On a single-FY view the figure barely moves but its
  *     MEANING flips: FY 26-27 is ~100 days old, so no invoice raised inside it can yet be 120 days
  *     overdue — 100% of the number would silently be pre-FY debt. Aging is a property of the whole
  *     book, so the report reads the whole book. The nested FYProvider below re-bases the FY context
  *     to its default (Both FYs), and UserLayout hides the FY selector on this route so the topbar
- *     can never contradict the data.
+ *     can never contradict the data. (Under Live the invoice snapshot is unscoped by FY anyway, so
+ *     this pin is belt-and-braces there.)
  */
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
@@ -187,13 +193,13 @@ function OverdueAgingInner() {
     [allCustomers],
   );
   const realGroupNames = useMemo(
-    () => new Set(Object.values(customerGroupMap.mapping)),
+    () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
   const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
 
   const groupOf = useCallback(
-    (c: ConsolidatedCustomer) => customerGroupMap.mapping[c.name] ?? c.name,
+    (c: ConsolidatedCustomer) => groupNameOf(c, customerGroupMap),
     [customerGroupMap],
   );
 
@@ -209,7 +215,7 @@ function OverdueAgingInner() {
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length){ const s = new Set(customerNames);d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length){ const s = new Set(groupNamesSel);d = d.filter((c) => s.has(customerGroupMap.mapping[c.name] ?? c.name)); }
+    if (groupNamesSel.length){ const s = new Set(groupNamesSel);d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
     if (segment !== "all") {
       const act = new Map<string, number>();
       for (const c of d) {
@@ -240,7 +246,7 @@ function OverdueAgingInner() {
   );
 
   const baseBills = useMemo(
-    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap.mapping),
+    () => enumerateBills(scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap],
   );
 
@@ -264,7 +270,7 @@ function OverdueAgingInner() {
     const extra: EnrichedBill[] = [];
     for (const c of scopedLedgers) {
       const adj = c.outstanding - (billNet.get(c.id) ?? 0);
-      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap.mapping));
+      if (Math.abs(adj) >= EPS) extra.push(ledgerAdjBill(c, adj, customerGroupMap));
     }
     return extra.length ? [...baseBills, ...extra] : baseBills;
   }, [baseBills, scopedLedgers, customerGroupMap, saleTypeActive]);
@@ -293,13 +299,17 @@ function OverdueAgingInner() {
     [undatedBills],
   );
 
-  // ── Receipt-derived columns (source-aware helpers, pinned to "pipeline") ───────────
+  // ── Receipt-derived columns (source-aware helpers) ─────────────────────────────────
   // Summed over constituentIds ∩ inScopeLedgerIds inside buildOverdueRows — NOT via factsFor(),
   // which sums over EVERY constituent ledger and would leak another company's sales into a
   // company-filtered view.
+  // The report follows the topbar Live toggle, so read the current source and translate it to the
+  // collections helper's source arg ("live" reads receipts off c.monthlyReceipts / c.lastReceiptDate;
+  // "pipeline" derives them from the transaction arrays) — see lib/collections.ts.
+  const collSource = useReceivablesSource() === "connectwave" ? "live" : "pipeline";
   const series = useMemo(
-    () => buildMonthlySeries(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail],
+    () => buildMonthlySeries(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
   );
   const salesByLedgerMonth = useMemo(() => {
     const out = new Map<string, Map<string, number>>();
@@ -311,8 +321,8 @@ function OverdueAgingInner() {
     return out;
   }, [series]);
   const lastReceiptByLedger = useMemo(
-    () => buildLastReceiptDates(allCustomers, customerDetail, "pipeline"),
-    [allCustomers, customerDetail],
+    () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
   );
 
   // ── Rows ──────────────────────────────────────────────────────────────────────────
@@ -682,7 +692,7 @@ function OverdueAgingInner() {
     ...(saleTypes.length ? [{ label: `Sale Type: ${saleTypes.length}`, onRemove: () => setSaleTypes([]) }] : []),
     ...(minAged !== "0" ? [{ label: `Min Aged: ${MIN_AGED_OPTIONS.find((o) => o.key === minAged)?.label}`, onRemove: () => setMinAged("0") }] : []),
     ...(segment !== "all" ? [{ label: `Segment: ${segment === "active" ? "Active" : "Dormant"}`, onRemove: () => setSegment("all") }] : []),
-    ...(blockedOnly ? [{ label: "Blocked only", onRemove: () => setBlockedOnly(false) }] : []),
+    ...(blockedOnly ? [{ label: "Red Mark only", onRemove: () => setBlockedOnly(false) }] : []),
     ...(excludeBF ? [{ label: "Excluding brought-forward", onRemove: () => setExcludeBF(false) }] : []),
   ];
   const clearFilters = () => {
@@ -1133,7 +1143,7 @@ function OverdueAgingInner() {
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(v === true)} />
-                    <span className="text-xs text-foreground">Blocked customers only</span>
+                    <span className="text-xs text-foreground">Red Mark customers only</span>
                   </label>
                   <label className="flex items-start gap-2 cursor-pointer">
                     <Checkbox className="mt-0.5" checked={excludeBF} onCheckedChange={(v) => setExcludeBF(v === true)} />
@@ -1384,18 +1394,18 @@ function OverdueAgingInner() {
 }
 
 /**
- * Pinned twice — see the file header.
+ * Pinned to Both FYs only; the SOURCE follows the topbar Live toggle — see the file header.
  *
- * The nested FYProvider re-bases the financial-year context to its own default (Both FYs) and never
- * changes it, so this report always reads the full book no matter what the topbar selector says.
- * UserLayout hides that selector on this route, so the two can never disagree on screen.
+ * No source wrapper here: the report inherits the app-level ReceivablesSourceProvider (bound to the
+ * Live toggle in ReceivablesHubApp), exactly like the Aging Report. The nested FYProvider re-bases
+ * the financial-year context to its own default (Both FYs) and never changes it, so this report
+ * always reads the full book no matter what the topbar selector says. UserLayout hides that selector
+ * on this route, so the two can never disagree on screen.
  */
 export default function OverdueAgingReport() {
   return (
-    <ReceivablesSourceProvider value="default">
-      <FYProvider>
-        <OverdueAgingInner />
-      </FYProvider>
-    </ReceivablesSourceProvider>
+    <FYProvider>
+      <OverdueAgingInner />
+    </FYProvider>
   );
 }

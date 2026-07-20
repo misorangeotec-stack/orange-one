@@ -481,7 +481,7 @@ export const OA_FOCUS_LABELS: Record<OAFocus, string> = {
   broughtForward: "Brought Forward",
   neverPaid:      "Never Paid",
   stillBuying:    "Still Buying",
-  blocked:        "Blocked",
+  blocked:        "Red Mark",
   netCredit:      "Net Credit",
   fullyAged:      "Fully Aged",
 };

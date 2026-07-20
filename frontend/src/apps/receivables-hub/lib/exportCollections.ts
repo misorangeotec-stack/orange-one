@@ -195,7 +195,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
     "Cheque Returns", "Credit Notes",
     "Max Overdue Days", "Days Since Receipt", "Last Receipt Date",
     "Sales in Prior Period", "Last Sale Month", "Months Since Sale",
-    "Credit Limit", "Utilization %", "Risk", "Blocked",
+    "Credit Limit", "Utilization %", "Risk", "Red Mark",
   ];
   const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 15, 17, 20, 21, 25, 28];
   const PCT_COLS = [13, 14, 18, 19];

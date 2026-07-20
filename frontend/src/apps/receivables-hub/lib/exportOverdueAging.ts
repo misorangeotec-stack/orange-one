@@ -163,7 +163,7 @@ function buildCustomerSheet(rows: OARow[], meta: OAExportMeta): XLSX.WorkSheet {
     "Total Overdue", "Billed Outstanding", "On Account", "Unbilled Adj.", "Outstanding (net ledger)",
     "Net Credit", "Fully Aged",
     "Sales (Last 3M)", "Days Since Receipt", "Last Receipt Date",
-    "Credit Limit", "Utilization %", "Risk", "Blocked",
+    "Credit Limit", "Utilization %", "Risk", "Red Mark",
   ];
   const MONEY_COLS = [6, 7, 8, 9, 14, 15, 16, 17, 18, 21, 24];
   const PCT_COLS = [10, 25];

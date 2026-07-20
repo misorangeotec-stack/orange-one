@@ -35,7 +35,7 @@ function visibility(crumb: Crumb, isLast: boolean): string {
   return crumb.collapsible ? "hidden lg:flex" : "hidden md:flex";
 }
 
-export default function Breadcrumbs({ pageLabel }: { pageLabel?: string | null }) {
+export default function Breadcrumbs({ pageLabel }: { pageLabel?: string | Crumb[] | null }) {
   const { pathname } = useLocation();
   const crumbs = useMemo(() => buildTrail(pathname, pageLabel), [pathname, pageLabel]);
 
