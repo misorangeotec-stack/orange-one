@@ -30,3 +30,9 @@ verify_jwt = false
 # Purchase FMS. The caller is always a signed-in portal user, so JWT stays ON.
 [functions.import-fx-rate]
 verify_jwt = true
+
+# Receivables AI analysis (Claude) for the Top-Exposure report's Analysis tab. Receives a
+# pre-computed stats summary (no DB reads) and returns a collections narrative. Sensitive
+# figures + always a signed-in admin, so JWT verification stays ON.
+[functions.analyze-receivables]
+verify_jwt = true

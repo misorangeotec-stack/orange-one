@@ -16,6 +16,7 @@ import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import AgingReport from "@hub/pages/AgingReport";
+import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
 import RedMarkCustomersReport from "@hub/pages/RedMarkCustomersReport";
 import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
@@ -70,6 +71,8 @@ function HubRoutes() {
           <Route path="import" element={<ImportDashboard />} />
           <Route path="reports" element={<Reports />} />
           <Route path="reports/aging" element={<AgingReport />} />
+          {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
+          <Route path="reports/top-exposure" element={<TopExposureReport />} />
           <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
           {/* One page, two reports: ?below=0 is "Zero Collections", ?below=30 is "Below 30%".
               Zero collection is the 0% case, so they share an engine — see lib/collections.ts.

@@ -3,6 +3,7 @@ import {
   BookOpen,
   Calculator,
   CalendarClock,
+  Crown,
   FolderTree,
   Gauge,
   HandCoins,
@@ -151,6 +152,18 @@ export const REPORTS: ReportEntry[] = [
     source: "pipeline",
     status: "live",
     keywords: ["aged", "90", "180", "chase"],
+  },
+  {
+    id: "top-exposure",
+    title: "Top 50 Credit Exposure & Overdue Accounts",
+    purpose:
+      "The biggest exposure / most-overdue customers as a ranked call-list, with credit limit, utilisation and terms.",
+    category: "receivables",
+    path: "reports/top-exposure",
+    icon: Crown,
+    source: "tally", // Live (Tally) only — shows a "Not applicable" panel on the default pipeline.
+    status: "live",
+    keywords: ["top 50", "exposure", "call list", "credit limit", "utilisation", "over limit", "overdue", "chase"],
   },
   {
     id: "dso",
