@@ -599,6 +599,17 @@ export function useAppData(filters: Filters = {}): AppData {
           ? saleTypeList.reduce((s, t) => s + (c.salesByType?.[t] ?? 0), 0) / salesTotal
           : (saleTypeList.includes("other" as SaleType) ? 1 : 0);
 
+        // Fallback split by the OUTSTANDING mix, used only where a figure has no per-type source of
+        // its own. On the Live (Tally) source openingBalanceByType is unavailable (empty), so the
+        // sales-mix smear collapses a real opening balance to ₹0 for any customer with no *sales* in
+        // the selected type — hiding money that IS in their outstanding. outstandingByType is
+        // source-true on Live, and opening balance is a component of outstanding, so its mix is the
+        // honest fallback. On the default source this branch never runs (opening has its own split).
+        const outstandingTotal = allSaleTypes.reduce((s, t) => s + (c.outstandingByType?.[t] ?? 0), 0);
+        const selectedOutstandingShare = outstandingTotal > 1e-9
+          ? saleTypeList.reduce((s, t) => s + (c.outstandingByType?.[t] ?? 0), 0) / outstandingTotal
+          : selectedShare;
+
         const project = (
           total: number,
           byType: Partial<Record<SaleType, number>> | undefined,
@@ -607,6 +618,14 @@ export function useAppData(filters: Filters = {}): AppData {
           const residual = total - allSaleTypes.reduce((s, t) => s + (byType?.[t] ?? 0), 0);
           return typedSum + residual * selectedShare;
         };
+
+        // Opening balance: exact when its own per-type split is present (default source, sums to the
+        // total). When that split is entirely absent (Live), project by the outstanding mix rather
+        // than let project()'s sales-mix smear zero it out.
+        const openingByTypeAvailable = allSaleTypes.some((t) => Math.abs(c.openingBalanceByType?.[t] ?? 0) > 1e-9);
+        const projectedOpeningBalance = openingByTypeAvailable
+          ? project(c.openingBalance, c.openingBalanceByType)
+          : c.openingBalance * selectedOutstandingShare;
 
         // Same residual allocation per aging bucket: the flat agingBuckets include
         // opening balance (180+) which carries no sale type, so distribute that
@@ -636,10 +655,10 @@ export function useAppData(filters: Filters = {}): AppData {
           // remainder (advances / unallocated) has no bill-level sale type.
           outstanding:    project(c.outstanding,  c.outstandingByType),
           overdue:        project(c.overdue,      c.overdueByType),
-          // Opening balance is now source-true per sale type (1wM3 split): its
-          // openingBalanceByType sums to openingBalance, so project() carries zero
-          // residual and returns the exact selected-type opening (no smear).
-          openingBalance: project(c.openingBalance, c.openingBalanceByType),
+          // Opening balance: source-true per sale type on the default pipeline (1wM3 split); on Live
+          // it falls back to the outstanding mix (see projectedOpeningBalance above) instead of a
+          // sales-mix smear that would zero out real money.
+          openingBalance: projectedOpeningBalance,
           maxOverdueDays: typeMaxOD,
           agingBuckets:   projectedAgingBuckets,
         };

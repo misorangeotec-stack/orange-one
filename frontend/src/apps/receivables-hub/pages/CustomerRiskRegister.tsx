@@ -38,7 +38,7 @@ import * as XLSX from "xlsx-js-style";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import { saveAs } from "file-saver";
 import { useToast } from "@hub/hooks/use-toast";
-import { useAppData } from "@hub/lib/useAppData";
+import { useAppData, groupNameOf } from "@hub/lib/useAppData";
 import { useHubBase } from "@hub/lib/sourceContext";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
 import { SaleTypeMultiSelect } from "@hub/components/SaleTypeMultiSelect";
@@ -48,7 +48,7 @@ import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder, type GroupByPreset } from "@hub/components/GroupByBuilder";
-import type { AgingBuckets, Customer, ConsolidatedCustomer, GroupedCustomer, ProposedCreditLimitReason, ProposedConstituent } from "@hub/lib/types";
+import type { AgingBuckets, Customer, ConsolidatedCustomer, CustomerGroupMap, GroupedCustomer, ProposedCreditLimitReason, ProposedConstituent } from "@hub/lib/types";
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -164,6 +164,18 @@ function DeltaBadge({ pct }: { pct: number | null }) {
 
 const numTrim = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, ""));
 
+/** A reason is renderable only if it carries the fields the working/phrase helpers dereference.
+ *  A truthy-but-empty `{}` (a partial/missing pipeline write) passes `!reason` but then throws when
+ *  a phrase helper calls `.match`/`.replace` on an undefined string — so check the shape, not just
+ *  presence. `cycleMultiplier` is the numeric spine; the three *Reason strings are the crash sites. */
+function isRenderableReason(r: ProposedCreditLimitReason | undefined): r is ProposedCreditLimitReason {
+  return !!r
+    && typeof r.cycleMultiplier === "number"
+    && typeof r.paymentReason === "string"
+    && typeof r.overdueReason === "string"
+    && typeof r.riskReason === "string";
+}
+
 /** A multiplier factor → a plain "+10%" / "−20%" / "no change" phrase. */
 function factorPct(factor: number): string {
   const pct = Math.round((factor - 1) * 100);
@@ -216,6 +228,7 @@ function deltaText(deltaPct: number | null, creditLimit: number): string | null 
 /** One short reason line for a single company account inside an aggregated tooltip
  *  (multi-company customers list one line each instead of the full working). */
 function compactReason(reason: ProposedCreditLimitReason): string {
+  if (!isRenderableReason(reason)) return "Within normal range";
   if (reason.edgeCase === "dormant") return "No recent purchases — held at half its limit";
   const bits: string[] = [];
   if (reason.paymentFactor < 1) {
@@ -431,7 +444,7 @@ function AIProposedReason({ row }: { row: CustomerRow }) {
 
   // Single-constituent (or fallback)
   if (constituents.length <= 1) {
-    if (!reason) {
+    if (!isRenderableReason(reason)) {
       return (
         <div>
           <div className="font-semibold mb-1">
@@ -626,11 +639,15 @@ const R_PRESETS: GroupByPreset<RDim>[] = [
 interface RNode { key: string; depth: number; label: string; header: CustomerRow; children: RNode[]; isLeaf: boolean; count: number; dim?: RDim; }
 const RISK_ORDER: RiskCategory[] = ["critical", "high", "medium", "low"];
 
-/** Single display value for a consolidated row on a dimension (multi-valued → "Multiple"). */
-function rdimValue(r: CustomerRow, dim: RDim, nameToGroup: Record<string, string>): string {
+/** Single display value for a consolidated row on a dimension (multi-valued → "Multiple").
+ *  The "group" dimension resolves by ledger GUID (`groupNameOf`), not by name — 387 ledger
+ *  names repeat across companies, so a name lookup can borrow another company's group. A row
+ *  whose resolved group isn't a real multi-member group falls back to its own customer name,
+ *  so an ungrouped customer keeps its own row (and drills into /customer/, not /group/). */
+function rdimValue(r: CustomerRow, dim: RDim, groupMap: CustomerGroupMap, realGroups: Set<string>): string {
   switch (dim) {
     case "customer": return r.name;
-    case "group":    return nameToGroup[r.name] ?? r.name;
+    case "group":    { const g = groupNameOf(r, groupMap); return realGroups.has(g) ? g : r.name; }
     case "salesperson": { const xs = r.salesPersons?.length ? r.salesPersons : (r.salesPerson ? [r.salesPerson] : []); return xs.length === 0 ? "Unassigned" : xs.length === 1 ? xs[0] : "Multiple"; }
     case "category":    { const xs = r.categories?.length ? r.categories : (r.category ? [r.category] : []); return xs.length === 0 ? "Uncategorized" : xs.length === 1 ? xs[0] : "Multiple"; }
     case "company":     { const xs = r.companies ?? []; return xs.length === 0 ? "—" : xs.length === 1 ? xs[0] : "Multiple"; }
@@ -647,12 +664,16 @@ export default function CustomerRiskRegister() {
   // state and don't survive a same-tab Back navigation).
   // Keep drill-through inside the current set (default vs Live/Tally): rebase the app prefix.
   const hubBase = useHubBase();
+  const source = useReceivablesSource();
   const openInNewTab = (path: string) =>
     window.open(path.replace(/^\/outstanding-dashboard/, hubBase), "_blank", "noopener,noreferrer");
   // Carry the active Sale Type filter into the Customer/Group Detail page so the
   // detail view opens pre-filtered to the same type(s) (it reads ?saleType).
+  // NOT on Live (Tally): the detail page can't scope by sale type there (per-txn sale type
+  // doesn't exist), so it would ignore ?saleType and show ALL types — a total that wouldn't
+  // match the sale-type-filtered row the user clicked. Better to open unfiltered than to lie.
   const withSaleType = (path: string) =>
-    saleTypes.length > 0
+    source !== "connectwave" && saleTypes.length > 0
       ? `${path}?saleType=${encodeURIComponent(saleTypes.join(","))}`
       : path;
   const { toast } = useToast();
@@ -714,7 +735,7 @@ export default function CustomerRiskRegister() {
   // Follow-ups are a normal-dashboard feature: under the admin "Live (Tally)" source toggle
   // the columns (and the quick-add) disappear entirely, without disturbing the user's saved
   // column preferences.
-  const followupsEnabled = useReceivablesSource() === "default";
+  const followupsEnabled = source === "default";
   const visibleCols = useMemo(() => {
     if (followupsEnabled) return storedCols;
     const s = new Set(storedCols);
@@ -769,7 +790,7 @@ export default function CustomerRiskRegister() {
     return () => window.removeEventListener("resize", measureCols);
   }, [measureCols]);
 
-  const { loading, error, customers, allCustomers, consolidatedCustomers, groupedCustomers, customerDetail, salesPersonOptions } = useAppData({
+  const { loading, error, customers, allCustomers, consolidatedCustomers, groupedCustomers, customerGroupMap, customerDetail, salesPersonOptions } = useAppData({
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
     customerSegment,
     balanceFilter,
@@ -804,21 +825,18 @@ export default function CustomerRiskRegister() {
       };
     });
   }, [consolidatedCustomers, latestByEntity, followupsEnabled]);
-  const nameToGroup = useMemo(() => {
-    const m: Record<string, string> = {};
+  // The labels that are REAL (multi-member) groups. `groupedCustomers` is already rolled up by
+  // `groupNameOf` (GUID-first), so its multi-child entries name exactly the genuine groups. An
+  // ungrouped customer still surfaces as its own row under the "group" dimension (rdimValue falls
+  // back to the customer's own name) — that row must drill into /customer/, not /group/, which is
+  // how it behaved before the Group By rework.
+  const realGroupNames = useMemo(() => {
+    const s = new Set<string>();
     for (const g of groupedCustomers as GroupedCustomer[]) {
-      if ((g.isGroup ?? (g.childNames?.length ?? 0) > 1) && g.childNames) {
-        for (const n of g.childNames) m[n] = g.name;
-      }
+      if (g.isGroup ?? (g.childNames?.length ?? 0) > 1) s.add(g.name);
     }
-    return m;
+    return s;
   }, [groupedCustomers]);
-
-  // The labels that are REAL (multi-member) groups. `nameToGroup` only carries entries for genuine
-  // multi-child groups, so its values are exactly those. An ungrouped customer still surfaces as its
-  // own row under the "group" dimension (rdimValue falls back to the customer's own name) — that row
-  // must drill into /customer/, not /group/, which is how it behaved before the Group By rework.
-  const groupNames = useMemo(() => new Set(Object.values(nameToGroup)), [nameToGroup]);
 
   // Company / Location filter options — dependent (each list narrows by the other
   // selection) and sourced from the unfiltered, salesperson-scoped customer set so
@@ -1190,9 +1208,19 @@ export default function CustomerRiskRegister() {
     });
   }, [rows, customerDetail]);
 
+  // On Live (Tally) the `monthly` snapshot has no per-month Credit Notes or Cheque Returns, so
+  // those series would draw a flat ₹0 line and a ₹0 tile beneath a non-zero table column. Hide
+  // them there (same call the Customer Detail page makes) rather than chart a fabricated zero.
+  const liveTrendGap = source === "connectwave";
+  const visibleTrendLines = useMemo(
+    () => liveTrendGap
+      ? trendAllLines.filter((t) => t.key !== "creditNotes" && t.key !== "checkReturns")
+      : trendAllLines,
+    [liveTrendGap],
+  );
   const activeLines = activeTrendKeys.size === 0
-    ? trendAllLines
-    : trendAllLines.filter((t) => activeTrendKeys.has(t.key));
+    ? visibleTrendLines
+    : visibleTrendLines.filter((t) => activeTrendKeys.has(t.key));
 
   // ── Group-by roll-up (Aging-style, N levels) ────────────────────────────────
   // Leaves are the filtered+sorted consolidated customers (`rows`); internal nodes are
@@ -1269,7 +1297,7 @@ export default function CustomerRiskRegister() {
       const order: string[] = [];
       const buckets = new Map<string, CustomerRow[]>();
       for (const r of rs) {
-        const v = rdimValue(r, dim, nameToGroup);
+        const v = rdimValue(r, dim, customerGroupMap, realGroupNames);
         let arr = buckets.get(v);
         if (!arr) { arr = []; buckets.set(v, arr); order.push(v); }
         arr.push(r);
@@ -1283,7 +1311,7 @@ export default function CustomerRiskRegister() {
       return nodes;
     };
     return build(rows, groupBy, 0, "");
-  }, [rows, groupBy, nameToGroup, sortKey, sortDir, agingBucketKeys, latestByEntity, followupsEnabled]);
+  }, [rows, groupBy, customerGroupMap, realGroupNames, sortKey, sortDir, agingBucketKeys, latestByEntity, followupsEnabled]);
 
   // Reset to page 1 whenever filters, sort, page size, or grouping changes.
   useEffect(() => {
@@ -1478,7 +1506,7 @@ export default function CustomerRiskRegister() {
     // appearing under the "group" dimension drills into its own /customer/ page — the behaviour the
     // Group By rework (0b7de4c) dropped, which is what made these rows unclickable.
     const navPath = n.dim !== "group" ? null
-      : groupNames.has(n.label)
+      : realGroupNames.has(n.label)
         ? `/outstanding-dashboard/group/${encodeURIComponent(n.label)}`
         : `/outstanding-dashboard/customer/${encodeURIComponent(n.label)}`;
     const openDetail = navPath ? () => openInNewTab(withSaleType(navPath)) : undefined;
@@ -1911,7 +1939,7 @@ export default function CustomerRiskRegister() {
               >
                 All
               </Button>
-              {trendAllLines.map((t) => {
+              {visibleTrendLines.map((t) => {
                 const active = activeTrendKeys.has(t.key);
                 return (
                 <Button
@@ -1970,8 +1998,11 @@ export default function CustomerRiskRegister() {
               {[
                 { label: "Total Sales",       value: fmtL(aggregatedTrend.reduce((s, r) => s + r.sales, 0)),              color: "text-primary" },
                 { label: "Total Collected",   value: fmtL(aggregatedTrend.reduce((s, r) => s + r.receipts, 0)),           color: "text-[hsl(142,71%,45%)]" },
-                { label: "Total Cr. Notes",   value: fmtL(aggregatedTrend.reduce((s, r) => s + r.creditNotes, 0)),        color: "text-[hsl(271,75%,58%)]" },
-                { label: "Total Chq Returns", value: fmtL(aggregatedTrend.reduce((s, r) => s + r.checkReturns, 0)),       color: "text-[hsl(213,94%,52%)]" },
+                // Cr. Notes / Chq Returns tiles are omitted on Live — no per-month source (see visibleTrendLines).
+                ...(liveTrendGap ? [] : [
+                  { label: "Total Cr. Notes",   value: fmtL(aggregatedTrend.reduce((s, r) => s + r.creditNotes, 0)),        color: "text-[hsl(271,75%,58%)]" },
+                  { label: "Total Chq Returns", value: fmtL(aggregatedTrend.reduce((s, r) => s + r.checkReturns, 0)),       color: "text-[hsl(213,94%,52%)]" },
+                ]),
                 { label: "Outstanding",       value: fmt(Math.abs(totals.outstanding)), color: "text-secondary" },
                 { label: "Overdue",           value: fmt(totals.overdue),    color: "text-destructive" },
               ].map((item) => (
