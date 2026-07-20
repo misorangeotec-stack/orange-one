@@ -113,6 +113,11 @@ export function UserSidebar() {
   // (profiles.receivables_hidden_menus, set by an admin in Settings → Menu Permissions).
   // Sub-nav children are gated by their PARENT's key — see ReceivablesMenuChild.
   const navItems = visibleMenusFor(isAdmin, user.receivablesHiddenMenus ?? []);
+  // Admin-only menus are parked in their own "Hidden" section at the bottom so they read as
+  // out-of-the-way tools rather than part of the everyday nav. `visibleMenusFor` already drops them
+  // for non-admins, so `hiddenItems` is simply empty for everyone else and the section never renders.
+  const regularItems = navItems.filter((m) => !m.adminOnly);
+  const hiddenItems = navItems.filter((m) => m.adminOnly);
 
   return (
     <Sidebar collapsible="icon">
@@ -163,7 +168,7 @@ export function UserSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) =>
+              {regularItems.map((item) =>
                 item.children?.length && !collapsed ? (
                   <CollapsibleMenu key={item.key} item={item} />
                 ) : (
@@ -185,6 +190,41 @@ export function UserSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {/*
+          Admin-only "Hidden" tools. Only admins ever reach this (visibleMenusFor drops adminOnly
+          menus for everyone else), so the whole group is absent for non-admins. Each entry carries a
+          "Hidden" tag so it's clear these are parked, not part of the live nav.
+        */}
+        {hiddenItems.length > 0 && !collapsed && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-sidebar-foreground/50 uppercase text-[11px] tracking-wider font-semibold">
+              Hidden · Admin only
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {hiddenItems.map((item) => (
+                  <SidebarMenuItem key={item.key}>
+                    <SidebarMenuButton asChild>
+                      <NavLink
+                        to={item.url}
+                        end
+                        className={LINK_CLASS}
+                        activeClassName={ACTIVE_CLASS}
+                      >
+                        <item.icon className="h-4 w-4 shrink-0" />
+                        <span className="flex-1">{item.title}</span>
+                        <span className="ml-auto rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sidebar-foreground/10 text-sidebar-foreground/60">
+                          Hidden
+                        </span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

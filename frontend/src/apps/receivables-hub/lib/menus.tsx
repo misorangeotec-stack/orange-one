@@ -65,14 +65,17 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "dashboard", title: "Dashboard", url: BASE, icon: BarChart3 },
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
   { key: "followups", title: "Follow-ups", url: `${BASE}/followups`, icon: PhoneCall },
-  { key: "salesperson-analysis", title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck },
+  // Admin-only: parked in the "Hidden" section of the sidebar. Not in use for regular users, but
+  // kept reachable for admins rather than deleted.
+  { key: "salesperson-analysis", title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck, adminOnly: true },
   { key: "salesperson-collection", title: "Salesperson Collection Report", url: `${BASE}/salesperson-collection`, icon: HandCoins },
   // NOTE: the parallel "Live (Tally)" view is NOT a set of separate menu items — an admin toggles
   // the whole hub to the ConnectWave live source via the topbar switch (see lib/liveMode), so the
   // nav stays a single clean set instead of showing every screen twice. The Collection Report used to
   // break this rule with a duplicate "Collection Report (Tally Live)" entry that rendered the very same
   // Salesperson Collection Report against ConnectWave; it's gone — toggle Live on the report instead.
-  { key: "import", title: "Import Data", url: `${BASE}/import`, icon: PackageOpen },
+  // Admin-only: parked in the "Hidden" section of the sidebar (see salesperson-analysis above).
+  { key: "import", title: "Import Data", url: `${BASE}/import`, icon: PackageOpen, adminOnly: true },
   // The sub-nav lists CATEGORIES, not reports. One child per report would push the sidebar
   // past twenty entries as the Tally section fills in; categories stay a fixed five.
   {
