@@ -147,6 +147,11 @@ export default function RequestDetail() {
               {r.status === "on_hold" ? "Resume" : "Hold"}
             </Button>
           )}
+          {s.requestEditable(r) && (
+            <Link to={`/office-supplies/requests/${r.id}/edit`}>
+              <Button size="sm" variant="outline">Edit</Button>
+            </Link>
+          )}
           {canCancel && <Button size="sm" variant="ghost" onClick={() => setCancelOpen(true)} className="!text-ryg-red">Cancel</Button>}
         </div>
       </div>

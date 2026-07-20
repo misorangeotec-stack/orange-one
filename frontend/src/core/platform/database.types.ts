@@ -7802,6 +7802,8 @@ export type Database = {
         Returns: string[]
       }
       fms_supplies_submit_request: { Args: { p: Json }; Returns: string }
+      fms_supplies_update_request: { Args: { p: Json }; Returns: undefined }
+      fms_supplies_request_editable: { Args: { p_req: string }; Returns: boolean }
       fms_supplies_update_first_approval: {
         Args: { p_approve: boolean; p_remarks?: string; p_req: string }
         Returns: undefined
