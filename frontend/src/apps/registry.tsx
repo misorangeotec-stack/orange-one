@@ -7,6 +7,7 @@ import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
+import { samplingApp } from "./sampling/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
@@ -38,6 +39,9 @@ export const apps: AppManifest[] = [
   hrExitApp,
   // Universal (apps/universal.ts): every employee can raise an office-supply request.
   officeSuppliesApp,
+  // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
+  // the sampling team (not universal). Ink / raw-material lab sampling.
+  samplingApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];
