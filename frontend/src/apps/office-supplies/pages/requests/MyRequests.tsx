@@ -1,20 +1,61 @@
 import { Link } from "react-router-dom";
-import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
-import EmptyState from "@/shared/components/ui/EmptyState";
-import Pagination from "@/shared/components/ui/Pagination";
-import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
-import { usePagination } from "@/shared/lib/usePagination";
+import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
 import { requestTypeLabel } from "../../lib/format";
 import { useSuppliesStore } from "../../store";
+import type { SupplyRequest } from "../../types";
 
 /** The requests I raised or am the beneficiary of. */
 export default function MyRequests() {
   const s = useSuppliesStore();
-  const rows = [...s.myRequests].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
-  const pg = usePagination(rows, {});
+
+  const columns: QueueColumn<SupplyRequest>[] = [
+    {
+      key: "reqNo",
+      header: "Request",
+      cell: (r) => (
+        <Link to={`/office-supplies/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+          {r.reqNo}
+        </Link>
+      ),
+      sortValue: (r) => r.reqNo,
+      filter: { kind: "text", get: (r) => r.reqNo },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "item",
+      header: "Item / Service",
+      cell: (r) => <span className="text-navy">{r.itemName ?? "—"}</span>,
+      filter: { kind: "text", get: (r) => r.itemName ?? "" },
+    },
+    {
+      key: "type",
+      header: "Type",
+      cell: (r) => <span className="text-grey-2">{requestTypeLabel(r.requestType)}</span>,
+      filter: { kind: "select", get: (r) => requestTypeLabel(r.requestType) },
+    },
+    {
+      key: "qty",
+      header: "Qty",
+      cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (r) => <StatusPill status={r.status} />,
+      filter: { kind: "select", get: (r) => r.status },
+    },
+    {
+      key: "submitted",
+      header: "Submitted",
+      cell: (r) => <span className="text-grey-2">{formatDate(r.submittedAt)}</span>,
+      sortValue: (r) => r.submittedAt,
+      filter: { kind: "date", get: (r) => r.submittedAt },
+      tdClassName: "whitespace-nowrap",
+    },
+  ];
 
   return (
     <div className="space-y-5">
@@ -28,52 +69,30 @@ export default function MyRequests() {
         </Link>
       </div>
 
-      <Card className="overflow-hidden">
-        {rows.length === 0 ? (
-          <EmptyState
-            title="No requests yet"
-            message="You haven't raised any supply requests."
-            actionLabel="Raise a request"
-            onAction={() => {
-              window.location.assign("/office-supplies/requests/new");
-            }}
-          />
-        ) : (
+      <QueueTable<SupplyRequest>
+        rows={s.myRequests}
+        rowKey={(r) => r.id}
+        columns={columns}
+        groupBy={{
+          idOf: (r) => r.companyId,
+          nameOf: (id) => s.companyById(id)?.name ?? "—",
+          allLabel: "All companies",
+          label: "Company",
+        }}
+        initialSort={{ key: "submitted", dir: "desc" }}
+        rowsLabel="requests"
+        exportName="My_Supply_Requests"
+        emptyTitle="No requests yet"
+        emptyMessage="You haven't raised any supply requests."
+        actions={(r) => (
           <>
-            <ScrollableTable>
-              <table className="w-full text-[13.5px]">
-                <thead>
-                  <tr className="text-left text-grey-2 border-b border-line">
-                    <th className="font-medium px-4 py-3">Request</th>
-                    <th className="font-medium px-4 py-3">Item / Service</th>
-                    <th className="font-medium px-4 py-3">Type</th>
-                    <th className="font-medium px-4 py-3">Qty</th>
-                    <th className="font-medium px-4 py-3">Status</th>
-                    <th className="font-medium px-4 py-3">Submitted</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pg.pageItems.map((r) => (
-                    <tr key={r.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <Link to={`/office-supplies/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
-                          {r.reqNo}
-                        </Link>
-                      </td>
-                      <td className="px-4 py-3 text-navy">{r.itemName ?? "—"}</td>
-                      <td className="px-4 py-3 text-grey-2">{requestTypeLabel(r.requestType)}</td>
-                      <td className="px-4 py-3 text-grey-2">{r.quantity}</td>
-                      <td className="px-4 py-3"><StatusPill status={r.status} /></td>
-                      <td className="px-4 py-3 text-grey-2 whitespace-nowrap">{formatDate(r.submittedAt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </ScrollableTable>
-            <Pagination state={pg} rowsLabel="requests" />
+            <Link to={`/office-supplies/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">Open</Link>
+            {s.requestEditable(r) && (
+              <Link to={`/office-supplies/requests/${r.id}/edit`} className="text-[12.5px] font-semibold text-grey hover:text-navy ml-3">Edit</Link>
+            )}
           </>
         )}
-      </Card>
+      />
     </div>
   );
 }
