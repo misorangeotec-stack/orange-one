@@ -17,6 +17,7 @@ import {
   payloadFromValues,
   type MasterValues,
 } from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * "Request a new master entry" — the single raise surface for every procurement
@@ -64,29 +65,7 @@ export default function RequestMasterModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const categoryOptions: ComboOption[] = useMemo(
-    () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
-    [s.activeCategories]
-  );
-  const itemGroupOptions: ComboOption[] = useMemo(
-    () =>
-      s.itemGroups
-        .filter((g) => g.active)
-        .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
-    [s.itemGroups, s]
-  );
-  const vendorOptions: ComboOption[] = useMemo(
-    () => s.vendors.filter((v) => v.active).map((v) => ({ value: v.id, label: v.name })),
-    [s.vendors]
-  );
-  const itemOptions: ComboOption[] = useMemo(
-    () =>
-      s.items
-        .filter((i) => i.active)
-        .map((i) => ({ value: i.id, label: i.name, sublabel: s.itemGroupById(i.itemGroupId)?.name })),
-    [s.items, s]
-  );
-  const ctx = { categoryOptions, itemGroupOptions, vendorOptions, itemOptions };
+  const ctx = useMasterFieldCtx();
 
   const typeOptions: ComboOption[] = MASTER_TYPES.map((m) => ({ value: m.value, label: m.label }));
 

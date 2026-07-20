@@ -132,6 +132,13 @@ export interface PurchaseRequest {
    *  sourced per line — lib/queues.ts falls back to max(line.sourcedAt). */
   sourcedAt: string | null;
   sourcedBy: string | null;
+  /** Set when the requester (or an admin) cancelled it before sourcing began. */
+  cancelReason: string | null;
+  cancelledAt: string | null;
+  cancelledBy: string | null;
+  /** Set when the requester corrected the request after submitting it. */
+  editedAt: string | null;
+  editedBy: string | null;
 }
 
 /**

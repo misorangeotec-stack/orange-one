@@ -7436,6 +7436,14 @@ export type Database = {
         Args: { p_reason: string; p_request_item_id: string }
         Returns: undefined
       }
+      fms_purchase_cancel_request: {
+        Args: { p_reason: string; p_request_id: string }
+        Returns: undefined
+      }
+      fms_purchase_request_editable: {
+        Args: { p_request_id: string }
+        Returns: boolean
+      }
       fms_purchase_cancel_po: {
         Args: { p_po_id: string; p_reason: string; p_request_id?: string }
         Returns: undefined

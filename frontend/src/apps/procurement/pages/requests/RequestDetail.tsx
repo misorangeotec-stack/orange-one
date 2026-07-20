@@ -27,6 +27,12 @@ export default function RequestDetail() {
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Cancelling the WHOLE request is a distinct verb from cancelling one line, so
+  // it gets its own state — sharing the slots above would cross-wire the two.
+  const [cancellingRequest, setCancellingRequest] = useState(false);
+  const [reqReason, setReqReason] = useState("");
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqErr, setReqErr] = useState<string | null>(null);
 
   const request = s.requestById(id ?? null);
   if (!request) {
@@ -49,6 +55,8 @@ export default function RequestDetail() {
     .slice()
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
+  const canEdit = s.canEditRequest(request);
+
   const doCancel = async () => {
     if (!cancelling) return;
     if (!reason.trim()) return setErr("A reason is required.");
@@ -62,6 +70,21 @@ export default function RequestDetail() {
       setErr((e as Error).message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const doCancelRequest = async () => {
+    if (!reqReason.trim()) return setReqErr("A reason is required.");
+    setReqBusy(true);
+    setReqErr(null);
+    try {
+      await s.cancelRequest(request.id, reqReason.trim());
+      setCancellingRequest(false);
+      setReqReason("");
+    } catch (e) {
+      setReqErr((e as Error).message);
+    } finally {
+      setReqBusy(false);
     }
   };
 
@@ -93,8 +116,30 @@ export default function RequestDetail() {
           {anyInApproval && s.canApproveRequest(request) && (
             <Button size="sm" onClick={() => setApproving(true)}>Approve</Button>
           )}
+          {/* The requester's own affordance — only before any buyer sources.
+              (Edit request lands in a later phase.) */}
+          {canEdit && (
+            <Button
+              size="sm"
+              className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+              onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
+            >
+              Cancel request
+            </Button>
+          )}
         </div>
       </div>
+
+      {request.status === "cancelled" && (
+        <Card className="px-4 py-3 border-ryg-red/40 bg-ryg-red/5">
+          <p className="text-[13px] font-semibold text-navy">This request was cancelled</p>
+          <p className="text-[12.5px] text-grey mt-0.5">
+            {request.cancelReason || "No reason recorded."}
+            {request.cancelledBy && <> — {s.profileById(request.cancelledBy)?.name ?? "someone"}</>}
+            {request.cancelledAt && <>, {formatDate(request.cancelledAt)}</>}
+          </p>
+        </Card>
+      )}
 
       {mixedVendors && (
         <p className="rounded-xl bg-ryg-red/10 px-3.5 py-2.5 text-[12.5px] text-ryg-red">
@@ -193,6 +238,38 @@ export default function RequestDetail() {
             <TextArea rows={3} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this line being cancelled?" />
           </FieldLabel>
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
+        </div>
+      </Modal>
+
+      <Modal
+        open={cancellingRequest}
+        onClose={() => setCancellingRequest(false)}
+        title="Cancel request?"
+        subtitle={request.requestNo}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setCancellingRequest(false)} disabled={reqBusy}>Back</Button>
+            <Button
+              size="sm"
+              className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+              onClick={doCancelRequest}
+              disabled={reqBusy}
+            >
+              {reqBusy ? "Cancelling…" : "Cancel request"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[13.5px] text-grey leading-relaxed">
+            This cancels {request.requestNo} and all {lines.length} of its line{lines.length === 1 ? "" : "s"}. The
+            request stays on record, marked cancelled. This can't be undone.
+          </p>
+          <FieldLabel label="Reason" required>
+            <TextArea rows={3} value={reqReason} onChange={(e) => setReqReason(e.target.value)} placeholder="Why is this request being cancelled?" />
+          </FieldLabel>
+          {reqErr && <p className="text-[12.5px] text-ryg-red">{reqErr}</p>}
         </div>
       </Modal>
     </div>

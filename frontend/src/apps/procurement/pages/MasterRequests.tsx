@@ -5,7 +5,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Tabs from "@/shared/components/ui/Tabs";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
-import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
@@ -21,6 +21,7 @@ import {
   missingRequired,
   type MasterValues,
 } from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * Master Requests — one page, two audiences.
@@ -43,28 +44,8 @@ export default function MasterRequests() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const categoryOptions: ComboOption[] = useMemo(
-    () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
-    [s.activeCategories]
-  );
-  const itemGroupOptions: ComboOption[] = useMemo(
-    () =>
-      s.itemGroups
-        .filter((g) => g.active)
-        .map((g) => ({ value: g.id, label: g.name, sublabel: s.categoryById(g.categoryId)?.name })),
-    [s.itemGroups, s]
-  );
-  const vendorOptions: ComboOption[] = useMemo(
-    () => s.vendors.filter((v) => v.active).map((v) => ({ value: v.id, label: v.name })),
-    [s.vendors]
-  );
-  const itemOptions: ComboOption[] = useMemo(
-    () => s.items.filter((i) => i.active).map((i) => ({ value: i.id, label: i.name, sublabel: s.itemGroupById(i.itemGroupId)?.name })),
-    [s.items, s]
-  );
-  // vendor_item_price's dropdowns come from here — without these two it would
-  // render an approve form with empty vendor/item pickers.
-  const ctx = { categoryOptions, itemGroupOptions, vendorOptions, itemOptions };
+  // Shared so vendor_item_price's Vendor/Item dropdowns can never render empty.
+  const ctx = useMasterFieldCtx();
 
   const describe = (r: MasterRequest) =>
     describePayload(r.masterType, r.proposedPayload as Record<string, unknown>, {
