@@ -377,9 +377,7 @@ export function findings(roots: FsNode[], companyLabel: string, only?: FsStateme
  * The Tally column itself is a fixed snapshot and cannot be re-sliced, so the comparison is exact only
  * at to = the snapshot date; other dates move our side alone (documented in the UI).
  */
-const OOW_PAGE = 1000;
-
-/** yyyy-mm-dd → yyyymmdd (tally_voucher_line.vch_date is a yyyymmdd string, sorts lexically). */
+/** yyyy-mm-dd → yyyymmdd (vch_date is a yyyymmdd string, sorts lexically). */
 const isoToYmd = (iso: string): string => iso.replace(/-/g, "");
 
 /** A company to trim: its guid and the statement's from_date, which is the FY-start FLOOR (see below). */
@@ -393,12 +391,16 @@ export interface OowCompany {
  * amount to remove from that ledger's `ours` so the column reads "as of" the window. Keyed by
  * company_guid then ledger_guid.
  *
- * CRITICAL — the FY-start floor. A company's book can span more than one financial year (Surat runs
- * 1-Apr-25 → 31-Mar-27), so tally_voucher_line holds prior-FY lines too. But a P&L ledger's closing
- * balance is the CURRENT FY's net only — it never contained those prior-FY lines. Subtracting them
- * would corrupt `ours` (and pulling 150k+ prior-FY rows would blow the anon timeout). So every query is
- * clamped `vch_date >= from_date` (the statement's own basis): we only ever touch this-FY vouchers, and
- * by default (from = from_date) the pre-`from` branch is empty, leaving just the small future set.
+ * Sourced from the `fs_oow_by_ledger` RPC. tally_voucher_line has RLS on with NO anon policy, so a
+ * direct table read from the browser returns nothing; the RPC is SECURITY DEFINER (the same pattern as
+ * ledger_txn_by_id) and aggregates server-side against the partial index, so it stays well under the
+ * anon 3s timeout and only ships one row per touched ledger.
+ *
+ * CRITICAL — the FY-start floor (p_floor). A book can span more than one financial year (Surat runs
+ * 1-Apr-25 → 31-Mar-27), so the voucher table holds prior-FY lines too. But a P&L ledger's closing is
+ * the CURRENT FY's net only — it never contained those prior-FY lines. The RPC clamps `vch_date >=
+ * p_floor` (the statement's from_date) so we only ever touch this-FY vouchers; by default (from =
+ * from_date) the pre-`from` branch is empty, leaving just the small future set.
  */
 export async function fetchOutOfWindow(
   companies: OowCompany[],
@@ -409,38 +411,23 @@ export async function fetchOutOfWindow(
   if (companies.length === 0 || (!fromIso && !toIso)) return out;
 
   const cw = getConnectwaveSupabase();
-  const toYmd = toIso ? isoToYmd(toIso) : null;
+  const toYmd = toIso ? isoToYmd(toIso) : "99999999"; // no upper bound → nothing is "after"
   const fromYmd = fromIso ? isoToYmd(fromIso) : null;
 
   await Promise.all(
     companies.map(async (c) => {
       const floor = isoToYmd(c.fromDate); // never subtract anything before the statement's FY start
       const bucket: Record<string, number> = (out[c.companyGuid] = {});
-
-      for (let from = 0; ; from += OOW_PAGE) {
-        // Outside window, within this FY = vch_date >= floor AND (vch_date > to OR vch_date < from).
-        const clauses: string[] = [];
-        if (toYmd) clauses.push(`vch_date.gt.${toYmd}`);
-        if (fromYmd) clauses.push(`vch_date.lt.${fromYmd}`);
-        const { data, error } = await cw
-          .from("tally_voucher_line")
-          .select("ledger_guid,amount,is_cancelled,is_optional")
-          .eq("tenant_id", `acct_orange::${c.companyGuid}`)
-          .gte("vch_date", floor)
-          .or(clauses.join(","))
-          .order("voucher_guid", { ascending: true })
-          .range(from, from + OOW_PAGE - 1);
-        if (error) throw new Error(error.message);
-        const rows = (data ?? []) as {
-          ledger_guid: string | null; amount: number | string | null;
-          is_cancelled: boolean | null; is_optional: boolean | null;
-        }[];
-        for (const r of rows) {
-          if (r.is_cancelled || r.is_optional || !r.ledger_guid) continue;
-          // Dr-positive convention matches v_ledger_detail.closing = -1 × the raw voucher amount.
-          bucket[r.ledger_guid] = (bucket[r.ledger_guid] ?? 0) - (Number(r.amount) || 0);
-        }
-        if (rows.length < OOW_PAGE) break;
+      const { data, error } = await cw.rpc("fs_oow_by_ledger", {
+        p_tenant: `acct_orange::${c.companyGuid}`,
+        p_floor: floor,
+        p_from: fromYmd ?? floor, // no lower bound clips nothing (with the floor already at FY start)
+        p_to: toYmd,
+      });
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as { ledger_guid: string | null; dr_positive: number | string | null }[]) {
+        if (!r.ledger_guid) continue;
+        bucket[r.ledger_guid] = Number(r.dr_positive) || 0;
       }
     }),
   );
