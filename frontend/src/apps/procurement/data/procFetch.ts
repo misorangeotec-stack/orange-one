@@ -303,6 +303,7 @@ const mapRequestItem = (r: any): RequestItem => ({
   id: r.id,
   requestId: r.request_id,
   itemId: r.item_id,
+  categoryId: r.category_id ?? null,
   quantity: Number(r.quantity),
   unit: r.unit ?? "",
   lineRemark: r.line_remark ?? null,

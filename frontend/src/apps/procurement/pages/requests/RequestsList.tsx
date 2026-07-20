@@ -93,7 +93,12 @@ export default function RequestsList() {
           emptyTitle="No requests"
           emptyMessage="Raise a purchase request to get started."
           actions={(r) => (
-            <Link to={`/procurement/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">View</Link>
+            <>
+              <Link to={`/procurement/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">View</Link>
+              {s.canEditRequest(r) && (
+                <Link to={`/procurement/requests/${r.id}/edit`} className="text-[12.5px] font-semibold text-grey hover:text-navy ml-3">Edit</Link>
+              )}
+            </>
           )}
         />
       </Card>

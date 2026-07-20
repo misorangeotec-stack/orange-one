@@ -169,6 +169,9 @@ export interface RequestItem {
   id: string;
   requestId: string;
   itemId: string;
+  /** Category of THIS line. Null only on rows predating per-line category —
+   *  fall back to the request header's, or resolve via item→group→category. */
+  categoryId: string | null;
   quantity: number;
   unit: string;
   lineRemark: string | null;

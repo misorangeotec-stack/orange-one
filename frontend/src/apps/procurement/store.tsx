@@ -109,6 +109,7 @@ import {
   generatePo as generatePoWrite,
   cancelLine as cancelLineWrite,
   cancelRequest as cancelRequestWrite,
+  updateRequest as updateRequestWrite,
   requestPoCancel as requestPoCancelWrite,
   cancelPo as cancelPoWrite,
   declinePoCancel as declinePoCancelWrite,
@@ -147,6 +148,7 @@ import {
   type StepOwnerInput,
   type ApprovalBandInput,
   type NewRequestLine,
+  type EditRequestLine,
   type QuotationInput,
   type SourcingVendorInput,
   type SourcingLineInput,
@@ -362,7 +364,7 @@ interface ProcurementStoreValue {
   canCancelPo: (po: PurchaseOrder) => boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; categoryId: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  submitRequest: (input: { companyId: string; categoryId: string | null; note: string | null; items: NewRequestLine[] }) => Promise<string>;
   /** Stage 2 — source a WHOLE requisition. Re-calling it is the edit path. */
   saveSourcingRequest: (input: {
     requestId: string;
@@ -389,6 +391,8 @@ interface ProcurementStoreValue {
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
+  /** Correct an already-submitted request. Pre-sourcing only — the RPC re-checks. */
+  updateRequest: (input: { requestId: string; note: string | null; items: EditRequestLine[] }) => Promise<void>;
   /** Cancel a whole request (kept, marked cancelled). Pre-sourcing only. */
   cancelRequest: (requestId: string, reason: string) => Promise<void>;
   /** A PO-side owner logs the vendor's request to cancel a PO. Returns the request id. */
@@ -966,6 +970,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
           recipients: requesterOfLine(requestItemId),
         });
+        await invalidate();
+      },
+      updateRequest: async (input) => {
+        await updateRequestWrite(input);
+        // The RPC writes its audit row in-transaction; no client announce (a
+        // second one would duplicate the timeline). Sourcing hasn't happened, so
+        // there's no approver to re-notify.
         await invalidate();
       },
       cancelRequest: async (requestId, reason) => {
