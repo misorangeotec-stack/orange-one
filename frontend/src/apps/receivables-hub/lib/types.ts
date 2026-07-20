@@ -50,7 +50,12 @@ export interface Customer {
   tallyGroup?: string;
   creditPeriod: number;
   creditLimit: number;
-  /** True when the source-sheet Credit Limit equals 1 (the "blocked" sentinel). */
+  /**
+   * True = "Red Mark" customer. On the Live (Tally) source this is membership in the ext_redmark
+   * master (hand-kept in Masters → Red Mark, keyed by Tally GUID). On the default pipeline it falls
+   * back to the legacy credit-limit=1 sentinel. (Field name kept as `blocked` to avoid a churn across
+   * ~140 references; the UI label is "Red Mark" everywhere.)
+   */
   blocked: boolean;
   openingBalance: number;
   openingDrCr?: 'Dr' | 'Cr';
@@ -375,7 +380,7 @@ export interface KPIs {
   criticalCustomers: number;
   overCreditLimit: number;
   overdue180Plus: number;
-  /** Count of INK customers whose source-sheet Credit Limit is 0/blank. */
+  /** Count of "Red Mark" customers (see Customer.blocked). */
   blockedCustomers: number;
 }
 

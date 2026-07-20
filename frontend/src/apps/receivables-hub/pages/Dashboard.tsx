@@ -218,7 +218,7 @@ export default function Dashboard() {
       onRemove: () => setBalanceFilter("all"),
     },
     blockedFilter !== "all" && {
-      label: blockedFilter === "blocked" ? "Blocked" : "Not Blocked",
+      label: blockedFilter === "blocked" ? "Red Mark" : "Not Red Mark",
       onRemove: () => setBlockedFilter("all"),
     },
     salesPersons.length > 0 && {
@@ -263,7 +263,7 @@ export default function Dashboard() {
   const blockedValue      = String(isGroupMode ? groupCounts.blocked    : kpis?.blockedCustomers   ?? 0);
   const totalCountLabel   = isGroupMode ? "Total Groups"       : "Total Customers";
   const criticalLabel     = isGroupMode ? "Critical Groups"    : "Critical Customers";
-  const blockedLabel      = isGroupMode ? "Blocked Groups" : "Blocked Customers";
+  const blockedLabel      = isGroupMode ? "Red Mark Groups" : "Red Mark Customers";
 
   const kpiCards: {
     label: string; value: string; icon: typeof Users; warn: boolean;
@@ -286,7 +286,7 @@ export default function Dashboard() {
     { label: criticalLabel,        value: criticalValue,                  icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?risk=critical"),                   panel: null },
     { label: "Over Credit Limit",  value: overLimitValue,                 icon: AlertTriangle, warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?filter=over_credit_limit"),         panel: null },
     { label: "180+ Overdue",       value: overdue180Value,                icon: Users,         warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?aging=180%2B"),                    panel: null },
-    { label: blockedLabel,         value: blockedValue,                   icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?blocked=1"),                       panel: null },
+    { label: blockedLabel,         value: blockedValue,                   icon: ShieldAlert,   warn: true,  link: buildRRUrl("/outstanding-dashboard/risk-register?redmark=1"),                       panel: null },
   ] : [];
 
   const lastSync = dashboard?.lastUpdated
@@ -300,7 +300,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
           <p className="text-[11px] text-muted-foreground/80 italic mt-1">
-            Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
+            Note: "Red Mark" customers are hand-picked in Masters → Red Mark (Live/Tally). On the default view it still reflects the legacy credit-limit=1 marker.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -365,15 +365,15 @@ export default function Dashboard() {
           </Select>
         </div>
         <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Blocked</span>
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Red Mark</span>
           <Select value={blockedFilter} onValueChange={(v) => setBlockedFilter(v as "all" | "blocked" | "not_blocked")}>
             <SelectTrigger className="w-36 rounded-input h-9 text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="blocked">Blocked only</SelectItem>
-              <SelectItem value="not_blocked">Not blocked</SelectItem>
+              <SelectItem value="blocked">Red Mark only</SelectItem>
+              <SelectItem value="not_blocked">Not Red Mark</SelectItem>
             </SelectContent>
           </Select>
         </div>

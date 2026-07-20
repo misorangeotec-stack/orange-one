@@ -215,7 +215,7 @@ function toCustomer(r: CustSnap, identity: CompanyIdentity): Customer {
     category: r.category ?? "",
     creditPeriod: Number(r.credit_period) || 0,
     creditLimit,
-    blocked: false,   // overridden downstream from the creditLimit===1 sentinel (see useAppData)
+    blocked: false,   // Red Mark flag — set from the ext_redmark master in loadFromConnectwave below
     openingBalance: Number(r.opening_balance) || 0,
     openingDrCr: (Number(r.opening_balance) || 0) < 0 ? "Cr" : "Dr",
     remainingOpeningBalance: Number(r.remaining_opening_balance) || 0,
@@ -274,7 +274,7 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
   const sb = getConnectwaveSupabase();
   // Each order key below is that table's PRIMARY key — the uniqueness fetchAll requires.
   // (ext_ledger_group is keyed by ledger_id, NOT tally_name: 387 names repeat across companies.)
-  const [custRows, invRows, metaRes, groupRows, tagRows, companyRows, ledgerGroupRows] = await Promise.all([
+  const [custRows, invRows, metaRes, groupRows, tagRows, companyRows, ledgerGroupRows, redmarkRows] = await Promise.all([
     fetchAll<CustSnap>(() => sb.from("collection_customer_snapshot").select("*"), ["tenant_id", "ledger_id"]),
     fetchAll<InvSnap>(() => sb.from("collection_invoice_snapshot").select("*"), ["tenant_id", "ledger_id", "bill_ref"]),
     sb.from("collection_meta").select("*").maybeSingle(),
@@ -290,6 +290,10 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     fetchAll<{ guid: string; sub_group: string | null }>(
       () => sb.from("v_ledger_detail").select("guid,sub_group").contains("group_chain", ["Sundry Debtors"]),
       ["guid"]),
+    // Red Mark master (ext_redmark) — a hand-kept list keyed by the Tally GUID. Presence of a row
+    // flags the customer as "Red Mark" on the Live (Tally) screens (KPI/badge/filter/report). This
+    // REPLACES the old creditLimit===1 sentinel as the driver of the flag on this source.
+    fetchAll<{ ledger_id: string }>(() => sb.from("ext_redmark").select("ledger_id"), ["ledger_id"]),
   ]);
 
   // Musters are read LIVE (small, editable) and applied over the snapshot by ledger GUID, so a
@@ -297,11 +301,14 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
   const resolveCompany = makeCompanyResolver(companyRows);
   const tagByGuid = new Map(tagRows.map((t) => [t.ledger_id, t]));
   const tallyGroupByGuid = new Map(ledgerGroupRows.map((g) => [g.guid, g.sub_group ?? undefined]));
+  // Red Mark membership by Tally GUID (= Customer.id). `blocked` carries the Red Mark flag on Live.
+  const redmarkSet = new Set(redmarkRows.map((r) => r.ledger_id));
   const cust = custRows.map((r) => toCustomer(r, resolveCompany(r.tenant_id, r.company))).map((c) => {
     const tallyGroup = tallyGroupByGuid.get(c.id);
+    const blocked = redmarkSet.has(c.id);
     const t = tagByGuid.get(c.id);
-    if (!t) return tallyGroup ? { ...c, tallyGroup } : c;
-    return { ...c, tallyGroup, salesPerson: t.salesperson ?? c.salesPerson, category: t.category ?? c.category };
+    if (!t) return { ...c, tallyGroup: tallyGroup ?? c.tallyGroup, blocked };
+    return { ...c, tallyGroup, blocked, salesPerson: t.salesperson ?? c.salesPerson, category: t.category ?? c.category };
   });
   // The as-of month comes from collection_meta (the authoritative stamp collection_refresh()
   // writes), not from an arbitrary snapshot row — row 0 of an unordered fetch is whatever the

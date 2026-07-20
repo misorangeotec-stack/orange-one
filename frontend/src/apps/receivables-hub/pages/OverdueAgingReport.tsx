@@ -692,7 +692,7 @@ function OverdueAgingInner() {
     ...(saleTypes.length ? [{ label: `Sale Type: ${saleTypes.length}`, onRemove: () => setSaleTypes([]) }] : []),
     ...(minAged !== "0" ? [{ label: `Min Aged: ${MIN_AGED_OPTIONS.find((o) => o.key === minAged)?.label}`, onRemove: () => setMinAged("0") }] : []),
     ...(segment !== "all" ? [{ label: `Segment: ${segment === "active" ? "Active" : "Dormant"}`, onRemove: () => setSegment("all") }] : []),
-    ...(blockedOnly ? [{ label: "Blocked only", onRemove: () => setBlockedOnly(false) }] : []),
+    ...(blockedOnly ? [{ label: "Red Mark only", onRemove: () => setBlockedOnly(false) }] : []),
     ...(excludeBF ? [{ label: "Excluding brought-forward", onRemove: () => setExcludeBF(false) }] : []),
   ];
   const clearFilters = () => {
@@ -1143,7 +1143,7 @@ function OverdueAgingInner() {
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(v === true)} />
-                    <span className="text-xs text-foreground">Blocked customers only</span>
+                    <span className="text-xs text-foreground">Red Mark customers only</span>
                   </label>
                   <label className="flex items-start gap-2 cursor-pointer">
                     <Checkbox className="mt-0.5" checked={excludeBF} onCheckedChange={(v) => setExcludeBF(v === true)} />

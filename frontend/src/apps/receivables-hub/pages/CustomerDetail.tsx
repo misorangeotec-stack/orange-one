@@ -1398,7 +1398,7 @@ export default function CustomerDetail() {
       active: isKpiActive("sales", "overdue"),
     },
     { label: "Credit Limit",   value: fmt(customer.creditLimit) },
-    { label: "Utilization",    value: customer.blocked ? "—" : `${utilization}%`,  destructive: !customer.blocked && utilization > 100 },
+    { label: "Utilization",    value: customer.creditLimit === 1 ? "—" : `${utilization}%`,  destructive: customer.creditLimit !== 1 && utilization > 100 },
     { label: "Credit Period",  value: `${customer.creditPeriod} days` },
     {
       label: "Opening Balance",
@@ -1607,9 +1607,9 @@ export default function CustomerDetail() {
                   <Badge
                     variant="outline"
                     className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30"
-                    title="Source-sheet credit limit is set to 1 (blocked sentinel — typically INK customers only)"
+                    title="Flagged as Red Mark (managed in Masters → Red Mark on the Live/Tally view)"
                   >
-                    Blocked
+                    Red Mark
                   </Badge>
                 )}
                 {isGroupRoute ? (
@@ -1632,7 +1632,7 @@ export default function CustomerDetail() {
               )}
               {customer.blocked && (
                 <p className="text-[11px] text-muted-foreground/80 italic mt-1">
-                  Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
+                  Note: "Red Mark" customers are hand-picked in Masters → Red Mark (Live/Tally). On the default view it still reflects the legacy credit-limit=1 marker.
                 </p>
               )}
               {effectiveSaleType !== "all" && (

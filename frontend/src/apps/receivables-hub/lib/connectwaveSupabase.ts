@@ -5,7 +5,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
  *
  * This is a THIRD Supabase project, separate from both Orange One's identity
  * project and the (legacy) receivables project. It holds the live Tally mirror
- * (project jbekkdgednbqrnlcrdfq, tenant acct_orange) and the curated
+ * (project ieeefdnyhzgrroifiqbb, tenant acct_orange) and the curated
  * `collection_*` snapshot + `ext_*` muster tables that back the admin-only
  * "Collection Report (Tally Live)" screen.
  *

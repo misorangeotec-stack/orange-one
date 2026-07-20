@@ -663,7 +663,7 @@ function CustomerCategoryInner() {
     ...(saleTypes.length ? [{ label: `Sale Type: ${saleTypes.length}`, onRemove: () => setSaleTypes([]) }] : []),
     ...(minOwed !== "0" ? [{ label: `Min Owed: ${MIN_OWED_OPTIONS.find((o) => o.key === minOwed)?.label}`, onRemove: () => setMinOwed("0") }] : []),
     ...(activity !== "active" ? [{ label: ACTIVITY_LABELS[activity], onRemove: () => setActivity("active") }] : []),
-    ...(blockedOnly ? [{ label: "Blocked only", onRemove: () => setBlockedOnly(false) }] : []),
+    ...(blockedOnly ? [{ label: "Red Mark only", onRemove: () => setBlockedOnly(false) }] : []),
     ...(tierFilter.size ? [{ label: `Tier: ${[...tierFilter].join(", ")}`, onRemove: () => setTierFilter(new Set()) }] : []),
     ...(mxCell ? [{ label: `Cell: ${mxCell.tier} × ${mxCell.col}`, onRemove: () => setMxCell(null) }] : []),
     ...[...focus].map((f) => ({ label: CC_FOCUS_LABELS[f], onRemove: () => toggleFocus(f) })),
@@ -1096,7 +1096,7 @@ function CustomerCategoryInner() {
                 </div>
                 <label className="flex items-center gap-2 text-xs cursor-pointer">
                   <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(!!v)} />
-                  Blocked customers only
+                  Red Mark customers only
                 </label>
               </PopoverContent>
             </Popover>

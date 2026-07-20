@@ -175,7 +175,7 @@ function buildCustomerSheet(
     "Outstanding", "Net Billings (lookback)", "Gross Sales (lookback)", "Credit Notes (lookback)",
     "Overdue (bill-wise)", "180+ (bill-wise)", "Max Overdue Days",
     "Days Since Last Receipt", "Last Receipt Date", "Months Since Last Sale", "Last Sale Month",
-    "Credit Limit", "Utilization %", "Risk", "Blocked",
+    "Credit Limit", "Utilization %", "Risk", "Red Mark",
   ];
   const MONEY_COLS = [12, 13, 14, 15, 16, 17, 23];
   const DAYS_COLS = [6, 8, 9, 10, 11, 18, 19];

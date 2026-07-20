@@ -101,6 +101,27 @@ export function entityKey(type: FollowupEntityType, name: string): string {
 }
 
 /**
+ * The most recent entry per entity — the row that defines that customer's OPEN
+ * follow-up. There is no status column by design: logging a new follow-up
+ * supersedes the previous one, and a null `nextFollowupDate` means "no further
+ * chase".
+ *
+ * Pure, and shared by `useFollowups` (the Hub's own worklist) and the home
+ * screen's My Work provider, so the two can never disagree about what is open.
+ *
+ * REQUIRES `rows` newest-first — the first row seen per key wins. That is the
+ * order `fetchFollowups()` returns (`order("created_at", { ascending: false })`).
+ */
+export function latestByEntity(rows: Followup[]): Map<string, Followup> {
+  const map = new Map<string, Followup>();
+  for (const f of rows) {
+    const key = entityKey(f.entityType, f.entityName);
+    if (!map.has(key)) map.set(key, f);
+  }
+  return map;
+}
+
+/**
  * Today as "YYYY-MM-DD" in LOCAL time.
  *
  * `new Date().toISOString()` is UTC — in IST (UTC+5:30) that returns *yesterday* for

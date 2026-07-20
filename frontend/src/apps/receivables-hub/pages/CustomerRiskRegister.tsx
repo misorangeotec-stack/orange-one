@@ -336,7 +336,7 @@ const RISK_TAGLINE: Record<RiskCategory, string> = {
 
 /** Plain per-cell tooltip for the Risk badge, using the customer's own numbers. */
 function RiskReason({ row }: { row: CustomerRow }) {
-  const usage = row.blocked
+  const usage = row.creditLimit === 1
     ? "and their limit is blocked"
     : `and they're using ${row.utilization}% of their credit limit`;
   return (
@@ -585,7 +585,7 @@ const columns: { key: SortKey; label: string; align?: "right" }[] = [
   { key: "proposedCreditLimitAI", label: "AI Proposed", align: "right" },
   { key: "utilization",    label: "Util %",        align: "right" },
   { key: "risk",           label: "Risk" },
-  { key: "blocked",        label: "Blocked" },
+  { key: "blocked",        label: "Red Mark" },
   // Stays last: it's a wide free-text column, and moving it left would shove the money columns
   // off-screen. The remark is also surfaced in the row action's tooltip.
   { key: "lastRemark",       label: "Last Remark" },
@@ -919,7 +919,7 @@ export default function CustomerRiskRegister() {
 
     if (filterParam)   setSpecialFilter(filterParam);
     if (segmentParam === "all" || segmentParam === "active" || segmentParam === "no_activity") setCustomerSegment(segmentParam);
-    const blockedParam = searchParams.get("blocked");
+    const blockedParam = searchParams.get("redmark");
     if (blockedParam === "1" || blockedParam === "true") setBlockedFilter("blocked");
   }, [searchParams]);
 
@@ -976,7 +976,7 @@ export default function CustomerRiskRegister() {
       onRemove: () => setBalanceFilter("all"),
     },
     blockedFilter !== "all" && {
-      label: blockedFilter === "blocked" ? "Blocked" : "Not Blocked",
+      label: blockedFilter === "blocked" ? "Red Mark" : "Not Red Mark",
       onRemove: () => setBlockedFilter("all"),
     },
     salesPersons.length > 0 && {
@@ -1419,8 +1419,8 @@ export default function CustomerRiskRegister() {
           </TableCell>
         )}
         {visibleCols.has("utilization") && (
-          <TableCell className={`text-sm text-right font-mono font-semibold ${isHeader ? "text-muted-foreground" : r.blocked ? "text-muted-foreground" : r.utilization > 100 ? "text-destructive" : r.utilization > 80 ? "text-primary" : ""}`}>
-            {isHeader ? "—" : r.blocked ? "—" : `${r.utilization}%`}
+          <TableCell className={`text-sm text-right font-mono font-semibold ${isHeader ? "text-muted-foreground" : r.creditLimit === 1 ? "text-muted-foreground" : r.utilization > 100 ? "text-destructive" : r.utilization > 80 ? "text-primary" : ""}`}>
+            {isHeader ? "—" : r.creditLimit === 1 ? "—" : `${r.utilization}%`}
           </TableCell>
         )}
         {visibleCols.has("risk") && (
@@ -1442,7 +1442,7 @@ export default function CustomerRiskRegister() {
         {visibleCols.has("blocked") && (
           <TableCell>
             {isHeader ? <span className="text-[10px] text-muted-foreground">—</span> : r.blocked ? (
-              <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30">Blocked</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30">Red Mark</Badge>
             ) : (
               <span className="text-[10px] text-muted-foreground">—</span>
             )}
@@ -1551,13 +1551,13 @@ export default function CustomerRiskRegister() {
     if (key === "salesPerson") return row.salesPersons?.join("; ") ?? row.salesPerson ?? "";
     if (key === "companies" || key === "locations") return (row[key] as string[] | undefined)?.join("; ") ?? "";
     if (key === "risk") return row.risk.charAt(0).toUpperCase() + row.risk.slice(1);
-    if (key === "blocked") return row.blocked ? "Blocked" : "";
+    if (key === "blocked") return row.blocked ? "Red Mark" : "";
     if (key === "overdue") return overdueForRow(row);
     if (key === "nextFollowupDate") return row.nextFollowupDate ? formatDateDMY(row.nextFollowupDate) : "";
     if (key === "lastRemark") return row.lastRemark ?? "";
     // Blocked customers carry a ₹1 sentinel credit limit, not a real limit,
     // so their utilization % is meaningless — export a dash instead.
-    if (key === "utilization") return row.blocked ? "—" : row.utilization;
+    if (key === "utilization") return row.creditLimit === 1 ? "—" : row.utilization;
     const v = row[key];
     return typeof v === "number" ? v : (v ?? "") as string;
   };
@@ -1730,7 +1730,7 @@ export default function CustomerRiskRegister() {
               })()}
             </p>
             <p className="text-[11px] text-muted-foreground/80 italic mt-0.5">
-              Note: "Blocked" is set when the source-sheet credit limit equals 1. In practice this marker is used for the INK product category only.
+              Note: "Red Mark" customers are hand-picked in Masters → Red Mark (Live/Tally). On the default view it still reflects the legacy credit-limit=1 marker.
             </p>
           </div>
         </div>
@@ -1875,15 +1875,15 @@ export default function CustomerRiskRegister() {
               </Select>
             </div>
             <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Blocked</span>
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Red Mark</span>
               <Select value={blockedFilter} onValueChange={(v) => setBlockedFilter(v as "all" | "blocked" | "not_blocked")}>
                 <SelectTrigger className="w-36 rounded-input h-9 text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="blocked">Blocked only</SelectItem>
-                  <SelectItem value="not_blocked">Not blocked</SelectItem>
+                  <SelectItem value="blocked">Red Mark only</SelectItem>
+                  <SelectItem value="not_blocked">Not Red Mark</SelectItem>
                 </SelectContent>
               </Select>
             </div>

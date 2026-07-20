@@ -164,7 +164,7 @@ const CUSTOMER_HEADER = [
   "Cheque Returns", "Credit Notes",
   "Overdue", "% Overdue", "0-30", "31-60", "61-90", "91-120", "121-180", "180+", "% at 180+",
   "Open Bills", "Max Overdue Days", "Days Since Receipt", "Last Receipt Date",
-  "Credit Limit", "Utilisation %", "Risk", "Blocked", "Sale Type", "Activity",
+  "Credit Limit", "Utilisation %", "Risk", "Red Mark", "Sale Type", "Activity",
 ];
 const CUST_MONEY = [17, 18, 19, 20, 21, 22, 23, 25, 26, 27, 29, 30, 31, 32, 33, 34, 40];
 const CUST_PCT = [15, 16, 24, 28, 35, 41];

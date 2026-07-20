@@ -996,7 +996,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       label: `Segment: ${segment === "active" ? "Active" : "No Activity"}`,
       onRemove: () => setSegment("all"),
     },
-    blockedOnly && { label: "Blocked only", onRemove: () => setBlockedOnly(false) },
+    blockedOnly && { label: "Red Mark only", onRemove: () => setBlockedOnly(false) },
     includeNonDebtors && { label: "Incl. zero & credit balances", onRemove: () => setIncludeNonDebtors(false) },
   ].filter(Boolean) as FilterChip[];
 
@@ -1034,7 +1034,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       );
     if (minOut !== "0") s.push(`Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`);
     if (segment !== "all") s.push(`Segment: ${segment === "active" ? "Active" : "No Activity"}`);
-    if (blockedOnly) s.push("Blocked only");
+    if (blockedOnly) s.push("Red Mark only");
     if (includeNonDebtors) s.push("Incl. zero & credit balances");
     return s;
   }, [focus, bands, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, isDormantMode, saleTypes]);
@@ -1561,7 +1561,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   </div>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <Checkbox checked={blockedOnly} onCheckedChange={(v) => setBlockedOnly(v === true)} />
-                    <span className="text-xs text-foreground">Blocked customers only</span>
+                    <span className="text-xs text-foreground">Red Mark customers only</span>
                   </label>
                   <label className="flex items-start gap-2 cursor-pointer">
                     <Checkbox className="mt-0.5" checked={includeNonDebtors} onCheckedChange={(v) => setIncludeNonDebtors(v === true)} />

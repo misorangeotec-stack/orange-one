@@ -485,15 +485,20 @@ export function useAppData(filters: Filters = {}): AppData {
     refetchOnMount: "always",
   });
 
-  // Derive `blocked` on the frontend from the credit-limit sentinel so the rule
-  // can be tweaked without regenerating data. Single source of truth: creditLimit === 1.
+  // `blocked` carries the "Red Mark" flag. On the Live (Tally) source it is the ext_redmark master
+  // (set by connectwaveFetcher, keyed by Tally GUID) — the hand-kept list managed in Masters. On the
+  // default pipeline there is no such master yet, so it falls back to the legacy credit-limit sentinel
+  // (creditLimit === 1) relabeled as Red Mark. (Note: the sentinel still governs the utilization "—"
+  // display in the Risk Register / Customer Detail — that check reads creditLimit === 1 directly.)
   // SCOPE CHOKEPOINT: when restricted, drop customers outside the allowed
   // salesperson set here — this cascades to every downstream list/KPI, and to
   // the allowed-id set used to scope customerDetail (blocks /customer/:id guessing).
   const allCustomers = useMemo<Customer[]>(() => {
-    const list = raw ? raw.cust.map((c) => ({ ...c, blocked: c.creditLimit === 1 })) : [];
+    const list = raw
+      ? raw.cust.map((c) => ({ ...c, blocked: source === "connectwave" ? c.blocked === true : c.creditLimit === 1 }))
+      : [];
     return allowedSalespersonSet ? list.filter((c) => allowedSalespersonSet.has(c.salesPerson)) : list;
-  }, [raw, allowedSalespersonSet]);
+  }, [raw, allowedSalespersonSet, source]);
   const dashboard = raw?.dash ?? null;
   // Allowed customer ids for the current scope (null = unrestricted).
   const allowedCustomerIds = useMemo(

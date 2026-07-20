@@ -17,6 +17,7 @@ import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import AgingReport from "@hub/pages/AgingReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
+import RedMarkCustomersReport from "@hub/pages/RedMarkCustomersReport";
 import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
 import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
 import CustomerCategoryReport from "@hub/pages/CustomerCategoryReport";
@@ -89,6 +90,7 @@ function HubRoutes() {
           {/* The book pivoted by the A/B/C/D/E tier, plus the tag-hygiene lens. Pinned to the
               pipeline source AND to Both FYs — see the header of pages/CustomerCategoryReport.tsx. */}
           <Route path="reports/category" element={<CustomerCategoryReport />} />
+          <Route path="reports/red-mark" element={<RedMarkCustomersReport />} />
           {/* How long each customer takes to turn a sale into cash: ?over=90 (the card), 60 / 120 /
               any custom cutoff. A COUNTBACK, not AR/Sales — and a group's DSO is never the average
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
