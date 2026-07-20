@@ -8,6 +8,7 @@ import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
+import { productionEntryApp } from "./production-entry/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
@@ -42,6 +43,9 @@ export const apps: AppManifest[] = [
   // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
   // the sampling team (not universal). Ink / raw-material lab sampling.
   samplingApp,
+  // Production Entry FMS — separate module (own fms_production_* tables), granted per
+  // user to the production team (not universal). Ink production job-card tracker.
+  productionEntryApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];
