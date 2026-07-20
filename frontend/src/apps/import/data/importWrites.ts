@@ -570,6 +570,29 @@ export async function decideApproval(input: {
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Stage 3 — one decision for the WHOLE requisition, banded on its total. The
+ * request-scoped twin of `decideApproval`; the RPC refuses 'override' (Import
+ * has no quoted vendors).
+ */
+export async function decideApprovalRequest(input: {
+  requestId: string;
+  decision: ApprovalDecision;
+  overrideVendorId?: string | null;
+  reason?: string | null;
+  /** For `override`: revised rates (vendor's foreign currency) per line. */
+  rates?: { requestItemId: string; rate: number }[] | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_decide_approval_request", {
+    p_request_id: input.requestId,
+    p_decision: input.decision,
+    p_override_vendor_id: input.overrideVendorId ?? undefined,
+    p_reason: input.reason ?? undefined,
+    p_rates: input.rates ? input.rates.map((r) => ({ request_item_id: r.requestItemId, rate: r.rate })) : undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** Stage 4 — generate a vendor × company PO from chosen approved lines. Returns the PO id. */
 export async function generatePo(input: {
   vendorId: string;
@@ -1104,6 +1127,28 @@ export async function updateApproval(input: {
     p_decision: input.decision,
     p_override_vendor_id: input.overrideVendorId ?? undefined,
     p_reason: input.reason ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Correct a whole requisition's approval decision. `decision` is 'approve' |
+ * 'reject'; the RPC refuses 'override' and refuses once any line has a PO.
+ */
+export async function updateApprovalRequest(input: {
+  requestId: string;
+  decision: string;
+  overrideVendorId?: string | null;
+  reason?: string | null;
+  /** For `override`: revised rates (vendor's foreign currency) per line. */
+  rates?: { requestItemId: string; rate: number }[] | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_approval_request", {
+    p_request_id: input.requestId,
+    p_decision: input.decision,
+    p_override_vendor_id: input.overrideVendorId ?? undefined,
+    p_reason: input.reason ?? undefined,
+    p_rates: input.rates ? input.rates.map((r) => ({ request_item_id: r.requestItemId, rate: r.rate })) : undefined,
   });
   if (error) throw new Error(error.message);
 }

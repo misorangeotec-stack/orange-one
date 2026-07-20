@@ -6,7 +6,7 @@ import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import RequestMasterModal from "./RequestMasterModal";
 import { useImportStore } from "../store";
-import { inr } from "../lib/format";
+import { inr, fxMoney } from "../lib/format";
 import type { RequestItem } from "../types";
 
 interface QRow {
@@ -209,8 +209,15 @@ export default function SourcingModal({
         </div>
 
         <div className="flex items-center justify-between rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
-          <span className="text-[12.5px] text-grey">Line value — routes the approval</span>
-          <span className="text-[15px] font-bold text-navy">{inr(lineValue)}</span>
+          <span className="text-[12.5px] text-grey">Line value</span>
+          <div className="text-right">
+            {/* Rate is in the vendor's currency; the INR equivalent (qty × rate × the
+                request-time FX rate) is what routes the approval. */}
+            <div className="text-[15px] font-bold text-navy">{fxMoney(lineValue, line.currency)}</div>
+            <div className="text-[11.5px] text-grey-2">
+              {inr(lineValue === null ? null : lineValue * (line.fxRateAtRequest ?? 1))} · routes the approval
+            </div>
+          </div>
         </div>
 
         {filledRows.length < 3 && (

@@ -8,7 +8,7 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
-import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
+import { inr, fxMoney, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -136,9 +136,9 @@ export default function PoDetail() {
       <Card className="px-4 py-4"><PoStepper po={po} /></Card>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="Value" value={inr(po.totalValue)} />
-        <Stat label="Advance / Paid" value={inr(po.advancePaid)} />
-        <Stat label="Pending" value={inr(pending)} />
+        <Kpi label="Value" value={inr(po.totalValue)} hint={fxMoney(po.totalValueFx, po.currency)} size="sm" />
+        <Kpi label="Advance / Paid" value={inr(po.advancePaid)} hint={fxMoney(s.paidFxForPo(po.id), po.currency)} size="sm" />
+        <Kpi label="Pending" value={inr(pending)} hint={fxMoney(s.pendingFxAmount(po), po.currency)} size="sm" />
         <Stat label="Items" value={String(items.length)} />
       </div>
 
@@ -163,7 +163,7 @@ export default function PoDetail() {
         {tab === "items" && (
           <ScrollableTable>
             <table className="w-full text-[13.5px]">
-              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Item</th><th className="font-medium px-4 py-3">Source Request</th><th className="font-medium px-4 py-3">Qty</th><th className="font-medium px-4 py-3">Received</th><th className="font-medium px-4 py-3">Rate</th><th className="font-medium px-4 py-3">Line Value</th></tr></thead>
+              <thead><tr className="text-left text-grey-2 border-b border-line"><th className="font-medium px-4 py-3">Item</th><th className="font-medium px-4 py-3">Source Request</th><th className="font-medium px-4 py-3">Qty</th><th className="font-medium px-4 py-3">Received</th><th className="font-medium px-4 py-3">Rate</th><th className="font-medium px-4 py-3">Value ({po.currency ?? "FCY"})</th><th className="font-medium px-4 py-3">Value (INR)</th></tr></thead>
               <tbody>
                 {items.map((pi) => {
                   const line = s.lineById(pi.requestItemId);
@@ -174,7 +174,8 @@ export default function PoDetail() {
                       <td className="px-4 py-3 whitespace-nowrap">{req ? <Link to={`/import/requests/${req.id}`} className="text-orange hover:underline">{req.requestNo}</Link> : "—"}</td>
                       <td className="px-4 py-3">{pi.qty}</td>
                       <td className="px-4 py-3">{pi.receivedQty}{pi.receivedQty >= pi.qty ? " ✓" : ""}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{inr(pi.rate)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{fxMoney(pi.rate, po.currency)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{fxMoney(pi.qty * pi.rate, po.currency)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{inr(pi.lineValue)}</td>
                     </tr>
                   );

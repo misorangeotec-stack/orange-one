@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { SECTION_HEADING_CLASS, Field } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
 // NOT time.ts's todayIso(): that is documented "local" but is really the UTC
@@ -12,7 +13,7 @@ import { todayIso, formatDate } from "@/shared/lib/time";
 // entered early in the morning. todayLocalIso() is the genuinely local one.
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useImportStore } from "../store";
-import { inr } from "../lib/format";
+import { inr, fxMoney } from "../lib/format";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "./DocLinks";
 import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, TallyBooking } from "../types";
 
@@ -69,8 +70,11 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
     return { pi, covered, remaining: Math.max(0, pi.qty - covered), unit: pi.qty > 0 ? pi.lineValue / pi.qty : 0 };
   });
   const unitById = new Map(coverage.map((c) => [c.pi.id, c.unit]));
-  // PI value auto-matches the lines this PI covers (Σ coverQty × per-unit).
+  // PI value auto-matches the lines this PI covers (Σ coverQty × per-unit). The
+  // INR figure uses the per-unit INR value; the foreign figure uses the PO line's
+  // vendor-currency rate — both shown so the PI reads in both currencies.
   const piValue = Math.round(items.reduce((sum, pi) => sum + (Number(qty[pi.id]) || 0) * (unitById.get(pi.id) ?? 0), 0) * 100) / 100;
+  const piValueFx = Math.round(items.reduce((sum, pi) => sum + (Number(qty[pi.id]) || 0) * pi.rate, 0) * 100) / 100;
 
   useEffect(() => {
     if (!open) return;
@@ -124,7 +128,15 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
           <FieldLabel label="PI Value" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
-            <TextInput type="number" value={String(readOnly && editing ? editing.piValue : piValue)} readOnly title={readOnly ? "The PI value as it was recorded" : "Auto-calculated from the covered lines (Cover Qty × rate)"} className="bg-page/70 text-grey-2 cursor-not-allowed" />
+            {/* Read-only, shown in BOTH currencies with their symbols — INR (the
+                accounting basis) as the headline, the vendor-currency value below. */}
+            <div
+              className="rounded-xl border border-line bg-page/70 px-3 py-2 leading-tight"
+              title={readOnly ? "The PI value as it was recorded" : "Auto-calculated from the covered lines (Cover Qty × rate)"}
+            >
+              <div className="text-[14px] font-bold text-navy">{inr(readOnly && editing ? editing.piValue : piValue)}</div>
+              <div className="text-[11.5px] text-grey-2">{fxMoney(piValueFx, po.currency)}</div>
+            </div>
           </FieldLabel>
         </div>
         {!readOnly && (
@@ -496,15 +508,22 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   const [transport, setTransport] = useState("");
   const [revised, setRevised] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [piRemarks, setPiRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // The vendor PI opened for a quick read-only look (from the reference row).
+  const [viewPi, setViewPi] = useState<Pi | null>(null);
 
   // Follow-ups are recorded against the PO; seed from the latest PO-level record.
   const history = po ? s.followupsForPo(po.id) : [];
   const latest = history[0];
   // The date the vendor currently owes us the goods by.
   const due = po ? s.dispatchDueForPo(po.id) : null;
+  // The ORIGINAL planned dispatch date, confirmed at Share PO — always shown for
+  // reference. `priorRevised` is the most recent revised date from an earlier
+  // delay (history is newest-first, and a `dispatched` row never carries a revised
+  // date — see onStatusChange — so this always resolves to the last real delay).
+  const planned = po?.dispatchDate ?? null;
+  const priorRevised = history.find((f) => f.revisedDispatchDate)?.revisedDispatchDate ?? null;
 
   useEffect(() => {
     if (!open || !po) return;
@@ -517,7 +536,6 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
       setTransport(editing.transportDetails ?? "");
       setRevised(editing.revisedDispatchDate ?? "");
       setRemarks(editing.remarks ?? "");
-      setPiRemarks(editing.piRemarks ?? "");
       setErr(null);
       return;
     }
@@ -533,19 +551,22 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
     setTransport(latest?.transportDetails ?? "");
     setRevised("");
     setRemarks("");
-    setPiRemarks("");
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po?.id, editing?.id]);
 
   if (!po) return null;
 
-  // The actual dispatch date only means anything on a `dispatched` follow-up:
-  // clear it on the way out so a seeded date can't ride along on a status that
-  // says the goods have NOT left.
+  // Each editable date belongs to exactly one status: the actual date to
+  // `dispatched`, the revised date to `delayed`. Clear the one that no longer
+  // applies on the way out, so a seeded/typed date can't ride along on a status
+  // that contradicts it.
   const onStatusChange = (next: string) => {
     setStatus(next);
-    if (next !== "dispatched") setActual("");
+    // LR number, transport and the actual dispatch date only mean something once
+    // the goods have left — clear them when the status says they haven't.
+    if (next !== "dispatched") { setActual(""); setLr(""); setTransport(""); }
+    if (next !== "delayed") setRevised("");
   };
 
   const save = async () => {
@@ -558,7 +579,9 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
     if (status === "delayed" && !revised) return setErr("Enter the revised dispatch date the vendor promised.");
     setBusy(true);
     try {
-      const payload = { dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null, piRemarks: piRemarks.trim() || null };
+      // piRemarks is no longer collected in the UI (the real vendor PI is shown in
+      // the reference row); preserve any value an older record already had.
+      const payload = { dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null, piRemarks: editing?.piRemarks ?? null };
       if (editing) await s.updateFollowup({ followupId: editing.id, ...payload });
       else await s.recordFollowup({ poId: po.id, ...payload });
       onClose();
@@ -570,32 +593,77 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   };
 
   return (
+    <>
     <Modal open={open} onClose={onClose} readOnly={readOnly} size="lg" title={editing && !readOnly ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
       subtitle={editing ? "Correct what was recorded. Editable until goods are received." : due ? `Dispatch due ${formatDate(due)}` : undefined}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Save"}</Button></>}>
       <div className="space-y-3.5">
-        <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance /></FieldLabel>
+        {/* The real references this follow-up is about — the vendor-facing Tally PO
+            number (set at Share PO, links to the PO) and the vendor PI number(s)
+            collected on this PO (each opens that PI). The internal PO number is in
+            the title. */}
         <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Actual Dispatch Date" required={status === "dispatched"}>
-            <TextInput type="date" value={actual} max={todayLocalIso()} onChange={(e) => setActual(e.target.value)} />
-            <Hint>The day the goods actually left — cannot be in the future</Hint>
-          </FieldLabel>
+          <Field label="Tally PO No.">
+            {po.tallyPoNo ? (
+              <Link to={`/import/pos/${po.id}`} target="_blank" className="font-semibold text-navy hover:text-orange hover:underline">
+                {po.tallyPoNo}
+              </Link>
+            ) : undefined}
+          </Field>
+          <Field label="Vendor PI No.">
+            {s.pisForPo(po.id).length > 0 ? (
+              <span className="flex flex-wrap gap-x-1.5 gap-y-1">
+                {s.pisForPo(po.id).map((pi, i, arr) => (
+                  <button
+                    key={pi.id}
+                    type="button"
+                    onClick={() => setViewPi(pi)}
+                    className="font-semibold text-navy hover:text-orange hover:underline"
+                  >
+                    {pi.vendorPiNo}{i < arr.length - 1 ? "," : ""}
+                  </button>
+                ))}
+              </span>
+            ) : undefined}
+          </Field>
+        </div>
+
+        <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance /></FieldLabel>
+
+        {/* Dispatch dates. The PLANNED date (confirmed at Share PO) is always shown
+            for reference; the editable field then matches the status — a revised
+            promise when `delayed`, the actual dispatch fact when `dispatched`. When
+            dispatching after an earlier delay, that revised date is shown too. */}
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Planned Dispatch Date" value={formatDate(planned)} />
           {status === "delayed" && (
             <FieldLabel label="Revised Dispatch Date" required>
-              {/* Was min={actual}. `actual` is now empty on a `delayed` follow-up,
-                  which would leave this unbounded — a revised promise is future. */}
+              {/* A revised promise is always future. */}
               <TextInput type="date" value={revised} min={todayLocalIso()} onChange={(e) => setRevised(e.target.value)} />
               <Hint>The new date the vendor promised</Hint>
             </FieldLabel>
           )}
-          <FieldLabel label="LR No."><TextInput value={lr} onChange={(e) => setLr(e.target.value)} /></FieldLabel>
-          <FieldLabel label="Transport"><TextInput value={transport} onChange={(e) => setTransport(e.target.value)} /></FieldLabel>
+          {status === "dispatched" && (
+            <>
+              {priorRevised && <Field label="Revised (delayed) Dispatch Date" value={formatDate(priorRevised)} />}
+              <FieldLabel label="Actual Dispatch Date" required>
+                <TextInput type="date" value={actual} max={todayLocalIso()} onChange={(e) => setActual(e.target.value)} />
+                <Hint>The day the goods actually left — cannot be in the future</Hint>
+              </FieldLabel>
+            </>
+          )}
         </div>
+
+        {/* LR No. + Transport describe a shipment that has left — only meaningful
+            once dispatched. */}
+        {status === "dispatched" && (
+          <div className="grid grid-cols-2 gap-3">
+            <FieldLabel label="LR No."><TextInput value={lr} onChange={(e) => setLr(e.target.value)} /></FieldLabel>
+            <FieldLabel label="Transport"><TextInput value={transport} onChange={(e) => setTransport(e.target.value)} /></FieldLabel>
+          </div>
+        )}
         <FieldLabel label="Remarks" hint="what the vendor said this time · optional">
           <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor confirmed dispatch by Fri; awaiting LR." />
-        </FieldLabel>
-        <FieldLabel label="PI ref / remarks" hint="the vendor PI this dispatch relates to · optional">
-          <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. PI-8841" />
         </FieldLabel>
         <Err msg={err} />
 
@@ -632,6 +700,9 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
         </div>
       </div>
     </Modal>
+    {/* A quick read-only look at a vendor PI, opened from the reference row. */}
+    {viewPi && <AddPiModal po={po} open editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    </>
   );
 }
 
@@ -642,20 +713,25 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
   // The receipt is booked against the PO. Default to the reference the vendor
   // sees on the shared PO (its Tally number), falling back to the system PO no.
   const defaultPoRef = po.tallyPoNo || po.poNo;
+  // The vendor PI(s) on this PO — shown (clickable) as the reference, and kept as
+  // the receipt's PI remark so nobody has to re-type a number the PO already holds.
+  const pis = s.pisForPo(po.id);
+  const defaultPiRef = pis.map((p) => p.vendorPiNo).join(", ");
   const [poRef, setPoRef] = useState(defaultPoRef);
-  const [piRef, setPiRef] = useState("");
+  const [piRef, setPiRef] = useState(defaultPiRef);
   const [gate, setGate] = useState("");
   const [condition, setCondition] = useState("good");
   const [note, setNote] = useState("");
   const [qty, setQty] = useState<Record<string, string>>({});
   const [photo, setPhoto] = useState<File | null>(null);
+  const [viewPi, setViewPi] = useState<Pi | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setPoRef(editing?.poRef ?? defaultPoRef);
-    setPiRef(editing?.piRef ?? "");
+    setPiRef(editing?.piRef ?? defaultPiRef);
     setGate(editing?.gateRegisterNo ?? "");
     setCondition(editing?.condition ?? "good");
     setNote(editing?.note ?? "");
@@ -699,15 +775,45 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <GrnPhotoLink grn={editing} /> : undefined} size="lg" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
+    <>
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <GrnPhotoLink grn={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until this receipt is booked in Tally.` : `${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : editing ? "Save Changes" : "Record receipt"}</Button></>}>
-      <div className="space-y-3.5">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3.5">
-          <FieldLabel label="PO Ref No." required>
-            <TextInput value={poRef} onChange={(e) => setPoRef(e.target.value)} placeholder="e.g. 2627/PO/0042" />
-            <Hint>The PO this receipt is against</Hint>
-          </FieldLabel>
+      <div className="space-y-5">
+        {/* References panel — the receipt is booked against this PO, so these come
+            from the PO itself: the vendor-facing Tally PO No. (links to the PO) and
+            the vendor PI No(s) collected on it (each opens that PI). Set apart in a
+            tinted card so this read-only context doesn't blur into the entry fields. */}
+        <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Tally PO No.">
+              {po.tallyPoNo ? (
+                <Link to={`/import/pos/${po.id}`} target="_blank" className="font-semibold text-navy hover:text-orange hover:underline">
+                  {po.tallyPoNo}
+                </Link>
+              ) : undefined}
+            </Field>
+            <Field label="Vendor PI No.">
+              {pis.length > 0 ? (
+                <span className="flex flex-wrap gap-x-1.5 gap-y-1">
+                  {pis.map((pi, i, arr) => (
+                    <button
+                      key={pi.id}
+                      type="button"
+                      onClick={() => setViewPi(pi)}
+                      className="font-semibold text-navy hover:text-orange hover:underline"
+                    >
+                      {pi.vendorPiNo}{i < arr.length - 1 ? "," : ""}
+                    </button>
+                  ))}
+                </span>
+              ) : undefined}
+            </Field>
+          </div>
+        </div>
+
+        {/* Receipt details */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
           <FieldLabel label="Gate Register No.">
             <TextInput value={gate} onChange={(e) => setGate(e.target.value)} />
           </FieldLabel>
@@ -715,28 +821,43 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
             <Combobox value={condition} onChange={setCondition} options={CONDITION} autoAdvance />
           </FieldLabel>
         </div>
-        <div className="rounded-xl border border-line overflow-hidden">
-          <table className="w-full text-[13px]">
-            <thead><tr className="text-left text-grey-2 border-b border-line bg-page/60"><th className="px-3 py-2 font-medium">Item</th><th className="px-3 py-2 font-medium">Ordered</th><th className="px-3 py-2 font-medium">Received</th><th className="px-3 py-2 font-medium w-28">Receive Now</th></tr></thead>
-            <tbody>
-              {items.map((it) => {
-                const line = s.lineById(it.requestItemId);
-                return (
-                  <tr key={it.id} className="border-b border-line/70 last:border-0">
-                    <td className="px-3 py-2 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
-                    <td className="px-3 py-2">{it.qty}</td>
-                    <td className="px-3 py-2">{it.receivedQty}</td>
-                    <td className="px-3 py-2"><TextInput type="number" className="w-24" value={qty[it.id] ?? ""} onChange={(e) => setQty((p) => ({ ...p, [it.id]: e.target.value }))} /></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+        {/* Goods lines — enter how much of each item is landing on this receipt. */}
+        <div>
+          <div className={`${SECTION_HEADING_CLASS} mb-1.5`}>Goods received</div>
+          <div className="rounded-xl border border-line overflow-hidden">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="text-grey-2 border-b border-line bg-page/60">
+                  <th className="px-4 py-2.5 text-left font-medium">Item</th>
+                  <th className="px-4 py-2.5 text-right font-medium w-32">Ordered</th>
+                  <th className="px-4 py-2.5 text-right font-medium w-32">Received</th>
+                  <th className="px-4 py-2.5 text-right font-medium w-44">Receive Now</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => {
+                  const line = s.lineById(it.requestItemId);
+                  const unit = line?.unit ? ` ${line.unit}` : "";
+                  return (
+                    <tr key={it.id} className="border-b border-line/70 last:border-0">
+                      <td className="px-4 py-2.5 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">{it.qty}{unit}</td>
+                      <td className="px-4 py-2.5 text-right whitespace-nowrap">{it.receivedQty}{unit}</td>
+                      <td className="px-4 py-2.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <TextInput type="number" className="w-28 text-right" value={qty[it.id] ?? ""} onChange={(e) => setQty((p) => ({ ...p, [it.id]: e.target.value }))} />
+                          {line?.unit && <span className="w-10 text-[12.5px] text-grey-2">{line.unit}</span>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
-        <FieldLabel label="PI Ref" hint="optional">
-          <TextInput value={piRef} onChange={(e) => setPiRef(e.target.value)} placeholder="e.g. PI-8841" />
-          <Hint>Vendor PI number, kept as a remark only</Hint>
-        </FieldLabel>
+
         <FieldLabel label="Note"><TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></FieldLabel>
         {!readOnly && (
           <FieldLabel label="Photo" hint={damaged ? "recommended — capture the damage for records" : "optional"}>
@@ -760,6 +881,9 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
         <Err msg={err} />
       </div>
     </Modal>
+    {/* A quick read-only look at a vendor PI, opened from the reference row. */}
+    {viewPi && <AddPiModal po={po} open editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    </>
   );
 }
 

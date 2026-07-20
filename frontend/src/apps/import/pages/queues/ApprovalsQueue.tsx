@@ -6,68 +6,133 @@ import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { useImportStore } from "../../store";
-import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
+import { inr, fxMoney } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { StageEntry } from "../../lib/queues";
-import type { RequestItem } from "../../types";
+import type { PurchaseRequest, RequestItem } from "../../types";
 
-/** Approvals Stage — lines routed to me, plus the decisions already made. */
+/**
+ * Approvals Stage — REQUISITIONS routed to me, plus the decisions already made.
+ * One row per requisition: the band is picked on the requisition total, so the
+ * whole thing is approved or rejected together. Open a row to see every item.
+ */
 export default function ApprovalsQueue() {
   const s = useImportStore();
   const { user } = useEffectiveIdentity();
-  const [approving, setApproving] = useState<RequestItem | null>(null);
-  const editLine = useEntryModal<RequestItem>();
-  const stage = useStageMode(s.completedApprovalEntries, user.id);
+  const [approving, setApproving] = useState<PurchaseRequest | null>(null);
+  const editRequest = useEntryModal<PurchaseRequest>();
+  const stage = useStageMode(s.completedApprovalRequestEntries, user.id);
 
-  const requestNo = (l: RequestItem) => s.requestById(l.requestId)?.requestNo ?? "—";
+  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
+  const dueIso = (r: PurchaseRequest) => s.dueIsoForApprovalRequest(r);
+
+  /** Import has no vendor shortlist — the vendor rides on the line (finalVendorId). */
+  const vendorOf = (r: PurchaseRequest) => {
+    const vid = s.itemsForRequest(r.id).find((l) => l.finalVendorId)?.finalVendorId ?? null;
+    return s.vendorById(vid)?.name ?? "—";
+  };
+  const itemCount = (r: PurchaseRequest, match: (l: RequestItem) => boolean) =>
+    s.itemsForRequest(r.id).filter(match).length;
+  /** Lines on one requisition can differ, so the status cell is a rollup. */
+  const statusText = (r: PurchaseRequest) => {
+    const waiting = itemCount(r, (l) => l.status === "approval");
+    const held = itemCount(r, (l) => l.status === "on_hold");
+    return [waiting ? `${waiting} awaiting` : "", held ? `${held} on hold` : ""].filter(Boolean).join(" · ") || "—";
+  };
+  const decisionText = (r: PurchaseRequest) => {
+    const approved = itemCount(r, (l) => l.status === "approved_pending_po" || l.status === "po");
+    const rejected = itemCount(r, (l) => l.status === "rejected");
+    return [approved ? `${approved} approved` : "", rejected ? `${rejected} rejected` : ""].filter(Boolean).join(" · ") || "—";
+  };
+  const tierOf = (r: PurchaseRequest) => s.itemsForRequest(r.id).find((l) => l.approvalTier)?.approvalTier ?? "—";
+
   /**
-   * How much is being bought — the Line Value column only shows the money side.
-   * This queue is LINE-scoped, so there is nothing to sum and no mixed-unit
-   * problem: it is simply the sourced qty (falling back to what was asked).
+   * The requisition's total — qty × rate, no GST on an import line. Pending rows
+   * band on the lines under decision; completed rows on all of them, so a row can
+   * never disagree with the money that decided it.
    */
-  const qtyCell = (l: RequestItem) => (
-    <span>
-      {l.finalQty ?? l.quantity}
-      {l.unit && <span className="ml-1 text-[11.5px] text-grey-2">{l.unit}</span>}
+  const totalOf = (lines: RequestItem[]) =>
+    Math.round(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0) * 100) / 100;
+  const totalFxOf = (lines: RequestItem[]) =>
+    Math.round(lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0) * 100) / 100;
+  const underDecision = (r: PurchaseRequest) =>
+    s.itemsForRequest(r.id).filter((l) => l.status === "approval" || l.status === "on_hold");
+  const pendingTotal = (r: PurchaseRequest) => totalOf(underDecision(r));
+  const doneTotal = (r: PurchaseRequest) => totalOf(s.itemsForRequest(r.id));
+  const pendingTotalFx = (r: PurchaseRequest) => totalFxOf(underDecision(r));
+  const doneTotalFx = (r: PurchaseRequest) => totalFxOf(s.itemsForRequest(r.id));
+  // Single currency per requisition (the vendor's).
+  const currencyOf = (r: PurchaseRequest) => s.itemsForRequest(r.id).find((l) => l.currency)?.currency ?? null;
+  // INR total on top (the approval basis), the vendor-currency total below it.
+  const totalCell = (inrValue: number, fxValue: number, code: string | null) => (
+    <div className="whitespace-nowrap">
+      <div className="font-semibold text-navy">{inr(inrValue)}</div>
+      <div className="text-[11.5px] text-grey-2">{fxMoney(fxValue, code)}</div>
+    </div>
+  );
+
+  /**
+   * How much is being bought. Quantity SUMS across items, carrying a unit only
+   * when every item shares one; folding KGS and PCS into one number would be a
+   * lie, so a mixed requisition says so and lists its units on hover. Scoped to
+   * the same lines the money columns sum.
+   */
+  const qtyOf = (lines: RequestItem[]) => {
+    const total = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? l.quantity), 0) * 1000) / 1000;
+    const units = [...new Set(lines.map((l) => l.unit).filter(Boolean))];
+    if (units.length === 1) return { total, label: units[0], title: undefined as string | undefined };
+    if (units.length === 0) return { total, label: "", title: undefined };
+    return { total, label: "mixed", title: `Different units on this requisition: ${units.join(", ")}` };
+  };
+  const pendingQty = (r: PurchaseRequest) => qtyOf(underDecision(r));
+  const doneQty = (r: PurchaseRequest) => qtyOf(s.itemsForRequest(r.id));
+  const qtyCell = (q: ReturnType<typeof qtyOf>) => (
+    <span title={q.title}>
+      {q.total}
+      {q.label && <span className="ml-1 text-[11.5px] text-grey-2">{q.label}</span>}
     </span>
   );
-  const vendorName = (l: RequestItem) => s.vendorById(l.finalVendorId)?.name ?? "—";
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
-  const companyOf = (l: RequestItem) => s.requestById(l.requestId)?.companyId ?? null;
-  /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
-  const dueIso = (l: RequestItem) => s.dueIsoForLine(l, "approval");
 
-  const columns: QueueColumn<RequestItem>[] = [
-    {
-      key: "request", header: "Request", sortValue: (l) => requestNo(l), filter: { kind: "text", get: (l) => requestNo(l) }, tdClassName: "whitespace-nowrap",
-      cell: (l) => {
-        const req = s.requestById(l.requestId);
-        return req ? <Link to={`/import/requests/${req.id}`} className="font-semibold text-navy hover:text-orange">{req.requestNo}</Link> : "—";
-      },
-    },
-    { key: "item", header: "Item", cell: (l) => <span className="font-medium text-navy">{s.itemLabel(l.itemId)}</span>, sortValue: (l) => s.itemLabel(l.itemId), filter: { kind: "text", get: (l) => s.itemLabel(l.itemId) } },
-    { key: "qty", header: "Qty", cell: (l) => qtyCell(l), sortValue: (l) => l.finalQty ?? l.quantity, filter: { kind: "number", get: (l) => l.finalQty ?? l.quantity }, tdClassName: "whitespace-nowrap" },
-    { key: "vendor", header: "Recommended Vendor", cell: (l) => vendorName(l), sortValue: (l) => vendorName(l), filter: { kind: "select", get: (l) => vendorName(l) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Line Value", cell: (l) => <span className="font-semibold text-navy">{inr(l.lineValue)}</span>, sortValue: (l) => l.lineValue ?? 0, filter: { kind: "number", get: (l) => l.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
-    { key: "status", header: "Status", cell: (l) => <span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span>, sortValue: (l) => LINE_STATUS_LABEL[l.status], filter: { kind: "select", get: (l) => LINE_STATUS_LABEL[l.status] } },
-    { key: "created", header: "Created", cell: (l) => formatDate(l.createdAt), sortValue: (l) => l.createdAt, filter: { kind: "date", get: (l) => l.createdAt }, tdClassName: "whitespace-nowrap" },
-    { key: "due", header: "Due", cell: (l) => <DueCell dueIso={dueIso(l)} />, sortValue: (l) => dueIso(l), filter: { kind: "date", get: (l) => dueIso(l) }, tdClassName: "whitespace-nowrap" },
+  const requestLink = (r: PurchaseRequest) => (
+    <Link to={`/import/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+      {r.requestNo}
+    </Link>
+  );
+  // Just the count — the item NAMES are deliberately not shown here. A
+  // requisition can carry ten lines, and listing them clutters the row; open the
+  // requisition (or Review) to see them. Search still matches names via itemsText.
+  const itemsCell = (r: PurchaseRequest) => {
+    const n = s.itemsForRequest(r.id).length;
+    return <span className="font-medium text-navy">{n} item{n === 1 ? "" : "s"}</span>;
+  };
+  const itemsText = (r: PurchaseRequest) => s.itemsForRequest(r.id).map((l) => s.itemById(l.itemId)?.name ?? "").join(", ");
+
+  const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
+    { key: "items", header: "Items", cell: (r) => itemsCell(r), sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "text", get: (r) => itemsText(r) } },
+    { key: "qty", header: "Total Qty", cell: (r) => qtyCell(pendingQty(r)), sortValue: (r) => pendingQty(r).total, filter: { kind: "number", get: (r) => pendingQty(r).total }, tdClassName: "whitespace-nowrap" },
+    { key: "vendor", header: "Recommended Vendor", cell: (r) => vendorOf(r), sortValue: (r) => vendorOf(r), filter: { kind: "select", get: (r) => vendorOf(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Total", cell: (r) => totalCell(pendingTotal(r), pendingTotalFx(r), currencyOf(r)), sortValue: (r) => pendingTotal(r), filter: { kind: "number", get: (r) => pendingTotal(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "status", header: "Status", cell: (r) => <span className="text-[12.5px] text-grey">{statusText(r)}</span>, sortValue: (r) => statusText(r), filter: { kind: "select", get: (r) => statusText(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt }, tdClassName: "whitespace-nowrap" },
+    { key: "due", header: "Due", cell: (r) => <DueCell dueIso={dueIso(r)} />, sortValue: (r) => dueIso(r), filter: { kind: "date", get: (r) => dueIso(r) }, tdClassName: "whitespace-nowrap" },
   ];
 
   // A rejection is a completed decision too — exactly the kind of thing an
   // approver looks back at — so it appears here, locked (there is no un-reject).
-  const completedColumns: QueueColumn<StageEntry<RequestItem>>[] = [
-    { key: "request", header: "Request", cell: (e) => <Link to={`/import/requests/${e.row.requestId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
-    { key: "item", header: "Item", cell: (e) => <span className="font-medium text-navy">{s.itemLabel(e.row.itemId)}</span>, sortValue: (e) => s.itemLabel(e.row.itemId), filter: { kind: "text", get: (e) => s.itemLabel(e.row.itemId) } },
-    { key: "qty", header: "Qty", cell: (e) => qtyCell(e.row), sortValue: (e) => e.row.finalQty ?? e.row.quantity, filter: { kind: "number", get: (e) => e.row.finalQty ?? e.row.quantity }, tdClassName: "whitespace-nowrap" },
-    { key: "vendor", header: "Vendor", cell: (e) => vendorName(e.row), sortValue: (e) => vendorName(e.row), filter: { kind: "select", get: (e) => vendorName(e.row) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Line Value", cell: (e) => <span className="font-semibold text-navy">{inr(e.row.lineValue)}</span>, sortValue: (e) => e.row.lineValue ?? 0, filter: { kind: "number", get: (e) => e.row.lineValue ?? 0 }, tdClassName: "whitespace-nowrap" },
-    { key: "decision", header: "Decision", cell: (e) => <span className={lineBadge(e.row.status)}>{LINE_STATUS_LABEL[e.row.status]}</span>, sortValue: (e) => LINE_STATUS_LABEL[e.row.status], filter: { kind: "select", get: (e) => LINE_STATUS_LABEL[e.row.status] } },
-    { key: "tier", header: "Tier", cell: (e) => e.row.approvalTier ?? "—", sortValue: (e) => e.row.approvalTier ?? "", filter: { kind: "select", get: (e) => e.row.approvalTier ?? "—" }, tdClassName: "whitespace-nowrap" },
+  const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
+    { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
+    { key: "items", header: "Items", cell: (e) => itemsCell(e.row), sortValue: (e) => s.itemsForRequest(e.row.id).length, filter: { kind: "text", get: (e) => itemsText(e.row) } },
+    { key: "qty", header: "Total Qty", cell: (e) => qtyCell(doneQty(e.row)), sortValue: (e) => doneQty(e.row).total, filter: { kind: "number", get: (e) => doneQty(e.row).total }, tdClassName: "whitespace-nowrap" },
+    { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Total", cell: (e) => totalCell(doneTotal(e.row), doneTotalFx(e.row), currencyOf(e.row)), sortValue: (e) => doneTotal(e.row), filter: { kind: "number", get: (e) => doneTotal(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "decision", header: "Decision", cell: (e) => <span className="text-[12.5px] text-grey">{decisionText(e.row)}</span>, sortValue: (e) => decisionText(e.row), filter: { kind: "select", get: (e) => decisionText(e.row) }, tdClassName: "whitespace-nowrap" },
+    { key: "tier", header: "Tier", cell: (e) => tierOf(e.row), sortValue: (e) => tierOf(e.row), filter: { kind: "select", get: (e) => tierOf(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "decidedAt", header: "Decided On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     {
       key: "decidedBy", header: "By",
@@ -85,15 +150,15 @@ export default function ApprovalsQueue() {
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
             ? "Decisions already made. Each stays revisable until the PO is generated."
-            : "Lines awaiting your purchase approval."}
+            : "Requisitions awaiting your purchase approval — banded on the requisition total."}
         </p>
       </div>
 
       <StageTabs
         mode={stage.mode}
         onMode={stage.setMode}
-        pendingCount={s.approvalQueue.length}
-        completedCount={s.completedApprovalEntries.length}
+        pendingCount={s.approvalRequestQueue.length}
+        completedCount={s.completedApprovalRequestEntries.length}
         scope={stage.scope}
         onScope={stage.setScope}
         scopeNote={`Showing ${user.name}'s entries`}
@@ -106,32 +171,32 @@ export default function ApprovalsQueue() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            rowsLabel="lines"
+            rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Decisions you make will appear here, and stay revisable until the PO is generated."
             actions={(e) => (
               <StageRowAction
                 lockReason={e.lockReason}
-                canEdit={s.canApproveLine(e.row)}
-                permissionReason="Only this line's approver can revise the decision."
-                onEdit={() => editLine.openEdit(e.row)}
-                onView={() => editLine.openView(e.row)}
+                canEdit={s.canApproveRequest(e.row)}
+                permissionReason="Only this requisition's approver can revise the decision."
+                onEdit={() => editRequest.openEdit(e.row)}
+                onView={() => editRequest.openView(e.row)}
               />
             )}
           />
         ) : (
           <QueueTable
-            rows={s.approvalQueue}
-            rowKey={(l) => l.id}
+            rows={s.approvalRequestQueue}
+            rowKey={(r) => r.id}
             columns={columns}
-            groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
-            rowClassName={(l) => overdueRowClass(dueIso(l))}
-            rowsLabel="lines"
+            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            rowClassName={(r) => overdueRowClass(dueIso(r))}
+            rowsLabel="requests"
             emptyTitle="Nothing to approve"
-            emptyMessage="Lines routed to you will appear here."
+            emptyMessage="Requisitions routed to you will appear here."
             initialSort={{ key: "value", dir: "desc" }}
-            actions={(l) => (
-              <button onClick={() => setApproving(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
+            actions={(r) => (
+              <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
             )}
           />
         )}
@@ -163,13 +228,13 @@ export default function ApprovalsQueue() {
         </div>
       )}
 
-      <ApprovalModal line={approving} open={approving !== null} onClose={() => setApproving(null)} />
+      <ApprovalModal request={approving} open={approving !== null} onClose={() => setApproving(null)} />
       <ApprovalModal
-        line={editLine.row}
-        open={editLine.row !== null}
+        request={editRequest.row}
+        open={editRequest.row !== null}
         editing
-        readOnly={editLine.isView}
-        onClose={editLine.close}
+        readOnly={editRequest.isView}
+        onClose={editRequest.close}
       />
     </div>
   );

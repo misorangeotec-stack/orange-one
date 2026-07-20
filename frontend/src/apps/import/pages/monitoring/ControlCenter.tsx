@@ -11,6 +11,7 @@ import { formatDate } from "@/shared/lib/time";
 import { EMPTY_COUNTS, bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
 import { useImportStore } from "../../store";
 import { inr } from "../../lib/format";
+import MoneyCell from "../../components/MoneyCell";
 import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
 import type { QueueEntry } from "../../lib/queues";
 import { ownerResolver } from "../../lib/owners";
@@ -173,7 +174,7 @@ export default function ControlCenter() {
       tdClassName: "whitespace-nowrap",
     },
     { key: "owner", header: "Owner", cell: ownerCell, sortValue: (e) => ownerNames(e), filter: { kind: "select", get: (e) => ownerNames(e) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Value", cell: (e) => inr(e.value), sortValue: (e) => e.value ?? 0, filter: { kind: "number", get: (e) => e.value ?? 0 }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Value", cell: (e) => <MoneyCell inrValue={e.value} fxValue={e.valueFx} currency={e.currency} />, sortValue: (e) => e.value ?? 0, filter: { kind: "number", get: (e) => e.value ?? 0 }, tdClassName: "whitespace-nowrap" },
     {
       key: "due",
       header: "Due",
