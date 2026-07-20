@@ -45,6 +45,32 @@ export async function submitRequest(input: RequestInput): Promise<string> {
   return data as string;
 }
 
+/**
+ * Correct a submitted request — legal only while nobody has acted (awaiting first
+ * approval, or a no-approval request still awaiting handover). The RPC re-checks
+ * the gate and recomputes the route, since editing the category can flip whether
+ * the request needs approval at all.
+ */
+export async function updateRequest(requestId: string, input: RequestInput): Promise<void> {
+  const { error } = await supabase.rpc("fms_supplies_update_request", {
+    p: {
+      id: requestId,
+      company_id: input.companyId,
+      location: input.location,
+      department_id: input.departmentId,
+      requested_for_name: input.requestedForName,
+      requested_for_user_id: input.requestedForUserId ?? "",
+      request_type: input.requestType,
+      category_id: input.categoryId ?? "",
+      service_type_id: input.serviceTypeId ?? "",
+      item_name: input.itemName ?? "",
+      quantity: input.quantity,
+      reason: input.reason ?? "",
+    } as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export async function decideFirstApproval(requestId: string, approve: boolean, remarks: string): Promise<void> {
   const { error } = await supabase.rpc("fms_supplies_decide_first_approval", {
     p_req: requestId,

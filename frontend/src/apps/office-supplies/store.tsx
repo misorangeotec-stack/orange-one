@@ -25,6 +25,7 @@ import {
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
   submitRequest as submitRequestWrite,
+  updateRequest as updateRequestWrite,
   updateCategory as updateCategoryWrite,
   updateCompany as updateCompanyWrite,
   updateDepartment as updateDepartmentWrite,
@@ -147,6 +148,9 @@ interface SuppliesStoreValue {
   requestById: (id: string) => SupplyRequest | undefined;
   myRequests: SupplyRequest[];
   isOpenRequest: (r: SupplyRequest) => boolean;
+  /** May the current user edit this request? Requester|admin|coordinator, and
+   *  nobody has acted yet. */
+  requestEditable: (r: SupplyRequest) => boolean;
 
   // queues
   queueEntries: QueueEntry[];
@@ -176,6 +180,7 @@ interface SuppliesStoreValue {
 
   // workflow writes
   submitRequest: (input: RequestInput) => Promise<string>;
+  updateRequest: (requestId: string, input: RequestInput) => Promise<void>;
   decideFirstApproval: (r: SupplyRequest, approve: boolean, remarks: string) => Promise<void>;
   decideSecondApproval: (r: SupplyRequest, approve: boolean, remarks: string) => Promise<void>;
   recordHandover: (r: SupplyRequest, input: HandoverInput) => Promise<void>;
@@ -466,6 +471,13 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       requestById: (id) => requestMap.get(id),
       myRequests: requests.filter((r) => r.raisedBy === uid || r.requestedForUserId === uid),
       isOpenRequest,
+      // Mirrors the SQL predicate fms_supplies_request_editable + its authz:
+      // requester|admin|coordinator, and nobody has acted yet (awaiting first
+      // approval, or a no-approval request still awaiting handover).
+      requestEditable: (r) =>
+        (r.raisedBy === uid || isAdmin || isProcessCoordinator) &&
+        (r.status === "pending_first_approval" ||
+          (r.status === "pending_handover" && !r.requiresApproval && r.handedOverAt === null)),
 
       queueEntries,
       myQueue,
@@ -499,6 +511,11 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         // plain requester can notify approvers they cannot otherwise write to).
         await invalidate();
         return id;
+      },
+      updateRequest: async (requestId, input) => {
+        // The RPC re-announces in its own context (the route may have changed).
+        await updateRequestWrite(requestId, input);
+        await invalidate();
       },
       decideFirstApproval: async (r, approve, remarks) => {
         await decideFirstApprovalWrite(r.id, approve, remarks);

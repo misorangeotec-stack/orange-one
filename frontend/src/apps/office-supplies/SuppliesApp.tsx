@@ -5,6 +5,7 @@ import { SuppliesStoreProvider, useSuppliesStore } from "./store";
 import SuppliesLayout from "./SuppliesLayout";
 import Dashboard from "./pages/Dashboard";
 import NewRequest from "./pages/requests/NewRequest";
+import EditRequest from "./pages/requests/EditRequest";
 import MyRequests from "./pages/requests/MyRequests";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
@@ -59,6 +60,7 @@ export default function SuppliesApp() {
               rows to someone with no business here. */}
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
+          <Route path="requests/:id/edit" element={<EditRequest />} />
           <Route path="queues/first-approval" element={<FirstApprovalQueue />} />
           <Route path="queues/second-approval" element={<SecondApprovalQueue />} />
           <Route path="queues/handover" element={<HandoverQueue />} />
