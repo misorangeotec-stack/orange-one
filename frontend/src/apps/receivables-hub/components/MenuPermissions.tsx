@@ -22,12 +22,18 @@ function sameKeys(a: string[], b: string[]): boolean {
 }
 
 /**
- * Admin-only matrix to control which left-nav menus each receivables user can see.
+ * Admin-only matrix to control per-user receivables access.
  *
- * A ticked box = the user CAN see that menu; un-ticking it hides the menu for that
- * user (writes the key into profiles.receivables_hidden_menus, a deny-list). Default
- * is everything visible; admins are exempt and always see every menu, so they're not
- * listed here. Saving only touches receivables_hidden_menus (never the password).
+ * MENU columns: a ticked box = the user CAN see that menu; un-ticking it hides the menu for
+ * that user (writes the key into profiles.receivables_hidden_menus, a deny-list). Default is
+ * everything visible.
+ *
+ * LEGACY PIPELINE column: the hub defaults everyone to the Live (Tally) source. Tick this to
+ * let the user switch to the old pipeline source (writes profiles.receivables_allow_pipeline).
+ * Default is off — most users only ever see Live and get no source toggle.
+ *
+ * Admins are exempt from both and always see everything, so they're not listed here. Saving
+ * only touches these two receivables columns (never the password).
  */
 export function MenuPermissions() {
   const { profiles, updateUser } = useDirectory();
@@ -38,14 +44,17 @@ export function MenuPermissions() {
     (p) => p.role !== "admin" && p.moduleAccess.includes(RECEIVABLES_APP_ID),
   );
 
-  // Pending edits, keyed by user id. A user not in `draft` is shown from their
-  // saved profile. Cleared per-user after a successful save (the refetch reflects it).
+  // Pending edits, keyed by user id. A user not in a draft is shown from their saved
+  // profile. Cleared per-user after a successful save (the refetch reflects it).
   const [draft, setDraft] = useState<Record<string, string[]>>({});
+  const [pipelineDraft, setPipelineDraft] = useState<Record<string, boolean>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
 
   const hiddenFor = (u: Profile): string[] => draft[u.id] ?? u.receivablesHiddenMenus ?? [];
+  const allowPipelineFor = (u: Profile): boolean => pipelineDraft[u.id] ?? u.receivablesAllowPipeline;
   const isDirty = (u: Profile): boolean =>
-    u.id in draft && !sameKeys(draft[u.id], u.receivablesHiddenMenus ?? []);
+    (u.id in draft && !sameKeys(draft[u.id], u.receivablesHiddenMenus ?? [])) ||
+    (u.id in pipelineDraft && pipelineDraft[u.id] !== u.receivablesAllowPipeline);
 
   const toggle = (u: Profile, menuKey: string, canSee: boolean) => {
     const current = hiddenFor(u);
@@ -53,19 +62,30 @@ export function MenuPermissions() {
     setDraft((d) => ({ ...d, [u.id]: next }));
   };
 
+  const togglePipeline = (u: Profile, allow: boolean) => {
+    setPipelineDraft((d) => ({ ...d, [u.id]: allow }));
+  };
+
   const save = async (u: Profile) => {
     setSavingId(u.id);
     try {
-      await updateUser(u.id, { receivablesHiddenMenus: hiddenFor(u) });
+      await updateUser(u.id, {
+        receivablesHiddenMenus: hiddenFor(u),
+        receivablesAllowPipeline: allowPipelineFor(u),
+      });
       setDraft((d) => {
         const { [u.id]: _omit, ...rest } = d;
         return rest;
       });
-      toast({ title: "Menu access saved", description: `Updated menu visibility for ${u.name}.` });
+      setPipelineDraft((d) => {
+        const { [u.id]: _omit, ...rest } = d;
+        return rest;
+      });
+      toast({ title: "Access saved", description: `Updated receivables access for ${u.name}.` });
     } catch (e) {
       toast({
         variant: "destructive",
-        title: "Couldn't save menu access",
+        title: "Couldn't save access",
         description: (e as Error).message,
       });
     } finally {
@@ -81,15 +101,17 @@ export function MenuPermissions() {
           Menu Permissions
         </CardTitle>
         <CardDescription>
-          Choose which left-nav menus each user can see. Everything is visible by default —
-          un-tick a menu to hide it for that user. Admins always see every menu.
+          Choose which left-nav menus each user can see (visible by default — un-tick to hide),
+          and whether they may switch to the legacy pipeline source. Everyone defaults to the
+          Live (Tally) source; tick <span className="font-medium">Legacy pipeline</span> to give a
+          user the source toggle. Admins always see every menu and both sources.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {users.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No non-admin users have access to this dashboard yet. Grant a user the Outstanding
-            Dashboard module in the admin area, then set their menu access here.
+            Dashboard module in the admin area, then set their access here.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -102,6 +124,7 @@ export function MenuPermissions() {
                       {m.title}
                     </TableHead>
                   ))}
+                  <TableHead className="text-center whitespace-nowrap border-l">Legacy pipeline</TableHead>
                   <TableHead className="text-right">Save</TableHead>
                 </TableRow>
               </TableHeader>
@@ -126,6 +149,13 @@ export function MenuPermissions() {
                           </TableCell>
                         );
                       })}
+                      <TableCell className="text-center border-l">
+                        <Checkbox
+                          checked={allowPipelineFor(u)}
+                          onCheckedChange={(v) => togglePipeline(u, v === true)}
+                          aria-label={`${u.name} may view the legacy pipeline source`}
+                        />
+                      </TableCell>
                       <TableCell className="text-right">
                         <Button
                           size="sm"

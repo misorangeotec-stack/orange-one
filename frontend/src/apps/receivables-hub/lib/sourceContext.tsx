@@ -23,7 +23,9 @@ interface SourceValue {
   basePath: string;
 }
 
-const SourceContext = createContext<SourceValue>({ source: "default", basePath: DEFAULT_HUB_BASE });
+// Live (Tally) is the default view; the fallback here matches that (it only applies if a
+// component ever reads this outside the provider — none do today, but keep it aligned).
+const SourceContext = createContext<SourceValue>({ source: "connectwave", basePath: DEFAULT_HUB_BASE });
 
 export function ReceivablesSourceProvider({
   value,

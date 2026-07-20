@@ -53,6 +53,12 @@ export interface Profile {
    */
   receivablesHiddenMenus: string[];
   /**
+   * Receivables Hub legacy-source access (profiles.receivables_allow_pipeline). The hub
+   * defaults everyone to the Live (Tally) source; when true, this non-admin also gets the
+   * topbar toggle to view the legacy pipeline source. Admins ignore this (always allowed).
+   */
+  receivablesAllowPipeline: boolean;
+  /**
    * When the user last opened the portal (profiles.last_active_at, ISO). Stamped on
    * app open / login via the touch_last_active RPC; null if never seen since the
    * feature shipped. Shown to admins (Users/Hierarchy) and HODs (their team).
