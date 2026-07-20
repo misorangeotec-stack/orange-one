@@ -43,10 +43,6 @@ export default function RequestDetail() {
   const anyInSourcing = lines.some((l) => l.status === "sourcing");
   const anyInApproval = lines.some((l) => l.status === "approval" || l.status === "on_hold");
   const mixedVendors = s.requestHasMixedVendors(request.id);
-  /** Cancel is the only per-line action left — everything else acts on the whole
-   *  requisition from the header. No cancellable line ⇒ no Actions column at all. */
-  const canCancel = (l: RequestItem) => l.status === "approved_pending_po" && (s.canGeneratePo || s.canSource);
-  const showActions = lines.some(canCancel);
 
   // Activity for the request + all its lines, newest first.
   const lineIds = new Set(lines.map((l) => l.id));
@@ -165,7 +161,6 @@ export default function RequestDetail() {
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
-                {showActions && <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>}
                 <th className="font-medium px-4 py-3">Item</th>
                 <th className="font-medium px-4 py-3">Qty</th>
                 <th className="font-medium px-4 py-3">Status</th>
@@ -182,18 +177,6 @@ export default function RequestDetail() {
                 const po = poItem ? s.poById(poItem.poId) : undefined;
                 return (
                   <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60 align-middle">
-                    {showActions && (
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {/* Source / Approve moved to the requisition header — they act
-                            on every item at once. Cancel is the only per-line action
-                            left, so the whole column hides when nothing is cancellable. */}
-                        {canCancel(l) ? (
-                          <button onClick={() => { setReason(""); setErr(null); setCancelling(l); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">Cancel</button>
-                        ) : (
-                          <span className="text-[12px] text-grey-2">—</span>
-                        )}
-                      </td>
-                    )}
                     <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
                     <td className="px-4 py-3">

@@ -155,7 +155,6 @@ export default function RequestDetail() {
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
-                <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
                 <th className="font-medium px-4 py-3">Category</th>
                 <th className="font-medium px-4 py-3">Item</th>
                 <th className="font-medium px-4 py-3">Qty</th>
@@ -173,26 +172,10 @@ export default function RequestDetail() {
                 const po = poItem ? s.poById(poItem.poId) : undefined;
                 return (
                   <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60 align-middle">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      {(l.status === "sourcing") && s.canSource && (
-                        <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Source</button>
-                      )}
-                      {/* Approval is decided for the whole requisition from the
-                          header button above; the per-line action here is only
-                          the sourcer's Re-source. */}
-                      {(l.status === "approval" || l.status === "on_hold") && s.canSource && (
-                        <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-grey hover:text-navy">Re-source</button>
-                      )}
-                      {l.status === "approved_pending_po" && (s.canGeneratePo || s.canSource) && (
-                        <button onClick={() => { setReason(""); setErr(null); setCancelling(l); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">Cancel</button>
-                      )}
-                      {l.status === "rejected" && <span className="text-[12px] text-grey-2" title={l.rejectReason ?? ""}>Rejected</span>}
-                      {l.status === "cancelled" && <span className="text-[12px] text-grey-2" title={l.cancelReason ?? ""}>Cancelled</span>}
-                    </td>
                     <td className="px-4 py-3 whitespace-nowrap text-grey">{lineCategory(l)}</td>
                     <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
-                    <td className="px-4 py-3"><span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span></td>
+                    <td className="px-4 py-3"><span className={lineBadge(l.status)} title={l.rejectReason ?? l.cancelReason ?? undefined}>{LINE_STATUS_LABEL[l.status]}</span></td>
                     <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{fxMoney(l.finalRate, l.currency)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{fxMoney(l.lineValueFx, l.currency)}</td>
@@ -208,9 +191,9 @@ export default function RequestDetail() {
               <tfoot>
                 {/* Totals align under their own columns: Qty under Qty, and the two
                     value totals under Value (FCY) / Value (INR). The label span
-                    absorbs the leading Actions column. */}
+                    covers the leading Category + Item columns. */}
                 <tr className="border-t-2 border-line bg-orange-soft/50">
-                  <td colSpan={3} className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td colSpan={2} className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
                   <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">
                     <QtyTotal entries={lines.map((l) => ({ qty: l.quantity, unit: l.unit }))} />
                   </td>
