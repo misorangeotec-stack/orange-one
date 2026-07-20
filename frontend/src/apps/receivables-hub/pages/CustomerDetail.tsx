@@ -582,7 +582,7 @@ export default function CustomerDetail() {
   // ── Follow-ups ───────────────────────────────────────────────────────────────
   // The entity follows the ROUTE: /group/:id logs against the group, /customer/:id against
   // the customer. Keyed by name — never by Customer.id, which is a pipeline surrogate.
-  const followupsEnabled = useReceivablesSource() === "default";
+  const followupsEnabled = true; // shared ConnectWave log — available on default AND Live (Tally)
   const followupEntityType: FollowupEntityType = isGroupRoute ? "group" : "customer";
   const followupEntityName = isGroupRoute ? groupName : customerName;
   const { latestByEntity } = useFollowups();

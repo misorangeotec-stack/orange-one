@@ -18,7 +18,7 @@ import {
 } from "@hub/components/ui/select";
 import { useToast } from "@hub/hooks/use-toast";
 import { useAppData } from "@hub/lib/useAppData";
-import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
+import { useHubBase } from "@hub/lib/sourceContext";
 import { useFollowups } from "@hub/lib/useFollowups";
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY, formatDateTimeDMY } from "@hub/lib/utils";
 import { RiskLegendPopover } from "@hub/components/RiskLegendPopover";
@@ -69,9 +69,9 @@ export default function Dashboard() {
   const hubBase = useHubBase();
   const rebase = (p: string) => p.replace(/^\/outstanding-dashboard/, hubBase);
 
-  // Follow-ups are a normal-dashboard feature — hidden under the Live (Tally) source toggle.
-  const source = useReceivablesSource();
-  const followupsEnabled = source === "default";
+  // Follow-ups are available on both the default pipeline and the Live (Tally) source — the log is
+  // a shared ConnectWave store (see lib/followupsApi.ts), so the due-today banner shows on either.
+  const followupsEnabled = true;
   const { due: followupsDue } = useFollowups();
 
   const [riskLevels,      setRiskLevels]      = useState<string[]>([]);

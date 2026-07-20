@@ -732,10 +732,10 @@ export default function CustomerRiskRegister() {
     try { localStorage.setItem(COL_STORAGE_KEY, JSON.stringify([...storedCols])); } catch {}
   }, [storedCols]);
 
-  // Follow-ups are a normal-dashboard feature: under the admin "Live (Tally)" source toggle
-  // the columns (and the quick-add) disappear entirely, without disturbing the user's saved
-  // column preferences.
-  const followupsEnabled = source === "default";
+  // Follow-ups are available on BOTH sources — the log lives on ConnectWave and is shared by the
+  // default pipeline and the Live (Tally) mirror (see lib/followupsApi.ts), keyed by customer/group
+  // NAME so an entry logged on one source surfaces on the other wherever the name matches.
+  const followupsEnabled = true;
   const visibleCols = useMemo(() => {
     if (followupsEnabled) return storedCols;
     const s = new Set(storedCols);
