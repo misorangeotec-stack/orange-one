@@ -372,10 +372,10 @@ export function findings(roots: FsNode[], companyLabel: string, only?: FsStateme
  * entries).
  *
  * To make our column line up with Tally, we let the user pick a window [from, to] (to defaults to the
- * snapshot's as-of date) and subtract each ledger's vouchers dated OUTSIDE it. This is done entirely
- * in the web view — no connector or DB change — reading the anon-granted tally_voucher_line directly.
- * The Tally column itself is a fixed snapshot and cannot be re-sliced, so the comparison is exact only
- * at to = the snapshot date; other dates move our side alone (documented in the UI).
+ * snapshot's as-of date) and subtract each statement line's vouchers dated OUTSIDE it, via the
+ * `fs_oow_adj` RPC (see fetchOutOfWindow). No connector change — an RPC + a supporting index on the
+ * mirror. The Tally column itself is a fixed snapshot and cannot be re-sliced, so the comparison is
+ * exact only at to = the snapshot date; other dates move our side alone (documented in the UI).
  */
 /** yyyy-mm-dd → yyyymmdd (vch_date is a yyyymmdd string, sorts lexically). */
 const isoToYmd = (iso: string): string => iso.replace(/-/g, "");
@@ -387,20 +387,22 @@ export interface OowCompany {
 }
 
 /**
- * Per-company, per-ledger Dr-positive sum of vouchers dated OUTSIDE the window [fromIso, toIso] — the
- * amount to remove from that ledger's `ours` so the column reads "as of" the window. Keyed by
- * company_guid then ledger_guid.
+ * Per-company, per-NODE-NAME Dr-positive sum of vouchers dated OUTSIDE the window [fromIso, toIso] — the
+ * amount to remove from that statement line's `ours` so the column reads "as of" the window. Keyed by
+ * company_guid then the line's `name` (group OR ledger — the same key `v_fs_line` nests on).
  *
- * Sourced from the `fs_oow_by_ledger` RPC. tally_voucher_line has RLS on with NO anon policy, so a
- * direct table read from the browser returns nothing; the RPC is SECURITY DEFINER (the same pattern as
- * ledger_txn_by_id) and aggregates server-side against the partial index, so it stays well under the
- * anon 3s timeout and only ships one row per touched ledger.
+ * Sourced from the `fs_oow_adj` RPC. Two reasons it must be keyed by NAME, not ledger guid:
+ *  1. RLS — `tally_voucher_line` has RLS on with no anon policy, so a direct browser read returns
+ *     nothing; the RPC is SECURITY DEFINER (same pattern as ledger_txn_by_id).
+ *  2. The statement is built from the group-level Trial Balance, so a group like "INSURANCE EXP" is a
+ *     single line with NO ledger children. The RPC therefore rolls each ledger's out-of-window amount
+ *     up its whole group chain (exactly how `v_fs_line` rolls `our_closing` up), returning one row per
+ *     group name plus one per ledger-line name, so every statement line has a match.
  *
  * CRITICAL — the FY-start floor (p_floor). A book can span more than one financial year (Surat runs
- * 1-Apr-25 → 31-Mar-27), so the voucher table holds prior-FY lines too. But a P&L ledger's closing is
- * the CURRENT FY's net only — it never contained those prior-FY lines. The RPC clamps `vch_date >=
- * p_floor` (the statement's from_date) so we only ever touch this-FY vouchers; by default (from =
- * from_date) the pre-`from` branch is empty, leaving just the small future set.
+ * 1-Apr-25 → 31-Mar-27), so the voucher table holds prior-FY lines too. But a P&L line's closing is the
+ * CURRENT FY's net only. The RPC clamps `vch_date >= p_floor` (the statement's from_date) so we only
+ * ever touch this-FY vouchers; by default (from = from_date) the pre-`from` branch is empty.
  */
 export async function fetchOutOfWindow(
   companies: OowCompany[],
@@ -418,16 +420,16 @@ export async function fetchOutOfWindow(
     companies.map(async (c) => {
       const floor = isoToYmd(c.fromDate); // never subtract anything before the statement's FY start
       const bucket: Record<string, number> = (out[c.companyGuid] = {});
-      const { data, error } = await cw.rpc("fs_oow_by_ledger", {
+      const { data, error } = await cw.rpc("fs_oow_adj", {
         p_tenant: `acct_orange::${c.companyGuid}`,
         p_floor: floor,
         p_from: fromYmd ?? floor, // no lower bound clips nothing (with the floor already at FY start)
         p_to: toYmd,
       });
       if (error) throw new Error(error.message);
-      for (const r of (data ?? []) as { ledger_guid: string | null; dr_positive: number | string | null }[]) {
-        if (!r.ledger_guid) continue;
-        bucket[r.ledger_guid] = Number(r.dr_positive) || 0;
+      for (const r of (data ?? []) as { name: string | null; dr_positive: number | string | null }[]) {
+        if (!r.name) continue;
+        bucket[r.name] = Number(r.dr_positive) || 0;
       }
     }),
   );
@@ -435,23 +437,22 @@ export async function fetchOutOfWindow(
 }
 
 /**
- * Return a copy of the tree with every node's `ours` (and `gap`) reduced by its subtree's out-of-window
- * vouchers, so the statement reads "as of" the chosen window. A group's adjustment is the sum of its
- * descendant ledgers' — matching how the server rolls `our_closing` up the group chain. With an empty
- * map the values are unchanged (only the objects are new).
+ * Return a copy of the tree with every node's `ours` (and `gap`) reduced by its own out-of-window
+ * amount, so the statement reads "as of" the chosen window. Keyed by node NAME: the RPC already rolled
+ * each group up its chain (mirroring how `v_fs_line` builds a group's `our_closing`), so each line is
+ * adjusted directly — no tree summation. With an empty map the values are unchanged (only new objects).
  */
-export function adjustRootsAsOf(roots: FsNode[], adjByGuid: Record<string, number>): FsNode[] {
-  const build = (n: FsNode): { node: FsNode; subtree: number } => {
-    const own = n.ledgerGuid ? adjByGuid[n.ledgerGuid] ?? 0 : 0;
-    const kids = n.children.map(build);
-    const subtree = own + kids.reduce((s, k) => s + k.subtree, 0);
-    const ours = n.ours === null ? null : n.ours - subtree;
+export function adjustRootsAsOf(roots: FsNode[], adjByName: Record<string, number>): FsNode[] {
+  const build = (n: FsNode): FsNode => {
+    const ours = n.ours === null ? null : n.ours - (adjByName[n.name] ?? 0);
     return {
-      node: { ...n, children: kids.map((k) => k.node), ours, gap: ours === null ? null : n.tally - ours },
-      subtree,
+      ...n,
+      children: n.children.map(build),
+      ours,
+      gap: ours === null ? null : n.tally - ours,
     };
   };
-  return roots.map((r) => build(r).node);
+  return roots.map(build);
 }
 
 /** Sum of a top-level group's Tally figure, 0 when the company has no such group. */
