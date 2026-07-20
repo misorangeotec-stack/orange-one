@@ -356,7 +356,7 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     const creditLimit = Number(r.credit_limit) || 0;
     let fySalesR = 0, fyRcptR = 0;
     const rows: MonthlyTrend[] = Object.entries(m)
-      .filter(([month]) => inFy(month, w) && monthOrd(month) <= maxOrd)
+      .filter(([month]) => inFy(month, w) && monthOrd(month) >= LIVE_FLOOR_ORD && monthOrd(month) <= maxOrd)
       .map(([month, v]: [string, any]) => {
       const sR = Number(v?.s || 0), rR = Number(v?.r || 0);
       fySalesR += sR; fyRcptR += rR;
@@ -532,6 +532,12 @@ export const normBillRef = (s: string | null | undefined): string => (s ?? "").t
  * when the dashboard period rolls.
  */
 export const LIVE_PERIOD_START = "2025-04-01";
+
+/** Month-ordinal floor for the Live period (1-Apr-2025), the `monthOrd` form of LIVE_PERIOD_START.
+ *  Nothing on Live may chart a month earlier than this: the mirror carries monthly history back to
+ *  ~2019, and under "Both FYs" those ancient months would otherwise leak onto the trend charts. This
+ *  is the same expression fyWindow() uses for FY2526's min, i.e. monthOrd("Apr-25"). */
+const LIVE_FLOOR_ORD = 2025 * 12 + MONTH_ABBR.Apr;
 
 /** Normalized bill ref → ISO date the bill was RAISED (min vch_date of its 'New Ref' allocation),
  *  gathered across ALL of the company's books. A ref that is absent was raised before the mirror's
