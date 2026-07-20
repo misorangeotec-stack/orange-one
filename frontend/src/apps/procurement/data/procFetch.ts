@@ -271,6 +271,11 @@ const mapRequest = (r: any): PurchaseRequest => ({
   sourcingReason: r.sourcing_reason ?? null,
   sourcedAt: r.sourced_at ?? null,
   sourcedBy: r.sourced_by ?? null,
+  cancelReason: r.cancel_reason ?? null,
+  cancelledAt: r.cancelled_at ?? null,
+  cancelledBy: r.cancelled_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
 });
 
 const mapRequestVendor = (r: any): RequestVendor => ({

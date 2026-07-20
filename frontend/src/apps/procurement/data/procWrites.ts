@@ -579,6 +579,19 @@ export async function cancelLine(requestItemId: string, reason: string): Promise
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Cancel a whole request (requester or admin), allowed only before sourcing
+ * begins. The request is KEPT and marked cancelled — the RPC also cascades every
+ * still-sourcing line to cancelled, which is what removes it from the queues.
+ */
+export async function cancelRequest(requestId: string, reason: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_cancel_request", {
+    p_request_id: requestId,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /* ===================== PO cancellation (vendor-requested) ================= */
 
 /** A PO-side step owner logs the vendor's request to cancel a PO. Returns the request id. */

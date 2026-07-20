@@ -108,6 +108,7 @@ import {
   updateApprovalRequest as updateApprovalRequestWrite,
   generatePo as generatePoWrite,
   cancelLine as cancelLineWrite,
+  cancelRequest as cancelRequestWrite,
   requestPoCancel as requestPoCancelWrite,
   cancelPo as cancelPoWrite,
   declinePoCancel as declinePoCancelWrite,
@@ -332,6 +333,9 @@ interface ProcurementStoreValue {
   canSource: boolean;
   canGeneratePo: boolean;
   canApproveLine: (line: RequestItem) => boolean;
+  /** May the current user edit / cancel this request? Requester-or-admin, and no
+   *  line sourced yet. Derived from the real session — hidden while impersonating. */
+  canEditRequest: (request: PurchaseRequest) => boolean;
   /**
    * May the current user decide this whole requisition? Banded on the SAME total
    * the server uses (sum of lines in approval/on_hold) — if these two ever drift,
@@ -385,6 +389,8 @@ interface ProcurementStoreValue {
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
+  /** Cancel a whole request (kept, marked cancelled). Pre-sourcing only. */
+  cancelRequest: (requestId: string, reason: string) => Promise<void>;
   /** A PO-side owner logs the vendor's request to cancel a PO. Returns the request id. */
   requestPoCancel: (poId: string, reason: string, vendorRef?: string | null) => Promise<string>;
   /** Approver-only — cancel a PO (optionally resolving the logged request). */
@@ -591,6 +597,25 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approversForAmount(line.lineValue).includes(user.id));
 
+    /**
+     * May the current user edit / cancel this request? Mirrors the SQL predicate
+     * `fms_purchase_request_editable`: requester-or-admin AND nothing sourced yet
+     * (every line still an untouched 'sourcing' line).
+     *
+     * Derived from the REAL session, not the effective persona — the RPCs
+     * authorise against auth.uid(), which stays the real user in demo mode, so a
+     * persona-based gate would show a button the server then rejects. Both halves
+     * come from `session`; mixing in the persona's `isAdmin` is the subtle bug.
+     * Cost: Edit/Cancel are hidden while impersonating. Deliberate.
+     */
+    const requestEditable = (r: PurchaseRequest): boolean => {
+      if (r.status !== "open") return false;
+      const ls = requestItems.filter((l) => l.requestId === r.id);
+      return ls.length > 0 && ls.every((l) => l.status === "sourcing" && l.sourcedAt === null);
+    };
+    const canEditRequest = (r: PurchaseRequest): boolean =>
+      (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
+
     // The requisition total MUST be computed the same way the server does it —
     // sum over lines currently in approval/on_hold — or the client and server
     // land on different bands and an approver sees a row they cannot submit.
@@ -751,6 +776,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
       canApproveLine,
+      canEditRequest,
       canApproveRequest,
 
       // ---- PO lifecycle data + selectors ----
@@ -939,6 +965,19 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "cancelled",
           text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
           recipients: requesterOfLine(requestItemId),
+        });
+        await invalidate();
+      },
+      cancelRequest: async (requestId, reason) => {
+        await cancelRequestWrite(requestId, reason);
+        // The RPC writes the audit row in-transaction; this only fans the
+        // notification out to the sourcing owners whose queue it leaves.
+        await safeAnnounce({
+          entityType: "request",
+          entityId: requestId,
+          type: "request_cancelled",
+          text: `A purchase request was cancelled${reason ? ` — ${reason}` : ""}`,
+          recipients: ownerIdsOf("sourcing"),
         });
         await invalidate();
       },
