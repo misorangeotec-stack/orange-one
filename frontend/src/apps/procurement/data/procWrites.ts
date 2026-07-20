@@ -382,6 +382,8 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 
 export interface NewRequestLine {
   itemId: string;
+  /** Category of THIS line — a request may mix categories across its lines. */
+  categoryId: string;
   quantity: number;
   unit: string;
   lineRemark: string | null;
@@ -390,16 +392,19 @@ export interface NewRequestLine {
 /** Stage 1 — submit a request with its item lines. Returns the request id. */
 export async function submitRequest(input: {
   companyId: string;
-  categoryId: string;
+  /** Header category. Pass null to let the server take the first line's — the
+   *  header column is NOT NULL and exists only so pre-existing reads keep working. */
+  categoryId: string | null;
   note: string | null;
   items: NewRequestLine[];
 }): Promise<string> {
   const { data, error } = await supabase.rpc("fms_purchase_submit_request", {
     p_company_id: input.companyId,
-    p_category_id: input.categoryId,
+    p_category_id: input.categoryId as unknown as string,
     p_note: input.note ?? "",
     p_items: input.items.map((l) => ({
       item_id: l.itemId,
+      category_id: l.categoryId,
       quantity: l.quantity,
       unit: l.unit,
       line_remark: l.lineRemark ?? "",
@@ -575,6 +580,36 @@ export async function cancelLine(requestItemId: string, reason: string): Promise
   const { error } = await supabase.rpc("fms_purchase_cancel_line", {
     p_request_item_id: requestItemId,
     p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** A line as sent to `fms_purchase_update_request`. `id` null ⇒ a new line. */
+export interface EditRequestLine extends NewRequestLine {
+  id: string | null;
+}
+
+/**
+ * Correct a request the requester already submitted — legal only before sourcing
+ * begins. Lines match by `id`: existing → updated in place, null-id → inserted,
+ * omitted → removed. The RPC re-checks the gate server-side.
+ */
+export async function updateRequest(input: {
+  requestId: string;
+  note: string | null;
+  items: EditRequestLine[];
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_request", {
+    p_request_id: input.requestId,
+    p_note: input.note ?? "",
+    p_items: input.items.map((l) => ({
+      id: l.id,
+      item_id: l.itemId,
+      category_id: l.categoryId,
+      quantity: l.quantity,
+      unit: l.unit,
+      line_remark: l.lineRemark ?? "",
+    })) as unknown as Json,
   });
   if (error) throw new Error(error.message);
 }

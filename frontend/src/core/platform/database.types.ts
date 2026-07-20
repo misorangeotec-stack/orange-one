@@ -7444,6 +7444,10 @@ export type Database = {
         Args: { p_request_id: string }
         Returns: boolean
       }
+      fms_purchase_update_request: {
+        Args: { p_items: Json; p_note: string; p_request_id: string }
+        Returns: undefined
+      }
       fms_purchase_cancel_po: {
         Args: { p_po_id: string; p_reason: string; p_request_id?: string }
         Returns: undefined

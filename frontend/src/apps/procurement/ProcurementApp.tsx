@@ -12,6 +12,7 @@ import MasterRequests from "./pages/MasterRequests";
 import Setup from "./pages/settings/Setup";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import NewRequest from "./pages/requests/NewRequest";
+import EditRequest from "./pages/requests/EditRequest";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
 import SourcingQueue from "./pages/queues/SourcingQueue";
@@ -68,6 +69,7 @@ export default function ProcurementApp() {
             <Route path="requests" element={<RequestsList />} />
             <Route path="requests/new" element={<NewRequest />} />
             <Route path="requests/:id" element={<RequestDetail />} />
+            <Route path="requests/:id/edit" element={<EditRequest />} />
             <Route path="queues/sourcing" element={<SourcingQueue />} />
             <Route path="queues/approvals" element={<ApprovalsQueue />} />
             <Route path="queues/share" element={<SharePoQueue />} />

@@ -116,16 +116,20 @@ export default function RequestDetail() {
           {anyInApproval && s.canApproveRequest(request) && (
             <Button size="sm" onClick={() => setApproving(true)}>Approve</Button>
           )}
-          {/* The requester's own affordance — only before any buyer sources.
-              (Edit request lands in a later phase.) */}
+          {/* The requester's own affordances — only before any buyer sources. */}
           {canEdit && (
-            <Button
-              size="sm"
-              className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
-              onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
-            >
-              Cancel request
-            </Button>
+            <>
+              <Link to={`/procurement/requests/${request.id}/edit`}>
+                <Button variant="outline" size="sm">Edit request</Button>
+              </Link>
+              <Button
+                size="sm"
+                className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+                onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
+              >
+                Cancel request
+              </Button>
+            </>
           )}
         </div>
       </div>
