@@ -1,3 +1,4 @@
+// deploy: 2026-07-20 — rebuild to inline the Production VITE_CONNECTWAVE_* env vars.
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 /**
