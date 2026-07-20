@@ -16,8 +16,15 @@ const STAGES = [
   { key: "closed", label: "Closed" },
 ];
 
-function activeIndex(po: PurchaseOrder): number {
-  // Terminal stages sit at the final "Closed" node.
+const TALLY_INDEX = STAGES.findIndex((st) => st.key === "tally");
+
+function activeIndex(po: PurchaseOrder, tallyPending: boolean): number {
+  // A PO closes the moment goods are all received AND fully paid — which
+  // fms_import_refresh_po does BEFORE the Tally step is necessarily done. So a
+  // 'closed' PO can still have an unbooked GRN, i.e. its Tally step is genuinely
+  // outstanding. Sit the rail on Tally in that case so the node isn't ticked;
+  // otherwise a terminal stage sits at the final "Closed" node.
+  if (po.currentStage === "closed" && tallyPending) return TALLY_INDEX;
   if (po.currentStage === "closed" || po.currentStage === "cancelled") return STAGES.length - 1;
   const i = STAGES.findIndex((st) => st.key === po.currentStage);
   // The leading 'generated' node is always done for a live PO — the earliest
@@ -35,6 +42,9 @@ function activeIndex(po: PurchaseOrder): number {
  */
 export default function PoStepper({ po }: { po: PurchaseOrder }) {
   const s = useImportStore();
+  // Tally is genuinely done only once every goods receipt has its invoice; an
+  // unbooked GRN means the step is still open even on a PO that closed early.
+  const tallyPending = s.unbookedGrnsForPo(po.id).length > 0;
 
   const nodes: PoStageRailNode[] = useMemo(
     () =>
@@ -66,10 +76,12 @@ export default function PoStepper({ po }: { po: PurchaseOrder }) {
   return (
     <PoStageRail
       nodes={nodes}
-      activeIndex={activeIndex(po)}
+      activeIndex={activeIndex(po, tallyPending)}
       // A 'closed' PO has finished its final stage — the last node is DONE
-      // (green check), not in progress. (Cancelled stays highlighted, not ticked.)
-      finished={po.currentStage === "closed"}
+      // (green check), not in progress. But a PO that closed with Tally still
+      // pending isn't truly finished: the rail sits on Tally (in progress), so
+      // it must NOT be flagged finished. (Cancelled stays highlighted, not ticked.)
+      finished={po.currentStage === "closed" && !tallyPending}
     />
   );
 }

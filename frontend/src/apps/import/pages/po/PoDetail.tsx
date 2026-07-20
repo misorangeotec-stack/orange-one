@@ -157,6 +157,16 @@ export default function PoDetail() {
         </div>
       )}
 
+      {/* A PO closes on all-received + fully-paid BEFORE its Tally entry, so a
+          closed PO can still owe Tally (unbooked GRN). The action bar above is
+          open-only, so surface just the Tally action here — book_tally accepts a
+          closed PO. Mirrors poInTally, which keeps it in the Tally queue too. */}
+      {!open && po.currentStage === "closed" && !tallyBooked && s.canTally && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>
+        </div>
+      )}
+
       <Card className="overflow-hidden">
         <div className="px-4 pt-3"><Tabs tabs={tabs} active={tab} onChange={setTab} /></div>
 
