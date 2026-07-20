@@ -10,6 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
+import { REPORT_CATEGORIES, categoryHref } from "@hub/lib/reportCatalog";
 
 /**
  * Single source of truth for the Receivables Control left-nav menus.
@@ -29,6 +30,25 @@ import { appBasePath } from "@/apps/appInfo";
 // hub, which is exactly the drift the shared list exists to prevent.
 export const BASE = appBasePath("outstanding-dashboard");
 
+/**
+ * A sub-nav entry under a parent menu.
+ *
+ * Deliberately NOT independently permissionable: the parent's key gates the whole group.
+ * Hiding a sidebar entry does not hide its route, so a per-category tick-box would only
+ * look like access control while `/outstanding-dashboard/reports/balance-sheet` stayed
+ * directly reachable. Real per-category permission needs the catalogue filtered AND the
+ * routes guarded, which is a separate job.
+ *
+ * `key` is namespaced ("reports:tally") anyway, so if that job is ever done these keys
+ * drop into the same deny-list with no data migration.
+ */
+export interface ReceivablesMenuChild {
+  key: string;
+  title: string;
+  url: string;
+  icon?: LucideIcon;
+}
+
 export interface ReceivablesMenu {
   /** Stable id stored in the deny-list. Never reuse/rename without a data migration. */
   key: string;
@@ -37,6 +57,8 @@ export interface ReceivablesMenu {
   icon: LucideIcon;
   /** Admin-only menu: never shown to non-admins and excluded from the permission matrix. */
   adminOnly?: boolean;
+  /** Sub-nav rendered as a collapsible group. Gated by this menu's own key, not its own. */
+  children?: ReceivablesMenuChild[];
 }
 
 export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
@@ -51,7 +73,20 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   // break this rule with a duplicate "Collection Report (Tally Live)" entry that rendered the very same
   // Salesperson Collection Report against ConnectWave; it's gone — toggle Live on the report instead.
   { key: "import", title: "Import Data", url: `${BASE}/import`, icon: PackageOpen },
-  { key: "reports", title: "Reports", url: `${BASE}/reports`, icon: FileText },
+  // The sub-nav lists CATEGORIES, not reports. One child per report would push the sidebar
+  // past twenty entries as the Tally section fills in; categories stay a fixed five.
+  {
+    key: "reports",
+    title: "Reports",
+    url: `${BASE}/reports`,
+    icon: FileText,
+    children: REPORT_CATEGORIES.map((c) => ({
+      key: `reports:${c.id}`,
+      title: c.title,
+      url: categoryHref(c.id),
+      icon: c.icon,
+    })),
+  },
   { key: "settings", title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },
 ];
 

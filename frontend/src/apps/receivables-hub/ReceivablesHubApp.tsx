@@ -21,6 +21,9 @@ import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport"
 import OverdueAgingReport from "@hub/pages/OverdueAgingReport";
 import CustomerCategoryReport from "@hub/pages/CustomerCategoryReport";
 import DsoReport from "@hub/pages/DsoReport";
+import BalanceSheetReport from "@hub/pages/BalanceSheetReport";
+import ProfitLossReport from "@hub/pages/ProfitLossReport";
+import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -89,6 +92,9 @@ function HubRoutes() {
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
               a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
           <Route path="reports/dso" element={<DsoReport />} />
+          <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
+          <Route path="reports/profit-loss" element={<ProfitLossReport />} />
+          <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

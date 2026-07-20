@@ -1,153 +1,220 @@
-import { useNavigate } from "react-router-dom";
-import { CalendarClock, FileText, ArrowRight, HandCoins, UserX, Percent as PercentIcon, AlarmClock, PackageX, Layers, Gauge } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { ChevronRight, FileText, Search } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
-import { Card, CardContent } from "@hub/components/ui/card";
+import { Input } from "@hub/components/ui/input";
+import {
+  REPORT_CATEGORIES,
+  categoryById,
+  reportHref,
+  reportsInCategory,
+  searchReports,
+  subcategoriesInCategory,
+  type ReportCategoryId,
+  type ReportEntry,
+} from "@hub/lib/reportCatalog";
 
-/* ── Report catalogue ──────────────────────────────────────────
- * One card per report. The Aging Report is live; more cards land here
- * over time (set `to` + `ready: true` when each is built). */
+/**
+ * The report catalogue.
+ *
+ * A category rail beside a dense list, not a grid of cards. The card grid this replaced
+ * carried a 3–6 line description per report, which at ten reports already read as a wall
+ * of boxes and would not have survived the twenty this app is heading for. The long copy
+ * now lives on each report's own page, where it is read in context.
+ *
+ * Every row comes from lib/reportCatalog — the same list that builds the sidebar sub-nav
+ * and the breadcrumb trail, so the three can never disagree about what exists.
+ */
 
-interface ReportCard {
-  id: string;
-  title: string;
-  description: string;
-  icon: React.ElementType;
-  to?: string;
-  ready: boolean;
+/** Which pipeline the numbers come from. Flipping a catalogue field flips this pill. */
+function SourcePill({ source }: { source: ReportEntry["source"] }) {
+  const tally = source === "tally";
+  return (
+    <Badge
+      variant="outline"
+      className={`text-[10px] px-1.5 py-0 rounded-button uppercase tracking-wide shrink-0 ${
+        tally
+          ? "text-emerald-700 border-emerald-300 bg-emerald-50"
+          : "text-muted-foreground border-border bg-muted/50"
+      }`}
+    >
+      {tally ? "Tally" : "Pipeline"}
+    </Badge>
+  );
 }
 
-const REPORTS: ReportCard[] = [
-  {
-    id: "aging",
-    title: "Aging Report",
-    description:
-      "Outstanding split by invoice age (< 180 / > 180) and overdue split by days-past-due brackets — grouped by sale type, customer or salesperson, with stacked grouping.",
-    icon: CalendarClock,
-    to: "/outstanding-dashboard/reports/aging",
-    ready: true,
-  },
-  {
-    id: "other-payments",
-    title: "Other Payments Report",
-    description:
-      "Manual (non-Tally) payments applied against invoices or booked on account — grouped by salesperson or customer, with against-invoice vs on-account split and styled Excel export.",
-    icon: HandCoins,
-    to: "/outstanding-dashboard/reports/other-payments",
-    ready: true,
-  },
-  // Two cards, one page. Zero collection is the 0% case of the threshold report, so both
-  // open pages/CollectionPerformanceReport at a different ?below= — see lib/collections.ts.
-  {
-    id: "zero-collections",
-    title: "Customers with Zero Collections",
-    description:
-      "Customers who owe money and paid nothing in the period — ranked by outstanding, flagged when we're still billing them. Never-paid and still-buying counts, drill-down to open bills, Excel export.",
-    icon: UserX,
-    to: "/outstanding-dashboard/reports/collections?below=0",
-    ready: true,
-  },
-  {
-    id: "low-collections",
-    title: "Customers Below 30% Collection",
-    description:
-      "Customers who collected less than 30% of what we could have collected (opening outstanding + sales billed). Shortfall in rupees, severity bands, prior-period comparison, and bounced-cheque and still-buying flags.",
-    icon: PercentIcon,
-    to: "/outstanding-dashboard/reports/collections?below=30",
-    ready: true,
-  },
-  // The cutoff is switchable on the page (90 / 120 / 180 / custom, via ?over=) — this card is
-  // just the one management asked for. See lib/overdueAging.ts.
-  {
-    id: "overdue-aging",
-    title: "Customers Overdue Over 120 Days",
-    description:
-      "Customers with money stuck on bills more than 120 days past due — ranked on the aged amount alone, split into opening debt brought forward vs debt billed since, with the 180+ slice, still-buying flags, bill-level drill-down and an aged-bill Excel sheet to chase.",
-    icon: AlarmClock,
-    to: "/outstanding-dashboard/reports/overdue?over=120",
-    ready: true,
-  },
-  // The third report on the collections engine — but it asks the SALES question: not "who
-  // isn't paying" but "who has stopped buying and still owes us". See lib/collections.ts.
-  {
-    id: "dormant-debtors",
-    title: "Customers with Dues but No Sales",
-    description:
-      "Dormant accounts — they owe money but have billed nothing in the period. Opens on the last 6 months, excluding one-time machine sales (switchable), ranked by the cash stuck in them, with months-since-last-sale, a \"paid nothing either\" lens for the dead-and-stuck, a \"recently gone quiet\" lens for the ones still worth a call, drill-down to open bills and Excel export.",
-    icon: PackageX,
-    to: "/outstanding-dashboard/reports/dormant",
-    ready: true,
-  },
-  // The only report where the A/B/C/D/E tier is the SPINE rather than a filter — and the only one
-  // that asks whether the tiers mean anything. See lib/customerCategory.ts.
-  {
-    id: "customer-category",
-    title: "Customer Category Report (A/B/C/D/E)",
-    description:
-      "The whole book pivoted by customer tier — customers, sales, collection %, what they owe, what they've pre-paid us, share of book, aging, credit limits and risk, per grade. Plus a tag-hygiene lens that grades every customer on how they ACTUALLY pay and flags the mismatches: the ones tagged A who behave like a D, and the D/E who settle on time. Category × salesperson / sale type / company cross-tab, and a five-sheet Excel worklist.",
-    icon: Layers,
-    to: "/outstanding-dashboard/reports/category",
-    ready: true,
-  },
-  // The only report that measures TIME rather than money. A customer can be inside their credit
-  // terms on every individual bill and still take 140 days to pay — that is what this catches, and
-  // no other report here can see it. The cutoff is switchable on the page (60/90/120/custom, via
-  // ?over=); 90 is the one management asked for. See lib/dso.ts.
-  {
-    id: "dso",
-    title: "Customers with Average DSO over 90 Days",
-    description:
-      "How long each customer really takes to turn a sale into cash — their outstanding counted back against their own monthly billings, so a dormant debtor reads as \"beyond a year\" rather than infinity. Book-wide DSO, excess over each customer's agreed credit terms, DSO by salesperson and a distribution of the whole book. Excludes one-time machine sales by default (switchable), drills to the open bills, exports to Excel.",
-    icon: Gauge,
-    to: "/outstanding-dashboard/reports/dso?over=90",
-    ready: true,
-  },
-];
+function ReportRow({ report, categoryLabel }: { report: ReportEntry; categoryLabel?: string }) {
+  const live = report.status === "live" && report.path;
+
+  const body = (
+    <>
+      <div
+        className={`w-9 h-9 rounded-button flex items-center justify-center shrink-0 ${
+          live ? "bg-primary/15" : "bg-muted"
+        }`}
+      >
+        <report.icon className={`h-4 w-4 ${live ? "text-primary" : "text-muted-foreground"}`} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-foreground truncate">{report.title}</span>
+          {categoryLabel && (
+            <span className="text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
+              {categoryLabel}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">{report.purpose}</p>
+      </div>
+      <SourcePill source={report.source} />
+      {live ? (
+        <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+      ) : (
+        <Badge
+          variant="outline"
+          className="text-[10px] px-1.5 py-0 rounded-button uppercase bg-muted text-muted-foreground border-border shrink-0"
+        >
+          Coming soon
+        </Badge>
+      )}
+    </>
+  );
+
+  const className = "flex items-center gap-3 px-4 py-3 min-h-14";
+
+  return live ? (
+    <Link to={reportHref(report)} className={`${className} hover:bg-muted/50 transition-colors`}>
+      {body}
+    </Link>
+  ) : (
+    <div className={`${className} opacity-60`}>{body}</div>
+  );
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="px-4 py-2 bg-muted/30 border-b border-border text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
+    </div>
+  );
+}
 
 export default function Reports() {
-  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [query, setQuery] = useState("");
+
+  const selected: ReportCategoryId =
+    (categoryById(params.get("cat") ?? "")?.id as ReportCategoryId) ?? REPORT_CATEGORIES[0].id;
+
+  const searching = query.trim().length > 0;
+  const matches = useMemo(() => searchReports(query), [query]);
+
+  const pick = (id: ReportCategoryId) => {
+    setQuery("");
+    setParams({ cat: id });
+  };
+
+  const category = categoryById(selected)!;
+  const rows = reportsInCategory(selected);
+  const subcategories = subcategoriesInCategory(selected);
 
   return (
-    <div className="p-6 space-y-6 max-w-[1180px] mx-auto">
+    <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <FileText className="h-6 w-6 text-primary" /> Reports
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Detailed, drillable receivables reports. Pick a report to open it.
+          Every report in the dashboard, grouped by what it answers. Pick one to open it.
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {REPORTS.map((r) => (
-          <Card
-            key={r.id}
-            onClick={r.ready && r.to ? () => navigate(r.to as string) : undefined}
-            className={`rounded-card border transition-all ${
-              r.ready
-                ? "border-border bg-surface cursor-pointer hover:border-primary/40 hover:shadow-md"
-                : "border-dashed border-border bg-muted/30 opacity-70"
-            }`}
-          >
-            <CardContent className="p-5 space-y-3">
-              <div className="flex items-start justify-between">
-                <div className={`w-10 h-10 rounded-button flex items-center justify-center ${r.ready ? "bg-primary/15" : "bg-muted"}`}>
-                  <r.icon className={`h-5 w-5 ${r.ready ? "text-primary" : "text-muted-foreground"}`} />
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search reports…"
+          className="pl-9 h-9 rounded-input"
+        />
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        {/* Category rail. Hidden while searching — results deliberately cut across
+            categories, so a highlighted rail item would be claiming otherwise. */}
+        {!searching && (
+          <nav className="w-full lg:w-52 shrink-0 lg:sticky lg:top-4">
+            <ul className="rounded-lg border border-border bg-surface overflow-hidden divide-y divide-border">
+              {REPORT_CATEGORIES.map((c) => {
+                const active = c.id === selected;
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => pick(c.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm transition-colors ${
+                        active
+                          ? "bg-primary/10 text-primary font-semibold"
+                          : "text-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      <c.icon className={`h-4 w-4 shrink-0 ${active ? "text-primary" : "text-muted-foreground"}`} />
+                      <span className="flex-1 truncate">{c.title}</span>
+                      <span className="text-xs text-muted-foreground">{reportsInCategory(c.id).length}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        )}
+
+        <div className="flex-1 min-w-0 w-full">
+          {searching ? (
+            <div className="rounded-lg border border-border bg-surface overflow-hidden">
+              <SectionHeading>
+                {matches.length} {matches.length === 1 ? "report" : "reports"} matching “{query.trim()}”
+              </SectionHeading>
+              {matches.length === 0 ? (
+                <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  Nothing matches that. Try a customer term like “overdue”, “DSO” or “balance sheet”.
+                </p>
+              ) : (
+                <div className="divide-y divide-border">
+                  {matches.map((r) => (
+                    <ReportRow key={r.id} report={r} categoryLabel={categoryById(r.category)?.title} />
+                  ))}
                 </div>
-                {r.ready ? (
-                  <ArrowRight className="h-5 w-5 text-primary" />
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">{category.blurb}</p>
+              <div className="rounded-lg border border-border bg-surface overflow-hidden">
+                {subcategories.length > 0 ? (
+                  subcategories.map((s) => (
+                    <div key={s.id}>
+                      <SectionHeading>{s.title}</SectionHeading>
+                      <div className="divide-y divide-border">
+                        {rows
+                          .filter((r) => r.subcategory === s.id)
+                          .map((r) => (
+                            <ReportRow key={r.id} report={r} />
+                          ))}
+                      </div>
+                    </div>
+                  ))
                 ) : (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-button uppercase bg-muted text-muted-foreground border-border">
-                    Coming soon
-                  </Badge>
+                  <div className="divide-y divide-border">
+                    {rows.map((r) => (
+                      <ReportRow key={r.id} report={r} />
+                    ))}
+                  </div>
                 )}
               </div>
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">{r.title}</h3>
-                <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{r.description}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
