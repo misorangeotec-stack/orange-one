@@ -2,16 +2,16 @@
  * Who owns an Import FMS queue entry — extracted so more than one screen can ask.
  * See `apps/procurement/lib/owners.ts` for the full rationale.
  *
- * DELIBERATELY NOT A COPY OF PURCHASE. Import routes approvals per LINE with a
- * SINGLE approver per band (`approverUserId`); Purchase routes per REQUISITION
- * with a multi-approver band (`approverUserIds`). Import's `QueueEntry.entityType`
- * is typed `"line" | "po"` and so can never carry a requisition-scoped entry —
- * which is why there is no `request` branch here. Aligning the two models is a
- * product decision, not a refactor; do not "fix" this file into Purchase's shape.
+ * Approval is now REQUISITION-scoped (matching Purchase): one decision per
+ * requisition, banded on its TOTAL. So an approval queue entry carries a REQUEST
+ * id, and its owner is the approver for the request's approval total (plus any
+ * per-line manual reassign). Import still uses a SINGLE approver per band
+ * (`approverUserId`), where Purchase grew a multi-approver band — that difference
+ * remains.
  */
 import type { ApprovalBand, RequestItem, StepOwner } from "../types";
 import type { StepKey } from "./steps";
-import type { QueueEntry } from "./queues";
+import { lineInApproval, requestApprovalTotal, type QueueEntry } from "./queues";
 
 /** The slice of `ImportData` owner resolution reads — nothing more. */
 export interface OwnerSnapshot {
@@ -31,8 +31,12 @@ export interface OwnerResolver {
 }
 
 export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
-  const lineById = new Map<string, RequestItem>();
-  for (const l of data.requestItems) lineById.set(l.id, l);
+  const linesByRequest = new Map<string, RequestItem[]>();
+  for (const l of data.requestItems) {
+    const arr = linesByRequest.get(l.requestId);
+    if (arr) arr.push(l);
+    else linesByRequest.set(l.requestId, [l]);
+  }
 
   // Band selection mirrors the SQL exactly (`order by sort_order, min_amount
   // limit 1`) so the client and the RPC can never pick different bands.
@@ -51,16 +55,17 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   /**
    * Every step reads its owners from `step_owners`, except `approval` — there the
-   * owner depends on the line's value (the approval matrix band), plus any manual
-   * reassign override.
+   * owner depends on the REQUISITION's approval total (the matrix band), plus any
+   * per-line manual reassign. The entry is requisition-scoped, so `entityId` is a
+   * request id.
    */
   const ownerIdsOf = (e: QueueEntry): string[] => {
     if (e.stepKey === ("approval" as StepKey)) {
-      const l = lineById.get(e.entityId);
+      const lines = linesByRequest.get(e.entityId) ?? [];
       const ids = new Set<string>();
-      const appr = approverForAmount(l?.lineValue ?? 0);
+      const appr = approverForAmount(requestApprovalTotal(lines));
       if (appr) ids.add(appr);
-      if (l?.assignedApproverId) ids.add(l.assignedApproverId);
+      for (const l of lines) if (lineInApproval(l) && l.assignedApproverId) ids.add(l.assignedApproverId);
       return [...ids];
     }
     return stepOwnerIds(e.stepKey);

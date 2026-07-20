@@ -60,7 +60,10 @@ import {
   completedGrnEntries,
   completedTallyEntries,
   completedApprovalEntries,
+  completedApprovalRequestEntries,
   completedPoGenEntries,
+  requestInApproval,
+  requestApprovalDueIso,
   type StageEntry,
   type ImportIndex,
   type ImportSnapshot,
@@ -95,6 +98,8 @@ import {
   cancelRequest as cancelRequestWrite,
   saveSourcing as saveSourcingWrite,
   decideApproval as decideApprovalWrite,
+  decideApprovalRequest as decideApprovalRequestWrite,
+  updateApprovalRequest as updateApprovalRequestWrite,
   generatePo as generatePoWrite,
   cancelLine as cancelLineWrite,
   requestPoCancel as requestPoCancelWrite,
@@ -236,7 +241,19 @@ interface ImportStoreValue {
   queueEntries: QueueEntry[];
   // role-scoped queues
   sourcingQueue: RequestItem[];
+  /**
+   * DEPRECATED display path — the per-LINE approval queue (owner-scoped). Kept
+   * for any legacy caller; the Approvals page now renders `approvalRequestQueue`.
+   */
   approvalQueue: RequestItem[];
+  /**
+   * Requisitions awaiting approval — ONE row each. The band is picked on the
+   * requisition total, so the whole thing is approved/rejected together. Scoped
+   * to requisitions the current user may approve.
+   */
+  approvalRequestQueue: PurchaseRequest[];
+  /** Earliest approval due date across a requisition's under-decision lines. */
+  dueIsoForApprovalRequest: (r: PurchaseRequest) => string;
   poPool: RequestItem[];
   /**
    * Requisitions with at least one approved item still waiting for a PO — ONE
@@ -266,6 +283,8 @@ interface ImportStoreValue {
   completedGrnEntries: StageEntry<Grn>[];
   completedTallyEntries: StageEntry<TallyBooking>[];
   completedApprovalEntries: StageEntry<RequestItem>[];
+  /** Request-scope completed approvals — one entry per decided requisition. */
+  completedApprovalRequestEntries: StageEntry<PurchaseRequest>[];
   completedPoGenEntries: StageEntry<PurchaseOrder>[];
   /** Org-wide name lookup for a stage actor — see the note at the query. */
   personName: (id: string | null) => string;
@@ -301,6 +320,10 @@ interface ImportStoreValue {
   /** Whether the PO's payment terms require an advance (full/partial advance). */
   needsAdvance: (po: PurchaseOrder) => boolean;
   pendingAmount: (po: PurchaseOrder) => number;
+  /** Foreign-currency amount paid against a PO (Σ payment amount_fx). */
+  paidFxForPo: (poId: string) => number;
+  /** Outstanding on a PO in the vendor's currency = total_value_fx − Σ amount_fx. */
+  pendingFxAmount: (po: PurchaseOrder) => number;
   /** Amount paid so far against a specific PI (advances + installments tagged to it). */
   paidForPi: (pi: Pi) => number;
   /** Outstanding on a specific PI = pi.piValue − paidForPi(pi). */
@@ -311,6 +334,8 @@ interface ImportStoreValue {
   canSource: boolean;
   canGeneratePo: boolean;
   canApproveLine: (line: RequestItem) => boolean;
+  /** May the current user decide this whole requisition? Banded on its total. */
+  canApproveRequest: (r: PurchaseRequest) => boolean;
   /**
    * May the current user edit / cancel this request? Requester-or-admin AND
    * nothing decided yet. Derived from the REAL session, not the demo persona —
@@ -351,6 +376,8 @@ interface ImportStoreValue {
     sourcingReason: string | null;
   }) => Promise<void>;
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  /** One decision for the whole requisition, banded on its total (Import's request-scoped approval). `override` carries revised per-line rates. */
+  decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null; rates?: { requestItemId: string; rate: number }[] | null }) => Promise<void>;
   generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
   /** A PO-side owner logs the vendor's request to cancel a PO. Returns the request id. */
@@ -390,6 +417,8 @@ interface ImportStoreValue {
   updateGrn: (input: { grnId: string; items: GrnItemInput[]; poRef: string; piRef?: string | null; gateRegisterNo?: string | null; condition?: string | null; note?: string | null; photoPath?: string | null; photoName?: string | null }) => Promise<void>;
   updateTally: (input: { bookingId: string; tallyPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<void>;
   updateApproval: (input: { lineId: string; decision: string; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  /** Correct a whole requisition's approval decision (approve | override | reject). `override` re-prices the approved lines. */
+  updateApprovalRequest: (input: { requestId: string; decision: string; overrideVendorId?: string | null; reason?: string | null; rates?: { requestItemId: string; rate: number }[] | null }) => Promise<void>;
   updatePoNo: (poId: string, poNo: string) => Promise<void>;
   /** True when the signed-in user may still correct this PO's share details. */
   canEditSharePo: (po: PurchaseOrder) => boolean;
@@ -564,6 +593,24 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     const canApproveLine = (line: RequestItem): boolean =>
       isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
 
+    // Request-scoped approval bands on the requisition TOTAL, computed the same
+    // way the RPC does so the client and server never pick different bands. The
+    // basis is the lines still under decision (approval/on_hold) when deciding,
+    // or the approved-but-not-yet-PO'd lines when REVISING a completed decision —
+    // mirroring decide_approval_request vs update_approval_request. Also honours a
+    // per-line manual reassign: an approver assigned any of those lines may act.
+    const linesOfRequest = (requestId: string) => itemsByGroupId.get(requestId) ?? [];
+    const canApproveRequest = (r: PurchaseRequest): boolean => {
+      const lines = linesOfRequest(r.id);
+      const pending = lines.filter(lineInApproval);
+      const basis = pending.length > 0 ? pending : lines.filter(lineInPoDesk);
+      if (basis.length === 0) return false;
+      if (isAdmin) return true;
+      const total = basis.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+      if (approverForAmount(total) === user.id) return true;
+      return basis.some((l) => l.assignedApproverId === user.id);
+    };
+
     /**
      * May the current user still edit / cancel this request? Mirrors the SQL
      * predicate `fms_import_request_editable` exactly, plus the RPCs' authz.
@@ -718,6 +765,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // The ONE owner-scoped queue: an approver sees only the lines they may act
       // on. The unfiltered predicate stays in lib/queues.ts for the Control Center.
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
+      approvalRequestQueue: requests.filter(
+        (r) => requestInApproval(itemsByGroupId.get(r.id) ?? []) && canApproveRequest(r)
+      ),
+      dueIsoForApprovalRequest: (r) => requestApprovalDueIso(snapshot, itemsByGroupId.get(r.id) ?? []),
       poPool: requestItems.filter(lineInPoDesk),
       poRequestQueue: requests.filter((r) => (itemsByGroupId.get(r.id) ?? []).some(lineInPoDesk)),
       poDeskLinesForRequest: (requestId) => poDeskLinesOf(itemsByGroupId.get(requestId) ?? []),
@@ -738,12 +789,14 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       completedGrnEntries: completedGrnEntries(snapshot, importIndex),
       completedTallyEntries: completedTallyEntries(snapshot),
       completedApprovalEntries: completedApprovalEntries(snapshot, importIndex),
+      completedApprovalRequestEntries: completedApprovalRequestEntries(snapshot, importIndex),
       completedPoGenEntries: completedPoGenEntries(snapshot),
       personName,
       isStepOwner,
       canSource: isStepOwner("sourcing"),
       canGeneratePo: isStepOwner("po"),
       canApproveLine,
+      canApproveRequest,
       canEditRequest,
 
       // ---- PO lifecycle data + selectors ----
@@ -773,6 +826,8 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       paymentsForPi: (piId) => payments.filter((p) => p.piId === piId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       needsAdvance: (po) => po.paymentTerms === "full_advance" || po.paymentTerms === "partial_advance",
       pendingAmount: (po) => Math.max(0, po.totalValue - payments.filter((p) => p.poId === po.id).reduce((a, p) => a + p.amount, 0)),
+      paidFxForPo: (poId) => payments.filter((p) => p.poId === poId).reduce((a, p) => a + (p.amountFx ?? 0), 0),
+      pendingFxAmount: (po) => Math.max(0, (po.totalValueFx ?? 0) - payments.filter((p) => p.poId === po.id).reduce((a, p) => a + (p.amountFx ?? 0), 0)),
       paidForPi: (pi) => payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0),
       pendingForPi: (pi) => Math.max(0, pi.piValue - payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0)),
       canSharePo: isStepOwner("share_po"),
@@ -872,6 +927,37 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "on_hold",
             text: `A requested line was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfLine(input.requestItemId),
+          });
+        }
+        await invalidate();
+      },
+      decideApprovalRequest: async (input) => {
+        await decideApprovalRequestWrite(input);
+        const requester = requests.find((r) => r.id === input.requestId)?.requesterId;
+        const requesterRecipients = requester ? [requester] : [];
+        if (input.decision === "approve" || input.decision === "override") {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "approved",
+            text: "An approved requisition is ready for PO generation",
+            recipients: ownerIdsOf("po"),
+          });
+        } else if (input.decision === "reject") {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "rejected",
+            text: `A requisition was rejected${input.reason ? ` — ${input.reason}` : ""}`,
+            recipients: requesterRecipients,
+          });
+        } else if (input.decision === "hold") {
+          await safeAnnounce({
+            entityType: "request",
+            entityId: input.requestId,
+            type: "on_hold",
+            text: `A requisition was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
+            recipients: requesterRecipients,
           });
         }
         await invalidate();
@@ -1036,6 +1122,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       updateGrn: async (input) => { await updateGrnWrite(input); await invalidate(); },
       updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
       updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
+      updateApprovalRequest: async (input) => { await updateApprovalRequestWrite(input); await invalidate(); },
       updatePoNo: async (poId, poNo) => { await updatePoNoWrite(poId, poNo); await invalidate(); },
       canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(importIndex, po) === null,
 

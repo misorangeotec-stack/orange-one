@@ -2,7 +2,8 @@ import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import { useImportStore } from "../../store";
-import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
+import { poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
+import MoneyCell from "../../components/MoneyCell";
 import { stepByKey } from "../../lib/steps";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import type { PurchaseOrder } from "../../types";
@@ -24,9 +25,9 @@ export default function PoList() {
     { key: "po", header: "PO No.", cell: (p) => <span className="font-semibold text-navy">{p.poNo}</span>, sortValue: (p) => p.poNo, filter: { kind: "text", get: (p) => p.poNo }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (p) => vendorName(p), sortValue: (p) => vendorName(p), filter: { kind: "select", get: (p) => vendorName(p) }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (p) => s.poItemsForPo(p.id).length, sortValue: (p) => s.poItemsForPo(p.id).length, filter: { kind: "number", get: (p) => s.poItemsForPo(p.id).length } },
-    { key: "value", header: "Value", cell: (p) => inr(p.totalValue), sortValue: (p) => p.totalValue, filter: { kind: "number", get: (p) => p.totalValue }, tdClassName: "whitespace-nowrap" },
-    { key: "advance", header: "Advance", cell: (p) => inr(p.advancePaid), sortValue: (p) => p.advancePaid, filter: { kind: "number", get: (p) => p.advancePaid }, tdClassName: "whitespace-nowrap" },
-    { key: "pending", header: "Pending", cell: (p) => inr(s.pendingAmount(p)), sortValue: (p) => s.pendingAmount(p), filter: { kind: "number", get: (p) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Value", cell: (p) => <MoneyCell inrValue={p.totalValue} fxValue={p.totalValueFx} currency={p.currency} />, sortValue: (p) => p.totalValue, filter: { kind: "number", get: (p) => p.totalValue }, tdClassName: "whitespace-nowrap" },
+    { key: "advance", header: "Advance", cell: (p) => <MoneyCell inrValue={p.advancePaid} fxValue={s.paidFxForPo(p.id)} currency={p.currency} />, sortValue: (p) => p.advancePaid, filter: { kind: "number", get: (p) => p.advancePaid }, tdClassName: "whitespace-nowrap" },
+    { key: "pending", header: "Pending", cell: (p) => <MoneyCell inrValue={s.pendingAmount(p)} fxValue={s.pendingFxAmount(p)} currency={p.currency} />, sortValue: (p) => s.pendingAmount(p), filter: { kind: "number", get: (p) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
     { key: "stage", header: "Stage", cell: (p) => <span className={poStageBadge(p.currentStage)}>{stageLabel(p)}</span>, sortValue: (p) => stageLabel(p), filter: { kind: "select", get: (p) => stageLabel(p) }, tdClassName: "whitespace-nowrap" },
   ];
 

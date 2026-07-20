@@ -23,7 +23,7 @@ import type { ImportData } from "../data/importFetch";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import type { StepKey } from "./steps";
 import { DEFAULT_STEP_SLA, addWorkingDays, localDateIso, type StepSla } from "./sla";
-import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, RequestItem, TallyBooking } from "../types";
+import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, PurchaseRequest, RequestItem, TallyBooking } from "../types";
 
 /**
  * The slice of `ImportData` these rules actually read. A structural subset
@@ -63,7 +63,12 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
    */
   entityType: "line" | "po" | "request";
   companyId: string | null;
+  /** The work-item's value in INR (the approval / accounting basis). */
   value: number | null;
+  /** The same value in the vendor's FOREIGN currency, shown alongside the INR one. */
+  valueFx: number | null;
+  /** The vendor's currency code, for formatting `valueFx`. */
+  currency: string | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -384,7 +389,11 @@ export const poInInward = (idx: ImportIndex, p: PurchaseOrder) =>
   !allReceived(idx, p) &&
   (anyReceived(idx, p) || isDispatched(idx, p) || p.currentStage === "inward");
 /** Each GRN becomes its own Tally invoice, so a partial receipt qualifies. */
-export const poInTally = (idx: ImportIndex, p: PurchaseOrder) => isOpenPo(p) && unbookedGrnsForPo(idx, p.id).length > 0;
+// Tally is owed whenever a receipt is unbooked — even on a PO that has already
+// "closed" (a fully-received + fully-paid PO closes before its Tally entry). Only
+// a cancelled PO drops out. `book_tally` accepts a closed PO, so this is safe.
+export const poInTally = (idx: ImportIndex, p: PurchaseOrder) =>
+  p.currentStage !== "cancelled" && unbookedGrnsForPo(idx, p.id).length > 0;
 
 const PO_STEPS: { stepKey: StepKey; match: (idx: ImportIndex, p: PurchaseOrder) => boolean }[] = [
   { stepKey: "share_po", match: poInSharePo },
@@ -395,10 +404,12 @@ const PO_STEPS: { stepKey: StepKey; match: (idx: ImportIndex, p: PurchaseOrder) 
   { stepKey: "tally", match: poInTally },
 ];
 
-/** Sourcing and approval only — the PO desk is requisition-scoped (see below). */
+/**
+ * Sourcing only. Approval and the PO desk are both requisition-scoped now — one
+ * work-item per requisition, not per line (see buildQueueEntries below).
+ */
 const LINE_STEPS: { stepKey: StepKey; match: (l: RequestItem) => boolean }[] = [
   { stepKey: "sourcing", match: lineInSourcing },
-  { stepKey: "approval", match: lineInApproval },
 ];
 
 /** The lines the PO workbench may act on — exactly what the RPC accepts. */
@@ -411,6 +422,33 @@ export const poDeskLinesOf = (lines: RequestItem[]): RequestItem[] => lines.filt
  */
 export const requestPoDueIso = (data: ImportSnapshot, poolLines: RequestItem[]): string | null =>
   poolLines.map((l) => lineDueIso(data, l, "po")).reduce<string | null>((a, b) => (a === null || b <= a ? b : a), null);
+
+/* ----- The request-scope APPROVAL stage ---------------------------------- */
+
+/**
+ * Approval is decided for the WHOLE requisition, banded on the sum of the lines
+ * under decision — the request-scope twin of the per-line predicates above. A
+ * requisition is in the approval queue when any of its lines is `lineInApproval`
+ * (approval / on_hold), and the band + subtotal are computed over exactly those
+ * lines, matching `fms_import_decide_approval_request`.
+ */
+export const approvalLinesOf = (lines: RequestItem[]): RequestItem[] => lines.filter(lineInApproval);
+
+export const requestInApproval = (lines: RequestItem[]): boolean => lines.some(lineInApproval);
+
+/** What the approval band is picked on — the sum of the lines actually under decision. */
+export const requestApprovalTotal = (lines: RequestItem[]): number =>
+  approvalLinesOf(lines).reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+
+/**
+ * A requisition's approval due date: the EARLIEST of its under-decision lines'
+ * approval due dates — the conservative choice on a requisition with divergent
+ * line stamps, mirroring `requestPoDueIso`.
+ */
+export const requestApprovalDueIso = (data: ImportSnapshot, lines: RequestItem[]): string =>
+  approvalLinesOf(lines)
+    .map((l) => lineDueIso(data, l, "approval"))
+    .reduce<string | null>((a, b) => (a === null || b <= a ? b : a), null) ?? localDateIso(new Date());
 
 /* -------------------------------------------------------------------------- */
 /*  Completed entries — the "what I did here" side of a stage                  */
@@ -555,8 +593,13 @@ export function followupLockReason(data: ImportSnapshot, idx: ImportIndex, f: Fo
 }
 
 export function grnLockReason(data: ImportSnapshot, idx: ImportIndex, g: Grn): string | null {
-  const t = terminalReason(poOf(data, g.poId), "goods receipt");
-  if (t) return t;
+  // A receipt is editable until its NEXT stage (Tally) captures it — NOT merely
+  // until the PO closes. A PO closes the moment its goods are all received and it
+  // is fully paid, which can happen before Tally; freezing the receipt then would
+  // strand a still-uncaptured quantity. Only a cancelled PO (or an actual Tally
+  // booking) locks it. Mirror of fms_import_grn_editable.
+  const po = poOf(data, g.poId);
+  if (po?.currentStage === "cancelled") return "This PO is cancelled — its goods receipt can no longer be edited.";
   if (idx.bookedGrnIds.has(g.id)) return "This receipt has already been booked in Tally.";
   return null;
 }
@@ -662,6 +705,62 @@ export const completedApprovalEntries = (data: ImportSnapshot, idx: ImportIndex)
     .filter((l) => !!l.approvedAt || l.status === "rejected")
     .map((l) => lineEntry(idx, "approval", l, l.approverId, l.approvedAt ?? l.createdAt, approvalLockReason(l)));
 
+/** Request-scope counterpart of `lineEntry`: the entry IS the requisition. */
+function requestEntry(
+  stepKey: StepKey,
+  r: PurchaseRequest,
+  actorId: string | null,
+  atIso: string,
+  lockReason: string | null,
+  editedAtIso: string | null,
+  editedById: string | null,
+): StageEntry<PurchaseRequest> {
+  return {
+    id: r.id,
+    stepKey,
+    poId: "", // request-scope: no PO yet. Callers link to the requisition.
+    ref: r.requestNo,
+    companyId: r.companyId,
+    actorId,
+    atIso,
+    editedAtIso,
+    editedById,
+    lockReason,
+    row: r,
+  };
+}
+
+/**
+ * Decided requisitions — one entry per request that has any decided line. A
+ * rejection is a completed decision too, so it is included (locked). The entry
+ * stays UNLOCKED while at least one decided line is still correctable, so a
+ * requisition part-way to its PO keeps its Edit button; the edit form filters to
+ * exactly the still-open lines.
+ */
+export const completedApprovalRequestEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<PurchaseRequest>[] => {
+  const linesByRequest = new Map<string, RequestItem[]>();
+  for (const l of data.requestItems) push(linesByRequest, l.requestId, l);
+
+  const out: StageEntry<PurchaseRequest>[] = [];
+  for (const r of data.requests) {
+    const decided = (linesByRequest.get(r.id) ?? []).filter((l) => !!l.approvedAt || l.status === "rejected");
+    if (decided.length === 0) continue;
+
+    const latest = decided.reduce<RequestItem | null>(
+      (best, l) => (!best || (l.approvedAt ?? "") > (best.approvedAt ?? "") ? l : best),
+      null,
+    )!;
+    const open = decided.filter((l) => approvalLockReason(l) === null);
+    const lockReason = open.length > 0 ? null : approvalLockReason(latest);
+    const edited = decided.find((l) => !!l.editedAt) ?? null;
+
+    out.push(
+      requestEntry("approval", r, latest.approverId, latest.approvedAt ?? latest.createdAt, lockReason, edited?.editedAt ?? null, edited?.editedBy ?? null),
+    );
+  }
+  return out;
+};
+
 /** Generated POs. The entry is the PO; `po.createdAt` is the step's completion. */
 export const completedPoGenEntries = (data: ImportSnapshot): StageEntry<PurchaseOrder>[] =>
   data.pos.map((p) => ({
@@ -706,6 +805,28 @@ export function buildQueueEntries(data: ImportSnapshot, idx: ImportIndex = build
       dueIso: lineDueIso(data, l, step.stepKey),
       companyId: req.companyId,
       value: l.lineValue,
+      valueFx: l.lineValueFx,
+      currency: l.currency,
+    });
+  }
+
+  // Approval is REQUISITION-scoped: one decision banded on the requisition total,
+  // so a requisition with lines under decision is one piece of approval work.
+  const approvalByRequest = new Map<string, RequestItem[]>();
+  for (const l of data.requestItems) if (lineInApproval(l)) push(approvalByRequest, l.requestId, l);
+  for (const r of data.requests) {
+    const lines = approvalByRequest.get(r.id);
+    if (!lines?.length) continue;
+    out.push({
+      stepKey: "approval",
+      entityType: "request",
+      entityId: r.id,
+      ref: r.requestNo,
+      dueIso: requestApprovalDueIso(data, lines),
+      companyId: r.companyId,
+      value: requestApprovalTotal(lines),
+      valueFx: lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0),
+      currency: lines.find((l) => l.currency)?.currency ?? null,
     });
   }
 
@@ -724,11 +845,17 @@ export function buildQueueEntries(data: ImportSnapshot, idx: ImportIndex = build
       dueIso: requestPoDueIso(data, pool),
       companyId: r.companyId,
       value: pool.reduce((sum, l) => sum + (l.lineValue ?? 0), 0),
+      valueFx: pool.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0),
+      currency: pool.find((l) => l.currency)?.currency ?? null,
     });
   }
 
   for (const p of data.pos) {
-    if (!isOpenPo(p)) continue;
+    // A cancelled PO has no live work; a CLOSED one usually doesn't either, except
+    // an unbooked receipt still owes Tally (see poInTally) — so gate on cancelled
+    // only and let each step's own matcher decide. Every non-tally matcher still
+    // requires an open PO, so a closed PO can only surface as a Tally item.
+    if (p.currentStage === "cancelled") continue;
     for (const step of PO_STEPS) {
       if (!step.match(idx, p)) continue;
       out.push({
@@ -739,6 +866,8 @@ export function buildQueueEntries(data: ImportSnapshot, idx: ImportIndex = build
         dueIso: poDueIso(idx, data, p, step.stepKey),
         companyId: p.companyId,
         value: p.totalValue,
+        valueFx: p.totalValueFx,
+        currency: p.currency,
       });
     }
   }

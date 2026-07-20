@@ -9,7 +9,7 @@ import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
-import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
+import { inr, fxMoney, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -20,7 +20,7 @@ export default function RequestDetail() {
   const { id } = useParams();
   const s = useImportStore();
   const [sourcing, setSourcing] = useState<RequestItem | null>(null);
-  const [approving, setApproving] = useState<RequestItem | null>(null);
+  const [approving, setApproving] = useState(false);
   const [cancelling, setCancelling] = useState<RequestItem | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,6 +54,7 @@ export default function RequestDetail() {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 
   const canEdit = s.canEditRequest(request);
+  const anyInApproval = lines.some((l) => l.status === "approval" || l.status === "on_hold");
 
   const doCancelRequest = async () => {
     if (!reqReason.trim()) return setReqErr("A reason is required.");
@@ -99,22 +100,30 @@ export default function RequestDetail() {
             {request.editedAt && <> · edited {formatDate(request.editedAt)}</>}
           </p>
         </div>
-        {/* Only the raiser (or an admin) and only while nothing has been decided.
-            The RPCs re-check both server-side. */}
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            <Link to={`/import/requests/${request.id}/edit`}>
-              <Button variant="outline" size="sm">Edit request</Button>
-            </Link>
-            <Button
-              size="sm"
-              className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
-              onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
-            >
-              Cancel request
-            </Button>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* ONE approve button for the whole requisition — the band is picked on
+              its total, so it is approved or rejected together. The modal shows
+              every item under decision. */}
+          {anyInApproval && s.canApproveRequest(request) && (
+            <Button size="sm" onClick={() => setApproving(true)}>Approve</Button>
+          )}
+          {/* The requester's own affordances — only the raiser (or an admin) and
+              only while nothing has been decided. The RPCs re-check server-side. */}
+          {canEdit && (
+            <>
+              <Link to={`/import/requests/${request.id}/edit`}>
+                <Button variant="outline" size="sm">Edit request</Button>
+              </Link>
+              <Button
+                size="sm"
+                className="!bg-[#d4493f] !shadow-none hover:!bg-[#bf3d34]"
+                onClick={() => { setReqReason(""); setReqErr(null); setCancellingRequest(true); }}
+              >
+                Cancel request
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {request.status === "cancelled" && (
@@ -148,7 +157,8 @@ export default function RequestDetail() {
                 <th className="font-medium px-4 py-3">Status</th>
                 <th className="font-medium px-4 py-3">Vendor</th>
                 <th className="font-medium px-4 py-3">Rate</th>
-                <th className="font-medium px-4 py-3">Line Value</th>
+                <th className="font-medium px-4 py-3">Value ({request.currency ?? "FCY"})</th>
+                <th className="font-medium px-4 py-3">Value (INR)</th>
                 <th className="font-medium px-4 py-3">PO</th>
               </tr>
             </thead>
@@ -162,15 +172,11 @@ export default function RequestDetail() {
                       {(l.status === "sourcing") && s.canSource && (
                         <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-orange hover:underline">Source</button>
                       )}
-                      {(l.status === "approval" || l.status === "on_hold") && (
-                        <>
-                          {s.canApproveLine(l) && (
-                            <button onClick={() => setApproving(l)} className="text-[12.5px] font-semibold text-orange hover:underline mr-3">Approve</button>
-                          )}
-                          {s.canSource && (
-                            <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-grey hover:text-navy">Re-source</button>
-                          )}
-                        </>
+                      {/* Approval is decided for the whole requisition from the
+                          header button above; the per-line action here is only
+                          the sourcer's Re-source. */}
+                      {(l.status === "approval" || l.status === "on_hold") && s.canSource && (
+                        <button onClick={() => setSourcing(l)} className="text-[12.5px] font-semibold text-grey hover:text-navy">Re-source</button>
                       )}
                       {l.status === "approved_pending_po" && (s.canGeneratePo || s.canSource) && (
                         <button onClick={() => { setReason(""); setErr(null); setCancelling(l); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">Cancel</button>
@@ -183,7 +189,8 @@ export default function RequestDetail() {
                     <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
                     <td className="px-4 py-3"><span className={lineBadge(l.status)}>{LINE_STATUS_LABEL[l.status]}</span></td>
                     <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.finalRate)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{fxMoney(l.finalRate, l.currency)}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{fxMoney(l.lineValueFx, l.currency)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{inr(l.lineValue)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {po ? <Link to={`/import/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
@@ -202,7 +209,7 @@ export default function RequestDetail() {
       </div>
 
       <SourcingModal line={sourcing} open={sourcing !== null} onClose={() => setSourcing(null)} />
-      <ApprovalModal line={approving} open={approving !== null} onClose={() => setApproving(null)} />
+      <ApprovalModal request={approving ? request : null} open={approving} onClose={() => setApproving(false)} />
 
       <Modal
         open={cancelling !== null}

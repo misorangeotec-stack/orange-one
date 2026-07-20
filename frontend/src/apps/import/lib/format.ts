@@ -1,8 +1,24 @@
 import type { LineStatus } from "../types";
 
-/** ₹ amount in Indian grouping. */
+/** ₹ amount in Indian grouping, rounded to whole rupees (no decimals). */
 export const inr = (n: number | null | undefined): string =>
-  n === null || n === undefined ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  n === null || n === undefined ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+
+/**
+ * A foreign amount carrying its own currency symbol ($10,000.00), so it never
+ * reads as a bare number beside a ₹ one. The vendor's currency is free text, so
+ * fall back to "CODE 1,234.00" when it isn't a currency Intl recognises.
+ */
+export const fxMoney = (n: number | null | undefined, code: string | null | undefined): string => {
+  if (n === null || n === undefined) return "—";
+  const c = (code ?? "").trim().toUpperCase();
+  try {
+    return Number(n).toLocaleString("en-IN", { style: "currency", currency: c, currencyDisplay: "narrowSymbol" });
+  } catch {
+    const amt = Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return c ? `${c} ${amt}` : amt;
+  }
+};
 
 export const LINE_STATUS_LABEL: Record<LineStatus, string> = {
   sourcing: "Sourcing",

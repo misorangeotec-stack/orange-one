@@ -7,6 +7,7 @@ import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs, { type StageMode, type StageScope } from "@/shared/components/ui/StageTabs";
 import { useImportStore } from "../../store";
 import { inr } from "../../lib/format";
+import MoneyCell from "../../components/MoneyCell";
 import {
   allReceived,
   piCoverage,
@@ -115,8 +116,8 @@ function StepQueuePage<E>({
     ...(hideMoney
       ? []
       : [
-          { key: "value", header: "Value", cell: (p: PurchaseOrder) => inr(p.totalValue), sortValue: (p: PurchaseOrder) => p.totalValue, filter: { kind: "number" as const, get: (p: PurchaseOrder) => p.totalValue }, tdClassName: "whitespace-nowrap" },
-          { key: "pending", header: "Pending", cell: (p: PurchaseOrder) => inr(s.pendingAmount(p)), sortValue: (p: PurchaseOrder) => s.pendingAmount(p), filter: { kind: "number" as const, get: (p: PurchaseOrder) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
+          { key: "value", header: "Value", cell: (p: PurchaseOrder) => <MoneyCell inrValue={p.totalValue} fxValue={p.totalValueFx} currency={p.currency} />, sortValue: (p: PurchaseOrder) => p.totalValue, filter: { kind: "number" as const, get: (p: PurchaseOrder) => p.totalValue }, tdClassName: "whitespace-nowrap" },
+          { key: "pending", header: "Pending", cell: (p: PurchaseOrder) => <MoneyCell inrValue={s.pendingAmount(p)} fxValue={s.pendingFxAmount(p)} currency={p.currency} />, sortValue: (p: PurchaseOrder) => s.pendingAmount(p), filter: { kind: "number" as const, get: (p: PurchaseOrder) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
         ]),
     { key: "created", header: "In stage since", cell: (p) => formatDate(since(p)), sortValue: (p) => since(p), filter: { kind: "date", get: (p) => since(p).slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     ...(!hideDue ? [{ key: "due", header: "Due", cell: (p: PurchaseOrder) => <DueCell dueIso={dueIso(p)} />, sortValue: (p: PurchaseOrder) => dueIso(p) ?? "9999-99-99", filter: { kind: "date" as const, get: (p: PurchaseOrder) => dueIso(p) ?? "" }, tdClassName: "whitespace-nowrap" }] : []),
@@ -437,6 +438,13 @@ export function FollowUpQueue() {
   const [followPo, setFollowPo] = useState<PurchaseOrder | null>(null);
   const editFollowup = useEntryModal<Followup>();
   const dispatchDue = (p: PurchaseOrder): string | null => s.dispatchDueForPo(p.id);
+  // The vendor-facing references + the current dispatch status, shown as columns
+  // so the queue mirrors what the follow-up modal opens with.
+  const tallyPoOf = (p: PurchaseOrder) => p.tallyPoNo ?? "";
+  const vendorPisOf = (p: PurchaseOrder) => s.pisForPo(p.id).map((pi) => pi.vendorPiNo).filter(Boolean).join(", ");
+  const dispatchLatest = (p: PurchaseOrder) => s.followupsForPo(p.id)[0]?.dispatchStatus ?? "pending";
+  const statusPill = (st: string) =>
+    `${PILL} ${st === "dispatched" ? "text-ryg-green bg-[#EAF7EE]" : st === "delayed" ? "text-ryg-red bg-[#FDECEC]" : "text-grey-2 bg-page"}`;
 
   // ANY follow-up is editable until goods arrive — not merely "the latest".
   // There is no reliable ordering to single one out: created_at is now() (two
@@ -471,6 +479,33 @@ export function FollowUpQueue() {
           renderAction: (e) => editAction(e, s.canFollowup, () => editFollowup.openEdit(e.row), () => editFollowup.openView(e.row)),
         }}
         extraColumns={[
+          {
+            key: "tallyPo",
+            header: "Tally PO No.",
+            after: "po",
+            cell: (p) => tallyPoOf(p) || "—",
+            sortValue: (p) => tallyPoOf(p),
+            filter: { kind: "text", get: (p) => tallyPoOf(p) },
+            tdClassName: "whitespace-nowrap",
+          },
+          {
+            key: "vendorPi",
+            header: "Vendor PI No.",
+            after: "tallyPo",
+            cell: (p) => vendorPisOf(p) || "—",
+            sortValue: (p) => vendorPisOf(p),
+            filter: { kind: "text", get: (p) => vendorPisOf(p) },
+            tdClassName: "whitespace-nowrap",
+          },
+          {
+            key: "dispatchStatus",
+            header: "Status",
+            after: "vendor",
+            cell: (p) => <span className={statusPill(dispatchLatest(p))}>{dispatchLatest(p)}</span>,
+            sortValue: (p) => dispatchLatest(p),
+            filter: { kind: "select", get: (p) => dispatchLatest(p), options: ["pending", "delayed", "dispatched"] },
+            tdClassName: "whitespace-nowrap",
+          },
           {
             key: "followups",
             header: "Follow-ups",
@@ -524,6 +559,12 @@ export function InwardQueue() {
   const editGrn = useEntryModal<Grn>();
   // Goods quantities (summed across the PO's lines) — the meaningful numbers for inward.
   const qty = (p: PurchaseOrder) => poQty(s.importIndex, p);
+  // A unit suffix for the aggregate qty columns — but only when every line on the
+  // PO shares one unit (summing across different units would be meaningless).
+  const unit = (p: PurchaseOrder): string => {
+    const units = new Set(s.poItemsForPo(p.id).map((it) => s.lineById(it.requestItemId)?.unit).filter(Boolean));
+    return units.size === 1 ? ` ${[...units][0]}` : "";
+  };
 
   const vendorOf = (e: StageEntry<Grn>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
   const grnQtyOf = (e: StageEntry<Grn>) => grnQty(s.importIndex, e.row.id);
@@ -556,9 +597,9 @@ export function InwardQueue() {
           renderAction: (e) => editAction(e, s.canInward, () => editGrn.openEdit(e.row), () => editGrn.openView(e.row)),
         }}
         extraColumns={[
-          { key: "ordered", header: "Ordered", after: "vendor", cell: (p) => numFmt(qty(p).ordered), sortValue: (p) => qty(p).ordered, filter: { kind: "number", get: (p) => qty(p).ordered }, tdClassName: "whitespace-nowrap" },
-          { key: "received", header: "Received", after: "ordered", cell: (p) => numFmt(qty(p).received), sortValue: (p) => qty(p).received, filter: { kind: "number", get: (p) => qty(p).received }, tdClassName: "whitespace-nowrap" },
-          { key: "pending", header: "Pending", after: "received", cell: (p) => <span className="font-semibold text-navy">{numFmt(qty(p).pending)}</span>, sortValue: (p) => qty(p).pending, filter: { kind: "number", get: (p) => qty(p).pending }, tdClassName: "whitespace-nowrap" },
+          { key: "ordered", header: "Ordered", after: "vendor", cell: (p) => <>{numFmt(qty(p).ordered)}{unit(p)}</>, sortValue: (p) => qty(p).ordered, filter: { kind: "number", get: (p) => qty(p).ordered }, tdClassName: "whitespace-nowrap" },
+          { key: "received", header: "Received", after: "ordered", cell: (p) => <>{numFmt(qty(p).received)}{unit(p)}</>, sortValue: (p) => qty(p).received, filter: { kind: "number", get: (p) => qty(p).received }, tdClassName: "whitespace-nowrap" },
+          { key: "pending", header: "Pending", after: "received", cell: (p) => <span className="font-semibold text-navy">{numFmt(qty(p).pending)}{unit(p)}</span>, sortValue: (p) => qty(p).pending, filter: { kind: "number", get: (p) => qty(p).pending }, tdClassName: "whitespace-nowrap" },
           {
             key: "dispatchDue",
             header: "Dispatch Due",

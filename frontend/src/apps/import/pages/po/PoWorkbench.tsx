@@ -1,50 +1,132 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
-import EmptyState from "@/shared/components/ui/EmptyState";
 import Modal from "@/shared/components/ui/Modal";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
+import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import { formatDateTime } from "@/shared/lib/time";
+import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { useImportStore } from "../../store";
 import { inr } from "../../lib/format";
+import MoneyCell from "../../components/MoneyCell";
+import PoModal from "../../components/PoModal";
+import PoItemsTable from "../../components/PoItemsTable";
 import type { StageEntry } from "../../lib/queues";
-import type { RequestItem, PurchaseOrder } from "../../types";
-
-interface Group {
-  key: string;
-  vendorId: string;
-  companyId: string;
-  lines: RequestItem[];
-}
+import type { PurchaseRequest, RequestItem, PurchaseOrder } from "../../types";
 
 /**
- * PO Generation Workbench — the approved-line pool grouped by (vendor × company).
- * Select lines from one group and generate a single vendor-wise PO (it may pull
- * lines from many requests).
+ * PO Stage — one row per REQUISITION whose approved items are waiting for a PO,
+ * matching Sourcing and Approvals. Open a row to see every item and generate the
+ * PO from there.
+ *
+ * A PO never spans two requisitions. Within one it is still per vendor, so a
+ * legacy requisition sourced across two vendors produces two POs — see PoModal.
  */
 export default function PoWorkbench() {
   const s = useImportStore();
   const { user } = useEffectiveIdentity();
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [poRequest, setPoRequest] = useState<PurchaseRequest | null>(null);
   const editPo = useEntryModal<PurchaseOrder>();
   const [poNo, setPoNo] = useState("");
   const [savingNo, setSavingNo] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
   const stage = useStageMode(s.completedPoGenEntries, user.id);
 
+  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
+  const dueIso = (r: PurchaseRequest) => s.dueIsoForPoRequest(r);
+  /**
+   * Every column below reads THIS set, never the whole requisition: a rejected
+   * or already-PO'd sibling line must not show up in the count, the quantity or
+   * the money.
+   */
+  const poolLines = (r: PurchaseRequest) => s.poDeskLinesForRequest(r.id);
+
+  /**
+   * Quantity SUMS across items, so it can carry a unit only when every item
+   * shares one; folding KGS and PCS into "2500 KGS" would be a plain lie, so a
+   * mixed requisition says so and lists its units on hover. Same treatment as
+   * the Sourcing and Approvals queues, deliberately.
+   */
+  const qtyOf = (r: PurchaseRequest) => {
+    const lines = poolLines(r);
+    const total = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? l.quantity), 0) * 1000) / 1000;
+    const units = [...new Set(lines.map((l) => l.unit).filter(Boolean))];
+    if (units.length === 1) return { total, label: units[0], title: undefined as string | undefined };
+    if (units.length === 0) return { total, label: "", title: undefined };
+    return { total, label: "mixed", title: `Different units on this requisition: ${units.join(", ")}` };
+  };
+  const qtyCell = (q: ReturnType<typeof qtyOf>) => (
+    <span title={q.title}>
+      {q.total}
+      {q.label && <span className="ml-1 text-[11.5px] text-grey-2">{q.label}</span>}
+    </span>
+  );
+
+  /** The requisition's pooled value. No GST on an import line, so qty × rate is the total. */
+  const money = (r: PurchaseRequest) => {
+    const lines = poolLines(r);
+    return Math.round(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0) * 100) / 100;
+  };
+  /** The same pooled value in the vendor's foreign currency, shown beside the INR one. */
+  const moneyFx = (r: PurchaseRequest) => {
+    const lines = poolLines(r);
+    return Math.round(lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0) * 100) / 100;
+  };
+  const currencyOf = (r: PurchaseRequest) => poolLines(r).find((l) => l.currency)?.currency ?? null;
+
+  const itemsCell = (lines: RequestItem[]) => {
+    const names = lines.slice(0, 2).map((l) => s.itemById(l.itemId)?.name ?? "—");
+    const rest = lines.length - names.length;
+    return (
+      <div className="min-w-0">
+        <span className="font-medium text-navy">{lines.length} item{lines.length === 1 ? "" : "s"}</span>
+        <span className="ml-1.5 text-[11.5px] text-grey-2">{names.join(", ")}{rest > 0 ? ` +${rest} more` : ""}</span>
+      </div>
+    );
+  };
+  const itemsText = (r: PurchaseRequest) => poolLines(r).map((l) => s.itemById(l.itemId)?.name ?? "").join(", ");
+
+  /**
+   * How many POs this row will produce, named where there is only one. Says so
+   * up front rather than making the user open the dialog to find out.
+   */
+  const vendorNames = (r: PurchaseRequest) =>
+    s.poDeskVendorIdsForRequest(r.id).map((id) => s.vendorById(id)?.name ?? "—");
+  const vendorText = (r: PurchaseRequest) => {
+    const names = vendorNames(r);
+    if (names.length === 1) return names[0];
+    if (names.length === 0) return "No vendor";
+    return `${names.length} vendors`;
+  };
+  const vendorCell = (r: PurchaseRequest) => {
+    const names = vendorNames(r);
+    if (names.length === 0) return <span className="text-ryg-red">No vendor</span>;
+    return <span title={names.length > 1 ? names.join(", ") : undefined}>{vendorText(r)}</span>;
+  };
+
+  const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "request", header: "Request", cell: (r) => <Link to={`/import/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">{r.requestNo}</Link>, sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
+    { key: "items", header: "Items", cell: (r) => itemsCell(poolLines(r)), sortValue: (r) => poolLines(r).length, filter: { kind: "text", get: (r) => itemsText(r) } },
+    { key: "qty", header: "Total Qty", cell: (r) => qtyCell(qtyOf(r)), sortValue: (r) => qtyOf(r).total, filter: { kind: "number", get: (r) => qtyOf(r).total }, tdClassName: "whitespace-nowrap" },
+    { key: "vendor", header: "Vendor", cell: (r) => vendorCell(r), sortValue: (r) => vendorText(r), filter: { kind: "select", get: (r) => vendorText(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Total", cell: (r) => <MoneyCell inrValue={money(r)} fxValue={moneyFx(r)} currency={currencyOf(r)} />, sortValue: (r) => money(r), filter: { kind: "number", get: (r) => money(r) }, tdClassName: "whitespace-nowrap" },
+    { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt }, tdClassName: "whitespace-nowrap" },
+    // A requisition with no pool line has no due date; it also cannot be a row
+    // here, so "" only ever sorts an impossible case last.
+    { key: "due", header: "Due", cell: (r) => <DueCell dueIso={dueIso(r)} />, sortValue: (r) => dueIso(r) ?? "", filter: { kind: "date", get: (r) => dueIso(r) ?? "" }, tdClassName: "whitespace-nowrap" },
+  ];
+
   const completedColumns: QueueColumn<StageEntry<PurchaseOrder>>[] = [
     { key: "po", header: "PO No.", cell: (e) => <Link to={`/import/pos/${e.poId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => s.vendorById(e.row.vendorId)?.name ?? "—", sortValue: (e) => s.vendorById(e.row.vendorId)?.name ?? "", filter: { kind: "select", get: (e) => s.vendorById(e.row.vendorId)?.name ?? "—" }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Value", cell: (e) => <span className="font-semibold text-navy">{inr(e.row.totalValue)}</span>, sortValue: (e) => e.row.totalValue, filter: { kind: "number", get: (e) => e.row.totalValue }, tdClassName: "whitespace-nowrap" },
+    { key: "value", header: "Value", cell: (e) => <MoneyCell inrValue={e.row.totalValue} fxValue={e.row.totalValueFx} currency={e.row.currency} />, sortValue: (e) => e.row.totalValue, filter: { kind: "number", get: (e) => e.row.totalValue }, tdClassName: "whitespace-nowrap" },
     { key: "lines", header: "Lines", cell: (e) => s.poItemsForPo(e.row.id).length, sortValue: (e) => s.poItemsForPo(e.row.id).length, tdClassName: "whitespace-nowrap" },
     { key: "stage", header: "Now At", cell: (e) => <span className="text-grey-2">{e.row.currentStage.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.currentStage, filter: { kind: "select", get: (e) => e.row.currentStage.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap" },
     { key: "genAt", header: "Generated On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
@@ -57,55 +139,6 @@ export default function PoWorkbench() {
     },
   ];
 
-  const groups: Group[] = useMemo(() => {
-    const map = new Map<string, Group>();
-    for (const l of s.poPool) {
-      const req = s.requestById(l.requestId);
-      if (!l.finalVendorId || !req) continue;
-      const key = `${l.finalVendorId}__${req.companyId}`;
-      if (!map.has(key)) map.set(key, { key, vendorId: l.finalVendorId, companyId: req.companyId, lines: [] });
-      map.get(key)!.lines.push(l);
-    }
-    return [...map.values()];
-  }, [s.poPool, s]);
-
-  const toggle = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
-
-  const toggleGroup = (g: Group, on: boolean) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      g.lines.forEach((l) => (on ? next.add(l.id) : next.delete(l.id)));
-      return next;
-    });
-
-  const generate = async (g: Group) => {
-    const ids = g.lines.filter((l) => selected.has(l.id)).map((l) => l.id);
-    if (ids.length === 0) {
-      setErr("Select at least one line in this group.");
-      return;
-    }
-    setErr(null);
-    setBusyKey(g.key);
-    try {
-      await s.generatePo({ vendorId: g.vendorId, companyId: g.companyId, requestItemIds: ids });
-      // Stay on the workbench — the generated lines drop out of the pool on refresh.
-      setSelected((prev) => {
-        const next = new Set(prev);
-        ids.forEach((id) => next.delete(id));
-        return next;
-      });
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusyKey(null);
-    }
-  };
-
   return (
     <div className="space-y-5">
       <div>
@@ -113,27 +146,33 @@ export default function PoWorkbench() {
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
             ? "POs already generated. The PO number stays editable until it is shared with the vendor."
-            : "Approved lines, grouped by vendor and company. Select lines and generate a PO."}
+            : "Approved requisitions waiting for a PO. Open one to see its items and generate the PO."}
         </p>
       </div>
 
       <StageTabs
         mode={stage.mode}
         onMode={stage.setMode}
-        pendingCount={groups.length}
+        pendingCount={s.poRequestQueue.length}
         completedCount={s.completedPoGenEntries.length}
         scope={stage.scope}
         onScope={stage.setScope}
         scopeNote={`Showing ${user.name}'s entries`}
       />
 
-      {stage.showingCompleted ? (
-        <Card className="p-4">
+      {!stage.showingCompleted && !s.canGeneratePo && (
+        <Card className="px-4 py-3 text-[12.5px] text-grey-2">
+          You can open a requisition and see its pool, but only the PO Desk can generate POs.
+        </Card>
+      )}
+
+      <Card className="p-4">
+        {stage.showingCompleted ? (
           <QueueTable
             rows={stage.rows}
             rowKey={(e) => e.id}
             columns={completedColumns}
-            groupBy={{ idOf: (e) => e.companyId, nameOf: (id) => s.companyById(id)?.name ?? "—", allLabel: "All companies" }}
+            groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
             rowsLabel="POs"
             emptyTitle="Nothing here yet"
             emptyMessage="POs you generate will appear here. Only the PO number is amendable — and only until the PO is shared."
@@ -147,110 +186,69 @@ export default function PoWorkbench() {
               />
             )}
           />
-        </Card>
-      ) : (
-        <>
-      {!s.canGeneratePo && (
-        <Card className="px-4 py-3 text-[12.5px] text-grey-2">You can view the pool, but only the PO Desk can generate POs.</Card>
-      )}
-      {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
+        ) : (
+          <QueueTable
+            rows={s.poRequestQueue}
+            rowKey={(r) => r.id}
+            columns={columns}
+            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            rowClassName={(r) => overdueRowClass(dueIso(r))}
+            rowsLabel="requests"
+            emptyTitle="Nothing to PO"
+            emptyMessage="Approved requisitions waiting for a PO will appear here."
+            initialSort={{ key: "value", dir: "desc" }}
+            actions={(r) => (
+              <button onClick={() => setPoRequest(r)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                {s.canGeneratePo ? "Generate" : "View"}
+              </button>
+            )}
+          />
+        )}
+      </Card>
 
-      {groups.length === 0 ? (
-        <Card className="overflow-hidden"><EmptyState title="Pool is empty" message="Approved lines waiting for a PO will appear here." /></Card>
-      ) : (
-        <div className="space-y-4">
-          {groups.map((g) => {
-            const co = s.companyById(g.companyId);
-            const allOn = g.lines.every((l) => selected.has(l.id));
-            const total = g.lines.filter((l) => selected.has(l.id)).reduce((a, l) => a + (l.lineValue ?? 0), 0);
-            return (
-              <Card key={g.key} className="overflow-hidden">
-                <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-line bg-page/40">
-                  <div>
-                    <div className="font-semibold text-navy">{s.vendorById(g.vendorId)?.name ?? "Vendor"}</div>
-                    <div className="text-[12px] text-grey-2">{co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {g.lines.length} line{g.lines.length === 1 ? "" : "s"}</div>
-                  </div>
-                  {s.canGeneratePo && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-[12.5px] text-grey">Selected: <b className="text-navy">{inr(total)}</b></span>
-                      <Button size="sm" onClick={() => generate(g)} disabled={busyKey === g.key}>
-                        {busyKey === g.key ? "Generating…" : "Generate PO"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <table className="w-full text-[13.5px]">
-                  <thead>
-                    <tr className="text-left text-grey-2 border-b border-line">
-                      {s.canGeneratePo && (
-                        <th className="px-4 py-2.5 w-10">
-                          <input type="checkbox" className="w-4 h-4 accent-orange" checked={allOn} onChange={(e) => toggleGroup(g, e.target.checked)} />
-                        </th>
-                      )}
-                      <th className="font-medium px-4 py-2.5">Item</th>
-                      <th className="font-medium px-4 py-2.5">Request</th>
-                      <th className="font-medium px-4 py-2.5">Qty</th>
-                      <th className="font-medium px-4 py-2.5">Rate</th>
-                      <th className="font-medium px-4 py-2.5">Line Value</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {g.lines.map((l) => {
-                      const req = s.requestById(l.requestId);
-                      return (
-                        <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
-                          {s.canGeneratePo && (
-                            <td className="px-4 py-2.5">
-                              <input type="checkbox" className="w-4 h-4 accent-orange" checked={selected.has(l.id)} onChange={() => toggle(l.id)} />
-                            </td>
-                          )}
-                          <td className="px-4 py-2.5 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap">
-                            {req ? <Link to={`/import/requests/${req.id}`} className="text-orange hover:underline">{req.requestNo}</Link> : "—"}
-                          </td>
-                          <td className="px-4 py-2.5 whitespace-nowrap">{l.finalQty ?? l.quantity} {l.unit}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap">{inr(l.finalRate)}</td>
-                          <td className="px-4 py-2.5 whitespace-nowrap">{inr(l.lineValue)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-        </>
-      )}
+      <PoModal
+        request={poRequest}
+        open={poRequest !== null}
+        readOnly={!s.canGeneratePo}
+        onClose={() => setPoRequest(null)}
+      />
 
-      {/* Only po_no is amendable: vendor / company / lines are what the PO IS,
-          and changing them is a cancel-and-regenerate, not a correction. */}
+      {/* The PO's items are shown for context (same layout as Approve / Generate
+          PO). Only po_no is amendable: vendor / company / lines are what the PO
+          IS, and changing them is a cancel-and-regenerate, not a correction. */}
       <Modal
         open={editPo.row !== null}
         readOnly={editPo.isView}
         onClose={editPo.close}
-        title={editPo.isView ? "PO Number" : "Edit PO Number"}
-        subtitle={editPo.row ? `${editPo.row.poNo} · editable until the PO is shared with the vendor.` : undefined}
+        size="2xl"
+        title={`${editPo.isView ? "PO" : "Edit PO"} — ${editPo.row?.poNo ?? ""}`}
+        subtitle={editPo.row ? `${s.vendorById(editPo.row.vendorId)?.name ?? "—"} · ${companyName(editPo.row.companyId)}${editPo.isView ? "" : " · the PO number is editable until the PO is shared with the vendor"}` : undefined}
         footer={
-          <>
-            <Button variant="ghost" size="sm" onClick={editPo.close} disabled={savingNo}>Cancel</Button>
-            <Button size="sm" disabled={savingNo || !poNo.trim()} onClick={async () => {
-              if (!editPo.row) return;
-              setEditErr(null);
-              setSavingNo(true);
-              try {
-                await s.updatePoNo(editPo.row.id, poNo.trim());
-                editPo.close();
-              } catch (e) { setEditErr((e as Error).message); } finally { setSavingNo(false); }
-            }}>{savingNo ? "Saving…" : "Save Changes"}</Button>
-          </>
+          editPo.isView ? (
+            <Button variant="ghost" size="sm" onClick={editPo.close}>Close</Button>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" onClick={editPo.close} disabled={savingNo}>Cancel</Button>
+              <Button size="sm" disabled={savingNo || !poNo.trim()} onClick={async () => {
+                if (!editPo.row) return;
+                setEditErr(null);
+                setSavingNo(true);
+                try {
+                  await s.updatePoNo(editPo.row.id, poNo.trim());
+                  editPo.close();
+                } catch (e) { setEditErr((e as Error).message); } finally { setSavingNo(false); }
+              }}>{savingNo ? "Saving…" : "Save Changes"}</Button>
+            </>
+          )
         }
       >
-        <div className="space-y-3">
-          <FieldLabel label="PO Number" required>
-            <TextInput value={poNo} onChange={(e) => setPoNo(e.target.value)} />
-          </FieldLabel>
+        <div className="space-y-4">
+          {editPo.row && <PoItemsTable po={editPo.row} />}
+          {!editPo.isView && (
+            <FieldLabel label="PO Number" required>
+              <TextInput value={poNo} onChange={(e) => setPoNo(e.target.value)} />
+            </FieldLabel>
+          )}
           {editErr && <p className="text-[12.5px] text-ryg-red">{editErr}</p>}
         </div>
       </Modal>
