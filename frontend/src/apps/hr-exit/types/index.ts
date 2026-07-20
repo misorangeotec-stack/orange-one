@@ -155,6 +155,21 @@ export interface ExitCase {
   holdAt: string | null;
   holdReason: string | null;
 
+  /**
+   * The stage view's attribution (migration 20260720120000). Who confirmed the LWD,
+   * completed the clearance, issued the documents, archived the case — the actors
+   * that were missing before the Completed tab needed them. Old rows are null →
+   * "Not recorded". `editedAt`/`editedBy` = the last correction to a completed
+   * header step (distinct from `updatedAt`, which every write bumps).
+   */
+  lwdConfirmedAt: string | null;
+  lwdConfirmedBy: string | null;
+  clearanceCompletedBy: string | null;
+  documentsIssuedBy: string | null;
+  archivedBy: string | null;
+  editedAt: string | null;
+  editedBy: string | null;
+
   createdAt: string;
 }
 
@@ -283,6 +298,9 @@ export interface ExitInterview {
   /** `cases/<id>/interview/…` — HR-confidential in storage too (a restrictive policy). */
   filePath: string | null;
   fileName: string | null;
+  /** Stage view: the last correction to a recorded interview (migration 20260720120000). */
+  editedAt: string | null;
+  editedBy: string | null;
 }
 
 /* -------------------------------- settlement ------------------------------- */
@@ -326,6 +344,14 @@ export interface ExitSettlement {
   /** Of the balance, what is actually payable. Never more than the balance (the RPC checks). */
   encashableDays: number | null;
   leaveRemarks: string | null;
+  /** Stage view attribution (migration 20260720120000). Who verified leave, keyed payroll,
+   *  generated the F&F — the finance-step actors, kept on the confidential satellite with
+   *  the numbers. `editedAt`/`editedBy` = the last correction across any finance step. */
+  leaveVerifiedBy: string | null;
+  payrollDoneBy: string | null;
+  fnfGeneratedBy: string | null;
+  editedAt: string | null;
+  editedBy: string | null;
 
   /** Payroll inputs — the sheet's stage 8. Every one of these ARRIVES from payroll. */
   lwpCompleted: boolean;

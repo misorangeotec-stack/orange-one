@@ -27,14 +27,19 @@ export function ManagerReviewModal({
   case: c,
   open,
   onClose,
+  editing = false,
 }: {
   case: ExitCase;
   open: boolean;
   onClose: () => void;
+  /** Correct a review already recorded — calls the update RPC, greyed once HR verifies. */
+  editing?: boolean;
 }) {
   const s = useExitStore();
-  const [recommendation, setRecommendation] = useState<ManagerRecommendation>("accept");
-  const [remarks, setRemarks] = useState("");
+  const [recommendation, setRecommendation] = useState<ManagerRecommendation>(
+    editing ? (c.managerRecommendation ?? "accept") : "accept",
+  );
+  const [remarks, setRemarks] = useState(editing ? (c.managerRemarks ?? "") : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -45,7 +50,8 @@ export function ManagerReviewModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.managerReview(c, recommendation, remarks.trim());
+      if (editing) await s.updateManagerReview(c, recommendation, remarks.trim());
+      else await s.managerReview(c, recommendation, remarks.trim());
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -64,7 +70,7 @@ export function ManagerReviewModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`Your review — ${c.exitNo}`}
+      title={`${editing ? "Edit review" : "Your review"} — ${c.exitNo}`}
       subtitle={`${c.employeeName} · ${c.employeeCode}`}
       footer={
         <>
@@ -72,7 +78,7 @@ export function ManagerReviewModal({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={busy || invalid}>
-            {busy ? "Saving…" : "Submit"}
+            {busy ? "Saving…" : editing ? "Save changes" : "Submit"}
           </Button>
         </>
       }
@@ -133,10 +139,13 @@ export function HrVerifyModal({
   case: c,
   open,
   onClose,
+  editing = false,
 }: {
   case: ExitCase;
   open: boolean;
   onClose: () => void;
+  /** Correct a verification already recorded — calls the update RPC, greyed once approved. */
+  editing?: boolean;
 }) {
   const s = useExitStore();
   const [noticeDays, setNoticeDays] = useState(String(c.noticePeriodDays ?? s.policy.defaultNoticeDays));
@@ -154,14 +163,16 @@ export function HrVerifyModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.hrVerify(c, {
+      const input = {
         noticePeriodDays: Number(noticeDays) || null,
         noticeWaived: waived,
         policyApplicable: applicable,
         policyNaReason: applicable ? null : naReason.trim(),
         proposedLwd,
         hrRemarks: remarks.trim() || null,
-      });
+      };
+      if (editing) await s.updateHrVerify(c, input);
+      else await s.hrVerify(c, input);
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -174,7 +185,7 @@ export function HrVerifyModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`HR verification — ${c.exitNo}`}
+      title={`${editing ? "Edit verification" : "HR verification"} — ${c.exitNo}`}
       subtitle={`${c.employeeName} · joined ${formatDateDMY(c.dateOfJoining)}`}
       footer={
         <>
@@ -182,7 +193,7 @@ export function HrVerifyModal({
             Cancel
           </Button>
           <Button size="sm" onClick={submit} disabled={busy || invalid}>
-            {busy ? "Saving…" : "Send to the HR Head"}
+            {busy ? "Saving…" : editing ? "Save changes" : "Send to the HR Head"}
           </Button>
         </>
       }
@@ -241,14 +252,17 @@ export function HeadDecisionModal({
   case: c,
   open,
   onClose,
+  editing = false,
 }: {
   case: ExitCase;
   open: boolean;
   onClose: () => void;
+  /** Correct the approval remark, or flip it to a rejection, before the LWD is confirmed. */
+  editing?: boolean;
 }) {
   const s = useExitStore();
   const [decision, setDecision] = useState<HeadDecision>("approve");
-  const [remarks, setRemarks] = useState("");
+  const [remarks, setRemarks] = useState(editing ? (c.approvalRemarks ?? "") : "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -258,7 +272,8 @@ export function HeadDecisionModal({
     setBusy(true);
     setErr(null);
     try {
-      await s.decideCase(c, decision, remarks.trim());
+      if (editing) await s.updateHeadDecision(c, decision, remarks.trim());
+      else await s.decideCase(c, decision, remarks.trim());
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -268,7 +283,11 @@ export function HeadDecisionModal({
   };
 
   const choices: { key: HeadDecision; label: string; hint: string }[] = [
-    { key: "approve", label: "Approve", hint: "Confirm the last working day next — that starts clearance" },
+    {
+      key: "approve",
+      label: editing ? "Keep approved" : "Approve",
+      hint: editing ? "Just correct the remark" : "Confirm the last working day next — that starts clearance",
+    },
     { key: "reject", label: "Reject", hint: "Terminal. This exit will not proceed" },
   ];
 
@@ -276,7 +295,7 @@ export function HeadDecisionModal({
     <Modal
       open={open}
       onClose={onClose}
-      title={`HR Head decision — ${c.exitNo}`}
+      title={`${editing ? "Edit decision" : "HR Head decision"} — ${c.exitNo}`}
       subtitle={`${c.employeeName} · proposed last working day ${formatDateDMY(c.proposedLwd)}`}
       footer={
         <>

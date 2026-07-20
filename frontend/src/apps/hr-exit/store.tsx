@@ -5,6 +5,7 @@ import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import type { Department, Profile } from "@/core/platform/types";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
+import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import { EXIT_QK, exitQueryKey, fetchExitData } from "./data/exitFetch";
 import {
   announce as announceWrite,
@@ -22,6 +23,9 @@ import {
   insertPayrollHead as insertPayrollHeadWrite,
   issueDocuments as issueDocumentsWrite,
   managerReview as managerReviewWrite,
+  updateManagerReview as updateManagerReviewWrite,
+  updateHrVerify as updateHrVerifyWrite,
+  updateHeadDecision as updateHeadDecisionWrite,
   markNotificationsRead as markNotificationsReadWrite,
   raiseCase as raiseCaseWrite,
   recordAck as recordAckWrite,
@@ -67,17 +71,34 @@ import {
   type StepOwnerInput,
 } from "./data/exitWrites";
 import {
+  archiveLockReason,
+  assetReturnLockReason,
   buildQueueEntries,
   checkDueIso,
   checkOwnerIds,
+  clearanceLockReason,
   daysToLwd,
+  documentsLockReason,
   exitDueIso,
+  exitEntryOf,
   exitSnapshotFrom,
+  fnfApproveLockReason,
+  fnfGenerateLockReason,
+  fnfPaymentLockReason,
+  handoverLockReason,
+  headApprovalLockReason,
+  hrVerifyLockReason,
+  interviewLockReason,
   isCheckOutstanding,
   isOpenCase,
+  leaveLockReason,
+  lwdLockReason,
+  managerReviewLockReason,
+  payrollLockReason,
   skippedStepsOf,
   type ExitSnapshot,
   type QueueEntry,
+  type StageEntry,
 } from "./lib/queues";
 import { masterTypeLabel } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
@@ -359,6 +380,22 @@ interface ExitStoreValue {
    */
   queueOwnerIds: (e: QueueEntry) => string[];
 
+  // stage view — "what I did here", editable until the next step is done
+  /**
+   * Every completed work-item for a step, one per (step, case). Owner-agnostic
+   * (the page narrows to Mine via useStageMode). Confidential steps (exit_interview
+   * + the five finance steps) build ONLY from a satellite the caller can read, so a
+   * non-reader gets an empty list — the lock reasons are pure header functions, but
+   * the actor and the entry itself come from the gated satellite.
+   */
+  completedFor: (stepKey: StepKey) => StageEntry<ExitCase>[];
+  /** Resolve an actor id to a display name — via org people, not the RLS-scoped directory. */
+  personName: (id: string | null) => string;
+  /** The EFFECTIVE user id (the persona in demo mode) — what "Mine" scopes on. */
+  userId: string;
+  /** In demo/persona mode, whose work "Mine" is showing; undefined otherwise. */
+  stageScopeNote: string | undefined;
+
   // activity + bell
   activity: ExitActivity[];
   activityFor: (entityType: ExitEntityType, entityId: string) => ExitActivity[];
@@ -372,6 +409,10 @@ interface ExitStoreValue {
   managerReview: (c: ExitCase, recommendation: ManagerRecommendation, remarks: string) => Promise<void>;
   hrVerify: (c: ExitCase, input: HrVerifyInput) => Promise<void>;
   decideCase: (c: ExitCase, decision: HeadDecision, remarks: string) => Promise<void>;
+  /** Stage view: correct a completed approval step until the next step is done. */
+  updateManagerReview: (c: ExitCase, recommendation: ManagerRecommendation, remarks: string) => Promise<void>;
+  updateHrVerify: (c: ExitCase, input: HrVerifyInput) => Promise<void>;
+  updateHeadDecision: (c: ExitCase, decision: HeadDecision, remarks: string) => Promise<void>;
   /** Finalise the LWD. The RPC seeds the checklist from the active master, idempotently. */
   confirmLwd: (c: ExitCase, lwd: string) => Promise<void>;
   toggleClearanceCheck: (checkId: string, done: boolean, input?: CheckInput) => Promise<void>;
@@ -521,6 +562,11 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
    * insert in Phase 9).
    */
   const realUserId = session.user?.id ?? null;
+
+  // The Completed tab names cross-department actors — an IT clearance owner, the HR
+  // head, finance — whom `profileById` (RLS-scoped to self + downline + same dept)
+  // renders blank. `list_org_people()` is the SECURITY DEFINER, name-only escape hatch.
+  const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const value = useMemo<ExitStoreValue>(() => {
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
@@ -772,6 +818,110 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
         return c ? canActOn(stepKey, c) : false;
       });
 
+    // Actor id → display name. The Completed tab names people outside the RLS
+    // directory's reach (a cross-department clearance owner, finance), so it goes
+    // through org people, not `profileById`.
+    const personName = (id: string | null): string => {
+      if (!id) return "Not recorded";
+      if (id === user.id) return user.name;
+      return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
+    };
+
+    // "What I did here", one entry per (step, case). Header steps read the wide
+    // header; the confidential steps (interview + finance) build ONLY when their
+    // satellite is readable, so a non-reader gets an empty list, never a leak. The
+    // edited_* for those steps lives on the satellite, so it is spread over the
+    // header default the pure builder used.
+    const completedFor = (stepKey: StepKey): StageEntry<ExitCase>[] => {
+      switch (stepKey) {
+        case "manager_review":
+          return cases
+            .filter((c) => c.managerReviewedAt)
+            .map((c) => exitEntryOf("manager_review", c, c.managerReviewerId, c.managerReviewedAt!, managerReviewLockReason(c)));
+        case "hr_verification":
+          return cases
+            .filter((c) => c.hrVerifiedAt)
+            .map((c) => exitEntryOf("hr_verification", c, c.hrVerifierId, c.hrVerifiedAt!, hrVerifyLockReason(c)));
+        case "hr_head_approval":
+          // Approvals AND rejections — a rejection stamps rejectedAt, not approvedAt,
+          // and is exactly what an approver most wants to look back at.
+          return cases
+            .filter((c) => c.approvedAt || c.rejectedAt)
+            .map((c) => exitEntryOf("hr_head_approval", c, c.approverId, (c.approvedAt ?? c.rejectedAt)!, headApprovalLockReason(c)));
+        case "lwd_confirm":
+          return cases
+            .filter((c) => c.lwd && c.lwdConfirmedAt)
+            .map((c) => exitEntryOf("lwd_confirm", c, c.lwdConfirmedBy, c.lwdConfirmedAt!, lwdLockReason(c)));
+        case "clearance":
+          return cases
+            .filter((c) => c.clearanceCompletedAt)
+            .map((c) => exitEntryOf("clearance", c, c.clearanceCompletedBy, c.clearanceCompletedAt!, clearanceLockReason(c)));
+        case "asset_return":
+          return cases
+            .filter((c) => c.assetsReturnedAt)
+            .map((c) => exitEntryOf("asset_return", c, c.assetsHrSignedBy, c.assetsReturnedAt!, assetReturnLockReason(c)));
+        case "handover":
+          return cases
+            .filter((c) => c.handoverCompletedAt)
+            .map((c) => {
+              const h = handoverByCase.get(c.id);
+              return exitEntryOf("handover", c, h?.hrConfirmedBy ?? null, c.handoverCompletedAt!, handoverLockReason(c));
+            });
+        case "exit_interview":
+          return cases
+            .filter((c) => c.interviewDoneAt && interviewByCase.get(c.id))
+            .map((c) => {
+              const i = interviewByCase.get(c.id)!;
+              return { ...exitEntryOf("exit_interview", c, i.conductedBy, c.interviewDoneAt!, interviewLockReason(c)), editedAtIso: i.editedAt, editedById: i.editedBy };
+            });
+        case "leave_verification":
+          return cases
+            .filter((c) => c.leaveVerifiedAt && settlementByCase.get(c.id))
+            .map((c) => {
+              const s = settlementByCase.get(c.id)!;
+              return { ...exitEntryOf("leave_verification", c, s.leaveVerifiedBy, c.leaveVerifiedAt!, leaveLockReason(c)), editedAtIso: s.editedAt, editedById: s.editedBy };
+            });
+        case "payroll_inputs":
+          return cases
+            .filter((c) => c.payrollDoneAt && settlementByCase.get(c.id))
+            .map((c) => {
+              const s = settlementByCase.get(c.id)!;
+              return { ...exitEntryOf("payroll_inputs", c, s.payrollDoneBy, c.payrollDoneAt!, payrollLockReason(c)), editedAtIso: s.editedAt, editedById: s.editedBy };
+            });
+        case "fnf_generate":
+          return cases
+            .filter((c) => c.fnfGeneratedAt && settlementByCase.get(c.id))
+            .map((c) => {
+              const s = settlementByCase.get(c.id)!;
+              return { ...exitEntryOf("fnf_generate", c, s.fnfGeneratedBy, c.fnfGeneratedAt!, fnfGenerateLockReason(c)), editedAtIso: s.editedAt, editedById: s.editedBy };
+            });
+        case "fnf_approve":
+          return cases
+            .filter((c) => c.fnfApprovedAt && settlementByCase.get(c.id))
+            .map((c) => {
+              const s = settlementByCase.get(c.id)!;
+              return { ...exitEntryOf("fnf_approve", c, s.fnfApprovedById, c.fnfApprovedAt!, fnfApproveLockReason(c)), editedAtIso: s.editedAt, editedById: s.editedBy };
+            });
+        case "fnf_payment":
+          return cases
+            .filter((c) => c.fnfPaidAt && settlementByCase.get(c.id))
+            .map((c) => {
+              const s = settlementByCase.get(c.id)!;
+              return { ...exitEntryOf("fnf_payment", c, s.fnfPaidById, c.fnfPaidAt!, fnfPaymentLockReason(c)), editedAtIso: s.editedAt, editedById: s.editedBy };
+            });
+        case "documents":
+          return cases
+            .filter((c) => c.documentsIssuedAt)
+            .map((c) => exitEntryOf("documents", c, c.documentsIssuedBy, c.documentsIssuedAt!, documentsLockReason(c)));
+        case "archive":
+          return cases
+            .filter((c) => c.archivedAt)
+            .map((c) => exitEntryOf("archive", c, c.archivedBy, c.archivedAt!, archiveLockReason(c)));
+        default:
+          return [];
+      }
+    };
+
     /* ---------------------------------------------------------------------- */
 
     return {
@@ -782,6 +932,10 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
       departments: dir.departments,
       designations,
       profileById: dir.profileById,
+      personName,
+      completedFor,
+      userId: user.id,
+      stageScopeNote: user.id !== realUserId ? `Showing ${user.name}'s work` : undefined,
 
       reasons,
       assetTypes,
@@ -966,6 +1120,20 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
               ? ownerIdsOf("lwd_confirm")
               : [c.employeeUserId, c.raisedBy].filter((x): x is string => !!x),
         });
+        await invalidate();
+      },
+      // Stage view corrections. No extra announce — the correction is quiet, and the
+      // RPC logs its own activity row in-transaction.
+      updateManagerReview: async (c, recommendation, remarks) => {
+        await updateManagerReviewWrite(c.id, recommendation, remarks);
+        await invalidate();
+      },
+      updateHrVerify: async (c, input) => {
+        await updateHrVerifyWrite(c.id, input);
+        await invalidate();
+      },
+      updateHeadDecision: async (c, decision, remarks) => {
+        await updateHeadDecisionWrite(c.id, decision, remarks);
         await invalidate();
       },
       /**
@@ -1252,7 +1420,10 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
     isLoading, error, dir, designations, reasons, assetTypes, documentTypes, payrollHeads,
     clearanceItems, masterManagers, masterRequests, cases, skips, clearanceChecks, assets,
     handovers, interviews, settlements, payrollLines, documents, stepOwners,
-    processCoordinatorIds, stepSla, policy, activity, notifications, isAdmin, user.id,
+    processCoordinatorIds, stepSla, policy, activity, notifications, isAdmin, user.id, user.name,
+    // ⚠ `orgPeople` — `personName` closes over it; without it the memo would not recompute
+    //   when the org-people list loads, and every actor would read "Unknown user".
+    orgPeople,
     // ⚠ `realUserId` is NOT decoration. `requestNewMaster` closes over it (Trap 10), and
     // HR's memo shipped without it — the persona switch would then hand you a stale
     // closure. It is the REAL session id and never the persona's.

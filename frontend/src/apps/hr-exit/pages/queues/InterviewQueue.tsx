@@ -4,12 +4,15 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import ExitInterviewPanel from "../../components/interview/ExitInterviewPanel";
+import CompletedExitTable from "../../components/CompletedExitTable";
 import AccessDenied from "../system/AccessDenied";
 import { useExitStore } from "../../store";
 import { CASE_TYPE_LABEL } from "../../lib/format";
-import type { QueueEntry } from "../../lib/queues";
+import type { QueueEntry, StageEntry } from "../../lib/queues";
 import type { ExitCase } from "../../types";
 
 /**
@@ -50,6 +53,10 @@ export default function InterviewQueue() {
         .filter((r): r is Row => !!r),
     [s],
   );
+
+  const completed = useMemo(() => s.completedFor("exit_interview"), [s]);
+  const stage = useStageMode(completed, s.userId);
+  const openEntry = (e: StageEntry<ExitCase>) => setWorking(e.row);
 
   // See the header: the confidential gate, not "do I have rows".
   if (!s.canReadConfidential) return <AccessDenied />;
@@ -158,36 +165,56 @@ export default function InterviewQueue() {
         </p>
       </div>
 
-      <QueueTable<Row>
-        rows={rows}
-        // Composite, like every other table in this app: a case can be owed at several
-        // steps at once, and a duplicate React key silently drops a row.
-        rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
-        columns={columns}
-        groupBy={{
-          idOf: (r) => r.departmentId,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
-        rowsLabel="interviews"
-        rowClassName={(r) => overdueRowClass(r.dueIso)}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="Exits needing an interview will appear here once their last working day is confirmed."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Exit_Interviews"
-        exportTitle="Exit interviews due"
-        exportNotes={[
-          "The exits still needing an interview. The due date runs BACKWARDS from the last working day — it is LWD minus the configured number of working days (Setup → Due Dates), because you cannot interview someone who has already left.",
-          "This export carries NO interview content — only the case, the manager and the clock. What was said never leaves the panel.",
-          "Working days are Mon–Sat; only Sunday is skipped.",
-        ]}
-        actions={(r) => (
-          <Button size="sm" onClick={() => setWorking(r.case)}>
-            Record
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedExitTable
+          rows={stage.rows}
+          exportName="HR_Exit_Interviews_Completed"
+          emptyMessage="Interviews you record will appear here — revisable until the case is closed."
+          onEdit={openEntry}
+          onView={openEntry}
+        />
+      ) : (
+        <QueueTable<Row>
+          rows={rows}
+          // Composite, like every other table in this app: a case can be owed at several
+          // steps at once, and a duplicate React key silently drops a row.
+          rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
+          columns={columns}
+          groupBy={{
+            idOf: (r) => r.departmentId,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Department",
+          }}
+          rowsLabel="interviews"
+          rowClassName={(r) => overdueRowClass(r.dueIso)}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="Exits needing an interview will appear here once their last working day is confirmed."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Exit_Interviews"
+          exportTitle="Exit interviews due"
+          exportNotes={[
+            "The exits still needing an interview. The due date runs BACKWARDS from the last working day — it is LWD minus the configured number of working days (Setup → Due Dates), because you cannot interview someone who has already left.",
+            "This export carries NO interview content — only the case, the manager and the clock. What was said never leaves the panel.",
+            "Working days are Mon–Sat; only Sunday is skipped.",
+          ]}
+          actions={(r) => (
+            <Button size="sm" onClick={() => setWorking(r.case)}>
+              Record
+            </Button>
+          )}
+        />
+      )}
 
       {/* The panel in place, so HR never has to go hunting for the case page. It is the
           same component the detail page renders, behind the same gate. */}

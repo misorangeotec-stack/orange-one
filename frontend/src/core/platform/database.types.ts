@@ -6885,6 +6885,18 @@ export type Database = {
         Args: { p: Json; p_case: string }
         Returns: undefined
       }
+      fms_exit_update_head_decision: {
+        Args: { p_case: string; p_decision: string; p_remarks?: string }
+        Returns: undefined
+      }
+      fms_exit_update_hr_verify: {
+        Args: { p: Json; p_case: string }
+        Returns: undefined
+      }
+      fms_exit_update_manager_review: {
+        Args: { p_case: string; p_recommendation: string; p_remarks?: string }
+        Returns: undefined
+      }
       fms_exit_verify_leave: {
         Args: { p: Json; p_case: string }
         Returns: undefined

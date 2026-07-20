@@ -519,3 +519,133 @@ export function buildQueueEntries(snap: ExitSnapshot): QueueEntry[] {
 
   return out;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  The STAGE VIEW — "what I did here", editable until the next step is done   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One completed work-item, for the Completed tab. Every HR-Exit step is
+ * case-scoped, so `row` is always the case — a page that needs satellite content
+ * (the settlement figures, the interview) looks it up by `caseId` in its own
+ * cell renderer, so this stays a plain function of the wide-read header.
+ *
+ * `id` is composite (`${stepKey}:${caseId}`) because a Completed tab concatenates
+ * several steps' entries and the case id alone is not unique across them.
+ */
+export interface StageEntry<T> {
+  id: string;
+  stepKey: StepKey;
+  caseId: string;
+  ref: string;
+  departmentId: string | null;
+  /** Who did the step. Null = not recorded (an old row, before attribution). */
+  actorId: string | null;
+  /** When the step completed. */
+  atIso: string;
+  /** When it was last corrected, if ever. */
+  editedAtIso: string | null;
+  editedById: string | null;
+  /** Null ⇒ the entry may still be corrected; otherwise WHY it cannot be. */
+  lockReason: string | null;
+  row: T;
+}
+
+/**
+ * Every lock reason below mirrors its server guard (the raises added in
+ * 20260720120000). The DATABASE is the gate; these exist so the button can grey
+ * and SAY WHY, written to the same shape so a drift is easy to spot.
+ *
+ * All are pure functions of the wide-read header. `on_hold` locks everything, and
+ * that is MECHANICAL: `fms_exit_resume_status` derives where a held case resumes
+ * from the very timestamps an edit touches, so editing under hold could move where
+ * it comes back to. Resume first, then edit.
+ */
+export function heldTerminalBar(c: ExitCase, what: string): string | null {
+  if (c.status === "on_hold") return `This case is on hold — take it off hold before editing its ${what}.`;
+  if (c.status === "withdrawn" || c.status === "rejected" || c.status === "archived") {
+    return `This case was ${c.status} — its ${what} can no longer be changed.`;
+  }
+  return null;
+}
+
+export const managerReviewLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "manager review") ??
+  (c.hrVerifiedAt ? "HR has verified this case — the manager review can no longer be changed." : null);
+
+export const hrVerifyLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "HR verification") ??
+  (c.approvedAt ? "The HR Head has approved this case — the verification can no longer be changed." : null);
+
+export const headApprovalLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "approval") ??
+  (c.lwd ? "The last working day is confirmed and the clearance is seeded — the approval can no longer be re-opened." : null);
+
+export const lwdLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "last working day") ??
+  (c.leaveVerifiedAt || c.payrollDoneAt
+    ? "The leave / payroll has been recorded against this last working day — correct those first."
+    : null);
+
+/** Feeds no calculation; editable (reopen the checklist) until the case is terminal. */
+export const clearanceLockReason = (c: ExitCase): string | null => heldTerminalBar(c, "clearance");
+
+/** Signed off — a signature cannot be invalidated under the signer. Always view-only. */
+export const assetReturnLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "asset return") ?? "The asset return is signed off — it is a record now, not editable.";
+
+/** Confirmed by HR — view-only, same reason as the asset return. */
+export const handoverLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "handover") ?? "The handover is confirmed — it is a record now, not editable.";
+
+/** Feeds no calculation; editable (re-record) until the case is terminal. */
+export const interviewLockReason = (c: ExitCase): string | null => heldTerminalBar(c, "exit interview");
+
+export const leaveLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "leave verification") ??
+  (c.fnfGeneratedAt ? "The F&F has been generated from this leave balance — send it back first to correct it." : null);
+
+export const payrollLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "payroll inputs") ??
+  (c.fnfGeneratedAt ? "The F&F has been generated from these payroll inputs — send it back first to correct them." : null);
+
+export const fnfGenerateLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "F&F") ??
+  (c.fnfApprovedAt ? "The F&F has been approved — send it back first to regenerate it." : null);
+
+export const fnfApproveLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "F&F approval") ??
+  (c.fnfPaidAt ? "The F&F has been paid — its approval can no longer be changed." : null);
+
+/** Editable (correct the UTR / mode) until the case is terminal. */
+export const fnfPaymentLockReason = (c: ExitCase): string | null => heldTerminalBar(c, "F&F payment");
+
+export const documentsLockReason = (c: ExitCase): string | null =>
+  heldTerminalBar(c, "exit documents") ??
+  (c.archivedAt ? "The case is archived — the documents can no longer be changed." : null);
+
+/** The terminal act. Always a record, never editable. */
+export const archiveLockReason = (_c: ExitCase): string | null => "The case is archived — this is the final record.";
+
+/** Build a case-scoped Completed entry. `row` is the case; `atIso` its completion. */
+export function exitEntryOf(
+  stepKey: StepKey,
+  c: ExitCase,
+  actorId: string | null,
+  atIso: string,
+  lockReason: string | null,
+): StageEntry<ExitCase> {
+  return {
+    id: `${stepKey}:${c.id}`,
+    stepKey,
+    caseId: c.id,
+    ref: c.exitNo,
+    departmentId: c.departmentId,
+    actorId,
+    atIso,
+    editedAtIso: c.editedAt,
+    editedById: c.editedBy,
+    lockReason,
+    row: c,
+  };
+}
