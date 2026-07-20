@@ -82,10 +82,10 @@ export default function TrialBalanceReport() {
         );
       }}
     >
-      {(c) => (
+      {(c, showReconcile) => (
         <div className="p-3">
           <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[70vh]">
-            <TrialBalanceTree view={viewOf(c)} />
+            <TrialBalanceTree view={viewOf(c)} showReconcile={showReconcile} />
           </ScrollableTable>
         </div>
       )}
