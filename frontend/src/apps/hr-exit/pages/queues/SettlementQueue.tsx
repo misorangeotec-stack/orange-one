@@ -4,11 +4,14 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import SettlementPanel from "../../components/settlement/SettlementPanel";
+import CompletedExitTable from "../../components/CompletedExitTable";
 import AccessDenied from "../system/AccessDenied";
 import { useExitStore } from "../../store";
-import type { QueueEntry } from "../../lib/queues";
+import type { QueueEntry, StageEntry } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import type { ExitCase } from "../../types";
 
@@ -64,6 +67,10 @@ export default function SettlementQueue() {
       })
       .filter((r): r is Row => !!r);
   }, [s]);
+
+  const completed = useMemo(() => STEPS_HERE.flatMap((k) => s.completedFor(k)), [s]);
+  const stage = useStageMode(completed, s.userId);
+  const openEntry = (e: StageEntry<ExitCase>) => setWorking(e.row);
 
   // See the header: the finance gate, not "do I have rows".
   if (!(s.isFinanceStaff || s.isProcessCoordinator)) return <AccessDenied />;
@@ -176,36 +183,56 @@ export default function SettlementQueue() {
         </p>
       </div>
 
-      <QueueTable<Row>
-        rows={rows}
-        // COMPOSITE. A case is legitimately owed at several of these steps at once.
-        rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
-        columns={columns}
-        groupBy={{
-          idOf: (r) => r.departmentId,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
-        rowsLabel="items"
-        rowClassName={(r) => overdueRowClass(r.dueIso)}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="Exits needing a leave check, payroll inputs, an F&F, an approval or a payment appear here once their last working day is confirmed."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Exit_Settlement"
-        exportTitle="Exit settlements due"
-        exportNotes={[
-          "One row per OPEN settlement step — a case owing both the leave check and the payroll inputs appears twice. That is correct: they are two different people's work.",
-          "Leave verification is due BEFORE the last working day (a leave balance is only final once they stop accruing). Payroll inputs are due at the payroll CUT-OFF of the month the last working day falls in — and if the last working day is after that cut-off, it rolls to the next month's, because you cannot key someone's final payroll before their last day.",
-          "THIS EXPORT DELIBERATELY CARRIES NO AMOUNTS. Not the F&F, not a deduction, not a recovery. A settlement figure in a spreadsheet is a settlement figure loose in the building; the numbers stay behind the panel's read gate.",
-          "Working days are Mon–Sat; only Sunday is skipped.",
-        ]}
-        actions={(r) => (
-          <Button size="sm" onClick={() => setWorking(r.case)}>
-            Open
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedExitTable
+          rows={stage.rows}
+          exportName="HR_Exit_Settlement_Completed"
+          emptyMessage="Leave checks, payroll inputs, F&F work and payments you record appear here — no amounts, just the step, who and when."
+          onEdit={openEntry}
+          onView={openEntry}
+        />
+      ) : (
+        <QueueTable<Row>
+          rows={rows}
+          // COMPOSITE. A case is legitimately owed at several of these steps at once.
+          rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
+          columns={columns}
+          groupBy={{
+            idOf: (r) => r.departmentId,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Department",
+          }}
+          rowsLabel="items"
+          rowClassName={(r) => overdueRowClass(r.dueIso)}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="Exits needing a leave check, payroll inputs, an F&F, an approval or a payment appear here once their last working day is confirmed."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Exit_Settlement"
+          exportTitle="Exit settlements due"
+          exportNotes={[
+            "One row per OPEN settlement step — a case owing both the leave check and the payroll inputs appears twice. That is correct: they are two different people's work.",
+            "Leave verification is due BEFORE the last working day (a leave balance is only final once they stop accruing). Payroll inputs are due at the payroll CUT-OFF of the month the last working day falls in — and if the last working day is after that cut-off, it rolls to the next month's, because you cannot key someone's final payroll before their last day.",
+            "THIS EXPORT DELIBERATELY CARRIES NO AMOUNTS. Not the F&F, not a deduction, not a recovery. A settlement figure in a spreadsheet is a settlement figure loose in the building; the numbers stay behind the panel's read gate.",
+            "Working days are Mon–Sat; only Sunday is skipped.",
+          ]}
+          actions={(r) => (
+            <Button size="sm" onClick={() => setWorking(r.case)}>
+              Open
+            </Button>
+          )}
+        />
+      )}
 
       {/* The panel in place, so payroll never has to go hunting for the case page. Same
           component the detail page renders, behind the same gate. */}

@@ -141,6 +141,48 @@ export async function decideCase(caseId: string, decision: HeadDecision, remarks
   if (error) throw new Error(error.message);
 }
 
+/* ---- Stage view: correct a completed approval step, until the next is done ---- */
+
+/** Correct the manager recommendation / remarks while HR has not yet verified. */
+export async function updateManagerReview(
+  caseId: string,
+  recommendation: ManagerRecommendation,
+  remarks: string,
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_exit_update_manager_review", {
+    p_case: caseId,
+    p_recommendation: recommendation,
+    p_remarks: remarks,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Correct the HR verification (notice / policy / proposed LWD) before the Head decides. */
+export async function updateHrVerify(caseId: string, input: HrVerifyInput): Promise<void> {
+  const { error } = await supabase.rpc("fms_exit_update_hr_verify", {
+    p_case: caseId,
+    p: {
+      notice_period_days: input.noticePeriodDays ?? "",
+      notice_waived: input.noticeWaived,
+      policy_applicable: input.policyApplicable,
+      policy_na_reason: input.policyNaReason ?? "",
+      proposed_lwd: input.proposedLwd,
+      hr_remarks: input.hrRemarks ?? "",
+    } as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Correct the approval remark, or flip an approval to a rejection, before the LWD is confirmed. */
+export async function updateHeadDecision(caseId: string, decision: HeadDecision, remarks: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_exit_update_head_decision", {
+    p_case: caseId,
+    p_decision: decision,
+    p_remarks: remarks,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** The employee retracts. Allowed right up until the F&F has actually been paid. */
 export async function withdrawCase(caseId: string, reason: string): Promise<void> {
   const { error } = await supabase.rpc("fms_exit_withdraw_case", { p_case: caseId, p_reason: reason });

@@ -1,56 +1,59 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
-import { HeadDecisionModal, HrVerifyModal, ManagerReviewModal } from "../../components/ExitModals";
+import {
+  ConfirmLwdModal,
+  HeadDecisionModal,
+  HrVerifyModal,
+  ManagerReviewModal,
+} from "../../components/ExitModals";
+import CompletedExitTable from "../../components/CompletedExitTable";
 import StatusPill from "../../components/StatusPill";
 import AccessDenied from "../system/AccessDenied";
 import { useExitStore } from "../../store";
 import { CASE_TYPE_LABEL } from "../../lib/format";
-import type { QueueEntry } from "../../lib/queues";
+import type { QueueEntry, StageEntry } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import type { ExitCase } from "../../types";
 
 /**
- * The approval chain — manager review, HR verification, HR Head approval — on ONE
- * page, because a person may own more than one of the three gates (and a coordinator
- * owns all of them).
+ * The approval chain — manager review, HR verification, HR Head approval — plus
+ * Confirm LWD, on ONE page, because a person may own more than one of these gates
+ * (and a coordinator owns all of them). Confirm LWD lives here rather than only on
+ * the detail page so it too gets a stage view.
  *
- * ⚠ THE ROW KEY IS COMPOSITE. This is the FIRST table in the app that mixes steps,
- * and an exit case can legitimately sit at several steps at once (the whole reason
- * this app's queue aggregator clones Purchase's rather than HR's). `entityId` alone is
- * therefore NOT unique across a mixed-step table, and React would silently drop rows.
- * `checkId` is in the key too, ready for Phase 3's per-clearance-row entries.
- *
- * Rows come from `store.myQueue(step)`, which is `lib/queues.ts` narrowed to what THIS
- * user may action. The queue, the Control Center's count and the SLA clock therefore
- * read the same due date — they cannot disagree, because there is only one of them.
+ * ⚠ THE ROW KEY IS COMPOSITE. `entityId` alone is not unique across a mixed-step
+ * table, and React would silently drop rows.
  */
 type Row = QueueEntry & { case: ExitCase };
 
+const STEPS_HERE: StepKey[] = ["manager_review", "hr_verification", "hr_head_approval", "lwd_confirm"];
+
 export default function ApprovalsQueue() {
   const s = useExitStore();
+  const navigate = useNavigate();
   const [reviewing, setReviewing] = useState<ExitCase | null>(null);
   const [verifying, setVerifying] = useState<ExitCase | null>(null);
   const [deciding, setDeciding] = useState<ExitCase | null>(null);
+  const [confirmingLwd, setConfirmingLwd] = useState<ExitCase | null>(null);
 
-  // A coordinator chases everything and fms_exit_can_act() already lets them act, so
-  // gating on step ownership alone would lock them out of a page holding their own
-  // work. A reporting manager owns `manager_review` PER CASE, never in the owners
-  // table — so anyone with a manager-review row in their queue belongs here too.
+  // A coordinator chases everything; a reporting manager owns `manager_review` per
+  // case, never in the owners table — so anyone with a manager-review row belongs here.
   const managerRows = s.myQueue("manager_review");
   const canSeePage =
     s.isProcessCoordinator ||
     s.isStepOwner("hr_verification") ||
     s.isStepOwner("hr_head_approval") ||
+    s.isStepOwner("lwd_confirm") ||
     managerRows.length > 0;
 
   const rows: Row[] = useMemo(() => {
-    const steps: StepKey[] = ["manager_review", "hr_verification", "hr_head_approval"];
-    return steps
-      .flatMap((step) => s.myQueue(step))
+    return STEPS_HERE.flatMap((step) => s.myQueue(step))
       .map((e) => {
         const c = s.caseById(e.caseId);
         return c ? { ...e, case: c } : null;
@@ -58,14 +61,20 @@ export default function ApprovalsQueue() {
       .filter((r): r is Row => !!r);
   }, [s]);
 
+  // The Completed tab spans the same four steps. Owner-agnostic entries; useStageMode
+  // narrows to Mine on the effective identity.
+  const completed = useMemo(() => STEPS_HERE.flatMap((step) => s.completedFor(step)), [s]);
+  const stage = useStageMode(completed, s.userId);
+
   if (!canSeePage) return <AccessDenied />;
 
-  const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
+  const deptName = (id: string | null) => (id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—");
   const person = (id: string | null) => (id ? (s.profileById(id)?.name ?? "Unknown") : "—");
   const STEP_LABEL: Partial<Record<StepKey, string>> = {
     manager_review: "Reporting manager",
     hr_verification: "HR",
     hr_head_approval: "HR Head",
+    lwd_confirm: "Confirm LWD",
   };
 
   const columns: QueueColumn<Row>[] = [
@@ -117,14 +126,6 @@ export default function ApprovalsQueue() {
       exportValue: (r) => STEP_LABEL[r.stepKey] ?? r.stepKey,
     },
     {
-      key: "raised",
-      header: "Raised on",
-      cell: (r) => <span className="text-grey">{formatDateDMY(r.case.submittedAt)}</span>,
-      sortValue: (r) => r.case.submittedAt,
-      exportValue: (r) => formatDateDMY(r.case.submittedAt),
-      tdClassName: "whitespace-nowrap",
-    },
-    {
       key: "due",
       header: "Due",
       cell: (r) => <DueCell dueIso={r.dueIso} />,
@@ -134,57 +135,110 @@ export default function ApprovalsQueue() {
     },
   ];
 
-  const act = (r: Row) => {
-    if (r.stepKey === "manager_review") setReviewing(r.case);
-    else if (r.stepKey === "hr_verification") setVerifying(r.case);
-    else setDeciding(r.case);
+  const act = (r: Row) => openFor(r.stepKey, r.case);
+
+  const openFor = (stepKey: StepKey, c: ExitCase) => {
+    if (stepKey === "manager_review") setReviewing(c);
+    else if (stepKey === "hr_verification") setVerifying(c);
+    else if (stepKey === "hr_head_approval") setDeciding(c);
+    else setConfirmingLwd(c);
   };
+
+  const onEdit = (e: StageEntry<ExitCase>) => openFor(e.stepKey, e.row);
+  const onView = (e: StageEntry<ExitCase>) => navigate(`/hr-exit/exits/${e.caseId}`);
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">Approvals</h1>
         <p className="mt-1 text-[13.5px] text-grey-2">
-          Exits waiting on you. The reporting manager's answer is a recommendation — only the HR Head can stop one.
+          {stage.showingCompleted
+            ? "Decisions you have made here — revisable until the next step is done."
+            : "Exits waiting on you. The reporting manager's answer is a recommendation — only the HR Head can stop one."}
         </p>
       </div>
 
-      <QueueTable<Row>
-        rows={rows}
-        // Composite, not `r.caseId` — see the header. One case can be owed at two
-        // steps at once, and a duplicate key silently loses a row.
-        rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
-        columns={columns}
-        groupBy={{
-          idOf: (r) => r.departmentId,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
-        rowsLabel="exits"
-        rowClassName={(r) => overdueRowClass(r.dueIso)}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="Exits needing your decision will appear here."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Exit_Approvals"
-        exportTitle="Exit approvals"
-        exportNotes={[
-          "Only the exits waiting on YOU — the reporting-manager gate, the HR verification gate, the HR Head gate, or whichever of them you own.",
-          "The due date comes from this step's rule in Setup → Due Dates, counted in working days (Mon–Sat; only Sunday is skipped).",
-          "One case can appear at more than one step across the app. Here it cannot — the approval chain is strictly sequential.",
-        ]}
-        actions={(r) => (
-          <Button size="sm" onClick={() => act(r)}>
-            {r.stepKey === "manager_review" ? "Review" : r.stepKey === "hr_verification" ? "Verify" : "Decide"}
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
 
-      {reviewing && (
-        <ManagerReviewModal case={reviewing} open={!!reviewing} onClose={() => setReviewing(null)} />
+      {stage.showingCompleted ? (
+        <CompletedExitTable
+          rows={stage.rows}
+          exportName="HR_Exit_Approvals_Completed"
+          emptyMessage="Decisions you make here will appear here, and stay revisable until the next step is done."
+          onEdit={onEdit}
+          onView={onView}
+        />
+      ) : (
+        <QueueTable<Row>
+          rows={rows}
+          rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
+          columns={columns}
+          groupBy={{
+            idOf: (r) => r.departmentId,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Department",
+          }}
+          rowsLabel="exits"
+          rowClassName={(r) => overdueRowClass(r.dueIso)}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="Exits needing your decision will appear here."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Exit_Approvals"
+          exportTitle="Exit approvals"
+          exportNotes={[
+            "Only the exits waiting on YOU — the reporting-manager gate, HR verification, the HR Head gate, or the LWD confirmation.",
+            "The due date comes from this step's rule in Setup → Due Dates, counted in working days (Mon–Sat; only Sunday is skipped).",
+          ]}
+          actions={(r) => (
+            <Button size="sm" onClick={() => act(r)}>
+              {r.stepKey === "manager_review"
+                ? "Review"
+                : r.stepKey === "hr_verification"
+                  ? "Verify"
+                  : r.stepKey === "hr_head_approval"
+                    ? "Decide"
+                    : "Confirm LWD"}
+            </Button>
+          )}
+        />
       )}
-      {verifying && <HrVerifyModal case={verifying} open={!!verifying} onClose={() => setVerifying(null)} />}
-      {deciding && <HeadDecisionModal case={deciding} open={!!deciding} onClose={() => setDeciding(null)} />}
+
+      {reviewing && (
+        <ManagerReviewModal
+          case={reviewing}
+          open={!!reviewing}
+          onClose={() => setReviewing(null)}
+          editing={!!reviewing.managerReviewedAt}
+        />
+      )}
+      {verifying && (
+        <HrVerifyModal
+          case={verifying}
+          open={!!verifying}
+          onClose={() => setVerifying(null)}
+          editing={!!verifying.hrVerifiedAt}
+        />
+      )}
+      {deciding && (
+        <HeadDecisionModal
+          case={deciding}
+          open={!!deciding}
+          onClose={() => setDeciding(null)}
+          editing={!!deciding.approvedAt}
+        />
+      )}
+      {confirmingLwd && (
+        <ConfirmLwdModal case={confirmingLwd} open={!!confirmingLwd} onClose={() => setConfirmingLwd(null)} />
+      )}
     </div>
   );
 }

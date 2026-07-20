@@ -4,13 +4,16 @@ import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import Modal from "@/shared/components/ui/Modal";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import ClearancePanel from "../../components/clearance/ClearancePanel";
 import AssetPanel from "../../components/assets/AssetPanel";
 import HandoverPanel from "../../components/handover/HandoverPanel";
+import CompletedExitTable from "../../components/CompletedExitTable";
 import AccessDenied from "../system/AccessDenied";
 import { useExitStore } from "../../store";
-import type { QueueEntry } from "../../lib/queues";
+import type { QueueEntry, StageEntry } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import type { ClearanceCheck, ExitCase } from "../../types";
 
@@ -84,6 +87,13 @@ export default function ClearanceQueue() {
       })
       .filter((r): r is Row => !!r);
   }, [entries, s]);
+
+  const completed = useMemo(
+    () => ["clearance", "asset_return", "handover"].flatMap((k) => s.completedFor(k as StepKey)),
+    [s],
+  );
+  const stage = useStageMode(completed, s.userId);
+  const openEntry = (e: StageEntry<ExitCase>) => setWorking({ case: e.row, step: e.stepKey });
 
   if (!canSeePage) return <AccessDenied />;
 
@@ -275,38 +285,58 @@ export default function ClearanceQueue() {
         </p>
       </div>
 
-      <QueueTable<Row>
-        rows={rows}
-        // COMPOSITE. One case contributes one row per outstanding item PLUS a row for
-        // each open sign-off step, so `entityId` alone is not unique and React would
-        // silently drop the duplicates.
-        rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
-        columns={columns}
-        groupBy={{
-          idOf: (r) => r.departmentId,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Employee's department",
-        }}
-        rowsLabel="items"
-        rowClassName={(r) => overdueRowClass(r.dueIso)}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="Clearance items, asset returns and handovers assigned to you will appear here once a last working day is confirmed."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Exit_Clearance"
-        exportTitle="Exit clearance"
-        exportNotes={[
-          "One row per OUTSTANDING clearance item — an exit with three items still open appears three times. That is correct: they are three different people's work.",
-          "The asset return and the handover are STEPS, not checklist items: each needs two signatures (the HOD / reporting manager first, then HR). HR's signature completes the step AND auto-ticks the clearance rows it settles — Admin + IT for the asset return, the Reporting Manager for the handover — with no file asked of anyone.",
-          "The due date is the last working day plus that item's own offset, in working days (Mon–Sat; only Sunday is skipped). A negative offset means it is due BEFORE the last working day.",
-          "An item is settled when it is ticked OR marked not-applicable. The exit clears itself when the last one is settled — that is decided by the database, not by this screen.",
-        ]}
-        actions={(r) => (
-          <Button size="sm" onClick={() => setWorking({ case: r.case, step: r.stepKey })}>
-            Open
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedExitTable
+          rows={stage.rows}
+          exportName="HR_Exit_Clearance_Completed"
+          emptyMessage="Cleared cases, asset sign-offs and handovers you complete will appear here. The signed steps become a record; a cleared checklist stays reopenable until the case is closed."
+          onEdit={openEntry}
+          onView={openEntry}
+        />
+      ) : (
+        <QueueTable<Row>
+          rows={rows}
+          // COMPOSITE. One case contributes one row per outstanding item PLUS a row for
+          // each open sign-off step, so `entityId` alone is not unique and React would
+          // silently drop the duplicates.
+          rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
+          columns={columns}
+          groupBy={{
+            idOf: (r) => r.departmentId,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Employee's department",
+          }}
+          rowsLabel="items"
+          rowClassName={(r) => overdueRowClass(r.dueIso)}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="Clearance items, asset returns and handovers assigned to you will appear here once a last working day is confirmed."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Exit_Clearance"
+          exportTitle="Exit clearance"
+          exportNotes={[
+            "One row per OUTSTANDING clearance item — an exit with three items still open appears three times. That is correct: they are three different people's work.",
+            "The asset return and the handover are STEPS, not checklist items: each needs two signatures (the HOD / reporting manager first, then HR). HR's signature completes the step AND auto-ticks the clearance rows it settles — Admin + IT for the asset return, the Reporting Manager for the handover — with no file asked of anyone.",
+            "The due date is the last working day plus that item's own offset, in working days (Mon–Sat; only Sunday is skipped). A negative offset means it is due BEFORE the last working day.",
+            "An item is settled when it is ticked OR marked not-applicable. The exit clears itself when the last one is settled — that is decided by the database, not by this screen.",
+          ]}
+          actions={(r) => (
+            <Button size="sm" onClick={() => setWorking({ case: r.case, step: r.stepKey })}>
+              Open
+            </Button>
+          )}
+        />
+      )}
 
       {/* The panel itself, in place — so an IT owner never has to learn what an "exit
           case detail page" is just to say the laptop came back, and a reporting manager

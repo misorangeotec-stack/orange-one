@@ -302,6 +302,8 @@ const mapInterview = (r: any): ExitInterview => ({
   portalFeedbackDone: !!r.portal_feedback_done,
   filePath: r.file_path ?? null,
   fileName: r.file_name ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
 });
 
 /** `numeric` arrives from PostgREST as a STRING. `null` must survive as `null`. */
@@ -320,6 +322,11 @@ const mapSettlement = (r: any): ExitSettlement => ({
   lwpDays: num(r.lwp_days),
   encashableDays: num(r.encashable_days),
   leaveRemarks: r.leave_remarks ?? null,
+  leaveVerifiedBy: r.leave_verified_by ?? null,
+  payrollDoneBy: r.payroll_done_by ?? null,
+  fnfGeneratedBy: r.fnf_generated_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   lwpCompleted: !!r.lwp_completed,
   noticeRecoveryDays: num(r.notice_recovery_days),
   noticeRecoveryAmount: num(r.notice_recovery_amount),
@@ -447,6 +454,14 @@ const mapCase = (r: any): ExitCase => ({
   withdrawReason: r.withdraw_reason ?? null,
   holdAt: r.hold_at ?? null,
   holdReason: r.hold_reason ?? null,
+  // Stage view attribution (migration 20260720120000).
+  lwdConfirmedAt: r.lwd_confirmed_at ?? null,
+  lwdConfirmedBy: r.lwd_confirmed_by ?? null,
+  clearanceCompletedBy: r.clearance_completed_by ?? null,
+  documentsIssuedBy: r.documents_issued_by ?? null,
+  archivedBy: r.archived_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
 });
 

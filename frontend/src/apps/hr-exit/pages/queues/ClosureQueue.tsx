@@ -4,10 +4,13 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
+import StageTabs from "@/shared/components/ui/StageTabs";
+import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
 import DocumentsPanel from "../../components/documents/DocumentsPanel";
+import CompletedExitTable from "../../components/CompletedExitTable";
 import { useExitStore } from "../../store";
-import type { QueueEntry } from "../../lib/queues";
+import type { QueueEntry, StageEntry } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import type { ExitCase } from "../../types";
 
@@ -53,6 +56,10 @@ export default function ClosureQueue() {
       })
       .filter((r): r is Row => !!r);
   }, [s]);
+
+  const completed = useMemo(() => STEPS_HERE.flatMap((k) => s.completedFor(k)), [s]);
+  const stage = useStageMode(completed, s.userId);
+  const openEntry = (e: StageEntry<ExitCase>) => setWorking(e.row);
 
   const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
 
@@ -177,36 +184,56 @@ export default function ClosureQueue() {
         </p>
       </div>
 
-      <QueueTable<Row>
-        rows={rows}
-        // COMPOSITE — mandatory on any mixed-step table.
-        rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
-        columns={columns}
-        groupBy={{
-          idOf: (r) => r.departmentId,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
-        rowsLabel="items"
-        rowClassName={(r) => overdueRowClass(r.dueIso)}
-        emptyTitle="Nothing waiting on you"
-        emptyMessage="Exits appear here once their full & final is approved — the letters go out, the signed acknowledgement comes back, and the case is archived."
-        initialSort={{ key: "due", dir: "asc" }}
-        exportName="HR_Exit_Closure"
-        exportTitle="Exits at closure"
-        exportNotes={[
-          "One row per OPEN closure step. The letters (`documents`) are issued once the F&F is APPROVED — not once it is paid: bank transfers lag, and the leaver needs their relieving letter to start elsewhere.",
-          "ISSUED IS NOT ACKNOWLEDGED. The Documents column shows both, because a case whose letters went out and whose signed copies never came back reads as done everywhere else — and it is the commonest real failure of an exit.",
-          "An exit cannot be archived until clearance is complete, the F&F is paid, every document is issued, the SIGNED ACKNOWLEDGEMENT is attached for every document actually issued, and the employee's own copy of the final F&F is on file. Any of those steps can be waived with a reason (an absconder gets no relieving letter) — the evidence rule then applies only to what was actually issued.",
-          "Working days are Mon–Sat; only Sunday is skipped.",
-        ]}
-        actions={(r) => (
-          <Button size="sm" onClick={() => setWorking(r.case)}>
-            Open
-          </Button>
-        )}
+      <StageTabs
+        mode={stage.mode}
+        onMode={stage.setMode}
+        pendingCount={rows.length}
+        completedCount={completed.length}
+        scope={stage.scope}
+        onScope={stage.setScope}
+        scopeNote={s.stageScopeNote}
       />
+
+      {stage.showingCompleted ? (
+        <CompletedExitTable
+          rows={stage.rows}
+          exportName="HR_Exit_Closure_Completed"
+          emptyMessage="Documents you issue and cases you archive will appear here."
+          onEdit={openEntry}
+          onView={openEntry}
+        />
+      ) : (
+        <QueueTable<Row>
+          rows={rows}
+          // COMPOSITE — mandatory on any mixed-step table.
+          rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
+          columns={columns}
+          groupBy={{
+            idOf: (r) => r.departmentId,
+            nameOf: deptName,
+            allLabel: "All departments",
+            label: "Department",
+          }}
+          rowsLabel="items"
+          rowClassName={(r) => overdueRowClass(r.dueIso)}
+          emptyTitle="Nothing waiting on you"
+          emptyMessage="Exits appear here once their full & final is approved — the letters go out, the signed acknowledgement comes back, and the case is archived."
+          initialSort={{ key: "due", dir: "asc" }}
+          exportName="HR_Exit_Closure"
+          exportTitle="Exits at closure"
+          exportNotes={[
+            "One row per OPEN closure step. The letters (`documents`) are issued once the F&F is APPROVED — not once it is paid: bank transfers lag, and the leaver needs their relieving letter to start elsewhere.",
+            "ISSUED IS NOT ACKNOWLEDGED. The Documents column shows both, because a case whose letters went out and whose signed copies never came back reads as done everywhere else — and it is the commonest real failure of an exit.",
+            "An exit cannot be archived until clearance is complete, the F&F is paid, every document is issued, the SIGNED ACKNOWLEDGEMENT is attached for every document actually issued, and the employee's own copy of the final F&F is on file. Any of those steps can be waived with a reason (an absconder gets no relieving letter) — the evidence rule then applies only to what was actually issued.",
+            "Working days are Mon–Sat; only Sunday is skipped.",
+          ]}
+          actions={(r) => (
+            <Button size="sm" onClick={() => setWorking(r.case)}>
+              Open
+            </Button>
+          )}
+        />
+      )}
 
       {/* The panel in place, so HR never has to go hunting for the case page. Same component
           the detail page renders. */}
