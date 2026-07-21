@@ -26,12 +26,16 @@ export default function SendModal({
 }) {
   const s = useSamplingStore();
   const [sentDate, setSentDate] = useState("");
+  const [gateEntryNo, setGateEntryNo] = useState("");
+  const [sentQty, setSentQty] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && request) {
       setSentDate(request.sentDate ?? "");
+      setGateEntryNo(request.gateEntryNo ?? "");
+      setSentQty(request.sentQty ?? "");
       setErr(null);
       setBusy(false);
     }
@@ -42,7 +46,7 @@ export default function SendModal({
     setBusy(true);
     setErr(null);
     try {
-      const input = { sentDate: sentDate || null };
+      const input = { sentDate: sentDate || null, gateEntryNo: gateEntryNo.trim() || null, sentQty: sentQty.trim() || null };
       if (editing) await s.updateSend(request, input);
       else await s.recordSend(request, input);
       onClose();
@@ -70,6 +74,12 @@ export default function SendModal({
       <div className="space-y-3.5">
         <FieldLabel label="Date sent" hint="defaults to today if left blank">
           <TextInput type="date" value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
+        </FieldLabel>
+        <FieldLabel label="Gate outward entry no.">
+          <TextInput value={gateEntryNo} onChange={(e) => setGateEntryNo(e.target.value)} placeholder="e.g. GT/2627/118" />
+        </FieldLabel>
+        <FieldLabel label="Quantity">
+          <TextInput value={sentQty} onChange={(e) => setSentQty(e.target.value)} placeholder="e.g. 500 ml" />
         </FieldLabel>
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>

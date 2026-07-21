@@ -17,11 +17,11 @@ export default function ResultQueue() {
     <RequestQueue
       stepKey="result"
       title="Result"
-      description="Tested samples awaiting the result to be recorded, which closes the request."
+      description="Tested samples awaiting the result to be recorded, which sends it for handover."
       actionLabel="Record result"
       StageModal={ResultModal}
       capturedColumn={capturedColumn}
-      completedBlurb="Results you record will appear here. A closed request's result stays correctable — it is the last step, so nothing downstream depends on it."
+      completedBlurb="Results you record will appear here. A result stays correctable until its handover is recorded."
     />
   );
 }

@@ -13,6 +13,7 @@ import SendQueue from "./pages/queues/SendQueue";
 import ConfirmQueue from "./pages/queues/ConfirmQueue";
 import TestingQueue from "./pages/queues/TestingQueue";
 import ResultQueue from "./pages/queues/ResultQueue";
+import HandoverQueue from "./pages/queues/HandoverQueue";
 import Masters from "./pages/masters/Masters";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import Setup from "./pages/settings/Setup";
@@ -61,6 +62,7 @@ export default function SamplingApp() {
           <Route path="queues/confirm" element={<ConfirmQueue />} />
           <Route path="queues/testing" element={<TestingQueue />} />
           <Route path="queues/result" element={<ResultQueue />} />
+          <Route path="queues/handover" element={<HandoverQueue />} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />

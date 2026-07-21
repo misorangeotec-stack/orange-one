@@ -1,18 +1,27 @@
 import { useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
+import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import { useSession } from "@/core/platform/session";
 import { useSamplingStore } from "../../store";
 import type { RequestInput } from "../../data/samplingWrites";
 import type { Direction, ReceiveVia, RequirementType, TransportBorne } from "../../types";
 
+/** One editable colour/quantity row (competitor samples). */
+export interface SampleRow extends LineGridRow {
+  colour: string;
+  quantity: string;
+}
+export const makeEmptySample = (): SampleRow => ({ uid: newUid(), colour: "", quantity: "" });
+export const isSampleBlank = (r: SampleRow): boolean => !r.colour.trim() && !r.quantity.trim();
+
 /**
  * The intake form's state + derivation for a new sampling request.
  *
  * The form branches on `direction` (and, for inward, on `requirementType`): the
- * competitor path collects colour/quantity + who collects + who to hand to +
- * transport, the new-product path is leaner, and the outward path drops the
- * competitor fields and asks who bears transport on the receiver's side. All
- * party/product/people fields are FREE TEXT; only Company + the enums are pickers.
+ * competitor path collects a LIST of colour/quantity samples + who collects (a
+ * picked employee) + who to hand to + transport, the new-product path is leaner,
+ * and the outward path drops the competitor fields. Company + the enums + the
+ * collector are pickers; every other party/product field is free text.
  */
 export function useSampleRequestForm() {
   const s = useSamplingStore();
@@ -25,8 +34,8 @@ export function useSampleRequestForm() {
   const [requesterName, setRequesterName] = useState(session.user?.name ?? "");
   const [partyName, setPartyName] = useState("");
   const [productDesc, setProductDesc] = useState("");
-  const [colourQty, setColourQty] = useState("");
-  const [collectorName, setCollectorName] = useState("");
+  const [sampleItems, setSampleItems] = useState<SampleRow[]>([makeEmptySample()]);
+  const [collectorId, setCollectorId] = useState("");
   const [handoverName, setHandoverName] = useState("");
   const [transportBorne, setTransportBorne] = useState<TransportBorne | "">("");
   const [desiredResult, setDesiredResult] = useState("");
@@ -34,6 +43,9 @@ export function useSampleRequestForm() {
   const [err, setErr] = useState<string | null>(null);
 
   const companyOptions: ComboOption[] = s.activeCompanies.map((c) => ({ value: c.id, label: c.name }));
+  const collectorOptions: ComboOption[] = [...s.samplingUsers]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => ({ value: p.id, label: p.designation ? `${p.name} · ${p.designation}` : p.name }));
 
   const isInward = direction === "inward";
   const isOutward = direction === "outward";
@@ -47,6 +59,10 @@ export function useSampleRequestForm() {
     if (isInward && !requirementType) return { error: "Requirement type is required for an inward sample." };
     if (!productDesc.trim()) return { error: "Product / description is required." };
 
+    const filledSamples = isCompetitor
+      ? sampleItems.filter((r) => !isSampleBlank(r)).map((r) => ({ colour: r.colour.trim(), quantity: r.quantity.trim() }))
+      : [];
+
     return {
       input: {
         companyId,
@@ -56,8 +72,8 @@ export function useSampleRequestForm() {
         requesterName: requesterName.trim() || (session.user?.name ?? "Requester"),
         partyName: partyName.trim() || null,
         productDesc: productDesc.trim(),
-        colourQty: isCompetitor ? colourQty.trim() || null : null,
-        collectorName: isCompetitor ? collectorName.trim() || null : null,
+        sampleItems: filledSamples,
+        collectorId: isCompetitor ? collectorId || null : null,
         handoverName: isCompetitor ? handoverName.trim() || null : null,
         transportBorne: isCompetitor || isOutward ? (transportBorne || null) : null,
         desiredResult: desiredResult.trim() || null,
@@ -75,15 +91,15 @@ export function useSampleRequestForm() {
     requesterName, setRequesterName,
     partyName, setPartyName,
     productDesc, setProductDesc,
-    colourQty, setColourQty,
-    collectorName, setCollectorName,
+    sampleItems, setSampleItems,
+    collectorId, setCollectorId,
     handoverName, setHandoverName,
     transportBorne, setTransportBorne,
     desiredResult, setDesiredResult,
     additionalInfo, setAdditionalInfo,
     err, setErr,
     // derived
-    companyOptions, isInward, isOutward, isCompetitor,
+    companyOptions, collectorOptions, isInward, isOutward, isCompetitor,
     // action
     build,
   };

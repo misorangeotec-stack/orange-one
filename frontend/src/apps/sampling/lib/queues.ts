@@ -35,7 +35,8 @@ export const isOpenRequest = (r: SamplingRequest): boolean =>
   r.status === "awaiting_send" ||
   r.status === "awaiting_confirm" ||
   r.status === "awaiting_testing" ||
-  r.status === "awaiting_result";
+  r.status === "awaiting_result" ||
+  r.status === "awaiting_handover";
 
 /** The single step a request currently owes, from its status. */
 export function openStep(r: SamplingRequest): StepKey | null {
@@ -50,6 +51,8 @@ export function openStep(r: SamplingRequest): StepKey | null {
       return "testing";
     case "awaiting_result":
       return "result";
+    case "awaiting_handover":
+      return "result_handover";
     default:
       return null;
   }
@@ -74,6 +77,8 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
       return r.direction === "inward" ? r.receivedAt : r.confirmedAt;
     case "result":
       return r.testedAt;
+    case "result_handover":
+      return r.resultedAt;
     default:
       return null;
   }
@@ -158,13 +163,21 @@ export function testingLockReason(r: SamplingRequest): string | null {
   return null;
 }
 
-/**
- * Result is the LAST step, so nothing downstream can lock it — a closed request's
- * result deliberately STAYS editable (a product decision, safe: this app has no
- * derived stage machine). Only held / cancelled lock it.
- */
+/** Editable while the result is recorded but the handover isn't yet. */
 export function resultLockReason(r: SamplingRequest): string | null {
-  return heldOrTerminal(r, "result");
+  const t = heldOrTerminal(r, "result");
+  if (t) return t;
+  if (r.status !== "awaiting_handover") return "The result has already been handed over — it can no longer be changed.";
+  return null;
+}
+
+/**
+ * Result handover is the LAST step, so nothing downstream can lock it — a closed
+ * request's handover deliberately STAYS editable (a product decision, safe: this
+ * app has no derived stage machine). Only held / cancelled lock it.
+ */
+export function handoverLockReason(r: SamplingRequest): string | null {
+  return heldOrTerminal(r, "result handover");
 }
 
 const entryOf = (
@@ -210,6 +223,11 @@ export const completedResultEntries = (data: SamplingSnapshot): StageEntry<Sampl
   data.requests
     .filter((r) => !!r.resultedAt)
     .map((r) => entryOf("result", r, r.resultedBy, r.resultedAt!, resultLockReason(r)));
+
+export const completedHandoverEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.handedOverAt)
+    .map((r) => entryOf("result_handover", r, r.handedOverBy, r.handedOverAt!, handoverLockReason(r)));
 
 /** Every open work-item, one per (current step, request). */
 export function buildQueueEntries(snap: SamplingSnapshot): QueueEntry[] {

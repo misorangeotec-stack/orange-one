@@ -15,6 +15,12 @@ export type Direction = "inward" | "outward";
 export type RequirementType = "competitor" | "new_product";
 export type TransportBorne = "Yes" | "No";
 
+/** One competitor sample to collect — colour + quantity, entered as a line item. */
+export interface SampleItem {
+  colour: string;
+  quantity: string;
+}
+
 /** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled leave every queue. */
 export type RequestStatus =
   | "awaiting_receipt"
@@ -22,6 +28,7 @@ export type RequestStatus =
   | "awaiting_confirm"
   | "awaiting_testing"
   | "awaiting_result"
+  | "awaiting_handover"
   | "closed"
   | "on_hold"
   | "cancelled";
@@ -44,8 +51,10 @@ export interface SamplingRequest {
   requesterName: string;
   partyName: string | null;
   productDesc: string | null;
-  colourQty: string | null;
-  collectorName: string | null;
+  colourQty: string | null;             // legacy single value (old rows)
+  sampleItems: SampleItem[];            // competitor: the samples to collect
+  collectorId: string | null;           // the chosen collector (auth.users id)
+  collectorName: string | null;         // legacy free-text collector name
   handoverName: string | null;
   transportBorne: TransportBorne | null;
   desiredResult: string | null;
@@ -61,6 +70,8 @@ export interface SamplingRequest {
 
   // send_sample (outward)
   sentDate: string | null;
+  gateEntryNo: string | null;
+  sentQty: string | null;
   sentAt: string | null;
   sentBy: string | null;
 
@@ -76,13 +87,19 @@ export interface SamplingRequest {
   testedAt: string | null;
   testedBy: string | null;
 
-  // result (both) — closes the request
+  // result (both) — moves the request to awaiting_handover
   resultComment: string | null;
   resultOwner: string | null;
   attachmentPath: string | null;
   attachmentName: string | null;
   resultedAt: string | null;
   resultedBy: string | null;
+
+  // result_handover (both) — closes the request
+  handoverDate: string | null;
+  handoverNote: string | null;
+  handedOverAt: string | null;
+  handedOverBy: string | null;
   closedAt: string | null;
 
   /**

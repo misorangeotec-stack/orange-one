@@ -13,6 +13,7 @@ import {
   insertCompany as insertCompanyWrite,
   markNotificationsRead as markNotificationsReadWrite,
   recordConfirm as recordConfirmWrite,
+  recordHandover as recordHandoverWrite,
   recordReceipt as recordReceiptWrite,
   recordResult as recordResultWrite,
   recordSend as recordSendWrite,
@@ -24,12 +25,14 @@ import {
   submitRequest as submitRequestWrite,
   updateCompany as updateCompanyWrite,
   updateConfirm as updateConfirmWrite,
+  updateHandover as updateHandoverWrite,
   updateReceipt as updateReceiptWrite,
   updateResult as updateResultWrite,
   updateSend as updateSendWrite,
   updateTesting as updateTestingWrite,
   type CompanyInput,
   type ConfirmInput,
+  type HandoverInput,
   type ReceiptInput,
   type RequestInput,
   type ResultInput,
@@ -40,6 +43,7 @@ import {
 import {
   buildQueueEntries,
   completedConfirmEntries,
+  completedHandoverEntries,
   completedReceiveEntries,
   completedResultEntries,
   completedSendEntries,
@@ -73,6 +77,8 @@ interface SamplingStoreValue {
 
   // directory (portal)
   profiles: Profile[];
+  /** Users granted the Sampling app — the candidate collectors. */
+  samplingUsers: Profile[];
   orgDepartments: OrgDepartment[];
   designations: Designation[];
   profileById: (id: string) => Profile | undefined;
@@ -137,6 +143,8 @@ interface SamplingStoreValue {
   updateTesting: (r: SamplingRequest, input: TestingInput) => Promise<void>;
   recordResult: (r: SamplingRequest, input: ResultInput) => Promise<void>;
   updateResult: (r: SamplingRequest, input: ResultInput) => Promise<void>;
+  recordHandover: (r: SamplingRequest, input: HandoverInput) => Promise<void>;
+  updateHandover: (r: SamplingRequest, input: HandoverInput) => Promise<void>;
   holdRequest: (r: SamplingRequest, hold: boolean, reason: string) => Promise<void>;
   cancelRequest: (r: SamplingRequest, reason: string) => Promise<void>;
 
@@ -195,9 +203,13 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
     // Mirrors fms_sampling_can_act(step, req, uid): admin / coordinator / the
-    // step's owner. Sampling steps are owned globally (no per-request HOD).
-    const canActOn = (stepKey: StepKey, _r: SamplingRequest): boolean =>
-      isAdmin || isProcessCoordinator || isStepOwner(stepKey);
+    // step's owner — PLUS the chosen collector for that request's receive_sample.
+    // Sampling steps are otherwise owned globally (no per-request HOD).
+    const canActOn = (stepKey: StepKey, r: SamplingRequest): boolean =>
+      isAdmin ||
+      isProcessCoordinator ||
+      isStepOwner(stepKey) ||
+      (stepKey === "receive_sample" && !!r.collectorId && r.collectorId === uid);
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -244,6 +256,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const confirmEntries = completedConfirmEntries(snapshot);
     const testingEntries = completedTestingEntries(snapshot);
     const resultEntries = completedResultEntries(snapshot);
+    const handoverEntries = completedHandoverEntries(snapshot);
 
     const completedFor = (stepKey: StepKey): StageEntry<SamplingRequest>[] =>
       stepKey === "receive_sample" ? receiveEntries
@@ -251,6 +264,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       : stepKey === "confirm_receipt" ? confirmEntries
       : stepKey === "testing" ? testingEntries
       : stepKey === "result" ? resultEntries
+      : stepKey === "result_handover" ? handoverEntries
       : [];
 
     const myQueue = (stepKey: StepKey): QueueEntry[] =>
@@ -270,6 +284,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       error,
 
       profiles: dir.profiles,
+      // Candidate collectors = users granted the Sampling app (admins bypass
+      // module access, so they carry no `sampling` tag — include them explicitly).
+      samplingUsers: dir.profiles.filter((p) => p.role === "admin" || p.moduleAccess.includes("sampling")),
       orgDepartments: dir.departments,
       designations,
       profileById: dir.profileById,
@@ -361,17 +378,20 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       },
       recordResult: async (r, input) => {
         await recordResultWrite(r.id, input);
-        await safeAnnounce({
-          entityType: "request",
-          entityId: r.id,
-          type: "result_recorded",
-          text: `${r.reqNo} result recorded — the sampling request is closed.`,
-          recipients: r.raisedBy ? [r.raisedBy] : [],
-        });
+        // The RPC already fanned out to the result_handover owners.
         await invalidate();
       },
       updateResult: async (r, input) => {
         await updateResultWrite(r.id, input);
+        await invalidate();
+      },
+      recordHandover: async (r, input) => {
+        await recordHandoverWrite(r.id, input);
+        // The RPC already notified the raiser that the request is closed.
+        await invalidate();
+      },
+      updateHandover: async (r, input) => {
+        await updateHandoverWrite(r.id, input);
         await invalidate();
       },
       holdRequest: async (r, hold, reason) => {

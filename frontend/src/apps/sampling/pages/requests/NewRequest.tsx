@@ -32,18 +32,18 @@ export default function NewRequest() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-3xl mx-auto space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">Raise a sampling request</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Tell us what needs sampling and which way it moves. Inward samples are received then tested; outward samples are
-          sent, confirmed and then tested.
+          A few quick details and you're done. Inward samples are received then tested; outward samples are sent,
+          confirmed and then tested.
         </p>
       </div>
 
-      <Card className="p-5 space-y-4">
+      <Card className="p-6">
         <SampleRequestFields form={form} />
-        <div className="flex justify-end pt-1">
+        <div className="flex justify-end pt-5 mt-6 border-t border-line">
           <Button size="sm" onClick={submit} disabled={busy}>
             {busy ? "Submitting…" : "Submit request"}
           </Button>

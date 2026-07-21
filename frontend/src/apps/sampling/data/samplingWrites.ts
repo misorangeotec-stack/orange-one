@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_sampling_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { Direction, ReceiveVia, RequirementType, SamplingEntityType, SamplingMasterType, TransportBorne } from "../types";
+import type { Direction, ReceiveVia, RequirementType, SampleItem, SamplingEntityType, SamplingMasterType, TransportBorne } from "../types";
 
 /**
  * Sampling FMS write layer. The company master + config are written directly under
@@ -21,8 +21,8 @@ export interface RequestInput {
   requesterName: string;
   partyName: string | null;
   productDesc: string;
-  colourQty: string | null;
-  collectorName: string | null;
+  sampleItems: SampleItem[];
+  collectorId: string | null;
   handoverName: string | null;
   transportBorne: TransportBorne | null;
   desiredResult: string | null;
@@ -39,8 +39,8 @@ export async function submitRequest(input: RequestInput): Promise<string> {
       requester_name: input.requesterName,
       party_name: input.partyName ?? "",
       product_desc: input.productDesc,
-      colour_qty: input.colourQty ?? "",
-      collector_name: input.collectorName ?? "",
+      sample_items: input.sampleItems,
+      collector_id: input.collectorId ?? "",
       handover_name: input.handoverName ?? "",
       transport_borne: input.transportBorne ?? "",
       desired_result: input.desiredResult ?? "",
@@ -73,19 +73,20 @@ export async function updateReceipt(requestId: string, input: ReceiptInput): Pro
 
 export interface SendInput {
   sentDate: string | null;
+  gateEntryNo: string | null;
+  sentQty: string | null;
 }
+const sendPayload = (input: SendInput) => ({
+  sent_date: input.sentDate ?? "",
+  gate_entry_no: input.gateEntryNo ?? "",
+  sent_qty: input.sentQty ?? "",
+});
 export async function recordSend(requestId: string, input: SendInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_record_send", {
-    p_req: requestId,
-    p: { sent_date: input.sentDate ?? "" },
-  });
+  const { error } = await db.rpc("fms_sampling_record_send", { p_req: requestId, p: sendPayload(input) });
   if (error) throw new Error(error.message);
 }
 export async function updateSend(requestId: string, input: SendInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_update_send", {
-    p_req: requestId,
-    p: { sent_date: input.sentDate ?? "" },
-  });
+  const { error } = await db.rpc("fms_sampling_update_send", { p_req: requestId, p: sendPayload(input) });
   if (error) throw new Error(error.message);
 }
 
@@ -149,6 +150,23 @@ export async function recordResult(requestId: string, input: ResultInput): Promi
 }
 export async function updateResult(requestId: string, input: ResultInput): Promise<void> {
   const { error } = await db.rpc("fms_sampling_update_result", { p_req: requestId, p: resultPayload(input) });
+  if (error) throw new Error(error.message);
+}
+
+export interface HandoverInput {
+  handoverDate: string | null;
+  handoverNote: string | null;
+}
+const handoverPayload = (input: HandoverInput) => ({
+  handover_date: input.handoverDate ?? "",
+  handover_note: input.handoverNote ?? "",
+});
+export async function recordHandover(requestId: string, input: HandoverInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_record_handover", { p_req: requestId, p: handoverPayload(input) });
+  if (error) throw new Error(error.message);
+}
+export async function updateHandover(requestId: string, input: HandoverInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_handover", { p_req: requestId, p: handoverPayload(input) });
   if (error) throw new Error(error.message);
 }
 

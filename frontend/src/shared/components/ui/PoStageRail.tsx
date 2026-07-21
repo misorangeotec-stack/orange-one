@@ -61,17 +61,25 @@ export default function PoStageRail({
   nodes,
   activeIndex,
   finished,
+  fit = false,
 }: {
   nodes: PoStageRailNode[];
   /** Index of the stage the PO is currently sitting on. */
   activeIndex: number;
   /** True once the final stage is itself complete (a closed PO). */
   finished: boolean;
+  /**
+   * Fit every node into the available width instead of scrolling. Fixed-width
+   * nodes (the default) scroll when the rail is wider than its container — fine
+   * on the full-width PO detail, but a narrow column would clip. `fit` makes the
+   * nodes share the width evenly (they truncate rather than overflow).
+   */
+  fit?: boolean;
 }) {
   return (
     // items-start (not center): captions make columns vary in height, and we
     // need every circle to stay on one line.
-    <div className="flex items-start overflow-x-auto py-1">
+    <div className={cn("flex items-start py-1", !fit && "overflow-x-auto")}>
       {nodes.map((n, i) => {
         const done = i < activeIndex || (finished && i === activeIndex);
         const current = i === activeIndex && !finished;
@@ -93,7 +101,10 @@ export default function PoStageRail({
         return (
           <div
             key={n.key}
-            className="relative flex w-[132px] shrink-0 flex-col items-center px-1"
+            className={cn(
+              "relative flex flex-col items-center px-1",
+              fit ? "min-w-0 flex-1 basis-0" : "w-[132px] shrink-0"
+            )}
           >
             {/* Connector, anchored to the circle's centre rather than offset up
                 from the column bottom — captions make column height vary. */}

@@ -58,6 +58,7 @@ export function buildSamplingNav(opts: {
   canConfirm: boolean;
   canTest: boolean;
   canResult: boolean;
+  canHandover: boolean;
   canMonitor: boolean;
   hasRequests: boolean;
 }): NavItem[] {
@@ -78,6 +79,7 @@ export function buildSamplingNav(opts: {
   if (opts.canConfirm) queue("Receipt Confirmed", `${B}/queues/confirm`, ic.confirm);
   if (opts.canTest) queue("Testing", `${B}/queues/testing`, ic.testing);
   if (opts.canResult) queue("Result", `${B}/queues/result`, ic.result);
+  if (opts.canHandover) queue("Result Handover", `${B}/queues/handover`, ic.confirm);
 
   let adminUsed = false;
   const admin = (label: string, to: string, icon: JSX.Element) => {

@@ -12,6 +12,8 @@ import SendModal from "../../components/SendModal";
 import ConfirmModal from "../../components/ConfirmModal";
 import TestingModal from "../../components/TestingModal";
 import ResultModal from "../../components/ResultModal";
+import HandoverModal from "../../components/HandoverModal";
+import SamplingStepper from "../../components/SamplingStepper";
 import StatusPill from "../../components/StatusPill";
 import { directionLabel, dmy, receiveViaLabel, requestSubject, requirementTypeLabel } from "../../lib/format";
 import { openStep } from "../../lib/queues";
@@ -19,46 +21,7 @@ import type { StepKey } from "../../lib/steps";
 import { useSamplingStore } from "../../store";
 import type { SamplingRequest } from "../../types";
 
-type StageState = "done" | "current" | "pending";
-
-/** One step in the progress panel. */
-function Stage({
-  title,
-  when,
-  by,
-  detail,
-  state,
-}: {
-  title: string;
-  when: string | null;
-  by: string | null;
-  detail: string | null;
-  state: StageState;
-}) {
-  const tone = state === "done" ? "text-ryg-green" : state === "current" ? "text-orange" : "text-grey-2";
-  const dot = state === "done" ? "bg-ryg-green" : state === "current" ? "bg-orange" : "bg-line";
-  const label = state === "done" ? "Done" : state === "current" ? "In progress" : "Pending";
-  return (
-    <div className="flex gap-3">
-      <div className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${dot}`} />
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[13.5px] font-semibold text-navy">{title}</span>
-          <span className={`text-[11px] font-semibold uppercase tracking-wide ${tone}`}>{label}</span>
-        </div>
-        {when && (
-          <div className="text-[12.5px] text-grey-2">
-            {formatDate(when)}
-            {by ? ` · ${by}` : ""}
-          </div>
-        )}
-        {detail && <div className="text-[12.5px] text-grey mt-0.5">{detail}</div>}
-      </div>
-    </div>
-  );
-}
-
-type OpenModal = "receive" | "send" | "confirm" | "testing" | "result" | null;
+type OpenModal = "receive" | "send" | "confirm" | "testing" | "result" | "handover" | null;
 
 export default function RequestDetail() {
   const { id } = useParams();
@@ -100,6 +63,7 @@ export default function RequestDetail() {
     : r.status === "awaiting_confirm" ? { label: "Confirm receipt", modal: "confirm" }
     : r.status === "awaiting_testing" ? { label: "Record testing", modal: "testing" }
     : r.status === "awaiting_result" ? { label: "Record result", modal: "result" }
+    : r.status === "awaiting_handover" ? { label: "Record handover", modal: "handover" }
     : null;
 
   const runReason = async (fn: (r: SamplingRequest, reason: string) => Promise<void>, close: () => void) => {
@@ -120,13 +84,10 @@ export default function RequestDetail() {
     }
   };
 
-  const stateFor = (step: StepKey, doneAt: string | null): StageState =>
-    doneAt ? "done" : cur === step ? "current" : "pending";
-
   const activity = s.activityFor("request", r.id);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="max-w-4xl mx-auto space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
@@ -168,8 +129,21 @@ export default function RequestDetail() {
           <Field label="Product / description" value={r.productDesc} className="col-span-2 sm:col-span-3" />
           {r.direction === "inward" && r.requirementType === "competitor" && (
             <>
-              <Field label="Colour & quantity" value={r.colourQty} />
-              <Field label="Collected by" value={r.collectorName} />
+              <div className="col-span-2 sm:col-span-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Colour &amp; quantity to collect</div>
+                {r.sampleItems.length > 0 ? (
+                  <ul className="mt-1 space-y-0.5">
+                    {r.sampleItems.map((it, i) => (
+                      <li key={i} className="text-[13.5px] text-navy">
+                        {[it.colour, it.quantity].filter(Boolean).join(" — ") || "—"}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="mt-1 text-[13.5px] text-navy">{r.colourQty ?? "—"}</div>
+                )}
+              </div>
+              <Field label="Collector" value={r.collectorId ? name(r.collectorId) : r.collectorName} />
               <Field label="Hand to" value={r.handoverName} />
             </>
           )}
@@ -190,52 +164,69 @@ export default function RequestDetail() {
         )}
       </Card>
 
-      <Card className="p-5 space-y-4">
+      <Card className="p-5 space-y-3">
         <h2 className="text-[15px] font-bold text-navy">Progress</h2>
-        {r.direction === "inward" ? (
-          <Stage
-            title="Sample received"
-            when={r.receivedAt}
-            by={name(r.receivedBy)}
-            detail={r.receivedDate ? `Received ${dmy(r.receivedDate)}` : null}
-            state={stateFor("receive_sample", r.receivedAt)}
+        <SamplingStepper request={r} />
+      </Card>
+
+      <Card className="p-5">
+        <SectionHeading>Step details</SectionHeading>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+          {r.direction === "inward" ? (
+            <Field
+              label="Sample received"
+              value={
+                r.receivedAt
+                  ? `${r.receivedDate ? dmy(r.receivedDate) : formatDate(r.receivedAt)} · ${name(r.receivedBy)}`
+                  : "—"
+              }
+            />
+          ) : (
+            <>
+              <Field
+                label="Sample sent"
+                value={
+                  r.sentAt
+                    ? `${r.sentDate ? dmy(r.sentDate) : formatDate(r.sentAt)} · ${name(r.sentBy)}`
+                    : "—"
+                }
+              />
+              {(r.gateEntryNo || r.sentQty) && (
+                <Field label="Gate entry / quantity" value={[r.gateEntryNo, r.sentQty].filter(Boolean).join(" · ") || "—"} />
+              )}
+              <Field
+                label="Receipt confirmed"
+                value={
+                  r.confirmedAt
+                    ? `${r.partyReceivedDate ? dmy(r.partyReceivedDate) : formatDate(r.confirmedAt)} · ${name(r.confirmedBy)}`
+                    : "—"
+                }
+              />
+            </>
+          )}
+          <Field
+            label="Testing"
+            value={
+              r.testedAt
+                ? `${r.testingCompletedDate ? dmy(r.testingCompletedDate) : formatDate(r.testedAt)}${r.internalRef ? ` · ${r.internalRef}` : ""}${r.tentativeResultDate ? ` · result by ${dmy(r.tentativeResultDate)}` : ""} · ${name(r.testedBy)}`
+                : "—"
+            }
           />
-        ) : (
-          <>
-            <Stage
-              title="Sample sent"
-              when={r.sentAt}
-              by={name(r.sentBy)}
-              detail={r.sentDate ? `Sent ${dmy(r.sentDate)}` : null}
-              state={stateFor("send_sample", r.sentAt)}
-            />
-            <Stage
-              title="Receipt confirmed"
-              when={r.confirmedAt}
-              by={name(r.confirmedBy)}
-              detail={r.partyReceivedDate ? `Party received ${dmy(r.partyReceivedDate)}` : null}
-              state={stateFor("confirm_receipt", r.confirmedAt)}
-            />
-          </>
-        )}
-        <Stage
-          title="Testing"
-          when={r.testedAt}
-          by={name(r.testedBy)}
-          detail={
-            r.testingCompletedDate
-              ? `Completed ${dmy(r.testingCompletedDate)}${r.internalRef ? ` · ${r.internalRef}` : ""}${r.tentativeResultDate ? ` · result by ${dmy(r.tentativeResultDate)}` : ""}`
-              : null
-          }
-          state={stateFor("testing", r.testedAt)}
-        />
-        <Stage
-          title="Result"
-          when={r.resultedAt}
-          by={name(r.resultedBy)}
-          detail={r.resultComment}
-          state={stateFor("result", r.resultedAt)}
-        />
+          <Field
+            label="Result"
+            value={r.resultedAt ? `${r.resultComment ?? ""} · ${name(r.resultedBy)}` : "—"}
+            className="col-span-1 sm:col-span-2"
+          />
+          <Field
+            label="Result handover"
+            value={
+              r.handedOverAt
+                ? `${r.handoverDate ? dmy(r.handoverDate) : formatDate(r.handedOverAt)}${r.handoverNote ? ` · ${r.handoverNote}` : ""} · ${name(r.handedOverBy)}`
+                : "—"
+            }
+            className="col-span-1 sm:col-span-2"
+          />
+        </div>
       </Card>
 
       {activity.length > 0 && (
@@ -266,6 +257,7 @@ export default function RequestDetail() {
       <ConfirmModal open={modal === "confirm"} onClose={() => setModal(null)} request={r} />
       <TestingModal open={modal === "testing"} onClose={() => setModal(null)} request={r} />
       <ResultModal open={modal === "result"} onClose={() => setModal(null)} request={r} />
+      <HandoverModal open={modal === "handover"} onClose={() => setModal(null)} request={r} />
 
       <Modal
         open={holdOpen}

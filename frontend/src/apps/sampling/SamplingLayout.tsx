@@ -27,8 +27,9 @@ export default function SamplingLayout() {
   const canConfirm = s.isProcessCoordinator || s.isStepOwner("confirm_receipt") || s.myQueue("confirm_receipt").length > 0;
   const canTest = s.isProcessCoordinator || s.isStepOwner("testing") || s.myQueue("testing").length > 0;
   const canResult = s.isProcessCoordinator || s.isStepOwner("result") || s.myQueue("result").length > 0;
+  const canHandover = s.isProcessCoordinator || s.isStepOwner("result_handover") || s.myQueue("result_handover").length > 0;
   const canMonitor = s.isProcessCoordinator;
-  const hasRequests = s.requests.length > 0 || s.isProcessCoordinator || canReceive || canSend || canConfirm || canTest || canResult;
+  const hasRequests = s.requests.length > 0 || s.isProcessCoordinator || canReceive || canSend || canConfirm || canTest || canResult || canHandover;
 
   const nav = useMemo(
     () =>
@@ -40,10 +41,11 @@ export default function SamplingLayout() {
         canConfirm,
         canTest,
         canResult,
+        canHandover,
         canMonitor,
         hasRequests,
       }),
-    [isAdmin, s.isAnyMasterManager, canReceive, canSend, canConfirm, canTest, canResult, canMonitor, hasRequests],
+    [isAdmin, s.isAnyMasterManager, canReceive, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, hasRequests],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

@@ -6,16 +6,26 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * queue logic.
  *
  * TWO PATHS through the same row, chosen by `direction`:
- *   inward  : request → receive_sample → testing → result
- *   outward : request → send_sample → confirm_receipt → testing → result
+ *   inward  : request → receive_sample → testing → result → result_handover
+ *   outward : request → send_sample → confirm_receipt → testing → result → result_handover
  * They converge at `testing`. A step that doesn't apply to a request's direction
  * is simply never its current_step, so its queue never shows it — the queue reads
  * `status`, so a skipped step never appears.
  *
+ * `result` records the outcome and hands off to `result_handover`, which is the
+ * closing step (records that the result/report was handed over).
+ *
  * Statuses are NOT step keys — closed / on_hold / cancelled live in RequestStatus
  * (types/index.ts), never here.
  */
-export type StepKey = "request" | "receive_sample" | "send_sample" | "confirm_receipt" | "testing" | "result";
+export type StepKey =
+  | "request"
+  | "receive_sample"
+  | "send_sample"
+  | "confirm_receipt"
+  | "testing"
+  | "result"
+  | "result_handover";
 
 /** One scope — a request is one entity from raise to result. */
 export type StepScope = "request";
@@ -29,6 +39,7 @@ export const STEPS: StepDef[] = [
   { key: "confirm_receipt", index: 4, title: "Receipt Confirmed", short: "Confirmed", scope: "request" },
   { key: "testing", index: 5, title: "Testing", short: "Testing", scope: "request" },
   { key: "result", index: 6, title: "Result", short: "Result", scope: "request" },
+  { key: "result_handover", index: 7, title: "Result Handover", short: "Handover", scope: "request" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -42,4 +53,5 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Movement", keys: ["receive_sample", "send_sample", "confirm_receipt"] },
   { label: "Testing", keys: ["testing"] },
   { label: "Result", keys: ["result"] },
+  { label: "Handover", keys: ["result_handover"] },
 ];

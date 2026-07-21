@@ -37,9 +37,8 @@ function ResultDocLink({ path, name }: { path: string; name: string | null }) {
 
 /**
  * Record (or correct) the RESULT — a comment (required), the result owner, and an
- * optional lab-report attachment. Recording closes the request. The result is the
- * last step, so it stays editable after close (until held / cancelled); the server
- * re-checks.
+ * optional lab-report attachment. Recording moves the request to result handover.
+ * The result stays editable until the handover is recorded; the server re-checks.
  */
 export default function ResultModal({
   open,
@@ -117,7 +116,7 @@ export default function ResultModal({
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save" : "Save & close request"}</Button>
+          <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save" : "Save & send for handover"}</Button>
         </>
       }
     >
