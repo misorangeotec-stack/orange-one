@@ -6,14 +6,14 @@
 // It reuses the app's own formatters (inr / fxMoney / qtyText) and item labels so
 // emails read exactly like the screens.
 //
-// Data source rule: build from what's in scope at the announce moment — method
+// Data source rule: build from what's in scope at the announce moment - method
 // inputs for freshly-created docs (submit, PO generate), and the store's existing
 // rows for everything already persisted (approval, share, PI, payment, GRN, …).
 
 import { inr, fxMoney, qtyText } from "./format";
 import { formatDate } from "@/shared/lib/time";
 
-// Structural shapes (a subset of the real domain types — the store's typed arrays
+// Structural shapes (a subset of the real domain types - the store's typed arrays
 // satisfy these, so we avoid coupling to exact type names).
 interface Named { id: string; name: string }
 interface RequestLike { id: string; requestNo?: string | null; vendorId?: string | null; companyId?: string | null; currency?: string | null; requesterId?: string | null }
@@ -56,7 +56,7 @@ export interface ImportEmailMeta {
 }
 
 const B = "/import";
-const dash = "—";
+const dash = "-";
 
 export function makeImportEmail(deps: ImportEmailDeps) {
   const { vendors, companies, items, requests, requestItems, pos, poItems } = deps;
@@ -107,7 +107,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       }));
       const t = totalsOf(lines, input.currency);
       return {
-        subject: `New import requisition — ${vName(input.vendorId)}`,
+        subject: `New import requisition - ${vName(input.vendorId)}`,
         eyebrow: "New requisition", headline: "A purchase requisition needs your approval",
         action: "raised an import requisition",
         rows: [{ label: "Vendor", value: vName(input.vendorId) }, { label: "Company", value: cName(input.companyId) }, t.row, t.itemsRow],
@@ -122,7 +122,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       const req = entity.kind === "request" ? reqOf(entity.requestId) : reqOf(lines[0]?.requestId ?? "");
       const t = totalsOf(lines, req?.currency);
       return {
-        subject: `Approved — ready for PO${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`,
+        subject: `Approved - ready for PO${req?.requestNo ? ` (Req #${req.requestNo})` : ""}`,
         eyebrow: "Approved", headline: "An approved requisition is ready for PO generation",
         action: "approved a requisition",
         docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
@@ -155,7 +155,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       const lines = input.requestItemIds.map(lineOf).filter(Boolean) as LineLike[];
       const t = totalsOf(lines);
       return {
-        subject: `PO ready to share${input.poNo ? ` — PO #${input.poNo}` : ""} (${vName(input.vendorId)})`,
+        subject: `PO ready to share${input.poNo ? ` - PO #${input.poNo}` : ""} (${vName(input.vendorId)})`,
         eyebrow: "PO generated", headline: "A new PO is ready to share with the vendor",
         action: "generated a PO",
         docLabel: input.poNo ? `PO #${input.poNo}` : undefined,
@@ -169,8 +169,8 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     poShared(poId: string, input?: { dispatchDate?: string | null; paymentTerms?: string | null; remarks?: string | null; name?: string | null }): ImportEmailMeta {
       const po = poOf(poId);
       return {
-        subject: `PO shared — collect the PI${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "PO shared", headline: "PO shared with the vendor — collect the PI(s)",
+        subject: `PO shared - collect the PI${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "PO shared", headline: "PO shared with the vendor - collect the PI(s)",
         action: "shared the PO with the vendor",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         rows: [
@@ -188,8 +188,8 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     piAdded(input: { poId: string; vendorPiNo: string; piValue: number; items: Array<{ poItemId: string; qty: number }>; documentName?: string | null }): ImportEmailMeta {
       const po = poOf(input.poId);
       return {
-        subject: `PI collected — advance may be due${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "PI collected", headline: "A PI was added — advance payment may be due",
+        subject: `PI collected - advance may be due${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "PI collected", headline: "A PI was added - advance payment may be due",
         action: "recorded a PI",
         docLabel: `PI #${input.vendorPiNo}`,
         rows: [
@@ -208,8 +208,8 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       const po = poOf(input.poId);
       const cur = input.currency ?? po?.currency ?? "";
       return {
-        subject: `Advance paid — follow up on dispatch${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "Advance paid", headline: "Advance paid — follow up on dispatch",
+        subject: `Advance paid - follow up on dispatch${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "Advance paid", headline: "Advance paid - follow up on dispatch",
         action: "recorded the advance payment",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         rows: [
@@ -227,8 +227,8 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     dispatched(input: { poId: string; actualDispatchDate: string | null; revisedDispatchDate: string | null; lrNo: string | null; transportDetails: string | null; remarks: string | null }): ImportEmailMeta {
       const po = poOf(input.poId);
       return {
-        subject: `Goods dispatched — expect inward${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "Dispatched", headline: "Goods dispatched — expect inward (GRN)",
+        subject: `Goods dispatched - expect inward${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "Dispatched", headline: "Goods dispatched - expect inward (GRN)",
         action: "logged a dispatch update",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         rows: [
@@ -247,8 +247,8 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     grnRecorded(input: { poId: string; poRef?: string | null; piRef?: string | null; gateRegisterNo: string | null; condition: string; note: string | null; items: Array<{ poItemId: string; receivedQty: number; condition: string }> }): ImportEmailMeta {
       const po = poOf(input.poId);
       return {
-        subject: `Goods received (GRN) — book in Tally${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "Goods received", headline: "Goods received (GRN) — book the entry in Tally",
+        subject: `Goods received (GRN) - book in Tally${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "Goods received", headline: "Goods received (GRN) - book the entry in Tally",
         action: "recorded goods receipt (GRN)",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         rows: [
@@ -282,7 +282,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     cancelRequested(poId: string, reason: string): ImportEmailMeta {
       const po = poOf(poId);
       return {
-        subject: `Vendor cancellation requested${po?.poNo ? ` — PO #${po.poNo}` : ""}`,
+        subject: `Vendor cancellation requested${po?.poNo ? ` - PO #${po.poNo}` : ""}`,
         eyebrow: "Cancellation requested", headline: "Vendor cancellation requested for this PO",
         action: "requested a PO cancellation",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
@@ -294,7 +294,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     poCancelled(poId: string, reason: string): ImportEmailMeta {
       const po = poOf(poId);
       return {
-        subject: `PO cancelled${po?.poNo ? ` — PO #${po.poNo}` : ""}`,
+        subject: `PO cancelled${po?.poNo ? ` - PO #${po.poNo}` : ""}`,
         eyebrow: "PO cancelled", headline: "This PO was cancelled",
         action: "cancelled a PO",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
@@ -318,7 +318,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     // Master-data governance
     masterRequested(label: string, name: string): ImportEmailMeta {
       return {
-        subject: `New ${label} requested — "${name}"`,
+        subject: `New ${label} requested - "${name}"`,
         eyebrow: "Master request", headline: `A new ${label} was requested`,
         action: `requested a new ${label}`,
         rows: [{ label: "Name", value: name }],
@@ -327,7 +327,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     },
     masterResolved(label: string, name: string, approved: boolean, note?: string | null): ImportEmailMeta {
       return {
-        subject: approved ? `Your ${label} was approved — "${name}"` : `Your ${label} request was rejected`,
+        subject: approved ? `Your ${label} was approved - "${name}"` : `Your ${label} request was rejected`,
         eyebrow: approved ? "Master approved" : "Master rejected",
         headline: approved ? `Your new ${label} was approved` : `Your ${label} request was rejected`,
         action: approved ? `approved a ${label}` : `rejected a ${label}`,
