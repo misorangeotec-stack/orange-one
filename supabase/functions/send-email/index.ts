@@ -314,13 +314,14 @@ async function compose(row: Row): Promise<Composed | null> {
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     const isSupplies = row.kind.startsWith("office-supplies_");
-    const appLabel = isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    const isProduction = row.kind.startsWith("production-entry_");
+    const appLabel = isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isProduction ? "/production-entry" : isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
