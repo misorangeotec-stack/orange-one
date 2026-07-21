@@ -197,7 +197,7 @@ function cta(link: string, label = "Open task"): string {
 }
 
 /** The full branded email chrome: navy header, accent, body, footer. */
-function emailShell(opts: { eyebrow: string; headline: string; inner: string }): string {
+function emailShell(opts: { eyebrow: string; headline: string; inner: string; tag?: string; footer?: string }): string {
   return `<div style="margin:0;padding:0;background:${PAGE};">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${PAGE};">
   <tr><td align="center" style="padding:26px 12px;">
@@ -205,7 +205,7 @@ function emailShell(opts: { eyebrow: string; headline: string; inner: string }):
       <tr><td bgcolor="${NAVY}" style="background:${NAVY};background:linear-gradient(135deg,${NAVY} 0%,${NAVY2} 100%);padding:19px 32px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
           <td style="font-family:${FONT};font-size:18px;font-weight:800;color:#ffffff;letter-spacing:.2px;"><span style="color:${ORANGE2};">&#9679;</span>&nbsp; Orange One <span style="color:#AEB9CC;font-weight:600;">Hub</span></td>
-          <td align="right" style="font-family:${FONT};font-size:10.5px;font-weight:700;color:#8FA0BC;letter-spacing:1px;text-transform:uppercase;">Task Management</td>
+          <td align="right" style="font-family:${FONT};font-size:10.5px;font-weight:700;color:#8FA0BC;letter-spacing:1px;text-transform:uppercase;">${esc(opts.tag ?? "Task Management")}</td>
         </tr></table>
       </td></tr>
       <tr><td style="height:3px;line-height:3px;font-size:0;background:${ORANGE};background:linear-gradient(90deg,${ORANGE} 0%,${ORANGE2} 100%);">&nbsp;</td></tr>
@@ -215,14 +215,49 @@ function emailShell(opts: { eyebrow: string; headline: string; inner: string }):
         ${opts.inner}
       </td></tr>
       <tr><td style="background:${PAGE};border-top:1px solid ${LINE};padding:18px 32px;font-family:${FONT};font-size:12px;line-height:1.6;color:${GREY2};">
-        <b style="color:${GREY};">Orange One Hub</b> &middot; automated task notification.<br>
-        You're receiving this because you have a task in Orange One. Replies reach the person who acted.
+        ${opts.footer ?? `<b style="color:${GREY};">Orange One Hub</b> &middot; automated task notification.<br>You're receiving this because you have a task in Orange One. Replies reach the person who acted.`}
       </td></tr>
     </table>
     <div style="font-family:${FONT};font-size:11px;color:${GREY2};padding:14px 0 2px;">&copy; Orange O Tec &middot; Orange One Hub</div>
   </td></tr>
 </table>
 </div>`;
+}
+
+// ---- Import FMS email building blocks -------------------------------------
+/** A dark reference chip, e.g. "PO #IMP-1023". */
+function docChip(label: string): string {
+  return `<div style="margin:0 0 18px;"><span style="display:inline-block;background:${NAVY};color:#ffffff;font-family:${FONT};font-size:12px;font-weight:700;padding:6px 13px;border-radius:999px;letter-spacing:.3px;">${esc(label)}</span></div>`;
+}
+/** Key/value detail rows; `sub` renders a muted foreign-currency line. */
+function detailRows(rows: Array<{ label: string; value: string; sub?: string }>): string {
+  if (!rows.length) return "";
+  const body = rows.map((r) => `<tr>
+    <td style="padding:8px 0;font-family:${FONT};font-size:13px;color:${GREY};vertical-align:top;width:40%;border-bottom:1px solid ${LINE};">${esc(r.label)}</td>
+    <td style="padding:8px 0;font-family:${FONT};font-size:14px;color:${NAVY};font-weight:600;text-align:right;border-bottom:1px solid ${LINE};">${esc(r.value)}${r.sub ? `<span style="display:block;font-size:12px;color:${GREY2};font-weight:400;">${esc(r.sub)}</span>` : ""}</td>
+  </tr>`).join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;">${body}</table>`;
+}
+/** Compact line-item list. */
+function itemList(items: Array<{ name: string; meta?: string; value?: string; sub?: string }>): string {
+  if (!items.length) return "";
+  const rows = items.map((it) => `<tr>
+    <td style="padding:9px 13px;font-family:${FONT};font-size:13.5px;color:${NAVY};border-top:1px solid ${LINE};"><b>${esc(it.name)}</b>${it.meta ? `<span style="color:${GREY};font-weight:400;"> &middot; ${esc(it.meta)}</span>` : ""}</td>
+    <td align="right" style="padding:9px 13px;font-family:${FONT};font-size:13.5px;color:${NAVY};font-weight:600;white-space:nowrap;border-top:1px solid ${LINE};">${it.value ? esc(it.value) : ""}${it.sub ? `<span style="display:block;font-size:11.5px;color:${GREY2};font-weight:400;">${esc(it.sub)}</span>` : ""}</td>
+  </tr>`).join("");
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;background:${PAGE};border:1px solid ${LINE};border-radius:11px;overflow:hidden;">
+    <tr><td colspan="2" style="padding:9px 13px;font-family:${FONT};font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:${GREY2};font-weight:700;">Items</td></tr>
+    ${rows}
+  </table>`;
+}
+/** Orange-tinted note/reason box. */
+function noteBox(label: string, text: string): string {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 22px;"><tr>
+    <td style="background:${ORANGE_SOFT};border-radius:10px;padding:13px 16px;font-family:${FONT};">
+      <div style="font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:${ORANGE};font-weight:700;margin-bottom:4px;">${esc(label)}</div>
+      <div style="font-size:14px;line-height:1.55;color:${NAVY};">${esc(text)}</div>
+    </td>
+  </tr></table>`;
 }
 
 interface Row {
@@ -273,6 +308,33 @@ async function compose(row: Row): Promise<Composed | null> {
       subject: `New recurring task from ${actorName}: ${rTitle}`,
       html: emailShell({ eyebrow: "Recurring task", headline: "You've been assigned a recurring task", inner }),
       text: `${actorName} assigned you a recurring task: ${rTitle}\n${recurrence}\n\nOpen: ${listLink}`,
+      replyTo,
+    };
+  }
+  if (row.kind.startsWith("import_")) {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+    const headline = str(p.headline, str(p.text, "Import update"));
+    const eyebrow = str(p.eyebrow, "Import");
+    const ctaPath = str(p.ctaPath, "/import");
+    const link = APP_BASE_URL ? `${APP_BASE_URL}${ctaPath}` : "";
+    const note = (p.note && typeof p.note === "object") ? (p.note as { label?: string; text?: string }) : null;
+    const inner =
+      actorRow(actorName, str(p.action, "updated an import document")) +
+      (p.docLabel ? docChip(str(p.docLabel)) : "") +
+      detailRows(arr(p.rows)) +
+      itemList(arr(p.items)) +
+      (note && note.text ? noteBox(str(note.label, "Note"), str(note.text)) : "") +
+      cta(link, str(p.ctaLabel, "Open in Import"));
+    return {
+      subject: str(p.subject, `${eyebrow}: ${headline}`),
+      html: emailShell({
+        eyebrow, headline, inner,
+        tag: "Purchase · Import",
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; automated Import notification.<br>You're receiving this because you're the next actor on this Import document. Replies reach the person who acted.`,
+      }),
+      text: `${actorName}: ${headline}${p.docLabel ? `\n${str(p.docLabel)}` : ""}\n\nOpen: ${link}`,
       replyTo,
     };
   }
