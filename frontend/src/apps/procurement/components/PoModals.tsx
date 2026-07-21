@@ -13,6 +13,8 @@ import { todayIso, formatDate } from "@/shared/lib/time";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
+import QtyTotal from "./QtyTotal";
+import PoItemsReadout from "./PoItemsReadout";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "./DocLinks";
 import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, TallyBooking } from "../types";
 
@@ -115,7 +117,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined} size="lg" title={editing ? (readOnly ? "PI" : "Edit PI") : "Add PI"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "PI" : "Edit PI") : "Add PI"}
       subtitle={editing
         ? `${po.poNo} · correct what was recorded. Editable until a payment lands against it or goods arrive.`
         : "Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."}
@@ -184,6 +186,17 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
                 );
               })}
             </tbody>
+            {coverage.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-line bg-orange-soft/50">
+                  <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td className="px-3 py-2 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={coverage.map(({ pi }) => ({ qty: pi.qty, unit: s.lineById(pi.requestItemId)?.unit }))} />
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         <Err msg={err} />
@@ -261,7 +274,7 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<PoDocLink po={po} />} size="lg" title={editing ? (readOnly ? "Share Details" : "Edit Share Details") : "Share PO"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<PoDocLink po={po} />} size="2xl" title={editing ? (readOnly ? "Share Details" : "Edit Share Details") : "Share PO"}
       subtitle={editing
         ? `${po.poNo} · correct what was recorded when this PO was shared. Editable until the next step is done.`
         : `${po.poNo} · confirm the terms and dispatch date, attach the PO PDF, then mark it shared with the vendor.`}
@@ -281,6 +294,8 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
             <Hint>Anchors the follow-up due date</Hint>
           </FieldLabel>
         </div>
+
+        <PoItemsReadout po={po} />
 
         <div className="border-t border-line/70" />
 
@@ -478,7 +493,7 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} size="lg" title={editing && !readOnly ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} size="2xl" title={editing && !readOnly ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
       subtitle={editing ? "Correct what was recorded. Editable until goods are received." : due ? `Dispatch due ${formatDate(due)}` : undefined}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Save"}</Button></>}>
       <div className="space-y-3.5">
@@ -607,7 +622,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <GrnPhotoLink grn={editing} /> : undefined} size="lg" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <GrnPhotoLink grn={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until this receipt is booked in Tally.` : `${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : editing ? "Save Changes" : "Record receipt"}</Button></>}>
       <div className="space-y-3.5">
@@ -639,6 +654,20 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
                 );
               })}
             </tbody>
+            {items.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-line bg-orange-soft/50">
+                  <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td className="px-3 py-2 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={items.map((it) => ({ qty: it.qty, unit: s.lineById(it.requestItemId)?.unit }))} />
+                  </td>
+                  <td className="px-3 py-2 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={items.map((it) => ({ qty: it.receivedQty, unit: s.lineById(it.requestItemId)?.unit }))} />
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
         <FieldLabel label="PI Ref" hint="optional">

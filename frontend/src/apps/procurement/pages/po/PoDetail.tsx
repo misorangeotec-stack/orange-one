@@ -10,6 +10,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
+import QtyTotal from "../../components/QtyTotal";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "../../components/DocLinks";
@@ -190,6 +191,24 @@ export default function PoDetail() {
                   );
                 })}
               </tbody>
+              {items.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-line bg-orange-soft/50">
+                    <td className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                    <td />
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      <QtyTotal entries={items.map((pi) => ({ qty: pi.qty, unit: s.lineById(pi.requestItemId)?.unit }))} />
+                    </td>
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      <QtyTotal entries={items.map((pi) => ({ qty: pi.receivedQty, unit: s.lineById(pi.requestItemId)?.unit }))} />
+                    </td>
+                    <td />
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      {inr(items.reduce((sum, pi) => sum + (pi.lineValue ?? 0), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </ScrollableTable>
         )}
@@ -210,6 +229,16 @@ export default function PoDetail() {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-line bg-orange-soft/50">
+                    <td className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                    <td />
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      {inr(pis.reduce((sum, p) => sum + (p.piValue ?? 0), 0))}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
               </table>
             </ScrollableTable>
           )

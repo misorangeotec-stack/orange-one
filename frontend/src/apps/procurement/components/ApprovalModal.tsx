@@ -5,6 +5,7 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 /**
@@ -47,6 +48,8 @@ export default function ApprovalModal({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** Per-line override edits, held as strings so a half-typed cell survives. */
+  const [ovr, setOvr] = useState<Record<string, { qty: string; rate: string; gst: string }>>({});
 
   const requestId = request?.id ?? null;
   const allLines = useMemo(() => (requestId ? s.itemsForRequest(requestId) : []), [requestId, s]);
@@ -65,11 +68,32 @@ export default function ApprovalModal({
           ),
     [allLines, editing, readOnly]
   );
-  const total = lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
+  // In override mode the approver may edit qty/rate/GST per line; the totals below
+  // — and the band this requisition routes to — follow those edits live.
+  const editingOverride = mode === "override" && !readOnly;
+  const effOf = (l: RequestItem) => {
+    if (!editingOverride) {
+      return { qty: l.finalQty ?? l.quantity ?? 0, rate: l.finalRate ?? 0, gst: l.gstPct ?? 0, value: l.lineValue ?? 0 };
+    }
+    const o = ovr[l.id] ?? { qty: "", rate: "", gst: "" };
+    const qty = Number(o.qty) || 0;
+    const rate = Number(o.rate) || 0;
+    const gst = o.gst === "" ? 0 : Number(o.gst) || 0;
+    const value = qty > 0 && rate >= 0 ? Math.round(qty * rate * (1 + gst / 100) * 100) / 100 : 0;
+    return { qty, rate, gst, value };
+  };
+  const total = Math.round(lines.reduce((sum, l) => sum + effOf(l).value, 0) * 100) / 100;
   // Base = qty × rate before GST; GST derived from the total so the three can
   // never disagree with each other.
-  const base = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? 0) * (l.finalRate ?? 0), 0) * 100) / 100;
+  const base = Math.round(lines.reduce((sum, l) => { const e = effOf(l); return sum + e.qty * e.rate; }, 0) * 100) / 100;
   const gst = Math.round((total - base) * 100) / 100;
+  // If the edited total lands in a band the current user can't approve, the save
+  // keeps the numbers but routes it to that band (the RPC enforces this too).
+  const willReroute = editingOverride && lines.length > 0 && !s.canApproveAmount(total);
+  const projectedBand = [...s.approvalBands]
+    .filter((b) => b.active)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.minAmount - b.minAmount)
+    .find((b) => total >= b.minAmount && (b.maxAmount === null || total <= b.maxAmount));
 
   /** The shortlist. Legacy requisitions predate it — fall back to who quoted. */
   const shortlist = useMemo(() => (requestId ? s.vendorsForRequest(requestId) : []), [requestId, s]);
@@ -96,6 +120,7 @@ export default function ApprovalModal({
     setMode("none");
     setOverrideVendor("");
     setReason("");
+    setOvr({});
     setErr(null);
   }, [open, requestId]);
 
@@ -104,9 +129,57 @@ export default function ApprovalModal({
   const recommendedId = shortlist.find((v) => v.isRecommended)?.vendorId ?? lines[0]?.finalVendorId ?? null;
   const onHold = lines.some((l) => l.status === "on_hold");
 
+  /** Enter override mode, seeding the editable cells from the sourced values. */
+  const openOverride = () => {
+    setErr(null);
+    setReason("");
+    setOvr(
+      Object.fromEntries(
+        lines.map((l) => [
+          l.id,
+          {
+            qty: String(l.finalQty ?? l.quantity ?? ""),
+            rate: l.finalRate === null ? "" : String(l.finalRate),
+            gst: l.gstPct === null ? "" : String(l.gstPct),
+          },
+        ])
+      )
+    );
+    setMode("override");
+  };
+
+  const setCell = (lineId: string, field: "qty" | "rate" | "gst", value: string) =>
+    setOvr((prev) => ({ ...prev, [lineId]: { ...(prev[lineId] ?? { qty: "", rate: "", gst: "" }), [field]: value } }));
+
+  const num = "w-24 rounded-lg border border-line px-2 py-1 text-[13px] text-navy focus:outline-none focus:ring-2 focus:ring-orange/30";
+
+  /** Build the per-line override payload from the edited cells. */
+  const overrideLines = () =>
+    lines.map((l) => {
+      const o = ovr[l.id] ?? { qty: "", rate: "", gst: "" };
+      return {
+        requestItemId: l.id,
+        finalQty: o.qty === "" ? (l.finalQty ?? l.quantity) : Number(o.qty),
+        finalRate: o.rate === "" ? l.finalRate : Number(o.rate),
+        gstPct: o.gst === "" ? null : Number(o.gst),
+      };
+    });
+
+  const submitOverride = () => {
+    for (const l of lines) {
+      const o = ovr[l.id] ?? { qty: "", rate: "", gst: "" };
+      const q = o.qty === "" ? (l.finalQty ?? l.quantity) : Number(o.qty);
+      const rt = o.rate === "" ? l.finalRate : Number(o.rate);
+      const name = s.itemById(l.itemId)?.name ?? "item";
+      if (!(Number(q) > 0)) return setErr(`Quantity must be greater than 0 — ${name}.`);
+      if (rt === null || rt === undefined || !(Number(rt) >= 0)) return setErr(`Enter a rate of 0 or more — ${name}.`);
+    }
+    run("override", { overrideVendorId: overrideVendor || undefined, reason: reason.trim() || undefined, lines: overrideLines() });
+  };
+
   const run = async (
     decision: "approve" | "override" | "reject" | "hold" | "resume",
-    extra?: { overrideVendorId?: string; reason?: string }
+    extra?: { overrideVendorId?: string; reason?: string; lines?: { requestItemId: string; finalQty: number | null; finalRate: number | null; gstPct: number | null }[] }
   ) => {
     setErr(null);
     setBusy(true);
@@ -118,13 +191,21 @@ export default function ApprovalModal({
           decision,
           overrideVendorId: extra?.overrideVendorId ?? null,
           reason: extra?.reason ?? null,
+          lines: extra?.lines ?? null,
         });
       } else {
-        await s.decideApprovalRequest({ requestId: request.id, decision, ...extra });
+        await s.decideApprovalRequest({
+          requestId: request.id,
+          decision,
+          overrideVendorId: extra?.overrideVendorId ?? null,
+          reason: extra?.reason ?? null,
+          lines: extra?.lines ?? null,
+        });
       }
       setMode("none");
       setOverrideVendor("");
       setReason("");
+      setOvr({});
       onSaved?.();
       onClose();
     } catch (e) {
@@ -182,7 +263,7 @@ export default function ApprovalModal({
           </p>
         )}
 
-        {/* ---- the items, read-only ---- */}
+        {/* ---- the items — editable in override mode, read-only otherwise ---- */}
         <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full min-w-[560px] text-[13px]">
             <thead>
@@ -196,19 +277,36 @@ export default function ApprovalModal({
               </tr>
             </thead>
             <tbody>
-              {lines.map((l) => (
-                <tr key={l.id} className="border-b border-line/70 last:border-0">
-                  {/* Item NAME only — matches the sourcing grid. */}
-                  <td className="px-3 py-2 font-medium text-navy whitespace-nowrap">{s.itemById(l.itemId)?.name ?? "—"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">
-                    {l.finalQty ?? l.quantity} {l.unit}
-                  </td>
-                  <td className="px-3 py-2">{inr(l.finalRate)}</td>
-                  <td className="px-3 py-2">{l.gstPct ?? "—"}</td>
-                  <td className="px-3 py-2">{l.leadTimeDays === null ? "—" : `${l.leadTimeDays}d`}</td>
-                  <td className="px-3 py-2 text-right font-semibold text-navy whitespace-nowrap">{inr(l.lineValue)}</td>
-                </tr>
-              ))}
+              {lines.map((l) => {
+                const e = effOf(l);
+                const o = ovr[l.id] ?? { qty: "", rate: "", gst: "" };
+                return (
+                  <tr key={l.id} className="border-b border-line/70 last:border-0">
+                    {/* Item NAME only — matches the sourcing grid. */}
+                    <td className="px-3 py-2 font-medium text-navy whitespace-nowrap">{s.itemById(l.itemId)?.name ?? "—"}</td>
+                    {editingOverride ? (
+                      <>
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-1.5">
+                            <input type="number" className={num} value={o.qty} onChange={(ev) => setCell(l.id, "qty", ev.target.value)} />
+                            {l.unit && <span className="shrink-0 text-[11.5px] text-grey-2">{l.unit}</span>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2"><input type="number" className={num} value={o.rate} onChange={(ev) => setCell(l.id, "rate", ev.target.value)} /></td>
+                        <td className="px-3 py-2"><input type="number" className={num} value={o.gst} onChange={(ev) => setCell(l.id, "gst", ev.target.value)} /></td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-3 py-2 whitespace-nowrap">{e.qty} {l.unit}</td>
+                        <td className="px-3 py-2">{inr(l.finalRate)}</td>
+                        <td className="px-3 py-2">{l.gstPct ?? "—"}</td>
+                      </>
+                    )}
+                    <td className="px-3 py-2">{l.leadTimeDays === null ? "—" : `${l.leadTimeDays}d`}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-navy whitespace-nowrap">{inr(e.value)}</td>
+                  </tr>
+                );
+              })}
               {lines.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-3 py-4 text-center text-[12.5px] text-grey-2">
@@ -217,13 +315,21 @@ export default function ApprovalModal({
                 </tr>
               )}
             </tbody>
+            {lines.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-line bg-orange-soft/50">
+                  <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td className="px-3 py-2 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={lines.map((l) => ({ qty: effOf(l).qty, unit: l.unit }))} />
+                  </td>
+                  <td className="px-3 py-2" />
+                  <td className="px-3 py-2 font-bold text-navy whitespace-nowrap">{inr(gst)}</td>
+                  <td className="px-3 py-2" />
+                  <td className="px-3 py-2 text-right font-bold text-navy whitespace-nowrap">{inr(total)}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-2 rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
-          <Money label="Base" value={base} />
-          <Money label="GST" value={gst} />
-          <Money label="Total (incl. GST)" value={total} strong />
         </div>
 
         {/* ---- the decision: what was made, or the controls to make one ---- */}
@@ -231,12 +337,16 @@ export default function ApprovalModal({
           <DecisionReadout lines={lines} tier={lines.find((l) => l.approvalTier)?.approvalTier ?? null} />
         ) : mode === "override" ? (
           <div className="space-y-2.5">
-            <FieldLabel label="Override vendor" required hint="applies to every item on this requisition">
+            <p className="text-[11.5px] text-grey-2">
+              Edit any item's quantity, rate or GST in the table above, and/or switch the vendor. Leave the vendor blank to
+              keep the sourced one.
+            </p>
+            <FieldLabel label="Override vendor" hint="optional — keeps the sourced vendor if left blank">
               <Combobox
                 value={overrideVendor}
                 onChange={setOverrideVendor}
                 options={overrideOptions}
-                placeholder="Pick a shortlisted vendor"
+                placeholder="Keep current vendor"
                 autoAdvance
               />
             </FieldLabel>
@@ -245,20 +355,24 @@ export default function ApprovalModal({
                 rows={2}
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Reason for overriding the recommendation…"
+                placeholder="Reason for the override…"
               />
             </FieldLabel>
+            {willReroute && (
+              <p className="rounded-xl bg-[#FFF7E6] px-3.5 py-2.5 text-[12px] text-yellow">
+                This raises the total to <strong>{inr(total)}</strong>
+                {projectedBand ? <> — tier <strong>{projectedBand.tierLabel}</strong></> : null}, above your approval limit.
+                Saving keeps these changes and routes it to{" "}
+                <strong>
+                  {s.approversForAmount(total).map((id) => s.profileById(id)?.name ?? "—").join(", ") ||
+                    "that tier's approver"}
+                </strong>{" "}
+                for approval.
+              </p>
+            )}
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() =>
-                  overrideVendor
-                    ? run("override", { overrideVendorId: overrideVendor, reason: reason.trim() || undefined })
-                    : setErr("Pick a vendor.")
-                }
-                disabled={busy}
-              >
-                Confirm override
+              <Button size="sm" onClick={submitOverride} disabled={busy || lines.length === 0}>
+                {willReroute ? "Save & route for approval" : "Confirm override"}
               </Button>
               <Button variant="ghost" size="sm" onClick={() => setMode("none")} disabled={busy}>
                 Back
@@ -310,11 +424,7 @@ export default function ApprovalModal({
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => {
-                setErr(null);
-                setReason("");
-                setMode("override");
-              }}
+              onClick={openOverride}
               disabled={busy || lines.length === 0}
             >
               Override
@@ -389,18 +499,6 @@ function DecisionReadout({ lines, tier }: { lines: RequestItem[]; tier: string |
           <strong className="text-navy">Reason:</strong> {r}
         </p>
       ))}
-    </div>
-  );
-}
-
-/** One figure in the Base / GST / Total strip. */
-function Money({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
-  return (
-    <div className="text-right">
-      <div className="text-[11.5px] text-grey-2">{label}</div>
-      <div className={strong ? "text-[15px] font-bold text-navy" : "text-[13px] font-semibold text-grey"}>
-        {inr(value)}
-      </div>
     </div>
   );
 }

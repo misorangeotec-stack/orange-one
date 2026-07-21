@@ -153,6 +153,7 @@ import {
   type SourcingVendorInput,
   type SourcingLineInput,
   type ApprovalDecision,
+  type ApprovalLineOverride,
   type PiItemInput,
   type GrnItemInput,
 } from "./data/procWrites";
@@ -344,6 +345,9 @@ interface ProcurementStoreValue {
    * an approver sees a row they cannot submit.
    */
   canApproveRequest: (r: PurchaseRequest) => boolean;
+  /** Whether the current user could approve a requisition of this total — used to
+   *  preview whether an at-approval override would re-route to a higher band. */
+  canApproveAmount: (amount: number) => boolean;
   canSharePo: boolean;
   canCollectPi: boolean;
   canRecordPayment: boolean;
@@ -373,10 +377,10 @@ interface ProcurementStoreValue {
     lines: SourcingLineInput[];
     sourcingReason: string | null;
   }) => Promise<void>;
-  /** Stage 3 — one decision for the whole requisition, banded on its total. */
-  decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
-  /** Stage 3 correction — change an already-approved requisition's decision. */
-  updateApprovalRequest: (input: { requestId: string; decision: Exclude<ApprovalDecision, "hold" | "resume">; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
+  /** Stage 3 — one decision for the whole requisition, banded on its total. Returns 'approved' | 'rerouted' | 'ok'. */
+  decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null; lines?: ApprovalLineOverride[] | null }) => Promise<string>;
+  /** Stage 3 correction — change an already-approved requisition's decision. Returns 'approved' | 'rerouted' | 'ok'. */
+  updateApprovalRequest: (input: { requestId: string; decision: Exclude<ApprovalDecision, "hold" | "resume">; overrideVendorId?: string | null; reason?: string | null; lines?: ApprovalLineOverride[] | null }) => Promise<string>;
   /** @deprecated per-LINE; kept for legacy mixed-vendor requisitions. */
   saveSourcing: (input: {
     requestItemId: string;
@@ -626,6 +630,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     const requestApprovalTotalOf = (requestId: string) => requestApprovalTotal(procIndex, requestId);
     const canApproveRequest = (r: PurchaseRequest): boolean =>
       isAdmin || approversForAmount(requestApprovalTotalOf(r.id)).includes(user.id);
+    const canApproveAmount = (amount: number): boolean =>
+      isAdmin || approversForAmount(amount).includes(user.id);
 
     // ---- PO cancellation helpers (approver-only, vendor-requested) ----
     const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
@@ -782,6 +788,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       canApproveLine,
       canEditRequest,
       canApproveRequest,
+      canApproveAmount,
 
       // ---- PO lifecycle data + selectors ----
       pis,
@@ -865,11 +872,18 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         await invalidate();
       },
       decideApprovalRequest: async (input) => {
-        await decideApprovalRequestWrite(input);
+        const result = await decideApprovalRequestWrite(input);
         const requesterOfRequest = (requestId: string) => {
           const r = requests.find((x) => x.id === requestId);
           return r?.requesterId ? [r.requesterId] : [];
         };
+        // An override that crossed into a higher band was NOT approved — it went
+        // back to `approval` and the RPC already notified the new band. Skip the
+        // "ready for PO" announce, which would be a lie.
+        if (result === "rerouted") {
+          await invalidate();
+          return result;
+        }
         if (input.decision === "approve" || input.decision === "override") {
           await safeAnnounce({
             entityType: "request",
@@ -899,11 +913,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           });
         }
         await invalidate();
+        return result;
       },
       updateApprovalRequest: async (input) => {
         // The RPC announces the correction itself, in the same transaction.
-        await updateApprovalRequestWrite(input);
+        const result = await updateApprovalRequestWrite(input);
         await invalidate();
+        return result;
       },
       saveSourcing: async (input) => {
         await saveSourcingWrite(input);

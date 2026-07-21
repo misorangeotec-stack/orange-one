@@ -83,6 +83,19 @@ export default function SourcingQueue() {
       filter: { kind: "text", get: (e) => itemSummary(e.row).text },
     },
     { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
+    {
+      key: "qty", header: "Total Qty",
+      cell: (e) => {
+        const u = qtyUnit(e.row);
+        return (
+          <span title={u.title}>
+            {totalQty(e.row)}
+            {u.label && <span className="ml-1 text-[11.5px] text-grey-2">{u.label}</span>}
+          </span>
+        );
+      },
+      sortValue: (e) => totalQty(e.row), filter: { kind: "number", get: (e) => totalQty(e.row) }, tdClassName: "whitespace-nowrap",
+    },
     { key: "value", header: "Request Value", cell: (e) => inr(sourcedValue(e.row)), sortValue: (e) => sourcedValue(e.row), filter: { kind: "number", get: (e) => sourcedValue(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "sourcedAt", header: "Sourced On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     {

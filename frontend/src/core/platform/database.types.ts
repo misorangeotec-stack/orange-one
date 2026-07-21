@@ -7547,11 +7547,12 @@ export type Database = {
       fms_purchase_decide_approval_request: {
         Args: {
           p_decision: string
+          p_lines?: Json
           p_override_vendor_id?: string
           p_reason?: string
           p_request_id: string
         }
-        Returns: undefined
+        Returns: string
       }
       fms_purchase_decline_po_cancel: {
         Args: { p_note?: string; p_request_id: string }
@@ -7721,11 +7722,12 @@ export type Database = {
       fms_purchase_update_approval_request: {
         Args: {
           p_decision: string
+          p_lines?: Json
           p_override_vendor_id?: string
           p_reason?: string
           p_request_id: string
         }
-        Returns: undefined
+        Returns: string
       }
       fms_purchase_update_followup: {
         Args: {

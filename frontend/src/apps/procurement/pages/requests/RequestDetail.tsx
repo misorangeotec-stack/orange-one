@@ -10,6 +10,7 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
+import QtyTotal from "../../components/QtyTotal";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -197,6 +198,21 @@ export default function RequestDetail() {
                 );
               })}
             </tbody>
+            {lines.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-line bg-orange-soft/50 align-middle">
+                  <td className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={lines.map((l) => ({ qty: l.quantity, unit: l.unit }))} />
+                  </td>
+                  <td colSpan={4} />
+                  <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                    {inr(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0))}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </ScrollableTable>
       </Card>

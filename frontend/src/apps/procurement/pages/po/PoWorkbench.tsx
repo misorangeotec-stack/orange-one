@@ -15,6 +15,7 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
 import PoModal from "../../components/PoModal";
+import PoItemsReadout from "../../components/PoItemsReadout";
 import type { StageEntry } from "../../lib/queues";
 import type { PurchaseRequest, RequestItem, PurchaseOrder } from "../../types";
 
@@ -216,6 +217,7 @@ export default function PoWorkbench() {
         open={editPo.row !== null}
         readOnly={editPo.isView}
         onClose={editPo.close}
+        size="2xl"
         title={editPo.isView ? "PO Number" : "Edit PO Number"}
         subtitle={editPo.row ? `${editPo.row.poNo} · editable until the PO is shared with the vendor.` : undefined}
         footer={
@@ -233,10 +235,11 @@ export default function PoWorkbench() {
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-3.5">
           <FieldLabel label="PO Number" required>
             <TextInput value={poNo} onChange={(e) => setPoNo(e.target.value)} />
           </FieldLabel>
+          {editPo.row && <PoItemsReadout po={editPo.row} />}
           {editErr && <p className="text-[12.5px] text-ryg-red">{editErr}</p>}
         </div>
       </Modal>
