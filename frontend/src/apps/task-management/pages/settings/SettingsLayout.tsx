@@ -7,6 +7,7 @@ export default function SettingsLayout() {
     { to: "/task-management/settings", label: "Organization", end: true },
     { to: "/task-management/settings/locations", label: "Locations" },
     { to: "/task-management/settings/permissions", label: "Permissions" },
+    { to: "/task-management/settings/notifications", label: "Notifications" },
   ];
 
   return (

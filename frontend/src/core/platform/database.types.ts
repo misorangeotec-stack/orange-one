@@ -6730,6 +6730,27 @@ export type Database = {
           },
         ]
       }
+      email_module_settings: {
+        Row: {
+          enabled: boolean
+          module_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          module_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          module_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       workspace_settings: {
         Row: {
           id: boolean
@@ -6762,6 +6783,11 @@ export type Database = {
       add_task_remark: {
         Args: { p_mentioned?: string[]; p_note: string; p_task_id: string }
         Returns: string
+      }
+      email_module_enabled: { Args: { p_module: string }; Returns: boolean }
+      set_email_module_enabled: {
+        Args: { p_enabled: boolean; p_module: string }
+        Returns: undefined
       }
       app_mobile_has_access: { Args: never; Returns: boolean }
       fms_complete_stage: {
