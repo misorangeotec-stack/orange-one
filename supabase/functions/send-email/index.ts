@@ -311,28 +311,35 @@ async function compose(row: Row): Promise<Composed | null> {
       replyTo,
     };
   }
-  if (row.kind.startsWith("import_")) {
+  // Shared FMS renderer — payload-driven, used by every purchase-family FMS
+  // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
+  // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_")) {
+    const isProc = row.kind.startsWith("procurement_");
+    const appLabel = isProc ? "RM Domestic" : "Import";
+    const basePath = isProc ? "/procurement" : "/import";
+    const tag = isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
-    const headline = str(p.headline, str(p.text, "Import update"));
-    const eyebrow = str(p.eyebrow, "Import");
-    const ctaPath = str(p.ctaPath, "/import");
+    const headline = str(p.headline, str(p.text, `${appLabel} update`));
+    const eyebrow = str(p.eyebrow, appLabel);
+    const ctaPath = str(p.ctaPath, basePath);
     const link = APP_BASE_URL ? `${APP_BASE_URL}${ctaPath}` : "";
     const note = (p.note && typeof p.note === "object") ? (p.note as { label?: string; text?: string }) : null;
     const inner =
-      actorRow(actorName, str(p.action, "updated an import document")) +
+      actorRow(actorName, str(p.action, `updated a ${appLabel} document`)) +
       (p.docLabel ? docChip(str(p.docLabel)) : "") +
       detailRows(arr(p.rows)) +
       itemList(arr(p.items)) +
       (note && note.text ? noteBox(str(note.label, "Note"), str(note.text)) : "") +
-      cta(link, str(p.ctaLabel, "Open in Import"));
+      cta(link, str(p.ctaLabel, `Open in ${appLabel}`));
     return {
       subject: str(p.subject, `${eyebrow}: ${headline}`),
       html: emailShell({
         eyebrow, headline, inner,
-        tag: "Purchase · Import",
-        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; automated Import notification.<br>You're receiving this because you're the next actor on this Import document. Replies reach the person who acted.`,
+        tag,
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; automated ${appLabel} notification.<br>You're receiving this because you're the next actor on this ${appLabel} document. Replies reach the person who acted.`,
       }),
       text: `${actorName}: ${headline}${p.docLabel ? `\n${str(p.docLabel)}` : ""}\n\nOpen: ${link}`,
       replyTo,

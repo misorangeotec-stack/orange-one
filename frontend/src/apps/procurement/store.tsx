@@ -41,6 +41,7 @@ import type {
 import { STEPS, type StepKey } from "./lib/steps";
 import { ownerResolver } from "./lib/owners";
 import { masterTypeLabel } from "./lib/masterFields";
+import { makeProcurementEmail } from "./lib/emailMeta";
 import {
   buildProcIndex,
   buildQueueEntries,
@@ -688,6 +689,11 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       }
     };
 
+    // Per-step email content (rendered by the send-email edge fn when the
+    // 'procurement' email module is ON). Built from the same arrays the
+    // selectors use, so numbers/labels match the screens.
+    const email = makeProcurementEmail({ vendors, companies, categories, items, requests, requestItems, pos, poItems });
+
     return {
       companies,
       categories,
@@ -850,6 +856,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "submitted",
           text: "New purchase request raised — awaiting sourcing",
           recipients: ownerIdsOf("sourcing"),
+          meta: email.submitted(input),
         });
         await invalidate();
         return id;
@@ -868,6 +875,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "sourced",
           text: `A sourced requisition (${input.lines.length} item${input.lines.length === 1 ? "" : "s"}) needs your approval`,
           recipients: approversForAmount(total),
+          meta: email.sourced({
+            requestId: input.requestId,
+            recommendedVendorId: input.recommendedVendorId,
+            vendorCount: input.vendors.length,
+            lines: input.lines,
+          }),
         });
         await invalidate();
       },
@@ -894,6 +907,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
                 ? `An approved requisition (vendor overridden) is ready for PO generation${input.reason ? ` — ${input.reason}` : ""}`
                 : "An approved requisition is ready for PO generation",
             recipients: ownerIdsOf("po"),
+            meta: email.approved({ kind: "request", requestId: input.requestId }, input.decision === "override" ? input.reason : null),
           });
         } else if (input.decision === "reject") {
           await safeAnnounce({
@@ -902,6 +916,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             type: "rejected",
             text: `A requisition was rejected${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfRequest(input.requestId),
+            meta: email.declined({ kind: "request", requestId: input.requestId }, "rejected", input.reason),
           });
         } else if (input.decision === "hold") {
           await safeAnnounce({
@@ -910,6 +925,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             type: "on_hold",
             text: `A requisition was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfRequest(input.requestId),
+            meta: email.declined({ kind: "request", requestId: input.requestId }, "on_hold", input.reason),
           });
         }
         await invalidate();
@@ -930,6 +946,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "sourced",
           text: "A sourced line needs your approval",
           recipients: approversForAmount(lineValue),
+          meta: email.sourcedLine({
+            requestItemId: input.requestItemId,
+            finalQty: input.finalQty,
+            finalRate: input.finalRate,
+            gstPct: input.gstPct ?? null,
+          }),
         });
         await invalidate();
       },
@@ -945,6 +967,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
                 ? `An approved line (vendor overridden) is ready for PO generation${input.reason ? ` — ${input.reason}` : ""}`
                 : "An approved line is ready for PO generation",
             recipients: ownerIdsOf("po"),
+            meta: email.approved({ kind: "line", requestItemId: input.requestItemId }, input.decision === "override" ? input.reason : null),
           });
         } else if (input.decision === "reject") {
           await safeAnnounce({
@@ -953,6 +976,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             type: "rejected",
             text: `A requested line was rejected${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfLine(input.requestItemId),
+            meta: email.declined({ kind: "line", requestItemId: input.requestItemId }, "rejected", input.reason),
           });
         } else if (input.decision === "hold") {
           await safeAnnounce({
@@ -961,6 +985,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             type: "on_hold",
             text: `A requested line was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfLine(input.requestItemId),
+            meta: email.declined({ kind: "line", requestItemId: input.requestItemId }, "on_hold", input.reason),
           });
         }
         await invalidate();
@@ -973,6 +998,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "po_generated",
           text: "A new PO is ready to share with the vendor",
           recipients: ownerIdsOf("share_po"),
+          meta: email.poGenerated({
+            poId: id,
+            vendorId: input.vendorId,
+            companyId: input.companyId,
+            requestItemIds: input.requestItemIds,
+            poNo: input.poNo ?? null,
+          }),
         });
         await invalidate();
         return id;
@@ -985,6 +1017,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "cancelled",
           text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
           recipients: requesterOfLine(requestItemId),
+          meta: email.lineCancelled(requestItemId, reason),
         });
         await invalidate();
       },
@@ -1005,6 +1038,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "request_cancelled",
           text: `A purchase request was cancelled${reason ? ` — ${reason}` : ""}`,
           recipients: ownerIdsOf("sourcing"),
+          meta: email.requestCancelled(requestId, reason),
         });
         await invalidate();
       },
@@ -1019,6 +1053,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "cancel_requested",
           text: `Vendor cancellation requested for this PO — ${reason}`,
           recipients: po ? poApproverIds(po) : [],
+          meta: email.cancelRequested(poId, reason),
         });
         await invalidate();
         return id;
@@ -1035,6 +1070,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             ...(req?.requestedBy ? [req.requestedBy] : []),
             ...ownerIdsOf("share_po"),
           ],
+          meta: email.poCancelled(poId, reason),
         });
         await invalidate();
       },
@@ -1047,6 +1083,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "cancel_declined",
           text: `Cancellation request declined${note ? ` — ${note}` : ""}`,
           recipients: req?.requestedBy ? [req.requestedBy] : [],
+          meta: email.cancelDeclined(req?.poId ?? "", note),
         });
         await invalidate();
       },
@@ -1060,6 +1097,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "po_shared",
           text: "PO shared with the vendor — collect the PI(s)",
           recipients: ownerIdsOf("collect_pi"),
+          meta: email.poShared(poId, {
+            dispatchDate: input?.dispatchDate ?? null,
+            paymentTerms: input?.paymentTerms ?? null,
+            remarks: input?.remarks ?? null,
+            name: input?.name ?? null,
+          }),
         });
         await invalidate();
       },
@@ -1087,6 +1130,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "pi_added",
           text: "A PI was added — advance payment may be due",
           recipients: ownerIdsOf("advance_payment"),
+          meta: email.piAdded({
+            poId: input.poId,
+            vendorPiNo: input.vendorPiNo,
+            piValue: input.piValue,
+            items: input.items,
+            documentName: input.documentName ?? null,
+          }),
         });
         await invalidate();
         return id;
@@ -1108,6 +1158,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
               ? "Advance paid — follow up on dispatch"
               : "An installment payment was recorded",
           recipients: input.kind === "advance" ? ownerIdsOf("follow_up") : [],
+          meta:
+            input.kind === "advance"
+              ? email.advancePaid({
+                  poId: input.poId,
+                  amount: input.amount,
+                  paidOn: input.paidOn,
+                  utrRef: input.utrRef,
+                  piRemarks: input.piRemarks ?? null,
+                })
+              : undefined,
         });
         await invalidate();
         return id;
@@ -1121,6 +1181,14 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             type: "dispatched",
             text: "Goods dispatched — expect inward (GRN)",
             recipients: ownerIdsOf("inward"),
+            meta: email.dispatched({
+              poId: input.poId,
+              actualDispatchDate: input.actualDispatchDate,
+              revisedDispatchDate: input.revisedDispatchDate,
+              lrNo: input.lrNo,
+              transportDetails: input.transportDetails,
+              remarks: input.remarks,
+            }),
           });
         }
         await invalidate();
@@ -1133,6 +1201,15 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "grn_recorded",
           text: "Goods received (GRN) — book the entry in Tally",
           recipients: ownerIdsOf("tally"),
+          meta: email.grnRecorded({
+            poId: input.poId,
+            poRef: input.poRef ?? null,
+            piRef: input.piRef ?? null,
+            gateRegisterNo: input.gateRegisterNo,
+            condition: input.condition,
+            note: input.note,
+            items: input.items,
+          }),
         });
         await invalidate();
         return id;
@@ -1171,6 +1248,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "nudge",
           text: `Reminder: ${label} is waiting on you`,
           recipients,
+          meta: email.reminder("nudge", label),
         });
         await invalidate();
       },
@@ -1181,6 +1259,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "escalate",
           text: `Escalated: ${label} is stuck and needs attention`,
           recipients: processCoordinatorIds,
+          meta: email.reminder("escalate", label),
         });
         await invalidate();
       },
@@ -1268,7 +1347,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "master_requested",
           text: `requested a new ${masterTypeLabel(masterType)} — “${name}”. Review it.`,
           recipients: masterReviewersFor(masterType),
-          meta: { masterType },
+          meta: { masterType, ...email.masterRequested(masterTypeLabel(masterType), name) },
         });
         await invalidate();
         return id;
@@ -1288,7 +1367,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
             ? `approved your ${label} request — “${name}” is now selectable.`
             : `rejected your ${label} request — “${name}”${note ? `: ${note}` : "."}`,
           recipients: req?.requestedBy ? [req.requestedBy] : [],
-          meta: { masterType: req?.masterType, resolvedMasterId: newId },
+          meta: { masterType: req?.masterType, resolvedMasterId: newId, ...email.masterResolved(label, name, approve, note) },
         });
         await invalidate();
         return newId;
