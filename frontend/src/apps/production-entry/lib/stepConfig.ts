@@ -58,10 +58,10 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record handover",
     description: "Job cards awaiting the raw-material handover to be confirmed.",
     completedBlurb: "Handovers you record appear here, and stay revisable until the transfer slip is created.",
+    // The date auto-stamps on save and the per-raw-material handover grid (actual
+    // qty + issue lot no) is rendered by StepModal itself — only RM Book No. and
+    // Remarks are plain fields here.
     fields: [
-      { key: "mh_actual_date", label: "Actual date of handover", kind: "date", get: (r) => s(r.mhActualDate), hint: "defaults to today if left blank" },
-      { key: "mh_status", label: "Status of transfer slip", kind: "status", get: (r) => s(r.mhStatus) },
-      { key: "mh_qty", label: "Qty", kind: "number", get: (r) => n(r.mhQty) },
       { key: "rm_book_no", label: "RM Book No.", kind: "text", get: (r) => s(r.rmBookNo) },
       { key: "mh_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.mhRemarks) },
     ],

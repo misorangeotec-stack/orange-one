@@ -49,8 +49,10 @@ export async function submitRequest(input: RequestInput): Promise<string> {
 
 /* ------------------------------- stage records ---------------------------- */
 
-/** payload keys are the jsonb keys the matching RPC reads (see lib/stepConfig.ts). */
-export type StepPayload = Record<string, string>;
+/** payload keys are the jsonb keys the matching RPC reads (see lib/stepConfig.ts).
+ *  Values are usually strings, but a step may send structured data (e.g. the
+ *  material handover's `mh_bom_lines` array), so the value type is unknown. */
+export type StepPayload = Record<string, unknown>;
 
 const RECORD_RPC: Record<QueueStep, string> = {
   material_handover: "fms_production_record_material_handover",

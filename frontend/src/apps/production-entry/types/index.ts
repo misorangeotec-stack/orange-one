@@ -43,6 +43,15 @@ export interface BomLine {
   unitId: string | null;
 }
 
+/** One raw-material line of the material handover: the ACTUAL qty handed over
+ *  and its issue lot number (pre-filled from the issue-slip BomLine). */
+export interface HandoverBomLine {
+  rawMaterialId: string | null;
+  unitId: string | null;
+  qty: number | null;
+  lotNo: string | null;
+}
+
 export interface ProductionRequest {
   id: string;
   reqNo: string;
@@ -71,6 +80,7 @@ export interface ProductionRequest {
   mhActualDate: string | null;
   mhStatus: string | null;
   mhQty: number | null;
+  mhBomLines: HandoverBomLine[];
   rmBookNo: string | null;
   mhRemarks: string | null;
   mhAt: string | null;
