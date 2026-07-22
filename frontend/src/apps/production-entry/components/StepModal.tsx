@@ -114,9 +114,12 @@ export default function StepModal({
   const isHandover = stepKey === "material_handover";
   const isRmTransfer = stepKey === "rm_transfer";
   const isLogBook = stepKey === "transfer_slip";
+  const isProduction = stepKey === "production_entry";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
+  const [prodScrap, setProdScrap] = useState("");
+  const [prodLab, setProdLab] = useState("");
   const [qtyFallback, setQtyFallback] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [logFile, setLogFile] = useState<File | null>(null);
@@ -162,6 +165,8 @@ export default function StepModal({
       setValues(seed);
       setHoRows(isHandover ? seedHandoverRows(request) : []);
       setLogRows(isLogBook ? seedLogRows(request) : []);
+      setProdScrap(isProduction && request.scrapQty != null ? String(request.scrapQty) : "");
+      setProdLab(isProduction && request.peLabQty != null ? String(request.peLabQty) : "");
       setQtyFallback(isHandover && request.mhBomLines.length === 0 ? (request.mhQty != null ? String(request.mhQty) : "") : "");
       setFile(null);
       setLogFile(null);
@@ -171,7 +176,7 @@ export default function StepModal({
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, request, cfg, isHandover, isLogBook]);
+  }, [open, request, cfg, isHandover, isLogBook, isProduction]);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
@@ -238,6 +243,15 @@ export default function StepModal({
         // else editing with an existing attachment: omit the keys → RPC keeps it.
       }
 
+      if (isProduction) {
+        const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
+        const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
+        payload.pe_expected_qty = String(expected);
+        payload.scrap_qty = prodScrap;
+        payload.actual_qty = String(output);
+        payload.pe_lab_qty = prodLab;
+      }
+
       if (cfg.hasAttachment && file) {
         const up = await uploadQualityDocument(request.id, file);
         payload.qc_attachment_path = up.path;
@@ -291,7 +305,7 @@ export default function StepModal({
         {(isHandover || isLogBook || isRmTransfer) && request && (
           <div className="rounded-xl bg-page px-3.5 py-3 space-y-1.5">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Job Card</span>
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lot/Batch Card</span>
               <Link
                 to={`/production-entry/requests/${request.id}`}
                 onClick={onClose}
@@ -468,6 +482,69 @@ export default function StepModal({
             </FieldLabel>
           </>
         )}
+
+        {isProduction && request && (() => {
+          const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
+          const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
+          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+          const val = "text-[15px] font-bold text-navy tabular-nums";
+          return (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 rounded-xl bg-page px-3.5 py-3">
+                <div>
+                  <div className={cap}>FG Item</div>
+                  <div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div>
+                </div>
+                <div>
+                  <div className={cap}>Expected Qty</div>
+                  <div className={val}>{expected}</div>
+                </div>
+                <FieldLabel label="Scrap Qty">
+                  <TextInput type="number" disabled={readOnly} className="px-2.5 py-1.5 text-[13.5px]" value={prodScrap} onChange={(e) => setProdScrap(e.target.value)} placeholder="0" />
+                </FieldLabel>
+                <div>
+                  <div className={cap}>Actual Output</div>
+                  <div className={val}>{output}</div>
+                </div>
+                <FieldLabel label="Lab Testing Qty">
+                  <TextInput type="number" disabled={readOnly} className="px-2.5 py-1.5 text-[13.5px]" value={prodLab} onChange={(e) => setProdLab(e.target.value)} placeholder="0" />
+                </FieldLabel>
+              </div>
+
+              {request.tsBomLines.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[13px] font-medium text-navy">Raw materials (from log book)</span>
+                  <div className="rounded-xl border border-line overflow-x-auto">
+                    <table className="w-full text-[13px]">
+                      <thead>
+                        <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                          <th className="font-medium px-3 py-2 min-w-[200px]">Raw Material</th>
+                          <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
+                          <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Handover</th>
+                          <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Actual Use</th>
+                          <th className="font-medium px-2 py-2 w-16">Unit</th>
+                          <th className="font-medium px-2 py-2 w-40 whitespace-nowrap">Issue Lot No.</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {request.tsBomLines.map((l, i) => (
+                          <tr key={i} className="border-b border-line/70 last:border-0">
+                            <td className="px-3 py-2 text-navy">{l.rawMaterialName || s.rawMaterialById(l.rawMaterialId)?.name || "—"}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.requestedQty)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.handoverQty)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.actualUse)}</td>
+                            <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                            <td className="px-2 py-2 text-grey">{l.lotNo || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {isRmTransfer && request && request.mhBomLines.length > 0 && (
           <div className="space-y-1.5">

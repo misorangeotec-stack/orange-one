@@ -42,7 +42,7 @@ export function buildProductionNav(opts: {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     ...(opts.hasRequests ? [{ label: "All Job Cards", to: `${B}/requests`, icon: ic.list }] : []),
-    { label: "Generate Issue Slip", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
+    { label: "Generate Batch Card", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
     { label: "My Job Cards", to: `${B}/my-requests`, icon: ic.mine },
     { label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests },
   ];

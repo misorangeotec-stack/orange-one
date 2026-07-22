@@ -124,8 +124,10 @@ export interface ProductionRequest {
   // step 4: production_entry
   peActualDate: string | null;
   peStatus: string | null;
-  actualQty: number | null;
+  peExpectedQty: number | null;
+  actualQty: number | null; // actual output = expected − scrap
   scrapQty: number | null;
+  peLabQty: number | null;
   lotNo: string | null;
   peRemarks: string | null;
   peAt: string | null;

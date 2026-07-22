@@ -65,7 +65,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     },
     {
       key: "subject",
-      header: "Job Card No.",
+      header: "Lot/Batch Card No.",
       cell: ({ request: r }) => <span className="text-navy">{requestSubject(r)}</span>,
       filter: { kind: "text", get: ({ request }) => requestSubject(request) },
     },
@@ -96,7 +96,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     },
     {
       key: "subject",
-      header: "Job Card No.",
+      header: "Lot/Batch Card No.",
       cell: (e) => <span className="text-navy">{requestSubject(e.row)}</span>,
       filter: { kind: "text", get: (e) => requestSubject(e.row) },
     },

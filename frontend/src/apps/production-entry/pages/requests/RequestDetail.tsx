@@ -47,7 +47,7 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
       const n = r.tsBomLines.length;
       return [n ? `${n} item${n === 1 ? "" : "s"} logged` : null, r.tsAttachmentName ? "attachment" : null].filter(Boolean).join(" · ") || null;
     }
-    case "production_entry": return [r.peStatus, r.actualQty != null ? `Actual ${r.actualQty}` : null, r.scrapQty != null ? `Scrap ${r.scrapQty}` : null, r.lotNo ? `LOT ${r.lotNo}` : null].filter(Boolean).join(" · ") || null;
+    case "production_entry": return [r.peExpectedQty != null ? `Expected ${r.peExpectedQty}` : null, r.scrapQty != null ? `Scrap ${r.scrapQty}` : null, r.actualQty != null ? `Output ${r.actualQty}` : null, r.peLabQty != null ? `Lab ${r.peLabQty}` : null].filter(Boolean).join(" · ") || null;
     case "quality_check": return [r.qcStatus, r.qcRemarks].filter(Boolean).join(" · ") || null;
     case "mc_testing": return [r.mcStatus, r.mcRemarks].filter(Boolean).join(" · ") || null;
     case "pm_handover": return [r.pmhStatus, r.pmhQty != null ? `Qty ${r.pmhQty}` : null, r.pmhBatchNo ? `Batch ${r.pmhBatchNo}` : null].filter(Boolean).join(" · ") || null;
@@ -109,7 +109,7 @@ export default function RequestDetail() {
             <h1 className="text-[22px] font-bold text-navy">{r.reqNo}</h1>
             <StatusPill status={r.status} />
           </div>
-          <p className="text-[13.5px] text-grey-2 mt-1">Job Card {requestSubject(r)} · raised by {r.requesterName}</p>
+          <p className="text-[13.5px] text-grey-2 mt-1">Lot/Batch Card {requestSubject(r)} · raised by {r.requesterName}</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           {cur && canActNow && <Button size="sm" onClick={() => setModalStep(cur)}>{STEP_CONFIG[cur].actionLabel}</Button>}
@@ -129,10 +129,10 @@ export default function RequestDetail() {
       </Card>
 
       <Card className="p-5">
-        <SectionHeading>Issue Slip</SectionHeading>
+        <SectionHeading>Batch Card</SectionHeading>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-3">
           <Field label="FG Item" value={s.fgItemById(r.fgItemId)?.name ?? "—"} />
-          <Field label="Job Card No." value={r.jobcardNo} />
+          <Field label="Lot/Batch Card Number" value={r.jobcardNo} />
           <Field label="Requester" value={r.requesterName} />
           <Field label="Raised" value={formatDate(r.submittedAt)} />
           {r.issueRemarks && <Field label="Remarks" value={r.issueRemarks} className="col-span-2 sm:col-span-3" />}

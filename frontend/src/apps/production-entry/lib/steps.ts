@@ -36,7 +36,7 @@ export type StepScope = "request";
 export type StepDef = StepDefBase<StepKey, StepScope>;
 
 export const STEPS: StepDef[] = [
-  { key: "issue_slip", index: 1, title: "Generate Issue Slip", short: "Issue Slip", scope: "request", noQueue: true },
+  { key: "issue_slip", index: 1, title: "Generate Batch Card", short: "Batch Card", scope: "request", noQueue: true },
   { key: "material_handover", index: 2, title: "Material Handover Confirmation", short: "Handover", scope: "request" },
   { key: "rm_transfer", index: 3, title: "RM Transfer to Production", short: "RM Transfer", scope: "request" },
   { key: "transfer_slip", index: 4, title: "Log Book Entry", short: "Log Book", scope: "request" },

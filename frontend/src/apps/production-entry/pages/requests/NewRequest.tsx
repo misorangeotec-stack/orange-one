@@ -93,16 +93,16 @@ export default function NewRequest() {
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">Generate Issue Slip</h1>
+        <h1 className="text-[22px] font-bold text-navy">Generate Batch Card</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Raise a new production job card. Missing an option below? Request it on the{" "}
+          Raise a new production batch card. Missing an option below? Request it on the{" "}
           <Link to="/production-entry/master-requests" className="font-semibold text-orange hover:underline">Master Requests</Link> page.
         </p>
       </div>
 
       <Card className="p-5 space-y-4">
-        <FieldLabel label="Job Card No." required>
-          <TextInput value={f.jobcardNo} onChange={(e) => f.setJobcardNo(e.target.value)} placeholder="e.g. JC-1043" />
+        <FieldLabel label="Lot/Batch Card Number" required>
+          <TextInput value={f.jobcardNo} onChange={(e) => f.setJobcardNo(e.target.value)} placeholder="e.g. BC-1043" />
         </FieldLabel>
         <FieldLabel label="FG Item Name" required>
           <Combobox value={f.fgItemId} onChange={f.setFgItemId} options={f.fgItemOptions} placeholder="Select finished-good item" autoAdvance />

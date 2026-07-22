@@ -174,8 +174,10 @@ const mapRequest = (r: any): ProductionRequest => ({
 
   peActualDate: r.pe_actual_date ?? null,
   peStatus: r.pe_status ?? null,
+  peExpectedQty: num(r.pe_expected_qty),
   actualQty: num(r.actual_qty),
   scrapQty: num(r.scrap_qty),
+  peLabQty: num(r.pe_lab_qty),
   lotNo: r.lot_no ?? null,
   peRemarks: r.pe_remarks ?? null,
   peAt: r.pe_at ?? null,

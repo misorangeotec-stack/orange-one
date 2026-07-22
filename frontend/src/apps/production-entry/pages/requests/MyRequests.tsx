@@ -24,7 +24,7 @@ export default function MyRequests() {
     },
     {
       key: "jobcard",
-      header: "Job Card No.",
+      header: "Lot/Batch Card No.",
       cell: (r) => <span className="text-navy">{r.jobcardNo}</span>,
       filter: { kind: "text", get: (r) => r.jobcardNo },
     },

@@ -101,15 +101,12 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record production",
     description: "Job cards awaiting the production entry to be recorded.",
     completedBlurb: "Production entries you record appear here, and stay revisable until quality checking is recorded.",
+    // The date auto-stamps; the metrics row (FG, expected, scrap, actual output,
+    // lab testing) and the read-only log-book item table are rendered by StepModal.
     fields: [
-      { key: "pe_actual_date", label: "Actual date of production entry", kind: "date", get: (r) => s(r.peActualDate), hint: "defaults to today if left blank" },
-      { key: "pe_status", label: "Status of production entry", kind: "status", get: (r) => s(r.peStatus) },
-      { key: "actual_qty", label: "Actual Qty", kind: "number", get: (r) => n(r.actualQty) },
-      { key: "scrap_qty", label: "Scrap", kind: "number", get: (r) => n(r.scrapQty) },
-      { key: "lot_no", label: "LOT No.", kind: "text", get: (r) => s(r.lotNo) },
       { key: "pe_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.peRemarks) },
     ],
-    captured: { key: "lotNo", header: "LOT No.", get: (r) => s(r.lotNo) || "—" },
+    captured: { key: "output", header: "Actual Output", get: (r) => numOrDash(r.actualQty) },
   },
   quality_check: {
     stepKey: "quality_check",
