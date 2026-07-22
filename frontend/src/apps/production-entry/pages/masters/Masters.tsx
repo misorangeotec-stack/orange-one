@@ -20,11 +20,12 @@ export default function Masters() {
 
   const tabs = PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length }));
 
-  const isRm = tab === "raw_material";
+  // Raw materials AND packaging items carry their own unit.
+  const hasUnit = tab === "raw_material" || tab === "packaging_item";
   const unitOptions: ComboOption[] = s.activeUnits.map((u) => ({ value: u.id, label: u.name }));
   const unitName = (r: NamedMaster) => s.unitById((r as RawMaterial).unitId)?.name ?? "—";
 
-  const fields: MasterFieldDef[] = isRm
+  const fields: MasterFieldDef[] = hasUnit
     ? [
         ...masterFields(tab),
         {
@@ -33,14 +34,14 @@ export default function Masters() {
           type: "select",
           options: unitOptions,
           placeholder: "Select unit",
-          hint: "Shown automatically when this raw material is picked on a job card.",
+          hint: "Shown automatically when this item is picked on a job card.",
         },
       ]
     : masterFields(tab);
 
   const columns: MasterColumn<NamedMaster>[] = [
     { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-    ...(isRm ? [{ header: "Unit", render: (r: NamedMaster) => <span className="text-grey-2">{unitName(r)}</span>, className: "w-28" }] : []),
+    ...(hasUnit ? [{ header: "Unit", render: (r: NamedMaster) => <span className="text-grey-2">{unitName(r)}</span>, className: "w-28" }] : []),
     { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
   ];
 
@@ -65,9 +66,9 @@ export default function Masters() {
         fields={fields}
         searchText={(r) => r.name}
         canManage={s.canManage(tab)}
-        emptyValues={isRm ? { name: "", sortOrder: "0", unit_id: "" } : { name: "", sortOrder: "0" }}
+        emptyValues={hasUnit ? { name: "", sortOrder: "0", unit_id: "" } : { name: "", sortOrder: "0" }}
         toValues={(r): Record<string, string> =>
-          isRm
+          hasUnit
             ? { name: r.name, sortOrder: String(r.sortOrder), unit_id: (r as RawMaterial).unitId ?? "" }
             : { name: r.name, sortOrder: String(r.sortOrder) }
         }
@@ -76,7 +77,7 @@ export default function Masters() {
             name: v.name.trim(),
             active,
             sortOrder: Math.max(0, Math.floor(Number(v.sortOrder) || 0)),
-            ...(isRm ? { unitId: v.unit_id || null } : {}),
+            ...(hasUnit ? { unitId: v.unit_id || null } : {}),
           };
           if (id) await s.updateMaster(tab, id, input);
           else await s.insertMaster(tab, input);
@@ -86,7 +87,7 @@ export default function Masters() {
             name: row.name,
             active,
             sortOrder: row.sortOrder,
-            ...(isRm ? { unitId: (row as RawMaterial).unitId ?? null } : {}),
+            ...(hasUnit ? { unitId: (row as RawMaterial).unitId ?? null } : {}),
           })
         }
       />

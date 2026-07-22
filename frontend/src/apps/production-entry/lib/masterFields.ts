@@ -16,10 +16,14 @@ export function masterFields(mt: ProductionMasterType): MasterFieldDef[] {
   const label =
     mt === "category" ? "Category name"
     : mt === "raw_material" ? "Raw material name"
+    : mt === "packaging_item" ? "Packaging item name"
     : mt === "fg_item" ? "FG item name"
     : "Unit name";
   const placeholder =
-    mt === "unit" ? "e.g. KGS, LTR, PCS" : mt === "category" ? "e.g. Ink" : "e.g. name";
+    mt === "unit" ? "e.g. KGS, LTR, PCS"
+    : mt === "category" ? "e.g. Ink"
+    : mt === "packaging_item" ? "e.g. Carton, Label"
+    : "e.g. name";
   return [{ key: "name", label, type: "text", required: true, placeholder }];
 }
 

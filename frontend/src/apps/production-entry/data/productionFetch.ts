@@ -16,6 +16,7 @@ import type {
   ProductionNotification,
   ProductionRequest,
   RawMaterial,
+  PackagingItem,
   StepOwner,
   Unit,
 } from "../types";
@@ -34,6 +35,7 @@ type Tbl =
   | "fms_production_config"
   | "fms_production_categories"
   | "fms_production_raw_materials"
+  | "fms_production_packaging_items"
   | "fms_production_fg_items"
   | "fms_production_units"
   | "fms_production_master_managers"
@@ -74,6 +76,7 @@ export interface ProductionData {
   config: ProductionConfig;
   categories: Category[];
   rawMaterials: RawMaterial[];
+  packagingItems: PackagingItem[];
   fgItems: FgItem[];
   units: Unit[];
   masterManagers: ProductionMasterManager[];
@@ -215,6 +218,13 @@ const mapRequest = (r: any): ProductionRequest => ({
   pmhStatus: r.pmh_status ?? null,
   pmhQty: num(r.pmh_qty),
   pmhBatchNo: r.pmh_batch_no ?? null,
+  pmhBomLines: Array.isArray(r.pmh_bom_lines)
+    ? r.pmh_bom_lines.map((l: any) => ({
+        packagingItemId: l.packaging_item_id ?? null,
+        unitId: l.unit_id ?? null,
+        qty: num(l.qty),
+      }))
+    : [],
   pmhRemarks: r.pmh_remarks ?? null,
   pmhAt: r.pmh_at ?? null,
   pmhBy: r.pmh_by ?? null,
@@ -286,7 +296,7 @@ const mapNotification = (r: any): ProductionNotification => ({
 
 export async function fetchProductionData(): Promise<ProductionData> {
   const [
-    stepOwners, configRows, designations, categories, rawMaterials, fgItems, units,
+    stepOwners, configRows, designations, categories, rawMaterials, packagingItems, fgItems, units,
     masterManagers, masterRequests, requests, activity, notifications,
   ] = await Promise.all([
     fetchAll("fms_production_step_owners"),
@@ -294,6 +304,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     fetchAll("designations"),
     fetchAll("fms_production_categories"),
     fetchAll("fms_production_raw_materials"),
+    fetchAll("fms_production_packaging_items"),
     fetchAll("fms_production_fg_items"),
     fetchAll("fms_production_units"),
     fetchAll("fms_production_master_managers"),
@@ -315,6 +326,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     config,
     categories: categories.map(mapMaster),
     rawMaterials: rawMaterials.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
+    packagingItems: packagingItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     fgItems: fgItems.map(mapMaster),
     units: units.map(mapMaster),
     masterManagers: masterManagers.map(mapMasterManager),

@@ -34,6 +34,10 @@ export type Category = NamedMaster;
 export interface RawMaterial extends NamedMaster {
   unitId: string | null;
 }
+/** A packaging item likewise carries its own unit (shown automatically on pick). */
+export interface PackagingItem extends NamedMaster {
+  unitId: string | null;
+}
 export type FgItem = NamedMaster;
 export type Unit = NamedMaster;
 
@@ -51,6 +55,14 @@ export interface HandoverBomLine {
   unitId: string | null;
   qty: number | null;
   lotNo: string | null;
+}
+
+/** One packaging line of the packing-material handover: the packaging item (from
+ *  the packaging master, carrying its own unit) and the quantity handed over. */
+export interface PackingBomLine {
+  packagingItemId: string | null;
+  unitId: string | null;
+  qty: number | null;
 }
 
 /** One quality test round (approve / reject) inside the quality-checking step. */
@@ -164,11 +176,12 @@ export interface ProductionRequest {
   mcAt: string | null;
   mcBy: string | null;
 
-  // step 7: pm_handover
+  // step 7: pm_handover — FG packed qty + packaging lines
   pmhActualDate: string | null;
   pmhStatus: string | null;
   pmhQty: number | null;
   pmhBatchNo: string | null;
+  pmhBomLines: PackingBomLine[];
   pmhRemarks: string | null;
   pmhAt: string | null;
   pmhBy: string | null;
@@ -210,7 +223,7 @@ export interface ProductionRequest {
 
 /* ------------------------------ master governance ------------------------- */
 
-export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "unit";
+export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "unit" | "packaging_item";
 
 // Category is retained in the union above (legacy master_requests / managers rows
 // may still reference it) but is intentionally omitted from this registry so it no
@@ -218,6 +231,7 @@ export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "un
 // request-new-master modal). The intake no longer captures a category.
 export const PRODUCTION_MASTER_TYPES: { value: ProductionMasterType; label: string; plural: string }[] = [
   { value: "raw_material", label: "Raw Material", plural: "Raw Materials" },
+  { value: "packaging_item", label: "Packaging Item", plural: "Packaging Items" },
   { value: "fg_item", label: "FG Item", plural: "FG Items" },
   { value: "unit", label: "Unit", plural: "Units" },
 ];

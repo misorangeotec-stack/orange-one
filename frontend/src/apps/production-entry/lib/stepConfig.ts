@@ -136,28 +136,21 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record PM handover",
     description: "Job cards awaiting packing-material handover for packing.",
     completedBlurb: "Handovers you record appear here, and stay revisable until the packing-material transfer is recorded.",
-    fields: [
-      { key: "pmh_actual_date", label: "Actual date of PM transfer", kind: "date", get: (r) => s(r.pmhActualDate), hint: "defaults to today if left blank" },
-      { key: "pmh_status", label: "Status of PM transfer", kind: "status", get: (r) => s(r.pmhStatus) },
-      { key: "pmh_qty", label: "Qty transfer", kind: "number", get: (r) => n(r.pmhQty) },
-      { key: "pmh_batch_no", label: "Batch No. against material transfer", kind: "text", get: (r) => s(r.pmhBatchNo) },
-      { key: "pmh_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.pmhRemarks) },
-    ],
-    captured: { key: "pmhDate", header: "PM handover date", get: (r) => dmy(r.pmhActualDate), isDate: true },
+    // The FG packed-qty box and the multi-line packaging grid (item + qty + auto
+    // unit + total) are rendered entirely by StepModal.
+    fields: [],
+    captured: { key: "pmhQty", header: "FG Packed Qty", get: (r) => numOrDash(r.pmhQty) },
   },
   pm_transfer: {
     stepKey: "pm_transfer",
     title: "Packing Material Transfer to Production",
-    actionLabel: "Record PM transfer",
-    description: "Job cards awaiting the packing-material transfer entry.",
-    completedBlurb: "Transfers you record appear here, and stay revisable until the packing entry is recorded.",
-    fields: [
-      { key: "pmt_actual_date", label: "Actual date of PM transfer entry", kind: "date", get: (r) => s(r.pmtActualDate), hint: "defaults to today if left blank" },
-      { key: "pmt_status", label: "Status of PM transfer", kind: "status", get: (r) => s(r.pmtStatus) },
-      { key: "pmt_qty", label: "PM transfer qty", kind: "number", get: (r) => n(r.pmtQty) },
-      { key: "pmt_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.pmtRemarks) },
-    ],
-    captured: { key: "pmtQty", header: "PM transfer qty", get: (r) => numOrDash(r.pmtQty) },
+    actionLabel: "Confirm transfer",
+    description: "Job cards awaiting the packing-material transfer confirmation.",
+    completedBlurb: "Transfers you confirm appear here, and stay revisable until the packing entry is recorded.",
+    // View-only: StepModal shows the production-entry Tally no., FG packed qty and
+    // the handover's packaging list; the user just saves to advance.
+    fields: [],
+    captured: { key: "pmtDate", header: "Transferred", get: (r) => dmy(r.pmtActualDate), isDate: true },
   },
   packing_entry: {
     stepKey: "packing_entry",

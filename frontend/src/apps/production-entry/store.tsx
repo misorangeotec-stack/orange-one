@@ -54,6 +54,7 @@ import type {
   ProductionNotification,
   ProductionRequest,
   RawMaterial,
+  PackagingItem,
   StepOwner,
   Unit,
 } from "./types";
@@ -73,14 +74,17 @@ interface ProductionStoreValue {
   // masters
   categories: Category[];
   rawMaterials: RawMaterial[];
+  packagingItems: PackagingItem[];
   fgItems: FgItem[];
   units: Unit[];
   activeCategories: Category[];
   activeRawMaterials: RawMaterial[];
+  activePackagingItems: PackagingItem[];
   activeFgItems: FgItem[];
   activeUnits: Unit[];
   categoryById: (id: string | null) => Category | undefined;
   rawMaterialById: (id: string | null) => RawMaterial | undefined;
+  packagingItemById: (id: string | null) => PackagingItem | undefined;
   fgItemById: (id: string | null) => FgItem | undefined;
   unitById: (id: string | null) => Unit | undefined;
   masterList: (mt: ProductionMasterType) => NamedMaster[];
@@ -178,6 +182,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const designations = data?.designations ?? [];
   const categories = data?.categories ?? [];
   const rawMaterials = data?.rawMaterials ?? [];
+  const packagingItems = data?.packagingItems ?? [];
   const fgItems = data?.fgItems ?? [];
   const units = data?.units ?? [];
   const masterManagers = data?.masterManagers ?? [];
@@ -216,6 +221,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     const MASTER_LIST: Record<ProductionMasterType, NamedMaster[]> = {
       category: categories,
       raw_material: rawMaterials,
+      packaging_item: packagingItems,
       fg_item: fgItems,
       unit: units,
     };
@@ -284,14 +290,17 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
 
       categories,
       rawMaterials,
+      packagingItems,
       fgItems,
       units,
       activeCategories: byOrder(categories),
       activeRawMaterials: byOrder(rawMaterials),
+      activePackagingItems: byOrder(packagingItems),
       activeFgItems: byOrder(fgItems),
       activeUnits: byOrder(units),
       categoryById: (id) => idById(categories, id),
       rawMaterialById: (id) => idById(rawMaterials, id),
+      packagingItemById: (id) => idById(packagingItems, id),
       fgItemById: (id) => idById(fgItems, id),
       unitById: (id) => idById(units, id),
       masterList: (mt) => MASTER_LIST[mt],
@@ -424,7 +433,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       },
     };
   }, [
-    isLoading, error, dir, userId, isAdmin, designations, categories, rawMaterials, fgItems, units,
+    isLoading, error, dir, userId, isAdmin, designations, categories, rawMaterials, packagingItems, fgItems, units,
     masterManagers, masterRequests, requests, activity, notifications, stepOwners, processCoordinatorIds,
     stepSla, queryClient, session.user, orgPeople,
   ]);

@@ -160,6 +160,7 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 const MASTER_TABLE: Record<ProductionMasterType, string> = {
   category: "fms_production_categories",
   raw_material: "fms_production_raw_materials",
+  packaging_item: "fms_production_packaging_items",
   fg_item: "fms_production_fg_items",
   unit: "fms_production_units",
 };

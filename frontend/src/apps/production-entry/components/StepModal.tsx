@@ -59,6 +59,15 @@ interface HandoverRow {
   lotNo: string;
 }
 
+/** One packing-material handover row being edited: the picked packaging item (with
+ *  its own unit, auto-shown) and the quantity handed over. */
+interface PackRow {
+  uid: string;
+  packagingItemId: string | null;
+  unitId: string | null;
+  qty: string;
+}
+
 /** One Log Book Entry row being edited. Existing rows carry the locked requested/
  *  handover/lot from earlier steps with an editable actual use; new rows are added
  *  at this step (master pick or free text) with their own actual use + lot. */
@@ -117,12 +126,16 @@ export default function StepModal({
   const isProduction = stepKey === "production_entry";
   const isQuality = stepKey === "quality_check";
   const isMc = stepKey === "mc_testing";
+  const isPmHandover = stepKey === "pm_handover";
+  const isPmTransfer = stepKey === "pm_transfer";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
   const [prodScrap, setProdScrap] = useState("");
   const [prodLab, setProdLab] = useState("");
   const [prodTally, setProdTally] = useState("");
+  const [packRows, setPackRows] = useState<PackRow[]>([]);
+  const [pmhQty, setPmhQty] = useState("");
   const [qcResult, setQcResult] = useState<"approved" | "rejected" | "">("");
   const [qcRemarks, setQcRemarks] = useState("");
   const [qcTestDate, setQcTestDate] = useState("");
@@ -169,6 +182,17 @@ export default function StepModal({
     }));
   };
 
+  /** Seed the packing rows from an already-recorded handover, else one blank row. */
+  const seedPackRows = (r: ProductionRequest): PackRow[] =>
+    r.pmhBomLines.length > 0
+      ? r.pmhBomLines.map((l) => ({
+          uid: newUid(),
+          packagingItemId: l.packagingItemId,
+          unitId: l.unitId,
+          qty: l.qty != null ? String(l.qty) : "",
+        }))
+      : [{ uid: newUid(), packagingItemId: null, unitId: null, qty: "" }];
+
   useEffect(() => {
     if (open && request) {
       const seed: Record<string, string> = {};
@@ -176,6 +200,8 @@ export default function StepModal({
       setValues(seed);
       setHoRows(isHandover ? seedHandoverRows(request) : []);
       setLogRows(isLogBook ? seedLogRows(request) : []);
+      setPackRows(isPmHandover ? seedPackRows(request) : []);
+      setPmhQty(isPmHandover && request.pmhQty != null ? String(request.pmhQty) : "");
       setProdScrap(isProduction && request.scrapQty != null ? String(request.scrapQty) : "");
       setProdLab(isProduction && request.peLabQty != null ? String(request.peLabQty) : "");
       setProdTally(isProduction ? request.peTallyEntry ?? "" : "");
@@ -201,7 +227,7 @@ export default function StepModal({
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, request, cfg, isHandover, isLogBook, isProduction, isQuality, isMc, editing]);
+  }, [open, request, cfg, isHandover, isLogBook, isProduction, isQuality, isMc, isPmHandover, editing]);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
@@ -214,6 +240,12 @@ export default function StepModal({
       { uid: newUid(), isNew: true, rawMaterialId: null, name: "", unitId: null, requestedQty: null, handoverQty: null, actualUse: "", lotNo: "" },
     ]);
   const removeLogRow = (uid: string) => setLogRows((prev) => prev.filter((r) => r.uid !== uid));
+
+  const setPackField = (uid: string, patch: Partial<PackRow>) =>
+    setPackRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
+  const addPackRow = () =>
+    setPackRows((prev) => [...prev, { uid: newUid(), packagingItemId: null, unitId: null, qty: "" }]);
+  const removePackRow = (uid: string) => setPackRows((prev) => prev.filter((r) => r.uid !== uid));
 
   // Per-new-row raw-material options: active materials + a synthetic entry for a
   // free-text name already typed, so the Combobox can display it.
@@ -304,6 +336,13 @@ export default function StepModal({
         }
       }
 
+      if (isPmHandover) {
+        payload.pmh_qty = pmhQty;
+        payload.pmh_bom_lines = packRows
+          .filter((r) => r.packagingItemId)
+          .map((r) => ({ packaging_item_id: r.packagingItemId, unit_id: r.unitId, qty: r.qty ?? "" }));
+      }
+
       if (isProduction) {
         const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
         const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
@@ -357,9 +396,9 @@ export default function StepModal({
       // grid especially) show every column without wrapping.
       size="3xl"
       title={`${titlePrefix} — ${request?.reqNo ?? ""}`}
-      // Quality & M/C testing already show the Lot/Batch Card in their own grid,
-      // so don't repeat it in the subtitle.
-      subtitle={request && !isQuality && !isMc ? requestSubject(request) : undefined}
+      // Steps that already show the Lot/Batch Card in their own header/grid don't
+      // repeat it in the subtitle.
+      subtitle={request && !isQuality && !isMc && !isPmHandover && !isPmTransfer ? requestSubject(request) : undefined}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -368,7 +407,7 @@ export default function StepModal({
       }
     >
       <div className="space-y-3.5">
-        {(isHandover || isLogBook || isRmTransfer) && request && (
+        {(isHandover || isLogBook || isRmTransfer || isPmHandover || isPmTransfer) && request && (
           <div className="rounded-xl bg-page px-3.5 py-3 space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lot/Batch Card</span>
@@ -778,6 +817,140 @@ export default function StepModal({
                   </div>
                 </div>
               )}
+            </>
+          );
+        })()}
+
+        {isPmHandover && request && (() => {
+          // Per-unit totals of the filled packaging rows.
+          const totals = new Map<string, number>();
+          for (const r of packRows) {
+            if (!r.packagingItemId) continue;
+            const q = Number(r.qty);
+            if (!q) continue;
+            const uname = s.unitById(r.unitId)?.name ?? "—";
+            totals.set(uname, (totals.get(uname) ?? 0) + q);
+          }
+          const totalText = [...totals.entries()].map(([u, q]) => `${Math.round(q * 1000) / 1000} ${u}`).join(" · ");
+          const packOptions: ComboOption[] = s.activePackagingItems.map((p) => ({ value: p.id, label: p.name }));
+          return (
+            <>
+              <FieldLabel label="FG Packed Qty">
+                <TextInput type="number" disabled={readOnly} value={pmhQty} onChange={(e) => setPmhQty(e.target.value)} placeholder="0" />
+              </FieldLabel>
+
+              <div className="space-y-1.5">
+                <span className="block text-[13px] font-medium text-navy">Packaging items used</span>
+                <div className="rounded-xl border border-line overflow-x-auto">
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                        <th className="font-medium px-3 py-2 min-w-[220px]">Packaging Item</th>
+                        <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Qty</th>
+                        <th className="font-medium px-2 py-2 w-20">Unit</th>
+                        <th className="w-8" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {packRows.map((row) => (
+                        <tr key={row.uid} className="border-b border-line/70 last:border-0 align-top">
+                          <td className="px-3 py-2 text-navy">
+                            {readOnly ? (
+                              s.packagingItemById(row.packagingItemId)?.name ?? "—"
+                            ) : (
+                              <Combobox
+                                value={row.packagingItemId ?? ""}
+                                onChange={(v) => {
+                                  const pi = s.packagingItemById(v);
+                                  setPackField(row.uid, { packagingItemId: v, unitId: pi?.unitId ?? null });
+                                }}
+                                options={packOptions}
+                                placeholder="Pick a packaging item…"
+                                searchable
+                                triggerClassName="px-2 py-1.5 text-[13px]"
+                              />
+                            )}
+                          </td>
+                          <td className="px-1.5 py-1.5">
+                            <TextInput
+                              type="number"
+                              disabled={readOnly}
+                              className="w-full px-2 py-1.5 text-[13px] text-right tabular-nums"
+                              value={row.qty}
+                              onChange={(e) => setPackField(row.uid, { qty: e.target.value })}
+                            />
+                          </td>
+                          <td className="px-2 py-2 text-grey">{s.unitById(row.unitId)?.name ?? "—"}</td>
+                          <td className="px-1 py-2 text-center">
+                            {!readOnly && packRows.length > 1 && (
+                              <button type="button" onClick={() => removePackRow(row.uid)} className="text-grey-2 hover:text-ryg-red" title="Remove">✕</button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex items-center justify-between">
+                  {!readOnly ? (
+                    <button type="button" onClick={addPackRow} className="text-[12.5px] font-semibold text-orange hover:underline">+ Add packaging item</button>
+                  ) : <span />}
+                  {totalText && (
+                    <div className="text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span></div>
+                  )}
+                </div>
+              </div>
+            </>
+          );
+        })()}
+
+        {isPmTransfer && request && (() => {
+          const lines = request.pmhBomLines;
+          const totals = new Map<string, number>();
+          for (const l of lines) {
+            if (l.qty == null) continue;
+            const uname = s.unitById(l.unitId)?.name ?? "—";
+            totals.set(uname, (totals.get(uname) ?? 0) + l.qty);
+          }
+          const totalText = [...totals.entries()].map(([u, q]) => `${Math.round(q * 1000) / 1000} ${u}`).join(" · ");
+          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+          return (
+            <>
+              <div className="grid grid-cols-2 gap-3 rounded-xl bg-page px-3.5 py-3">
+                <div><div className={cap}>Production Entry Tally No.</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
+                <div><div className={cap}>FG Packed Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.pmhQty)}</div></div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="block text-[13px] font-medium text-navy">Packaging items (from handover)</span>
+                <div className="rounded-xl border border-line overflow-x-auto">
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                        <th className="font-medium px-3 py-2 min-w-[220px]">Packaging Item</th>
+                        <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Qty</th>
+                        <th className="font-medium px-2 py-2 w-20">Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.length === 0 ? (
+                        <tr><td colSpan={3} className="px-3 py-3 text-grey-2">No packaging items were recorded at handover.</td></tr>
+                      ) : (
+                        lines.map((l, i) => (
+                          <tr key={i} className="border-b border-line/70 last:border-0">
+                            <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.qty)}</td>
+                            <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {totalText && (
+                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span></div>
+                )}
+              </div>
             </>
           );
         })()}
