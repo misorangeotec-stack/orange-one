@@ -331,6 +331,15 @@ export interface CollectionFacts {
   chequeReturns: number;
   /** Credit notes inside the window (₹) — bills cleared without cash. */
   creditNotes: number;
+  /**
+   * Net journal CREDIT inside the window (₹), clamped >= 0 — the amount journals REDUCED the
+   * balance by (inter-company settlements: paid in one company, moved across by journal). This
+   * is a display figure; whether it is folded into `collected`/`inWindow` (and so removes a
+   * customer from the zero/below-threshold list) is decided by the `includeJournalSettlement`
+   * flag passed to factsForScoped. Net rule: a window whose journals sum to a DEBIT (they owe
+   * more — interest, rate diffs) contributes 0, so a charge is never mistaken for a payment.
+   */
+  journalSettledInWindow: number;
 
   /** Outstanding carried into the window (₹), clamped >= 0. */
   opening: number;
@@ -471,8 +480,9 @@ export function factsFor(
   windowMonths: string[],
   priorMonths: string[],
   asOfDate: string,
+  includeJournalSettlement = false,
 ): CollectionFacts {
-  return factsForScoped(c, series, lastDates, balances, months, windowMonths, priorMonths, asOfDate, null);
+  return factsForScoped(c, series, lastDates, balances, months, windowMonths, priorMonths, asOfDate, null, includeJournalSettlement);
 }
 
 /**
@@ -504,12 +514,16 @@ export function factsForScoped(
   priorMonths: string[],
   asOfDate: string,
   scopeIds: ReadonlySet<string> | null,
+  includeJournalSettlement = false,
 ): CollectionFacts {
   const all = c.constituentIds?.length ? c.constituentIds : [c.id];
   const ids = scopeIds ? all.filter((id) => scopeIds.has(id)) : all;
 
   let inWindow = 0, inPrior = 0, salesInWindow = 0, chequeReturns = 0, creditNotes = 0;
   let salesInPrior = 0;
+  // Signed net journals (Dr − Cr) across the scoped ledgers in the window. Summed BEFORE the
+  // clamp so one ledger's charge can offset another's settlement — the user's "net" rule.
+  let journalInWindowRaw = 0;
   let openingRaw = 0, priorOpeningRaw = 0;
   let lastReceiptDate: string | null = null;
   let lastSaleMonth: string | null = null;
@@ -522,6 +536,7 @@ export function factsForScoped(
     salesInPrior  += sumMonths(byMonth, priorMonths,  (m) => m.sales);
     chequeReturns += sumMonths(byMonth, windowMonths, (m) => m.chequeReturns);
     creditNotes   += sumMonths(byMonth, windowMonths, (m) => m.creditNotes);
+    journalInWindowRaw += sumMonths(byMonth, windowMonths, (m) => m.journals);
 
     if (windowMonths.length)
       openingRaw += openingForLedger(id, series, balances, months, windowMonths[0]);
@@ -551,7 +566,13 @@ export function factsForScoped(
   // their opening — but they may still have bought during the window.
   const opening = Math.max(0, openingRaw);
   const collectible = opening + salesInWindow;
-  const collected = inWindow;
+  // Net journal credit = the amount journals REDUCED the balance by (negative net = credit).
+  // A window that nets to a journal debit contributes 0 (a charge is never a "payment").
+  const journalSettledInWindow = Math.max(0, -journalInWindowRaw);
+  // When the toggle is on, a journal settlement counts as collected — so it lifts the zero /
+  // below-threshold test and the Collection %. When off, `collected` is receipts-only, exactly
+  // as before. `journalSettledInWindow` is still reported (its own column) either way.
+  const collected = inWindow + (includeJournalSettlement ? journalSettledInWindow : 0);
   const collectedNet = Math.max(0, collected - chequeReturns);
 
   const priorCollectible = priorMonths.length
@@ -570,6 +591,7 @@ export function factsForScoped(
     salesInPrior,
     chequeReturns,
     creditNotes,
+    journalSettledInWindow,
     opening,
     collectible,
     collected,
@@ -591,12 +613,14 @@ export function factsForScoped(
 // ── The three predicates ────────────────────────────────────────────────────────────
 
 /**
- * A customer collected nothing in the window. Strict: any receipt at all disqualifies.
+ * A customer collected nothing in the window. Strict: any collection at all disqualifies.
  *
- * Deliberately needs NO denominator, so it still catches a customer with an empty
- * collectible pool — and so the Zero Collections report is bit-for-bit what it always was.
+ * Reads `f.collected`, which is receipts + manual Other Payments and — when the caller passed
+ * `includeJournalSettlement` to factsFor(Scoped) — the net journal settlement too. With the
+ * flag off, `collected === inWindow`, so this is bit-for-bit the original receipt-only test.
+ * Needs NO denominator, so it still catches a customer with an empty collectible pool.
  */
-export const isZeroCollection = (f: CollectionFacts): boolean => f.inWindow < ZERO_EPS;
+export const isZeroCollection = (f: CollectionFacts): boolean => f.collected < ZERO_EPS;
 
 /**
  * A customer collected less than `thresholdPct` of what we could have collected.
@@ -675,6 +699,8 @@ export interface ZCMetrics {
   salesInWindow: number;
   collectible: number;
   collected: number;
+  /** Portion of `collected` that came from journal settlements (net journal credit). */
+  journalSettled: number;
   shortfall: number;
   priorCollections: number;
   priorCollectible: number;
@@ -709,7 +735,7 @@ export const DETERIORATION_PP = 10;
 
 export const emptyMetrics = (): ZCMetrics => ({
   customers: 0, outstanding: 0, overdue: 0, over180: 0,
-  opening: 0, salesInWindow: 0, collectible: 0, collected: 0, shortfall: 0,
+  opening: 0, salesInWindow: 0, collectible: 0, collected: 0, journalSettled: 0, shortfall: 0,
   priorCollections: 0, priorCollectible: 0, chequeReturns: 0, creditNotes: 0,
   maxOverdueDays: 0, daysSinceLastReceipt: -1, monthsSinceLastSale: -1,
   neverPaid: 0, neverSold: 0, stillBuying: 0, wentQuiet: 0, bounced: 0,
@@ -735,6 +761,7 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
     salesInWindow: f.salesInWindow,
     collectible: f.collectible,
     collected: f.collected,
+    journalSettled: f.journalSettledInWindow,
     shortfall: shortfallOf(f, targetPct),
     priorCollections: f.inPrior,
     priorCollectible: f.priorCollectible,
@@ -763,6 +790,7 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
   acc.salesInWindow    += m.salesInWindow;
   acc.collectible      += m.collectible;
   acc.collected        += m.collected;
+  acc.journalSettled   += m.journalSettled;
   acc.shortfall        += m.shortfall;
   acc.priorCollections += m.priorCollections;
   acc.priorCollectible += m.priorCollectible;
@@ -960,7 +988,7 @@ export function zcDimValue(
 
 export type ZCColumnKey =
   | "customers" | "outstanding" | "overdue" | "over180"
-  | "opening" | "salesInWindow" | "collectible" | "collected"
+  | "opening" | "salesInWindow" | "collectible" | "collected" | "journalSettled"
   | "collectionPct" | "shortfall" | "priorPct" | "deltaPp"
   | "priorCollections" | "chequeReturns" | "creditNotes"
   | "daysSinceLastReceipt" | "monthsSinceLastSale" | "maxOverdueDays" | "creditLimit";
@@ -995,6 +1023,7 @@ export const ZC_COLUMNS: ZCColumn[] = [
   { key: "salesInWindow", label: "Sales in Period", kind: "money", value: (m) => m.salesInWindow, alarm: true },
   { key: "collectible",   label: "Collectible",     kind: "money", value: (m) => m.collectible },
   { key: "collected",     label: "Collected",       kind: "money", value: (m) => m.collected },
+  { key: "journalSettled", label: "Journal Settled", kind: "money", value: (m) => m.journalSettled },
   { key: "collectionPct", label: "Collection %",    kind: "pct",   value: (m) => pctOf(m.collected, m.collectible), lowIsBad: true },
   { key: "shortfall",     label: "Shortfall",       kind: "money", value: (m) => m.shortfall, alarm: true },
   { key: "priorPct",      label: "Prior %",         kind: "pct",   value: (m) => pctOf(m.priorCollections, m.priorCollectible) },
@@ -1033,11 +1062,11 @@ export type CollectionsMode = "zero" | "threshold" | "dormant";
  */
 export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
   if (mode === "zero")
-    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "priorCollections", "daysSinceLastReceipt"];
+    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "journalSettled", "priorCollections", "daysSinceLastReceipt"];
   if (mode === "dormant")
     return ["customers", "outstanding", "overdue", "over180", "collected", "monthsSinceLastSale", "daysSinceLastReceipt"];
   return [
-    "customers", "outstanding", "opening", "salesInWindow", "collectible", "collected",
+    "customers", "outstanding", "opening", "salesInWindow", "collectible", "collected", "journalSettled",
     "collectionPct", "shortfall", "priorPct", "deltaPp", "chequeReturns", "creditNotes",
   ];
 }

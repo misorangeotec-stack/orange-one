@@ -189,7 +189,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
   const header = [
     "Customer", "Group", "Company", "Location", "Salesperson", "Category",
     "Outstanding", "Overdue", "> 180 Days",
-    "Opening", "Sales in Period", "Collectible", "Collected",
+    "Opening", "Sales in Period", "Collectible", "Collected", "Journal Settled",
     "Collection %", "Collection % (net of cheque returns)", `Shortfall vs ${meta.targetPct}%`, "Band",
     "Prior Collections", "Prior %", "Δ pp",
     "Cheque Returns", "Credit Notes",
@@ -197,8 +197,9 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
     "Sales in Prior Period", "Last Sale Month", "Months Since Sale",
     "Credit Limit", "Utilization %", "Risk", "Red Mark",
   ];
-  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 15, 17, 20, 21, 25, 28];
-  const PCT_COLS = [13, 14, 18, 19];
+  // Indices shift +1 from "Journal Settled" (col 13) onward.
+  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 13, 16, 18, 21, 22, 26, 29];
+  const PCT_COLS = [14, 15, 19, 20];
 
   const aoa: Array<Array<string | number>> = [];
   aoa.push([`${meta.title} — ${meta.periodLabel}`]);
@@ -224,6 +225,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
       Math.round(f.salesInWindow),
       Math.round(f.collectible),
       Math.round(f.collected),
+      Math.round(f.journalSettledInWindow),
       pctCell(f.pct),
       pctCell(f.pctNet),
       Math.round(shortfallOf(f, meta.targetPct)),
@@ -251,7 +253,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
   ws["!cols"] = [
     { wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 12 },
     { wch: 15 }, { wch: 15 }, { wch: 15 },
-    { wch: 15 }, { wch: 16 }, { wch: 15 }, { wch: 15 },
+    { wch: 15 }, { wch: 16 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
     { wch: 13 }, { wch: 30 }, { wch: 17 }, { wch: 13 },
     { wch: 17 }, { wch: 11 }, { wch: 10 },
     { wch: 15 }, { wch: 14 },
