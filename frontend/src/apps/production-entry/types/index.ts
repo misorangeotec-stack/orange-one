@@ -53,6 +53,16 @@ export interface HandoverBomLine {
   lotNo: string | null;
 }
 
+/** One quality test round (approve / reject) inside the quality-checking step. */
+export interface QualityRound {
+  round: number;
+  testDate: string | null;
+  result: "approved" | "rejected" | null;
+  remarks: string | null;
+  attachmentPath: string | null;
+  attachmentName: string | null;
+}
+
 /** One line of the Log Book Entry (step 3): the (locked) requested + handover
  *  quantities and lot carried from earlier steps, plus this step's ACTUAL USE.
  *  `isNew` items are added here — a master pick (rawMaterialId set) or free text
@@ -133,12 +143,14 @@ export interface ProductionRequest {
   peAt: string | null;
   peBy: string | null;
 
-  // step 5: quality_check
+  // step 5: quality_check (multi-round approve/reject)
   qcActualDate: string | null;
   qcStatus: string | null;
   qcRemarks: string | null;
   qcAttachmentPath: string | null;
   qcAttachmentName: string | null;
+  qcRounds: QualityRound[];
+  qcRetestDue: string | null;
   qcAt: string | null;
   qcBy: string | null;
 

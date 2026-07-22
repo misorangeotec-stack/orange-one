@@ -9,7 +9,7 @@ import { newUid } from "@/shared/components/ui/LineGrid";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
-import { numOrDash, requestSubject } from "../lib/format";
+import { dmy, numOrDash, requestSubject } from "../lib/format";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
 import type { ProductionRequest } from "../types";
@@ -115,11 +115,16 @@ export default function StepModal({
   const isRmTransfer = stepKey === "rm_transfer";
   const isLogBook = stepKey === "transfer_slip";
   const isProduction = stepKey === "production_entry";
+  const isQuality = stepKey === "quality_check";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
   const [prodScrap, setProdScrap] = useState("");
   const [prodLab, setProdLab] = useState("");
+  const [qcResult, setQcResult] = useState<"approved" | "rejected" | "">("");
+  const [qcRemarks, setQcRemarks] = useState("");
+  const [qcTestDate, setQcTestDate] = useState("");
+  const [qcFile, setQcFile] = useState<File | null>(null);
   const [qtyFallback, setQtyFallback] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [logFile, setLogFile] = useState<File | null>(null);
@@ -167,6 +172,12 @@ export default function StepModal({
       setLogRows(isLogBook ? seedLogRows(request) : []);
       setProdScrap(isProduction && request.scrapQty != null ? String(request.scrapQty) : "");
       setProdLab(isProduction && request.peLabQty != null ? String(request.peLabQty) : "");
+      // Quality: when editing correct the last round; when recording start a fresh one.
+      const lastQc = request.qcRounds[request.qcRounds.length - 1];
+      setQcResult(editing && lastQc?.result ? lastQc.result : "");
+      setQcRemarks(editing ? lastQc?.remarks ?? "" : "");
+      setQcTestDate(editing ? (lastQc?.testDate ?? "").slice(0, 10) : "");
+      setQcFile(null);
       setQtyFallback(isHandover && request.mhBomLines.length === 0 ? (request.mhQty != null ? String(request.mhQty) : "") : "");
       setFile(null);
       setLogFile(null);
@@ -176,7 +187,7 @@ export default function StepModal({
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, request, cfg, isHandover, isLogBook, isProduction]);
+  }, [open, request, cfg, isHandover, isLogBook, isProduction, isQuality, editing]);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
@@ -204,6 +215,11 @@ export default function StepModal({
     if (isLogBook && !logFile && !request.tsAttachmentPath) {
       setErr("An attachment is required for the log book entry.");
       return;
+    }
+    if (isQuality && !editing) {
+      const round = request.qcRounds.length + 1;
+      if (!qcResult) { setErr("Choose Approve or Reject."); return; }
+      if (round === 3 && !qcTestDate.trim()) { setErr("Enter the test date for the final test."); return; }
     }
     setBusy(true);
     setErr(null);
@@ -241,6 +257,21 @@ export default function StepModal({
           payload.ts_attachment_name = up.name;
         }
         // else editing with an existing attachment: omit the keys → RPC keeps it.
+      }
+
+      if (isQuality) {
+        if (qcFile) {
+          const up = await uploadStepDocument(request.id, "quality", qcFile);
+          payload.qc_attachment_path = up.path;
+          payload.qc_attachment_name = up.name;
+        }
+        payload.qc_remarks = qcRemarks;
+        if (editing) {
+          payload.qc_actual_date = qcTestDate; // update the last round's date
+        } else {
+          payload.qc_result = qcResult;
+          payload.qc_test_date = qcTestDate; // blank → server uses today (required only on Test 3)
+        }
       }
 
       if (isProduction) {
@@ -482,6 +513,98 @@ export default function StepModal({
             </FieldLabel>
           </>
         )}
+
+        {isQuality && request && (() => {
+          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+          const round = request.qcRounds.length + (editing ? 0 : 1);
+          const roundLabel = round === 1 ? "Test 1 — first test" : round === 2 ? "Test 2 — retest" : "Test 3 — final test";
+          const canRecord = editing || round <= 3;
+          const manualDate = round === 3 || editing; // Test 3 (and any edit) uses a manual date
+          const btn = (v: "approved" | "rejected", label: string, on: string, off: string) => (
+            <button
+              type="button"
+              disabled={readOnly || editing}
+              onClick={() => setQcResult(v)}
+              className={`flex-1 rounded-xl border px-3 py-2 text-[13px] font-semibold transition ${qcResult === v ? on : off}`}
+            >
+              {label}
+            </button>
+          );
+          return (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-page px-3.5 py-3">
+                <div><div className={cap}>Lot/Batch Card</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.jobcardNo || "—"}</div></div>
+                <div><div className={cap}>FG Item</div><div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div></div>
+                <div><div className={cap}>Lab Testing Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.peLabQty)}</div></div>
+                <div><div className={cap}>Actual Output</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.actualQty)}</div></div>
+              </div>
+
+              {request.qcRounds.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="block text-[13px] font-medium text-navy">Test history</span>
+                  <div className="rounded-xl border border-line divide-y divide-line/70">
+                    {request.qcRounds.map((r, i) => (
+                      <div key={i} className="flex items-center justify-between gap-3 px-3 py-2 text-[12.5px]">
+                        <span className="text-navy font-medium">Test {r.round}</span>
+                        <span className={r.result === "approved" ? "text-ryg-green font-semibold" : "text-ryg-red font-semibold"}>
+                          {r.result === "approved" ? "Approved" : "Rejected"}
+                        </span>
+                        <span className="text-grey-2">{dmy(r.testDate)}</span>
+                        <span className="flex-1 text-grey truncate">{r.remarks || ""}</span>
+                        {r.attachmentPath && <QcDocLink path={r.attachmentPath} name={r.attachmentName} />}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {request.qcRetestDue && !editing && round <= 3 && (
+                <div className="rounded-xl bg-orange-soft px-3.5 py-2 text-[12.5px] text-orange font-medium">
+                  Retest due by {dmy(request.qcRetestDue)}
+                </div>
+              )}
+
+              {canRecord ? (
+                <div className="space-y-3">
+                  <div className="text-[13px] font-semibold text-navy">{roundLabel}</div>
+                  {editing ? (
+                    <div className="text-[12.5px] text-grey">
+                      Result: <span className={qcResult === "approved" ? "text-ryg-green font-semibold" : "text-ryg-red font-semibold"}>{qcResult === "approved" ? "Approved" : "Rejected"}</span>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      {btn("approved", "Approve", "border-ryg-green bg-[#E9F8EF] text-ryg-green", "border-line text-grey hover:border-ryg-green/50")}
+                      {btn("rejected", "Reject", "border-ryg-red bg-[#FDECEC] text-ryg-red", "border-line text-grey hover:border-ryg-red/50")}
+                    </div>
+                  )}
+
+                  {manualDate ? (
+                    <FieldLabel label="Test date" hint={round === 3 ? "enter the final test date" : undefined}>
+                      <TextInput type="date" disabled={readOnly} value={qcTestDate} onChange={(e) => setQcTestDate(e.target.value)} />
+                    </FieldLabel>
+                  ) : (
+                    <p className="text-[12px] text-grey-2">Test date is captured automatically as today.</p>
+                  )}
+
+                  <FieldLabel label="Remarks">
+                    <TextArea rows={2} disabled={readOnly} value={qcRemarks} onChange={(e) => setQcRemarks(e.target.value)} placeholder="Testing remarks" />
+                  </FieldLabel>
+
+                  <FieldLabel label="Attachment of testing" hint={editing ? "choose a file to replace it" : "optional"}>
+                    <input
+                      type="file"
+                      disabled={readOnly}
+                      onChange={(e) => setQcFile(e.target.files?.[0] ?? null)}
+                      className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+                    />
+                  </FieldLabel>
+                </div>
+              ) : (
+                <p className="text-[12.5px] text-ryg-red">The final test has been recorded — no further retests are allowed.</p>
+              )}
+            </>
+          );
+        })()}
 
         {isProduction && request && (() => {
           const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;

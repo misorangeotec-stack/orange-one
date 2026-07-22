@@ -112,15 +112,12 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     stepKey: "quality_check",
     title: "Quality Checking",
     actionLabel: "Record quality check",
-    description: "Job cards awaiting lab quality checking after production.",
+    description: "Job cards awaiting lab quality checking (approve / reject, with retests).",
     completedBlurb: "Quality checks you record appear here, and stay revisable until M/C testing is recorded.",
-    hasAttachment: true,
-    fields: [
-      { key: "qc_actual_date", label: "Actual date of lab testing", kind: "date", get: (r) => s(r.qcActualDate), hint: "defaults to today if left blank" },
-      { key: "qc_status", label: "Status of lab testing", kind: "status", get: (r) => s(r.qcStatus) },
-      { key: "qc_remarks", label: "Remarks if any", kind: "textarea", get: (r) => s(r.qcRemarks) },
-    ],
-    captured: { key: "qcDate", header: "Lab testing date", get: (r) => dmy(r.qcActualDate), isDate: true },
+    // The multi-round approve/reject form (read-only top, test history, result +
+    // date + remarks + attachment) is rendered entirely by StepModal.
+    fields: [],
+    captured: { key: "qcResult", header: "Result", get: (r) => (r.qcStatus ? r.qcStatus[0].toUpperCase() + r.qcStatus.slice(1) : "—") },
   },
   mc_testing: {
     stepKey: "mc_testing",

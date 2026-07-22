@@ -120,6 +120,8 @@ export function openStep(r: ProductionRequest): QueueStep | null {
 
 /** A card's due date for one step = its anchor's completion + N working days. */
 export function productionDueIso(snap: ProductionSnapshot, r: ProductionRequest, step: QueueStep): string | null {
+  // A rejected Test 1 sets an explicit +2-day retest due that overrides the SLA.
+  if (step === "quality_check" && r.qcRetestDue) return r.qcRetestDue;
   const sla = snap.stepSla[step];
   if (!sla) return null;
   const from = ANCHOR_AT[step](r) ?? r.submittedAt;

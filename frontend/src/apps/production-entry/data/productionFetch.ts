@@ -188,6 +188,17 @@ const mapRequest = (r: any): ProductionRequest => ({
   qcRemarks: r.qc_remarks ?? null,
   qcAttachmentPath: r.qc_attachment_path ?? null,
   qcAttachmentName: r.qc_attachment_name ?? null,
+  qcRounds: Array.isArray(r.qc_rounds)
+    ? r.qc_rounds.map((x: any) => ({
+        round: Number(x.round) || 0,
+        testDate: x.test_date ?? null,
+        result: x.result ?? null,
+        remarks: x.remarks ?? null,
+        attachmentPath: x.attachment_path ?? null,
+        attachmentName: x.attachment_name ?? null,
+      }))
+    : [],
+  qcRetestDue: r.qc_retest_due ?? null,
   qcAt: r.qc_at ?? null,
   qcBy: r.qc_by ?? null,
 
