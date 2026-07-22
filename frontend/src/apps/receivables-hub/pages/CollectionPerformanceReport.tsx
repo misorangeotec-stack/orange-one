@@ -40,7 +40,7 @@ import { sumOutstanding } from "@hub/lib/receivables";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import { monthEndLong, monthStartLong } from "@hub/lib/months";
 import {
-  buildLastReceiptDates, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor,
+  buildLastReceiptDates, buildLastReceiptAmounts, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor,
   isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
   applyFocus, totalsOf, detailPathFor, defaultColumnsFor,
@@ -113,6 +113,14 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 /** Days-since-receipt cell. The never-paid sentinel must never render as 9007199254740991. */
 const daysText = (v: number): string =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : `${v}d`;
+
+/** Last-receipt cell. Takes the yyyymmdd ordinal the metric carries and shows dd-mm-yyyy;
+ *  0 (no receipt in the data horizon) reads "Never", same as the days column. */
+const dateText = (v: number): string => {
+  if (!v) return "Never";
+  const s = String(v);
+  return formatDateDMY(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`);
+};
 
 /**
  * Months-since-sale cell. Same sentinel discipline as daysText.
@@ -209,6 +217,15 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // ── Target (drives Shortfall ₹) ───────────────────────────────────────────────────
   const [target, setTarget] = useState<number>(30);
   useEffect(() => { setTarget(threshold > 0 ? threshold : 30); }, [threshold]);
+
+  // ── Count journal settlements as collected ────────────────────────────────────────
+  // Multi-company reality: a customer often pays into ONE company and the receivable in another
+  // is cleared by an inter-company JOURNAL (not a receipt). With this ON (default), a customer's
+  // NET journal credit counts as a collection, so those genuinely-paid customers drop off the
+  // list. OFF = the classic receipt-only view (for auditing what the journal cleared). See the
+  // "Journal Settled" column for the amount. Not shown in dormant mode (that report isn't
+  // collection-based). Journal charges (net debit) never count — see journalSettledInWindow.
+  const [countJournalSettlements, setCountJournalSettlements] = useState(true);
 
   // ── Filters (the bar; the rest behind "More") ─────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -334,6 +351,12 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
     [allCustomers, customerDetail, collSource],
   );
+  // Exact ₹ of each ledger's last receipt voucher, twinned with lastDates. Null under Live
+  // (the bulk snapshot has no per-voucher detail), so the amount column reads "—" there.
+  const lastAmounts = useMemo(
+    () => buildLastReceiptAmounts(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
+  );
   // The anchor for Opening: the CANONICAL outstanding, rolled backwards through the window's
   // movements. Never customer_trend.outstanding — see the openingForLedger header.
   const balances = useMemo(() => buildLedgerBalances(allCustomers), [allCustomers]);
@@ -406,7 +429,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     const out: ZCRow[] = [];
     let dropped = 0;
     for (const c of eligible) {
-      const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate);
+      const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, countJournalSettlements, lastAmounts);
       const listed =
         mode === "dormant" ? isDormant(facts)
         : mode === "zero"  ? isZeroCollection(facts)
@@ -415,7 +438,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped++;
     }
     return { rows: out, noPool: dropped };
-  }, [eligible, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold]);
+  }, [eligible, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements]);
 
   // ── Focus (the clickable KPI cards) + severity bands ──────────────────────────────
   // A layer ON TOP of the filter chain: eligible → rows → focusedRows. Lenses AND together.
@@ -1051,15 +1074,19 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // balance, whose per-month notes the live feed doesn't carry, so it's honest about the estimate.
   const liveNote = !isLive
     ? ""
-    : isDormantMode || mode === "zero"
+    : (isDormantMode || mode === "zero") && !(mode === "zero" && countJournalSettlements)
       ? " Source: the live Tally feed (ConnectWave) — read directly, no estimate."
-      : " Source: the live Tally feed (ConnectWave). Credit notes, debit notes, journals and bounced cheques are estimated from each customer's yearly total (the live feed doesn't carry them month by month), so the Opening balance and % are close, not exact.";
+      : mode === "zero"
+        ? " Source: the live Tally feed (ConnectWave). Receipts are read directly; journal settlements are apportioned from each customer's yearly journal total (the live feed doesn't carry journals month by month), so journal-cleared customers are dropped accurately over a full FY and approximately over shorter windows."
+        : " Source: the live Tally feed (ConnectWave). Credit notes, debit notes, journals and bounced cheques are estimated from each customer's yearly total (the live feed doesn't carry them month by month), so the Opening balance and % are close, not exact.";
 
   const basis = (isDormantMode
     ? `A customer is listed when they owe money (Outstanding > ₹0) and billed NO sales at all in the period. Sales are read at month grain from the customer trend and summed over every ledger the customer consolidates. Months Since Sale counts back to the most recent month with any billing; "None" means nothing billed anywhere in the available data, which begins ${horizonLabel} — it does NOT mean the customer never bought from us. A group row shows its deadest member. "Paid Nothing Either" narrows to those who also collected ₹0 in the period; "Recently Gone Quiet" to those who were still buying in the previous period of the same length. The Sale Type filter scopes the report to customers whose outstanding is DOMINATED by the selected types (the single largest type wins; untagged balances count as Other). MACHINE IS EXCLUDED BY DEFAULT: a machine is a one-time capital sale paid down over months, so a machine customer not re-ordering is normal rather than a warning — select it in the Sale Type filter to bring those customers back in.`
     : mode === "zero"
-      ? "No receipt voucher and no Other Payment in the period. Cheque returns are reported, not netted."
-      : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`) + liveNote;
+      ? (countJournalSettlements
+          ? "No receipt voucher, manual Other Payment, OR journal settlement in the period. A customer whose balance was cleared by a journal (e.g. paid in one company, moved across by an inter-company journal) is treated as paid and drops off — the amount shows in the Journal Settled column. Only journals that NET to a credit count; journal charges don't. Cheque returns are reported, not netted."
+          : "No receipt voucher and no Other Payment in the period. Journal settlements are NOT counted (toggle off). Cheque returns are reported, not netted.")
+      : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments${countJournalSettlements ? " + net journal settlements (see the Journal Settled column)" : ""}. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`) + liveNote;
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
   // `focusedRows` (not `rows`) feeds the flat Customers sheet: otherwise the roll-up sheet
@@ -1188,7 +1215,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const metricCells = (node: GroupNode<ZCMetrics> | null, isTotal: boolean): ReactNode =>
     columns.map((col) => {
       const m = node ? node.metrics : tree.total;
-      const v = col.value(m);
+      // Leaf-only columns (last receipt date/amount) can't be summed — blank on any roll-up
+      // row and the grand total, exactly what the "Last Sale Month" precedent does in Excel.
+      const isLeaf = !!node && node.children.length === 0;
+      const suppressed = !!col.leafOnly && (isTotal || !isLeaf);
+      const v = suppressed ? null : col.value(m);
       const clickable = !!col.drill && v !== null && Math.abs(v) >= 0.5;
 
       // What "wrong" means differs by column: a shortfall is bad when it's big, a collection
@@ -1207,6 +1238,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         v === null ? "—"
         : col.kind === "money" ? fmtINRMoney(v)
         : col.kind === "days" ? daysText(v)
+        : col.kind === "date" ? dateText(v)
         : col.kind === "months" ? monthsText(v)
         : col.kind === "pct"
           ? (col.key === "deltaPp" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}` : `${v.toFixed(1)}%`)
@@ -1393,6 +1425,30 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
               <span className="opacity-70"> · no prior period in this fiscal year, so Prior % and Δ read “—”</span>
             )}
           </p>
+
+          {/* Multi-company: a customer often pays into one company and the receivable in another
+              is cleared by an inter-company JOURNAL, not a receipt. Counting the net journal
+              credit as a collection stops those genuinely-paid customers being flagged. */}
+          {!isDormantMode && (
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-border/60">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">Journal Settlements</span>
+              <div className="pt-2 flex flex-wrap items-center gap-2">
+                <Button
+                  variant={countJournalSettlements ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setCountJournalSettlements((v) => !v)}
+                  className={`h-7 text-xs rounded-button ${countJournalSettlements ? "bg-primary text-primary-foreground" : "border-border"}`}
+                >
+                  {countJournalSettlements ? "Counted as collected" : "Not counted"}
+                </Button>
+                <span className="text-[11px] text-muted-foreground">
+                  {countJournalSettlements
+                    ? "A customer whose balance was cleared by a journal (e.g. inter-company transfer) counts as paid — see the Journal Settled column. Journal charges (net debit) don’t count."
+                    : "Only cash / bank receipts and manual Other Payments count; journal settlements are ignored."}
+                </span>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
