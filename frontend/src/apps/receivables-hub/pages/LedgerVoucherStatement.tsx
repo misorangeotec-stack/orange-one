@@ -31,7 +31,7 @@ import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { formatDateDMY } from "@hub/lib/utils";
 import { companyGuidOfLedger, loadLedgerMeta, tenantOfLedger } from "@hub/lib/ledgerOutstanding";
-import { loadLedgerVouchers, type LedgerVoucherRow } from "@hub/lib/ledgerVouchers";
+import { loadLedgerVouchers, buildLedgerStatement, periodLabelFor, type LedgerVoucherRow } from "@hub/lib/ledgerVouchers";
 import { exportLedgerVouchersXlsx } from "@hub/lib/exportFinancialStatements";
 
 const BASE = "/outstanding-dashboard";
@@ -110,40 +110,14 @@ export default function LedgerVoucherStatement() {
   const toYmdVal = toYmd(to);
   const hasPeriod = !!(fromYmd || toYmdVal);
 
-  // Opening as of the window start = master opening + everything strictly BEFORE `from`.
-  const openingAsOf = useMemo(() => {
-    if (!fromYmd) return opening;
-    let acc = opening;
-    for (const r of rows) if ((r.date ?? "") < fromYmd) acc += r.amount;
-    return acc;
-  }, [rows, opening, fromYmd]);
-
-  // Rows inside the window, with a running balance folded from openingAsOf. Computed over the FULL
-  // set first so the balance is correct on every page; the page then slices this.
-  const withBalance = useMemo(() => {
-    let bal = openingAsOf;
-    const out: { row: LedgerVoucherRow; balance: number }[] = [];
-    for (const r of rows) {
-      const d = r.date ?? "";
-      if (fromYmd && d < fromYmd) continue;
-      if (toYmdVal && d > toYmdVal) continue;
-      bal += r.amount;
-      out.push({ row: r, balance: bal });
-    }
-    return out;
-  }, [rows, openingAsOf, fromYmd, toYmdVal]);
-
-  const totals = useMemo(() => {
-    let debit = 0;
-    let credit = 0;
-    for (const { row } of withBalance) {
-      if (row.amount > 0) debit += row.amount;
-      else credit += -row.amount;
-    }
-    return { debit, credit };
-  }, [withBalance]);
-
-  const closingComputed = withBalance.length ? withBalance[withBalance.length - 1].balance : openingAsOf;
+  // Opening-anchored statement (opening-as-of, running balance, totals) — the shared helper that
+  // the multi-ledger export reuses, so the sheet and the screen can't drift. Computed over the FULL
+  // windowed set first so the balance is correct on every page; the page then slices `withBalance`.
+  const { openingAsOf, withBalance, debit, credit, closingComputed } = useMemo(
+    () => buildLedgerStatement(opening, rows, fromYmd, toYmdVal),
+    [opening, rows, fromYmd, toYmdVal],
+  );
+  const totals = { debit, credit };
   const masterClosing = meta?.closing ?? 0;
   // Only meaningful with no period set (a windowed closing legitimately differs from the master).
   const closingGap = !hasPeriod ? closingComputed - masterClosing : 0;
@@ -157,11 +131,7 @@ export default function LedgerVoucherStatement() {
   const broughtForward = startIdx === 0 ? openingAsOf : withBalance[startIdx - 1].balance;
   const isLastPage = current === totalPages;
 
-  const periodLabel = hasPeriod
-    ? `${fromYmd ? tallyDate(fromYmd) : "start"} to ${toYmdVal ? tallyDate(toYmdVal) : "today"}`
-    : company
-    ? `${formatDateDMY(company.fromDate)} to ${formatDateDMY(company.asOf)}`
-    : "All history";
+  const periodLabel = periodLabelFor(fromYmd, toYmdVal, company);
 
   const ledgerName = meta?.ledger ?? "Ledger";
   const resetPeriod = () => { setFrom(""); setTo(""); setPage(1); };

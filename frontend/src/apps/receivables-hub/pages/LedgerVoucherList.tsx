@@ -7,10 +7,11 @@
  * default pipeline this shows a "Not applicable" panel (same pattern as TopExposureReport). Mirrors
  * Ledger Outstandings' list scaffolding (filter bar + FilterChips + hand-rolled 25/page pagination).
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronRight, Lock, ScrollText, Search } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, ChevronRight, Download, Lock, ScrollText, Search } from "lucide-react";
+import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
 import { Input } from "@hub/components/ui/input";
 import {
@@ -24,7 +25,9 @@ import { fmtAmount } from "@hub/components/StatementTree";
 import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
-import { loadLedgerList, type LedgerListRow } from "@hub/lib/ledgerOutstanding";
+import { loadLedgerList, loadLedgerMeta, type LedgerListRow } from "@hub/lib/ledgerOutstanding";
+import { loadLedgerVouchers, buildLedgerStatement, periodLabelFor } from "@hub/lib/ledgerVouchers";
+import { exportLedgerVouchersMultiXlsx, type LedgerBlock } from "@hub/lib/exportFinancialStatements";
 
 const BASE = "/outstanding-dashboard";
 const PAGE_SIZE = 25;
@@ -112,6 +115,94 @@ export default function LedgerVoucherList() {
   const clearAll = () => { setCompanyFilters([]); setGroupFilters([]); setSearch(""); setPage(1); };
   const onFilterChange = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); setPage(1); };
 
+  // ── Multi-ledger selection + bulk export ──────────────────────────────────────────────────
+  const queryClient = useQueryClient();
+  const [selected, setSelected] = useState<Set<string>>(new Set()); // by ledger guid
+  const [from, setFrom] = useState(""); // yyyy-mm-dd, export window (blank = full history)
+  const [to, setTo] = useState("");
+  const [exporting, setExporting] = useState<{ done: number; total: number } | null>(null);
+
+  const byGuid = useMemo(() => {
+    const m = new Map<string, LedgerListRow>();
+    for (const l of all) m.set(l.guid, l);
+    return m;
+  }, [all]);
+  const companyOf = (companyGuid: string) => companies.find((c) => c.companyGuid === companyGuid);
+
+  // Select all operates on the FULL filtered set (every page), not just the visible slice.
+  const filteredGuids = useMemo(() => filtered.map((l) => l.guid), [filtered]);
+  const selectedInFiltered = useMemo(
+    () => filteredGuids.reduce((n, g) => n + (selected.has(g) ? 1 : 0), 0),
+    [filteredGuids, selected],
+  );
+  const allFilteredSelected = filteredGuids.length > 0 && selectedInFiltered === filteredGuids.length;
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = selectedInFiltered > 0 && !allFilteredSelected;
+  }, [selectedInFiltered, allFilteredSelected]);
+
+  const toggleAll = () => setSelected((prev) => {
+    const next = new Set(prev);
+    if (allFilteredSelected) filteredGuids.forEach((g) => next.delete(g));
+    else filteredGuids.forEach((g) => next.add(g));
+    return next;
+  });
+  const toggleOne = (g: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(g)) next.delete(g); else next.add(g);
+    return next;
+  });
+  const clearSelection = () => setSelected(new Set());
+
+  async function handleExport() {
+    const guids = [...selected].filter((g) => byGuid.has(g));
+    if (!guids.length || exporting) return;
+    if (guids.length > 50 &&
+      !window.confirm(`Export ${guids.length} ledgers? Each is fetched from Tally one at a time, so this can take a minute or two.`)) return;
+
+    const fromYmd = from ? from.replace(/-/g, "") : "";
+    const toYmd = to ? to.replace(/-/g, "") : "";
+    const blocks: LedgerBlock[] = [];
+    const skipped: string[] = [];
+    setExporting({ done: 0, total: guids.length });
+    // Strictly sequential: each ledger is a per-book RPC under a 3s anon timeout, and fetchQuery
+    // shares/warms the same cache the single-ledger statement screen uses.
+    for (let i = 0; i < guids.length; i++) {
+      const row = byGuid.get(guids[i])!;
+      try {
+        const meta = await queryClient.fetchQuery({
+          queryKey: ["ledgerMeta", row.tenantId, row.guid],
+          queryFn: () => loadLedgerMeta(row.tenantId, row.guid),
+          staleTime: 5 * 60 * 1000,
+        });
+        const rows = await queryClient.fetchQuery({
+          queryKey: ["ledgerVouchers", row.tenantId, row.guid],
+          queryFn: () => loadLedgerVouchers(row.tenantId, row.guid),
+          staleTime: 5 * 60 * 1000,
+        });
+        const company = companyOf(row.companyGuid);
+        const st = buildLedgerStatement(meta?.opening ?? 0, rows, fromYmd, toYmd);
+        blocks.push({
+          ledgerName: row.ledger,
+          company,
+          periodLabel: periodLabelFor(fromYmd, toYmd, company),
+          opening: st.openingAsOf,
+          closing: st.closingComputed,
+          rows: st.withBalance,
+        });
+      } catch (e) {
+        console.warn("[LedgerVoucherList] export skipped:", row.ledger, e);
+        skipped.push(row.ledger);
+      }
+      setExporting({ done: i + 1, total: guids.length });
+    }
+    setExporting(null);
+    if (blocks.length) exportLedgerVouchersMultiXlsx(blocks);
+    if (skipped.length) {
+      window.alert(`Exported ${blocks.length} of ${guids.length} ledgers.\nSkipped (Tally fetch failed): ${skipped.join(", ")}`);
+    }
+  }
+
   // Live (Tally) only — the default pipeline has no voucher-level data.
   if (!live) {
     return (
@@ -185,6 +276,14 @@ export default function LedgerVoucherList() {
             triggerClassName="w-[190px] h-9 text-sm rounded-input border-border"
           />
         </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide leading-none">Export period</span>
+          <div className="flex items-center gap-1">
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 w-[150px] rounded-input text-sm" />
+            <span className="text-muted-foreground text-xs">to</span>
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 w-[150px] rounded-input text-sm" />
+          </div>
+        </div>
       </div>
       {chips.length > 0 && <FilterChips chips={chips} onClearAll={clearAll} />}
 
@@ -194,13 +293,45 @@ export default function LedgerVoucherList() {
         <div className="py-16 text-center text-destructive">{(error as Error).message}</div>
       ) : (
         <>
-          <div className="text-xs text-muted-foreground">
-            {filtered.length.toLocaleString("en-IN")} ledger{filtered.length === 1 ? "" : "s"}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {filtered.length.toLocaleString("en-IN")} ledger{filtered.length === 1 ? "" : "s"}
+              {selected.size > 0 && (
+                <span className="ml-2 text-foreground font-medium">· {selected.size} selected</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {selected.size > 0 && !exporting && (
+                <button onClick={clearSelection} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">
+                  Clear selection
+                </button>
+              )}
+              {exporting && (
+                <span className="text-xs text-muted-foreground tabular-nums">Fetching {exporting.done} / {exporting.total}…</span>
+              )}
+              <Button
+                onClick={handleExport}
+                disabled={selected.size === 0 || !!exporting}
+                className="h-9 gap-1.5 rounded-button bg-primary text-primary-foreground hover:bg-primary/90"
+              >
+                <Download className="h-4 w-4" /> Export {selected.size > 0 ? `${selected.size} ledger${selected.size === 1 ? "" : "s"}` : "ledgers"}
+              </Button>
+            </div>
           </div>
           <ScrollableTable className="rounded-lg border border-border" maxHeight="max-h-[64vh]">
             <table className="w-full border-collapse min-w-[720px]">
               <thead>
                 <tr className="border-b-2 border-border bg-muted/50">
+                  <th className="w-8 py-2 px-3 text-left">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allFilteredSelected}
+                      onChange={toggleAll}
+                      aria-label="Select all ledgers"
+                      className="h-4 w-4 cursor-pointer align-middle"
+                    />
+                  </th>
                   <th className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ledger</th>
                   <th className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Group</th>
                   <th className="text-left py-2 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Company</th>
@@ -210,10 +341,20 @@ export default function LedgerVoucherList() {
               </thead>
               <tbody>
                 {shown.length === 0 ? (
-                  <tr><td colSpan={5} className="py-10 text-center text-sm text-muted-foreground">No ledgers match those filters.</td></tr>
+                  <tr><td colSpan={6} className="py-10 text-center text-sm text-muted-foreground">No ledgers match those filters.</td></tr>
                 ) : (
                   shown.map((l) => (
                     <tr key={`${l.companyGuid}-${l.guid}`} className="border-b border-border/40 hover:bg-muted/40">
+                      <td className="py-1.5 px-3">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(l.guid)}
+                          onChange={() => toggleOne(l.guid)}
+                          onClick={(e) => e.stopPropagation()}
+                          aria-label={`Select ${l.ledger}`}
+                          className="h-4 w-4 cursor-pointer align-middle"
+                        />
+                      </td>
                       <td className="py-1.5 px-3 text-sm">
                         <Link to={`${BASE}/reports/ledger-voucher/${l.guid}`} className="text-foreground hover:text-primary font-medium">
                           {l.ledger}

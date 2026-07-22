@@ -15,6 +15,7 @@
  * and a raw view scan blows past it.
  */
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
+import { formatDateDMY } from "./utils";
 
 /** One voucher line hitting the viewed ledger. `amount` is Dr-positive (Cr is negative). */
 export interface LedgerVoucherRow {
@@ -105,4 +106,74 @@ export async function loadLedgerVouchers(
   // yyyymmdd sorts lexicographically; guid tie-breaks so paging is stable.
   all.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || a.guid.localeCompare(b.guid));
   return all;
+}
+
+// ── Statement framing (shared by the single-ledger screen and the multi-ledger export) ──────
+// The running balance / opening-as-of / totals are NOT in the RPC — they depend on the period
+// filter, so they're computed here. Keeping this in ONE place is what stops the on-screen
+// statement and the exported sheet from ever drifting apart.
+
+export interface LedgerStatement {
+  /** Opening carried INTO the window = master opening + every voucher strictly BEFORE `fromYmd`. */
+  openingAsOf: number;
+  /** Rows inside [fromYmd, toYmd], each with the running balance folded from `openingAsOf`. */
+  withBalance: { row: LedgerVoucherRow; balance: number }[];
+  /** Σ Dr amounts inside the window. */
+  debit: number;
+  /** Σ Cr amounts (as a positive number) inside the window. */
+  credit: number;
+  /** The last running balance in the window (= `openingAsOf` when the window is empty). */
+  closingComputed: number;
+}
+
+/**
+ * Fold one ledger's vouchers into an opening-anchored statement over an optional [fromYmd, toYmd]
+ * window (both `yyyymmdd`, "" = unbounded). Lifted verbatim from the statement page so the export
+ * reconciles to the exact figures shown on screen.
+ */
+export function buildLedgerStatement(
+  opening: number,
+  rows: LedgerVoucherRow[],
+  fromYmd: string,
+  toYmd: string,
+): LedgerStatement {
+  let openingAsOf = opening;
+  if (fromYmd) for (const r of rows) if ((r.date ?? "") < fromYmd) openingAsOf += r.amount;
+
+  let bal = openingAsOf;
+  let debit = 0;
+  let credit = 0;
+  const withBalance: { row: LedgerVoucherRow; balance: number }[] = [];
+  for (const r of rows) {
+    const d = r.date ?? "";
+    if (fromYmd && d < fromYmd) continue;
+    if (toYmd && d > toYmd) continue;
+    bal += r.amount;
+    if (r.amount > 0) debit += r.amount;
+    else credit += -r.amount;
+    withBalance.push({ row: r, balance: bal });
+  }
+  const closingComputed = withBalance.length ? withBalance[withBalance.length - 1].balance : openingAsOf;
+  return { openingAsOf, withBalance, debit, credit, closingComputed };
+}
+
+/** yyyymmdd → dd-mm-yyyy (blank on bad/absent input). */
+function ymdToDMY(yyyymmdd: string): string {
+  if (!/^\d{8}$/.test(yyyymmdd)) return "";
+  return formatDateDMY(`${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`);
+}
+
+/**
+ * The period label shown/exported for a ledger. When a From/To is set it wins; otherwise it falls
+ * back to THAT ledger's own company fiscal range (bulk exports span companies with different FYs, so
+ * this must be resolved per-ledger, never once globally).
+ */
+export function periodLabelFor(
+  fromYmd: string,
+  toYmd: string,
+  company?: { fromDate: string; asOf: string } | null,
+): string {
+  if (fromYmd || toYmd) return `${fromYmd ? ymdToDMY(fromYmd) : "start"} to ${toYmd ? ymdToDMY(toYmd) : "today"}`;
+  if (company) return `${formatDateDMY(company.fromDate)} to ${formatDateDMY(company.asOf)}`;
+  return "All history";
 }
