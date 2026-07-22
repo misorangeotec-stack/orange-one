@@ -23,8 +23,9 @@ export default function Modal({
   children: ReactNode;
   footer?: ReactNode;
   /** `2xl` is for dense data grids (e.g. sourcing a whole requisition) where a
-   *  narrower dialog forces item names to wrap onto two lines. */
-  size?: "sm" | "md" | "lg" | "xl" | "2xl";
+   *  narrower dialog forces item names to wrap onto two lines. `3xl` matches a
+   *  full intake page (max-w-4xl) — used by multi-column step modals. */
+  size?: "sm" | "md" | "lg" | "xl" | "3xl" | "2xl";
   /**
    * This modal opens on top of another one. Sits at z-65 — above the parent
    * dialog (z-60) but below the portalled Combobox menu (z-70), so its own
@@ -79,7 +80,7 @@ export default function Modal({
   }, [open, onClose, stacked]);
 
   if (!open) return null;
-  const width = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-3xl", "2xl": "max-w-6xl" }[size];
+  const width = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-3xl", "3xl": "max-w-4xl", "2xl": "max-w-6xl" }[size];
 
   return (
     <div className={cn("fixed inset-0 flex items-center justify-center p-4", stacked ? "z-[65]" : "z-[60]")}>

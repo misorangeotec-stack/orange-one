@@ -177,6 +177,9 @@ export default function StepModal({
       onClose={onClose}
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
+      // Match the Generate Issue Slip width so multi-column steps (the handover
+      // grid especially) show every column without wrapping.
+      size="3xl"
       title={`${titlePrefix} — ${request?.reqNo ?? ""}`}
       subtitle={request ? requestSubject(request) : undefined}
       footer={
@@ -212,11 +215,11 @@ export default function StepModal({
                   <table className="w-full text-[13px]">
                     <thead>
                       <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                        <th className="font-medium px-3 py-2">Raw Material</th>
-                        <th className="font-medium px-2 py-2 text-right w-24">Requested</th>
-                        <th className="font-medium px-2 py-2 text-right w-28">Handover Qty</th>
-                        <th className="font-medium px-2 py-2 w-16">Unit</th>
-                        <th className="font-medium px-2 py-2 w-32">Issue Lot No.</th>
+                        <th className="font-medium px-3 py-2 min-w-[220px]">Raw Material</th>
+                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
+                        <th className="font-medium px-2 py-2 text-right w-32 whitespace-nowrap">Handover Qty</th>
+                        <th className="font-medium px-2 py-2 w-20">Unit</th>
+                        <th className="font-medium px-2 py-2 w-48 whitespace-nowrap">Issue Lot No.</th>
                       </tr>
                     </thead>
                     <tbody>
