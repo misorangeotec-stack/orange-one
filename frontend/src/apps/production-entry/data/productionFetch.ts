@@ -113,6 +113,13 @@ const mapRequest = (r: any): ProductionRequest => ({
   rawMaterialId: r.raw_material_id ?? null,
   requiredQty: num(r.required_qty),
   unitId: r.unit_id ?? null,
+  bomLines: Array.isArray(r.bom_lines)
+    ? r.bom_lines.map((l: any) => ({
+        rawMaterialId: l.raw_material_id ?? null,
+        requiredQty: num(l.required_qty),
+        unitId: l.unit_id ?? null,
+      }))
+    : [],
   fgItemId: r.fg_item_id ?? null,
   issueRemarks: r.issue_remarks ?? null,
   raisedBy: r.raised_by ?? null,

@@ -6,13 +6,13 @@ import { masterFields } from "../../lib/masterFields";
 import { PRODUCTION_MASTER_TYPES, type NamedMaster, type ProductionMasterType } from "../../types";
 
 /**
- * Production Masters — four flat lists (Category, Raw Material, FG Item, Unit),
- * each a MasterCrud surface. Editable by admins and each master's assigned owner
+ * Production Masters — flat lists (Raw Material, FG Item, Unit), each a
+ * MasterCrud surface. Editable by admins and each master's assigned owner
  * (Setup → Master Owners). Anyone can request a missing entry on Master Requests.
  */
 export default function Masters() {
   const s = useProductionStore();
-  const [tab, setTab] = useState<ProductionMasterType>("category");
+  const [tab, setTab] = useState<ProductionMasterType>("raw_material");
 
   const tabs = PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length }));
 

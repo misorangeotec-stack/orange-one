@@ -33,6 +33,13 @@ export type RawMaterial = NamedMaster;
 export type FgItem = NamedMaster;
 export type Unit = NamedMaster;
 
+/** One raw-material line of a job card's BOM (intake-only reference data). */
+export interface BomLine {
+  rawMaterialId: string | null;
+  requiredQty: number | null;
+  unitId: string | null;
+}
+
 export interface ProductionRequest {
   id: string;
   reqNo: string;
@@ -40,9 +47,14 @@ export interface ProductionRequest {
   // issue slip (step 1)
   jobcardNo: string;
   categoryId: string | null;
+  // Legacy single-RM columns — mirror the FIRST bom line (fallback for cards
+  // raised before multi-RM intake, and what the downstream steps still read).
   rawMaterialId: string | null;
   requiredQty: number | null;
   unitId: string | null;
+  // The full multi-raw-material BOM (intake-only reference data). Empty for
+  // legacy cards; display falls back to the single columns above.
+  bomLines: BomLine[];
   fgItemId: string | null;
   issueRemarks: string | null;
   raisedBy: string | null;
@@ -144,8 +156,11 @@ export interface ProductionRequest {
 
 export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "unit";
 
+// Category is retained in the union above (legacy master_requests / managers rows
+// may still reference it) but is intentionally omitted from this registry so it no
+// longer surfaces on any UI (Masters tabs, Master Owners, Master Requests, the
+// request-new-master modal). The intake no longer captures a category.
 export const PRODUCTION_MASTER_TYPES: { value: ProductionMasterType; label: string; plural: string }[] = [
-  { value: "category", label: "Category", plural: "Categories" },
   { value: "raw_material", label: "Raw Material", plural: "Raw Materials" },
   { value: "fg_item", label: "FG Item", plural: "FG Items" },
   { value: "unit", label: "Unit", plural: "Units" },

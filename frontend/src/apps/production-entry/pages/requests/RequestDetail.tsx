@@ -122,15 +122,45 @@ export default function RequestDetail() {
       <Card className="p-5">
         <SectionHeading>Issue Slip</SectionHeading>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-3">
-          <Field label="Job Card No." value={r.jobcardNo} />
-          <Field label="Category" value={s.categoryById(r.categoryId)?.name ?? "—"} />
-          <Field label="Raw Material" value={s.rawMaterialById(r.rawMaterialId)?.name ?? "—"} />
-          <Field label="Required Qty" value={numOrDash(r.requiredQty)} />
-          <Field label="Unit" value={s.unitById(r.unitId)?.name ?? "—"} />
           <Field label="FG Item" value={s.fgItemById(r.fgItemId)?.name ?? "—"} />
+          <Field label="Job Card No." value={r.jobcardNo} />
           <Field label="Requester" value={r.requesterName} />
           <Field label="Raised" value={formatDate(r.submittedAt)} />
           {r.issueRemarks && <Field label="Remarks" value={r.issueRemarks} className="col-span-2 sm:col-span-3" />}
+        </div>
+
+        {/* Raw materials — the BOM. New cards carry a line list; legacy cards
+            (raised before multi-RM intake) fall back to the single-RM triple. */}
+        <div className="mt-4">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">Raw Materials</div>
+          {r.bomLines.length > 0 ? (
+            <div className="rounded-xl border border-line overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                    <th className="font-medium px-3 py-2">Raw Material</th>
+                    <th className="font-medium px-3 py-2 text-right w-28">Qty</th>
+                    <th className="font-medium px-3 py-2 w-32">Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.bomLines.map((l, i) => (
+                    <tr key={i} className="border-b border-line/70 last:border-0">
+                      <td className="px-3 py-2 text-navy">{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.requiredQty)}</td>
+                      <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <Field label="Raw Material" value={s.rawMaterialById(r.rawMaterialId)?.name ?? "—"} />
+              <Field label="Required Qty" value={numOrDash(r.requiredQty)} />
+              <Field label="Unit" value={s.unitById(r.unitId)?.name ?? "—"} />
+            </div>
+          )}
         </div>
         {r.status === "on_hold" && r.holdReason && (
           <div className="mt-4 rounded-xl bg-page px-3.5 py-2.5 text-[12.5px] text-grey">On hold: {r.holdReason}</div>

@@ -30,7 +30,16 @@ export default function RequestsList() {
     {
       key: "rm",
       header: "Raw Material",
-      cell: (r) => <span className="text-grey-2">{s.rawMaterialById(r.rawMaterialId)?.name ?? "—"}</span>,
+      // Primary (mirrored first) raw material; a "+N" badge flags a multi-RM BOM.
+      cell: (r) => {
+        const extra = Math.max(0, r.bomLines.length - 1);
+        return (
+          <span className="text-grey-2">
+            {s.rawMaterialById(r.rawMaterialId)?.name ?? "—"}
+            {extra > 0 && <span className="ml-1.5 text-[11px] text-grey-2">+{extra}</span>}
+          </span>
+        );
+      },
       filter: { kind: "select", get: (r) => s.rawMaterialById(r.rawMaterialId)?.name ?? "—" },
     },
     {

@@ -14,12 +14,16 @@ import type { QueueStep } from "../lib/queues";
 
 /* --------------------------------- requests ------------------------------- */
 
+/** One raw-material line of the intake BOM. */
+export interface RequestLineInput {
+  rawMaterialId: string;
+  qty: string;
+  unitId: string | null;
+}
+
 export interface RequestInput {
   jobcardNo: string;
-  categoryId: string | null;
-  rawMaterialId: string;
-  requiredQty: string;
-  unitId: string | null;
+  bomLines: RequestLineInput[];
   fgItemId: string;
   issueRemarks: string | null;
   requesterName: string;
@@ -29,10 +33,11 @@ export async function submitRequest(input: RequestInput): Promise<string> {
   const { data, error } = await db.rpc("fms_production_submit_request", {
     p: {
       jobcard_no: input.jobcardNo,
-      category_id: input.categoryId ?? "",
-      raw_material_id: input.rawMaterialId,
-      required_qty: input.requiredQty ?? "",
-      unit_id: input.unitId ?? "",
+      bom_lines: input.bomLines.map((l) => ({
+        raw_material_id: l.rawMaterialId,
+        required_qty: l.qty ?? "",
+        unit_id: l.unitId ?? "",
+      })),
       fg_item_id: input.fgItemId,
       issue_remarks: input.issueRemarks ?? "",
       requester_name: input.requesterName,
