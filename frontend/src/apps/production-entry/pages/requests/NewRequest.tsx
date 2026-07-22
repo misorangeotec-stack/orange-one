@@ -58,7 +58,7 @@ export default function NewRequest() {
     {
       key: "qty",
       header: <span className="block text-right">Qty</span>,
-      className: "w-28",
+      className: "w-36",
       cell: (row, api) => (
         <TextInput
           ref={api.focusRef as (el: HTMLInputElement | null) => void}
@@ -92,8 +92,15 @@ export default function NewRequest() {
     },
   ];
 
+  // Total quantity across the filled BOM lines. Units can differ per line, so we
+  // show the shared unit when every line agrees, else "mixed".
+  const filledLines = f.lines.filter((l) => !isRmLineBlank(l));
+  const totalQty = Math.round(filledLines.reduce((sm, l) => sm + (Number(l.qty) || 0), 0) * 1000) / 1000;
+  const totalUnits = [...new Set(filledLines.map((l) => s.unitById(l.unitId)?.name).filter(Boolean))] as string[];
+  const totalUnitLabel = totalUnits.length === 1 ? totalUnits[0] : totalUnits.length === 0 ? "" : "mixed";
+
   return (
-    <div className="max-w-2xl mx-auto space-y-5">
+    <div className="max-w-4xl mx-auto space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">Generate Issue Slip</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
@@ -120,6 +127,18 @@ export default function NewRequest() {
             columns={columns}
             makeEmptyRow={makeEmptyRmLine}
             isRowBlank={isRmLineBlank}
+            footer={
+              filledLines.length > 0 ? (
+                <tfoot>
+                  <tr className="border-t border-line bg-page/50 text-navy">
+                    <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total Qty</td>
+                    <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{totalQty}</td>
+                    <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{totalUnitLabel}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              ) : undefined
+            }
           />
           <p className="text-[12px] text-grey-2">
             List every raw material that goes into this FG item, each with its own quantity and unit. Press Tab or Enter at
