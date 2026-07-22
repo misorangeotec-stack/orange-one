@@ -159,20 +159,25 @@ export interface MasterInput {
   name: string;
   active: boolean;
   sortOrder: number;
+  /** Raw materials only: the material's own unit (fms_production_units id). */
+  unitId?: string | null;
 }
 
+/** Base columns + the raw-material-only unit_id when supplied. */
+const masterRow = (input: MasterInput) => ({
+  name: input.name,
+  active: input.active,
+  sort_order: input.sortOrder,
+  ...(input.unitId !== undefined ? { unit_id: input.unitId || null } : {}),
+});
+
 export async function insertMaster(mt: ProductionMasterType, input: MasterInput): Promise<void> {
-  const { error } = await db
-    .from(MASTER_TABLE[mt])
-    .insert({ name: input.name, active: input.active, sort_order: input.sortOrder });
+  const { error } = await db.from(MASTER_TABLE[mt]).insert(masterRow(input));
   if (error) throw new Error(error.message);
 }
 
 export async function updateMaster(mt: ProductionMasterType, id: string, input: MasterInput): Promise<void> {
-  const { error } = await db
-    .from(MASTER_TABLE[mt])
-    .update({ name: input.name, active: input.active, sort_order: input.sortOrder })
-    .eq("id", id);
+  const { error } = await db.from(MASTER_TABLE[mt]).update(masterRow(input)).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

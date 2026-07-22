@@ -270,7 +270,8 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         return r ? canActOn(stepKey, r) : false;
       });
 
-    const idById = (rows: NamedMaster[], id: string | null) => (id ? rows.find((c) => c.id === id) : undefined);
+    const idById = <T extends NamedMaster>(rows: T[], id: string | null): T | undefined =>
+      id ? rows.find((c) => c.id === id) : undefined;
 
     return {
       isLoading,

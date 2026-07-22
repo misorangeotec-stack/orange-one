@@ -43,8 +43,8 @@ export default function NewRequest() {
           ref={api.focusRef as (el: ComboboxHandle | null) => void}
           value={row.rawMaterialId}
           onChange={(v) => {
-            // Default qty to 1 on first pick, matching the RM-purchase grid.
-            api.patch({ rawMaterialId: v, qty: row.qty || "1" });
+            // The unit follows the raw material's own master unit; default qty to 1.
+            api.patch({ rawMaterialId: v, unitId: f.unitForRawMaterial(v), qty: row.qty || "1" });
             api.advance();
           }}
           options={f.rawMaterialOptionsFor(row)}
@@ -71,33 +71,24 @@ export default function NewRequest() {
       ),
     },
     {
+      // Read-only: the unit comes from the selected raw material's master.
       key: "unit",
       header: "Unit",
-      className: "w-32",
-      cell: (row, api) => (
-        <Combobox
-          ref={api.focusRef as (el: ComboboxHandle | null) => void}
-          value={row.unitId}
-          onChange={(v) => {
-            api.patch({ unitId: v });
-            api.advance();
-          }}
-          options={f.unitOptions}
-          placeholder="Unit…"
-          searchable
-          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
-          onTriggerKeyDown={api.keyHandler}
-        />
-      ),
+      className: "w-24",
+      skipFocus: true,
+      cell: (row) => <span className="text-grey">{s.unitById(row.unitId)?.name ?? "—"}</span>,
     },
   ];
 
-  // Total quantity across the filled BOM lines. Units can differ per line, so we
-  // show the shared unit when every line agrees, else "mixed".
+  // Totals across the filled BOM lines, split BY UNIT — items in different units
+  // (KGS, LTR, …) each get their own subtotal rather than a meaningless single sum.
   const filledLines = f.lines.filter((l) => !isRmLineBlank(l));
-  const totalQty = Math.round(filledLines.reduce((sm, l) => sm + (Number(l.qty) || 0), 0) * 1000) / 1000;
-  const totalUnits = [...new Set(filledLines.map((l) => s.unitById(l.unitId)?.name).filter(Boolean))] as string[];
-  const totalUnitLabel = totalUnits.length === 1 ? totalUnits[0] : totalUnits.length === 0 ? "" : "mixed";
+  const totalsByUnit = new Map<string, number>();
+  for (const l of filledLines) {
+    const u = s.unitById(l.unitId)?.name ?? "—";
+    totalsByUnit.set(u, (totalsByUnit.get(u) ?? 0) + (Number(l.qty) || 0));
+  }
+  const unitTotals = [...totalsByUnit.entries()].map(([unit, qty]) => ({ unit, qty: Math.round(qty * 1000) / 1000 }));
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -130,12 +121,16 @@ export default function NewRequest() {
             footer={
               filledLines.length > 0 ? (
                 <tfoot>
-                  <tr className="border-t border-line bg-page/50 text-navy">
-                    <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total Qty</td>
-                    <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{totalQty}</td>
-                    <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{totalUnitLabel}</td>
-                    <td />
-                  </tr>
+                  {unitTotals.map((t, i) => (
+                    <tr key={t.unit} className={`bg-page/50 text-navy ${i === 0 ? "border-t border-line" : ""}`}>
+                      <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">
+                        {i === 0 ? "Total Qty" : ""}
+                      </td>
+                      <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{t.qty}</td>
+                      <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{t.unit}</td>
+                      <td />
+                    </tr>
+                  ))}
                 </tfoot>
               ) : undefined
             }

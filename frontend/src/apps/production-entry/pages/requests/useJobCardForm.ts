@@ -14,7 +14,8 @@ import type { RequestInput } from "../../data/productionWrites";
  * material and a quantity > 0 (its unit is optional).
  */
 
-/** One raw-material row of the BOM grid. */
+/** One raw-material row of the BOM grid. `unitId` is not user-picked — it is
+ *  derived from the selected raw material's own unit (its master). */
 export interface RmLine extends LineGridRow {
   rawMaterialId: string;
   qty: string;
@@ -24,7 +25,7 @@ export interface RmLine extends LineGridRow {
 /** A genuinely empty row — no default qty (LineGrid's "blank means blank"). */
 export const makeEmptyRmLine = (): RmLine => ({ uid: newUid(), rawMaterialId: "", qty: "", unitId: "" });
 
-export const isRmLineBlank = (l: RmLine) => !l.rawMaterialId && !l.qty && !l.unitId;
+export const isRmLineBlank = (l: RmLine) => !l.rawMaterialId && !l.qty;
 
 export function useJobCardForm() {
   const s = useProductionStore();
@@ -37,13 +38,15 @@ export function useJobCardForm() {
   const [err, setErr] = useState<string | null>(null);
 
   const fgItemOptions: ComboOption[] = s.activeFgItems.map((c) => ({ value: c.id, label: c.name }));
-  const unitOptions: ComboOption[] = s.activeUnits.map((c) => ({ value: c.id, label: c.name }));
 
   /** Raw materials, minus ones another row already picked. */
   const rawMaterialOptionsFor = (line: RmLine): ComboOption[] => {
     const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.rawMaterialId).map((l) => l.rawMaterialId));
     return s.activeRawMaterials.filter((rm) => !taken.has(rm.id)).map((rm) => ({ value: rm.id, label: rm.name }));
   };
+
+  /** The unit a raw material carries in its master (empty if none set yet). */
+  const unitForRawMaterial = (rawMaterialId: string): string => s.rawMaterialById(rawMaterialId)?.unitId ?? "";
 
   const build = (): { input: RequestInput } | { error: string } => {
     if (!jobcardNo.trim()) return { error: "Job card number is required." };
@@ -69,7 +72,7 @@ export function useJobCardForm() {
     issueRemarks, setIssueRemarks,
     lines, setLines,
     err, setErr,
-    fgItemOptions, unitOptions, rawMaterialOptionsFor,
+    fgItemOptions, rawMaterialOptionsFor, unitForRawMaterial,
     build,
   };
 }

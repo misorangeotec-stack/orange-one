@@ -270,7 +270,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     designations: designations.map(mapDesignation),
     config,
     categories: categories.map(mapMaster),
-    rawMaterials: rawMaterials.map(mapMaster),
+    rawMaterials: rawMaterials.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     fgItems: fgItems.map(mapMaster),
     units: units.map(mapMaster),
     masterManagers: masterManagers.map(mapMasterManager),

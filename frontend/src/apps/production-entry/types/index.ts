@@ -29,7 +29,10 @@ export interface NamedMaster {
   sortOrder: number;
 }
 export type Category = NamedMaster;
-export type RawMaterial = NamedMaster;
+/** A raw material carries its own unit of measure (shown automatically on pick). */
+export interface RawMaterial extends NamedMaster {
+  unitId: string | null;
+}
 export type FgItem = NamedMaster;
 export type Unit = NamedMaster;
 
