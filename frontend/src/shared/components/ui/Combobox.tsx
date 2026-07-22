@@ -292,8 +292,8 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
                       onMouseEnter={() => setActive(idx)}
                       onClick={() => commit(o.value)}
                       className={cn(
-                        "w-full flex items-center gap-2.5 px-3 py-2 text-left transition",
-                        on ? "bg-orange-soft/60" : idx === active ? "bg-page" : "hover:bg-page"
+                        "w-full flex items-center gap-2.5 px-3 py-2 text-left transition border-l-[3px] border-l-transparent",
+                        on ? "bg-orange-soft/60" : idx === active ? "bg-line border-l-orange" : "hover:bg-page"
                       )}
                     >
                       {o.icon && <span className="shrink-0 flex items-center">{o.icon}</span>}
@@ -317,8 +317,8 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
                   onMouseEnter={() => setActive(filtered.length)}
                   onClick={create}
                   className={cn(
-                    "w-full flex items-center gap-2.5 px-3 py-2 text-left transition",
-                    active === filtered.length ? "bg-orange-soft/40" : "hover:bg-orange-soft/40"
+                    "w-full flex items-center gap-2.5 px-3 py-2 text-left transition border-l-[3px] border-l-transparent",
+                    active === filtered.length ? "bg-orange-soft/40 border-l-orange" : "hover:bg-orange-soft/40"
                   )}
                 >
                   <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-orange-soft text-orange">

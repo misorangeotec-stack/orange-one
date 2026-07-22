@@ -210,8 +210,8 @@ export default function MultiSelect({
                     type="button"
                     onClick={() => toggle(o.value)}
                     className={cn(
-                      "w-full flex items-center gap-2.5 px-3 py-2 text-left transition",
-                      on ? "bg-orange-soft/60" : "hover:bg-page"
+                      "w-full flex items-center gap-2.5 px-3 py-2 text-left transition border-l-[3px] border-l-transparent",
+                      on ? "bg-orange-soft/60" : "hover:bg-line hover:border-l-orange"
                     )}
                   >
                     <span
