@@ -5,8 +5,10 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { newUid } from "@/shared/components/ui/LineGrid";
+import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useProductionStore } from "../store";
-import { uploadQualityDocument } from "../data/productionWrites";
+import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
 import { numOrDash, requestSubject } from "../lib/format";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
@@ -57,6 +59,21 @@ interface HandoverRow {
   lotNo: string;
 }
 
+/** One Log Book Entry row being edited. Existing rows carry the locked requested/
+ *  handover/lot from earlier steps with an editable actual use; new rows are added
+ *  at this step (master pick or free text) with their own actual use + lot. */
+interface LogRow {
+  uid: string;
+  isNew: boolean;
+  rawMaterialId: string | null;
+  name: string;
+  unitId: string | null;
+  requestedQty: number | null;
+  handoverQty: number | null;
+  actualUse: string;
+  lotNo: string;
+}
+
 /** Seed the handover rows from the issue slip, pre-filling the handover qty +
  *  lot number from an already-recorded handover when one exists. */
 function seedHandoverRows(request: ProductionRequest): HandoverRow[] {
@@ -95,13 +112,47 @@ export default function StepModal({
   const s = useProductionStore();
   const cfg = STEP_CONFIG[stepKey];
   const isHandover = stepKey === "material_handover";
+  const isLogBook = stepKey === "transfer_slip";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
+  const [logRows, setLogRows] = useState<LogRow[]>([]);
   const [qtyFallback, setQtyFallback] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [logFile, setLogFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const logFileRef = useRef<HTMLInputElement>(null);
+
+  /** Seed the log-book rows from the recorded entry when editing, else from the
+   *  handover (existing items, locked) with actual use defaulting to handover qty. */
+  const seedLogRows = (r: ProductionRequest): LogRow[] => {
+    if (r.tsBomLines.length > 0) {
+      return r.tsBomLines.map((l) => ({
+        uid: newUid(),
+        isNew: l.isNew,
+        rawMaterialId: l.rawMaterialId,
+        name: l.rawMaterialName || s.rawMaterialById(l.rawMaterialId)?.name || "—",
+        unitId: l.unitId,
+        requestedQty: l.requestedQty,
+        handoverQty: l.handoverQty,
+        actualUse: l.actualUse != null ? String(l.actualUse) : "",
+        lotNo: l.lotNo ?? "",
+      }));
+    }
+    const requestedByRm = new Map(r.bomLines.map((b) => [b.rawMaterialId, b.requiredQty]));
+    return r.mhBomLines.map((l) => ({
+      uid: newUid(),
+      isNew: false,
+      rawMaterialId: l.rawMaterialId,
+      name: s.rawMaterialById(l.rawMaterialId)?.name || "—",
+      unitId: l.unitId,
+      requestedQty: requestedByRm.get(l.rawMaterialId) ?? null,
+      handoverQty: l.qty,
+      actualUse: l.qty != null ? String(l.qty) : "",
+      lotNo: l.lotNo ?? "",
+    }));
+  };
 
   useEffect(() => {
     if (open && request) {
@@ -109,20 +160,45 @@ export default function StepModal({
       for (const f of cfg.fields) seed[f.key] = f.get(request);
       setValues(seed);
       setHoRows(isHandover ? seedHandoverRows(request) : []);
+      setLogRows(isLogBook ? seedLogRows(request) : []);
       setQtyFallback(isHandover && request.mhBomLines.length === 0 ? (request.mhQty != null ? String(request.mhQty) : "") : "");
       setFile(null);
+      setLogFile(null);
       if (fileRef.current) fileRef.current.value = "";
+      if (logFileRef.current) logFileRef.current.value = "";
       setErr(null);
       setBusy(false);
     }
-  }, [open, request, cfg, isHandover]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, request, cfg, isHandover, isLogBook]);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
     setHoRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: v } : r)));
+  const setLogField = (uid: string, patch: Partial<LogRow>) =>
+    setLogRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
+  const addLogRow = () =>
+    setLogRows((prev) => [
+      ...prev,
+      { uid: newUid(), isNew: true, rawMaterialId: null, name: "", unitId: null, requestedQty: null, handoverQty: null, actualUse: "", lotNo: "" },
+    ]);
+  const removeLogRow = (uid: string) => setLogRows((prev) => prev.filter((r) => r.uid !== uid));
+
+  // Per-new-row raw-material options: active materials + a synthetic entry for a
+  // free-text name already typed, so the Combobox can display it.
+  const rmOptionsFor = (row: LogRow): ComboOption[] => {
+    const opts = s.activeRawMaterials.map((rm) => ({ value: rm.id, label: rm.name }));
+    if (!row.rawMaterialId && row.name) opts.unshift({ value: `free:${row.name}`, label: row.name });
+    return opts;
+  };
 
   const save = async () => {
     if (!request) return;
+    // Log Book Entry requires an attachment (a new file, or one already on file).
+    if (isLogBook && !logFile && !request.tsAttachmentPath) {
+      setErr("An attachment is required for the log book entry.");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -140,6 +216,25 @@ export default function StepModal({
         } else {
           payload.mh_qty = qtyFallback;
         }
+      }
+
+      if (isLogBook) {
+        payload.ts_bom_lines = logRows.map((r) => ({
+          raw_material_id: r.rawMaterialId,
+          raw_material_name: r.name || null,
+          unit_id: r.unitId,
+          requested_qty: r.requestedQty ?? "",
+          handover_qty: r.handoverQty ?? "",
+          actual_use: r.actualUse ?? "",
+          lot_no: r.lotNo ?? "",
+          is_new: r.isNew,
+        }));
+        if (logFile) {
+          const up = await uploadStepDocument(request.id, "logbook", logFile);
+          payload.ts_attachment_path = up.path;
+          payload.ts_attachment_name = up.name;
+        }
+        // else editing with an existing attachment: omit the keys → RPC keeps it.
       }
 
       if (cfg.hasAttachment && file) {
@@ -167,6 +262,8 @@ export default function StepModal({
   const existing =
     cfg.hasAttachment && request?.qcAttachmentPath ? (
       <QcDocLink path={request.qcAttachmentPath} name={request.qcAttachmentName} />
+    ) : isLogBook && request?.tsAttachmentPath ? (
+      <QcDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
     ) : null;
 
   const titlePrefix = editing && !readOnly ? `Edit ${cfg.title.toLowerCase()}` : readOnly ? cfg.title : cfg.actionLabel;
@@ -190,24 +287,26 @@ export default function StepModal({
       }
     >
       <div className="space-y-3.5">
+        {(isHandover || isLogBook) && request && (
+          <div className="rounded-xl bg-page px-3.5 py-3 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Job Card</span>
+              <Link
+                to={`/production-entry/requests/${request.id}`}
+                onClick={onClose}
+                className="text-[14px] font-bold text-navy hover:text-orange hover:underline"
+              >
+                {request.jobcardNo || request.reqNo}
+              </Link>
+            </div>
+            <div className="text-[12.5px] text-grey">
+              FG Item: <span className="font-semibold text-navy">{s.fgItemById(request.fgItemId)?.name ?? "—"}</span>
+            </div>
+          </div>
+        )}
+
         {isHandover && request && (
           <>
-            <div className="rounded-xl bg-page px-3.5 py-3 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Job Card</span>
-                <Link
-                  to={`/production-entry/requests/${request.id}`}
-                  onClick={onClose}
-                  className="text-[14px] font-bold text-navy hover:text-orange hover:underline"
-                >
-                  {request.jobcardNo || request.reqNo}
-                </Link>
-              </div>
-              <div className="text-[12.5px] text-grey">
-                FG Item: <span className="font-semibold text-navy">{s.fgItemById(request.fgItemId)?.name ?? "—"}</span>
-              </div>
-            </div>
-
             {hoRows.length > 0 ? (
               <div className="space-y-1.5">
                 <span className="block text-[13px] font-medium text-navy">Raw materials handed over</span>
@@ -257,6 +356,115 @@ export default function StepModal({
                 <TextInput inputMode="decimal" disabled={readOnly} value={qtyFallback} onChange={(e) => setQtyFallback(e.target.value)} />
               </FieldLabel>
             )}
+          </>
+        )}
+
+        {isLogBook && request && (
+          <>
+            <div className="space-y-1.5">
+              <span className="block text-[13px] font-medium text-navy">Actual use per raw material</span>
+              <div className="rounded-xl border border-line overflow-x-auto">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                      <th className="font-medium px-3 py-2 min-w-[200px]">Raw Material</th>
+                      <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
+                      <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Handover</th>
+                      <th className="font-medium px-2 py-2 w-16">Unit</th>
+                      <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Actual Use</th>
+                      <th className="font-medium px-2 py-2 w-40 whitespace-nowrap">Issue Lot No.</th>
+                      <th className="w-8" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logRows.map((row) => (
+                      <tr key={row.uid} className="border-b border-line/70 last:border-0 align-top">
+                        <td className="px-3 py-2 text-navy">
+                          {row.isNew ? (
+                            <Combobox
+                              value={row.rawMaterialId ?? (row.name ? `free:${row.name}` : "")}
+                              onChange={(v) => {
+                                if (v.startsWith("free:")) return setLogField(row.uid, { rawMaterialId: null, name: v.slice(5) });
+                                const rm = s.rawMaterialById(v);
+                                setLogField(row.uid, { rawMaterialId: v, name: rm?.name ?? "", unitId: rm?.unitId ?? null });
+                              }}
+                              options={rmOptionsFor(row)}
+                              placeholder="Pick or type a material…"
+                              searchable
+                              triggerClassName="px-2 py-1.5 text-[13px]"
+                              onCreate={(name) => setLogField(row.uid, { rawMaterialId: null, name, unitId: null })}
+                              createLabel={(q) => `Use “${q}”`}
+                            />
+                          ) : (
+                            row.name
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.requestedQty)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.handoverQty)}</td>
+                        <td className="px-2 py-2 text-grey">{s.unitById(row.unitId)?.name ?? "—"}</td>
+                        <td className="px-1.5 py-1.5">
+                          <TextInput
+                            type="number"
+                            disabled={readOnly}
+                            className="w-full px-2 py-1.5 text-[13px] text-right tabular-nums"
+                            value={row.actualUse}
+                            onChange={(e) => setLogField(row.uid, { actualUse: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-1.5 py-1.5">
+                          {row.isNew ? (
+                            <TextInput
+                              disabled={readOnly}
+                              className="w-full px-2 py-1.5 text-[13px]"
+                              placeholder="Lot no."
+                              value={row.lotNo}
+                              onChange={(e) => setLogField(row.uid, { lotNo: e.target.value })}
+                            />
+                          ) : (
+                            <span className="text-grey">{row.lotNo || "—"}</span>
+                          )}
+                        </td>
+                        <td className="px-2 py-2 text-right">
+                          {row.isNew && !readOnly && (
+                            <button
+                              type="button"
+                              onClick={() => removeLogRow(row.uid)}
+                              className="text-grey-2 hover:text-ryg-red transition"
+                              aria-label="Remove item"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={addLogRow}
+                  className="text-[12.5px] font-semibold text-orange hover:underline"
+                >
+                  + Add item
+                </button>
+              )}
+            </div>
+
+            <FieldLabel label="Attachment" required hint={editing ? "choose a file to replace it" : "required — e.g. the log book page"}>
+              <input
+                ref={logFileRef}
+                type="file"
+                onChange={(e) => setLogFile(e.target.files?.[0] ?? null)}
+                className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+              />
+              {request.tsAttachmentPath && (
+                <div className="mt-1 text-[12px] text-grey-2">
+                  Current file: <QcDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
+                </div>
+              )}
+            </FieldLabel>
           </>
         )}
 

@@ -52,6 +52,21 @@ export interface HandoverBomLine {
   lotNo: string | null;
 }
 
+/** One line of the Log Book Entry (step 3): the (locked) requested + handover
+ *  quantities and lot carried from earlier steps, plus this step's ACTUAL USE.
+ *  `isNew` items are added here — a master pick (rawMaterialId set) or free text
+ *  (name only) — with their own lot number. */
+export interface LogBookLine {
+  rawMaterialId: string | null;
+  rawMaterialName: string | null;
+  unitId: string | null;
+  requestedQty: number | null;
+  handoverQty: number | null;
+  actualUse: number | null;
+  lotNo: string | null;
+  isNew: boolean;
+}
+
 export interface ProductionRequest {
   id: string;
   reqNo: string;
@@ -86,11 +101,14 @@ export interface ProductionRequest {
   mhAt: string | null;
   mhBy: string | null;
 
-  // step 3: transfer_slip
+  // step 3: transfer_slip (displayed as "Log Book Entry")
   tsActualDate: string | null;
   tsStatus: string | null;
   transferSlipNo: string | null;
   batchCardNo: string | null;
+  tsBomLines: LogBookLine[];
+  tsAttachmentPath: string | null;
+  tsAttachmentName: string | null;
   tsRemarks: string | null;
   tsAt: string | null;
   tsBy: string | null;

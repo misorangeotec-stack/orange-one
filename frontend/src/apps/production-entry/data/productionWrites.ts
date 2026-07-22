@@ -102,15 +102,20 @@ export async function cancelRequest(requestId: string, reason: string): Promise<
 
 const DOCS_BUCKET = "fms-production-docs";
 
-/** Upload the quality-checking test-report attachment; returns the stored path + name. */
-export async function uploadQualityDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+/** Upload a step attachment into a per-step folder; returns the stored path + name. */
+export async function uploadStepDocument(requestId: string, folder: string, file: File): Promise<{ path: string; name: string }> {
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const path = `${requestId}/quality/${Date.now()}-${safeName}`;
+  const path = `${requestId}/${folder}/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage
     .from(DOCS_BUCKET)
     .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(error.message);
   return { path, name: file.name };
+}
+
+/** Upload the quality-checking test-report attachment; returns the stored path + name. */
+export async function uploadQualityDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+  return uploadStepDocument(requestId, "quality", file);
 }
 
 /** Create a short-lived signed URL to view/download a stored quality document. */

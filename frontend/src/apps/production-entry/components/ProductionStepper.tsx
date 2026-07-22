@@ -13,7 +13,7 @@ import type { ProductionRequest } from "../types";
 const STAGES: { key: string; label: string; step: StepKey | null }[] = [
   { key: "generated", label: "Generated", step: null },
   { key: "material_handover", label: "Handover", step: "material_handover" },
-  { key: "transfer_slip", label: "Transfer Slip", step: "transfer_slip" },
+  { key: "transfer_slip", label: "Log Book", step: "transfer_slip" },
   { key: "production_entry", label: "Production", step: "production_entry" },
   { key: "quality_check", label: "Quality", step: "quality_check" },
   { key: "mc_testing", label: "M/C Testing", step: "mc_testing" },

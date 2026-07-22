@@ -69,18 +69,17 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
   },
   transfer_slip: {
     stepKey: "transfer_slip",
-    title: "Transfer Slip & Batch Card Creation",
-    actionLabel: "Record transfer slip",
-    description: "Job cards awaiting the transfer slip and batch card to be created.",
-    completedBlurb: "Transfer slips you record appear here, and stay revisable until production entry is recorded.",
+    title: "Log Book Entry",
+    actionLabel: "Record log book entry",
+    description: "Job cards awaiting the log book entry (actual use per raw material).",
+    completedBlurb: "Log book entries you record appear here, and stay revisable until production entry is recorded.",
+    // The date auto-stamps on save; the per-raw-material log-book grid (actual use,
+    // added items) and the mandatory attachment are rendered by StepModal itself —
+    // only Remarks is a plain field here.
     fields: [
-      { key: "ts_actual_date", label: "Actual date of creation", kind: "date", get: (r) => s(r.tsActualDate), hint: "defaults to today if left blank" },
-      { key: "ts_status", label: "Status of card creation", kind: "status", get: (r) => s(r.tsStatus) },
-      { key: "transfer_slip_no", label: "Transfer Slip No.", kind: "text", get: (r) => s(r.transferSlipNo) },
-      { key: "batch_card_no", label: "Batch Card No.", kind: "text", get: (r) => s(r.batchCardNo) },
-      { key: "ts_remarks", label: "Remark", kind: "textarea", get: (r) => s(r.tsRemarks) },
+      { key: "ts_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.tsRemarks) },
     ],
-    captured: { key: "slipNo", header: "Transfer Slip No.", get: (r) => s(r.transferSlipNo) || "—" },
+    captured: { key: "tsDate", header: "Log book date", get: (r) => dmy(r.tsActualDate), isDate: true },
   },
   production_entry: {
     stepKey: "production_entry",

@@ -42,7 +42,10 @@ function Stage({ title, when, by, detail, state }: { title: string; when: string
 function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
   switch (step) {
     case "material_handover": return [r.mhStatus, r.mhQty != null ? `Qty ${r.mhQty}` : null, r.rmBookNo ? `RM Book ${r.rmBookNo}` : null].filter(Boolean).join(" · ") || null;
-    case "transfer_slip": return [r.tsStatus, r.transferSlipNo ? `Slip ${r.transferSlipNo}` : null, r.batchCardNo ? `Batch ${r.batchCardNo}` : null].filter(Boolean).join(" · ") || null;
+    case "transfer_slip": {
+      const n = r.tsBomLines.length;
+      return [n ? `${n} item${n === 1 ? "" : "s"} logged` : null, r.tsAttachmentName ? "attachment" : null].filter(Boolean).join(" · ") || null;
+    }
     case "production_entry": return [r.peStatus, r.actualQty != null ? `Actual ${r.actualQty}` : null, r.scrapQty != null ? `Scrap ${r.scrapQty}` : null, r.lotNo ? `LOT ${r.lotNo}` : null].filter(Boolean).join(" · ") || null;
     case "quality_check": return [r.qcStatus, r.qcRemarks].filter(Boolean).join(" · ") || null;
     case "mc_testing": return [r.mcStatus, r.mcRemarks].filter(Boolean).join(" · ") || null;
@@ -98,7 +101,7 @@ export default function RequestDetail() {
   const activity = s.activityFor("request", r.id);
 
   return (
-    <div className="max-w-3xl mx-auto space-y-5">
+    <div className="max-w-6xl mx-auto space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">

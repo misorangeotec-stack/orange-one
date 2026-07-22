@@ -37,7 +37,7 @@ export type StepDef = StepDefBase<StepKey, StepScope>;
 export const STEPS: StepDef[] = [
   { key: "issue_slip", index: 1, title: "Generate Issue Slip", short: "Issue Slip", scope: "request", noQueue: true },
   { key: "material_handover", index: 2, title: "Material Handover Confirmation", short: "Handover", scope: "request" },
-  { key: "transfer_slip", index: 3, title: "Transfer Slip & Batch Card", short: "Transfer Slip", scope: "request" },
+  { key: "transfer_slip", index: 3, title: "Log Book Entry", short: "Log Book", scope: "request" },
   { key: "production_entry", index: 4, title: "Production Entry", short: "Production", scope: "request" },
   { key: "quality_check", index: 5, title: "Quality Checking", short: "Quality", scope: "request" },
   { key: "mc_testing", index: 6, title: "Testing of M/C", short: "M/C Testing", scope: "request" },
@@ -55,7 +55,7 @@ export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) =>
  * `issue_slip` is `noQueue`, so it never holds work and is absent.
  */
 export const STAGES: { label: string; keys: StepKey[] }[] = [
-  { label: "Handover & Slips", keys: ["material_handover", "transfer_slip"] },
+  { label: "Handover & Log Book", keys: ["material_handover", "transfer_slip"] },
   { label: "Production", keys: ["production_entry"] },
   { label: "Quality", keys: ["quality_check", "mc_testing"] },
   { label: "Packing", keys: ["pm_handover", "pm_transfer", "packing_entry"] },

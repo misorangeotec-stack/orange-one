@@ -148,6 +148,20 @@ const mapRequest = (r: any): ProductionRequest => ({
   tsStatus: r.ts_status ?? null,
   transferSlipNo: r.transfer_slip_no ?? null,
   batchCardNo: r.batch_card_no ?? null,
+  tsBomLines: Array.isArray(r.ts_bom_lines)
+    ? r.ts_bom_lines.map((l: any) => ({
+        rawMaterialId: l.raw_material_id ?? null,
+        rawMaterialName: l.raw_material_name ?? null,
+        unitId: l.unit_id ?? null,
+        requestedQty: num(l.requested_qty),
+        handoverQty: num(l.handover_qty),
+        actualUse: num(l.actual_use),
+        lotNo: l.lot_no ?? null,
+        isNew: !!l.is_new,
+      }))
+    : [],
+  tsAttachmentPath: r.ts_attachment_path ?? null,
+  tsAttachmentName: r.ts_attachment_name ?? null,
   tsRemarks: r.ts_remarks ?? null,
   tsAt: r.ts_at ?? null,
   tsBy: r.ts_by ?? null,
