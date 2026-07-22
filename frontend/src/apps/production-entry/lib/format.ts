@@ -2,7 +2,8 @@ import type { ProductionRequest, ProductionStatus } from "../types";
 
 export const STATUS_LABEL: Record<ProductionStatus, string> = {
   awaiting_material_handover: "Awaiting material handover",
-  awaiting_transfer_slip: "Awaiting transfer slip",
+  awaiting_rm_transfer: "Awaiting RM transfer to production",
+  awaiting_transfer_slip: "Awaiting log book entry",
   awaiting_production: "Awaiting production entry",
   awaiting_quality: "Awaiting quality checking",
   awaiting_mc_testing: "Awaiting M/C testing",
@@ -18,6 +19,7 @@ export const STATUS_LABEL: Record<ProductionStatus, string> = {
 /** Tailwind text/bg classes per status (mirrors the portal's status-pill palette). */
 export const STATUS_TONE: Record<ProductionStatus, string> = {
   awaiting_material_handover: "text-orange bg-orange-soft",
+  awaiting_rm_transfer: "text-orange bg-orange-soft",
   awaiting_transfer_slip: "text-orange bg-orange-soft",
   awaiting_production: "text-navy bg-navy/[0.06]",
   awaiting_quality: "text-navy bg-navy/[0.06]",

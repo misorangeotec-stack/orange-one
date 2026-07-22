@@ -20,6 +20,7 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
 export type StepKey =
   | "issue_slip"
   | "material_handover"
+  | "rm_transfer"
   | "transfer_slip"
   | "production_entry"
   | "quality_check"
@@ -37,14 +38,15 @@ export type StepDef = StepDefBase<StepKey, StepScope>;
 export const STEPS: StepDef[] = [
   { key: "issue_slip", index: 1, title: "Generate Issue Slip", short: "Issue Slip", scope: "request", noQueue: true },
   { key: "material_handover", index: 2, title: "Material Handover Confirmation", short: "Handover", scope: "request" },
-  { key: "transfer_slip", index: 3, title: "Log Book Entry", short: "Log Book", scope: "request" },
-  { key: "production_entry", index: 4, title: "Production Entry", short: "Production", scope: "request" },
-  { key: "quality_check", index: 5, title: "Quality Checking", short: "Quality", scope: "request" },
-  { key: "mc_testing", index: 6, title: "Testing of M/C", short: "M/C Testing", scope: "request" },
-  { key: "pm_handover", index: 7, title: "Packing Material Handover", short: "PM Handover", scope: "request" },
-  { key: "pm_transfer", index: 8, title: "Packing Material Transfer", short: "PM Transfer", scope: "request" },
-  { key: "packing_entry", index: 9, title: "Packing Entry", short: "Packing", scope: "request" },
-  { key: "fg_transfer", index: 10, title: "FG Transfer to Hojiwala", short: "FG Transfer", scope: "request" },
+  { key: "rm_transfer", index: 3, title: "RM Transfer to Production", short: "RM Transfer", scope: "request" },
+  { key: "transfer_slip", index: 4, title: "Log Book Entry", short: "Log Book", scope: "request" },
+  { key: "production_entry", index: 5, title: "Production Entry", short: "Production", scope: "request" },
+  { key: "quality_check", index: 6, title: "Quality Checking", short: "Quality", scope: "request" },
+  { key: "mc_testing", index: 7, title: "Testing of M/C", short: "M/C Testing", scope: "request" },
+  { key: "pm_handover", index: 8, title: "Packing Material Handover", short: "PM Handover", scope: "request" },
+  { key: "pm_transfer", index: 9, title: "Packing Material Transfer", short: "PM Transfer", scope: "request" },
+  { key: "packing_entry", index: 10, title: "Packing Entry", short: "Packing", scope: "request" },
+  { key: "fg_transfer", index: 11, title: "FG Transfer to Hojiwala", short: "FG Transfer", scope: "request" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -55,7 +57,7 @@ export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) =>
  * `issue_slip` is `noQueue`, so it never holds work and is absent.
  */
 export const STAGES: { label: string; keys: StepKey[] }[] = [
-  { label: "Handover & Log Book", keys: ["material_handover", "transfer_slip"] },
+  { label: "Handover & Log Book", keys: ["material_handover", "rm_transfer", "transfer_slip"] },
   { label: "Production", keys: ["production_entry"] },
   { label: "Quality", keys: ["quality_check", "mc_testing"] },
   { label: "Packing", keys: ["pm_handover", "pm_transfer", "packing_entry"] },

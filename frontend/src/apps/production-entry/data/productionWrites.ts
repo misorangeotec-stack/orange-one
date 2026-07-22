@@ -56,6 +56,7 @@ export type StepPayload = Record<string, unknown>;
 
 const RECORD_RPC: Record<QueueStep, string> = {
   material_handover: "fms_production_record_material_handover",
+  rm_transfer: "fms_production_record_rm_transfer",
   transfer_slip: "fms_production_record_transfer_slip",
   production_entry: "fms_production_record_production",
   quality_check: "fms_production_record_quality",
@@ -68,6 +69,7 @@ const RECORD_RPC: Record<QueueStep, string> = {
 
 const UPDATE_RPC: Record<QueueStep, string> = {
   material_handover: "fms_production_update_material_handover",
+  rm_transfer: "fms_production_update_rm_transfer",
   transfer_slip: "fms_production_update_transfer_slip",
   production_entry: "fms_production_update_production",
   quality_check: "fms_production_update_quality",

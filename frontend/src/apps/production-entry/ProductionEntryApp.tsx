@@ -9,6 +9,7 @@ import MyRequests from "./pages/requests/MyRequests";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
 import MaterialHandoverQueue from "./pages/queues/MaterialHandoverQueue";
+import RmTransferQueue from "./pages/queues/RmTransferQueue";
 import TransferSlipQueue from "./pages/queues/TransferSlipQueue";
 import ProductionQueue from "./pages/queues/ProductionQueue";
 import QualityQueue from "./pages/queues/QualityQueue";
@@ -60,6 +61,7 @@ export default function ProductionEntryApp() {
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
           <Route path="queues/material-handover" element={<MaterialHandoverQueue />} />
+          <Route path="queues/rm-transfer" element={<RmTransferQueue />} />
           <Route path="queues/transfer-slip" element={<TransferSlipQueue />} />
           <Route path="queues/production" element={<ProductionQueue />} />
           <Route path="queues/quality" element={<QualityQueue />} />

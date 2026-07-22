@@ -112,6 +112,7 @@ export default function StepModal({
   const s = useProductionStore();
   const cfg = STEP_CONFIG[stepKey];
   const isHandover = stepKey === "material_handover";
+  const isRmTransfer = stepKey === "rm_transfer";
   const isLogBook = stepKey === "transfer_slip";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
@@ -287,7 +288,7 @@ export default function StepModal({
       }
     >
       <div className="space-y-3.5">
-        {(isHandover || isLogBook) && request && (
+        {(isHandover || isLogBook || isRmTransfer) && request && (
           <div className="rounded-xl bg-page px-3.5 py-3 space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Job Card</span>
@@ -466,6 +467,39 @@ export default function StepModal({
               )}
             </FieldLabel>
           </>
+        )}
+
+        {isRmTransfer && request && request.mhBomLines.length > 0 && (
+          <div className="space-y-1.5">
+            <span className="block text-[13px] font-medium text-navy">Raw materials handed over</span>
+            <div className="rounded-xl border border-line overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                    <th className="font-medium px-3 py-2 min-w-[200px]">Raw Material</th>
+                    <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
+                    <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Handover</th>
+                    <th className="font-medium px-2 py-2 w-16">Unit</th>
+                    <th className="font-medium px-2 py-2 w-40 whitespace-nowrap">Issue Lot No.</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {request.mhBomLines.map((l, i) => {
+                    const requested = request.bomLines.find((b) => b.rawMaterialId === l.rawMaterialId)?.requiredQty ?? null;
+                    return (
+                      <tr key={i} className="border-b border-line/70 last:border-0">
+                        <td className="px-3 py-2 text-navy">{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(requested)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.qty)}</td>
+                        <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                        <td className="px-2 py-2 text-grey">{l.lotNo || "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
 
         {cfg.fields.map((f) => (

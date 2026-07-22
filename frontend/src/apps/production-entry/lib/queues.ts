@@ -39,6 +39,7 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
 /** The step's own completion timestamp (`*_at`). */
 const AT: Record<QueueStep, (r: ProductionRequest) => string | null> = {
   material_handover: (r) => r.mhAt,
+  rm_transfer: (r) => r.rmtAt,
   transfer_slip: (r) => r.tsAt,
   production_entry: (r) => r.peAt,
   quality_check: (r) => r.qcAt,
@@ -52,6 +53,7 @@ const AT: Record<QueueStep, (r: ProductionRequest) => string | null> = {
 /** Who completed the step (`*_by`). */
 const BY: Record<QueueStep, (r: ProductionRequest) => string | null> = {
   material_handover: (r) => r.mhBy,
+  rm_transfer: (r) => r.rmtBy,
   transfer_slip: (r) => r.tsBy,
   production_entry: (r) => r.peBy,
   quality_check: (r) => r.qcBy,
@@ -65,7 +67,8 @@ const BY: Record<QueueStep, (r: ProductionRequest) => string | null> = {
 /** The anchor whose completion starts a step's SLA clock — the previous step. */
 const ANCHOR_AT: Record<QueueStep, (r: ProductionRequest) => string | null> = {
   material_handover: (r) => r.submittedAt,
-  transfer_slip: (r) => r.mhAt,
+  rm_transfer: (r) => r.mhAt,
+  transfer_slip: (r) => r.rmtAt,
   production_entry: (r) => r.tsAt,
   quality_check: (r) => r.peAt,
   mc_testing: (r) => r.qcAt,
@@ -78,6 +81,7 @@ const ANCHOR_AT: Record<QueueStep, (r: ProductionRequest) => string | null> = {
 /** status → the single step a card currently owes. */
 const STATUS_STEP: Partial<Record<ProductionStatus, QueueStep>> = {
   awaiting_material_handover: "material_handover",
+  awaiting_rm_transfer: "rm_transfer",
   awaiting_transfer_slip: "transfer_slip",
   awaiting_production: "production_entry",
   awaiting_quality: "quality_check",
@@ -90,8 +94,9 @@ const STATUS_STEP: Partial<Record<ProductionStatus, QueueStep>> = {
 
 /** Edit-lock rules per step — mirror the `fms_production_<step>_editable()` predicates. */
 const LOCK: Record<QueueStep, { open: ProductionStatus; what: string; nextWhat: string }> = {
-  material_handover: { open: "awaiting_transfer_slip", what: "material handover", nextWhat: "the transfer slip" },
-  transfer_slip: { open: "awaiting_production", what: "transfer slip", nextWhat: "production entry" },
+  material_handover: { open: "awaiting_rm_transfer", what: "material handover", nextWhat: "the RM transfer to production" },
+  rm_transfer: { open: "awaiting_transfer_slip", what: "RM transfer to production", nextWhat: "the log book entry" },
+  transfer_slip: { open: "awaiting_production", what: "log book entry", nextWhat: "production entry" },
   production_entry: { open: "awaiting_quality", what: "production entry", nextWhat: "quality checking" },
   quality_check: { open: "awaiting_mc_testing", what: "quality checking", nextWhat: "M/C testing" },
   mc_testing: { open: "awaiting_pm_handover", what: "M/C testing", nextWhat: "the packing-material handover" },

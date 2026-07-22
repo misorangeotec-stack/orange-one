@@ -9,6 +9,7 @@
 /** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled leave every queue. */
 export type ProductionStatus =
   | "awaiting_material_handover"
+  | "awaiting_rm_transfer"
   | "awaiting_transfer_slip"
   | "awaiting_production"
   | "awaiting_quality"
@@ -100,6 +101,13 @@ export interface ProductionRequest {
   mhRemarks: string | null;
   mhAt: string | null;
   mhBy: string | null;
+
+  // step 2.5: rm_transfer — "RM Transfer to Production" (the Tally location transfer)
+  rmtActualDate: string | null;
+  rmtTallyEntry: string | null;
+  rmtRemarks: string | null;
+  rmtAt: string | null;
+  rmtBy: string | null;
 
   // step 3: transfer_slip (displayed as "Log Book Entry")
   tsActualDate: string | null;

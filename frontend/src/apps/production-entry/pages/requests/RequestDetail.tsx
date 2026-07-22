@@ -42,6 +42,7 @@ function Stage({ title, when, by, detail, state }: { title: string; when: string
 function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
   switch (step) {
     case "material_handover": return [r.mhStatus, r.mhQty != null ? `Qty ${r.mhQty}` : null, r.rmBookNo ? `RM Book ${r.rmBookNo}` : null].filter(Boolean).join(" · ") || null;
+    case "rm_transfer": return r.rmtTallyEntry ? `Tally ${r.rmtTallyEntry}` : null;
     case "transfer_slip": {
       const n = r.tsBomLines.length;
       return [n ? `${n} item${n === 1 ? "" : "s"} logged` : null, r.tsAttachmentName ? "attachment" : null].filter(Boolean).join(" · ") || null;

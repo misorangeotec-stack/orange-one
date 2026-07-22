@@ -21,6 +21,7 @@ const ic = {
 /** URL path per queue step. */
 const QUEUE_PATH: Record<QueueStep, string> = {
   material_handover: "material-handover",
+  rm_transfer: "rm-transfer",
   transfer_slip: "transfer-slip",
   production_entry: "production",
   quality_check: "quality",

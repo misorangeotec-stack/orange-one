@@ -67,6 +67,20 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     ],
     captured: { key: "mhDate", header: "Handover date", get: (r) => dmy(r.mhActualDate), isDate: true },
   },
+  rm_transfer: {
+    stepKey: "rm_transfer",
+    title: "RM Transfer to Production",
+    actionLabel: "Transfer to production",
+    description: "Job cards awaiting the raw-material transfer to production (Tally location transfer).",
+    completedBlurb: "RM transfers you record appear here, and stay revisable until the log book entry is recorded.",
+    // The date auto-stamps on save; the handover details are shown read-only by
+    // StepModal. Only the Tally entry + Remarks are captured here.
+    fields: [
+      { key: "rmt_tally_entry", label: "Tally Entry", kind: "text", get: (r) => s(r.rmtTallyEntry), placeholder: "Tally location-transfer entry" },
+      { key: "rmt_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.rmtRemarks) },
+    ],
+    captured: { key: "rmtEntry", header: "Tally Entry", get: (r) => s(r.rmtTallyEntry) || "—" },
+  },
   transfer_slip: {
     stepKey: "transfer_slip",
     title: "Log Book Entry",

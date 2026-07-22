@@ -144,6 +144,12 @@ const mapRequest = (r: any): ProductionRequest => ({
   mhAt: r.mh_at ?? null,
   mhBy: r.mh_by ?? null,
 
+  rmtActualDate: r.rmt_actual_date ?? null,
+  rmtTallyEntry: r.rmt_tally_entry ?? null,
+  rmtRemarks: r.rmt_remarks ?? null,
+  rmtAt: r.rmt_at ?? null,
+  rmtBy: r.rmt_by ?? null,
+
   tsActualDate: r.ts_actual_date ?? null,
   tsStatus: r.ts_status ?? null,
   transferSlipNo: r.transfer_slip_no ?? null,
