@@ -40,7 +40,7 @@ import { sumOutstanding } from "@hub/lib/receivables";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import { monthEndLong, monthStartLong } from "@hub/lib/months";
 import {
-  buildLastReceiptDates, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor,
+  buildLastReceiptDates, buildLastReceiptAmounts, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor,
   isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
   applyFocus, totalsOf, detailPathFor, defaultColumnsFor,
@@ -113,6 +113,14 @@ function getPageWindow(current: number, total: number): (number | "...")[] {
 /** Days-since-receipt cell. The never-paid sentinel must never render as 9007199254740991. */
 const daysText = (v: number): string =>
   v === NEVER_PAID ? "Never" : v < 0 ? "—" : `${v}d`;
+
+/** Last-receipt cell. Takes the yyyymmdd ordinal the metric carries and shows dd-mm-yyyy;
+ *  0 (no receipt in the data horizon) reads "Never", same as the days column. */
+const dateText = (v: number): string => {
+  if (!v) return "Never";
+  const s = String(v);
+  return formatDateDMY(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`);
+};
 
 /**
  * Months-since-sale cell. Same sentinel discipline as daysText.
@@ -343,6 +351,12 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
     [allCustomers, customerDetail, collSource],
   );
+  // Exact ₹ of each ledger's last receipt voucher, twinned with lastDates. Null under Live
+  // (the bulk snapshot has no per-voucher detail), so the amount column reads "—" there.
+  const lastAmounts = useMemo(
+    () => buildLastReceiptAmounts(allCustomers, customerDetail, collSource),
+    [allCustomers, customerDetail, collSource],
+  );
   // The anchor for Opening: the CANONICAL outstanding, rolled backwards through the window's
   // movements. Never customer_trend.outstanding — see the openingForLedger header.
   const balances = useMemo(() => buildLedgerBalances(allCustomers), [allCustomers]);
@@ -415,7 +429,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     const out: ZCRow[] = [];
     let dropped = 0;
     for (const c of eligible) {
-      const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, countJournalSettlements);
+      const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, countJournalSettlements, lastAmounts);
       const listed =
         mode === "dormant" ? isDormant(facts)
         : mode === "zero"  ? isZeroCollection(facts)
@@ -424,7 +438,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped++;
     }
     return { rows: out, noPool: dropped };
-  }, [eligible, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements]);
+  }, [eligible, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements]);
 
   // ── Focus (the clickable KPI cards) + severity bands ──────────────────────────────
   // A layer ON TOP of the filter chain: eligible → rows → focusedRows. Lenses AND together.
@@ -1201,7 +1215,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const metricCells = (node: GroupNode<ZCMetrics> | null, isTotal: boolean): ReactNode =>
     columns.map((col) => {
       const m = node ? node.metrics : tree.total;
-      const v = col.value(m);
+      // Leaf-only columns (last receipt date/amount) can't be summed — blank on any roll-up
+      // row and the grand total, exactly what the "Last Sale Month" precedent does in Excel.
+      const isLeaf = !!node && node.children.length === 0;
+      const suppressed = !!col.leafOnly && (isTotal || !isLeaf);
+      const v = suppressed ? null : col.value(m);
       const clickable = !!col.drill && v !== null && Math.abs(v) >= 0.5;
 
       // What "wrong" means differs by column: a shortfall is bad when it's big, a collection
@@ -1220,6 +1238,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         v === null ? "—"
         : col.kind === "money" ? fmtINRMoney(v)
         : col.kind === "days" ? daysText(v)
+        : col.kind === "date" ? dateText(v)
         : col.kind === "months" ? monthsText(v)
         : col.kind === "pct"
           ? (col.key === "deltaPp" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}` : `${v.toFixed(1)}%`)

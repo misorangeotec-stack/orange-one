@@ -68,12 +68,22 @@ const monthsCell = (v: number): string | number =>
 const pctCell = (v: number | null): string | number =>
   v === null ? "—" : Math.round(v * 10) / 10;
 
-/** One column's value for one node, ready to drop into a cell. */
-const cellFor = (col: ZCColumn, m: ZCMetrics): string | number => {
+/** Last-receipt cell: the yyyymmdd ordinal → dd-mm-yyyy, 0 (no receipt) → "Never". */
+const dateCell = (v: number): string => {
+  if (!v) return "Never";
+  const s = String(v);
+  return formatDateDMY(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`) || "Never";
+};
+
+/** One column's value for one node, ready to drop into a cell. `isLeaf` blanks the leaf-only
+ *  columns (last receipt date/amount) on group and grand-total rows. */
+const cellFor = (col: ZCColumn, m: ZCMetrics, isLeaf: boolean): string | number => {
+  if (col.leafOnly && !isLeaf) return "—";
   const v = col.value(m);
   if (v === null) return "—";
   if (col.kind === "pct") return pctCell(v);
   if (col.kind === "days") return daysCell(v);
+  if (col.kind === "date") return dateCell(v);
   if (col.kind === "months") return monthsCell(v);
   return Math.round(v);
 };
@@ -145,12 +155,12 @@ function buildRollupSheet(
   for (const r of rows) {
     aoa.push([
       `${"    ".repeat(r.depth)}${r.label}`,
-      ...columns.map((c) => cellFor(c, r.metrics)),
+      ...columns.map((c) => cellFor(c, r.metrics, r.isLeaf)),
     ]);
   }
 
   const grandRow0 = aoa.length;
-  aoa.push(["GRAND TOTAL", ...columns.map((c) => cellFor(c, total))]);
+  aoa.push(["GRAND TOTAL", ...columns.map((c) => cellFor(c, total, false))]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const ncols = header.length;
@@ -193,12 +203,13 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
     "Collection %", "Collection % (net of cheque returns)", `Shortfall vs ${meta.targetPct}%`, "Band",
     "Prior Collections", "Prior %", "Δ pp",
     "Cheque Returns", "Credit Notes",
-    "Max Overdue Days", "Days Since Receipt", "Last Receipt Date",
+    "Max Overdue Days", "Days Since Receipt", "Last Receipt Date", "Last Receipt Amount",
     "Sales in Prior Period", "Last Sale Month", "Months Since Sale",
     "Credit Limit", "Utilization %", "Risk", "Red Mark",
   ];
-  // Indices shift +1 from "Journal Settled" (col 13) onward.
-  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 13, 16, 18, 21, 22, 26, 29];
+  // "Last Receipt Amount" is inserted at col 26, so everything from "Sales in Prior Period"
+  // (was 26, now 27) onward shifts +1 — including "Credit Limit" (was 29, now 30).
+  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 13, 16, 18, 21, 22, 26, 27, 30];
   const PCT_COLS = [14, 15, 19, 20];
 
   const aoa: Array<Array<string | number>> = [];
@@ -238,6 +249,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
       c.maxOverdueDays ?? 0,
       f.lastReceiptDate === null ? "Never" : (f.daysSinceLastReceipt ?? 0),
       f.lastReceiptDate ? formatDateDMY(f.lastReceiptDate) : "Never",
+      f.lastReceiptAmount != null ? Math.round(f.lastReceiptAmount) : "—",
       Math.round(f.salesInPrior),
       f.lastSaleMonth ?? "None",
       monthsCell(f.monthsSinceLastSale),
@@ -257,7 +269,7 @@ function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
     { wch: 13 }, { wch: 30 }, { wch: 17 }, { wch: 13 },
     { wch: 17 }, { wch: 11 }, { wch: 10 },
     { wch: 15 }, { wch: 14 },
-    { wch: 16 }, { wch: 17 }, { wch: 16 },
+    { wch: 16 }, { wch: 17 }, { wch: 16 }, { wch: 18 },
     { wch: 19 }, { wch: 15 }, { wch: 16 },
     { wch: 15 }, { wch: 13 }, { wch: 10 }, { wch: 9 },
   ];

@@ -261,6 +261,48 @@ export function buildLastReceiptDates(
   return out;
 }
 
+/**
+ * ledgerId → the ₹ amount of that ledger's MOST RECENT receipt voucher (same-day receipts
+ * summed), or null when it can't be known. The date twin of this is buildLastReceiptDates;
+ * they are kept as separate functions so the four other reports that consume the date map
+ * (DSO, Overdue Aging, Customer Category) are untouched.
+ *
+ * Under LIVE the bulk snapshot carries no per-voucher detail (only monthly totals), so the
+ * exact last-voucher amount is unknowable here → null. The date still comes through, so the
+ * column shows a date with a "—" amount on the live source.
+ */
+export function buildLastReceiptAmounts(
+  ledgers: Customer[],
+  detail: Record<string, CustomerDetail>,
+  source: CollectionsSource,
+): Map<string, number | null> {
+  const out = new Map<string, number | null>();
+
+  for (const c of ledgers) {
+    if (source === "live") {
+      out.set(c.id, null);
+      continue;
+    }
+
+    const d = detail[c.id];
+    let last: string | null = null;
+    let amount = 0;
+    const consider = (date: string | null, amt: number) => {
+      if (!date) return;
+      if (!last || date > last) { last = date; amount = amt; }
+      else if (date === last) { amount += amt; } // same-day receipts make up one "last receipt"
+    };
+    for (const r of d?.receiptTransactions ?? []) {
+      if (isChequeReturn(r.type)) continue;
+      consider(r.date, r.amount);
+    }
+    for (const o of d?.otherPaymentTransactions ?? []) consider(o.date, o.amount);
+    out.set(c.id, last ? amount : null);
+  }
+
+  return out;
+}
+
 // ── Dominant sale type (the dormant report's scope filter) ──────────────────────────
 
 export const SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
@@ -367,6 +409,9 @@ export interface CollectionFacts {
   lastReceiptDate: string | null;
   /** Days from lastReceiptDate to as-of. null when never paid. */
   daysSinceLastReceipt: number | null;
+  /** ₹ of the voucher behind lastReceiptDate (from the ledger that owns the latest date).
+   *  null = never paid OR unavailable (the live snapshot has no per-voucher amount). */
+  lastReceiptAmount?: number | null;
 
   /**
    * The most recent month with ANY billing, across all constituent ledgers ("Jun-25").
@@ -481,8 +526,9 @@ export function factsFor(
   priorMonths: string[],
   asOfDate: string,
   includeJournalSettlement = false,
+  lastAmounts?: Map<string, number | null>,
 ): CollectionFacts {
-  return factsForScoped(c, series, lastDates, balances, months, windowMonths, priorMonths, asOfDate, null, includeJournalSettlement);
+  return factsForScoped(c, series, lastDates, balances, months, windowMonths, priorMonths, asOfDate, null, includeJournalSettlement, lastAmounts);
 }
 
 /**
@@ -515,6 +561,7 @@ export function factsForScoped(
   asOfDate: string,
   scopeIds: ReadonlySet<string> | null,
   includeJournalSettlement = false,
+  lastAmounts?: Map<string, number | null>,
 ): CollectionFacts {
   const all = c.constituentIds?.length ? c.constituentIds : [c.id];
   const ids = scopeIds ? all.filter((id) => scopeIds.has(id)) : all;
@@ -526,6 +573,7 @@ export function factsForScoped(
   let journalInWindowRaw = 0;
   let openingRaw = 0, priorOpeningRaw = 0;
   let lastReceiptDate: string | null = null;
+  let lastReceiptAmount: number | null = null;
   let lastSaleMonth: string | null = null;
 
   for (const id of ids) {
@@ -544,7 +592,12 @@ export function factsForScoped(
       priorOpeningRaw += openingForLedger(id, series, balances, months, priorMonths[0]);
 
     const last = lastDates.get(id) ?? null;
-    if (last && (!lastReceiptDate || last > lastReceiptDate)) lastReceiptDate = last;
+    // The consolidated customer's last receipt is its most-recently-paying ledger's — take
+    // that ledger's amount alongside its date so the two always describe the same voucher.
+    if (last && (!lastReceiptDate || last > lastReceiptDate)) {
+      lastReceiptDate = last;
+      lastReceiptAmount = lastAmounts?.get(id) ?? null;
+    }
 
     // The consolidated customer is as alive as its MOST RECENTLY active ledger. Compared by
     // position in `months`, never as a string — "Sep-25" < "Apr-25" lexically.
@@ -605,6 +658,7 @@ export function factsForScoped(
     lastReceiptDate,
     daysSinceLastReceipt:
       lastReceiptDate && asOfDate ? daysBetween(lastReceiptDate, asOfDate) : null,
+    lastReceiptAmount,
     lastSaleMonth,
     monthsSinceLastSale,
   };
@@ -709,6 +763,11 @@ export interface ZCMetrics {
   maxOverdueDays: number;
   /** Worst (largest) days-since-last-receipt in the group. NEVER_PAID when any never paid. */
   daysSinceLastReceipt: number;
+  /** Most recent receipt date as a yyyymmdd ordinal (0 = none). Leaf-only on screen — folded
+   *  with MAX only to stay well-typed for grand totals. */
+  lastReceiptAt: number;
+  /** ₹ of the last receipt voucher (0 = none/unknown). Leaf-only on screen. */
+  lastReceiptAmount: number;
   /** Worst (largest) months-since-last-sale in the group. NEVER_SOLD when any never billed. */
   monthsSinceLastSale: number;
   neverPaid: number;
@@ -738,6 +797,7 @@ export const emptyMetrics = (): ZCMetrics => ({
   opening: 0, salesInWindow: 0, collectible: 0, collected: 0, journalSettled: 0, shortfall: 0,
   priorCollections: 0, priorCollectible: 0, chequeReturns: 0, creditNotes: 0,
   maxOverdueDays: 0, daysSinceLastReceipt: -1, monthsSinceLastSale: -1,
+  lastReceiptAt: 0, lastReceiptAmount: 0,
   neverPaid: 0, neverSold: 0, stillBuying: 0, wentQuiet: 0, bounced: 0,
   deteriorating: 0, zeroCollectors: 0,
   creditLimit: 0,
@@ -747,6 +807,13 @@ export const emptyMetrics = (): ZCMetrics => ({
  * `metricsOf` needs the target to compute Shortfall, and buildGroupTree wants a plain
  * (row) => metrics — so it's curried. Memoise the result on `targetPct` at the call site.
  */
+/** "2026-06-18" → 20260618. 0 for null/malformed — sorts and MAX-folds as "no receipt". */
+const ymdOrdinal = (iso: string | null): number => {
+  if (!iso) return 0;
+  const n = Number(iso.slice(0, 10).replace(/-/g, ""));
+  return Number.isFinite(n) ? n : 0;
+};
+
 export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
   const c = r.customer;
   const f = r.facts;
@@ -769,6 +836,8 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
     creditNotes: f.creditNotes,
     maxOverdueDays: c.maxOverdueDays ?? 0,
     daysSinceLastReceipt: never ? NEVER_PAID : (f.daysSinceLastReceipt ?? -1),
+    lastReceiptAt: ymdOrdinal(f.lastReceiptDate),
+    lastReceiptAmount: f.lastReceiptAmount ?? 0,
     monthsSinceLastSale: f.monthsSinceLastSale,
     neverPaid: never ? 1 : 0,
     neverSold: neverSold ? 1 : 0,
@@ -804,10 +873,12 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
   acc.deteriorating    += m.deteriorating;
   acc.zeroCollectors   += m.zeroCollectors;
   acc.creditLimit      += m.creditLimit;
+  acc.lastReceiptAmount += m.lastReceiptAmount; // leaf-only on screen; summed to stay well-typed
   // Non-summable: the group inherits its worst member.
   acc.maxOverdueDays       = Math.max(acc.maxOverdueDays, m.maxOverdueDays);
   acc.daysSinceLastReceipt = Math.max(acc.daysSinceLastReceipt, m.daysSinceLastReceipt);
   acc.monthsSinceLastSale  = Math.max(acc.monthsSinceLastSale, m.monthsSinceLastSale);
+  acc.lastReceiptAt        = Math.max(acc.lastReceiptAt, m.lastReceiptAt);
 }
 
 // ── Focus lenses (the clickable KPI cards) ──────────────────────────────────────────
@@ -991,13 +1062,14 @@ export type ZCColumnKey =
   | "opening" | "salesInWindow" | "collectible" | "collected" | "journalSettled"
   | "collectionPct" | "shortfall" | "priorPct" | "deltaPp"
   | "priorCollections" | "chequeReturns" | "creditNotes"
-  | "daysSinceLastReceipt" | "monthsSinceLastSale" | "maxOverdueDays" | "creditLimit";
+  | "daysSinceLastReceipt" | "lastReceipt" | "lastReceiptAmount"
+  | "monthsSinceLastSale" | "maxOverdueDays" | "creditLimit";
 
 export interface ZCColumn {
   key: ZCColumnKey;
   label: string;
-  /** How the cell renders: money (₹), a plain count, a day count, a month count, or a %. */
-  kind: "money" | "count" | "days" | "pct" | "months";
+  /** How the cell renders: money (₹), a plain count, a day count, a month count, a %, or a date. */
+  kind: "money" | "count" | "days" | "pct" | "months" | "date";
   /**
    * The node's value for this column, derived from its SUMMED metrics.
    *
@@ -1012,6 +1084,9 @@ export interface ZCColumn {
   alarm?: boolean;
   /** A percentage column where LOW is bad (the alarm fires below the threshold). */
   lowIsBad?: boolean;
+  /** A per-customer fact that can't be summed — shown only on leaf rows, "—" on group rows
+   *  and the grand total (the same reason "Last Sale Month" never went on screen). */
+  leafOnly?: boolean;
 }
 
 export const ZC_COLUMNS: ZCColumn[] = [
@@ -1039,6 +1114,10 @@ export const ZC_COLUMNS: ZCColumn[] = [
   { key: "chequeReturns",        label: "Cheque Returns",    kind: "money", value: (m) => m.chequeReturns, alarm: true },
   { key: "creditNotes",          label: "Credit Notes",      kind: "money", value: (m) => m.creditNotes },
   { key: "daysSinceLastReceipt", label: "Days Since Receipt", kind: "days", value: (m) => m.daysSinceLastReceipt, alarm: true },
+  // Leaf-only: a date/amount can't be summed onto a group row. The exact voucher amount only
+  // exists in the pipeline day-detail — "—" under the live snapshot, where the date still shows.
+  { key: "lastReceipt",       label: "Last Receipt",   kind: "date",  leafOnly: true, value: (m) => m.lastReceiptAt || null },
+  { key: "lastReceiptAmount", label: "Last Receipt ₹", kind: "money", leafOnly: true, value: (m) => m.lastReceiptAmount || null },
   // Folded with MAX, so a group reads as its DEADEST member. The exact month label is a
   // per-customer fact and can't be summed — it ships in the Excel export instead.
   { key: "monthsSinceLastSale",  label: "Months Since Sale", kind: "months", value: (m) => m.monthsSinceLastSale, alarm: true },
@@ -1062,7 +1141,7 @@ export type CollectionsMode = "zero" | "threshold" | "dormant";
  */
 export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
   if (mode === "zero")
-    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "journalSettled", "priorCollections", "daysSinceLastReceipt"];
+    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "journalSettled", "priorCollections", "daysSinceLastReceipt", "lastReceipt", "lastReceiptAmount"];
   if (mode === "dormant")
     return ["customers", "outstanding", "overdue", "over180", "collected", "monthsSinceLastSale", "daysSinceLastReceipt"];
   return [
