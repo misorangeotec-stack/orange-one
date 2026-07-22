@@ -8,6 +8,7 @@ import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import StepModal from "../../components/StepModal";
+import ProductionStepper from "../../components/ProductionStepper";
 import StatusPill from "../../components/StatusPill";
 import { dmy, numOrDash, requestSubject } from "../../lib/format";
 import { openStep, stepDoneAt, stepDoneBy, type QueueStep } from "../../lib/queues";
@@ -118,6 +119,10 @@ export default function RequestDetail() {
           )}
         </div>
       </div>
+
+      <Card className="p-4">
+        <ProductionStepper request={r} />
+      </Card>
 
       <Card className="p-5">
         <SectionHeading>Issue Slip</SectionHeading>
