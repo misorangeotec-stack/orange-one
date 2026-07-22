@@ -103,11 +103,11 @@ export default function NewRequest() {
       </div>
 
       <Card className="p-5 space-y-4">
-        <FieldLabel label="FG Item Name" required>
-          <Combobox value={f.fgItemId} onChange={f.setFgItemId} options={f.fgItemOptions} placeholder="Select finished-good item" autoAdvance />
-        </FieldLabel>
         <FieldLabel label="Job Card No." required>
           <TextInput value={f.jobcardNo} onChange={(e) => f.setJobcardNo(e.target.value)} placeholder="e.g. JC-1043" />
+        </FieldLabel>
+        <FieldLabel label="FG Item Name" required>
+          <Combobox value={f.fgItemId} onChange={f.setFgItemId} options={f.fgItemOptions} placeholder="Select finished-good item" autoAdvance />
         </FieldLabel>
 
         <div className="space-y-2">
