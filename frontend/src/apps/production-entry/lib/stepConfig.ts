@@ -123,14 +123,12 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     stepKey: "mc_testing",
     title: "Testing of M/C",
     actionLabel: "Record M/C testing",
-    description: "Job cards awaiting machine testing after lab testing.",
+    description: "Job cards awaiting machine testing after lab testing (approve / reject).",
     completedBlurb: "M/C tests you record appear here, and stay revisable until the packing-material handover is recorded.",
-    fields: [
-      { key: "mc_actual_date", label: "Actual date of M/C testing", kind: "date", get: (r) => s(r.mcActualDate), hint: "defaults to today if left blank" },
-      { key: "mc_status", label: "Status of M/C testing", kind: "status", get: (r) => s(r.mcStatus) },
-      { key: "mc_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.mcRemarks) },
-    ],
-    captured: { key: "mcDate", header: "M/C testing date", get: (r) => dmy(r.mcActualDate), isDate: true },
+    // The single approve/reject form (read-only top, result + remarks + optional
+    // attachment) is rendered entirely by StepModal.
+    fields: [],
+    captured: { key: "mcResult", header: "Result", get: (r) => (r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : "—") },
   },
   pm_handover: {
     stepKey: "pm_handover",

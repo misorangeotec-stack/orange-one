@@ -138,6 +138,7 @@ export interface ProductionRequest {
   actualQty: number | null; // actual output = expected − scrap
   scrapQty: number | null;
   peLabQty: number | null;
+  peTallyEntry: string | null;
   lotNo: string | null;
   peRemarks: string | null;
   peAt: string | null;
@@ -154,10 +155,12 @@ export interface ProductionRequest {
   qcAt: string | null;
   qcBy: string | null;
 
-  // step 6: mc_testing
+  // step 6: mc_testing — a single approve/reject (mcStatus = "approved" | "rejected")
   mcActualDate: string | null;
   mcStatus: string | null;
   mcRemarks: string | null;
+  mcAttachmentPath: string | null;
+  mcAttachmentName: string | null;
   mcAt: string | null;
   mcBy: string | null;
 

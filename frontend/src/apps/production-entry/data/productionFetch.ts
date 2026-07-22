@@ -178,6 +178,7 @@ const mapRequest = (r: any): ProductionRequest => ({
   actualQty: num(r.actual_qty),
   scrapQty: num(r.scrap_qty),
   peLabQty: num(r.pe_lab_qty),
+  peTallyEntry: r.pe_tally_entry ?? null,
   lotNo: r.lot_no ?? null,
   peRemarks: r.pe_remarks ?? null,
   peAt: r.pe_at ?? null,
@@ -205,6 +206,8 @@ const mapRequest = (r: any): ProductionRequest => ({
   mcActualDate: r.mc_actual_date ?? null,
   mcStatus: r.mc_status ?? null,
   mcRemarks: r.mc_remarks ?? null,
+  mcAttachmentPath: r.mc_attachment_path ?? null,
+  mcAttachmentName: r.mc_attachment_name ?? null,
   mcAt: r.mc_at ?? null,
   mcBy: r.mc_by ?? null,
 

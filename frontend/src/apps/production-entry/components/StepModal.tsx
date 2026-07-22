@@ -116,15 +116,21 @@ export default function StepModal({
   const isLogBook = stepKey === "transfer_slip";
   const isProduction = stepKey === "production_entry";
   const isQuality = stepKey === "quality_check";
+  const isMc = stepKey === "mc_testing";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
   const [prodScrap, setProdScrap] = useState("");
   const [prodLab, setProdLab] = useState("");
+  const [prodTally, setProdTally] = useState("");
   const [qcResult, setQcResult] = useState<"approved" | "rejected" | "">("");
   const [qcRemarks, setQcRemarks] = useState("");
   const [qcTestDate, setQcTestDate] = useState("");
   const [qcFile, setQcFile] = useState<File | null>(null);
+  const [mcResult, setMcResult] = useState<"approved" | "rejected" | "">("");
+  const [mcRemarks, setMcRemarks] = useState("");
+  const [mcTestDate, setMcTestDate] = useState("");
+  const [mcFile, setMcFile] = useState<File | null>(null);
   const [qtyFallback, setQtyFallback] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [logFile, setLogFile] = useState<File | null>(null);
@@ -172,12 +178,20 @@ export default function StepModal({
       setLogRows(isLogBook ? seedLogRows(request) : []);
       setProdScrap(isProduction && request.scrapQty != null ? String(request.scrapQty) : "");
       setProdLab(isProduction && request.peLabQty != null ? String(request.peLabQty) : "");
+      setProdTally(isProduction ? request.peTallyEntry ?? "" : "");
       // Quality: when editing correct the last round; when recording start a fresh one.
       const lastQc = request.qcRounds[request.qcRounds.length - 1];
       setQcResult(editing && lastQc?.result ? lastQc.result : "");
       setQcRemarks(editing ? lastQc?.remarks ?? "" : "");
       setQcTestDate(editing ? (lastQc?.testDate ?? "").slice(0, 10) : "");
       setQcFile(null);
+      // M/C testing: a single approve/reject. When editing, show the recorded
+      // result read-only; when recording, start blank (a prior rejection is shown
+      // for context but the result is re-picked).
+      setMcResult(editing && (request.mcStatus === "approved" || request.mcStatus === "rejected") ? request.mcStatus : "");
+      setMcRemarks(editing ? request.mcRemarks ?? "" : "");
+      setMcTestDate(editing ? (request.mcActualDate ?? "").slice(0, 10) : "");
+      setMcFile(null);
       setQtyFallback(isHandover && request.mhBomLines.length === 0 ? (request.mhQty != null ? String(request.mhQty) : "") : "");
       setFile(null);
       setLogFile(null);
@@ -187,7 +201,7 @@ export default function StepModal({
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, request, cfg, isHandover, isLogBook, isProduction, isQuality, editing]);
+  }, [open, request, cfg, isHandover, isLogBook, isProduction, isQuality, isMc, editing]);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
@@ -221,6 +235,7 @@ export default function StepModal({
       if (!qcResult) { setErr("Choose Approve or Reject."); return; }
       if (round === 3 && !qcTestDate.trim()) { setErr("Enter the test date for the final test."); return; }
     }
+    if (isMc && !editing && !mcResult) { setErr("Choose Approve or Reject."); return; }
     setBusy(true);
     setErr(null);
     try {
@@ -274,6 +289,21 @@ export default function StepModal({
         }
       }
 
+      if (isMc) {
+        if (mcFile) {
+          const up = await uploadStepDocument(request.id, "mctesting", mcFile);
+          payload.mc_attachment_path = up.path;
+          payload.mc_attachment_name = up.name;
+        }
+        payload.mc_remarks = mcRemarks;
+        if (editing) {
+          payload.mc_actual_date = mcTestDate; // correct the recorded test's date
+        } else {
+          payload.mc_result = mcResult;
+          payload.mc_test_date = mcTestDate; // blank → server uses today
+        }
+      }
+
       if (isProduction) {
         const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
         const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
@@ -281,6 +311,7 @@ export default function StepModal({
         payload.scrap_qty = prodScrap;
         payload.actual_qty = String(output);
         payload.pe_lab_qty = prodLab;
+        payload.pe_tally_entry = prodTally;
       }
 
       if (cfg.hasAttachment && file) {
@@ -310,6 +341,8 @@ export default function StepModal({
       <QcDocLink path={request.qcAttachmentPath} name={request.qcAttachmentName} />
     ) : isLogBook && request?.tsAttachmentPath ? (
       <QcDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
+    ) : isMc && request?.mcAttachmentPath ? (
+      <QcDocLink path={request.mcAttachmentPath} name={request.mcAttachmentName} />
     ) : null;
 
   const titlePrefix = editing && !readOnly ? `Edit ${cfg.title.toLowerCase()}` : readOnly ? cfg.title : cfg.actionLabel;
@@ -324,7 +357,9 @@ export default function StepModal({
       // grid especially) show every column without wrapping.
       size="3xl"
       title={`${titlePrefix} — ${request?.reqNo ?? ""}`}
-      subtitle={request ? requestSubject(request) : undefined}
+      // Quality & M/C testing already show the Lot/Batch Card in their own grid,
+      // so don't repeat it in the subtitle.
+      subtitle={request && !isQuality && !isMc ? requestSubject(request) : undefined}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -606,6 +641,76 @@ export default function StepModal({
           );
         })()}
 
+        {isMc && request && (() => {
+          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+          const priorReject = !editing && request.mcStatus === "rejected";
+          const btn = (v: "approved" | "rejected", label: string, on: string, off: string) => (
+            <button
+              type="button"
+              disabled={readOnly || editing}
+              onClick={() => setMcResult(v)}
+              className={`flex-1 rounded-xl border px-3 py-2 text-[13px] font-semibold transition ${mcResult === v ? on : off}`}
+            >
+              {label}
+            </button>
+          );
+          return (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-page px-3.5 py-3">
+                <div><div className={cap}>Lot/Batch Card</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.jobcardNo || "—"}</div></div>
+                <div><div className={cap}>FG Item</div><div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div></div>
+                <div><div className={cap}>Lab Testing Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.peLabQty)}</div></div>
+                <div><div className={cap}>Actual Output</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.actualQty)}</div></div>
+              </div>
+
+              {priorReject && (
+                <div className="rounded-xl bg-[#FDECEC] px-3.5 py-2 text-[12.5px] text-ryg-red font-medium">
+                  A previous M/C test was rejected{request.mcActualDate ? ` on ${dmy(request.mcActualDate)}` : ""} — record the re-test below.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {editing ? (
+                  <div className="text-[12.5px] text-grey">
+                    Result: <span className={mcResult === "approved" ? "text-ryg-green font-semibold" : "text-ryg-red font-semibold"}>{mcResult === "approved" ? "Approved" : "Rejected"}</span>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    {btn("approved", "Approve", "border-ryg-green bg-[#E9F8EF] text-ryg-green", "border-line text-grey hover:border-ryg-green/50")}
+                    {btn("rejected", "Reject", "border-ryg-red bg-[#FDECEC] text-ryg-red", "border-line text-grey hover:border-ryg-red/50")}
+                  </div>
+                )}
+
+                {editing ? (
+                  <FieldLabel label="Test date">
+                    <TextInput type="date" disabled={readOnly} value={mcTestDate} onChange={(e) => setMcTestDate(e.target.value)} />
+                  </FieldLabel>
+                ) : (
+                  <p className="text-[12px] text-grey-2">Test date is captured automatically as today.</p>
+                )}
+
+                <FieldLabel label="Remarks">
+                  <TextArea rows={2} disabled={readOnly} value={mcRemarks} onChange={(e) => setMcRemarks(e.target.value)} placeholder="M/C testing remarks" />
+                </FieldLabel>
+
+                <FieldLabel label="Attachment of testing" hint={editing ? "choose a file to replace it" : "optional"}>
+                  <input
+                    type="file"
+                    disabled={readOnly}
+                    onChange={(e) => setMcFile(e.target.files?.[0] ?? null)}
+                    className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+                  />
+                  {request.mcAttachmentPath && (
+                    <div className="mt-1 text-[12px] text-grey-2">
+                      Current file: <QcDocLink path={request.mcAttachmentPath} name={request.mcAttachmentName} />
+                    </div>
+                  )}
+                </FieldLabel>
+              </div>
+            </>
+          );
+        })()}
+
         {isProduction && request && (() => {
           const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
           const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
@@ -613,26 +718,34 @@ export default function StepModal({
           const val = "text-[15px] font-bold text-navy tabular-nums";
           return (
             <>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 rounded-xl bg-page px-3.5 py-3">
-                <div>
+              {/* Uniform 6-col grid: FG spans 2 (long name), the four metrics each
+                  a captioned cell so display values and number inputs line up. */}
+              <div className="grid grid-cols-2 sm:grid-cols-6 gap-x-4 gap-y-3 rounded-xl bg-page px-3.5 py-3 items-start">
+                <div className="col-span-2">
                   <div className={cap}>FG Item</div>
                   <div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div>
                 </div>
                 <div>
                   <div className={cap}>Expected Qty</div>
-                  <div className={val}>{expected}</div>
+                  <div className={`${val} pt-0.5`}>{expected}</div>
                 </div>
-                <FieldLabel label="Scrap Qty">
-                  <TextInput type="number" disabled={readOnly} className="px-2.5 py-1.5 text-[13.5px]" value={prodScrap} onChange={(e) => setProdScrap(e.target.value)} placeholder="0" />
-                </FieldLabel>
+                <div>
+                  <div className={cap}>Scrap Qty</div>
+                  <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={prodScrap} onChange={(e) => setProdScrap(e.target.value)} placeholder="0" />
+                </div>
                 <div>
                   <div className={cap}>Actual Output</div>
-                  <div className={val}>{output}</div>
+                  <div className={`${val} pt-0.5`}>{output}</div>
                 </div>
-                <FieldLabel label="Lab Testing Qty">
-                  <TextInput type="number" disabled={readOnly} className="px-2.5 py-1.5 text-[13.5px]" value={prodLab} onChange={(e) => setProdLab(e.target.value)} placeholder="0" />
-                </FieldLabel>
+                <div>
+                  <div className={cap}>Lab Testing Qty</div>
+                  <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={prodLab} onChange={(e) => setProdLab(e.target.value)} placeholder="0" />
+                </div>
               </div>
+
+              <FieldLabel label="Tally Entry" hint="Tally entry number for the production posting">
+                <TextInput disabled={readOnly} value={prodTally} onChange={(e) => setProdTally(e.target.value)} placeholder="e.g. voucher / entry no." />
+              </FieldLabel>
 
               {request.tsBomLines.length > 0 && (
                 <div className="space-y-1.5">
@@ -646,7 +759,7 @@ export default function StepModal({
                           <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Handover</th>
                           <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Actual Use</th>
                           <th className="font-medium px-2 py-2 w-16">Unit</th>
-                          <th className="font-medium px-2 py-2 w-40 whitespace-nowrap">Issue Lot No.</th>
+                          <th className="font-medium px-3 py-2 min-w-[160px] whitespace-nowrap">Issue Lot Number</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -657,7 +770,7 @@ export default function StepModal({
                             <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.handoverQty)}</td>
                             <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.actualUse)}</td>
                             <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
-                            <td className="px-2 py-2 text-grey">{l.lotNo || "—"}</td>
+                            <td className="px-3 py-2 text-navy whitespace-nowrap">{l.lotNo || "—"}</td>
                           </tr>
                         ))}
                       </tbody>

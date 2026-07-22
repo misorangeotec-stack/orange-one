@@ -47,13 +47,13 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
       const n = r.tsBomLines.length;
       return [n ? `${n} item${n === 1 ? "" : "s"} logged` : null, r.tsAttachmentName ? "attachment" : null].filter(Boolean).join(" · ") || null;
     }
-    case "production_entry": return [r.peExpectedQty != null ? `Expected ${r.peExpectedQty}` : null, r.scrapQty != null ? `Scrap ${r.scrapQty}` : null, r.actualQty != null ? `Output ${r.actualQty}` : null, r.peLabQty != null ? `Lab ${r.peLabQty}` : null].filter(Boolean).join(" · ") || null;
+    case "production_entry": return [r.peExpectedQty != null ? `Expected ${r.peExpectedQty}` : null, r.scrapQty != null ? `Scrap ${r.scrapQty}` : null, r.actualQty != null ? `Output ${r.actualQty}` : null, r.peLabQty != null ? `Lab ${r.peLabQty}` : null, r.peTallyEntry ? `Tally ${r.peTallyEntry}` : null].filter(Boolean).join(" · ") || null;
     case "quality_check": {
       const n = r.qcRounds.length;
       const res = r.qcStatus ? r.qcStatus[0].toUpperCase() + r.qcStatus.slice(1) : null;
       return [n ? `Test ${n}` : null, res, r.qcRetestDue ? `retest by ${dmy(r.qcRetestDue)}` : null].filter(Boolean).join(" · ") || null;
     }
-    case "mc_testing": return [r.mcStatus, r.mcRemarks].filter(Boolean).join(" · ") || null;
+    case "mc_testing": return [r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : null, r.mcRemarks].filter(Boolean).join(" · ") || null;
     case "pm_handover": return [r.pmhStatus, r.pmhQty != null ? `Qty ${r.pmhQty}` : null, r.pmhBatchNo ? `Batch ${r.pmhBatchNo}` : null].filter(Boolean).join(" · ") || null;
     case "pm_transfer": return [r.pmtStatus, r.pmtQty != null ? `Qty ${r.pmtQty}` : null].filter(Boolean).join(" · ") || null;
     case "packing_entry": return [r.pkStatus, r.packedQty != null ? `Packed ${r.packedQty}` : null, r.looseInkQty != null ? `Loose ${r.looseInkQty}` : null].filter(Boolean).join(" · ") || null;
