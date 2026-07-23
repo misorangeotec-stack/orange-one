@@ -147,6 +147,7 @@ export default function StepModal({
   const isPmHandover = stepKey === "pm_handover";
   const isPmTransfer = stepKey === "pm_transfer";
   const isPacking = stepKey === "packing_entry";
+  const isFgTransfer = stepKey === "fg_transfer";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
@@ -156,6 +157,9 @@ export default function StepModal({
   const [logLab, setLogLab] = useState("");
   const [logPacked, setLogPacked] = useState("");
   const [prodTally, setProdTally] = useState("");
+  // FG transfer: the two Tally-entry confirmations that gate Save.
+  const [fgProdTick, setFgProdTick] = useState(false);
+  const [fgHojiwalaTick, setFgHojiwalaTick] = useState(false);
   const [packRows, setPackRows] = useState<PackRow[]>([]);
   const [pmhQty, setPmhQty] = useState("");
   const [qcResult, setQcResult] = useState<"approved" | "rejected" | "">("");
@@ -227,6 +231,8 @@ export default function StepModal({
       setLogLab(isLogBook && request.peLabQty != null ? String(request.peLabQty) : "");
       setLogPacked(isLogBook && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
       setProdTally(isProduction ? request.peTallyEntry ?? "" : "");
+      setFgProdTick(isFgTransfer ? request.fgProdToFg : false);
+      setFgHojiwalaTick(isFgTransfer ? request.fgToHojiwala : false);
       // Quality: when editing correct the last round; when recording start a fresh one.
       const lastQc = request.qcRounds[request.qcRounds.length - 1];
       setQcResult(editing && lastQc?.result ? lastQc.result : "");
@@ -284,11 +290,20 @@ export default function StepModal({
       if (round === 3 && !qcTestDate.trim()) { setErr("Enter the test date for the final test."); return; }
     }
     if (isMc && !editing && !mcResult) { setErr("Choose Approve or Reject."); return; }
+    if (isFgTransfer && !(fgProdTick && fgHojiwalaTick)) {
+      setErr("Confirm both Tally entries — Production → Finished Goods and Finished Goods → Hojiwala — before saving.");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
       const payload: Record<string, unknown> = {};
       for (const f of cfg.fields) payload[f.key] = values[f.key] ?? "";
+
+      if (isFgTransfer) {
+        payload.fg_prod_to_fg = fgProdTick;
+        payload.fg_to_hojiwala = fgHojiwalaTick;
+      }
 
       if (isHandover) {
         if (hoRows.length > 0) {
@@ -426,7 +441,7 @@ export default function StepModal({
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
+          <Button size="sm" onClick={save} disabled={busy || (isFgTransfer && !(fgProdTick && fgHojiwalaTick))}>{busy ? "Saving…" : "Save"}</Button>
         </>
       }
     >
@@ -1141,6 +1156,56 @@ export default function StepModal({
               </div>
 
               <p className="text-[12px] text-grey-2">Review the details above, then Save to log this packing entry in Tally.</p>
+            </>
+          );
+        })()}
+
+        {isFgTransfer && request && (() => {
+          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+          const val = "text-[15px] font-bold text-navy tabular-nums";
+          const unit = fgUnit ? <span className="text-[11px] font-normal text-grey-2"> {fgUnit}</span> : null;
+          const tick = (
+            checked: boolean,
+            set: (v: boolean) => void,
+            title: string,
+            sub: string,
+          ) => (
+            <label
+              className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 transition ${readOnly ? "cursor-default" : "cursor-pointer"} ${checked ? "border-ryg-green bg-[#E9F8EF]" : "border-line hover:border-orange/50"}`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={readOnly}
+                onChange={(e) => set(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-ryg-green"
+              />
+              <span className="leading-tight">
+                <span className="block text-[13.5px] font-semibold text-navy">{title}</span>
+                <span className="block text-[12px] text-grey-2">{sub}</span>
+              </span>
+            </label>
+          );
+          return (
+            <>
+              {/* Lot/Batch Card + FG item are in the shared header above. */}
+              <div className="grid grid-cols-2 gap-3 rounded-xl bg-page px-3.5 py-3">
+                <div><div className={cap}>Packed Qty</div><div className={val}>{request.tsPackedQty != null ? <>{request.tsPackedQty}{unit}</> : "—"}</div></div>
+                <div><div className={cap}>Production Tally Entry</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="block text-[13px] font-medium text-navy">Confirm both Tally entries</span>
+                <div className="grid gap-2.5 sm:grid-cols-2">
+                  {tick(fgProdTick, setFgProdTick, "Production → Finished Goods", "Tally entry made")}
+                  {tick(fgHojiwalaTick, setFgHojiwalaTick, "Finished Goods → Hojiwala", "Tally entry made")}
+                </div>
+                {!readOnly && (
+                  <p className="text-[12px] text-grey-2">
+                    Both entries must be made in Tally and ticked here before you can Save — saving closes the job card.
+                  </p>
+                )}
+              </div>
             </>
           );
         })()}

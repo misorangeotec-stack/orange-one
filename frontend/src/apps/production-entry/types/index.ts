@@ -213,11 +213,13 @@ export interface ProductionRequest {
   pkAt: string | null;
   pkBy: string | null;
 
-  // step 10: fg_transfer — closes the card
+  // step 10: fg_transfer (UI "FG Transfer to Godown") — two Tally-entry ticks close the card
   fgActualDate: string | null;
   fgStatus: string | null;
   finalQty: number | null;
   fgRemarks: string | null;
+  fgProdToFg: boolean; // "Production → Finished Goods" Tally entry made
+  fgToHojiwala: boolean; // "Finished Goods → Hojiwala" Tally entry made
   fgAt: string | null;
   fgBy: string | null;
   closedAt: string | null;

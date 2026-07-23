@@ -69,7 +69,7 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
       const net = r.actualQty != null ? Math.round((r.actualQty - (r.peLabQty ?? 0)) * 1000) / 1000 : null;
       return [r.pkAt ? "Logged" : null, net != null ? `Net ${net}` : null, r.pmhBomLines.length ? `${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
     }
-    case "fg_transfer": return [r.fgStatus, r.finalQty != null ? `Final ${r.finalQty}` : null].filter(Boolean).join(" · ") || null;
+    case "fg_transfer": return [r.fgProdToFg ? "Prod→FG ✓" : null, r.fgToHojiwala ? "FG→Hojiwala ✓" : null, r.closedAt ? "closed" : null].filter(Boolean).join(" · ") || null;
   }
 }
 

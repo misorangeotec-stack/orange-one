@@ -173,16 +173,13 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
   },
   fg_transfer: {
     stepKey: "fg_transfer",
-    title: "Finished Good Transfer to Hojiwala",
-    actionLabel: "Record transfer & close",
-    description: "Job cards awaiting the finished-good transfer to Hojiwala — recording it closes the card.",
+    title: "FG Transfer to Godown",
+    actionLabel: "Confirm & close",
+    description: "Job cards awaiting the finished-good transfer to the godown — confirming both Tally entries closes the card.",
     completedBlurb: "Finished-good transfers you record appear here. As the last step it stays editable after the card closes.",
-    fields: [
-      { key: "fg_actual_date", label: "Actual date of transfer to Hojiwala", kind: "date", get: (r) => s(r.fgActualDate), hint: "defaults to today if left blank" },
-      { key: "fg_status", label: "Status of Hojiwala transfer entry", kind: "status", get: (r) => s(r.fgStatus) },
-      { key: "final_qty", label: "Final Qty", kind: "number", get: (r) => n(r.finalQty) },
-      { key: "fg_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.fgRemarks) },
-    ],
-    captured: { key: "finalQty", header: "Final Qty", get: (r) => numOrDash(r.finalQty) },
+    // Review + two tick marks (Production → Finished Goods, Finished Goods →
+    // Hojiwala) rendered by StepModal. Save is enabled only when both are ticked.
+    fields: [],
+    captured: { key: "packedQty", header: "Packed Qty", get: (r) => numOrDash(r.tsPackedQty) },
   },
 };

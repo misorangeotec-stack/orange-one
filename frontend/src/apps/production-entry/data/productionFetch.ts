@@ -250,6 +250,8 @@ const mapRequest = (r: any): ProductionRequest => ({
   fgStatus: r.fg_status ?? null,
   finalQty: num(r.final_qty),
   fgRemarks: r.fg_remarks ?? null,
+  fgProdToFg: !!r.fg_prod_to_fg,
+  fgToHojiwala: !!r.fg_to_hojiwala,
   fgAt: r.fg_at ?? null,
   fgBy: r.fg_by ?? null,
   closedAt: r.closed_at ?? null,
