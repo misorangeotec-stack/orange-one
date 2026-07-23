@@ -76,9 +76,9 @@ export function buildSamplingNav(opts: {
     nav.push({ label, to, icon, section: queueUsed ? undefined : "Queues" });
     queueUsed = true;
   };
-  if (opts.canReceive) queue("Sample Received", `${B}/queues/receive`, ic.inbound);
   if (opts.canCollect) queue("Sample Collect", `${B}/queues/collect`, ic.inbound);
-  if (opts.canSampleReceived) queue("Handover Received", `${B}/queues/received`, ic.confirm);
+  if (opts.canSampleReceived) queue("Sample Received", `${B}/queues/received`, ic.confirm);
+  if (opts.canReceive) queue("Sample Received (Lab)", `${B}/queues/receive`, ic.inbound);
   if (opts.canSend) queue("Sample Sent", `${B}/queues/send`, ic.outbound);
   if (opts.canConfirm) queue("Receipt Confirmed", `${B}/queues/confirm`, ic.confirm);
   if (opts.canTest) queue("Testing", `${B}/queues/testing`, ic.testing);

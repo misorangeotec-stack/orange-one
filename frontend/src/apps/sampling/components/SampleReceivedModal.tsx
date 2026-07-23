@@ -106,6 +106,7 @@ export default function SampleReceivedModal({
       onClose={onClose}
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
+      size="xl"
       title={`${editing && !readOnly ? "Edit sample receipt" : readOnly ? "Sample received" : "Confirm sample received"} — ${request?.reqNo ?? ""}`}
       subtitle={request ? requestSubject(request) : undefined}
       footer={

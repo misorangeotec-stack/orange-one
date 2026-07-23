@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
-import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { FieldLabel } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useSamplingStore } from "../store";
 import { requestSubject } from "../lib/format";
@@ -33,7 +33,6 @@ export default function CollectModal({
   const selfId = session.user?.id ?? "";
 
   const [pick, setPick] = useState("");        // a userId, selfId, or `free:<name>`
-  const [collectedDate, setCollectedDate] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -44,7 +43,6 @@ export default function CollectModal({
         request.handoverRecipientId ||
           (request.handoverRecipientName ? `free:${request.handoverRecipientName}` : selfId),
       );
-      setCollectedDate(request.collectedDate ?? "");
       setErr(null);
       setBusy(false);
     }
@@ -78,7 +76,8 @@ export default function CollectModal({
         recipientName =
           pick === selfId ? session.user?.name ?? "Self" : s.activeRecipients.find((r) => r.userId === pick)?.name ?? null;
       }
-      const input = { handoverRecipientId: recipientId, handoverRecipientName: recipientName, collectedDate: collectedDate || null };
+      // Date collected defaults to today server-side (the entry date).
+      const input = { handoverRecipientId: recipientId, handoverRecipientName: recipientName, collectedDate: null };
       if (editing) await s.updateCollect(request, input);
       else await s.recordCollect(request, input);
       onClose();
@@ -94,6 +93,7 @@ export default function CollectModal({
       open={open}
       onClose={onClose}
       readOnly={readOnly}
+      size="xl"
       title={`${editing && !readOnly ? "Edit sample collection" : readOnly ? "Sample collection" : "Sample collect & handover"} — ${request?.reqNo ?? ""}`}
       subtitle={request ? requestSubject(request) : undefined}
       footer={
@@ -119,9 +119,6 @@ export default function CollectModal({
             }}
             createLabel={(q) => `Hand to “${q}”`}
           />
-        </FieldLabel>
-        <FieldLabel label="Date collected" hint="defaults to today if left blank">
-          <TextInput type="date" value={collectedDate} onChange={(e) => setCollectedDate(e.target.value)} />
         </FieldLabel>
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>

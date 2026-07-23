@@ -22,9 +22,17 @@ export default function SamplingLayout() {
   const s = useSamplingStore();
   const orgPersonById = useOrgPersonById();
 
-  const canReceive = s.isProcessCoordinator || s.isStepOwner("receive_sample") || s.myQueue("receive_sample").length > 0;
-  const canCollect = s.isProcessCoordinator || s.isStepOwner("sample_collect") || s.myQueue("sample_collect").length > 0;
-  const canSampleReceived = s.isProcessCoordinator || s.isStepOwner("sample_received") || s.myQueue("sample_received").length > 0;
+  // Keep a person's queue link visible even after they finish the step, so it
+  // never disappears mid-flow: show it if they are/were the collector (or the
+  // hand-over recipient) on any request, not only while work is pending.
+  const uid = user?.id ?? "";
+  const iAmLabCollector = !!uid && s.requests.some((r) => r.labTestingRequired !== false && r.collectorId === uid);
+  const iAmCollector = !!uid && s.requests.some((r) => r.labTestingRequired === false && r.collectorId === uid);
+  const iAmRecipient = !!uid && s.requests.some((r) => r.handoverRecipientId === uid);
+
+  const canReceive = s.isProcessCoordinator || s.isStepOwner("receive_sample") || s.myQueue("receive_sample").length > 0 || iAmLabCollector;
+  const canCollect = s.isProcessCoordinator || s.isStepOwner("sample_collect") || s.myQueue("sample_collect").length > 0 || iAmCollector;
+  const canSampleReceived = s.isProcessCoordinator || s.isStepOwner("sample_received") || s.myQueue("sample_received").length > 0 || iAmRecipient;
   const canSend = s.isProcessCoordinator || s.isStepOwner("send_sample") || s.myQueue("send_sample").length > 0;
   const canConfirm = s.isProcessCoordinator || s.isStepOwner("confirm_receipt") || s.myQueue("confirm_receipt").length > 0;
   const canTest = s.isProcessCoordinator || s.isStepOwner("testing") || s.myQueue("testing").length > 0;
