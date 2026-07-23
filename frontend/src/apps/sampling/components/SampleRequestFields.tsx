@@ -32,13 +32,17 @@ const LAB_OPTIONS: ComboOption[] = [
   { value: "false", label: "No — collect and hand over" },
 ];
 
-/** A titled group of fields, laid out on a responsive two-column grid. */
-function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+/**
+ * A titled group of fields on a responsive two-column grid. The heading sits on
+ * its own ruled row so it reads as a section break, never merging with the first
+ * field's label.
+ */
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-3">
-      <div>
+    <section className="space-y-4">
+      <div className="flex items-center gap-3 border-b border-line pb-2">
+        <span className="h-4 w-1 rounded-full bg-orange" />
         <SectionHeading>{title}</SectionHeading>
-        {hint && <p className="text-[12px] text-grey-2 mt-0.5">{hint}</p>}
       </div>
       <div className="grid sm:grid-cols-2 gap-x-5 gap-y-4">{children}</div>
     </section>
@@ -90,7 +94,6 @@ function SamplesGrid({ form }: { form: SampleRequestFormApi }) {
         makeEmptyRow={makeEmptySample}
         isRowBlank={isSampleBlank}
       />
-      <p className="text-[12px] text-grey-2">One row per sample — press Tab or Enter at the end of a row to add another.</p>
     </div>
   );
 }
@@ -138,11 +141,11 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
 
   return (
     <div className="space-y-7">
-      <Section title="Basics" hint="What is being sampled and which way it moves.">
+      <Section title="Basics">
         <FieldLabel label="Company" required>
           <Combobox value={companyId} onChange={setCompanyId} options={companyOptions} placeholder="Select company" autoAdvance />
         </FieldLabel>
-        <FieldLabel label="Sample source" required hint="how the sample moves">
+        <FieldLabel label="Sample source" required>
           <Combobox
             value={receiveVia}
             onChange={(v) => setReceiveVia(v as ReceiveVia)}
@@ -174,7 +177,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
             />
           </FieldLabel>
         )}
-        <FieldLabel label="Requester name" hint="defaults to you">
+        <FieldLabel label="Requester name">
           <TextInput value={requesterName} onChange={(e) => setRequesterName(e.target.value)} placeholder="Who is raising this?" />
         </FieldLabel>
       </Section>
@@ -195,7 +198,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
 
           {isInward && (
             <>
-              <FieldLabel label="Lab testing required?" required hint="No skips straight to collect & hand over">
+              <FieldLabel label="Lab testing required?" required>
                 <Combobox
                   value={labTestingRequired}
                   onChange={(v) => setLabTestingRequired(v as typeof labTestingRequired)}
@@ -204,7 +207,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                   autoAdvance
                 />
               </FieldLabel>
-              <FieldLabel label="Who will collect the sample" required hint="they're notified to collect it">
+              <FieldLabel label="Who will collect the sample" required>
                 <Combobox
                   value={collectorId}
                   onChange={setCollectorId}
@@ -214,7 +217,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                 />
               </FieldLabel>
               {labNotRequired && (
-                <FieldLabel label="Whom to hand the sample to" hint="defaults to you; change if handing to someone else">
+                <FieldLabel label="Whom to hand the sample to">
                   <Combobox
                     value={handoverRecipientId}
                     onChange={setHandoverRecipientId}
@@ -241,7 +244,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
       )}
 
       {detailsReady && (
-        <Section title="Outcome" hint="Optional — what you're hoping to learn.">
+        <Section title="Outcome">
           <div className="sm:col-span-2">
             <FieldLabel label="Desired result">
               <TextArea rows={2} value={desiredResult} onChange={(e) => setDesiredResult(e.target.value)} placeholder="What outcome are you looking for?" />
