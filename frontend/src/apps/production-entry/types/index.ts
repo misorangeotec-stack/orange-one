@@ -38,7 +38,10 @@ export interface RawMaterial extends NamedMaster {
 export interface PackagingItem extends NamedMaster {
   unitId: string | null;
 }
-export type FgItem = NamedMaster;
+/** An FG item likewise carries its own unit (shown automatically wherever it appears). */
+export interface FgItem extends NamedMaster {
+  unitId: string | null;
+}
 export type Unit = NamedMaster;
 
 /** One raw-material line of a job card's BOM (intake-only reference data). */
@@ -137,13 +140,20 @@ export interface ProductionRequest {
   transferSlipNo: string | null;
   batchCardNo: string | null;
   tsBomLines: LogBookLine[];
+  // Production output metrics — captured HERE (the log book), shown read-only at
+  // production entry. Expected = Σ actual use; Actual Output = expected − scrap;
+  // Loose = Actual Output − Lab − Packed. Expected/scrap/actual/lab reuse the
+  // pe_* / scrap columns; packed + loose are the two ts_* columns below.
+  tsPackedQty: number | null;
+  tsLooseQty: number | null; // = actualQty − peLabQty − tsPackedQty
   tsAttachmentPath: string | null;
   tsAttachmentName: string | null;
   tsRemarks: string | null;
   tsAt: string | null;
   tsBy: string | null;
 
-  // step 4: production_entry
+  // step 4: production_entry — now a Tally-posting step (metrics captured at the
+  // log book, shown read-only here). It captures only the Tally entry + remarks.
   peActualDate: string | null;
   peStatus: string | null;
   peExpectedQty: number | null;

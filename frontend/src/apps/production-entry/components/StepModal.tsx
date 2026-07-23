@@ -9,7 +9,7 @@ import { newUid } from "@/shared/components/ui/LineGrid";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
-import { dmy, numOrDash, requestSubject } from "../lib/format";
+import { dmy, numOrDash } from "../lib/format";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
 import type { ProductionRequest } from "../types";
@@ -120,6 +120,10 @@ export default function StepModal({
 }: StepModalProps & { stepKey: QueueStep }) {
   const s = useProductionStore();
   const cfg = STEP_CONFIG[stepKey];
+  // The FG item + its own unit (shown automatically wherever the FG appears).
+  const fgItem = request ? s.fgItemById(request.fgItemId) : undefined;
+  const fgName = fgItem?.name ?? "—";
+  const fgUnit = fgItem ? s.unitById(fgItem.unitId)?.name ?? null : null;
   const isHandover = stepKey === "material_handover";
   const isRmTransfer = stepKey === "rm_transfer";
   const isLogBook = stepKey === "transfer_slip";
@@ -131,8 +135,11 @@ export default function StepModal({
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
-  const [prodScrap, setProdScrap] = useState("");
-  const [prodLab, setProdLab] = useState("");
+  // Output metrics are captured at the LOG BOOK now (scrap/lab/packed are entered;
+  // expected/actual/loose derive). Production entry only captures the Tally entry.
+  const [logScrap, setLogScrap] = useState("");
+  const [logLab, setLogLab] = useState("");
+  const [logPacked, setLogPacked] = useState("");
   const [prodTally, setProdTally] = useState("");
   const [packRows, setPackRows] = useState<PackRow[]>([]);
   const [pmhQty, setPmhQty] = useState("");
@@ -202,8 +209,9 @@ export default function StepModal({
       setLogRows(isLogBook ? seedLogRows(request) : []);
       setPackRows(isPmHandover ? seedPackRows(request) : []);
       setPmhQty(isPmHandover && request.pmhQty != null ? String(request.pmhQty) : "");
-      setProdScrap(isProduction && request.scrapQty != null ? String(request.scrapQty) : "");
-      setProdLab(isProduction && request.peLabQty != null ? String(request.peLabQty) : "");
+      setLogScrap(isLogBook && request.scrapQty != null ? String(request.scrapQty) : "");
+      setLogLab(isLogBook && request.peLabQty != null ? String(request.peLabQty) : "");
+      setLogPacked(isLogBook && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
       setProdTally(isProduction ? request.peTallyEntry ?? "" : "");
       // Quality: when editing correct the last round; when recording start a fresh one.
       const lastQc = request.qcRounds[request.qcRounds.length - 1];
@@ -298,6 +306,18 @@ export default function StepModal({
           lot_no: r.lotNo ?? "",
           is_new: r.isNew,
         }));
+        // Output metrics: Expected = Σ actual use; Actual Output = Expected − Scrap;
+        // Loose = Actual Output − Lab − Packed.
+        const r3 = (x: number) => Math.round(x * 1000) / 1000;
+        const expected = r3(logRows.reduce((sm, r) => sm + (Number(r.actualUse) || 0), 0));
+        const actual = r3(expected - (Number(logScrap) || 0));
+        const loose = r3(actual - (Number(logLab) || 0) - (Number(logPacked) || 0));
+        payload.pe_expected_qty = String(expected);
+        payload.scrap_qty = logScrap;
+        payload.actual_qty = String(actual);
+        payload.pe_lab_qty = logLab;
+        payload.ts_packed_qty = logPacked;
+        payload.ts_loose_qty = String(loose);
         if (logFile) {
           const up = await uploadStepDocument(request.id, "logbook", logFile);
           payload.ts_attachment_path = up.path;
@@ -344,12 +364,8 @@ export default function StepModal({
       }
 
       if (isProduction) {
-        const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
-        const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
-        payload.pe_expected_qty = String(expected);
-        payload.scrap_qty = prodScrap;
-        payload.actual_qty = String(output);
-        payload.pe_lab_qty = prodLab;
+        // Production entry is now a Tally-posting step; the output metrics were
+        // captured at the log book and are shown read-only here.
         payload.pe_tally_entry = prodTally;
       }
 
@@ -396,9 +412,9 @@ export default function StepModal({
       // grid especially) show every column without wrapping.
       size="3xl"
       title={`${titlePrefix} — ${request?.reqNo ?? ""}`}
-      // Steps that already show the Lot/Batch Card in their own header/grid don't
-      // repeat it in the subtitle.
-      subtitle={request && !isQuality && !isMc && !isPmHandover && !isPmTransfer ? requestSubject(request) : undefined}
+      // The Lot/Batch Card number is shown ONCE per step, always with a proper
+      // label — either the shared header box below (every step) or the 4-col grid
+      // inside Quality / M/C. Never repeated as an unlabeled subtitle.
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -407,7 +423,9 @@ export default function StepModal({
       }
     >
       <div className="space-y-3.5">
-        {(isHandover || isLogBook || isRmTransfer || isPmHandover || isPmTransfer) && request && (
+        {/* Shared labeled header: the ONE Lot/Batch Card number for every step
+            except Quality / M/C, which carry it in their own 4-col grid. */}
+        {!isQuality && !isMc && request && (
           <div className="rounded-xl bg-page px-3.5 py-3 space-y-1.5">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lot/Batch Card</span>
@@ -420,7 +438,8 @@ export default function StepModal({
               </Link>
             </div>
             <div className="text-[12.5px] text-grey">
-              FG Item: <span className="font-semibold text-navy">{s.fgItemById(request.fgItemId)?.name ?? "—"}</span>
+              FG Item: <span className="font-semibold text-navy">{fgName}</span>
+              {fgUnit && <span className="text-grey-2"> · {fgUnit}</span>}
             </div>
           </div>
         )}
@@ -572,6 +591,52 @@ export default function StepModal({
               )}
             </div>
 
+            {(() => {
+              const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+              const val = "text-[15px] font-bold text-navy tabular-nums";
+              const unit = fgUnit ? <span className="text-[11px] font-normal text-grey-2"> {fgUnit}</span> : null;
+              const r3 = (x: number) => Math.round(x * 1000) / 1000;
+              const expected = r3(logRows.reduce((sm, r) => sm + (Number(r.actualUse) || 0), 0));
+              const actual = r3(expected - (Number(logScrap) || 0));
+              const loose = r3(actual - (Number(logLab) || 0) - (Number(logPacked) || 0));
+              return (
+                <div className="space-y-1.5">
+                  <span className="block text-[13px] font-medium text-navy">Output</span>
+                  {/* Row 1: the output calc (Expected − Scrap = Actual Output).
+                      Row 2: the split (Lab, Packed → Loose = Actual − Lab − Packed). */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 rounded-xl bg-page px-3.5 py-3 items-start">
+                    <div>
+                      <div className={cap}>Expected Qty</div>
+                      <div className={`${val} pt-0.5`}>{expected}{unit}</div>
+                    </div>
+                    <div>
+                      <div className={cap}>Scrap Qty</div>
+                      <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logScrap} onChange={(e) => setLogScrap(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div className={cap}>Actual Output</div>
+                      <div className={`${val} pt-0.5`}>{actual}{unit}</div>
+                    </div>
+                    <div>
+                      <div className={cap}>Lab Testing Qty</div>
+                      <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logLab} onChange={(e) => setLogLab(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div className={cap}>Packed Qty</div>
+                      <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logPacked} onChange={(e) => setLogPacked(e.target.value)} placeholder="0" />
+                    </div>
+                    <div>
+                      <div className={cap}>Loose Qty</div>
+                      <div className={`${val} pt-0.5`}>{loose}{unit}</div>
+                    </div>
+                  </div>
+                  <p className="text-[11.5px] text-grey-2">
+                    Actual Output = Expected − Scrap · Loose = Actual Output − Lab − Packed{fgUnit ? ` · all quantities in ${fgUnit}` : ""}
+                  </p>
+                </div>
+              );
+            })()}
+
             <FieldLabel label="Attachment" required hint={editing ? "choose a file to replace it" : "required — e.g. the log book page"}>
               <input
                 ref={logFileRef}
@@ -608,7 +673,7 @@ export default function StepModal({
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-page px-3.5 py-3">
                 <div><div className={cap}>Lot/Batch Card</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.jobcardNo || "—"}</div></div>
-                <div><div className={cap}>FG Item</div><div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div></div>
+                <div><div className={cap}>FG Item</div><div className="text-[14px] font-semibold text-navy leading-tight">{fgName}{fgUnit && <span className="text-[12px] font-normal text-grey-2"> · {fgUnit}</span>}</div></div>
                 <div><div className={cap}>Lab Testing Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.peLabQty)}</div></div>
                 <div><div className={cap}>Actual Output</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.actualQty)}</div></div>
               </div>
@@ -697,7 +762,7 @@ export default function StepModal({
             <>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-page px-3.5 py-3">
                 <div><div className={cap}>Lot/Batch Card</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.jobcardNo || "—"}</div></div>
-                <div><div className={cap}>FG Item</div><div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div></div>
+                <div><div className={cap}>FG Item</div><div className="text-[14px] font-semibold text-navy leading-tight">{fgName}{fgUnit && <span className="text-[12px] font-normal text-grey-2"> · {fgUnit}</span>}</div></div>
                 <div><div className={cap}>Lab Testing Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.peLabQty)}</div></div>
                 <div><div className={cap}>Actual Output</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.actualQty)}</div></div>
               </div>
@@ -751,35 +816,21 @@ export default function StepModal({
         })()}
 
         {isProduction && request && (() => {
-          const expected = Math.round(request.tsBomLines.reduce((sm, l) => sm + (l.actualUse ?? 0), 0) * 1000) / 1000;
-          const output = Math.round((expected - (Number(prodScrap) || 0)) * 1000) / 1000;
           const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
           const val = "text-[15px] font-bold text-navy tabular-nums";
+          const unit = fgUnit ? <span className="text-[11px] font-normal text-grey-2"> {fgUnit}</span> : null;
+          const metric = (n: number | null) => (n != null ? <>{n}{unit}</> : "—");
           return (
             <>
-              {/* Uniform 6-col grid: FG spans 2 (long name), the four metrics each
-                  a captioned cell so display values and number inputs line up. */}
-              <div className="grid grid-cols-2 sm:grid-cols-6 gap-x-4 gap-y-3 rounded-xl bg-page px-3.5 py-3 items-start">
-                <div className="col-span-2">
-                  <div className={cap}>FG Item</div>
-                  <div className="text-[14px] font-semibold text-navy leading-tight">{s.fgItemById(request.fgItemId)?.name ?? "—"}</div>
-                </div>
-                <div>
-                  <div className={cap}>Expected Qty</div>
-                  <div className={`${val} pt-0.5`}>{expected}</div>
-                </div>
-                <div>
-                  <div className={cap}>Scrap Qty</div>
-                  <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={prodScrap} onChange={(e) => setProdScrap(e.target.value)} placeholder="0" />
-                </div>
-                <div>
-                  <div className={cap}>Actual Output</div>
-                  <div className={`${val} pt-0.5`}>{output}</div>
-                </div>
-                <div>
-                  <div className={cap}>Lab Testing Qty</div>
-                  <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={prodLab} onChange={(e) => setProdLab(e.target.value)} placeholder="0" />
-                </div>
+              {/* Output metrics are captured at the log book and shown read-only
+                  here (this is the Tally-posting step). */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 rounded-xl bg-page px-3.5 py-3 items-start">
+                <div><div className={cap}>Expected Qty</div><div className={`${val} pt-0.5`}>{metric(request.peExpectedQty)}</div></div>
+                <div><div className={cap}>Scrap Qty</div><div className={`${val} pt-0.5`}>{metric(request.scrapQty)}</div></div>
+                <div><div className={cap}>Actual Output</div><div className={`${val} pt-0.5`}>{metric(request.actualQty)}</div></div>
+                <div><div className={cap}>Lab Testing Qty</div><div className={`${val} pt-0.5`}>{metric(request.peLabQty)}</div></div>
+                <div><div className={cap}>Packed Qty</div><div className={`${val} pt-0.5`}>{metric(request.tsPackedQty)}</div></div>
+                <div><div className={cap}>Loose Qty</div><div className={`${val} pt-0.5`}>{metric(request.tsLooseQty)}</div></div>
               </div>
 
               <FieldLabel label="Tally Entry" hint="Tally entry number for the production posting">

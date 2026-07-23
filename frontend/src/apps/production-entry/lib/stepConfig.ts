@@ -88,12 +88,13 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     description: "Job cards awaiting the log book entry (actual use per raw material).",
     completedBlurb: "Log book entries you record appear here, and stay revisable until production entry is recorded.",
     // The date auto-stamps on save; the per-raw-material log-book grid (actual use,
-    // added items) and the mandatory attachment are rendered by StepModal itself —
-    // only Remarks is a plain field here.
+    // added items), the OUTPUT METRICS (expected/scrap/actual output/lab/packed/
+    // loose) and the mandatory attachment are rendered by StepModal itself — only
+    // Remarks is a plain field here.
     fields: [
       { key: "ts_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.tsRemarks) },
     ],
-    captured: { key: "tsDate", header: "Log book date", get: (r) => dmy(r.tsActualDate), isDate: true },
+    captured: { key: "output", header: "Actual Output", get: (r) => numOrDash(r.actualQty) },
   },
   production_entry: {
     stepKey: "production_entry",
@@ -101,12 +102,14 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record production",
     description: "Job cards awaiting the production entry to be recorded.",
     completedBlurb: "Production entries you record appear here, and stay revisable until quality checking is recorded.",
-    // The date auto-stamps; the metrics row (FG, expected, scrap, actual output,
-    // lab testing) and the read-only log-book item table are rendered by StepModal.
+    // Now a Tally-posting step: the output metrics (expected/scrap/actual output/
+    // lab/packed/loose) are captured at the log book and shown READ-ONLY here; the
+    // read-only log-book item table + the Tally Entry input are rendered by
+    // StepModal. Only Remarks is a plain field here.
     fields: [
       { key: "pe_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.peRemarks) },
     ],
-    captured: { key: "output", header: "Actual Output", get: (r) => numOrDash(r.actualQty) },
+    captured: { key: "peTally", header: "Tally Entry", get: (r) => s(r.peTallyEntry) || "—" },
   },
   quality_check: {
     stepKey: "quality_check",

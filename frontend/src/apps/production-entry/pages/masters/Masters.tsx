@@ -20,8 +20,8 @@ export default function Masters() {
 
   const tabs = PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length }));
 
-  // Raw materials AND packaging items carry their own unit.
-  const hasUnit = tab === "raw_material" || tab === "packaging_item";
+  // Raw materials, packaging items AND FG items each carry their own unit.
+  const hasUnit = tab === "raw_material" || tab === "packaging_item" || tab === "fg_item";
   const unitOptions: ComboOption[] = s.activeUnits.map((u) => ({ value: u.id, label: u.name }));
   const unitName = (r: NamedMaster) => s.unitById((r as RawMaterial).unitId)?.name ?? "—";
 

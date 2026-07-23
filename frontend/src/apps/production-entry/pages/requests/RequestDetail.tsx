@@ -45,9 +45,18 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
     case "rm_transfer": return r.rmtTallyEntry ? `Tally ${r.rmtTallyEntry}` : null;
     case "transfer_slip": {
       const n = r.tsBomLines.length;
-      return [n ? `${n} item${n === 1 ? "" : "s"} logged` : null, r.tsAttachmentName ? "attachment" : null].filter(Boolean).join(" · ") || null;
+      return [
+        n ? `${n} item${n === 1 ? "" : "s"} logged` : null,
+        r.peExpectedQty != null ? `Expected ${r.peExpectedQty}` : null,
+        r.scrapQty != null ? `Scrap ${r.scrapQty}` : null,
+        r.actualQty != null ? `Output ${r.actualQty}` : null,
+        r.peLabQty != null ? `Lab ${r.peLabQty}` : null,
+        r.tsPackedQty != null ? `Packed ${r.tsPackedQty}` : null,
+        r.tsLooseQty != null ? `Loose ${r.tsLooseQty}` : null,
+        r.tsAttachmentName ? "attachment" : null,
+      ].filter(Boolean).join(" · ") || null;
     }
-    case "production_entry": return [r.peExpectedQty != null ? `Expected ${r.peExpectedQty}` : null, r.scrapQty != null ? `Scrap ${r.scrapQty}` : null, r.actualQty != null ? `Output ${r.actualQty}` : null, r.peLabQty != null ? `Lab ${r.peLabQty}` : null, r.peTallyEntry ? `Tally ${r.peTallyEntry}` : null].filter(Boolean).join(" · ") || null;
+    case "production_entry": return r.peTallyEntry ? `Tally ${r.peTallyEntry}` : null;
     case "quality_check": {
       const n = r.qcRounds.length;
       const res = r.qcStatus ? r.qcStatus[0].toUpperCase() + r.qcStatus.slice(1) : null;
@@ -135,7 +144,15 @@ export default function RequestDetail() {
       <Card className="p-5">
         <SectionHeading>Batch Card</SectionHeading>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-3">
-          <Field label="FG Item" value={s.fgItemById(r.fgItemId)?.name ?? "—"} />
+          <Field
+            label="FG Item"
+            value={(() => {
+              const fg = s.fgItemById(r.fgItemId);
+              if (!fg) return "—";
+              const u = s.unitById(fg.unitId)?.name;
+              return u ? `${fg.name} · ${u}` : fg.name;
+            })()}
+          />
           <Field label="Lot/Batch Card Number" value={r.jobcardNo} />
           <Field label="Requester" value={r.requesterName} />
           <Field label="Raised" value={formatDate(r.submittedAt)} />

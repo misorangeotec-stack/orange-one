@@ -169,6 +169,8 @@ const mapRequest = (r: any): ProductionRequest => ({
         isNew: !!l.is_new,
       }))
     : [],
+  tsPackedQty: num(r.ts_packed_qty),
+  tsLooseQty: num(r.ts_loose_qty),
   tsAttachmentPath: r.ts_attachment_path ?? null,
   tsAttachmentName: r.ts_attachment_name ?? null,
   tsRemarks: r.ts_remarks ?? null,
@@ -327,7 +329,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     categories: categories.map(mapMaster),
     rawMaterials: rawMaterials.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     packagingItems: packagingItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
-    fgItems: fgItems.map(mapMaster),
+    fgItems: fgItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     units: units.map(mapMaster),
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),
