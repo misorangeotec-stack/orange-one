@@ -27,6 +27,10 @@ const YES_NO: ComboOption[] = [
   { value: "Yes", label: "Yes" },
   { value: "No", label: "No" },
 ];
+const LAB_OPTIONS: ComboOption[] = [
+  { value: "true", label: "Yes — send for lab testing" },
+  { value: "false", label: "No — collect and hand over" },
+];
 
 /** A titled group of fields, laid out on a responsive two-column grid. */
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
@@ -41,8 +45,9 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
-/** The competitor colour/quantity grid — one row per sample to collect. */
+/** The colour/quantity grid — one row per sample (every direction/type). */
 function SamplesGrid({ form }: { form: SampleRequestFormApi }) {
+  const gridLabel = form.isOutward ? "Colour & quantity to send" : "Colour & quantity to collect";
   const columns: LineGridColumn<SampleRow>[] = [
     {
       key: "colour",
@@ -77,7 +82,7 @@ function SamplesGrid({ form }: { form: SampleRequestFormApi }) {
   ];
   return (
     <div className="sm:col-span-2 space-y-1.5">
-      <span className="block text-[13px] font-medium text-navy">Colour &amp; quantity to collect</span>
+      <span className="block text-[13px] font-medium text-navy">{gridLabel}</span>
       <LineGrid
         rows={form.sampleItems}
         onRowsChange={form.setSampleItems}
@@ -106,13 +111,15 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
     requesterName, setRequesterName,
     partyName, setPartyName,
     productDesc, setProductDesc,
+    labTestingRequired, setLabTestingRequired,
     collectorId, setCollectorId,
-    handoverName, setHandoverName,
+    handoverRecipientId, setHandoverRecipientId,
     transportBorne, setTransportBorne,
     desiredResult, setDesiredResult,
     additionalInfo, setAdditionalInfo,
     err,
-    companyOptions, collectorOptions, isInward, isOutward, isCompetitor,
+    companyOptions, collectorOptions, recipientOptions,
+    isInward, isOutward, isCompetitor, labNotRequired,
   } = form;
 
   const partyLabel = isOutward
@@ -184,21 +191,39 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
             </FieldLabel>
           </div>
 
-          {isCompetitor && (
+          <SamplesGrid form={form} />
+
+          {isInward && (
             <>
-              <SamplesGrid form={form} />
-              <FieldLabel label="Who will collect the sample" hint="they're notified to collect it">
+              <FieldLabel label="Lab testing required?" required hint="No skips straight to collect & hand over">
+                <Combobox
+                  value={labTestingRequired}
+                  onChange={(v) => setLabTestingRequired(v as typeof labTestingRequired)}
+                  options={LAB_OPTIONS}
+                  placeholder="Choose Yes or No"
+                  autoAdvance
+                />
+              </FieldLabel>
+              <FieldLabel label="Who will collect the sample" required hint="they're notified to collect it">
                 <Combobox
                   value={collectorId}
                   onChange={setCollectorId}
                   options={collectorOptions}
-                  placeholder="Select an employee"
+                  placeholder={collectorOptions.length ? "Select a collector" : "Add collectors in Masters first"}
                   searchable
                 />
               </FieldLabel>
-              <FieldLabel label="Whom to hand the competitor sample to">
-                <TextInput value={handoverName} onChange={(e) => setHandoverName(e.target.value)} placeholder="Name" />
-              </FieldLabel>
+              {labNotRequired && (
+                <FieldLabel label="Whom to hand the sample to" hint="defaults to you; change if handing to someone else">
+                  <Combobox
+                    value={handoverRecipientId}
+                    onChange={setHandoverRecipientId}
+                    options={recipientOptions}
+                    placeholder="Select a recipient"
+                    searchable
+                  />
+                </FieldLabel>
+              )}
             </>
           )}
 

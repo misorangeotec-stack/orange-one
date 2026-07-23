@@ -12,13 +12,20 @@ interface FlowNode {
   label: string;
 }
 
-/** The two paths, in order. They converge at `testing`. */
+/** The paths, in order. The lab paths converge at `testing`. */
 const INWARD_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
   { key: "receive_sample", label: "Sample Received" },
   { key: "testing", label: "Testing" },
   { key: "result", label: "Result" },
   { key: "result_handover", label: "Result Handover" },
+  { key: "closed", label: "Closed" },
+];
+/** Inward with NO lab testing: collect → hand over → received (close). */
+const INWARD_NO_LAB_FLOW: FlowNode[] = [
+  { key: "request", label: "Request" },
+  { key: "sample_collect", label: "Collect & Handover" },
+  { key: "sample_received", label: "Sample Received" },
   { key: "closed", label: "Closed" },
 ];
 const OUTWARD_FLOW: FlowNode[] = [
@@ -40,7 +47,12 @@ const OUTWARD_FLOW: FlowNode[] = [
  */
 export default function SamplingStepper({ request }: { request: SamplingRequest }) {
   const s = useSamplingStore();
-  const flow = request.direction === "inward" ? INWARD_FLOW : OUTWARD_FLOW;
+  const flow =
+    request.direction === "outward"
+      ? OUTWARD_FLOW
+      : request.labTestingRequired === false
+        ? INWARD_NO_LAB_FLOW
+        : INWARD_FLOW;
 
   const nodes: PoStageRailNode[] = useMemo(
     () =>
@@ -49,11 +61,18 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
           return { key: n.key, label: n.label, departments: [], people: [], hasStep: false };
         }
         const owner = s.stepOwnerFor(n.key);
-        // The receive step is owned, for this request, by the chosen collector.
-        const collectorName =
-          n.key === "receive_sample" && request.collectorId ? s.personName(request.collectorId) : null;
-        const people = collectorName
-          ? [collectorName]
+        // The receive/collect steps are owned, for this request, by the chosen
+        // collector; the received step by the chosen recipient (or a free-text name).
+        const perRequestName =
+          (n.key === "receive_sample" || n.key === "sample_collect") && request.collectorId
+            ? s.personName(request.collectorId)
+            : n.key === "sample_received"
+              ? request.handoverRecipientId
+                ? s.personName(request.handoverRecipientId)
+                : request.handoverRecipientName
+              : null;
+        const people = perRequestName
+          ? [perRequestName]
           : (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((nm) => nm !== "—");
         return {
           key: n.key,
@@ -65,7 +84,7 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
           hasStep: true,
         };
       }),
-    [flow, s, request.collectorId],
+    [flow, s, request.collectorId, request.handoverRecipientId, request.handoverRecipientName],
   );
 
   const finished = request.status === "closed";

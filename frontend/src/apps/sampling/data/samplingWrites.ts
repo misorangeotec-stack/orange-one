@@ -24,6 +24,10 @@ export interface RequestInput {
   sampleItems: SampleItem[];
   collectorId: string | null;
   handoverName: string | null;
+  /** Inward only: true / false; null on outward (the RPC rejects a null inward value). */
+  labTestingRequired: boolean | null;
+  handoverRecipientId: string | null;
+  handoverRecipientName: string | null;
   transportBorne: TransportBorne | null;
   desiredResult: string | null;
   additionalInfo: string | null;
@@ -42,6 +46,10 @@ export async function submitRequest(input: RequestInput): Promise<string> {
       sample_items: input.sampleItems,
       collector_id: input.collectorId ?? "",
       handover_name: input.handoverName ?? "",
+      // Pass '' when null so the RPC's nullif() sees "unset"; 'true'/'false' otherwise.
+      lab_testing_required: input.labTestingRequired === null ? "" : String(input.labTestingRequired),
+      handover_recipient_id: input.handoverRecipientId ?? "",
+      handover_recipient_name: input.handoverRecipientName ?? "",
       transport_borne: input.transportBorne ?? "",
       desired_result: input.desiredResult ?? "",
       additional_info: input.additionalInfo ?? "",
@@ -68,6 +76,50 @@ export async function updateReceipt(requestId: string, input: ReceiptInput): Pro
     p_req: requestId,
     p: { received_date: input.receivedDate ?? "" },
   });
+  if (error) throw new Error(error.message);
+}
+
+export interface CollectInput {
+  handoverRecipientId: string | null;
+  handoverRecipientName: string | null;
+  collectedDate: string | null;
+}
+const collectPayload = (input: CollectInput) => ({
+  handover_recipient_id: input.handoverRecipientId ?? "",
+  handover_recipient_name: input.handoverRecipientName ?? "",
+  collected_date: input.collectedDate ?? "",
+});
+export async function recordCollect(requestId: string, input: CollectInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_record_collect", { p_req: requestId, p: collectPayload(input) });
+  if (error) throw new Error(error.message);
+}
+export async function updateCollect(requestId: string, input: CollectInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_collect", { p_req: requestId, p: collectPayload(input) });
+  if (error) throw new Error(error.message);
+}
+
+export interface SampleReceivedInput {
+  sampleReceivedDate: string | null;
+  sampleReceivedNote: string | null;
+  /** Pass a key (even null) to REPLACE the attachment; omit both keys to keep it. */
+  docPath?: string | null;
+  docName?: string | null;
+}
+const sampleReceivedPayload = (input: SampleReceivedInput) => {
+  const p: Record<string, unknown> = {
+    sample_received_date: input.sampleReceivedDate ?? "",
+    sample_received_note: input.sampleReceivedNote ?? "",
+  };
+  if (input.docPath !== undefined) p.sample_received_doc_path = input.docPath ?? "";
+  if (input.docName !== undefined) p.sample_received_doc_name = input.docName ?? "";
+  return p;
+};
+export async function recordSampleReceived(requestId: string, input: SampleReceivedInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_record_sample_received", { p_req: requestId, p: sampleReceivedPayload(input) });
+  if (error) throw new Error(error.message);
+}
+export async function updateSampleReceived(requestId: string, input: SampleReceivedInput): Promise<void> {
+  const { error } = await db.rpc("fms_sampling_update_sample_received", { p_req: requestId, p: sampleReceivedPayload(input) });
   if (error) throw new Error(error.message);
 }
 
@@ -184,15 +236,25 @@ export async function cancelRequest(requestId: string, reason: string): Promise<
 
 const DOCS_BUCKET = "fms-sampling-docs";
 
-/** Upload the result / lab-report attachment; returns the stored path + name. */
-export async function uploadResultDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+/** Upload an attachment under a per-request subfolder; returns the stored path + name. */
+async function uploadDocument(requestId: string, subfolder: string, file: File): Promise<{ path: string; name: string }> {
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const path = `${requestId}/result/${Date.now()}-${safeName}`;
+  const path = `${requestId}/${subfolder}/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage
     .from(DOCS_BUCKET)
     .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
   if (error) throw new Error(error.message);
   return { path, name: file.name };
+}
+
+/** Upload the result / lab-report attachment; returns the stored path + name. */
+export async function uploadResultDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+  return uploadDocument(requestId, "result", file);
+}
+
+/** Upload the sample-received attachment (no-lab branch); returns the stored path + name. */
+export async function uploadReceivedDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+  return uploadDocument(requestId, "received", file);
 }
 
 /** Create a short-lived signed URL to view/download a stored result document. */
@@ -248,6 +310,38 @@ export async function updateCompany(id: string, input: CompanyInput): Promise<vo
     .from("fms_sampling_companies")
     .update({ name: input.name, active: input.active, sort_order: input.sortOrder })
     .eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Collector + hand-over recipient masters: a display name mapped to an app user. */
+export interface PersonMasterInput {
+  name: string;
+  userId: string;
+  active: boolean;
+  sortOrder: number;
+}
+const personRow = (input: PersonMasterInput) => ({
+  name: input.name,
+  user_id: input.userId,
+  active: input.active,
+  sort_order: input.sortOrder,
+});
+
+export async function insertCollector(input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_collectors").insert(personRow(input));
+  if (error) throw new Error(error.message);
+}
+export async function updateCollector(id: string, input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_collectors").update(personRow(input)).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function insertRecipient(input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_handover_recipients").insert(personRow(input));
+  if (error) throw new Error(error.message);
+}
+export async function updateRecipient(id: string, input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_handover_recipients").update(personRow(input)).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

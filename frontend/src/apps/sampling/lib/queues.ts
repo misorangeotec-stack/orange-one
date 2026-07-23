@@ -36,7 +36,9 @@ export const isOpenRequest = (r: SamplingRequest): boolean =>
   r.status === "awaiting_confirm" ||
   r.status === "awaiting_testing" ||
   r.status === "awaiting_result" ||
-  r.status === "awaiting_handover";
+  r.status === "awaiting_handover" ||
+  r.status === "awaiting_collect" ||
+  r.status === "awaiting_sample_received";
 
 /** The single step a request currently owes, from its status. */
 export function openStep(r: SamplingRequest): StepKey | null {
@@ -53,6 +55,10 @@ export function openStep(r: SamplingRequest): StepKey | null {
       return "result";
     case "awaiting_handover":
       return "result_handover";
+    case "awaiting_collect":
+      return "sample_collect";
+    case "awaiting_sample_received":
+      return "sample_received";
     default:
       return null;
   }
@@ -70,9 +76,12 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
   switch (step) {
     case "receive_sample":
     case "send_sample":
+    case "sample_collect":
       return r.submittedAt;
     case "confirm_receipt":
       return r.sentAt;
+    case "sample_received":
+      return r.collectedAt;
     case "testing":
       return r.direction === "inward" ? r.receivedAt : r.confirmedAt;
     case "result":
@@ -180,6 +189,23 @@ export function handoverLockReason(r: SamplingRequest): string | null {
   return heldOrTerminal(r, "result handover");
 }
 
+/** Editable while collected but the recipient hasn't confirmed receipt yet. */
+export function collectLockReason(r: SamplingRequest): string | null {
+  const t = heldOrTerminal(r, "sample collection");
+  if (t) return t;
+  if (r.status !== "awaiting_sample_received") return "The sample has already been received — the collection can no longer be changed.";
+  return null;
+}
+
+/**
+ * Sample received is the LAST step of the no-lab branch, so nothing downstream
+ * can lock it — a closed request's receipt deliberately STAYS editable (mirrors
+ * the result-handover rule). Only held / cancelled lock it.
+ */
+export function sampleReceivedLockReason(r: SamplingRequest): string | null {
+  return heldOrTerminal(r, "sample receipt");
+}
+
 const entryOf = (
   stepKey: StepKey,
   r: SamplingRequest,
@@ -228,6 +254,16 @@ export const completedHandoverEntries = (data: SamplingSnapshot): StageEntry<Sam
   data.requests
     .filter((r) => !!r.handedOverAt)
     .map((r) => entryOf("result_handover", r, r.handedOverBy, r.handedOverAt!, handoverLockReason(r)));
+
+export const completedCollectEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.collectedAt)
+    .map((r) => entryOf("sample_collect", r, r.collectedBy, r.collectedAt!, collectLockReason(r)));
+
+export const completedSampleReceivedEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.sampleReceivedAt)
+    .map((r) => entryOf("sample_received", r, r.sampleReceivedBy, r.sampleReceivedAt!, sampleReceivedLockReason(r)));
 
 /** Every open work-item, one per (current step, request). */
 export function buildQueueEntries(snap: SamplingSnapshot): QueueEntry[] {

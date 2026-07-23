@@ -4,8 +4,10 @@ import { supabase } from "@/core/platform/supabase";
 const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
+  Collector,
   Company,
   Designation,
+  HandoverRecipient,
   SamplingActivity,
   SamplingEntityType,
   SamplingMasterManager,
@@ -28,6 +30,8 @@ type Tbl =
   | "fms_sampling_step_owners"
   | "fms_sampling_config"
   | "fms_sampling_companies"
+  | "fms_sampling_collectors"
+  | "fms_sampling_handover_recipients"
   | "fms_sampling_master_managers"
   | "fms_sampling_requests"
   | "fms_sampling_activity"
@@ -64,6 +68,8 @@ export interface SamplingData {
   designations: Designation[];
   config: SamplingConfig;
   companies: Company[];
+  collectors: Collector[];
+  recipients: HandoverRecipient[];
   masterManagers: SamplingMasterManager[];
   requests: SamplingRequest[];
   activity: SamplingActivity[];
@@ -73,6 +79,22 @@ export interface SamplingData {
 const mapCompany = (r: any): Company => ({
   id: r.id,
   name: r.name,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapCollector = (r: any): Collector => ({
+  id: r.id,
+  name: r.name,
+  userId: r.user_id,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapRecipient = (r: any): HandoverRecipient => ({
+  id: r.id,
+  name: r.name,
+  userId: r.user_id,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
 });
@@ -99,6 +121,9 @@ const mapRequest = (r: any): SamplingRequest => ({
   collectorId: r.collector_id ?? null,
   collectorName: r.collector_name ?? null,
   handoverName: r.handover_name ?? null,
+  labTestingRequired: r.lab_testing_required ?? null,
+  handoverRecipientId: r.handover_recipient_id ?? null,
+  handoverRecipientName: r.handover_recipient_name ?? null,
   transportBorne: r.transport_borne ?? null,
   desiredResult: r.desired_result ?? null,
   additionalInfo: r.additional_info ?? null,
@@ -131,6 +156,15 @@ const mapRequest = (r: any): SamplingRequest => ({
   handoverNote: r.handover_note ?? null,
   handedOverAt: r.handed_over_at ?? null,
   handedOverBy: r.handed_over_by ?? null,
+  collectedDate: r.collected_date ?? null,
+  collectedAt: r.collected_at ?? null,
+  collectedBy: r.collected_by ?? null,
+  sampleReceivedDate: r.sample_received_date ?? null,
+  sampleReceivedNote: r.sample_received_note ?? null,
+  sampleReceivedDocPath: r.sample_received_doc_path ?? null,
+  sampleReceivedDocName: r.sample_received_doc_name ?? null,
+  sampleReceivedAt: r.sample_received_at ?? null,
+  sampleReceivedBy: r.sample_received_by ?? null,
   closedAt: r.closed_at ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
@@ -175,12 +209,14 @@ const mapNotification = (r: any): SamplingNotification => ({
 });
 
 export async function fetchSamplingData(): Promise<SamplingData> {
-  const [stepOwners, configRows, designations, companies, masterManagers, requests, activity, notifications] =
+  const [stepOwners, configRows, designations, companies, collectors, recipients, masterManagers, requests, activity, notifications] =
     await Promise.all([
       fetchAll("fms_sampling_step_owners"),
       fetchAll("fms_sampling_config", "key"),
       fetchAll("designations"),
       fetchAll("fms_sampling_companies"),
+      fetchAll("fms_sampling_collectors"),
+      fetchAll("fms_sampling_handover_recipients"),
       fetchAll("fms_sampling_master_managers"),
       fetchAll("fms_sampling_requests", "submitted_at"),
       fetchAll("fms_sampling_activity"),
@@ -198,6 +234,8 @@ export async function fetchSamplingData(): Promise<SamplingData> {
     designations: designations.map(mapDesignation),
     config,
     companies: companies.map(mapCompany),
+    collectors: collectors.map(mapCollector),
+    recipients: recipients.map(mapRecipient),
     masterManagers: masterManagers.map(mapMasterManager),
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),

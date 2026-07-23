@@ -8,6 +8,8 @@ import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import ReceiveModal from "../../components/ReceiveModal";
+import CollectModal from "../../components/CollectModal";
+import SampleReceivedModal from "../../components/SampleReceivedModal";
 import SendModal from "../../components/SendModal";
 import ConfirmModal from "../../components/ConfirmModal";
 import TestingModal from "../../components/TestingModal";
@@ -15,13 +17,13 @@ import ResultModal from "../../components/ResultModal";
 import HandoverModal from "../../components/HandoverModal";
 import SamplingStepper from "../../components/SamplingStepper";
 import StatusPill from "../../components/StatusPill";
-import { directionLabel, dmy, receiveViaLabel, requestSubject, requirementTypeLabel } from "../../lib/format";
+import { directionLabel, dmy, labTestingLabel, receiveViaLabel, requestSubject, requirementTypeLabel } from "../../lib/format";
 import { openStep } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import { useSamplingStore } from "../../store";
 import type { SamplingRequest } from "../../types";
 
-type OpenModal = "receive" | "send" | "confirm" | "testing" | "result" | "handover" | null;
+type OpenModal = "receive" | "collect" | "sampleReceived" | "send" | "confirm" | "testing" | "result" | "handover" | null;
 
 export default function RequestDetail() {
   const { id } = useParams();
@@ -59,6 +61,8 @@ export default function RequestDetail() {
   const action: { label: string; modal: OpenModal } | null =
     !canActNow ? null
     : r.status === "awaiting_receipt" ? { label: "Record receipt", modal: "receive" }
+    : r.status === "awaiting_collect" ? { label: "Record collection", modal: "collect" }
+    : r.status === "awaiting_sample_received" ? { label: "Confirm received", modal: "sampleReceived" }
     : r.status === "awaiting_send" ? { label: "Record dispatch", modal: "send" }
     : r.status === "awaiting_confirm" ? { label: "Confirm receipt", modal: "confirm" }
     : r.status === "awaiting_testing" ? { label: "Record testing", modal: "testing" }
@@ -127,24 +131,34 @@ export default function RequestDetail() {
           <Field label={r.direction === "outward" ? "Send to" : "Party"} value={r.partyName} />
           <Field label="Requester" value={r.requesterName} />
           <Field label="Product / description" value={r.productDesc} className="col-span-2 sm:col-span-3" />
-          {r.direction === "inward" && r.requirementType === "competitor" && (
-            <>
-              <div className="col-span-2 sm:col-span-3">
-                <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Colour &amp; quantity to collect</div>
-                {r.sampleItems.length > 0 ? (
-                  <ul className="mt-1 space-y-0.5">
-                    {r.sampleItems.map((it, i) => (
-                      <li key={i} className="text-[13.5px] text-navy">
-                        {[it.colour, it.quantity].filter(Boolean).join(" — ") || "—"}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="mt-1 text-[13.5px] text-navy">{r.colourQty ?? "—"}</div>
-                )}
+          {(r.sampleItems.length > 0 || r.colourQty) && (
+            <div className="col-span-2 sm:col-span-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">
+                {r.direction === "outward" ? "Colour & quantity to send" : "Colour & quantity to collect"}
               </div>
+              {r.sampleItems.length > 0 ? (
+                <ul className="mt-1 space-y-0.5">
+                  {r.sampleItems.map((it, i) => (
+                    <li key={i} className="text-[13.5px] text-navy">
+                      {[it.colour, it.quantity].filter(Boolean).join(" — ") || "—"}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="mt-1 text-[13.5px] text-navy">{r.colourQty ?? "—"}</div>
+              )}
+            </div>
+          )}
+          {r.direction === "inward" && (
+            <>
+              <Field label="Lab testing" value={labTestingLabel(r.labTestingRequired)} />
               <Field label="Collector" value={r.collectorId ? name(r.collectorId) : r.collectorName} />
-              <Field label="Hand to" value={r.handoverName} />
+              {r.labTestingRequired === false && (
+                <Field
+                  label="Hand to"
+                  value={r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? r.handoverName}
+                />
+              )}
             </>
           )}
           {(r.transportBorne) && <Field label="Transport borne" value={r.transportBorne} />}
@@ -172,60 +186,85 @@ export default function RequestDetail() {
       <Card className="p-5">
         <SectionHeading>Step details</SectionHeading>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-          {r.direction === "inward" ? (
-            <Field
-              label="Sample received"
-              value={
-                r.receivedAt
-                  ? `${r.receivedDate ? dmy(r.receivedDate) : formatDate(r.receivedAt)} · ${name(r.receivedBy)}`
-                  : "—"
-              }
-            />
-          ) : (
+          {r.direction === "inward" && r.labTestingRequired === false ? (
             <>
               <Field
-                label="Sample sent"
+                label="Sample collect & handover"
                 value={
-                  r.sentAt
-                    ? `${r.sentDate ? dmy(r.sentDate) : formatDate(r.sentAt)} · ${name(r.sentBy)}`
+                  r.collectedAt
+                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"} · ${name(r.collectedBy)}`
+                    : "—"
+                }
+                className="col-span-1 sm:col-span-2"
+              />
+              <Field
+                label="Sample received"
+                value={
+                  r.sampleReceivedAt
+                    ? `${r.sampleReceivedDate ? dmy(r.sampleReceivedDate) : formatDate(r.sampleReceivedAt)}${r.sampleReceivedNote ? ` · ${r.sampleReceivedNote}` : ""} · ${name(r.sampleReceivedBy)}`
+                    : "—"
+                }
+                className="col-span-1 sm:col-span-2"
+              />
+            </>
+          ) : (
+            <>
+              {r.direction === "inward" ? (
+                <Field
+                  label="Sample received"
+                  value={
+                    r.receivedAt
+                      ? `${r.receivedDate ? dmy(r.receivedDate) : formatDate(r.receivedAt)} · ${name(r.receivedBy)}`
+                      : "—"
+                  }
+                />
+              ) : (
+                <>
+                  <Field
+                    label="Sample sent"
+                    value={
+                      r.sentAt
+                        ? `${r.sentDate ? dmy(r.sentDate) : formatDate(r.sentAt)} · ${name(r.sentBy)}`
+                        : "—"
+                    }
+                  />
+                  {(r.gateEntryNo || r.sentQty) && (
+                    <Field label="Gate entry / quantity" value={[r.gateEntryNo, r.sentQty].filter(Boolean).join(" · ") || "—"} />
+                  )}
+                  <Field
+                    label="Receipt confirmed"
+                    value={
+                      r.confirmedAt
+                        ? `${r.partyReceivedDate ? dmy(r.partyReceivedDate) : formatDate(r.confirmedAt)} · ${name(r.confirmedBy)}`
+                        : "—"
+                    }
+                  />
+                </>
+              )}
+              <Field
+                label="Testing"
+                value={
+                  r.testedAt
+                    ? `${r.testingCompletedDate ? dmy(r.testingCompletedDate) : formatDate(r.testedAt)}${r.internalRef ? ` · ${r.internalRef}` : ""}${r.tentativeResultDate ? ` · result by ${dmy(r.tentativeResultDate)}` : ""} · ${name(r.testedBy)}`
                     : "—"
                 }
               />
-              {(r.gateEntryNo || r.sentQty) && (
-                <Field label="Gate entry / quantity" value={[r.gateEntryNo, r.sentQty].filter(Boolean).join(" · ") || "—"} />
-              )}
               <Field
-                label="Receipt confirmed"
+                label="Result"
+                value={r.resultedAt ? `${r.resultComment ?? ""} · ${name(r.resultedBy)}` : "—"}
+                className="col-span-1 sm:col-span-2"
+              />
+              <Field
+                label="Result handover"
                 value={
-                  r.confirmedAt
-                    ? `${r.partyReceivedDate ? dmy(r.partyReceivedDate) : formatDate(r.confirmedAt)} · ${name(r.confirmedBy)}`
+                  r.handedOverAt
+                    ? `${r.handoverDate ? dmy(r.handoverDate) : formatDate(r.handedOverAt)}${r.handoverNote ? ` · ${r.handoverNote}` : ""} · ${name(r.handedOverBy)}`
                     : "—"
                 }
+                className="col-span-1 sm:col-span-2"
               />
             </>
           )}
-          <Field
-            label="Testing"
-            value={
-              r.testedAt
-                ? `${r.testingCompletedDate ? dmy(r.testingCompletedDate) : formatDate(r.testedAt)}${r.internalRef ? ` · ${r.internalRef}` : ""}${r.tentativeResultDate ? ` · result by ${dmy(r.tentativeResultDate)}` : ""} · ${name(r.testedBy)}`
-                : "—"
-            }
-          />
-          <Field
-            label="Result"
-            value={r.resultedAt ? `${r.resultComment ?? ""} · ${name(r.resultedBy)}` : "—"}
-            className="col-span-1 sm:col-span-2"
-          />
-          <Field
-            label="Result handover"
-            value={
-              r.handedOverAt
-                ? `${r.handoverDate ? dmy(r.handoverDate) : formatDate(r.handedOverAt)}${r.handoverNote ? ` · ${r.handoverNote}` : ""} · ${name(r.handedOverBy)}`
-                : "—"
-            }
-            className="col-span-1 sm:col-span-2"
-          />
         </div>
       </Card>
 
@@ -253,6 +292,8 @@ export default function RequestDetail() {
       )}
 
       <ReceiveModal open={modal === "receive"} onClose={() => setModal(null)} request={r} />
+      <CollectModal open={modal === "collect"} onClose={() => setModal(null)} request={r} />
+      <SampleReceivedModal open={modal === "sampleReceived"} onClose={() => setModal(null)} request={r} />
       <SendModal open={modal === "send"} onClose={() => setModal(null)} request={r} />
       <ConfirmModal open={modal === "confirm"} onClose={() => setModal(null)} request={r} />
       <TestingModal open={modal === "testing"} onClose={() => setModal(null)} request={r} />

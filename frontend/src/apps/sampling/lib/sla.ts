@@ -22,6 +22,8 @@ export type StepSlaMap = StepSlaMapBase<StepKey>;
 
 const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   receive_sample: { anchor: "request", days: 1 },
+  sample_collect: { anchor: "request", days: 1 },
+  sample_received: { anchor: "sample_collect", days: 1 },
   send_sample: { anchor: "request", days: 1 },
   confirm_receipt: { anchor: "send_sample", days: 1 },
   testing: { anchor: "request", days: 1 },

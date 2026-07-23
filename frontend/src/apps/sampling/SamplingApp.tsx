@@ -9,6 +9,8 @@ import MyRequests from "./pages/requests/MyRequests";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
 import ReceiveQueue from "./pages/queues/ReceiveQueue";
+import CollectQueue from "./pages/queues/CollectQueue";
+import SampleReceivedQueue from "./pages/queues/SampleReceivedQueue";
 import SendQueue from "./pages/queues/SendQueue";
 import ConfirmQueue from "./pages/queues/ConfirmQueue";
 import TestingQueue from "./pages/queues/TestingQueue";
@@ -58,6 +60,8 @@ export default function SamplingApp() {
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
           <Route path="queues/receive" element={<ReceiveQueue />} />
+          <Route path="queues/collect" element={<CollectQueue />} />
+          <Route path="queues/received" element={<SampleReceivedQueue />} />
           <Route path="queues/send" element={<SendQueue />} />
           <Route path="queues/confirm" element={<ConfirmQueue />} />
           <Route path="queues/testing" element={<TestingQueue />} />

@@ -10,12 +10,16 @@ import {
   announce as announceWrite,
   cancelRequest as cancelRequestWrite,
   holdRequest as holdRequestWrite,
+  insertCollector as insertCollectorWrite,
   insertCompany as insertCompanyWrite,
+  insertRecipient as insertRecipientWrite,
   markNotificationsRead as markNotificationsReadWrite,
+  recordCollect as recordCollectWrite,
   recordConfirm as recordConfirmWrite,
   recordHandover as recordHandoverWrite,
   recordReceipt as recordReceiptWrite,
   recordResult as recordResultWrite,
+  recordSampleReceived as recordSampleReceivedWrite,
   recordSend as recordSendWrite,
   recordTesting as recordTestingWrite,
   resultDocumentUrl as resultDocumentUrlWrite,
@@ -23,29 +27,38 @@ import {
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
   submitRequest as submitRequestWrite,
+  updateCollect as updateCollectWrite,
+  updateCollector as updateCollectorWrite,
   updateCompany as updateCompanyWrite,
   updateConfirm as updateConfirmWrite,
   updateHandover as updateHandoverWrite,
   updateReceipt as updateReceiptWrite,
+  updateRecipient as updateRecipientWrite,
   updateResult as updateResultWrite,
+  updateSampleReceived as updateSampleReceivedWrite,
   updateSend as updateSendWrite,
   updateTesting as updateTestingWrite,
+  type CollectInput,
   type CompanyInput,
   type ConfirmInput,
   type HandoverInput,
+  type PersonMasterInput,
   type ReceiptInput,
   type RequestInput,
   type ResultInput,
+  type SampleReceivedInput,
   type SendInput,
   type StepOwnerInput,
   type TestingInput,
 } from "./data/samplingWrites";
 import {
   buildQueueEntries,
+  completedCollectEntries,
   completedConfirmEntries,
   completedHandoverEntries,
   completedReceiveEntries,
   completedResultEntries,
+  completedSampleReceivedEntries,
   completedSendEntries,
   completedTestingEntries,
   isOpenRequest,
@@ -58,8 +71,10 @@ import {
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
+  Collector,
   Company,
   Designation,
+  HandoverRecipient,
   SamplingActivity,
   SamplingEntityType,
   SamplingMasterManager,
@@ -87,6 +102,10 @@ interface SamplingStoreValue {
   companies: Company[];
   activeCompanies: Company[];
   companyById: (id: string) => Company | undefined;
+  collectors: Collector[];
+  activeCollectors: Collector[];
+  recipients: HandoverRecipient[];
+  activeRecipients: HandoverRecipient[];
 
   // config
   stepOwners: StepOwner[];
@@ -139,6 +158,10 @@ interface SamplingStoreValue {
   updateSend: (r: SamplingRequest, input: SendInput) => Promise<void>;
   recordConfirm: (r: SamplingRequest, input: ConfirmInput) => Promise<void>;
   updateConfirm: (r: SamplingRequest, input: ConfirmInput) => Promise<void>;
+  recordCollect: (r: SamplingRequest, input: CollectInput) => Promise<void>;
+  updateCollect: (r: SamplingRequest, input: CollectInput) => Promise<void>;
+  recordSampleReceived: (r: SamplingRequest, input: SampleReceivedInput) => Promise<void>;
+  updateSampleReceived: (r: SamplingRequest, input: SampleReceivedInput) => Promise<void>;
   recordTesting: (r: SamplingRequest, input: TestingInput) => Promise<void>;
   updateTesting: (r: SamplingRequest, input: TestingInput) => Promise<void>;
   recordResult: (r: SamplingRequest, input: ResultInput) => Promise<void>;
@@ -159,6 +182,10 @@ interface SamplingStoreValue {
   // master writes
   insertCompany: (input: CompanyInput) => Promise<void>;
   updateCompany: (id: string, input: CompanyInput) => Promise<void>;
+  insertCollector: (input: PersonMasterInput) => Promise<void>;
+  updateCollector: (id: string, input: PersonMasterInput) => Promise<void>;
+  insertRecipient: (input: PersonMasterInput) => Promise<void>;
+  updateRecipient: (id: string, input: PersonMasterInput) => Promise<void>;
 }
 
 const Ctx = createContext<SamplingStoreValue | null>(null);
@@ -183,6 +210,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
   const companies = data?.companies ?? [];
+  const collectors = data?.collectors ?? [];
+  const recipients = data?.recipients ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const requests = data?.requests ?? [];
   const activity = data?.activity ?? [];
@@ -209,7 +238,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       isAdmin ||
       isProcessCoordinator ||
       isStepOwner(stepKey) ||
-      (stepKey === "receive_sample" && !!r.collectorId && r.collectorId === uid);
+      (stepKey === "receive_sample" && !!r.collectorId && r.collectorId === uid) ||
+      (stepKey === "sample_collect" && !!r.collectorId && r.collectorId === uid) ||
+      (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid);
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -252,6 +283,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const queueEntries = buildQueueEntries(snapshot);
 
     const receiveEntries = completedReceiveEntries(snapshot);
+    const collectEntries = completedCollectEntries(snapshot);
+    const sampleReceivedEntries = completedSampleReceivedEntries(snapshot);
     const sendEntries = completedSendEntries(snapshot);
     const confirmEntries = completedConfirmEntries(snapshot);
     const testingEntries = completedTestingEntries(snapshot);
@@ -260,6 +293,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
 
     const completedFor = (stepKey: StepKey): StageEntry<SamplingRequest>[] =>
       stepKey === "receive_sample" ? receiveEntries
+      : stepKey === "sample_collect" ? collectEntries
+      : stepKey === "sample_received" ? sampleReceivedEntries
       : stepKey === "send_sample" ? sendEntries
       : stepKey === "confirm_receipt" ? confirmEntries
       : stepKey === "testing" ? testingEntries
@@ -276,8 +311,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
 
     const queueOwnerIds = (e: QueueEntry): string[] => ownerIdsOf(e.stepKey);
 
-    const byOrder = (rows: Company[]): Company[] =>
+    const byOrder = <T extends { active: boolean; sortOrder: number; name: string }>(rows: T[]): T[] =>
       rows.filter((r) => r.active).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+    const byPersonOrder = byOrder;
 
     return {
       isLoading,
@@ -294,6 +330,10 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       companies,
       activeCompanies: byOrder(companies),
       companyById: (id) => companies.find((c) => c.id === id),
+      collectors,
+      activeCollectors: byPersonOrder(collectors),
+      recipients,
+      activeRecipients: byPersonOrder(recipients),
 
       stepOwners,
       stepOwnerFor,
@@ -368,6 +408,24 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await updateConfirmWrite(r.id, input);
         await invalidate();
       },
+      recordCollect: async (r, input) => {
+        await recordCollectWrite(r.id, input);
+        // The RPC already fanned out to the recipient / sample_received owners.
+        await invalidate();
+      },
+      updateCollect: async (r, input) => {
+        await updateCollectWrite(r.id, input);
+        await invalidate();
+      },
+      recordSampleReceived: async (r, input) => {
+        await recordSampleReceivedWrite(r.id, input);
+        // The RPC already notified the raiser that the request is closed.
+        await invalidate();
+      },
+      updateSampleReceived: async (r, input) => {
+        await updateSampleReceivedWrite(r.id, input);
+        await invalidate();
+      },
       recordTesting: async (r, input) => {
         await recordTestingWrite(r.id, input);
         await invalidate();
@@ -428,9 +486,25 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await updateCompanyWrite(id, input);
         await invalidate();
       },
+      insertCollector: async (input) => {
+        await insertCollectorWrite(input);
+        await invalidate();
+      },
+      updateCollector: async (id, input) => {
+        await updateCollectorWrite(id, input);
+        await invalidate();
+      },
+      insertRecipient: async (input) => {
+        await insertRecipientWrite(input);
+        await invalidate();
+      },
+      updateRecipient: async (id, input) => {
+        await updateRecipientWrite(id, input);
+        await invalidate();
+      },
     };
   }, [
-    isLoading, error, dir, userId, isAdmin, designations, companies, masterManagers, requests, activity,
+    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, masterManagers, requests, activity,
     notifications, stepOwners, processCoordinatorIds, stepSla, queryClient,
     // personName closes over orgPeople; without this the names stay "Unknown user".
     orgPeople,

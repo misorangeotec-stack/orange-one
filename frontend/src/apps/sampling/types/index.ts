@@ -29,6 +29,8 @@ export type RequestStatus =
   | "awaiting_testing"
   | "awaiting_result"
   | "awaiting_handover"
+  | "awaiting_collect"           // inward, lab testing NOT required: sample_collect
+  | "awaiting_sample_received"  // inward, lab testing NOT required: sample_received
   | "closed"
   | "on_hold"
   | "cancelled";
@@ -52,10 +54,15 @@ export interface SamplingRequest {
   partyName: string | null;
   productDesc: string | null;
   colourQty: string | null;             // legacy single value (old rows)
-  sampleItems: SampleItem[];            // competitor: the samples to collect
+  sampleItems: SampleItem[];            // the colour/quantity samples (all directions/types)
   collectorId: string | null;           // the chosen collector (auth.users id)
   collectorName: string | null;         // legacy free-text collector name
-  handoverName: string | null;
+  handoverName: string | null;          // legacy free-text "hand to" name (old rows)
+  /** Inward only: true → receive/testing/result flow; false → the short collect→received branch; null on outward. */
+  labTestingRequired: boolean | null;
+  /** The chosen hand-over recipient (an app user). Null when a free-text name was typed. */
+  handoverRecipientId: string | null;
+  handoverRecipientName: string | null;
   transportBorne: TransportBorne | null;
   desiredResult: string | null;
   additionalInfo: string | null;
@@ -100,6 +107,20 @@ export interface SamplingRequest {
   handoverNote: string | null;
   handedOverAt: string | null;
   handedOverBy: string | null;
+
+  // sample_collect (inward, lab testing NOT required) — collector hands over
+  collectedDate: string | null;
+  collectedAt: string | null;
+  collectedBy: string | null;
+
+  // sample_received (inward, lab testing NOT required) — recipient confirms; closes
+  sampleReceivedDate: string | null;
+  sampleReceivedNote: string | null;
+  sampleReceivedDocPath: string | null;
+  sampleReceivedDocName: string | null;
+  sampleReceivedAt: string | null;
+  sampleReceivedBy: string | null;
+
   closedAt: string | null;
 
   /**
@@ -116,13 +137,35 @@ export interface SamplingRequest {
   createdAt: string;
 }
 
+/* --------------------------------- masters -------------------------------- */
+
+/** A curated collector — "who will collect the sample". Maps to an app user. */
+export interface Collector {
+  id: string;
+  name: string;
+  userId: string;
+  active: boolean;
+  sortOrder: number;
+}
+
+/** A curated hand-over recipient — "whom to hand the sample to". Maps to an app user. */
+export interface HandoverRecipient {
+  id: string;
+  name: string;
+  userId: string;
+  active: boolean;
+  sortOrder: number;
+}
+
 /* ------------------------------ master governance ------------------------- */
 
-/** Company is the ONLY master, and it is ownable but never "requestable". */
-export type SamplingMasterType = "company";
+/** The ownable master types. All are ownable but never "requestable". */
+export type SamplingMasterType = "company" | "collector" | "recipient";
 
 export const SAMPLING_MASTER_TYPES: { value: SamplingMasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
+  { value: "collector", label: "Collector", plural: "Collectors" },
+  { value: "recipient", label: "Hand-over recipient", plural: "Hand-over recipients" },
 ];
 
 export interface SamplingMasterManager {
