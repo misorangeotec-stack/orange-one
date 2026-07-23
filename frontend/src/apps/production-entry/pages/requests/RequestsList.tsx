@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
@@ -9,6 +9,11 @@ import type { ProductionRequest, ProductionStatus } from "../../types";
 /** Every job card RLS lets this user see (the app is per-user granted). */
 export default function RequestsList() {
   const s = useProductionStore();
+  const [params] = useSearchParams();
+  // Dashboard tiles / status bars deep-link here as `?status=<key>`; honour it only
+  // if it's a real status, else fall through to "all".
+  const statusParam = params.get("status");
+  const initialGroup = statusParam && statusParam in STATUS_LABEL ? statusParam : undefined;
 
   const columns: QueueColumn<ProductionRequest>[] = [
     {
@@ -74,6 +79,7 @@ export default function RequestsList() {
         rowKey={(r) => r.id}
         columns={columns}
         groupBy={{ idOf: (r) => r.status, nameOf: (id) => STATUS_LABEL[id as ProductionStatus] ?? id, allLabel: "All statuses", label: "Status" }}
+        initialGroup={initialGroup}
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="job cards"
         exportName="Production_Job_Cards"

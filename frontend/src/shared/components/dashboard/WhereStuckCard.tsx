@@ -31,7 +31,7 @@ export default function WhereStuckCard<K extends string>({
           </Link>
         )}
       </div>
-      <StepPipeline nodes={nodes} groups={groups} selectedKeys={[]} onChange={() => {}} />
+      <StepPipeline nodes={nodes} groups={groups} selectedKeys={[]} onChange={() => {}} interactive={false} />
     </Card>
   );
 }

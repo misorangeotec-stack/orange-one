@@ -62,6 +62,8 @@ interface QueueTableProps<T> {
   emptyMessage?: string;
   /** Pre-activate a sort column on first render. */
   initialSort?: { key: string; dir: "asc" | "desc" };
+  /** Pre-select a group on first render (e.g. deep-linked `?status=…` from a dashboard). */
+  initialGroup?: string;
   /**
    * Opt in to Excel export by giving the file name stem (e.g. "HR_Requisitions").
    * Omitting it leaves the table exactly as it was — which is why Purchase's queues
@@ -107,12 +109,13 @@ export default function QueueTable<T>({
   emptyTitle = "Nothing here",
   emptyMessage = "Items needing action will appear here.",
   initialSort,
+  initialGroup,
   exportName,
   exportTitle,
   exportNotes,
 }: QueueTableProps<T>) {
   const [filters, setFilters] = useState<Record<string, FilterVal>>({});
-  const [group, setGroup] = useState<string>("all");
+  const [group, setGroup] = useState<string>(initialGroup ?? "all");
   const [sort, setSort] = useState<SortState>(initialSort ?? null);
 
   const { idOf, nameOf: groupNameOf, allLabel } = groupBy;

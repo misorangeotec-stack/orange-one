@@ -185,6 +185,37 @@ export default function RequestDetail() {
                     </tr>
                   ))}
                 </tbody>
+                {(() => {
+                  // Totals grouped by unit — raw materials mix units (e.g. LTR vs
+                  // KGS), so a single grand total would be meaningless. One footer
+                  // row per unit, in first-appearance order.
+                  const totals: { unit: string; qty: number }[] = [];
+                  for (const l of r.bomLines) {
+                    if (l.requiredQty == null) continue;
+                    const unit = s.unitById(l.unitId)?.name ?? "—";
+                    const row = totals.find((t) => t.unit === unit);
+                    if (row) row.qty += l.requiredQty;
+                    else totals.push({ unit, qty: l.requiredQty });
+                  }
+                  if (totals.length === 0) return null;
+                  const grand = totals.reduce((sum, t) => sum + t.qty, 0);
+                  return (
+                    <tfoot>
+                      {totals.map((t, i) => (
+                        <tr key={i} className="border-t border-line bg-page/60 font-semibold text-navy">
+                          <td className="px-3 py-2 text-right">{i === 0 ? "Total" : ""}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">{numOrDash(Math.round(t.qty * 1000) / 1000)}</td>
+                          <td className="px-3 py-2">{t.unit}</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-line bg-page font-bold text-navy">
+                        <td className="px-3 py-2 text-right">Grand total</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{numOrDash(Math.round(grand * 1000) / 1000)}</td>
+                        <td className="px-3 py-2 text-grey-2 font-normal text-[11px]">{totals.length > 1 ? "all units combined" : totals[0].unit}</td>
+                      </tr>
+                    </tfoot>
+                  );
+                })()}
               </table>
             </div>
           ) : (
