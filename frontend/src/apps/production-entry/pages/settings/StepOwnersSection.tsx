@@ -9,9 +9,10 @@ import { useProductionStore } from "../../store";
 import { STEPS, type StepKey } from "../../lib/steps";
 
 /**
- * Step Owners (admin). `issue_slip` is never owned — every granted user may raise a
- * job card, so it is barred (CHECK constraint) and absent here. Every other step's
- * owners are the notified / authorized actors for that step.
+ * Step Owners (admin). Every step (including step 1, Raise Request / `issue_slip`)
+ * can have owners — the notified / authorized actors for that step. For Raise
+ * Request specifically: with owners set, only they (or an admin / coordinator) can
+ * raise a job card; with none set, raising stays open to every granted user.
  */
 export default function StepOwnersSection() {
   const s = useProductionStore();
@@ -21,7 +22,8 @@ export default function StepOwnersSection() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const assignableSteps = useMemo(() => STEPS.filter((st) => st.key !== "issue_slip"), []);
+  // Every step is assignable now — including issue_slip (Raise Request).
+  const assignableSteps = STEPS;
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.orgDepartments.map((d) => ({ value: d.id, label: d.name })),

@@ -51,9 +51,11 @@ export default function MyRequests() {
           <h1 className="text-[22px] font-bold text-navy">My Job Cards</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">Production job cards you raised.</p>
         </div>
-        <Link to="/production-entry/requests/new">
-          <Button size="sm">Raise a job card</Button>
-        </Link>
+        {s.canRaise && (
+          <Link to="/production-entry/requests/new">
+            <Button size="sm">Raise a job card</Button>
+          </Link>
+        )}
       </div>
 
       <QueueTable<ProductionRequest>

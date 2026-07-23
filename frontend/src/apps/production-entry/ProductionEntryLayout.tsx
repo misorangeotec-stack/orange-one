@@ -37,9 +37,10 @@ export default function ProductionEntryLayout() {
         canManageMasters: s.isAnyMasterManager,
         canMonitor: s.isProcessCoordinator,
         hasRequests,
+        canRaise: s.canRaise,
         queues,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasRequests, queues],
+    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasRequests, s.canRaise, queues],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

@@ -100,6 +100,7 @@ interface ProductionStoreValue {
   isProcessCoordinator: boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
   canActOn: (stepKey: QueueStep, r: ProductionRequest) => boolean;
+  canRaise: boolean;
 
   // master governance
   masterManagers: ProductionMasterManager[];
@@ -208,6 +209,11 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     const canActOn = (stepKey: QueueStep, _r: ProductionRequest): boolean =>
       isAdmin || isProcessCoordinator || isStepOwner(stepKey);
 
+    // Who may raise a job card: open to all module users unless issue_slip has
+    // owners configured, then only those owners (or admin / coordinator).
+    const issueSlipOwners = stepOwnerFor("issue_slip")?.employeeIds ?? [];
+    const canRaise = issueSlipOwners.length === 0 || isAdmin || isProcessCoordinator || issueSlipOwners.includes(uid);
+
     const personName = (id: string | null): string => {
       if (!id) return "—";
       return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
@@ -314,6 +320,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       isProcessCoordinator,
       isStepOwner,
       canActOn,
+      canRaise,
 
       masterManagers,
       managerIdsFor,

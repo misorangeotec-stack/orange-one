@@ -8,12 +8,12 @@ import type { StepSlaMap } from "../../lib/sla";
 
 /**
  * Per-step due-date targets. Each queue step is due N working days after its
- * anchor (previous) step completes (defaults to 1). `issue_slip` has no queue, so
- * it is hidden.
+ * anchor (previous) step completes (defaults to 1). `issue_slip` has no queue, and
+ * `transfer_slip` (Log Book Entry) has NO due date — both are hidden here.
  */
 export default function StepDueDatesSection() {
   const s = useProductionStore();
-  const queueSteps = STEPS.filter((st) => !st.noQueue);
+  const queueSteps = STEPS.filter((st) => !st.noQueue && st.key !== "transfer_slip");
   const [days, setDays] = useState<Record<string, string>>(() => {
     const out: Record<string, string> = {};
     for (const st of queueSteps) out[st.key] = String(s.stepSla[st.key]?.days ?? 1);

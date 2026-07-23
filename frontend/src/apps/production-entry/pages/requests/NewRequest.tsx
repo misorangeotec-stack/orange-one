@@ -93,6 +93,19 @@ export default function NewRequest() {
   // Grand total = numeric sum across every unit; only shown when >1 unit is present.
   const { grand: grandTotal, multiUnit } = qtyTotals(totalsByUnit);
 
+  if (!s.canRaise) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <Card className="p-6 text-center">
+          <h1 className="text-[18px] font-bold text-navy">Not authorized to raise a job card</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1.5">
+            Raising a batch card is restricted to the owners of the Raise Request step. Ask an admin to add you in Setup → Step Owners.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto space-y-5">
       <div>

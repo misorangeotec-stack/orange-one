@@ -120,6 +120,9 @@ export function openStep(r: ProductionRequest): QueueStep | null {
 
 /** A card's due date for one step = its anchor's completion + N working days. */
 export function productionDueIso(snap: ProductionSnapshot, r: ProductionRequest, step: QueueStep): string | null {
+  // The Log Book Entry has NO due date — it is entered without dates and never
+  // runs overdue. (Downstream steps still anchor on its completion timestamp.)
+  if (step === "transfer_slip") return null;
   // A rejected Test 1 sets an explicit +2-day retest due that overrides the SLA.
   if (step === "quality_check" && r.qcRetestDue) return r.qcRetestDue;
   const sla = snap.stepSla[step];

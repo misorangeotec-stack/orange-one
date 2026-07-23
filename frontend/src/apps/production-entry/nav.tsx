@@ -37,13 +37,20 @@ export function buildProductionNav(opts: {
   canManageMasters: boolean;
   canMonitor: boolean;
   hasRequests: boolean;
+  canRaise: boolean;
   queues: Record<QueueStep, boolean>;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     ...(opts.hasRequests ? [{ label: "All Job Cards", to: `${B}/requests`, icon: ic.list }] : []),
-    { label: "Generate Batch Card", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
-    { label: "My Job Cards", to: `${B}/my-requests`, icon: ic.mine },
+    // Generate Batch Card is shown only to users who may raise a job card (Raise
+    // Request step owners, or everyone when no owners are configured).
+    ...(opts.canRaise
+      ? [
+          { label: "Generate Batch Card", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
+          { label: "My Job Cards", to: `${B}/my-requests`, icon: ic.mine },
+        ]
+      : [{ label: "My Job Cards", to: `${B}/my-requests`, icon: ic.mine, section: "Actions" }]),
     { label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests },
   ];
 

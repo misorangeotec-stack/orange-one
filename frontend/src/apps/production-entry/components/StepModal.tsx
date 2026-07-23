@@ -9,7 +9,7 @@ import LineGrid, { newUid, type LineGridColumn } from "@/shared/components/ui/Li
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
-import { dmy, numOrDash, qtyTotals } from "../lib/format";
+import { dmy, numOrDash } from "../lib/format";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
 import type { ProductionRequest } from "../types";
@@ -82,18 +82,6 @@ const packQtyFromPrefix = (name: string | undefined, fgPackedQty: string): strin
   return String(Math.round(fg / div));
 };
 
-/** The one totals line shown under every line-item quantity grid: per-unit
- *  subtotals plus a grand total (numeric sum across all units) when >1 unit. */
-function TotalsLine({ totals, label = "Total" }: { totals: Map<string, number>; label?: string }) {
-  const { perUnit, grand, multiUnit } = qtyTotals(totals);
-  if (!perUnit) return null;
-  return (
-    <div className="text-right text-[12.5px] text-grey-2">
-      {label}: <span className="font-semibold text-navy">{perUnit}</span>
-      {multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grand}</span></>}
-    </div>
-  );
-}
 
 /** One Log Book Entry row being edited. Existing rows carry the locked requested/
  *  handover/lot from earlier steps with an editable actual use; new rows are added
@@ -438,21 +426,17 @@ export default function StepModal({
 
   const titlePrefix = editing && !readOnly ? `Edit ${cfg.title.toLowerCase()}` : readOnly ? cfg.title : cfg.actionLabel;
 
-  // Per-unit quantity totals for each line-item grid (its operative qty column),
-  // consumed by <TotalsLine> under each table. Empty maps render nothing.
-  const totalsByUnit = (rows: Array<{ unitId: string | null; qty: number }>): Map<string, number> => {
-    const m = new Map<string, number>();
-    for (const r of rows) {
-      if (!r.qty) continue;
-      const u = s.unitById(r.unitId)?.name ?? "—";
-      m.set(u, (m.get(u) ?? 0) + r.qty);
+  // Grand total of a numeric column (sum across all rows, all units) + the list of
+  // units present — for the column-aligned totals row shown under each grid.
+  const gsum = (vals: Array<number | null | undefined>) => Math.round(vals.reduce<number>((a, v) => a + (v ?? 0), 0) * 1000) / 1000;
+  const unitsList = (unitIds: Array<string | null>) => {
+    const names: string[] = [];
+    for (const id of unitIds) {
+      const n = s.unitById(id)?.name;
+      if (n && !names.includes(n)) names.push(n);
     }
-    return m;
+    return names.join(" · ");
   };
-  const handoverTotals = totalsByUnit(hoRows.map((r) => ({ unitId: r.unitId, qty: Number(r.qty) || 0 })));
-  const logUseTotals = totalsByUnit(logRows.map((r) => ({ unitId: r.unitId, qty: Number(r.actualUse) || 0 })));
-  const rmTransferTotals = totalsByUnit((request?.mhBomLines ?? []).map((l) => ({ unitId: l.unitId, qty: l.qty ?? 0 })));
-  const productionUseTotals = totalsByUnit((request?.tsBomLines ?? []).map((l) => ({ unitId: l.unitId, qty: l.actualUse ?? 0 })));
 
   // Log Book line-item columns (shared LineGrid). Existing handover rows are
   // locked: only Actual Use is editable — their name/lot cells register no focus
@@ -629,9 +613,17 @@ export default function StepModal({
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t border-line bg-page/50 text-navy">
+                        <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(hoRows.map((r) => r.requestedQty))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(hoRows.map((r) => Number(r.qty) || 0))}</td>
+                        <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(hoRows.map((r) => r.unitId))}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
-                <TotalsLine totals={handoverTotals} label="Total handed over" />
               </div>
             ) : (
               <FieldLabel label="Qty">
@@ -700,6 +692,16 @@ export default function StepModal({
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot>
+                      <tr className="border-t border-line bg-page/50 text-navy">
+                        <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(logRows.map((r) => (r.isNew ? null : r.requestedQty)))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(logRows.map((r) => (r.isNew ? null : r.handoverQty)))}</td>
+                        <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(logRows.map((r) => r.unitId))}</td>
+                        <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(logRows.map((r) => Number(r.actualUse) || 0))}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
               ) : (
@@ -710,9 +712,21 @@ export default function StepModal({
                   makeEmptyRow={makeEmptyLogRow}
                   isRowBlank={isLogRowBlank}
                   canRemove={(r) => r.isNew}
+                  footer={
+                    <tfoot>
+                      <tr className="border-t border-line bg-page/50 text-navy">
+                        <td className="px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                        <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(logRows.map((r) => (r.isNew ? null : r.requestedQty)))}</td>
+                        <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(logRows.map((r) => (r.isNew ? null : r.handoverQty)))}</td>
+                        <td className="px-2.5 py-2 text-[12px] text-grey-2">{unitsList(logRows.map((r) => r.unitId))}</td>
+                        <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(logRows.map((r) => Number(r.actualUse) || 0))}</td>
+                        <td />
+                        <td />
+                      </tr>
+                    </tfoot>
+                  }
                 />
               )}
-              <TotalsLine totals={logUseTotals} label="Total actual use" />
             </div>
 
             <FieldLabel label="Attachment" required hint={editing ? "choose a file to replace it" : "required — e.g. the log book page"}>
@@ -942,9 +956,18 @@ export default function StepModal({
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot>
+                        <tr className="border-t border-line bg-page/50 text-navy">
+                          <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(request.tsBomLines.map((l) => l.requestedQty))}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(request.tsBomLines.map((l) => l.handoverQty))}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(request.tsBomLines.map((l) => l.actualUse))}</td>
+                          <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(request.tsBomLines.map((l) => l.unitId))}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
-                  <TotalsLine totals={productionUseTotals} label="Total actual use" />
                 </div>
               )}
             </>
@@ -952,16 +975,6 @@ export default function StepModal({
         })()}
 
         {isPmHandover && request && (() => {
-          // Per-unit totals of the filled packaging rows.
-          const totals = new Map<string, number>();
-          for (const r of packRows) {
-            if (!r.packagingItemId) continue;
-            const q = Number(r.qty);
-            if (!q) continue;
-            const uname = s.unitById(r.unitId)?.name ?? "—";
-            totals.set(uname, (totals.get(uname) ?? 0) + q);
-          }
-          const { perUnit: totalText, grand: grandTotal, multiUnit } = qtyTotals(totals);
           const packOptions: ComboOption[] = s.activePackagingItems.map((p) => ({ value: p.id, label: p.name }));
           const columns: LineGridColumn<PackRow>[] = [
             {
@@ -1045,6 +1058,15 @@ export default function StepModal({
                           ))
                         )}
                       </tbody>
+                      {request.pmhBomLines.length > 0 && (
+                        <tfoot>
+                          <tr className="border-t border-line bg-page/50 text-navy">
+                            <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                            <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(request.pmhBomLines.map((l) => l.qty))}</td>
+                            <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(request.pmhBomLines.map((l) => l.unitId))}</td>
+                          </tr>
+                        </tfoot>
+                      )}
                     </table>
                   </div>
                 ) : (
@@ -1054,18 +1076,23 @@ export default function StepModal({
                     columns={columns}
                     makeEmptyRow={makeEmptyPackRow}
                     isRowBlank={isPackRowBlank}
+                    footer={
+                      <tfoot>
+                        <tr className="border-t border-line bg-page/50 text-navy">
+                          <td className="px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                          <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(packRows.map((r) => Number(r.qty) || 0))}</td>
+                          <td className="px-2.5 py-2 text-[12px] text-grey-2">{unitsList(packRows.map((r) => r.unitId))}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    }
                   />
                 )}
-                <div className="flex items-start justify-between gap-3">
-                  {!readOnly ? (
-                    <p className="text-[12px] text-grey-2">
-                      Pick an item and a fresh line appears automatically. Qty auto-fills from the item's pack size (its name prefix ÷ FG packed qty) — edit if needed.
-                    </p>
-                  ) : <span />}
-                  {totalText && (
-                    <div className="text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span>{multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grandTotal}</span></>}</div>
-                  )}
-                </div>
+                {!readOnly && (
+                  <p className="text-[12px] text-grey-2">
+                    Pick an item and a fresh line appears automatically. Qty auto-fills from the item's pack size (its name prefix ÷ FG packed qty) — edit if needed.
+                  </p>
+                )}
               </div>
             </>
           );
@@ -1073,13 +1100,6 @@ export default function StepModal({
 
         {isPmTransfer && request && (() => {
           const lines = request.pmhBomLines;
-          const totals = new Map<string, number>();
-          for (const l of lines) {
-            if (l.qty == null) continue;
-            const uname = s.unitById(l.unitId)?.name ?? "—";
-            totals.set(uname, (totals.get(uname) ?? 0) + l.qty);
-          }
-          const { perUnit: totalText, grand: grandTotal, multiUnit } = qtyTotals(totals);
           const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
           return (
             <>
@@ -1112,11 +1132,17 @@ export default function StepModal({
                         ))
                       )}
                     </tbody>
+                    {lines.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t border-line bg-page/50 text-navy">
+                          <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.qty))}</td>
+                          <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(lines.map((l) => l.unitId))}</td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
-                {totalText && (
-                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span>{multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grandTotal}</span></>}</div>
-                )}
               </div>
             </>
           );
@@ -1150,9 +1176,17 @@ export default function StepModal({
                     );
                   })}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t border-line bg-page/50 text-navy">
+                    <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                    <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(request.mhBomLines.map((l) => request.bomLines.find((b) => b.rawMaterialId === l.rawMaterialId)?.requiredQty ?? null))}</td>
+                    <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(request.mhBomLines.map((l) => l.qty))}</td>
+                    <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(request.mhBomLines.map((l) => l.unitId))}</td>
+                    <td />
+                  </tr>
+                </tfoot>
               </table>
             </div>
-            <TotalsLine totals={rmTransferTotals} label="Total handed over" />
           </div>
         )}
 
@@ -1164,13 +1198,6 @@ export default function StepModal({
           // Net qty available for packing = Actual Output − Lab Testing Qty.
           const net = request.actualQty != null ? Math.round((request.actualQty - (request.peLabQty ?? 0)) * 1000) / 1000 : null;
           const lines = request.pmhBomLines;
-          const totals = new Map<string, number>();
-          for (const l of lines) {
-            if (l.qty == null) continue;
-            const uname = s.unitById(l.unitId)?.name ?? "—";
-            totals.set(uname, (totals.get(uname) ?? 0) + l.qty);
-          }
-          const { perUnit: totalText, grand: grandTotal, multiUnit } = qtyTotals(totals);
           return (
             <>
               {/* Lot/Batch Card + FG item are in the shared header above. */}
@@ -1205,11 +1232,17 @@ export default function StepModal({
                         ))
                       )}
                     </tbody>
+                    {lines.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t border-line bg-page/50 text-navy">
+                          <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.qty))}</td>
+                          <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(lines.map((l) => l.unitId))}</td>
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
-                {totalText && (
-                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span>{multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grandTotal}</span></>}</div>
-                )}
               </div>
 
               <p className="text-[12px] text-grey-2">Review the details above, then Save to log this packing entry in Tally.</p>
