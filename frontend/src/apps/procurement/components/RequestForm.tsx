@@ -5,7 +5,7 @@ import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import RequestMasterModal from "./RequestMasterModal";
 import { masterTypeLabel } from "../lib/masterFields";
-import { isLineBlank, makeEmptyLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
+import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
 
 /**
  * The body shared by New Request and Edit Request: the Company header and the
@@ -162,7 +162,9 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             rows={lines}
             onRowsChange={setLines}
             columns={columns}
-            makeEmptyRow={makeEmptyLine}
+            // New trailing row inherits Category + Item Group from the row above,
+            // so a multi-item requisition in one group isn't "re-pick every line".
+            makeEmptyRow={() => makeInheritedLine(lines[lines.length - 1])}
             isRowBlank={isLineBlank}
           />
           <p className="text-[12px] text-grey-2">

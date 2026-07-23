@@ -38,9 +38,28 @@ export const makeEmptyLine = (): RequestLine => ({
   remark: "",
 });
 
-/** `dbId` is NOT tested — a hydrated row is blank only if the user emptied it. */
-export const isLineBlank = (l: RequestLine) =>
-  !l.categoryId && !l.groupId && !l.itemId && !l.qty && !l.remark;
+/**
+ * A fresh row that carries the previous row's Category + Item Group forward, so
+ * a requisition of many items in one group is not "re-pick the category every
+ * line". Only the classifiers are inherited — item, qty, unit and remark stay
+ * empty, and the user can still change category/group on the new row. Because
+ * `isLineBlank` ignores category/group (see below), this inherited row still
+ * tests blank, so LineGrid keeps treating it as the single trailing blank row.
+ */
+export const makeInheritedLine = (prev?: RequestLine): RequestLine => ({
+  ...makeEmptyLine(),
+  categoryId: prev?.categoryId ?? "",
+  groupId: prev?.groupId ?? "",
+});
+
+/**
+ * Blankness is item-level: a row is blank until it names an item, a qty or a
+ * remark. Category/Group are deliberately NOT tested — an inherited trailing
+ * row carries them, and counting them would make LineGrid append blank rows
+ * forever (and would flag the trailing row as an incomplete line).
+ * `dbId` is NOT tested either — a hydrated row is blank only if the user emptied it.
+ */
+export const isLineBlank = (l: RequestLine) => !l.itemId && !l.qty && !l.remark;
 
 export interface RequestFormInit {
   requestId: string;
