@@ -161,14 +161,15 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record packing",
     description: "Job cards awaiting the packing consumption entry.",
     completedBlurb: "Packing entries you record appear here, and stay revisable until the finished-good transfer is recorded.",
-    fields: [
-      { key: "pk_actual_date", label: "Actual date of packing entry", kind: "date", get: (r) => s(r.pkActualDate), hint: "defaults to today if left blank" },
-      { key: "pk_status", label: "Status of packing entry", kind: "status", get: (r) => s(r.pkStatus) },
-      { key: "packed_qty", label: "Packed Qty", kind: "number", get: (r) => n(r.packedQty) },
-      { key: "loose_ink_qty", label: "Loose INK Qty", kind: "number", get: (r) => n(r.looseInkQty) },
-      { key: "pk_remarks", label: "Remarks", kind: "textarea", get: (r) => s(r.pkRemarks) },
-    ],
-    captured: { key: "packedQty", header: "Packed Qty", get: (r) => numOrDash(r.packedQty) },
+    // Review-only step: StepModal shows the net packing qty (Actual Output − Lab),
+    // the packed/loose qtys + production Tally entry (from earlier steps) and the
+    // handover packaging list, all READ-ONLY. The user just Saves to log it in Tally.
+    fields: [],
+    captured: {
+      key: "netQty",
+      header: "Net Qty",
+      get: (r) => numOrDash(r.actualQty != null ? Math.round((r.actualQty - (r.peLabQty ?? 0)) * 1000) / 1000 : null),
+    },
   },
   fg_transfer: {
     stepKey: "fg_transfer",

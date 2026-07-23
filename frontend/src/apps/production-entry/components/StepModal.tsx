@@ -146,6 +146,7 @@ export default function StepModal({
   const isMc = stepKey === "mc_testing";
   const isPmHandover = stepKey === "pm_handover";
   const isPmTransfer = stepKey === "pm_transfer";
+  const isPacking = stepKey === "packing_entry";
   const [values, setValues] = useState<Record<string, string>>({});
   const [hoRows, setHoRows] = useState<HandoverRow[]>([]);
   const [logRows, setLogRows] = useState<LogRow[]>([]);
@@ -1082,6 +1083,67 @@ export default function StepModal({
             </div>
           </div>
         )}
+
+        {isPacking && request && (() => {
+          const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
+          const val = "text-[15px] font-bold text-navy tabular-nums";
+          const unit = fgUnit ? <span className="text-[11px] font-normal text-grey-2"> {fgUnit}</span> : null;
+          const metric = (n: number | null) => (n != null ? <>{n}{unit}</> : "—");
+          // Net qty available for packing = Actual Output − Lab Testing Qty.
+          const net = request.actualQty != null ? Math.round((request.actualQty - (request.peLabQty ?? 0)) * 1000) / 1000 : null;
+          const lines = request.pmhBomLines;
+          const totals = new Map<string, number>();
+          for (const l of lines) {
+            if (l.qty == null) continue;
+            const uname = s.unitById(l.unitId)?.name ?? "—";
+            totals.set(uname, (totals.get(uname) ?? 0) + l.qty);
+          }
+          const totalText = [...totals.entries()].map(([u, q]) => `${Math.round(q * 1000) / 1000} ${u}`).join(" · ");
+          return (
+            <>
+              {/* Lot/Batch Card + FG item are in the shared header above. */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-page px-3.5 py-3">
+                <div><div className={cap}>Net Qty for Packing</div><div className={val}>{metric(net)}</div></div>
+                <div><div className={cap}>Packed Qty</div><div className={val}>{metric(request.tsPackedQty)}</div></div>
+                <div><div className={cap}>Loose Qty</div><div className={val}>{metric(request.tsLooseQty)}</div></div>
+                <div><div className={cap}>Production Tally Entry</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
+              </div>
+
+              <div className="space-y-1.5">
+                <span className="block text-[13px] font-medium text-navy">Packaging items (from handover)</span>
+                <div className="rounded-xl border border-line overflow-x-auto">
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                        <th className="font-medium px-3 py-2 min-w-[220px]">Packaging Item</th>
+                        <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Qty</th>
+                        <th className="font-medium px-2 py-2 w-20">Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.length === 0 ? (
+                        <tr><td colSpan={3} className="px-3 py-3 text-grey-2">No packaging items were recorded at handover.</td></tr>
+                      ) : (
+                        lines.map((l, i) => (
+                          <tr key={i} className="border-b border-line/70 last:border-0">
+                            <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.qty)}</td>
+                            <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {totalText && (
+                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span></div>
+                )}
+              </div>
+
+              <p className="text-[12px] text-grey-2">Review the details above, then Save to log this packing entry in Tally.</p>
+            </>
+          );
+        })()}
 
         {cfg.fields.map((f) => (
           <FieldLabel key={f.key} label={f.label} hint={f.hint}>

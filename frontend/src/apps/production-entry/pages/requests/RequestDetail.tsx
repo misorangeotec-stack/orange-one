@@ -65,7 +65,10 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
     case "mc_testing": return [r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : null, r.mcRemarks].filter(Boolean).join(" · ") || null;
     case "pm_handover": return [r.pmhQty != null ? `Packed ${r.pmhQty}` : null, r.pmhBomLines.length ? `${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
     case "pm_transfer": return r.pmtAt ? `Transferred${r.pmhBomLines.length ? ` · ${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : ""}` : null;
-    case "packing_entry": return [r.pkStatus, r.packedQty != null ? `Packed ${r.packedQty}` : null, r.looseInkQty != null ? `Loose ${r.looseInkQty}` : null].filter(Boolean).join(" · ") || null;
+    case "packing_entry": {
+      const net = r.actualQty != null ? Math.round((r.actualQty - (r.peLabQty ?? 0)) * 1000) / 1000 : null;
+      return [r.pkAt ? "Logged" : null, net != null ? `Net ${net}` : null, r.pmhBomLines.length ? `${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
+    }
     case "fg_transfer": return [r.fgStatus, r.finalQty != null ? `Final ${r.finalQty}` : null].filter(Boolean).join(" · ") || null;
   }
 }
