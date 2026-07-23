@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { SectionHeading } from "@/shared/components/ui/Readout";
+import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import type { Direction, ReceiveVia, RequirementType, TransportBorne } from "../types";
 import {
   isSampleBlank,
@@ -40,9 +40,10 @@ const LAB_OPTIONS: ComboOption[] = [
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-4">
-      <div className="flex items-center gap-3 border-b border-line pb-2">
-        <span className="h-4 w-1 rounded-full bg-orange" />
-        <SectionHeading>{title}</SectionHeading>
+      <div className="border-b border-line pb-2">
+        {/* Accent is a left border on the heading text itself, so it always sits
+            exactly in line with the title (never above it). */}
+        <h3 className={`${SECTION_HEADING_CLASS} border-l-[3px] border-orange pl-2.5 leading-none`}>{title}</h3>
       </div>
       <div className="grid sm:grid-cols-2 gap-x-5 gap-y-4">{children}</div>
     </section>
@@ -217,7 +218,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                 />
               </FieldLabel>
               {labNotRequired && (
-                <FieldLabel label="Whom to hand the sample to">
+                <FieldLabel label="Whom to hand over the sample to">
                   <Combobox
                     value={handoverRecipientId}
                     onChange={setHandoverRecipientId}
