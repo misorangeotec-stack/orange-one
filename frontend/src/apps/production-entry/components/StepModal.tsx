@@ -9,7 +9,7 @@ import LineGrid, { newUid, type LineGridColumn } from "@/shared/components/ui/Li
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
-import { dmy, numOrDash } from "../lib/format";
+import { dmy, numOrDash, qtyTotals } from "../lib/format";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
 import type { ProductionRequest } from "../types";
@@ -82,6 +82,19 @@ const packQtyFromPrefix = (name: string | undefined, fgPackedQty: string): strin
   return String(Math.round(fg / div));
 };
 
+/** The one totals line shown under every line-item quantity grid: per-unit
+ *  subtotals plus a grand total (numeric sum across all units) when >1 unit. */
+function TotalsLine({ totals, label = "Total" }: { totals: Map<string, number>; label?: string }) {
+  const { perUnit, grand, multiUnit } = qtyTotals(totals);
+  if (!perUnit) return null;
+  return (
+    <div className="text-right text-[12.5px] text-grey-2">
+      {label}: <span className="font-semibold text-navy">{perUnit}</span>
+      {multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grand}</span></>}
+    </div>
+  );
+}
+
 /** One Log Book Entry row being edited. Existing rows carry the locked requested/
  *  handover/lot from earlier steps with an editable actual use; new rows are added
  *  at this step (master pick or free text) with their own actual use + lot. */
@@ -96,6 +109,10 @@ interface LogRow {
   actualUse: string;
   lotNo: string;
 }
+const makeEmptyLogRow = (): LogRow => ({ uid: newUid(), isNew: true, rawMaterialId: null, name: "", unitId: null, requestedQty: null, handoverQty: null, actualUse: "", lotNo: "" });
+// Blank = a NEW row with nothing filled. Locked rows carried from the handover
+// (isNew:false) are never blank, so LineGrid keeps exactly one trailing new row.
+const isLogRowBlank = (r: LogRow) => r.isNew && !r.rawMaterialId && !(r.name ?? "").trim() && !(r.actualUse ?? "").trim() && !(r.lotNo ?? "").trim();
 
 /** Seed the handover rows from the issue slip, pre-filling the handover qty +
  *  lot number from an already-recorded handover when one exists. */
@@ -226,7 +243,9 @@ export default function StepModal({
       setHoRows(isHandover ? seedHandoverRows(request) : []);
       setLogRows(isLogBook ? seedLogRows(request) : []);
       setPackRows(isPmHandover ? seedPackRows(request) : []);
-      setPmhQty(isPmHandover && request.pmhQty != null ? String(request.pmhQty) : "");
+      // FG Packed Qty is carried READ-ONLY from the log book's Packed Qty (already
+      // entered upstream); fall back to a previously recorded pmhQty for legacy cards.
+      setPmhQty(isPmHandover ? (request.tsPackedQty != null ? String(request.tsPackedQty) : request.pmhQty != null ? String(request.pmhQty) : "") : "");
       setLogScrap(isLogBook && request.scrapQty != null ? String(request.scrapQty) : "");
       setLogLab(isLogBook && request.peLabQty != null ? String(request.peLabQty) : "");
       setLogPacked(isLogBook && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
@@ -260,14 +279,6 @@ export default function StepModal({
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
     setHoRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: v } : r)));
-  const setLogField = (uid: string, patch: Partial<LogRow>) =>
-    setLogRows((prev) => prev.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
-  const addLogRow = () =>
-    setLogRows((prev) => [
-      ...prev,
-      { uid: newUid(), isNew: true, rawMaterialId: null, name: "", unitId: null, requestedQty: null, handoverQty: null, actualUse: "", lotNo: "" },
-    ]);
-  const removeLogRow = (uid: string) => setLogRows((prev) => prev.filter((r) => r.uid !== uid));
 
   // Per-new-row raw-material options: active materials + a synthetic entry for a
   // free-text name already typed, so the Combobox can display it.
@@ -319,7 +330,9 @@ export default function StepModal({
       }
 
       if (isLogBook) {
-        payload.ts_bom_lines = logRows.map((r) => ({
+        // Drop LineGrid's trailing blank row before saving.
+        const logLines = logRows.filter((r) => !isLogRowBlank(r));
+        payload.ts_bom_lines = logLines.map((r) => ({
           raw_material_id: r.rawMaterialId,
           raw_material_name: r.name || null,
           unit_id: r.unitId,
@@ -332,7 +345,7 @@ export default function StepModal({
         // Output metrics: Expected = Σ actual use; Actual Output = Expected − Scrap;
         // Loose = Actual Output − Lab − Packed.
         const r3 = (x: number) => Math.round(x * 1000) / 1000;
-        const expected = r3(logRows.reduce((sm, r) => sm + (Number(r.actualUse) || 0), 0));
+        const expected = r3(logLines.reduce((sm, r) => sm + (Number(r.actualUse) || 0), 0));
         const actual = r3(expected - (Number(logScrap) || 0));
         const loose = r3(actual - (Number(logLab) || 0) - (Number(logPacked) || 0));
         payload.pe_expected_qty = String(expected);
@@ -425,6 +438,112 @@ export default function StepModal({
 
   const titlePrefix = editing && !readOnly ? `Edit ${cfg.title.toLowerCase()}` : readOnly ? cfg.title : cfg.actionLabel;
 
+  // Per-unit quantity totals for each line-item grid (its operative qty column),
+  // consumed by <TotalsLine> under each table. Empty maps render nothing.
+  const totalsByUnit = (rows: Array<{ unitId: string | null; qty: number }>): Map<string, number> => {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      if (!r.qty) continue;
+      const u = s.unitById(r.unitId)?.name ?? "—";
+      m.set(u, (m.get(u) ?? 0) + r.qty);
+    }
+    return m;
+  };
+  const handoverTotals = totalsByUnit(hoRows.map((r) => ({ unitId: r.unitId, qty: Number(r.qty) || 0 })));
+  const logUseTotals = totalsByUnit(logRows.map((r) => ({ unitId: r.unitId, qty: Number(r.actualUse) || 0 })));
+  const rmTransferTotals = totalsByUnit((request?.mhBomLines ?? []).map((l) => ({ unitId: l.unitId, qty: l.qty ?? 0 })));
+  const productionUseTotals = totalsByUnit((request?.tsBomLines ?? []).map((l) => ({ unitId: l.unitId, qty: l.actualUse ?? 0 })));
+
+  // Log Book line-item columns (shared LineGrid). Existing handover rows are
+  // locked: only Actual Use is editable — their name/lot cells register no focus
+  // ref, so Tab skips straight to the next editable cell / row.
+  const logColumns: LineGridColumn<LogRow>[] = [
+    {
+      key: "rm",
+      header: "Raw Material",
+      className: "min-w-[200px]",
+      cell: (row, api) =>
+        row.isNew ? (
+          <Combobox
+            ref={api.focusRef as (el: ComboboxHandle | null) => void}
+            value={row.rawMaterialId ?? (row.name ? `free:${row.name}` : "")}
+            onChange={(v) => {
+              if (v.startsWith("free:")) {
+                api.patch({ rawMaterialId: null, name: v.slice(5) });
+              } else {
+                const rm = s.rawMaterialById(v);
+                api.patch({ rawMaterialId: v, name: rm?.name ?? "", unitId: rm?.unitId ?? null });
+              }
+              api.advance();
+            }}
+            options={rmOptionsFor(row)}
+            placeholder="Pick or type a material…"
+            searchable
+            triggerClassName="px-2 py-1.5 text-[13px]"
+            onTriggerKeyDown={api.keyHandler}
+            onCreate={(name) => { api.patch({ rawMaterialId: null, name, unitId: null }); api.advance(); }}
+            createLabel={(q) => `Use “${q}”`}
+          />
+        ) : (
+          <span className="text-navy">{row.name}</span>
+        ),
+    },
+    {
+      key: "requested",
+      header: <span className="block text-right">Requested</span>,
+      className: "w-24",
+      skipFocus: true,
+      cell: (row) => <span className="block text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.requestedQty)}</span>,
+    },
+    {
+      key: "handover",
+      header: <span className="block text-right">Handover</span>,
+      className: "w-24",
+      skipFocus: true,
+      cell: (row) => <span className="block text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.handoverQty)}</span>,
+    },
+    {
+      key: "unit",
+      header: "Unit",
+      className: "w-16",
+      skipFocus: true,
+      cell: (row) => <span className="text-grey">{s.unitById(row.unitId)?.name ?? "—"}</span>,
+    },
+    {
+      key: "actualUse",
+      header: <span className="block text-right">Actual Use</span>,
+      className: "w-28",
+      cell: (row, api) => (
+        <TextInput
+          ref={api.focusRef as (el: HTMLInputElement | null) => void}
+          type="number"
+          className="w-full px-2 py-1.5 text-[13px] text-right tabular-nums"
+          value={row.actualUse}
+          onChange={(e) => api.patch({ actualUse: e.target.value })}
+          onKeyDown={api.keyHandler}
+        />
+      ),
+    },
+    {
+      key: "lot",
+      header: "Issue Lot No.",
+      className: "min-w-[140px]",
+      cell: (row, api) =>
+        row.isNew ? (
+          <TextInput
+            ref={api.focusRef as (el: HTMLInputElement | null) => void}
+            className="w-full px-2 py-1.5 text-[13px]"
+            placeholder="Lot no."
+            value={row.lotNo}
+            onChange={(e) => api.patch({ lotNo: e.target.value })}
+            onKeyDown={api.keyHandler}
+          />
+        ) : (
+          <span className="text-grey">{row.lotNo || "—"}</span>
+        ),
+    },
+  ];
+
   return (
     <Modal
       open={open}
@@ -512,6 +631,7 @@ export default function StepModal({
                     </tbody>
                   </table>
                 </div>
+                <TotalsLine totals={handoverTotals} label="Total handed over" />
               </div>
             ) : (
               <FieldLabel label="Qty">
@@ -523,97 +643,7 @@ export default function StepModal({
 
         {isLogBook && request && (
           <>
-            <div className="space-y-1.5">
-              <span className="block text-[13px] font-medium text-navy">Actual use per raw material</span>
-              <div className="rounded-xl border border-line overflow-x-auto">
-                <table className="w-full text-[13px]">
-                  <thead>
-                    <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                      <th className="font-medium px-3 py-2 min-w-[200px]">Raw Material</th>
-                      <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
-                      <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Handover</th>
-                      <th className="font-medium px-2 py-2 w-16">Unit</th>
-                      <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Actual Use</th>
-                      <th className="font-medium px-2 py-2 w-40 whitespace-nowrap">Issue Lot No.</th>
-                      <th className="w-8" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {logRows.map((row) => (
-                      <tr key={row.uid} className="border-b border-line/70 last:border-0 align-top">
-                        <td className="px-3 py-2 text-navy">
-                          {row.isNew ? (
-                            <Combobox
-                              value={row.rawMaterialId ?? (row.name ? `free:${row.name}` : "")}
-                              onChange={(v) => {
-                                if (v.startsWith("free:")) return setLogField(row.uid, { rawMaterialId: null, name: v.slice(5) });
-                                const rm = s.rawMaterialById(v);
-                                setLogField(row.uid, { rawMaterialId: v, name: rm?.name ?? "", unitId: rm?.unitId ?? null });
-                              }}
-                              options={rmOptionsFor(row)}
-                              placeholder="Pick or type a material…"
-                              searchable
-                              triggerClassName="px-2 py-1.5 text-[13px]"
-                              onCreate={(name) => setLogField(row.uid, { rawMaterialId: null, name, unitId: null })}
-                              createLabel={(q) => `Use “${q}”`}
-                            />
-                          ) : (
-                            row.name
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.requestedQty)}</td>
-                        <td className="px-2 py-2 text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.handoverQty)}</td>
-                        <td className="px-2 py-2 text-grey">{s.unitById(row.unitId)?.name ?? "—"}</td>
-                        <td className="px-1.5 py-1.5">
-                          <TextInput
-                            type="number"
-                            disabled={readOnly}
-                            className="w-full px-2 py-1.5 text-[13px] text-right tabular-nums"
-                            value={row.actualUse}
-                            onChange={(e) => setLogField(row.uid, { actualUse: e.target.value })}
-                          />
-                        </td>
-                        <td className="px-1.5 py-1.5">
-                          {row.isNew ? (
-                            <TextInput
-                              disabled={readOnly}
-                              className="w-full px-2 py-1.5 text-[13px]"
-                              placeholder="Lot no."
-                              value={row.lotNo}
-                              onChange={(e) => setLogField(row.uid, { lotNo: e.target.value })}
-                            />
-                          ) : (
-                            <span className="text-grey">{row.lotNo || "—"}</span>
-                          )}
-                        </td>
-                        <td className="px-2 py-2 text-right">
-                          {row.isNew && !readOnly && (
-                            <button
-                              type="button"
-                              onClick={() => removeLogRow(row.uid)}
-                              className="text-grey-2 hover:text-ryg-red transition"
-                              aria-label="Remove item"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {!readOnly && (
-                <button
-                  type="button"
-                  onClick={addLogRow}
-                  className="text-[12.5px] font-semibold text-orange hover:underline"
-                >
-                  + Add item
-                </button>
-              )}
-            </div>
-
+            {/* Output metrics live at the TOP, just below the FG header. */}
             {(() => {
               const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
               const val = "text-[15px] font-bold text-navy tabular-nums";
@@ -628,30 +658,12 @@ export default function StepModal({
                   {/* Row 1: the output calc (Expected − Scrap = Actual Output).
                       Row 2: the split (Lab, Packed → Loose = Actual − Lab − Packed). */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 rounded-xl bg-page px-3.5 py-3 items-start">
-                    <div>
-                      <div className={cap}>Expected Qty</div>
-                      <div className={`${val} pt-0.5`}>{expected}{unit}</div>
-                    </div>
-                    <div>
-                      <div className={cap}>Scrap Qty</div>
-                      <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logScrap} onChange={(e) => setLogScrap(e.target.value)} placeholder="0" />
-                    </div>
-                    <div>
-                      <div className={cap}>Actual Output</div>
-                      <div className={`${val} pt-0.5`}>{actual}{unit}</div>
-                    </div>
-                    <div>
-                      <div className={cap}>Lab Testing Qty</div>
-                      <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logLab} onChange={(e) => setLogLab(e.target.value)} placeholder="0" />
-                    </div>
-                    <div>
-                      <div className={cap}>Packed Qty</div>
-                      <TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logPacked} onChange={(e) => setLogPacked(e.target.value)} placeholder="0" />
-                    </div>
-                    <div>
-                      <div className={cap}>Loose Qty</div>
-                      <div className={`${val} pt-0.5`}>{loose}{unit}</div>
-                    </div>
+                    <div><div className={cap}>Expected Qty</div><div className={`${val} pt-0.5`}>{expected}{unit}</div></div>
+                    <div><div className={cap}>Scrap Qty</div><TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logScrap} onChange={(e) => setLogScrap(e.target.value)} placeholder="0" /></div>
+                    <div><div className={cap}>Actual Output</div><div className={`${val} pt-0.5`}>{actual}{unit}</div></div>
+                    <div><div className={cap}>Lab Testing Qty</div><TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logLab} onChange={(e) => setLogLab(e.target.value)} placeholder="0" /></div>
+                    <div><div className={cap}>Packed Qty</div><TextInput type="number" disabled={readOnly} className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums" value={logPacked} onChange={(e) => setLogPacked(e.target.value)} placeholder="0" /></div>
+                    <div><div className={cap}>Loose Qty</div><div className={`${val} pt-0.5`}>{loose}{unit}</div></div>
                   </div>
                   <p className="text-[11.5px] text-grey-2">
                     Actual Output = Expected − Scrap · Loose = Actual Output − Lab − Packed{fgUnit ? ` · all quantities in ${fgUnit}` : ""}
@@ -659,6 +671,49 @@ export default function StepModal({
                 </div>
               );
             })()}
+
+            {/* Then the raw-material line items (shared LineGrid: auto-append + Tab). */}
+            <div className="space-y-1.5">
+              <span className="block text-[13px] font-medium text-navy">Actual use per raw material</span>
+              {readOnly ? (
+                <div className="rounded-xl border border-line overflow-x-auto">
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                        <th className="font-medium px-3 py-2 min-w-[200px]">Raw Material</th>
+                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Requested</th>
+                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Handover</th>
+                        <th className="font-medium px-2 py-2 w-16">Unit</th>
+                        <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Actual Use</th>
+                        <th className="font-medium px-2 py-2 w-40 whitespace-nowrap">Issue Lot No.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {logRows.map((row) => (
+                        <tr key={row.uid} className="border-b border-line/70 last:border-0">
+                          <td className="px-3 py-2 text-navy">{row.name || "—"}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.requestedQty)}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-grey-2">{row.isNew ? "—" : numOrDash(row.handoverQty)}</td>
+                          <td className="px-2 py-2 text-grey">{s.unitById(row.unitId)?.name ?? "—"}</td>
+                          <td className="px-2 py-2 text-right tabular-nums text-navy">{row.actualUse || "—"}</td>
+                          <td className="px-2 py-2 text-grey">{row.lotNo || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <LineGrid
+                  rows={logRows}
+                  onRowsChange={setLogRows}
+                  columns={logColumns}
+                  makeEmptyRow={makeEmptyLogRow}
+                  isRowBlank={isLogRowBlank}
+                  canRemove={(r) => r.isNew}
+                />
+              )}
+              <TotalsLine totals={logUseTotals} label="Total actual use" />
+            </div>
 
             <FieldLabel label="Attachment" required hint={editing ? "choose a file to replace it" : "required — e.g. the log book page"}>
               <input
@@ -889,6 +944,7 @@ export default function StepModal({
                       </tbody>
                     </table>
                   </div>
+                  <TotalsLine totals={productionUseTotals} label="Total actual use" />
                 </div>
               )}
             </>
@@ -905,7 +961,7 @@ export default function StepModal({
             const uname = s.unitById(r.unitId)?.name ?? "—";
             totals.set(uname, (totals.get(uname) ?? 0) + q);
           }
-          const totalText = [...totals.entries()].map(([u, q]) => `${Math.round(q * 1000) / 1000} ${u}`).join(" · ");
+          const { perUnit: totalText, grand: grandTotal, multiUnit } = qtyTotals(totals);
           const packOptions: ComboOption[] = s.activePackagingItems.map((p) => ({ value: p.id, label: p.name }));
           const columns: LineGridColumn<PackRow>[] = [
             {
@@ -960,8 +1016,8 @@ export default function StepModal({
           ];
           return (
             <>
-              <FieldLabel label="FG Packed Qty">
-                <TextInput type="number" disabled={readOnly} value={pmhQty} onChange={(e) => setPmhQty(e.target.value)} placeholder="0" />
+              <FieldLabel label="FG Packed Qty" hint="carried from the log book — packaging quantities auto-calculate from it">
+                <TextInput type="number" disabled value={pmhQty} placeholder="0" />
               </FieldLabel>
 
               <div className="space-y-1.5">
@@ -1007,7 +1063,7 @@ export default function StepModal({
                     </p>
                   ) : <span />}
                   {totalText && (
-                    <div className="text-[12.5px] text-grey-2 whitespace-nowrap">Total: <span className="font-semibold text-navy">{totalText}</span></div>
+                    <div className="text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span>{multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grandTotal}</span></>}</div>
                   )}
                 </div>
               </div>
@@ -1023,7 +1079,7 @@ export default function StepModal({
             const uname = s.unitById(l.unitId)?.name ?? "—";
             totals.set(uname, (totals.get(uname) ?? 0) + l.qty);
           }
-          const totalText = [...totals.entries()].map(([u, q]) => `${Math.round(q * 1000) / 1000} ${u}`).join(" · ");
+          const { perUnit: totalText, grand: grandTotal, multiUnit } = qtyTotals(totals);
           const cap = "text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-1";
           return (
             <>
@@ -1059,7 +1115,7 @@ export default function StepModal({
                   </table>
                 </div>
                 {totalText && (
-                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span></div>
+                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span>{multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grandTotal}</span></>}</div>
                 )}
               </div>
             </>
@@ -1096,6 +1152,7 @@ export default function StepModal({
                 </tbody>
               </table>
             </div>
+            <TotalsLine totals={rmTransferTotals} label="Total handed over" />
           </div>
         )}
 
@@ -1113,7 +1170,7 @@ export default function StepModal({
             const uname = s.unitById(l.unitId)?.name ?? "—";
             totals.set(uname, (totals.get(uname) ?? 0) + l.qty);
           }
-          const totalText = [...totals.entries()].map(([u, q]) => `${Math.round(q * 1000) / 1000} ${u}`).join(" · ");
+          const { perUnit: totalText, grand: grandTotal, multiUnit } = qtyTotals(totals);
           return (
             <>
               {/* Lot/Batch Card + FG item are in the shared header above. */}
@@ -1151,7 +1208,7 @@ export default function StepModal({
                   </table>
                 </div>
                 {totalText && (
-                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span></div>
+                  <div className="text-right text-[12.5px] text-grey-2">Total: <span className="font-semibold text-navy">{totalText}</span>{multiUnit && <> · Grand total: <span className="font-semibold text-navy">{grandTotal}</span></>}</div>
                 )}
               </div>
 

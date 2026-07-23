@@ -46,7 +46,7 @@ export const STEPS: StepDef[] = [
   { key: "pm_handover", index: 8, title: "Packing Material Handover", short: "PM Handover", scope: "request" },
   { key: "pm_transfer", index: 9, title: "Packing Material Transfer", short: "PM Transfer", scope: "request" },
   { key: "packing_entry", index: 10, title: "Packing Entry", short: "Packing", scope: "request" },
-  { key: "fg_transfer", index: 11, title: "FG Transfer to Hojiwala", short: "FG Transfer", scope: "request" },
+  { key: "fg_transfer", index: 11, title: "FG Transfer to Godown", short: "FG Transfer", scope: "request" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);

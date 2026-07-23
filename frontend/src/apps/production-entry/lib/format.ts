@@ -42,3 +42,19 @@ export const requestSubject = (r: ProductionRequest): string => r.jobcardNo || r
 
 /** A number → string for display; blank for null. */
 export const numOrDash = (n: number | null | undefined): string => (n != null ? String(n) : "—");
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * From per-unit subtotals (a Map of unitName → summed qty), produce the display
+ * bits used wherever a multi-unit quantity is totalled:
+ *   • perUnit — "10 KGS · 5 LTR" (each unit's own subtotal)
+ *   • grand   — the numeric sum across ALL units (10 + 5 = 15)
+ *   • multiUnit — true when more than one unit is present, so callers only add the
+ *     grand total when it actually differs from a single per-unit total.
+ */
+export function qtyTotals(totals: Map<string, number>): { perUnit: string; grand: number; multiUnit: boolean } {
+  const perUnit = [...totals.entries()].map(([u, q]) => `${round3(q)} ${u}`).join(" · ");
+  const grand = round3([...totals.values()].reduce((a, b) => a + b, 0));
+  return { perUnit, grand, multiUnit: totals.size > 1 };
+}

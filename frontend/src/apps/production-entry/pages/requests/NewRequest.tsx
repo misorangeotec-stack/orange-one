@@ -7,6 +7,7 @@ import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { useProductionStore } from "../../store";
 import { useJobCardForm, makeEmptyRmLine, isRmLineBlank, type RmLine } from "./useJobCardForm";
+import { qtyTotals } from "../../lib/format";
 
 /**
  * The issue-slip intake form (step 1). Picks the FG item, captures the job-card
@@ -89,6 +90,8 @@ export default function NewRequest() {
     totalsByUnit.set(u, (totalsByUnit.get(u) ?? 0) + (Number(l.qty) || 0));
   }
   const unitTotals = [...totalsByUnit.entries()].map(([unit, qty]) => ({ unit, qty: Math.round(qty * 1000) / 1000 }));
+  // Grand total = numeric sum across every unit; only shown when >1 unit is present.
+  const { grand: grandTotal, multiUnit } = qtyTotals(totalsByUnit);
 
   return (
     <div className="max-w-4xl mx-auto space-y-5">
@@ -131,6 +134,14 @@ export default function NewRequest() {
                       <td />
                     </tr>
                   ))}
+                  {multiUnit && (
+                    <tr className="bg-page/70 text-navy border-t border-line">
+                      <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">Grand Total</td>
+                      <td className="px-2.5 py-2 text-right tabular-nums font-bold text-[13.5px]">{grandTotal}</td>
+                      <td className="px-2.5 py-2 text-[12px] text-grey-2">all units</td>
+                      <td />
+                    </tr>
+                  )}
                 </tfoot>
               ) : undefined
             }

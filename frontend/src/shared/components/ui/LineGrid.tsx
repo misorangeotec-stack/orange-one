@@ -71,6 +71,7 @@ export default function LineGrid<T extends LineGridRow>({
   isRowBlank,
   footer,
   onRemove,
+  canRemove,
   className,
 }: {
   rows: T[];
@@ -81,6 +82,9 @@ export default function LineGrid<T extends LineGridRow>({
   footer?: ReactNode;
   /** Optional hook fired after a row is removed (e.g. to clear a row-scoped error). */
   onRemove?: (row: T) => void;
+  /** Gate the ✕ per row (default: every non-blank row is removable). Lets a grid
+   *  mix removable new rows with locked rows carried from an earlier step. */
+  canRemove?: (row: T) => boolean;
   className?: string;
 }) {
   const cells = useRef(new Map<string, Focusable>());
@@ -129,16 +133,27 @@ export default function LineGrid<T extends LineGridRow>({
       const colIdx = focusables.findIndex((c) => c.key === colKey);
       if (colIdx === -1) return false;
 
-      // Not the last cell of the row → next column, same row.
-      if (colIdx < focusables.length - 1) {
-        setPending(cellKey(rows[rowIndex]!.uid, focusables[colIdx + 1]!.key));
-        return true;
+      // Move to the next REGISTERED focusable cell: remaining columns of this row,
+      // then each later row from its first column. Skipping unregistered cells lets
+      // a grid mix editable and locked/display cells per row (e.g. the log book's
+      // handover rows expose only Actual Use). In a uniform grid every focusable
+      // cell is registered, so this is exactly a next-cell-then-next-row walk.
+      const has = (uid: string, key: string) => cells.current.has(cellKey(uid, key));
+      for (let ci = colIdx + 1; ci < focusables.length; ci++) {
+        if (has(rows[rowIndex]!.uid, focusables[ci]!.key)) {
+          setPending(cellKey(rows[rowIndex]!.uid, focusables[ci]!.key));
+          return true;
+        }
       }
-      // Last column → first cell of the next row, if one exists.
-      const next = rows[rowIndex + 1];
-      if (!next) return false;
-      setPending(cellKey(next.uid, focusables[0]!.key));
-      return true;
+      for (let ri = rowIndex + 1; ri < rows.length; ri++) {
+        for (let ci = 0; ci < focusables.length; ci++) {
+          if (has(rows[ri]!.uid, focusables[ci]!.key)) {
+            setPending(cellKey(rows[ri]!.uid, focusables[ci]!.key));
+            return true;
+          }
+        }
+      }
+      return false;
     },
     [rows, focusables]
   );
@@ -185,12 +200,11 @@ export default function LineGrid<T extends LineGridRow>({
                         advanceFrom(i, col.key);
                         return;
                       }
-                      // Tab off the last cell of a row: hop to the next row's first
-                      // cell rather than letting DOM order walk through the ✕ button.
-                      // If there is no next row (the trailing blank one), let native
-                      // Tab carry focus out of the grid.
-                      const isLastCol = focusables[focusables.length - 1]?.key === col.key;
-                      if (e.key === "Tab" && !e.shiftKey && isLastCol) {
+                      // Tab forward: hop to the next registered cell (skipping
+                      // display/locked cells and the row's ✕ button). When there is
+                      // no next cell — the trailing blank row's last cell — let
+                      // native Tab carry focus out of the grid.
+                      if (e.key === "Tab" && !e.shiftKey) {
                         if (advanceFrom(i, col.key)) e.preventDefault();
                       }
                     },
@@ -207,7 +221,7 @@ export default function LineGrid<T extends LineGridRow>({
                   );
                 })}
                 <td className="px-2.5 py-1.5 text-right w-10">
-                  {!blank && (
+                  {!blank && (canRemove ? canRemove(row) : true) && (
                     <button
                       type="button"
                       onClick={() => removeRow(i)}
