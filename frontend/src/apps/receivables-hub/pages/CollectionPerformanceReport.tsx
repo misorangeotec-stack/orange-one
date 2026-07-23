@@ -26,7 +26,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@hub/components/ui/tool
 import { MultiSelect } from "@hub/components/MultiSelect";
 import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
 import { SaleTypeMultiSelect, SALE_TYPE_OPTIONS } from "@hub/components/SaleTypeMultiSelect";
-import { CustomerCategoryMultiSelect, matchesCategory } from "@hub/components/CustomerCategoryMultiSelect";
+import { CustomerCategoryMultiSelect, matchesCategory, CATEGORY_OPTIONS } from "@hub/components/CustomerCategoryMultiSelect";
 import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
 import { GroupByBuilder } from "@hub/components/GroupByBuilder";
@@ -94,6 +94,22 @@ const MIN_OUTSTANDING_OPTIONS = [
 type MinOutKey = (typeof MIN_OUTSTANDING_OPTIONS)[number]["key"];
 
 type Segment = "all" | "active" | "no_activity";
+
+/**
+ * Sale-type default for EVERY variant of this report (zero / threshold / dormant): all types
+ * except Machine. A machine is a one-time capital sale paid down over months, so "hasn't bought /
+ * hasn't paid recently" is its NORMAL state, not a warning — machine-dominant customers otherwise
+ * swamp the list with business-as-usual. They are one click away, not gone. "Clear filters"
+ * resets to THIS, not to a truly-empty (Machine back in) set, so a cleared call-list stays honest.
+ */
+const DEFAULT_SALE_TYPES = ["ink", "spare_parts", "head", "other"] as const;
+
+/**
+ * Category default for every variant: all tiers EXCEPT "AA" (internal). AA is not a real customer
+ * relationship, so it doesn't belong on a collections call-list by default. One click ("Select
+ * all" in the dropdown) adds it back; "Clear filters" resets to THIS, not to a truly-empty set.
+ */
+const DEFAULT_CATEGORIES = CATEGORY_OPTIONS.map((o) => o.value).filter((v) => v !== "AA");
 
 /** The thresholds management actually asks for. Anything else via the URL (?below=42). */
 const THRESHOLD_OPTIONS = [0, 30, 50] as const;
@@ -229,29 +245,16 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
   // ── Filters (the bar; the rest behind "More") ─────────────────────────────────────
   const [search, setSearch] = useState("");
-  const [customerNames, setCustomerNames] = useState<string[]>([]);
-  const [groupNamesSel, setGroupNamesSel] = useState<string[]>([]);
   const [salespersons, setSalespersons] = useState<string[]>([]);
   const [companies, setCompanies] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>(() => [...DEFAULT_CATEGORIES]);
   /**
-   * DORMANT ONLY. Scopes the report to customers whose outstanding is DOMINATED by one of the
-   * selected sale types — see dominantSaleTypeOf.
-   *
-   * Machine is deselected by default, deliberately. A machine is a one-time capital sale paid
-   * down over months, so "hasn't bought in 6 months" is the NORMAL state for a machine ledger,
-   * not a warning: on the live book, machine-dominant customers are 48 of the 123 dormant rows
-   * but ₹63.3 Cr of the ₹72.8 Cr, and they swamp the report with business-as-usual. They are one
-   * click away, not gone — and a machine customer who has genuinely stopped paying still shows
-   * on the two collection reports, which have no such filter.
-   *
-   * The other two reports (zero / threshold) do NOT get this control: they ask a payment
-   * question, where a machine customer is as accountable as anyone.
+   * Scopes the report to customers whose outstanding is DOMINATED by one of the selected sale
+   * types — see dominantSaleTypeOf. Present on ALL three reports (zero / threshold / dormant);
+   * Machine is off by default everywhere — see DEFAULT_SALE_TYPES.
    */
-  const [saleTypes, setSaleTypes] = useState<string[]>(
-    () => (variant === "dormant" ? ["ink", "spare_parts", "head", "other"] : []),
-  );
+  const [saleTypes, setSaleTypes] = useState<string[]>(() => [...DEFAULT_SALE_TYPES]);
   const [minOut, setMinOut] = useState<MinOutKey>("0");
   // "More"
   const [segment, setSegment] = useState<Segment>("all");
@@ -266,20 +269,15 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     () => [...new Set(allCustomers.map((c) => c.location).filter(Boolean))].sort(),
     [allCustomers],
   );
-  const customerOptions = useMemo(
-    () => [...new Set(allCustomers.map((c) => c.name).filter(Boolean))].sort(),
-    [allCustomers],
-  );
   /** The REAL groups from the mapping sheet. Also decides customer-vs-group drill-through:
    *  a "group" bucket that isn't in here is just an ungrouped customer shown as its own row. */
   const realGroupNames = useMemo(
     () => allGroupNames(customerGroupMap),
     [customerGroupMap],
   );
-  const groupOptions = useMemo(() => [...realGroupNames].sort(), [realGroupNames]);
 
   // ── View ──────────────────────────────────────────────────────────────────────────
-  const [groupBy, setGroupBy] = useState<ZCDim[]>(["salesperson", "customer"]);
+  const [groupBy, setGroupBy] = useState<ZCDim[]>(["customer"]);
   const viewLabel = useMemo(
     () => groupBy.map((d) => ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → "),
     [groupBy],
@@ -321,6 +319,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // The "How this report is calculated" panel. Collapsed by default — the working has to be
   // available, but it must not shout over the numbers.
   const [basisOpen, setBasisOpen] = useState(false);
+  // The report definition (threshold / period / journal) and the filters+view are BOTH collapsed
+  // by default: the KPI cards and the table must be visible on first load, not below a wall of
+  // controls. Each collapsed header carries a summary of what's currently applied.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   // ── Expand / paginate ─────────────────────────────────────────────────────────────
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -371,15 +374,13 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   /** Customers eligible for the report at all: they owe us money (the KPI denominator). */
   const eligible = useMemo(() => {
     let d = consolidatedCustomers.filter((c) => matchesCategory(c, categories));
-    if (customerNames.length)  { const s = new Set(customerNames);  d = d.filter((c) => s.has(c.name)); }
-    if (groupNamesSel.length)  { const s = new Set(groupNamesSel);  d = d.filter((c) => s.has(groupOf(c))); }
     if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => (c.companies ?? [c.company]).some((x) => s.has(x))); }
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => (c.locations ?? [c.location]).some((x) => s.has(x))); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => (c.salesPersons?.length ? c.salesPersons : [c.salesPerson]).some((x) => s.has(x))); }
-    // Dormant only. Active only on a PROPER subset: empty and full both mean "no filter", the
-    // same convention SaleTypeMultiSelect labels ("All Sale Types") and every other multi-select
-    // in the app uses. So "Clear selection" restores machine rather than emptying the report.
-    if (isDormantMode && saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length) {
+    // Scope by the customer's DOMINANT sale type. Active only on a PROPER subset: empty and full
+    // both mean "no filter", the same convention SaleTypeMultiSelect labels ("All Sale Types") and
+    // every other multi-select in the app uses. Default excludes Machine (see DEFAULT_SALE_TYPES).
+    if (saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length) {
       const s = new Set(saleTypes);
       d = d.filter((c) => s.has(dominantSaleTypeOf(c, outstandingByType)));
     }
@@ -403,9 +404,9 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     }
     return d;
   }, [
-    consolidatedCustomers, categories, customerNames, groupNamesSel, companies, locations, salespersons,
+    consolidatedCustomers, categories, companies, locations, salespersons,
     segment, blockedOnly, includeNonDebtors, minOut, search, groupOf,
-    isDormantMode, saleTypes, outstandingByType,
+    saleTypes, outstandingByType,
   ]);
 
   /**
@@ -475,7 +476,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   useEffect(() => {
     setExpanded(new Set());
     setPage(1);
-  }, [groupBy, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, saleTypes, minOut, segment, blockedOnly, includeNonDebtors, preset, customFrom, customTo, focus, bands, threshold]);
+  }, [groupBy, search, salespersons, companies, locations, categories, saleTypes, minOut, segment, blockedOnly, includeNonDebtors, preset, customFrom, customTo, focus, bands, threshold]);
 
   // Switching report (zero ⇄ threshold) must not strand a lens or band that no longer applies.
   useEffect(() => { setFocus(new Set()); setBands(new Set()); }, [mode]);
@@ -488,13 +489,22 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const tree = useMemo(
     () =>
       buildGroupTree<ZCRow, ZCMetrics>(focusedRows, groupBy, {
-        dimValue: zcDimValue,
+        // "Sale Type" is resolved here, not in the shared zcDimValue: the classifier needs the
+        // ledger-scoped outstandingByType map (zcDimValue is also used by Overdue Aging, which
+        // has no such map). Same dominantSaleTypeOf as the filter ⇒ groups and filter agree.
+        dimValue: (r, dim) => {
+          if (dim === "saleType") {
+            const st = dominantSaleTypeOf(r.customer, outstandingByType);
+            return { value: st, label: saleTypeLabel(st) };
+          }
+          return zcDimValue(r, dim);
+        },
         idOf: (r) => r.customer.id,
         metricsOf,
         empty: emptyMetrics,
         add: addMetrics,
       }),
-    [focusedRows, groupBy, metricsOf],
+    [focusedRows, groupBy, metricsOf, outstandingByType],
   );
 
   // Percentage columns can be null (no denominator). Nulls sort LAST in both directions —
@@ -1001,20 +1011,13 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       onRemove: () => toggleBand(b),
     })),
     search.trim() && { label: `Search: “${search.trim()}”`, onRemove: () => setSearch("") },
-    customerNames.length > 0 && {
-      label: customerNames.length <= 2 ? `Customer: ${customerNames.join(", ")}` : `Customer: ${customerNames.length} sel.`,
-      onRemove: () => setCustomerNames([]),
-    },
-    groupNamesSel.length > 0 && {
-      label: groupNamesSel.length <= 2 ? `Group: ${groupNamesSel.join(", ")}` : `Group: ${groupNamesSel.length} sel.`,
-      onRemove: () => setGroupNamesSel([]),
-    },
     salespersons.length > 0 && { label: `Salesperson: ${salespersons.length} sel.`, onRemove: () => setSalespersons([]) },
     companies.length > 0 && { label: `Company: ${companies.join(", ")}`, onRemove: () => setCompanies([]) },
     locations.length > 0 && { label: `Location: ${locations.join(", ")}`, onRemove: () => setLocations([]) },
     categories.length > 0 && { label: `Category: ${categories.join(", ")}`, onRemove: () => setCategories([]) },
-    // Removing the chip clears the filter (= all sale types, machine back in).
-    isDormantMode && saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length && {
+    // Shown on ALL reports. By default it reflects the Machine exclusion; removing the chip opens
+    // the report to every sale type (Machine back in).
+    saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length && {
       label: `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")}`,
       onRemove: () => setSaleTypes([]),
     },
@@ -1031,13 +1034,14 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   ].filter(Boolean) as FilterChip[];
 
   const clearFilters = () => {
-    setSearch(""); setCustomerNames([]); setGroupNamesSel([]);
+    setSearch("");
     setSalespersons([]); setCompanies([]); setLocations([]);
-    setCategories([]); setMinOut("0"); setSegment("all");
+    setCategories([...DEFAULT_CATEGORIES]); setMinOut("0"); setSegment("all");
     setBlockedOnly(false); setIncludeNonDebtors(false);
-    // "Clear filters" means CLEAR — including the machine exclusion, which is a filter like any
-    // other. Leaving it on would make the cleared report still quietly hide ₹63 Cr.
-    setSaleTypes([]);
+    // "Clear filters" resets to the report's DEFAULT sale-type scope (Machine excluded), NOT to a
+    // truly-empty set. Re-adding Machine on a cleared call-list would quietly reintroduce
+    // business-as-usual capital sales the user deliberately keeps out — see DEFAULT_SALE_TYPES.
+    setSaleTypes([...DEFAULT_SALE_TYPES]);
     setFocus(new Set()); setBands(new Set());
   };
 
@@ -1048,26 +1052,23 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     for (const f of focus) s.push(`Focus: ${ZC_FOCUS_LABELS[f]}`);
     for (const b of bands) s.push(`Band: ${BAND_LABELS[b]}`);
     if (search.trim()) s.push(`Search: ${search.trim()}`);
-    if (customerNames.length) s.push(`Customer: ${customerNames.join(", ")}`);
-    if (groupNamesSel.length) s.push(`Group: ${groupNamesSel.join(", ")}`);
     if (salespersons.length) s.push(`Salesperson: ${salespersons.join(", ")}`);
     if (companies.length) s.push(`Company: ${companies.join(", ")}`);
     if (locations.length) s.push(`Location: ${locations.join(", ")}`);
     if (categories.length) s.push(`Category: ${categories.join(", ")}`);
-    // Always record the sale-type scope on the dormant export, INCLUDING the default. The sheet
-    // has to say that machine was excluded, or the totals are unexplainable a week later.
-    if (isDormantMode)
-      s.push(
-        saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length
-          ? "Sale Type: All (incl. Machine)"
-          : `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")} (dominant type; Machine excluded by default)`,
-      );
+    // Always record the sale-type scope, INCLUDING the default — every report now excludes Machine
+    // by default, so the sheet has to say so or the totals are unexplainable a week later.
+    s.push(
+      saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length
+        ? "Sale Type: All (incl. Machine)"
+        : `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")} (dominant type; Machine excluded by default)`,
+    );
     if (minOut !== "0") s.push(`Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`);
     if (segment !== "all") s.push(`Segment: ${segment === "active" ? "Active" : "No Activity"}`);
     if (blockedOnly) s.push("Red Mark only");
     if (includeNonDebtors) s.push("Incl. zero & credit balances");
     return s;
-  }, [focus, bands, search, customerNames, groupNamesSel, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, isDormantMode, saleTypes]);
+  }, [focus, bands, search, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, saleTypes]);
 
   // Live (Tally) caveat, appended only under the ConnectWave source. Zero + Dormant are exact —
   // they read live receipts / live monthly sales — so they say so. Below-30% leans on the opening
@@ -1311,36 +1312,64 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-1">
+      {/* Header — deliberately spare: an icon chip, the title, one line of description, and the
+          as-of date as a quiet pill. The numbers live in the KPI cards right below, so the header
+          doesn't repeat them. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <Link to="/outstanding-dashboard/reports" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="h-3.5 w-3.5" /> Reports
           </Link>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <UserX className="h-6 w-6 text-primary" /> {title}
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2.5">
+            <span className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-primary/10 text-primary shrink-0">
+              <UserX className="h-5 w-5" />
+            </span>
+            {title}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {subtitle}
-            {asOfDate && <span className="text-foreground/70"> As on {formatDateDMY(asOfDate)}</span>}
-          </p>
+          <p className="text-sm text-muted-foreground mt-2 max-w-2xl">{subtitle}</p>
         </div>
-        <div className="flex items-center gap-2">
-          <ColumnPicker columns={columnOptions} visible={visibleCols} onChange={setVisibleCols} />
-          <Button
-            onClick={handleExport}
-            disabled={focusedRows.length === 0}
-            size="sm"
-            className="rounded-button bg-primary hover:bg-primary-hover text-primary-foreground"
-          >
-            <Download className="h-4 w-4 mr-1.5" /> Export
-          </Button>
+        <div className="flex flex-col items-start sm:items-end gap-2 shrink-0">
+          {asOfDate && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted rounded-pill px-2.5 py-1">
+              <CalendarClock className="h-3 w-3" /> As on {formatDateDMY(asOfDate)}
+            </span>
+          )}
+          <div className="flex items-center gap-2">
+            <ColumnPicker columns={columnOptions} visible={visibleCols} onChange={setVisibleCols} />
+            <Button
+              onClick={handleExport}
+              disabled={focusedRows.length === 0}
+              size="sm"
+              className="rounded-button bg-primary hover:bg-primary-hover text-primary-foreground"
+            >
+              <Download className="h-4 w-4 mr-1.5" /> Export
+            </Button>
+          </div>
         </div>
       </div>
 
-      {/* Threshold + Period */}
+      {/* Report definition (threshold / period / journal). Collapsed by default; the summary
+          on the header keeps the current scope visible without opening it. */}
       <Card className="rounded-card border-border bg-surface">
-        <CardContent className="p-4 space-y-3">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen((o) => !o)}
+          aria-expanded={settingsOpen}
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors rounded-card"
+        >
+          <CalendarClock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="text-xs font-semibold text-foreground shrink-0">Report settings</span>
+          <span className="text-[11px] text-muted-foreground truncate min-w-0">
+            {[
+              !isDormantMode && `Collected below ${threshold}%`,
+              PERIOD_LABELS[preset],
+              !isDormantMode && (countJournalSettlements ? "Journals count as paid" : "Journals ignored"),
+            ].filter(Boolean).join(" · ")}
+          </span>
+          <ChevronDown className={`ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform ${settingsOpen ? "rotate-180" : ""}`} />
+        </button>
+        {settingsOpen && (
+        <CardContent className="p-4 pt-0 space-y-3">
           {/* The threshold row is a COLLECTIONS control. Dormancy has no threshold — the
               report's only knob is the period, so the row is dropped entirely there. */}
           {!isDormantMode && (
@@ -1450,6 +1479,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
             </div>
           )}
         </CardContent>
+        )}
       </Card>
 
       {/* KPIs — click to focus the table. The lens cards AND together; the summary cards
@@ -1485,21 +1515,23 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                       isSummary ? setFocus(new Set()) : toggleFocus(k.focusKey!);
                     }
                   }}
-                  className={`rounded-card bg-surface transition-all ${
+                  className={`rounded-card bg-surface shadow-soft transition-all ${
                     active
                       ? "border-primary/50 ring-2 ring-primary"
                       : clickable
-                        ? "border-border cursor-pointer hover:border-primary/40 hover:bg-muted/30"
+                        ? "border-border cursor-pointer hover:border-primary/40 hover:shadow-card-hover"
                         : "border-border opacity-50"
                   }`}
                 >
-                  <CardContent className="px-3 py-2">
-                    <div className="flex items-center gap-1 mb-0.5">
-                      <Icon className={`h-3 w-3 shrink-0 ${active && !isSummary ? "text-primary" : "text-muted-foreground"}`} />
-                      <span className="text-[11px] text-muted-foreground leading-tight">{k.label}</span>
+                  <CardContent className="p-3">
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">{k.label}</span>
+                      <span className={`inline-flex items-center justify-center h-6 w-6 rounded-lg shrink-0 ${active && !isSummary ? "bg-primary/15 text-primary" : "bg-muted text-muted-foreground"}`}>
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
                     </div>
-                    <p className="text-sm font-bold text-destructive">{k.value}</p>
-                    <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{k.sub}</p>
+                    <p className={`text-xl font-bold leading-none ${isSummary ? "text-foreground" : "text-destructive"}`}>{k.value}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight mt-1.5">{k.sub}</p>
                   </CardContent>
                 </Card>
               </TooltipTrigger>
@@ -1555,9 +1587,24 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         </p>
       )}
 
-      {/* View + filters */}
+      {/* Filters & view — collapsed by default so the table sits right under the KPIs. The
+          header summary shows the current view and every applied filter at a glance. */}
       <Card className="rounded-card border-border bg-surface">
-        <CardContent className="p-4 space-y-3">
+        <button
+          type="button"
+          onClick={() => setFiltersOpen((o) => !o)}
+          aria-expanded={filtersOpen}
+          className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/30 transition-colors rounded-card"
+        >
+          <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="text-xs font-semibold text-foreground shrink-0">Filters &amp; view</span>
+          <span className="text-[11px] text-muted-foreground truncate min-w-0">
+            {`View: ${viewLabel}`}{filterSummary.length > 0 ? ` · ${filterSummary.join(" · ")}` : ""}
+          </span>
+          <ChevronDown className={`ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform ${filtersOpen ? "rotate-180" : ""}`} />
+        </button>
+        {filtersOpen && (
+        <CardContent className="p-4 pt-0 space-y-3">
           {/* Presets + chainable levels (Customer Group → Customer → Salesperson, any order). */}
           <GroupByBuilder dimensions={ZC_DIMENSIONS} presets={ZC_PRESETS} value={groupBy} onChange={setGroupBy} />
 
@@ -1584,18 +1631,15 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   </button>
                 )}
               </div>
-              <MultiSelect options={customerOptions} value={customerNames} onChange={setCustomerNames} allLabel="All Customers" noun="customers" triggerClassName="h-8 w-44 text-xs rounded-input" />
-              <MultiSelect options={groupOptions} value={groupNamesSel} onChange={setGroupNamesSel} allLabel="All Groups" noun="groups" triggerClassName="h-8 w-40 text-xs rounded-input" />
+              {/* Customer + Group dropdowns removed — the search box above already matches on
+                  customer name AND group. Scope by the customer's DOMINANT sale type instead;
+                  Machine is off by default (bought once, paid down over months), see
+                  dominantSaleTypeOf / DEFAULT_SALE_TYPES. */}
+              <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="h-8 w-36 text-xs rounded-input" />
               <SalesPersonMultiSelect options={salesPersonOptions} value={salespersons} onChange={setSalespersons} triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={companyOptions} value={companies} onChange={setCompanies} allLabel="All Companies" noun="companies" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <MultiSelect options={locationOptions} value={locations} onChange={setLocations} allLabel="All Locations" noun="locations" triggerClassName="h-8 w-40 text-xs rounded-input" />
               <CustomerCategoryMultiSelect value={categories} onChange={setCategories} triggerClassName="h-8 w-40 text-xs rounded-input" />
-              {/* Dormant only. Scopes by the customer's DOMINANT sale type; Machine is off by
-                  default because a machine is bought once and paid down over months, so "no
-                  repeat purchase" is its normal state, not a warning. See dominantSaleTypeOf. */}
-              {isDormantMode && (
-                <SaleTypeMultiSelect value={saleTypes} onChange={setSaleTypes} triggerClassName="h-8 w-36 text-xs rounded-input" />
-              )}
 
               {/* Min Outstanding — chips, not a fiddly ₹ box */}
               <div className="inline-flex items-center rounded-input border border-border overflow-hidden">
@@ -1648,6 +1692,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           </div>
           {chips.length > 0 && <FilterChips chips={chips} onClearAll={clearFilters} />}
         </CardContent>
+        )}
       </Card>
 
       {/* How it's calculated — a management report must be able to show its working, but the

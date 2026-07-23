@@ -962,7 +962,7 @@ export function bandCounts(rows: ZCRow[]): Record<CollectionBand, number> {
 
 // ── Grouping dimensions + the View presets ──────────────────────────────────────────
 
-export type ZCDim = "salesperson" | "customer" | "group" | "category" | "company" | "location";
+export type ZCDim = "salesperson" | "customer" | "group" | "category" | "company" | "location" | "saleType";
 
 export const ZC_DIMENSIONS: { key: ZCDim; label: string }[] = [
   { key: "salesperson", label: "Salesperson" },
@@ -971,6 +971,7 @@ export const ZC_DIMENSIONS: { key: ZCDim; label: string }[] = [
   { key: "category",    label: "Customer Category" },
   { key: "company",     label: "Company" },
   { key: "location",    label: "Location" },
+  { key: "saleType",    label: "Sale Type" },
 ];
 
 /** Quick "View" buttons. These are shortcuts, not the whole surface — the report renders
@@ -983,6 +984,8 @@ export const ZC_PRESETS: GroupByPreset<ZCDim>[] = [
   { label: "Customer Group → Customer", dims: ["group", "customer"] },
   { label: "Category → Customer",      dims: ["category", "customer"] },
   { label: "Company → Customer",       dims: ["company", "customer"] },
+  { label: "Sale Type",                dims: ["saleType"] },
+  { label: "Sale Type → Customer",     dims: ["saleType", "customer"] },
   { label: "Salesperson",              dims: ["salesperson"] },
   { label: "Location",                 dims: ["location"] },
 ];
