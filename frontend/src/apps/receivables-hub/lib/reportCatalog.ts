@@ -1,5 +1,6 @@
 import {
   AlarmClock,
+  BarChart3,
   BookOpen,
   Calculator,
   CalendarClock,
@@ -51,6 +52,7 @@ export type ReportSource = "pipeline" | "tally";
 export type ReportStatus = "live" | "soon";
 
 export type ReportCategoryId =
+  | "master-reports"
   | "receivables"
   | "collections"
   | "customers"
@@ -89,6 +91,14 @@ export interface ReportEntry {
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
+  // First in the rail on purpose — these are the headline management reports, and this
+  // array's order IS the landing-page tab order and the sidebar sub-nav order.
+  {
+    id: "master-reports",
+    title: "Master Reports",
+    blurb: "The headline management reports, read straight from the Tally books.",
+    icon: BarChart3,
+  },
   {
     id: "receivables",
     title: "Receivables",
@@ -128,6 +138,19 @@ export const REPORT_SUBCATEGORIES: ReportSubcategory[] = [
 ];
 
 export const REPORTS: ReportEntry[] = [
+  // ── Master Reports ─────────────────────────────────────────────────────────
+  {
+    id: "sales-report",
+    title: "Sales Report",
+    purpose: "The full sales picture — year, quarter, month, week, geography, product and customer.",
+    category: "master-reports",
+    path: "reports/sales",
+    icon: BarChart3,
+    source: "tally",
+    status: "live",
+    keywords: ["sales", "revenue", "turnover", "geography", "product", "contributing customers", "ageing"],
+  },
+
   // ── Receivables ────────────────────────────────────────────────────────────
   {
     id: "aging",

@@ -65,6 +65,10 @@ function formatAsOfDateTime(input: string): string {
  * the topbar from claiming otherwise.
  */
 const FY_PINNED_ROUTES = [
+  // The Sales Report carries its own FY picker in the page header (it needs to name the FY
+  // AND its prior year on every panel). A topbar selector would be a second, disagreeing
+  // control over the same thing.
+  "/outstanding-dashboard/reports/sales",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its
