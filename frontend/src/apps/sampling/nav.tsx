@@ -1,5 +1,6 @@
 import type { NavItem } from "@/shared/components/layout/types";
 import { appName } from "@/apps/appInfo";
+import { BRANCH_LABEL } from "./lib/steps";
 
 const B = "/sampling";
 
@@ -49,6 +50,20 @@ const ic = {
  * Builds the Sampling sidebar. Capability-driven, except for the two items every
  * granted user always gets ("Raise a Request", "My Requests"). Every item here is
  * routed in SamplingApp.tsx.
+ *
+ * Order: Workspace → Actions → the branch blocks → Administration. Raising and
+ * tracking your own request stays at the top because every granted user does it;
+ * the branch blocks below are role-specific and most people only work one of them.
+ *
+ * Those blocks are SPLIT BY BRANCH — one per path through the process (see
+ * StepBranch in lib/steps.ts), each led by its own request list and followed by
+ * that branch's step queues. `Sample Collect & Handover` is the one entry that
+ * appears twice: it is the first step of BOTH inward branches. Two nav items may
+ * share a `to` — Sidebar keys rows by to+index for exactly this reason.
+ *
+ * A block's heading is emitted on the FIRST item that survives the capability
+ * gate, so someone who owns no lab steps never sees an empty "Lab Testing"
+ * heading — and someone who owns none of either sees no headings at all.
  */
 export function buildSamplingNav(opts: {
   isAdmin: boolean;
@@ -56,6 +71,9 @@ export function buildSamplingNav(opts: {
   canReceive: boolean;
   canCollect: boolean;
   canSampleReceived: boolean;
+  canSampleToLab: boolean;
+  canLabProcess: boolean;
+  canResultReceived: boolean;
   canSend: boolean;
   canConfirm: boolean;
   canTest: boolean;
@@ -67,23 +85,45 @@ export function buildSamplingNav(opts: {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     ...(opts.hasRequests ? [{ label: "All Requests", to: `${B}/requests`, icon: ic.list }] : []),
+    // Raising and tracking your own request is the one thing EVERY granted user
+    // does, so it sits above the branch blocks, which most people only need one of.
     { label: "Raise a Request", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
     { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine },
   ];
 
-  let queueUsed = false;
-  const queue = (label: string, to: string, icon: JSX.Element) => {
-    nav.push({ label, to, icon, section: queueUsed ? undefined : "Queues" });
-    queueUsed = true;
+  /** Push into a branch block, heading the block on its first surviving item. */
+  const block = (heading: string) => {
+    let used = false;
+    return (label: string, to: string, icon: JSX.Element) => {
+      nav.push({ label, to, icon, section: used ? undefined : heading });
+      used = true;
+    };
   };
-  if (opts.canCollect) queue("Sample Collect", `${B}/queues/collect`, ic.inbound);
-  if (opts.canSampleReceived) queue("Sample Received", `${B}/queues/received`, ic.confirm);
-  if (opts.canReceive) queue("Sample Received (Lab)", `${B}/queues/receive`, ic.inbound);
-  if (opts.canSend) queue("Sample Sent", `${B}/queues/send`, ic.outbound);
-  if (opts.canConfirm) queue("Receipt Confirmed", `${B}/queues/confirm`, ic.confirm);
-  if (opts.canTest) queue("Testing", `${B}/queues/testing`, ic.testing);
-  if (opts.canResult) queue("Result", `${B}/queues/result`, ic.result);
-  if (opts.canHandover) queue("Result Handover", `${B}/queues/handover`, ic.confirm);
+
+  // Collect & Handover is deliberately listed in BOTH inward blocks — it is one
+  // page serving one step, but it is the first step of either branch, and a block
+  // that started halfway through the flow read as if collection happened elsewhere.
+  const noLab = block(BRANCH_LABEL.no_lab);
+  if (opts.hasRequests) noLab("No-Lab Requests", `${B}/no-lab-requests`, ic.list);
+  if (opts.canCollect) noLab("Sample Collect & Handover", `${B}/queues/collect`, ic.inbound);
+  if (opts.canSampleReceived) noLab("Sample Received", `${B}/queues/received`, ic.confirm);
+
+  const lab = block(BRANCH_LABEL.lab);
+  if (opts.hasRequests) lab("Lab Requests", `${B}/lab-requests`, ic.list);
+  if (opts.canCollect) lab("Sample Collect & Handover", `${B}/queues/collect`, ic.inbound);
+  if (opts.canSampleToLab) lab("Sample Received & Sent to Lab", `${B}/queues/to-lab`, ic.inbound);
+  if (opts.canLabProcess) lab("Lab Process", `${B}/queues/lab`, ic.testing);
+  if (opts.canResultReceived) lab("Result Received", `${B}/queues/result-received`, ic.confirm);
+  // Legacy: only shown while pre-lab-gate rows are still sitting in it.
+  if (opts.canReceive) lab("Sample Received at Lab", `${B}/queues/receive`, ic.inbound);
+
+  const outward = block(BRANCH_LABEL.outward);
+  if (opts.hasRequests) outward("Outward Requests", `${B}/outward-requests`, ic.list);
+  if (opts.canSend) outward("Sample Sent", `${B}/queues/send`, ic.outbound);
+  if (opts.canConfirm) outward("Receipt Confirmed", `${B}/queues/confirm`, ic.confirm);
+  if (opts.canTest) outward("Testing", `${B}/queues/testing`, ic.testing);
+  if (opts.canResult) outward("Result", `${B}/queues/result`, ic.result);
+  if (opts.canHandover) outward("Result Handover", `${B}/queues/handover`, ic.confirm);
 
   let adminUsed = false;
   const admin = (label: string, to: string, icon: JSX.Element) => {

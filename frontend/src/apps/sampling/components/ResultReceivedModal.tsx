@@ -1,16 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { useSamplingStore } from "../store";
-import { uploadReceivedDocument } from "../data/samplingWrites";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
 import SampleSummary from "./SampleSummary";
 import type { SamplingRequest } from "../types";
 
-/** Opens the stored received-sample document via a fresh short-lived signed URL. */
-function ReceivedDocLink({ path, name }: { path: string; name: string | null }) {
+/** Opens the lab report the result was handed over with. */
+function LabDocLink({ path, name }: { path: string; name: string | null }) {
   const s = useSamplingStore();
   const [busy, setBusy] = useState(false);
   const open = async () => {
@@ -31,17 +30,18 @@ function ReceivedDocLink({ path, name }: { path: string; name: string | null }) 
       className="inline-flex max-w-[240px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60"
     >
       <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : name || "View attachment"}</span>
+      <span className="truncate">{busy ? "Opening…" : name || "View lab report"}</span>
     </button>
   );
 }
 
 /**
- * sample_received — the recipient (or, for a free-text recipient, a step owner)
- * confirms the sample was received. A date, plus an OPTIONAL note and OPTIONAL
- * attachment. Recording closes the request; it stays editable after close.
+ * result_received — the LAST step of the inward lab branch. Whoever the lab handed
+ * the result to confirms they have it, which closes the request. It is the last
+ * step, so nothing downstream can lock it: a closed request's receipt stays
+ * editable, mirroring sample_received and result_handover.
  */
-export default function SampleReceivedModal({
+export default function ResultReceivedModal({
   open,
   onClose,
   request,
@@ -57,17 +57,13 @@ export default function SampleReceivedModal({
   const s = useSamplingStore();
   const [receivedDate, setReceivedDate] = useState("");
   const [note, setNote] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open && request) {
-      setReceivedDate(stepDateDefault(request.sampleReceivedDate));
-      setNote(request.sampleReceivedNote ?? "");
-      setFile(null);
-      if (fileRef.current) fileRef.current.value = "";
+      setReceivedDate(stepDateDefault(request.resultReceivedDate));
+      setNote(request.resultReceivedNote ?? "");
       setErr(null);
       setBusy(false);
     }
@@ -83,17 +79,9 @@ export default function SampleReceivedModal({
     setBusy(true);
     setErr(null);
     try {
-      let attach: { docPath?: string | null; docName?: string | null } = {};
-      if (file) {
-        const up = await uploadReceivedDocument(request.id, file);
-        attach = { docPath: up.path, docName: up.name };
-      }
-      const base = { sampleReceivedDate: receivedDate || null, sampleReceivedNote: note.trim() || null };
-      if (editing) {
-        await s.updateSampleReceived(request, { ...base, ...attach });
-      } else {
-        await s.recordSampleReceived(request, { ...base, docPath: attach.docPath ?? null, docName: attach.docName ?? null });
-      }
+      const input = { resultReceivedDate: receivedDate || null, resultReceivedNote: note.trim() || null };
+      if (editing) await s.updateResultReceived(request, input);
+      else await s.recordResultReceived(request, input);
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -102,18 +90,17 @@ export default function SampleReceivedModal({
     }
   };
 
-  const existing =
-    request?.sampleReceivedDocPath ? <ReceivedDocLink path={request.sampleReceivedDocPath} name={request.sampleReceivedDocName} /> : null;
+  const report = request?.labDocPath ? <LabDocLink path={request.labDocPath} name={request.labDocName} /> : null;
 
   return (
     <Modal
       open={open}
       onClose={onClose}
       readOnly={readOnly}
-      readOnlyHeader={existing ?? undefined}
+      readOnlyHeader={report ?? undefined}
       size="xl"
       // No subtitle: SampleSummary below already shows the product / description.
-      title={`${editing && !readOnly ? "Edit sample receipt" : readOnly ? "Sample received" : "Confirm sample received"} — ${request?.reqNo ?? ""}`}
+      title={`${editing && !readOnly ? "Edit result receipt" : readOnly ? "Result received" : "Confirm result received"} — ${request?.reqNo ?? ""}`}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -123,21 +110,21 @@ export default function SampleReceivedModal({
     >
       <div className="space-y-3.5">
         {request && <SampleSummary request={request} />}
+
+        {request?.labComment && (
+          <div className="rounded-xl bg-page px-4 py-3 space-y-1">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lab result</span>
+            <div className="text-[13.5px] text-navy whitespace-pre-wrap">{request.labComment}</div>
+            {report && <div>{report}</div>}
+          </div>
+        )}
+
         <FieldLabel label="Date received" hint="today by default — you can backdate, not post-date">
           <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
         </FieldLabel>
         <FieldLabel label="Remarks" hint="optional">
-          <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the received sample" />
+          <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the result" />
         </FieldLabel>
-        <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional"}>
-          <input
-            ref={fileRef}
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-          />
-        </FieldLabel>
-        {editing && existing && <div className="text-[12px] text-grey-2">Current file: {existing}</div>}
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

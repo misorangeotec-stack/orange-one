@@ -3,7 +3,7 @@ import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { directionLabel, requestSubject } from "../../lib/format";
+import { directionLabel, labTestingLabel, requestSubject } from "../../lib/format";
 import { useSamplingStore } from "../../store";
 import type { SamplingRequest } from "../../types";
 
@@ -35,6 +35,13 @@ export default function MyRequests() {
       header: "Direction",
       cell: (r) => <span className="text-grey-2">{directionLabel(r.direction)}</span>,
       filter: { kind: "select", get: (r) => directionLabel(r.direction) },
+    },
+    {
+      key: "labTesting",
+      header: "Lab testing",
+      cell: (r) => <span className="text-grey-2">{labTestingLabel(r.labTestingRequired)}</span>,
+      filter: { kind: "select", get: (r) => labTestingLabel(r.labTestingRequired) },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "status",

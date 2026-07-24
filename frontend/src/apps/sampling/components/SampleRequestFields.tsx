@@ -123,7 +123,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
     additionalInfo, setAdditionalInfo,
     err,
     companyOptions, collectorOptions, recipientOptions,
-    isInward, isOutward, isCompetitor, labNotRequired,
+    isInward, isOutward, isCompetitor,
   } = form;
 
   const partyLabel = isOutward
@@ -217,17 +217,18 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                   searchable
                 />
               </FieldLabel>
-              {labNotRequired && (
-                <FieldLabel label="Whom to hand over the sample to">
-                  <Combobox
-                    value={handoverRecipientId}
-                    onChange={setHandoverRecipientId}
-                    options={recipientOptions}
-                    placeholder="Select a recipient"
-                    searchable
-                  />
-                </FieldLabel>
-              )}
+              {/* Asked on BOTH inward branches now: on the no-lab path this person
+                  closes the request, and on the lab path they receive the sample,
+                  send it to the lab, and are the default recipient of the result. */}
+              <FieldLabel label="Whom to hand over the sample to">
+                <Combobox
+                  value={handoverRecipientId}
+                  onChange={setHandoverRecipientId}
+                  options={recipientOptions}
+                  placeholder="Select a recipient"
+                  searchable
+                />
+              </FieldLabel>
             </>
           )}
 

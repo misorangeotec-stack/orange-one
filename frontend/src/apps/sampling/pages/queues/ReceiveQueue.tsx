@@ -18,8 +18,8 @@ export default function ReceiveQueue() {
   return (
     <RequestQueue
       stepKey="receive_sample"
-      title="Sample Received"
-      description="Inward sampling requests awaiting the sample to be received."
+      title="Sample Received at Lab"
+      description="Inward samples that need lab testing, awaiting receipt at the lab."
       actionLabel="Record receipt"
       StageModal={ReceiveModal}
       capturedColumn={capturedColumn}

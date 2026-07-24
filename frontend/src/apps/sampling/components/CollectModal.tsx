@@ -5,7 +5,6 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { useSession } from "@/core/platform/session";
 import { useSamplingStore } from "../store";
-import { requestSubject } from "../lib/format";
 import SampleSummary from "./SampleSummary";
 import type { SamplingRequest } from "../types";
 
@@ -94,8 +93,9 @@ export default function CollectModal({
       onClose={onClose}
       readOnly={readOnly}
       size="xl"
+      // No subtitle: SampleSummary below already shows the product / description,
+      // and repeating it under the title read as the same line twice.
       title={`${editing && !readOnly ? "Edit sample collection" : readOnly ? "Sample collection" : "Sample collect & handover"} — ${request?.reqNo ?? ""}`}
-      subtitle={request ? requestSubject(request) : undefined}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>

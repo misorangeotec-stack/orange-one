@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { useSamplingStore } from "../store";
-import { requestSubject } from "../lib/format";
+import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -31,7 +31,7 @@ export default function ConfirmModal({
 
   useEffect(() => {
     if (open && request) {
-      setPartyReceivedDate(request.partyReceivedDate ?? "");
+      setPartyReceivedDate(stepDateDefault(request.partyReceivedDate));
       setErr(null);
       setBusy(false);
     }
@@ -39,6 +39,11 @@ export default function ConfirmModal({
 
   const save = async () => {
     if (!request) return;
+    const bad = futureDateError(partyReceivedDate, "Date the party received the sample");
+    if (bad) {
+      setErr(bad);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -68,8 +73,8 @@ export default function ConfirmModal({
       }
     >
       <div className="space-y-3.5">
-        <FieldLabel label="Date the party received the sample" hint="defaults to today if left blank">
-          <TextInput type="date" value={partyReceivedDate} onChange={(e) => setPartyReceivedDate(e.target.value)} />
+        <FieldLabel label="Date the party received the sample" hint="today by default — you can backdate, not post-date">
+          <TextInput type="date" max={todayIso()} value={partyReceivedDate} onChange={(e) => setPartyReceivedDate(e.target.value)} />
         </FieldLabel>
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>

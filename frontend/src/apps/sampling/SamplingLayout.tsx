@@ -26,20 +26,27 @@ export default function SamplingLayout() {
   // never disappears mid-flow: show it if they are/were the collector (or the
   // hand-over recipient) on any request, not only while work is pending.
   const uid = user?.id ?? "";
-  const iAmLabCollector = !!uid && s.requests.some((r) => r.labTestingRequired !== false && r.collectorId === uid);
-  const iAmCollector = !!uid && s.requests.some((r) => r.labTestingRequired === false && r.collectorId === uid);
+  const iAmCollector = !!uid && s.requests.some((r) => r.collectorId === uid);
   const iAmRecipient = !!uid && s.requests.some((r) => r.handoverRecipientId === uid);
+  const iAmResultRecipient = !!uid && s.requests.some((r) => r.labResultToId === uid);
 
-  const canReceive = s.isProcessCoordinator || s.isStepOwner("receive_sample") || s.myQueue("receive_sample").length > 0 || iAmLabCollector;
+  // `receive_sample` is LEGACY — nothing routes into it any more. Shown ONLY while
+  // pre-lab-gate rows are actually sitting in it, so the entry retires itself.
+  const canReceive = s.myQueue("receive_sample").length > 0;
   const canCollect = s.isProcessCoordinator || s.isStepOwner("sample_collect") || s.myQueue("sample_collect").length > 0 || iAmCollector;
   const canSampleReceived = s.isProcessCoordinator || s.isStepOwner("sample_received") || s.myQueue("sample_received").length > 0 || iAmRecipient;
+  const canSampleToLab = s.isProcessCoordinator || s.isStepOwner("sample_to_lab") || s.myQueue("sample_to_lab").length > 0 || iAmRecipient;
+  const canLabProcess = s.isProcessCoordinator || s.isStepOwner("lab_process") || s.myQueue("lab_process").length > 0;
+  const canResultReceived = s.isProcessCoordinator || s.isStepOwner("result_received") || s.myQueue("result_received").length > 0 || iAmResultRecipient;
   const canSend = s.isProcessCoordinator || s.isStepOwner("send_sample") || s.myQueue("send_sample").length > 0;
   const canConfirm = s.isProcessCoordinator || s.isStepOwner("confirm_receipt") || s.myQueue("confirm_receipt").length > 0;
   const canTest = s.isProcessCoordinator || s.isStepOwner("testing") || s.myQueue("testing").length > 0;
   const canResult = s.isProcessCoordinator || s.isStepOwner("result") || s.myQueue("result").length > 0;
   const canHandover = s.isProcessCoordinator || s.isStepOwner("result_handover") || s.myQueue("result_handover").length > 0;
   const canMonitor = s.isProcessCoordinator;
-  const hasRequests = s.requests.length > 0 || s.isProcessCoordinator || canReceive || canCollect || canSampleReceived || canSend || canConfirm || canTest || canResult || canHandover;
+  const hasRequests =
+    s.requests.length > 0 || s.isProcessCoordinator || canReceive || canCollect || canSampleReceived ||
+    canSampleToLab || canLabProcess || canResultReceived || canSend || canConfirm || canTest || canResult || canHandover;
 
   const nav = useMemo(
     () =>
@@ -49,6 +56,9 @@ export default function SamplingLayout() {
         canReceive,
         canCollect,
         canSampleReceived,
+        canSampleToLab,
+        canLabProcess,
+        canResultReceived,
         canSend,
         canConfirm,
         canTest,
@@ -57,7 +67,8 @@ export default function SamplingLayout() {
         canMonitor,
         hasRequests,
       }),
-    [isAdmin, s.isAnyMasterManager, canReceive, canCollect, canSampleReceived, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, hasRequests],
+    [isAdmin, s.isAnyMasterManager, canReceive, canCollect, canSampleReceived, canSampleToLab, canLabProcess,
+     canResultReceived, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, hasRequests],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

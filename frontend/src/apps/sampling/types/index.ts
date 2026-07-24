@@ -23,14 +23,17 @@ export interface SampleItem {
 
 /** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled leave every queue. */
 export type RequestStatus =
-  | "awaiting_receipt"
+  | "awaiting_receipt"          // LEGACY inward (pre lab-gate rows only)
   | "awaiting_send"
   | "awaiting_confirm"
   | "awaiting_testing"
   | "awaiting_result"
   | "awaiting_handover"
-  | "awaiting_collect"           // inward, lab testing NOT required: sample_collect
-  | "awaiting_sample_received"  // inward, lab testing NOT required: sample_received
+  | "awaiting_collect"           // inward, either branch: sample_collect
+  | "awaiting_sample_received"   // inward, lab NOT required: sample_received (closes)
+  | "awaiting_sample_to_lab"     // inward, lab required: sample_to_lab
+  | "awaiting_lab_process"       // inward, lab required: lab_process — BOTH passes
+  | "awaiting_result_received"   // inward, lab required: result_received (closes)
   | "closed"
   | "on_hold"
   | "cancelled";
@@ -120,6 +123,34 @@ export interface SamplingRequest {
   sampleReceivedDocName: string | null;
   sampleReceivedAt: string | null;
   sampleReceivedBy: string | null;
+
+  // sample_to_lab (inward, lab testing required) — recipient confirms + sends on.
+  // The internal reference number lives in `internalRef`, shared with outward testing.
+  labSentDate: string | null;
+  labSentAt: string | null;
+  labSentBy: string | null;
+
+  // lab_process pass 1 — the lab acknowledges the sample by dating the result.
+  labTentativeDate: string | null;
+  labStartedAt: string | null;
+  labStartedBy: string | null;
+
+  // lab_process pass 2 — testing done; comment + document are both REQUIRED.
+  labCompletedDate: string | null;
+  labComment: string | null;
+  labDocPath: string | null;
+  labDocName: string | null;
+  /** Whom the result is handed to. Null id + a name = a free-text recipient. */
+  labResultToId: string | null;
+  labResultToName: string | null;
+  labCompletedAt: string | null;
+  labCompletedBy: string | null;
+
+  // result_received (inward, lab testing required) — closes the request
+  resultReceivedDate: string | null;
+  resultReceivedNote: string | null;
+  resultReceivedAt: string | null;
+  resultReceivedBy: string | null;
 
   closedAt: string | null;
 

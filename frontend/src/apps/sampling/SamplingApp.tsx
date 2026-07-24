@@ -11,6 +11,9 @@ import RequestDetail from "./pages/requests/RequestDetail";
 import ReceiveQueue from "./pages/queues/ReceiveQueue";
 import CollectQueue from "./pages/queues/CollectQueue";
 import SampleReceivedQueue from "./pages/queues/SampleReceivedQueue";
+import SampleToLabQueue from "./pages/queues/SampleToLabQueue";
+import LabProcessQueue from "./pages/queues/LabProcessQueue";
+import ResultReceivedQueue from "./pages/queues/ResultReceivedQueue";
 import SendQueue from "./pages/queues/SendQueue";
 import ConfirmQueue from "./pages/queues/ConfirmQueue";
 import TestingQueue from "./pages/queues/TestingQueue";
@@ -57,11 +60,19 @@ export default function SamplingApp() {
           {/* "new" must come before ":id" or "new" would be read as an id. */}
           <Route path="requests/new" element={<NewRequest />} />
           <Route path="my-requests" element={<MyRequests />} />
+          {/* The branch lists sit OUTSIDE /requests on purpose: nested under it they
+              would keep the "All Requests" link highlighted alongside their own. */}
+          <Route path="lab-requests" element={<RequestsList branch="lab" />} />
+          <Route path="no-lab-requests" element={<RequestsList branch="no_lab" />} />
+          <Route path="outward-requests" element={<RequestsList branch="outward" />} />
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
           <Route path="queues/receive" element={<ReceiveQueue />} />
           <Route path="queues/collect" element={<CollectQueue />} />
           <Route path="queues/received" element={<SampleReceivedQueue />} />
+          <Route path="queues/to-lab" element={<SampleToLabQueue />} />
+          <Route path="queues/lab" element={<LabProcessQueue />} />
+          <Route path="queues/result-received" element={<ResultReceivedQueue />} />
           <Route path="queues/send" element={<SendQueue />} />
           <Route path="queues/confirm" element={<ConfirmQueue />} />
           <Route path="queues/testing" element={<TestingQueue />} />

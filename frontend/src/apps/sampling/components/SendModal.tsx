@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { useSamplingStore } from "../store";
-import { requestSubject } from "../lib/format";
+import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -33,7 +33,7 @@ export default function SendModal({
 
   useEffect(() => {
     if (open && request) {
-      setSentDate(request.sentDate ?? "");
+      setSentDate(stepDateDefault(request.sentDate));
       setGateEntryNo(request.gateEntryNo ?? "");
       setSentQty(request.sentQty ?? "");
       setErr(null);
@@ -43,6 +43,11 @@ export default function SendModal({
 
   const save = async () => {
     if (!request) return;
+    const bad = futureDateError(sentDate, "Date sent");
+    if (bad) {
+      setErr(bad);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -72,8 +77,8 @@ export default function SendModal({
       }
     >
       <div className="space-y-3.5">
-        <FieldLabel label="Date sent" hint="defaults to today if left blank">
-          <TextInput type="date" value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
+        <FieldLabel label="Date sent" hint="today by default — you can backdate, not post-date">
+          <TextInput type="date" max={todayIso()} value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
         </FieldLabel>
         <FieldLabel label="Gate outward entry no.">
           <TextInput value={gateEntryNo} onChange={(e) => setGateEntryNo(e.target.value)} placeholder="e.g. GT/2627/118" />

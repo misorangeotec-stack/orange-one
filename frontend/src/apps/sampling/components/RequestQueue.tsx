@@ -16,7 +16,8 @@ import type { StepKey } from "../lib/steps";
 import { useSamplingStore } from "../store";
 import type { SamplingRequest } from "../types";
 
-interface Row {
+/** One pending row. Exported so a queue page can type its own `pendingColumn`. */
+export interface Row {
   request: SamplingRequest;
   dueIso: string | null;
 }
@@ -46,6 +47,8 @@ export default function RequestQueue({
   StageModal,
   capturedColumn,
   completedBlurb,
+  pendingColumn,
+  pendingActionLabel,
 }: {
   stepKey: StepKey;
   title: string;
@@ -54,6 +57,14 @@ export default function RequestQueue({
   StageModal: ComponentType<StageModalProps>;
   capturedColumn: QueueColumn<StageEntry<SamplingRequest>>;
   completedBlurb: string;
+  /**
+   * An extra column on the PENDING side. Only `lab_process` needs one: it is a
+   * two-pass step, so two requests with the same status can be at different points
+   * and would otherwise be indistinguishable in the queue.
+   */
+  pendingColumn?: QueueColumn<Row>;
+  /** Per-row action label, when it depends on how far the row has got. */
+  pendingActionLabel?: (r: SamplingRequest) => string;
 }) {
   const s = useSamplingStore();
   const session = useSession();
@@ -100,6 +111,7 @@ export default function RequestQueue({
       cell: ({ request: r }) => <span className="text-grey-2">{directionLabel(r.direction)}</span>,
       filter: { kind: "select", get: ({ request }) => directionLabel(request.direction) },
     },
+    ...(pendingColumn ? [pendingColumn] : []),
     {
       key: "due",
       header: "Due",
@@ -227,7 +239,7 @@ export default function RequestQueue({
           emptyMessage="Requests needing your action will appear here."
           actions={({ request }) => (
             <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
-              {actionLabel}
+              {pendingActionLabel ? pendingActionLabel(request) : actionLabel}
             </Button>
           )}
         />

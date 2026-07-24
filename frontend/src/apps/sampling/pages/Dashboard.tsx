@@ -11,6 +11,7 @@ import NeedsAttentionCard from "@/shared/components/dashboard/NeedsAttentionCard
 import type { AttentionRow } from "@/shared/lib/fmsDashboard";
 import { appName } from "@/apps/appInfo";
 import { useSamplingStore } from "../store";
+import { requestBranch } from "../lib/queues";
 import { STEPS, STAGES, stepByKey } from "../lib/steps";
 import { STATUS_LABEL, STATUS_TONE, requestSubject } from "../lib/format";
 import type { RequestStatus } from "../types";
@@ -43,9 +44,13 @@ export default function Dashboard() {
     [s.requests],
   );
 
-  // A request closes at result_handover (lab branch) OR sample_received (no-lab branch).
+  // Three closing steps, one per path: sample_received (inward, no lab),
+  // result_received (inward, lab) and result_handover (outward).
   const completed30 = useMemo(
-    () => countInWindow(s.completedFor("result_handover"), since30) + countInWindow(s.completedFor("sample_received"), since30),
+    () =>
+      countInWindow(s.completedFor("sample_received"), since30) +
+      countInWindow(s.completedFor("result_received"), since30) +
+      countInWindow(s.completedFor("result_handover"), since30),
     [s.completedFor, since30],
   );
 
@@ -74,15 +79,20 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.queueEntries, todayIso]);
 
-  const open = s.requests.filter((r) => s.isOpenRequest(r)).length;
+  // Open work, split the way the sidebar is: the two branches are run by
+  // different people, so one merged "open" number told neither of them anything.
+  const openRequests = s.requests.filter((r) => s.isOpenRequest(r));
+  const openLab = openRequests.filter((r) => requestBranch(r) === "lab").length;
+  const openNoLab = openRequests.length - openLab;
   const inTesting = s.requests.filter((r) => r.status === "awaiting_testing").length;
 
   const kpiTiles: KpiTile[] = [
     { key: "pending", label: "Pending today", value: counts.delayed + counts.today, hint: "delayed + due today", size: "hero", tone: counts.delayed + counts.today > 0 ? "red" : undefined },
-    { key: "open", label: "Open requests", value: open, hint: "not yet closed" },
+    { key: "openLab", label: "Open — lab testing", value: openLab, hint: "not yet closed", href: "/sampling/lab-requests" },
+    { key: "openNoLab", label: "Open — no lab testing", value: openNoLab, hint: "not yet closed", href: "/sampling/no-lab-requests" },
     { key: "testing", label: "In testing", value: inTesting, hint: "awaiting a result" },
     { key: "delayed", label: "Delayed", value: counts.delayed, hint: "past due", tone: counts.delayed > 0 ? "red" : undefined },
-    { key: "done", label: "Completed (30d)", value: completed30, hint: "result handed over" },
+    { key: "done", label: "Completed (30d)", value: completed30, hint: "closed on any path" },
   ];
 
   return (

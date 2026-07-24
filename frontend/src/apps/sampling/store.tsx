@@ -17,9 +17,13 @@ import {
   recordCollect as recordCollectWrite,
   recordConfirm as recordConfirmWrite,
   recordHandover as recordHandoverWrite,
+  recordLabComplete as recordLabCompleteWrite,
+  recordLabStart as recordLabStartWrite,
   recordReceipt as recordReceiptWrite,
   recordResult as recordResultWrite,
+  recordResultReceived as recordResultReceivedWrite,
   recordSampleReceived as recordSampleReceivedWrite,
+  recordSampleToLab as recordSampleToLabWrite,
   recordSend as recordSendWrite,
   recordTesting as recordTestingWrite,
   resultDocumentUrl as resultDocumentUrlWrite,
@@ -32,21 +36,29 @@ import {
   updateCompany as updateCompanyWrite,
   updateConfirm as updateConfirmWrite,
   updateHandover as updateHandoverWrite,
+  updateLabComplete as updateLabCompleteWrite,
+  updateLabStart as updateLabStartWrite,
   updateReceipt as updateReceiptWrite,
   updateRecipient as updateRecipientWrite,
   updateResult as updateResultWrite,
+  updateResultReceived as updateResultReceivedWrite,
   updateSampleReceived as updateSampleReceivedWrite,
+  updateSampleToLab as updateSampleToLabWrite,
   updateSend as updateSendWrite,
   updateTesting as updateTestingWrite,
   type CollectInput,
   type CompanyInput,
   type ConfirmInput,
   type HandoverInput,
+  type LabCompleteInput,
+  type LabStartInput,
   type PersonMasterInput,
   type ReceiptInput,
   type RequestInput,
   type ResultInput,
+  type ResultReceivedInput,
   type SampleReceivedInput,
+  type SampleToLabInput,
   type SendInput,
   type StepOwnerInput,
   type TestingInput,
@@ -56,9 +68,12 @@ import {
   completedCollectEntries,
   completedConfirmEntries,
   completedHandoverEntries,
+  completedLabProcessEntries,
   completedReceiveEntries,
   completedResultEntries,
+  completedResultReceivedEntries,
   completedSampleReceivedEntries,
+  completedSampleToLabEntries,
   completedSendEntries,
   completedTestingEntries,
   isOpenRequest,
@@ -162,6 +177,14 @@ interface SamplingStoreValue {
   updateCollect: (r: SamplingRequest, input: CollectInput) => Promise<void>;
   recordSampleReceived: (r: SamplingRequest, input: SampleReceivedInput) => Promise<void>;
   updateSampleReceived: (r: SamplingRequest, input: SampleReceivedInput) => Promise<void>;
+  recordSampleToLab: (r: SamplingRequest, input: SampleToLabInput) => Promise<void>;
+  updateSampleToLab: (r: SamplingRequest, input: SampleToLabInput) => Promise<void>;
+  recordLabStart: (r: SamplingRequest, input: LabStartInput) => Promise<void>;
+  updateLabStart: (r: SamplingRequest, input: LabStartInput) => Promise<void>;
+  recordLabComplete: (r: SamplingRequest, input: LabCompleteInput) => Promise<void>;
+  updateLabComplete: (r: SamplingRequest, input: LabCompleteInput) => Promise<void>;
+  recordResultReceived: (r: SamplingRequest, input: ResultReceivedInput) => Promise<void>;
+  updateResultReceived: (r: SamplingRequest, input: ResultReceivedInput) => Promise<void>;
   recordTesting: (r: SamplingRequest, input: TestingInput) => Promise<void>;
   updateTesting: (r: SamplingRequest, input: TestingInput) => Promise<void>;
   recordResult: (r: SamplingRequest, input: ResultInput) => Promise<void>;
@@ -232,15 +255,18 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
     // Mirrors fms_sampling_can_act(step, req, uid): admin / coordinator / the
-    // step's owner — PLUS the chosen collector for that request's receive_sample.
-    // Sampling steps are otherwise owned globally (no per-request HOD).
+    // step's owner — PLUS the per-request assignees. Sampling steps are otherwise
+    // owned globally (no per-request HOD). Keep this list and the SQL in step.
     const canActOn = (stepKey: StepKey, r: SamplingRequest): boolean =>
       isAdmin ||
       isProcessCoordinator ||
       isStepOwner(stepKey) ||
       (stepKey === "receive_sample" && !!r.collectorId && r.collectorId === uid) ||
       (stepKey === "sample_collect" && !!r.collectorId && r.collectorId === uid) ||
-      (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid);
+      (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
+      // Whoever received the sample is the one who sends it on to the lab.
+      (stepKey === "sample_to_lab" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
+      (stepKey === "result_received" && !!r.labResultToId && r.labResultToId === uid);
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -285,6 +311,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const receiveEntries = completedReceiveEntries(snapshot);
     const collectEntries = completedCollectEntries(snapshot);
     const sampleReceivedEntries = completedSampleReceivedEntries(snapshot);
+    const sampleToLabEntries = completedSampleToLabEntries(snapshot);
+    const labProcessEntries = completedLabProcessEntries(snapshot);
+    const resultReceivedEntries = completedResultReceivedEntries(snapshot);
     const sendEntries = completedSendEntries(snapshot);
     const confirmEntries = completedConfirmEntries(snapshot);
     const testingEntries = completedTestingEntries(snapshot);
@@ -295,6 +324,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       stepKey === "receive_sample" ? receiveEntries
       : stepKey === "sample_collect" ? collectEntries
       : stepKey === "sample_received" ? sampleReceivedEntries
+      : stepKey === "sample_to_lab" ? sampleToLabEntries
+      : stepKey === "lab_process" ? labProcessEntries
+      : stepKey === "result_received" ? resultReceivedEntries
       : stepKey === "send_sample" ? sendEntries
       : stepKey === "confirm_receipt" ? confirmEntries
       : stepKey === "testing" ? testingEntries
@@ -424,6 +456,42 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       },
       updateSampleReceived: async (r, input) => {
         await updateSampleReceivedWrite(r.id, input);
+        await invalidate();
+      },
+      recordSampleToLab: async (r, input) => {
+        await recordSampleToLabWrite(r.id, input);
+        // The RPC already fanned out to the lab_process owners.
+        await invalidate();
+      },
+      updateSampleToLab: async (r, input) => {
+        await updateSampleToLabWrite(r.id, input);
+        await invalidate();
+      },
+      recordLabStart: async (r, input) => {
+        // Pass 1 — deliberately does NOT advance the request; it stays in this queue.
+        await recordLabStartWrite(r.id, input);
+        await invalidate();
+      },
+      updateLabStart: async (r, input) => {
+        await updateLabStartWrite(r.id, input);
+        await invalidate();
+      },
+      recordLabComplete: async (r, input) => {
+        await recordLabCompleteWrite(r.id, input);
+        // The RPC already fanned out to whoever the result was handed to.
+        await invalidate();
+      },
+      updateLabComplete: async (r, input) => {
+        await updateLabCompleteWrite(r.id, input);
+        await invalidate();
+      },
+      recordResultReceived: async (r, input) => {
+        await recordResultReceivedWrite(r.id, input);
+        // The RPC already notified the raiser that the request is closed.
+        await invalidate();
+      },
+      updateResultReceived: async (r, input) => {
+        await updateResultReceivedWrite(r.id, input);
         await invalidate();
       },
       recordTesting: async (r, input) => {

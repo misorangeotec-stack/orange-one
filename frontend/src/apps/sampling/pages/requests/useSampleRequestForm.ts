@@ -87,7 +87,9 @@ export function useSampleRequestForm() {
       .filter((r) => !isSampleBlank(r))
       .map((r) => ({ colour: r.colour.trim(), quantity: r.quantity.trim() }));
 
-    const recipientId = labNotRequired ? handoverRecipientId || selfId : "";
+    // Kept for EVERY inward request now: the lab branch needs it too (it receives
+    // the sample, sends it to the lab, and defaults the result hand-over).
+    const recipientId = isInward ? handoverRecipientId || selfId : "";
 
     return {
       input: {

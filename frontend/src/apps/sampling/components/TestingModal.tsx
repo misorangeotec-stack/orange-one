@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { useSamplingStore } from "../store";
-import { requestSubject } from "../lib/format";
+import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -33,7 +33,7 @@ export default function TestingModal({
 
   useEffect(() => {
     if (open && request) {
-      setTestingCompletedDate(request.testingCompletedDate ?? "");
+      setTestingCompletedDate(stepDateDefault(request.testingCompletedDate));
       setInternalRef(request.internalRef ?? "");
       setTentativeResultDate(request.tentativeResultDate ?? "");
       setErr(null);
@@ -43,6 +43,13 @@ export default function TestingModal({
 
   const save = async () => {
     if (!request) return;
+    // Only the completion date is capped — the tentative result date is a
+    // forecast and is SUPPOSED to be in the future.
+    const bad = futureDateError(testingCompletedDate, "Testing completed on");
+    if (bad) {
+      setErr(bad);
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -76,8 +83,8 @@ export default function TestingModal({
       }
     >
       <div className="space-y-3.5">
-        <FieldLabel label="Testing completed on" hint="defaults to today if left blank">
-          <TextInput type="date" value={testingCompletedDate} onChange={(e) => setTestingCompletedDate(e.target.value)} />
+        <FieldLabel label="Testing completed on" hint="today by default — you can backdate, not post-date">
+          <TextInput type="date" max={todayIso()} value={testingCompletedDate} onChange={(e) => setTestingCompletedDate(e.target.value)} />
         </FieldLabel>
         <FieldLabel label="Internal reference">
           <TextInput value={internalRef} onChange={(e) => setInternalRef(e.target.value)} placeholder="e.g. lab batch / job no." />

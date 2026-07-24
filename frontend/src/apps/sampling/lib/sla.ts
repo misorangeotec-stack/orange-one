@@ -24,6 +24,11 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   receive_sample: { anchor: "request", days: 1 },
   sample_collect: { anchor: "request", days: 1 },
   sample_received: { anchor: "sample_collect", days: 1 },
+  sample_to_lab: { anchor: "sample_collect", days: 1 },
+  // The default clock only applies until the lab commits to a date: once
+  // `lab_tentative_date` is set, samplingDueIso uses THAT instead (see queues.ts).
+  lab_process: { anchor: "sample_to_lab", days: 3 },
+  result_received: { anchor: "lab_process", days: 1 },
   send_sample: { anchor: "request", days: 1 },
   confirm_receipt: { anchor: "send_sample", days: 1 },
   testing: { anchor: "request", days: 1 },

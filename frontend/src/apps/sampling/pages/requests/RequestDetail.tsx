@@ -10,6 +10,9 @@ import { formatDate, formatDateTime } from "@/shared/lib/time";
 import ReceiveModal from "../../components/ReceiveModal";
 import CollectModal from "../../components/CollectModal";
 import SampleReceivedModal from "../../components/SampleReceivedModal";
+import SampleToLabModal from "../../components/SampleToLabModal";
+import LabProcessModal from "../../components/LabProcessModal";
+import ResultReceivedModal from "../../components/ResultReceivedModal";
 import SendModal from "../../components/SendModal";
 import ConfirmModal from "../../components/ConfirmModal";
 import TestingModal from "../../components/TestingModal";
@@ -23,7 +26,34 @@ import type { StepKey } from "../../lib/steps";
 import { useSamplingStore } from "../../store";
 import type { SamplingRequest } from "../../types";
 
-type OpenModal = "receive" | "collect" | "sampleReceived" | "send" | "confirm" | "testing" | "result" | "handover" | null;
+type OpenModal =
+  | "receive" | "collect" | "sampleReceived" | "sampleToLab" | "labProcess" | "resultReceived"
+  | "send" | "confirm" | "testing" | "result" | "handover" | null;
+
+/** Opens a stored lab report via a fresh short-lived signed URL. */
+function LabReportLink({ path, name }: { path: string; name: string | null }) {
+  const s = useSamplingStore();
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      disabled={busy}
+      onClick={async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          window.open(await s.resultDocumentUrl(path), "_blank", "noopener,noreferrer");
+        } catch {
+          /* surfaced elsewhere */
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className="text-[13px] font-semibold text-orange hover:underline disabled:opacity-60"
+    >
+      {busy ? "Opening…" : name || "View lab report"}
+    </button>
+  );
+}
 
 export default function RequestDetail() {
   const { id } = useParams();
@@ -51,6 +81,9 @@ export default function RequestDetail() {
   }
 
   const name = (uid: string | null) => (uid ? s.personName(uid) : "—");
+  // Raised before the lab gate existed: it entered at receive_sample and still runs
+  // the old testing → result → handover tail, so it reads on the legacy arm below.
+  const isLegacyInward = r.status === "awaiting_receipt" || !!r.receivedAt;
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
   const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
   const canCancel = (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
@@ -63,6 +96,11 @@ export default function RequestDetail() {
     : r.status === "awaiting_receipt" ? { label: "Record receipt", modal: "receive" }
     : r.status === "awaiting_collect" ? { label: "Record collection", modal: "collect" }
     : r.status === "awaiting_sample_received" ? { label: "Confirm received", modal: "sampleReceived" }
+    : r.status === "awaiting_sample_to_lab" ? { label: "Confirm & send to lab", modal: "sampleToLab" }
+    // One step, two passes — the label has to say which one you're about to do.
+    : r.status === "awaiting_lab_process"
+      ? { label: r.labStartedAt ? "Record result" : "Record tentative date", modal: "labProcess" }
+    : r.status === "awaiting_result_received" ? { label: "Confirm result received", modal: "resultReceived" }
     : r.status === "awaiting_send" ? { label: "Record dispatch", modal: "send" }
     : r.status === "awaiting_confirm" ? { label: "Confirm receipt", modal: "confirm" }
     : r.status === "awaiting_testing" ? { label: "Record testing", modal: "testing" }
@@ -121,6 +159,13 @@ export default function RequestDetail() {
         </div>
       </div>
 
+      {/* Progress is ALWAYS the first block on a detail page — "where is this now"
+          is the question people open the page to answer; the particulars come after. */}
+      <Card className="p-5 space-y-3">
+        <h2 className="text-[15px] font-bold text-navy">Progress</h2>
+        <SamplingStepper request={r} />
+      </Card>
+
       <Card className="p-5">
         <SectionHeading>Request</SectionHeading>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-3">
@@ -178,11 +223,6 @@ export default function RequestDetail() {
         )}
       </Card>
 
-      <Card className="p-5 space-y-3">
-        <h2 className="text-[15px] font-bold text-navy">Progress</h2>
-        <SamplingStepper request={r} />
-      </Card>
-
       <Card className="p-5">
         <SectionHeading>Step details</SectionHeading>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
@@ -205,6 +245,64 @@ export default function RequestDetail() {
                     : "—"
                 }
                 className="col-span-1 sm:col-span-2"
+              />
+            </>
+          ) : r.direction === "inward" && !isLegacyInward ? (
+            <>
+              <Field
+                label="Sample collect & handover"
+                value={
+                  r.collectedAt
+                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"} · ${name(r.collectedBy)}`
+                    : "—"
+                }
+                className="col-span-1 sm:col-span-2"
+              />
+              <Field
+                label="Received & sent to lab"
+                value={
+                  r.labSentAt
+                    ? `${r.labSentDate ? dmy(r.labSentDate) : formatDate(r.labSentAt)} · ref ${r.internalRef ?? "—"} · ${name(r.labSentBy)}`
+                    : "—"
+                }
+                className="col-span-1 sm:col-span-2"
+              />
+              <Field
+                label="At the lab"
+                value={
+                  r.labStartedAt
+                    ? `Result expected ${dmy(r.labTentativeDate)} · ${name(r.labStartedBy)}`
+                    : "—"
+                }
+              />
+              <Field
+                label="Lab testing completed"
+                value={
+                  r.labCompletedAt
+                    ? `${r.labCompletedDate ? dmy(r.labCompletedDate) : formatDate(r.labCompletedAt)} · ${name(r.labCompletedBy)}`
+                    : "—"
+                }
+              />
+              <Field label="Lab result" value={r.labComment} className="col-span-1 sm:col-span-2" />
+              {r.labDocPath && (
+                <div className="col-span-1 sm:col-span-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lab report</div>
+                  <div className="mt-1">
+                    <LabReportLink path={r.labDocPath} name={r.labDocName} />
+                  </div>
+                </div>
+              )}
+              <Field
+                label="Result handed over to"
+                value={r.labResultToId ? name(r.labResultToId) : r.labResultToName}
+              />
+              <Field
+                label="Result received"
+                value={
+                  r.resultReceivedAt
+                    ? `${r.resultReceivedDate ? dmy(r.resultReceivedDate) : formatDate(r.resultReceivedAt)}${r.resultReceivedNote ? ` · ${r.resultReceivedNote}` : ""} · ${name(r.resultReceivedBy)}`
+                    : "—"
+                }
               />
             </>
           ) : (
@@ -294,6 +392,9 @@ export default function RequestDetail() {
       <ReceiveModal open={modal === "receive"} onClose={() => setModal(null)} request={r} />
       <CollectModal open={modal === "collect"} onClose={() => setModal(null)} request={r} />
       <SampleReceivedModal open={modal === "sampleReceived"} onClose={() => setModal(null)} request={r} />
+      <SampleToLabModal open={modal === "sampleToLab"} onClose={() => setModal(null)} request={r} />
+      <LabProcessModal open={modal === "labProcess"} onClose={() => setModal(null)} request={r} />
+      <ResultReceivedModal open={modal === "resultReceived"} onClose={() => setModal(null)} request={r} />
       <SendModal open={modal === "send"} onClose={() => setModal(null)} request={r} />
       <ConfirmModal open={modal === "confirm"} onClose={() => setModal(null)} request={r} />
       <TestingModal open={modal === "testing"} onClose={() => setModal(null)} request={r} />

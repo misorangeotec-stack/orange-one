@@ -12,8 +12,15 @@ interface FlowNode {
   label: string;
 }
 
-/** The paths, in order. The lab paths converge at `testing`. */
-const INWARD_FLOW: FlowNode[] = [
+/**
+ * The paths, in order. Both inward branches start at collect and diverge at the
+ * handover receipt.
+ *
+ * INWARD_LEGACY_FLOW is for rows raised BEFORE the lab gate existed — they started
+ * at receive_sample and still run the old testing → result → handover tail. Nothing
+ * routes into it any more; it exists so a legacy row still renders sanely.
+ */
+const INWARD_LEGACY_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
   { key: "receive_sample", label: "Sample Received" },
   { key: "testing", label: "Testing" },
@@ -26,6 +33,15 @@ const INWARD_NO_LAB_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
   { key: "sample_collect", label: "Collect & Handover" },
   { key: "sample_received", label: "Sample Received" },
+  { key: "closed", label: "Closed" },
+];
+/** Inward WITH lab testing: collect → to the lab → lab process → result received. */
+const INWARD_LAB_FLOW: FlowNode[] = [
+  { key: "request", label: "Request" },
+  { key: "sample_collect", label: "Collect & Handover" },
+  { key: "sample_to_lab", label: "Received & Sent to Lab" },
+  { key: "lab_process", label: "Lab Process" },
+  { key: "result_received", label: "Result Received" },
   { key: "closed", label: "Closed" },
 ];
 const OUTWARD_FLOW: FlowNode[] = [
@@ -47,12 +63,16 @@ const OUTWARD_FLOW: FlowNode[] = [
  */
 export default function SamplingStepper({ request }: { request: SamplingRequest }) {
   const s = useSamplingStore();
+  // A legacy row is one that entered at receive_sample; it keeps the old rail.
+  const isLegacyInward = request.status === "awaiting_receipt" || !!request.receivedAt;
   const flow =
     request.direction === "outward"
       ? OUTWARD_FLOW
-      : request.labTestingRequired === false
-        ? INWARD_NO_LAB_FLOW
-        : INWARD_FLOW;
+      : isLegacyInward
+        ? INWARD_LEGACY_FLOW
+        : request.labTestingRequired === false
+          ? INWARD_NO_LAB_FLOW
+          : INWARD_LAB_FLOW;
 
   const nodes: PoStageRailNode[] = useMemo(
     () =>
@@ -61,16 +81,22 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
           return { key: n.key, label: n.label, departments: [], people: [], hasStep: false };
         }
         const owner = s.stepOwnerFor(n.key);
-        // The receive/collect steps are owned, for this request, by the chosen
-        // collector; the received step by the chosen recipient (or a free-text name).
+        // Several steps are owned, for THIS request, by a person chosen on the
+        // request rather than by the step's global owners: the collector collects,
+        // the hand-over recipient receives (and sends to the lab), and whoever the
+        // lab handed the result to confirms it.
         const perRequestName =
           (n.key === "receive_sample" || n.key === "sample_collect") && request.collectorId
             ? s.personName(request.collectorId)
-            : n.key === "sample_received"
+            : n.key === "sample_received" || n.key === "sample_to_lab"
               ? request.handoverRecipientId
                 ? s.personName(request.handoverRecipientId)
                 : request.handoverRecipientName
-              : null;
+              : n.key === "result_received"
+                ? request.labResultToId
+                  ? s.personName(request.labResultToId)
+                  : request.labResultToName
+                : null;
         const people = perRequestName
           ? [perRequestName]
           : (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((nm) => nm !== "—");
@@ -84,7 +110,8 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
           hasStep: true,
         };
       }),
-    [flow, s, request.collectorId, request.handoverRecipientId, request.handoverRecipientName],
+    [flow, s, request.collectorId, request.handoverRecipientId, request.handoverRecipientName,
+     request.labResultToId, request.labResultToName],
   );
 
   const finished = request.status === "closed";

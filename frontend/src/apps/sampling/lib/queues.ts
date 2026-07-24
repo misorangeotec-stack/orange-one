@@ -11,7 +11,7 @@
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
-import type { StepKey } from "./steps";
+import type { StepBranch, StepKey } from "./steps";
 import type { SamplingRequest } from "../types";
 
 export interface SamplingSnapshot {
@@ -30,15 +30,16 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
 }
 
 /** Still someone's work — a held / closed / cancelled request leaves every queue. */
-export const isOpenRequest = (r: SamplingRequest): boolean =>
-  r.status === "awaiting_receipt" ||
-  r.status === "awaiting_send" ||
-  r.status === "awaiting_confirm" ||
-  r.status === "awaiting_testing" ||
-  r.status === "awaiting_result" ||
-  r.status === "awaiting_handover" ||
-  r.status === "awaiting_collect" ||
-  r.status === "awaiting_sample_received";
+export const isOpenRequest = (r: SamplingRequest): boolean => openStep(r) !== null;
+
+/**
+ * Which branch a request runs on — the request-side twin of `StepDef.branches`.
+ *
+ * `=== false`, never `!r.labTestingRequired`: on an INWARD request NULL means a
+ * legacy row raised before the gate existed, which ran the lab path.
+ */
+export const requestBranch = (r: SamplingRequest): StepBranch =>
+  r.direction === "outward" ? "outward" : r.labTestingRequired === false ? "no_lab" : "lab";
 
 /** The single step a request currently owes, from its status. */
 export function openStep(r: SamplingRequest): StepKey | null {
@@ -59,6 +60,13 @@ export function openStep(r: SamplingRequest): StepKey | null {
       return "sample_collect";
     case "awaiting_sample_received":
       return "sample_received";
+    case "awaiting_sample_to_lab":
+      return "sample_to_lab";
+    // Both passes of lab_process share this status — see lib/steps.ts.
+    case "awaiting_lab_process":
+      return "lab_process";
+    case "awaiting_result_received":
+      return "result_received";
     default:
       return null;
   }
@@ -81,7 +89,12 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
     case "confirm_receipt":
       return r.sentAt;
     case "sample_received":
+    case "sample_to_lab":
       return r.collectedAt;
+    case "lab_process":
+      return r.labSentAt;
+    case "result_received":
+      return r.labCompletedAt;
     case "testing":
       return r.direction === "inward" ? r.receivedAt : r.confirmedAt;
     case "result":
@@ -93,8 +106,16 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
   }
 }
 
-/** A request's due date for one step = its anchor's completion + N working days. */
+/**
+ * A request's due date for one step = its anchor's completion + N working days.
+ *
+ * ONE exception: once the lab has given a tentative result date, THAT is when
+ * `lab_process` is due. Capturing it is the whole point of the step's first pass —
+ * leaving a generic SLA in the Due column would show every sample at the lab as
+ * overdue the next day, and would hide the date the lab actually committed to.
+ */
 export function samplingDueIso(snap: SamplingSnapshot, r: SamplingRequest, step: StepKey): string | null {
+  if (step === "lab_process" && r.labTentativeDate) return r.labTentativeDate.slice(0, 10);
   const sla = snap.stepSla[step];
   if (!sla) return null;
   const from = stepAnchorCompletedIso(r, step) ?? r.submittedAt;
@@ -189,12 +210,49 @@ export function handoverLockReason(r: SamplingRequest): string | null {
   return heldOrTerminal(r, "result handover");
 }
 
-/** Editable while collected but the recipient hasn't confirmed receipt yet. */
+/**
+ * Editable while collected but the recipient hasn't acted yet — on EITHER branch,
+ * so the two statuses the collect step can hand off to are both allowed.
+ */
 export function collectLockReason(r: SamplingRequest): string | null {
   const t = heldOrTerminal(r, "sample collection");
   if (t) return t;
-  if (r.status !== "awaiting_sample_received") return "The sample has already been received — the collection can no longer be changed.";
+  if (r.status !== "awaiting_sample_received" && r.status !== "awaiting_sample_to_lab") {
+    return "The sample has already been received — the collection can no longer be changed.";
+  }
   return null;
+}
+
+/** Editable while the sample is with the lab and the lab hasn't finished. */
+export function sampleToLabLockReason(r: SamplingRequest): string | null {
+  const t = heldOrTerminal(r, "sample receipt");
+  if (t) return t;
+  if (r.status !== "awaiting_lab_process") return "The lab has already finished — this entry can no longer be changed.";
+  return null;
+}
+
+/**
+ * The lab process is editable for as long as it is open — that covers correcting a
+ * tentative date during pass 1 — and stays correctable until the result is confirmed
+ * received. Which of the two an edit actually touches is decided by `labCompletedAt`
+ * in the modal; the server has a separate predicate for each pass.
+ */
+export function labProcessLockReason(r: SamplingRequest): string | null {
+  const t = heldOrTerminal(r, "lab process");
+  if (t) return t;
+  if (r.status !== "awaiting_lab_process" && r.status !== "awaiting_result_received") {
+    return "The result has already been received — the lab process can no longer be changed.";
+  }
+  return null;
+}
+
+/**
+ * Result received is the LAST step of the lab branch, so nothing downstream can
+ * lock it — a closed request's receipt deliberately STAYS editable (mirrors the
+ * sample-received and result-handover rules). Only held / cancelled lock it.
+ */
+export function resultReceivedLockReason(r: SamplingRequest): string | null {
+  return heldOrTerminal(r, "result receipt");
 }
 
 /**
@@ -264,6 +322,26 @@ export const completedSampleReceivedEntries = (data: SamplingSnapshot): StageEnt
   data.requests
     .filter((r) => !!r.sampleReceivedAt)
     .map((r) => entryOf("sample_received", r, r.sampleReceivedBy, r.sampleReceivedAt!, sampleReceivedLockReason(r)));
+
+export const completedSampleToLabEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.labSentAt)
+    .map((r) => entryOf("sample_to_lab", r, r.labSentBy, r.labSentAt!, sampleToLabLockReason(r)));
+
+/**
+ * `labCompletedAt`, NOT `labStartedAt`: a request that has only had its tentative
+ * date recorded is still work owed, so it belongs in the queue's Pending tab. Keying
+ * this on pass 1 would move it to Completed with the testing still to come.
+ */
+export const completedLabProcessEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.labCompletedAt)
+    .map((r) => entryOf("lab_process", r, r.labCompletedBy, r.labCompletedAt!, labProcessLockReason(r)));
+
+export const completedResultReceivedEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
+  data.requests
+    .filter((r) => !!r.resultReceivedAt)
+    .map((r) => entryOf("result_received", r, r.resultReceivedBy, r.resultReceivedAt!, resultReceivedLockReason(r)));
 
 /** Every open work-item, one per (current step, request). */
 export function buildQueueEntries(snap: SamplingSnapshot): QueueEntry[] {
