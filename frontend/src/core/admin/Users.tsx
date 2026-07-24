@@ -41,7 +41,7 @@ export default function Users() {
       profiles.filter((p) => {
         if (role !== "all" && p.role !== role) return false;
         if (dept !== "all" && p.departmentId !== dept) return false;
-        if (q.trim() && !matchesSearch(q, p.name)) return false;
+        if (q.trim() && !matchesSearch(q, p.name, p.email, p.phone)) return false;
         return true;
       }),
     [profiles, role, dept, q]
@@ -79,7 +79,7 @@ export default function Users() {
         <div className="p-3 flex flex-wrap items-center gap-2.5 border-b border-line">
           <div className="relative flex-1 min-w-[180px]">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search users…" className="pl-9 py-2 text-[13px]" />
+            <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, email or phone…" className="pl-9 py-2 text-[13px]" />
           </div>
           <Combobox value={role} onChange={(v) => setRole(v as AppRole | "all")} className="w-full sm:w-auto sm:min-w-[150px]" options={[{ value: "all", label: "All roles" }, ...(Object.keys(ROLE_LABEL) as AppRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} />
           <Combobox value={dept} onChange={setDept} className="w-full sm:w-auto sm:min-w-[160px]" options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
@@ -108,6 +108,7 @@ export default function Users() {
                   <div className="text-[11.5px] text-grey-2 truncate">
                     {u.designation || "—"} · {departmentById(u.departmentId)?.name ?? "No dept"}
                     {u.phone && ` · 📱 ${u.phone}`}
+                    {u.email && ` · ✉️ ${u.email}`}
                     {u.hodIds.length > 0 && ` · reports to ${u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", ")}`}
                   </div>
                 </div>
