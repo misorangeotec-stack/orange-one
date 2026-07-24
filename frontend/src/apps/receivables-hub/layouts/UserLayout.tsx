@@ -87,6 +87,9 @@ const FY_PINNED_ROUTES = [
   // The list and its /:ledgerId detail both hide the FY selector — the report has its own "As on"
   // date control, and the mirror holds one snapshot per company. startsWith covers the sub-route.
   "/outstanding-dashboard/reports/ledger-outstanding",
+  // The Sales Register carries its own From/To date window; a topbar FY selector would be a second
+  // control over the same period.
+  "/outstanding-dashboard/reports/sales-register",
 ];
 
 export default function UserLayout() {

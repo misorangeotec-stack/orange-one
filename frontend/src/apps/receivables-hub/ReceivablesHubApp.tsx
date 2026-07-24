@@ -31,6 +31,7 @@ import LedgerOutstandingList from "@hub/pages/LedgerOutstandingList";
 import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
 import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
 import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
+import SalesRegister from "@hub/pages/SalesRegister";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -114,6 +115,8 @@ function HubRoutes() {
           {/* Live (Tally) only — the pages render a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/ledger-voucher" element={<LedgerVoucherList />} />
           <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
+          {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
+          <Route path="reports/sales-register" element={<SalesRegister />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />
