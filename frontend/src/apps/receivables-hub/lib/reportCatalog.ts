@@ -151,6 +151,17 @@ export const REPORTS: ReportEntry[] = [
     status: "live",
     keywords: ["sales", "revenue", "turnover", "geography", "product", "contributing customers", "ageing"],
   },
+  {
+    id: "day-book-dashboard",
+    title: "Day Book",
+    purpose: "One day at a glance — sales, purchases, income & expense, products and vouchers.",
+    category: "master-reports",
+    path: "reports/day-book",
+    icon: BookOpen,
+    source: "tally",
+    status: "live",
+    keywords: ["day book", "daybook", "today", "vouchers", "collection", "payment", "income", "expense"],
+  },
 
   // ── Receivables ────────────────────────────────────────────────────────────
   {

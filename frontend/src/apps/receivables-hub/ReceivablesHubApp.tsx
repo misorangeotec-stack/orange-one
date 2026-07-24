@@ -16,6 +16,7 @@ import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
 import SalesReport from "@hub/pages/SalesReport";
+import DayBook from "@hub/pages/DayBook";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -76,6 +77,9 @@ function HubRoutes() {
               so it is source-agnostic — no Live/pipeline gate, same as the financial
               statements. It carries its own company + FY pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/sales" element={<SalesReport />} />
+          {/* Day Book — single-company single-day dashboard on the rpt_day_book snapshot;
+              source-agnostic, carries its own company + date pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/day-book" element={<DayBook />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />

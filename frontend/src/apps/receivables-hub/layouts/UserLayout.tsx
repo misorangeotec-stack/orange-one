@@ -69,6 +69,9 @@ const FY_PINNED_ROUTES = [
   // AND its prior year on every panel). A topbar selector would be a second, disagreeing
   // control over the same thing.
   "/outstanding-dashboard/reports/sales",
+  // The Day Book carries its own company + date picker in the page header — the FY is implied
+  // by the chosen date, so a topbar FY selector would be a second, disagreeing control.
+  "/outstanding-dashboard/reports/day-book",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its
