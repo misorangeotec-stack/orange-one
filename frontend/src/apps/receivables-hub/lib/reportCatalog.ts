@@ -209,12 +209,13 @@ export const REPORTS: ReportEntry[] = [
   {
     id: "finance-income",
     title: "Income",
-    purpose: "Income ledgers and their movement, straight from the Tally books.",
+    purpose: "Income by group, sub-group and ledger — year, quarter and month, straight from the Tally books.",
     category: "finance",
+    path: "reports/finance-income",
     icon: TrendingUp,
     source: "tally",
-    status: "soon",
-    keywords: ["income", "revenue"],
+    status: "live",
+    keywords: ["income", "revenue", "sales accounts", "direct income", "indirect income", "P&L", "profit and loss"],
   },
   {
     id: "finance-expense",
