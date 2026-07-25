@@ -16,6 +16,7 @@ import { cn } from "@/shared/lib/cn";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDirectory } from "@/core/platform/store";
 import type { AppRole, Profile } from "@/core/platform/types";
+import { exportUsersToXlsx } from "./exportUsers";
 
 const ROLE_BADGE: Record<AppRole, string> = {
   admin: "bg-orange-soft text-orange",
@@ -65,14 +66,30 @@ export default function Users() {
     setDept("all");
   };
 
+  const handleExport = () => {
+    exportUsersToXlsx({
+      users: filtered,
+      deptName: (id) => departmentById(id)?.name ?? "",
+      hodNames: (u) => u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", "),
+      // Same descriptions as the on-screen chips, so the sheet says what it counted.
+      filters: activeFilters.map((f) => f.label),
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-[13px] text-grey">{profiles.length} users</p>
-        <Button size="sm" onClick={() => navigate("/admin/users/new")} disabled={!canAddUser} title={canAddUser ? undefined : "Adding users needs an admin invite (coming soon)"}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add User
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={handleExport} disabled={filtered.length === 0} title={filtered.length === 0 ? "No users to export" : "Export users and their app access to Excel"}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
+            Export
+          </Button>
+          <Button size="sm" onClick={() => navigate("/admin/users/new")} disabled={!canAddUser} title={canAddUser ? undefined : "Adding users needs an admin invite (coming soon)"}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            Add User
+          </Button>
+        </div>
       </div>
 
       <Card className="overflow-hidden">
