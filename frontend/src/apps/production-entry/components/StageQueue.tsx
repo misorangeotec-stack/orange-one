@@ -41,6 +41,7 @@ export default function StageQueue({
   stepKey,
   rowPrint,
   rowExcel,
+  viewOnlyWhenDone,
 }: {
   stepKey: QueueStep;
   /** When set, a "Print" action is shown on each COMPLETED row (e.g. print the
@@ -50,6 +51,9 @@ export default function StageQueue({
   /** When set, a "Download Excel" action is shown on each COMPLETED row (e.g. the
    *  Batch Card .xlsx on the Log Book queue). */
   rowExcel?: (r: ProductionRequest) => void;
+  /** For pure review-and-confirm steps (e.g. PM Transfer) there is nothing to
+   *  change once done, so the COMPLETED row offers only a clean "View" — no Edit. */
+  viewOnlyWhenDone?: boolean;
 }) {
   const s = useProductionStore();
   const session = useSession();
@@ -230,14 +234,18 @@ export default function StageQueue({
           emptyMessage={cfg.completedBlurb}
           actions={(e) => (
             <div className="flex items-center gap-2">
-              <StageRowAction
-                as="button"
-                lockReason={e.lockReason}
-                canEdit={s.canActOn(stepKey, e.row)}
-                permissionReason="Only an owner of this step can edit the entry."
-                onEdit={() => editing.openEdit(e.row)}
-                onView={() => editing.openView(e.row)}
-              />
+              {viewOnlyWhenDone ? (
+                <Button size="sm" variant="ghost" onClick={() => editing.openView(e.row)}>View</Button>
+              ) : (
+                <StageRowAction
+                  as="button"
+                  lockReason={e.lockReason}
+                  canEdit={s.canActOn(stepKey, e.row)}
+                  permissionReason="Only an owner of this step can edit the entry."
+                  onEdit={() => editing.openEdit(e.row)}
+                  onView={() => editing.openView(e.row)}
+                />
+              )}
               {rowExcel && (
                 <Button size="sm" variant="ghost" onClick={() => rowExcel(e.row)}>Excel</Button>
               )}

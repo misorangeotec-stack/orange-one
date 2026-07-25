@@ -1,4 +1,4 @@
-import type { ProductionRequest, ProductionStatus } from "../types";
+import type { PackingBomLine, ProductionRequest, ProductionStatus } from "../types";
 
 export const STATUS_LABEL: Record<ProductionStatus, string> = {
   awaiting_material_handover: "Awaiting material handover",
@@ -48,6 +48,15 @@ export const requestSubject = (r: ProductionRequest): string => r.jobcardNo || r
 export const numOrDash = (n: number | null | undefined): string => (n != null ? String(n) : "—");
 
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/**
+ * The FINAL packaging quantity to display everywhere packaging is shown (PM
+ * Transfer, Packing Entry, Batch Card): base qty + extra, i.e. the server-computed
+ * line `total`. Falls back to qty+extra for any legacy row written before the
+ * total column existed; null only when neither qty nor extra is set.
+ */
+export const packFinalQty = (l: PackingBomLine): number | null =>
+  l.total != null ? l.total : l.qty != null || l.extra != null ? round3((l.qty ?? 0) + (l.extra ?? 0)) : null;
 
 /**
  * From per-unit subtotals (a Map of unitName → summed qty), produce the display

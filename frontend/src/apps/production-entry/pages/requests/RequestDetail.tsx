@@ -8,6 +8,7 @@ import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDateTime } from "@/shared/lib/time";
 import StepModal from "../../components/StepModal";
+import StepDocLink from "../../components/StepDocLink";
 import ProductionStepper from "../../components/ProductionStepper";
 import ExportButtons from "../../components/ExportButtons";
 import StatusPill from "../../components/StatusPill";
@@ -24,7 +25,29 @@ import type { ProductionRequest } from "../../types";
 
 type StageState = "done" | "current" | "pending";
 
-function Stage({ title, when, by, detail, state }: { title: string; when: string | null; by: string | null; detail: string | null; state: StageState }) {
+/** A stage attachment to surface in the flow: the stored file + an optional
+ *  sub-label (e.g. which QC test round it belongs to). */
+interface StageAttachment {
+  path: string;
+  name: string | null;
+  label?: string;
+}
+
+function Stage({
+  title,
+  when,
+  by,
+  detail,
+  state,
+  attachments,
+}: {
+  title: string;
+  when: string | null;
+  by: string | null;
+  detail: string | null;
+  state: StageState;
+  attachments?: StageAttachment[];
+}) {
   const tone = state === "done" ? "text-ryg-green" : state === "current" ? "text-orange" : "text-grey-2";
   const dot = state === "done" ? "bg-ryg-green" : state === "current" ? "bg-orange" : "bg-line";
   const label = state === "done" ? "Done" : state === "current" ? "In progress" : "Pending";
@@ -38,9 +61,43 @@ function Stage({ title, when, by, detail, state }: { title: string; when: string
         </div>
         {when && <div className="text-[12.5px] text-grey-2">{formatDateTime(when)}{by ? ` · ${by}` : ""}</div>}
         {detail && <div className="text-[12.5px] text-grey mt-0.5">{detail}</div>}
+        {attachments && attachments.length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-1">
+            {attachments.map((a, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                {a.label && <span className="text-[11.5px] text-grey-2 whitespace-nowrap">{a.label}:</span>}
+                <StepDocLink path={a.path} name={a.name} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
+}
+
+/** Every document uploaded at a given stage, for the progress flow. Log Book,
+ *  Quality Check (one per test round), M/C Testing and FG Transfer each capture a
+ *  file; other steps capture none. */
+function stageAttachments(step: QueueStep, r: ProductionRequest): StageAttachment[] {
+  switch (step) {
+    case "transfer_slip":
+      return r.tsAttachmentPath ? [{ path: r.tsAttachmentPath, name: r.tsAttachmentName }] : [];
+    case "quality_check": {
+      const perRound = r.qcRounds
+        .filter((rd) => rd.attachmentPath)
+        .map((rd) => ({ path: rd.attachmentPath as string, name: rd.attachmentName, label: `Test ${rd.round}` }));
+      // Legacy cards recorded a single request-level QC file with no rounds.
+      if (perRound.length === 0 && r.qcAttachmentPath) return [{ path: r.qcAttachmentPath, name: r.qcAttachmentName }];
+      return perRound;
+    }
+    case "mc_testing":
+      return r.mcAttachmentPath ? [{ path: r.mcAttachmentPath, name: r.mcAttachmentName }] : [];
+    case "fg_transfer":
+      return r.fgAttachmentPath ? [{ path: r.fgAttachmentPath, name: r.fgAttachmentName }] : [];
+    default:
+      return [];
+  }
 }
 
 /** Short per-step detail line for the progress panel — the captured value(s). */
@@ -380,6 +437,7 @@ export default function RequestDetail() {
               by={name(stepDoneBy(step, r))}
               detail={[capturedDate ? `On ${dmy(capturedDate)}` : null, stepDetail(step, r)].filter(Boolean).join(" — ") || null}
               state={stateFor(step)}
+              attachments={stageAttachments(step, r)}
             />
           );
         })}

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { FileText } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
@@ -8,9 +7,10 @@ import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import LineGrid, { newUid, type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import ExportButtons from "./ExportButtons";
+import StepDocLink from "./StepDocLink";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
-import { dmy, numOrDash } from "../lib/format";
+import { dmy, numOrDash, packFinalQty } from "../lib/format";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import { isAisLoopBlocked, type QueueStep } from "../lib/queues";
 import type { ProductionRequest } from "../types";
@@ -30,33 +30,6 @@ export interface StepModalProps {
   request: ProductionRequest | null;
   editing?: boolean;
   readOnly?: boolean;
-}
-
-/** Opens the stored quality document via a fresh short-lived signed URL. */
-function QcDocLink({ path, name }: { path: string; name: string | null }) {
-  const s = useProductionStore();
-  const [busy, setBusy] = useState(false);
-  const open = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      window.open(await s.qcDocumentUrl(path), "_blank", "noopener,noreferrer");
-    } catch {
-      /* surfaced elsewhere */
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button
-      onClick={open}
-      disabled={busy}
-      className="inline-flex max-w-[240px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60"
-    >
-      <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : name || "View attachment"}</span>
-    </button>
-  );
 }
 
 /** A material-handover BOM row being edited: the actual handover qty + issue lot
@@ -546,11 +519,11 @@ export default function StepModal({
 
   const existing =
     cfg.hasAttachment && request?.qcAttachmentPath ? (
-      <QcDocLink path={request.qcAttachmentPath} name={request.qcAttachmentName} />
+      <StepDocLink path={request.qcAttachmentPath} name={request.qcAttachmentName} />
     ) : isLogBook && request?.tsAttachmentPath ? (
-      <QcDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
+      <StepDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
     ) : isMc && request?.mcAttachmentPath ? (
-      <QcDocLink path={request.mcAttachmentPath} name={request.mcAttachmentName} />
+      <StepDocLink path={request.mcAttachmentPath} name={request.mcAttachmentName} />
     ) : null;
 
   const titlePrefix = editing && !readOnly ? `Edit ${cfg.title.toLowerCase()}` : readOnly ? cfg.title : cfg.actionLabel;
@@ -1007,7 +980,7 @@ export default function StepModal({
               />
               {request.tsAttachmentPath && (
                 <div className="mt-1 text-[12px] text-grey-2">
-                  Current file: <QcDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
+                  Current file: <StepDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
                 </div>
               )}
             </FieldLabel>
@@ -1077,7 +1050,7 @@ export default function StepModal({
                         </span>
                         <span className="text-grey-2">{dmy(r.testDate)}</span>
                         <span className="flex-1 text-grey truncate">{r.remarks || ""}</span>
-                        {r.attachmentPath && <QcDocLink path={r.attachmentPath} name={r.attachmentName} />}
+                        {r.attachmentPath && <StepDocLink path={r.attachmentPath} name={r.attachmentName} />}
                       </div>
                     ))}
                   </div>
@@ -1193,7 +1166,7 @@ export default function StepModal({
                   />
                   {request.mcAttachmentPath && (
                     <div className="mt-1 text-[12px] text-grey-2">
-                      Current file: <QcDocLink path={request.mcAttachmentPath} name={request.mcAttachmentName} />
+                      Current file: <StepDocLink path={request.mcAttachmentPath} name={request.mcAttachmentName} />
                     </div>
                   )}
                 </FieldLabel>
@@ -1378,18 +1351,22 @@ export default function StepModal({
                     <thead>
                       <tr className="text-left text-grey-2 border-b border-line bg-page/60">
                         <th className="font-medium px-3 py-2 min-w-[220px]">Packaging Item</th>
-                        <th className="font-medium px-2 py-2 text-right w-28 whitespace-nowrap">Qty</th>
+                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Base Qty</th>
+                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Extra</th>
+                        <th className="font-medium px-2 py-2 text-right w-24 whitespace-nowrap">Total</th>
                         <th className="font-medium px-2 py-2 w-20">Unit</th>
                       </tr>
                     </thead>
                     <tbody>
                       {lines.length === 0 ? (
-                        <tr><td colSpan={3} className="px-3 py-3 text-grey-2">No packaging items were recorded in the log book.</td></tr>
+                        <tr><td colSpan={5} className="px-3 py-3 text-grey-2">No packaging items were recorded in the log book.</td></tr>
                       ) : (
                         lines.map((l, i) => (
                           <tr key={i} className="border-b border-line/70 last:border-0">
                             <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
-                            <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.qty)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.qty)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.extra)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums font-semibold text-navy">{numOrDash(packFinalQty(l))}</td>
                             <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
                           </tr>
                         ))
@@ -1400,6 +1377,8 @@ export default function StepModal({
                         <tr className="border-t border-line bg-page/50 text-navy">
                           <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
                           <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.qty))}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.extra))}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map(packFinalQty))}</td>
                           <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(lines.map((l) => l.unitId))}</td>
                         </tr>
                       </tfoot>
@@ -1507,7 +1486,7 @@ export default function StepModal({
                         lines.map((l, i) => (
                           <tr key={i} className="border-b border-line/70 last:border-0">
                             <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
-                            <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.qty)}</td>
+                            <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(packFinalQty(l))}</td>
                             <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
                           </tr>
                         ))
@@ -1517,7 +1496,7 @@ export default function StepModal({
                       <tfoot>
                         <tr className="border-t border-line bg-page/50 text-navy">
                           <td className="px-3 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
-                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map((l) => l.qty))}</td>
+                          <td className="px-2 py-2 text-right tabular-nums font-semibold">{gsum(lines.map(packFinalQty))}</td>
                           <td className="px-2 py-2 text-[12px] text-grey-2">{unitsList(lines.map((l) => l.unitId))}</td>
                         </tr>
                       </tfoot>
