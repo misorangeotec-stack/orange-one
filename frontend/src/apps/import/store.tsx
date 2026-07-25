@@ -591,24 +591,24 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
     };
 
-    const canApproveLine = (line: RequestItem): boolean =>
-      isAdmin || (line.lineValue !== null && approverForAmount(line.lineValue) === user.id);
+    const isActiveApprover = approvalBands.some((b) => b.active && b.approverUserId === user.id);
 
-    // Request-scoped approval bands on the requisition TOTAL, computed the same
-    // way the RPC does so the client and server never pick different bands. The
-    // basis is the lines still under decision (approval/on_hold) when deciding,
-    // or the approved-but-not-yet-PO'd lines when REVISING a completed decision —
-    // mirroring decide_approval_request vs update_approval_request. Also honours a
-    // per-line manual reassign: an approver assigned any of those lines may act.
+    const canApproveLine = (line: RequestItem): boolean =>
+      isAdmin || isActiveApprover || line.assignedApproverId === user.id;
+
+    // Request-scoped approval, no value banding: ANY active approver may decide a
+    // requisition (mirrors the RPC's fms_import_is_approver check). The basis is
+    // the lines still under decision (approval/on_hold) when deciding, or the
+    // approved-but-not-yet-PO'd lines when REVISING a completed decision. Also
+    // honours a per-line manual reassign: an approver assigned any of those lines
+    // may act.
     const linesOfRequest = (requestId: string) => itemsByGroupId.get(requestId) ?? [];
     const canApproveRequest = (r: PurchaseRequest): boolean => {
       const lines = linesOfRequest(r.id);
       const pending = lines.filter(lineInApproval);
       const basis = pending.length > 0 ? pending : lines.filter(lineInPoDesk);
       if (basis.length === 0) return false;
-      if (isAdmin) return true;
-      const total = basis.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
-      if (approverForAmount(total) === user.id) return true;
+      if (isAdmin || isActiveApprover) return true;
       return basis.some((l) => l.assignedApproverId === user.id);
     };
 
@@ -745,7 +745,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       stepOwnerFor: owners.stepOwnerFor,
       approvalBands,
       approverForAmount,
-      isApprover: isAdmin || approvalBands.some((b) => b.approverUserId === user.id),
+      isApprover: isAdmin || isActiveApprover,
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
       canConfigure: isAdmin,
