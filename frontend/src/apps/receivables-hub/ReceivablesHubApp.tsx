@@ -18,6 +18,7 @@ import Reports from "@hub/pages/Reports";
 import SalesReport from "@hub/pages/SalesReport";
 import DayBook from "@hub/pages/DayBook";
 import PurchaseReport from "@hub/pages/PurchaseReport";
+import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -84,6 +85,9 @@ function HubRoutes() {
           {/* Day Book — single-company single-day dashboard on the rpt_day_book snapshot;
               source-agnostic, carries its own company + date pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/day-book" element={<DayBook />} />
+          {/* Finance → Receivables — Talligence receivables clone on the rpt_receivables_*
+              snapshot; own company + FY pickers. */}
+          <Route path="reports/finance-receivables" element={<ReceivablesMasterReport />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />

@@ -8,6 +8,7 @@ import {
   FolderTree,
   Gauge,
   HandCoins,
+  Landmark,
   Layers,
   NotebookText,
   PackageX,
@@ -55,6 +56,7 @@ export type ReportStatus = "live" | "soon";
 
 export type ReportCategoryId =
   | "master-reports"
+  | "finance"
   | "receivables"
   | "collections"
   | "customers"
@@ -100,6 +102,12 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Master Reports",
     blurb: "The headline management reports, read straight from the Tally books.",
     icon: BarChart3,
+  },
+  {
+    id: "finance",
+    title: "Finance",
+    blurb: "Receivables, payables, income and expense — straight from the Tally books.",
+    icon: Landmark,
   },
   {
     id: "receivables",
@@ -173,6 +181,59 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["day book", "daybook", "today", "vouchers", "collection", "payment", "income", "expense"],
+  },
+
+  // ── Finance ────────────────────────────────────────────────────────────────
+  {
+    id: "finance-receivables",
+    title: "Receivables",
+    purpose: "Outstanding, overdue, on-account and advances per customer — the Talligence receivables view.",
+    category: "finance",
+    path: "reports/finance-receivables",
+    icon: ReceiptText,
+    source: "tally",
+    status: "live",
+    keywords: ["receivables", "outstanding", "overdue", "on account", "advance", "bills receivable", "ageing", "debtors"],
+  },
+  {
+    id: "finance-payables",
+    title: "Payables",
+    purpose: "What we owe each supplier — outstanding, overdue and advances, by bill.",
+    category: "finance",
+    icon: HandCoins,
+    source: "tally",
+    status: "soon",
+    keywords: ["payables", "creditors", "supplier", "overdue"],
+  },
+  {
+    id: "finance-income",
+    title: "Income",
+    purpose: "Income ledgers and their movement, straight from the Tally books.",
+    category: "finance",
+    icon: TrendingUp,
+    source: "tally",
+    status: "soon",
+    keywords: ["income", "revenue"],
+  },
+  {
+    id: "finance-expense",
+    title: "Expense",
+    purpose: "Expense ledgers and their movement, straight from the Tally books.",
+    category: "finance",
+    icon: Wallet,
+    source: "tally",
+    status: "soon",
+    keywords: ["expense", "cost", "overheads"],
+  },
+  {
+    id: "finance-sales-gain",
+    title: "Sales Gain Report",
+    purpose: "Margin and gain analysis on the sales book.",
+    category: "finance",
+    icon: PercentIcon,
+    source: "tally",
+    status: "soon",
+    keywords: ["sales gain", "margin", "profit"],
   },
 
   // ── Receivables ────────────────────────────────────────────────────────────
