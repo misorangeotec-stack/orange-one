@@ -38,6 +38,7 @@ import type {
   ImportEntityType,
 } from "./types";
 import { STEPS, type StepKey } from "./lib/steps";
+import { makeImportEmail } from "./lib/emailMeta";
 import { ownerResolver } from "./lib/owners";
 import { masterTypeLabel } from "./lib/masterFields";
 import {
@@ -362,9 +363,9 @@ interface ImportStoreValue {
   canCancelPo: (po: PurchaseOrder) => boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; fxRate: number; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
   /** Correct an already-submitted request. Pre-approval only — the RPC re-checks. */
-  updateRequest: (input: { requestId: string; note: string | null; fxRate: number; items: EditRequestLine[] }) => Promise<void>;
+  updateRequest: (input: { requestId: string; note: string | null; items: EditRequestLine[] }) => Promise<void>;
   /** Cancel a whole request (kept, marked cancelled). Pre-approval only. */
   cancelRequest: (requestId: string, reason: string) => Promise<void>;
   saveSourcing: (input: {
@@ -686,6 +687,11 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // Per-step email content (rendered by the send-email edge function when the
+    // 'import' email module is enabled). Built from the same snapshot the
+    // selectors use, so it reads exactly like the screens.
+    const email = makeImportEmail({ vendors, companies, items, requests, requestItems, pos, poItems });
+
     return {
       companies,
       categories,
@@ -855,21 +861,16 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // ---- workflow mutations ----
       submitRequest: async (input) => {
         const id = await submitRequestWrite(input);
-        // No sourcing in Import: lines are born at Approval, so notify the
-        // approver(s) matched to each line's INR-equivalent value directly.
-        const approvers = new Set<string>();
-        for (const l of input.items) {
-          // Mirrors the RPC's value math exactly — no GST on an import line.
-          const inr = Math.round(l.quantity * l.rate * input.fxRate * 100) / 100;
-          const who = approverForAmount(inr);
-          if (who) approvers.add(who);
-        }
+        // No sourcing in Import and no value banding: lines are born at Approval
+        // and EVERY request routes to all active configured approvers.
+        const approvers = new Set(approvalBands.filter((b) => b.active).map((b) => b.approverUserId));
         await safeAnnounce({
           entityType: "request",
           entityId: id,
           type: "submitted",
           text: "New import purchase request raised — awaiting approval",
           recipients: [...approvers],
+          meta: email.submitted(input),
         });
         await invalidate();
         return id;
@@ -911,6 +912,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
                 ? `An approved line (vendor overridden) is ready for PO generation${input.reason ? ` — ${input.reason}` : ""}`
                 : "An approved line is ready for PO generation",
             recipients: ownerIdsOf("po"),
+            meta: email.approved({ kind: "line", requestItemId: input.requestItemId }, input.decision === "override" ? input.reason : null),
           });
         } else if (input.decision === "reject") {
           await safeAnnounce({
@@ -919,6 +921,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "rejected",
             text: `A requested line was rejected${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfLine(input.requestItemId),
+            meta: email.declined({ kind: "line", requestItemId: input.requestItemId }, "rejected", input.reason),
           });
         } else if (input.decision === "hold") {
           await safeAnnounce({
@@ -927,6 +930,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "on_hold",
             text: `A requested line was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterOfLine(input.requestItemId),
+            meta: email.declined({ kind: "line", requestItemId: input.requestItemId }, "on_hold", input.reason),
           });
         }
         await invalidate();
@@ -942,6 +946,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "approved",
             text: "An approved requisition is ready for PO generation",
             recipients: ownerIdsOf("po"),
+            meta: email.approved({ kind: "request", requestId: input.requestId }),
           });
         } else if (input.decision === "reject") {
           await safeAnnounce({
@@ -950,6 +955,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "rejected",
             text: `A requisition was rejected${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterRecipients,
+            meta: email.declined({ kind: "request", requestId: input.requestId }, "rejected", input.reason),
           });
         } else if (input.decision === "hold") {
           await safeAnnounce({
@@ -958,6 +964,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "on_hold",
             text: `A requisition was put on hold${input.reason ? ` — ${input.reason}` : ""}`,
             recipients: requesterRecipients,
+            meta: email.declined({ kind: "request", requestId: input.requestId }, "on_hold", input.reason),
           });
         }
         await invalidate();
@@ -970,6 +977,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "po_generated",
           text: "A new PO is ready to share with the vendor",
           recipients: ownerIdsOf("share_po"),
+          meta: email.poGenerated({ poId: id, vendorId: input.vendorId, companyId: input.companyId, requestItemIds: input.requestItemIds, poNo: input.poNo ?? null }),
         });
         await invalidate();
         return id;
@@ -982,6 +990,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "cancelled",
           text: `A requested line was cancelled${reason ? ` — ${reason}` : ""}`,
           recipients: requesterOfLine(requestItemId),
+          meta: email.lineCancelled(requestItemId, reason),
         });
         await invalidate();
       },
@@ -996,6 +1005,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "cancel_requested",
           text: `Vendor cancellation requested for this PO — ${reason}`,
           recipients: po ? poApproverIds(po) : [],
+          meta: email.cancelRequested(poId, reason),
         });
         await invalidate();
         return id;
@@ -1012,6 +1022,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             ...(req?.requestedBy ? [req.requestedBy] : []),
             ...ownerIdsOf("share_po"),
           ],
+          meta: email.poCancelled(poId, reason),
         });
         await invalidate();
       },
@@ -1024,6 +1035,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "cancel_declined",
           text: `Cancellation request declined${note ? ` — ${note}` : ""}`,
           recipients: req?.requestedBy ? [req.requestedBy] : [],
+          meta: email.cancelDeclined(req?.poId ?? "", note),
         });
         await invalidate();
       },
@@ -1037,6 +1049,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "po_shared",
           text: "PO shared with the vendor — collect the PI(s)",
           recipients: ownerIdsOf("collect_pi"),
+          meta: email.poShared(poId, input),
         });
         await invalidate();
       },
@@ -1048,6 +1061,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "pi_added",
           text: "A PI was added — advance payment may be due",
           recipients: ownerIdsOf("advance_payment"),
+          meta: email.piAdded(input),
         });
         await invalidate();
         return id;
@@ -1072,6 +1086,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
               ? "Advance paid — follow up on dispatch"
               : "An installment payment was recorded",
           recipients: input.kind === "advance" ? ownerIdsOf("follow_up") : [],
+          meta: input.kind === "advance" ? email.advancePaid(input) : undefined,
         });
         await invalidate();
         return id;
@@ -1085,6 +1100,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             type: "dispatched",
             text: "Goods dispatched — expect inward (GRN)",
             recipients: ownerIdsOf("inward"),
+            meta: email.dispatched(input),
           });
         }
         await invalidate();
@@ -1097,6 +1113,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "grn_recorded",
           text: "Goods received (GRN) — book the entry in Tally",
           recipients: ownerIdsOf("tally"),
+          meta: email.grnRecorded(input),
         });
         await invalidate();
         return id;
@@ -1150,6 +1167,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "nudge",
           text: `Reminder: ${label} is waiting on you`,
           recipients,
+          meta: email.reminder("nudge", label),
         });
         await invalidate();
       },
@@ -1160,6 +1178,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "escalate",
           text: `Escalated: ${label} is stuck and needs attention`,
           recipients: processCoordinatorIds,
+          meta: email.reminder("escalate", label),
         });
         await invalidate();
       },
@@ -1251,7 +1270,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "master_requested",
           text: `requested a new ${masterTypeLabel(masterType)} — “${name}”. Review it.`,
           recipients: masterReviewersFor(masterType),
-          meta: { masterType },
+          meta: { masterType, ...email.masterRequested(masterTypeLabel(masterType), name) },
         });
         await invalidate();
         return id;
@@ -1271,7 +1290,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
             ? `approved your ${label} request — “${name}” is now selectable.`
             : `rejected your ${label} request — “${name}”${note ? `: ${note}` : "."}`,
           recipients: req?.requestedBy ? [req.requestedBy] : [],
-          meta: { masterType: req?.masterType, resolvedMasterId: newId },
+          meta: { masterType: req?.masterType, resolvedMasterId: newId, ...email.masterResolved(label, name, approve, note) },
         });
         await invalidate();
         return newId;

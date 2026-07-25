@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
-import { inr, fxMoney } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 interface VendorGroup {
@@ -132,8 +132,6 @@ export default function PoModal({
       <div className="space-y-4">
         {groups.map((g) => {
           const picked = g.lines.filter((l) => selected.has(l.id));
-          const total = Math.round(picked.reduce((sum, l) => sum + (l.lineValue ?? 0), 0) * 100) / 100;
-          const totalFx = Math.round(picked.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0) * 100) / 100;
           const actionable = !readOnly && !!g.vendorId;
           const busy = busyVendorId === g.vendorId;
 
@@ -171,17 +169,14 @@ export default function PoModal({
               </div>
 
               <div className="overflow-x-auto rounded-xl border border-line">
-                <table className="w-full min-w-[640px] text-[13px]">
+                <table className="w-full min-w-[420px] text-[13px]">
                   <thead>
                     <tr className="bg-page text-left text-[11.5px] uppercase tracking-wide text-grey-2">
                       {actionable && <th className="w-9 px-3 py-2" />}
                       <th className="px-3 py-2 font-semibold">Item</th>
-                      <th className="w-28 px-2 py-2 font-semibold">Qty</th>
-                      <th className="w-28 px-2 py-2 font-semibold">Rate</th>
                       {/* No Lead column: an import line carries no lead time — the
                           promised dispatch date is captured later, at Share PO. */}
-                      <th className="w-32 px-3 py-2 text-right font-semibold">Value ({request.currency ?? "FCY"})</th>
-                      <th className="w-32 px-3 py-2 text-right font-semibold">Value (INR)</th>
+                      <th className="w-28 px-2 py-2 text-right font-semibold">Qty</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -203,30 +198,22 @@ export default function PoModal({
                           <td className="whitespace-nowrap px-3 py-1.5 font-medium text-navy">
                             {s.itemById(l.itemId)?.name ?? "—"}
                           </td>
-                          <td className="whitespace-nowrap px-2 py-1.5">
+                          <td className="whitespace-nowrap px-2 py-1.5 text-right">
                             {l.finalQty ?? l.quantity} {l.unit}
-                          </td>
-                          <td className="px-2 py-1.5">{fxMoney(l.finalRate, l.currency)}</td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right font-medium text-navy">
-                            {fxMoney(l.lineValueFx, l.currency)}
-                          </td>
-                          <td className="whitespace-nowrap px-3 py-1.5 text-right font-semibold text-navy">
-                            {inr(l.lineValue)}
                           </td>
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
-                    {/* Totals sit in the SAME columns as the line values, so Total
-                        (FCY) / Total (INR) align exactly under their columns. */}
                     <tr className="border-t-2 border-line bg-orange-soft/50">
                       {actionable && <td className="px-3 py-2" />}
-                      <td colSpan={3} className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                      <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
                         Total
                       </td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-navy">{fxMoney(totalFx, request.currency)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-navy">{inr(total)}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-bold text-navy">
+                        <QtyTotal entries={picked.map((l) => ({ qty: l.finalQty ?? l.quantity, unit: l.unit }))} />
+                      </td>
                     </tr>
                   </tfoot>
                 </table>

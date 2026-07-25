@@ -4,25 +4,24 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
-import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useImportStore } from "../../store";
 import type { ApprovalBand } from "../../types";
 
-const inr = (n: number) => `₹${n.toLocaleString("en-IN")}`;
-
 /**
- * Approval Matrix config (admin). Each active band maps a value range to an
- * approver; a request line's value routes to the band that contains it. The top
- * band can be left open-ended (no max).
+ * Approvals config (admin). Import is a pure quantity requisition — approvals no
+ * longer route by value. This is simply the list of people who may approve a
+ * requisition: EVERY request routes to every active approver here, regardless of
+ * quantity. Configure one person, or a small list.
+ *
+ * It is still backed by the fms_import_approval_matrix table (each row = one
+ * approver); the amount columns are written 0 / no-limit and never used.
  */
 export default function ApprovalMatrixSection() {
   const s = useImportStore();
   const [editing, setEditing] = useState<ApprovalBand | null>(null);
   const [creating, setCreating] = useState(false);
-  const [tierLabel, setTierLabel] = useState("");
-  const [minAmount, setMinAmount] = useState("0");
-  const [maxAmount, setMaxAmount] = useState("");
   const [approver, setApprover] = useState("");
   const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -36,15 +35,12 @@ export default function ApprovalMatrixSection() {
     [s.profiles]
   );
 
-  const bands = useMemo(
-    () => [...s.approvalBands].sort((a, b) => a.sortOrder - b.sortOrder || a.minAmount - b.minAmount),
+  const approvers = useMemo(
+    () => [...s.approvalBands].sort((a, b) => a.sortOrder - b.sortOrder),
     [s.approvalBands]
   );
 
   const openCreate = () => {
-    setTierLabel("");
-    setMinAmount("0");
-    setMaxAmount("");
     setApprover("");
     setActive(true);
     setErr(null);
@@ -52,9 +48,6 @@ export default function ApprovalMatrixSection() {
     setEditing(null);
   };
   const openEdit = (b: ApprovalBand) => {
-    setTierLabel(b.tierLabel);
-    setMinAmount(String(b.minAmount));
-    setMaxAmount(b.maxAmount === null ? "" : String(b.maxAmount));
     setApprover(b.approverUserId);
     setActive(b.active);
     setErr(null);
@@ -69,21 +62,22 @@ export default function ApprovalMatrixSection() {
 
   const save = async () => {
     setErr(null);
-    if (!tierLabel.trim()) return setErr("Tier label is required.");
-    if (!approver) return setErr("An approver is required.");
-    const min = Number(minAmount);
-    const max = maxAmount.trim() === "" ? null : Number(maxAmount);
-    if (Number.isNaN(min) || min < 0) return setErr("Min amount must be 0 or more.");
-    if (max !== null && (Number.isNaN(max) || max < min)) return setErr("Max amount must be blank or ≥ min.");
+    if (!approver) return setErr("Select an approver.");
+    // A duplicate approver would just be a second identical row — block it.
+    if (approvers.some((b) => b.approverUserId === approver && b.id !== editing?.id)) {
+      return setErr("That person is already an approver.");
+    }
 
     setBusy(true);
     try {
       const input = {
-        tierLabel: tierLabel.trim(),
-        minAmount: min,
-        maxAmount: max,
+        // The label is cosmetic now; store the person's name so legacy reads stay
+        // meaningful. Amount range is unused — a single open band.
+        tierLabel: s.profileById(approver)?.name ?? "Approver",
+        minAmount: 0,
+        maxAmount: null,
         approverUserId: approver,
-        sortOrder: editing?.sortOrder ?? bands.length,
+        sortOrder: editing?.sortOrder ?? approvers.length,
         active,
       };
       if (editing) await s.editApprovalBand(editing.id, input);
@@ -108,20 +102,20 @@ export default function ApprovalMatrixSection() {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[12.5px] text-grey-2">
-          A line's value (Final Qty × Final Rate) routes to the band that contains it.
+          Every requisition goes to these approvers, regardless of quantity. Add one person, or a small list.
         </p>
         <Button size="sm" onClick={openCreate}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          Add band
+          Add approver
         </Button>
       </div>
 
       <Card className="overflow-hidden">
-        {bands.length === 0 ? (
+        {approvers.length === 0 ? (
           <EmptyState
-            title="No approval bands yet"
-            message="Add at least one band so approvals can route by value."
-            actionLabel="Add band"
+            title="No approvers yet"
+            message="Add at least one approver so requisitions can be approved."
+            actionLabel="Add approver"
             onAction={openCreate}
           />
         ) : (
@@ -130,15 +124,12 @@ export default function ApprovalMatrixSection() {
               <thead>
                 <tr className="text-left text-grey-2 border-b border-line">
                   <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
-                  <th className="font-medium px-4 py-3">Tier</th>
-                  <th className="font-medium px-4 py-3">Min</th>
-                  <th className="font-medium px-4 py-3">Max</th>
                   <th className="font-medium px-4 py-3">Approver</th>
                   <th className="font-medium px-4 py-3">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {bands.map((b) => (
+                {approvers.map((b) => (
                   <tr key={b.id} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
                       <button onClick={() => openEdit(b)} className="text-[12.5px] font-semibold text-orange hover:underline mr-3">
@@ -148,10 +139,7 @@ export default function ApprovalMatrixSection() {
                         Delete
                       </button>
                     </td>
-                    <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{b.tierLabel}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(b.minAmount)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{b.maxAmount === null ? "No limit" : inr(b.maxAmount)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{s.profileById(b.approverUserId)?.name ?? "—"}</td>
+                    <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{s.profileById(b.approverUserId)?.name ?? "—"}</td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5 ${
@@ -172,30 +160,19 @@ export default function ApprovalMatrixSection() {
       <Modal
         open={creating || editing !== null}
         onClose={close}
-        title={editing ? "Edit band" : "Add band"}
+        title={editing ? "Edit approver" : "Add approver"}
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={close} disabled={busy}>
               Cancel
             </Button>
             <Button size="sm" onClick={save} disabled={busy}>
-              {busy ? "Saving…" : editing ? "Save changes" : "Add band"}
+              {busy ? "Saving…" : editing ? "Save changes" : "Add approver"}
             </Button>
           </>
         }
       >
         <div className="space-y-3.5">
-          <FieldLabel label="Tier label" required>
-            <TextInput value={tierLabel} onChange={(e) => setTierLabel(e.target.value)} placeholder="e.g. L1 — Purchase Head" />
-          </FieldLabel>
-          <div className="grid grid-cols-2 gap-3">
-            <FieldLabel label="Min amount (₹)" required>
-              <TextInput type="number" min={0} value={minAmount} onChange={(e) => setMinAmount(e.target.value)} />
-            </FieldLabel>
-            <FieldLabel label="Max amount (₹)" hint="blank = no limit">
-              <TextInput type="number" min={0} value={maxAmount} onChange={(e) => setMaxAmount(e.target.value)} placeholder="No limit" />
-            </FieldLabel>
-          </div>
           <FieldLabel label="Approver" required>
             <Combobox value={approver} onChange={setApprover} options={peopleOptions} placeholder="Select approver" autoAdvance />
           </FieldLabel>

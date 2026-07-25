@@ -61,8 +61,6 @@ export function buildImportNav(opts: {
   isApprover: boolean;
   canGeneratePo: boolean;
   canSharePo: boolean;
-  canCollectPi: boolean;
-  canAdvancePayment: boolean;
   canFollowup: boolean;
   canInward: boolean;
   canTally: boolean;
@@ -91,8 +89,6 @@ export function buildImportNav(opts: {
     { show: opts.isApprover, label: "Approvals", to: `${B}/queues/approvals`, icon: ic.approve },
     { show: opts.canGeneratePo, label: "PO Workbench", to: `${B}/po/workbench`, icon: ic.po },
     { show: opts.canSharePo, label: "Share PO", to: `${B}/queues/share`, icon: ic.orders },
-    { show: opts.canCollectPi, label: "Collect PI", to: `${B}/queues/collect-pi`, icon: ic.orders },
-    { show: opts.canAdvancePayment, label: "Payment", to: `${B}/queues/advance`, icon: ic.orders },
     { show: opts.canFollowup, label: "Follow-up", to: `${B}/queues/follow-up`, icon: ic.orders },
     { show: opts.canInward, label: "Inward", to: `${B}/queues/inward`, icon: ic.orders },
     { show: opts.canTally, label: "Tally", to: `${B}/queues/tally`, icon: ic.orders },

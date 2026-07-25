@@ -6,8 +6,9 @@ import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { useImportStore } from "../../store";
-import { inr, fxMoney } from "../../lib/format";
+import { sumQty } from "../../lib/format";
 import ApprovalModal from "../../components/ApprovalModal";
+import QtyTotal from "../../components/QtyTotal";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
@@ -51,52 +52,18 @@ export default function ApprovalsQueue() {
   };
   const tierOf = (r: PurchaseRequest) => s.itemsForRequest(r.id).find((l) => l.approvalTier)?.approvalTier ?? "—";
 
-  /**
-   * The requisition's total — qty × rate, no GST on an import line. Pending rows
-   * band on the lines under decision; completed rows on all of them, so a row can
-   * never disagree with the money that decided it.
-   */
-  const totalOf = (lines: RequestItem[]) =>
-    Math.round(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0) * 100) / 100;
-  const totalFxOf = (lines: RequestItem[]) =>
-    Math.round(lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0) * 100) / 100;
   const underDecision = (r: PurchaseRequest) =>
     s.itemsForRequest(r.id).filter((l) => l.status === "approval" || l.status === "on_hold");
-  const pendingTotal = (r: PurchaseRequest) => totalOf(underDecision(r));
-  const doneTotal = (r: PurchaseRequest) => totalOf(s.itemsForRequest(r.id));
-  const pendingTotalFx = (r: PurchaseRequest) => totalFxOf(underDecision(r));
-  const doneTotalFx = (r: PurchaseRequest) => totalFxOf(s.itemsForRequest(r.id));
-  // Single currency per requisition (the vendor's).
-  const currencyOf = (r: PurchaseRequest) => s.itemsForRequest(r.id).find((l) => l.currency)?.currency ?? null;
-  // INR total on top (the approval basis), the vendor-currency total below it.
-  const totalCell = (inrValue: number, fxValue: number, code: string | null) => (
-    <div className="whitespace-nowrap">
-      <div className="font-semibold text-navy">{inr(inrValue)}</div>
-      <div className="text-[11.5px] text-grey-2">{fxMoney(fxValue, code)}</div>
-    </div>
-  );
 
   /**
    * How much is being bought. Quantity SUMS across items, carrying a unit only
    * when every item shares one; folding KGS and PCS into one number would be a
-   * lie, so a mixed requisition says so and lists its units on hover. Scoped to
-   * the same lines the money columns sum.
+   * lie, so a mixed requisition says so and lists its units on hover (shared
+   * `sumQty`/`QtyTotal`). Scoped to the same lines the money columns sum.
    */
-  const qtyOf = (lines: RequestItem[]) => {
-    const total = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? l.quantity), 0) * 1000) / 1000;
-    const units = [...new Set(lines.map((l) => l.unit).filter(Boolean))];
-    if (units.length === 1) return { total, label: units[0], title: undefined as string | undefined };
-    if (units.length === 0) return { total, label: "", title: undefined };
-    return { total, label: "mixed", title: `Different units on this requisition: ${units.join(", ")}` };
-  };
-  const pendingQty = (r: PurchaseRequest) => qtyOf(underDecision(r));
-  const doneQty = (r: PurchaseRequest) => qtyOf(s.itemsForRequest(r.id));
-  const qtyCell = (q: ReturnType<typeof qtyOf>) => (
-    <span title={q.title}>
-      {q.total}
-      {q.label && <span className="ml-1 text-[11.5px] text-grey-2">{q.label}</span>}
-    </span>
-  );
+  const qtyEntries = (lines: RequestItem[]) => lines.map((l) => ({ qty: l.finalQty ?? l.quantity, unit: l.unit }));
+  const pendingQty = (r: PurchaseRequest) => sumQty(qtyEntries(underDecision(r)));
+  const doneQty = (r: PurchaseRequest) => sumQty(qtyEntries(s.itemsForRequest(r.id)));
 
   const requestLink = (r: PurchaseRequest) => (
     <Link to={`/import/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
@@ -115,9 +82,8 @@ export default function ApprovalsQueue() {
   const columns: QueueColumn<PurchaseRequest>[] = [
     { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => itemsCell(r), sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "text", get: (r) => itemsText(r) } },
-    { key: "qty", header: "Total Qty", cell: (r) => qtyCell(pendingQty(r)), sortValue: (r) => pendingQty(r).total, filter: { kind: "number", get: (r) => pendingQty(r).total }, tdClassName: "whitespace-nowrap" },
+    { key: "qty", header: "Total Qty", cell: (r) => <QtyTotal entries={qtyEntries(underDecision(r))} />, sortValue: (r) => pendingQty(r).total, filter: { kind: "number", get: (r) => pendingQty(r).total }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Recommended Vendor", cell: (r) => vendorOf(r), sortValue: (r) => vendorOf(r), filter: { kind: "select", get: (r) => vendorOf(r) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Total", cell: (r) => totalCell(pendingTotal(r), pendingTotalFx(r), currencyOf(r)), sortValue: (r) => pendingTotal(r), filter: { kind: "number", get: (r) => pendingTotal(r) }, tdClassName: "whitespace-nowrap" },
     { key: "status", header: "Status", cell: (r) => <span className="text-[12.5px] text-grey">{statusText(r)}</span>, sortValue: (r) => statusText(r), filter: { kind: "select", get: (r) => statusText(r) }, tdClassName: "whitespace-nowrap" },
     { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt }, tdClassName: "whitespace-nowrap" },
     { key: "due", header: "Due", cell: (r) => <DueCell dueIso={dueIso(r)} />, sortValue: (r) => dueIso(r), filter: { kind: "date", get: (r) => dueIso(r) }, tdClassName: "whitespace-nowrap" },
@@ -128,9 +94,8 @@ export default function ApprovalsQueue() {
   const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
     { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (e) => itemsCell(e.row), sortValue: (e) => s.itemsForRequest(e.row.id).length, filter: { kind: "text", get: (e) => itemsText(e.row) } },
-    { key: "qty", header: "Total Qty", cell: (e) => qtyCell(doneQty(e.row)), sortValue: (e) => doneQty(e.row).total, filter: { kind: "number", get: (e) => doneQty(e.row).total }, tdClassName: "whitespace-nowrap" },
+    { key: "qty", header: "Total Qty", cell: (e) => <QtyTotal entries={qtyEntries(s.itemsForRequest(e.row.id))} />, sortValue: (e) => doneQty(e.row).total, filter: { kind: "number", get: (e) => doneQty(e.row).total }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Total", cell: (e) => totalCell(doneTotal(e.row), doneTotalFx(e.row), currencyOf(e.row)), sortValue: (e) => doneTotal(e.row), filter: { kind: "number", get: (e) => doneTotal(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "decision", header: "Decision", cell: (e) => <span className="text-[12.5px] text-grey">{decisionText(e.row)}</span>, sortValue: (e) => decisionText(e.row), filter: { kind: "select", get: (e) => decisionText(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "tier", header: "Tier", cell: (e) => tierOf(e.row), sortValue: (e) => tierOf(e.row), filter: { kind: "select", get: (e) => tierOf(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "decidedAt", header: "Decided On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
@@ -194,7 +159,7 @@ export default function ApprovalsQueue() {
             rowsLabel="requests"
             emptyTitle="Nothing to approve"
             emptyMessage="Requisitions routed to you will appear here."
-            initialSort={{ key: "value", dir: "desc" }}
+            initialSort={{ key: "qty", dir: "desc" }}
             actions={(r) => (
               <button onClick={() => setApproving(r)} className="text-[12.5px] font-semibold text-orange hover:underline">Review</button>
             )}

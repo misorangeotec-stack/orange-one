@@ -13,8 +13,8 @@ import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { useImportStore } from "../../store";
-import { inr } from "../../lib/format";
-import MoneyCell from "../../components/MoneyCell";
+import { sumQty } from "../../lib/format";
+import QtyTotal from "../../components/QtyTotal";
 import PoModal from "../../components/PoModal";
 import PoItemsTable from "../../components/PoItemsTable";
 import type { StageEntry } from "../../lib/queues";
@@ -54,32 +54,8 @@ export default function PoWorkbench() {
    * mixed requisition says so and lists its units on hover. Same treatment as
    * the Sourcing and Approvals queues, deliberately.
    */
-  const qtyOf = (r: PurchaseRequest) => {
-    const lines = poolLines(r);
-    const total = Math.round(lines.reduce((sum, l) => sum + (l.finalQty ?? l.quantity), 0) * 1000) / 1000;
-    const units = [...new Set(lines.map((l) => l.unit).filter(Boolean))];
-    if (units.length === 1) return { total, label: units[0], title: undefined as string | undefined };
-    if (units.length === 0) return { total, label: "", title: undefined };
-    return { total, label: "mixed", title: `Different units on this requisition: ${units.join(", ")}` };
-  };
-  const qtyCell = (q: ReturnType<typeof qtyOf>) => (
-    <span title={q.title}>
-      {q.total}
-      {q.label && <span className="ml-1 text-[11.5px] text-grey-2">{q.label}</span>}
-    </span>
-  );
-
-  /** The requisition's pooled value. No GST on an import line, so qty × rate is the total. */
-  const money = (r: PurchaseRequest) => {
-    const lines = poolLines(r);
-    return Math.round(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0) * 100) / 100;
-  };
-  /** The same pooled value in the vendor's foreign currency, shown beside the INR one. */
-  const moneyFx = (r: PurchaseRequest) => {
-    const lines = poolLines(r);
-    return Math.round(lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0) * 100) / 100;
-  };
-  const currencyOf = (r: PurchaseRequest) => poolLines(r).find((l) => l.currency)?.currency ?? null;
+  const qtyEntries = (r: PurchaseRequest) => poolLines(r).map((l) => ({ qty: l.finalQty ?? l.quantity, unit: l.unit }));
+  const qtyOf = (r: PurchaseRequest) => sumQty(qtyEntries(r));
 
   const itemsCell = (lines: RequestItem[]) => {
     const names = lines.slice(0, 2).map((l) => s.itemById(l.itemId)?.name ?? "—");
@@ -114,9 +90,8 @@ export default function PoWorkbench() {
   const columns: QueueColumn<PurchaseRequest>[] = [
     { key: "request", header: "Request", cell: (r) => <Link to={`/import/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">{r.requestNo}</Link>, sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => itemsCell(poolLines(r)), sortValue: (r) => poolLines(r).length, filter: { kind: "text", get: (r) => itemsText(r) } },
-    { key: "qty", header: "Total Qty", cell: (r) => qtyCell(qtyOf(r)), sortValue: (r) => qtyOf(r).total, filter: { kind: "number", get: (r) => qtyOf(r).total }, tdClassName: "whitespace-nowrap" },
+    { key: "qty", header: "Total Qty", cell: (r) => <QtyTotal entries={qtyEntries(r)} />, sortValue: (r) => qtyOf(r).total, filter: { kind: "number", get: (r) => qtyOf(r).total }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (r) => vendorCell(r), sortValue: (r) => vendorText(r), filter: { kind: "select", get: (r) => vendorText(r) }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Total", cell: (r) => <MoneyCell inrValue={money(r)} fxValue={moneyFx(r)} currency={currencyOf(r)} />, sortValue: (r) => money(r), filter: { kind: "number", get: (r) => money(r) }, tdClassName: "whitespace-nowrap" },
     { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt }, tdClassName: "whitespace-nowrap" },
     // A requisition with no pool line has no due date; it also cannot be a row
     // here, so "" only ever sorts an impossible case last.
@@ -126,7 +101,6 @@ export default function PoWorkbench() {
   const completedColumns: QueueColumn<StageEntry<PurchaseOrder>>[] = [
     { key: "po", header: "PO No.", cell: (e) => <Link to={`/import/pos/${e.poId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => s.vendorById(e.row.vendorId)?.name ?? "—", sortValue: (e) => s.vendorById(e.row.vendorId)?.name ?? "", filter: { kind: "select", get: (e) => s.vendorById(e.row.vendorId)?.name ?? "—" }, tdClassName: "whitespace-nowrap" },
-    { key: "value", header: "Value", cell: (e) => <MoneyCell inrValue={e.row.totalValue} fxValue={e.row.totalValueFx} currency={e.row.currency} />, sortValue: (e) => e.row.totalValue, filter: { kind: "number", get: (e) => e.row.totalValue }, tdClassName: "whitespace-nowrap" },
     { key: "lines", header: "Lines", cell: (e) => s.poItemsForPo(e.row.id).length, sortValue: (e) => s.poItemsForPo(e.row.id).length, tdClassName: "whitespace-nowrap" },
     { key: "stage", header: "Now At", cell: (e) => <span className="text-grey-2">{e.row.currentStage.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.currentStage, filter: { kind: "select", get: (e) => e.row.currentStage.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap" },
     { key: "genAt", header: "Generated On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
@@ -196,7 +170,7 @@ export default function PoWorkbench() {
             rowsLabel="requests"
             emptyTitle="Nothing to PO"
             emptyMessage="Approved requisitions waiting for a PO will appear here."
-            initialSort={{ key: "value", dir: "desc" }}
+            initialSort={{ key: "qty", dir: "desc" }}
             actions={(r) => (
               <button onClick={() => setPoRequest(r)} className="text-[12.5px] font-semibold text-orange hover:underline">
                 {s.canGeneratePo ? "Generate" : "View"}

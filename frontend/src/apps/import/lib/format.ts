@@ -20,6 +20,37 @@ export const fxMoney = (n: number | null | undefined, code: string | null | unde
   }
 };
 
+/**
+ * Sum a set of line quantities for a "Total Qty" display. Currency is uniform
+ * per requisition but UNITS ARE NOT — a line carries its own unit (KGS, PCS, …),
+ * so a bare sum across mixed units would be misleading. Convention (shared with
+ * the queue "Total Qty" columns): sum the numbers, show the unit when every line
+ * shares one, otherwise label the total "mixed" with a hover listing the units.
+ * Rounded to 3 dp so fractional quantities don't show float noise.
+ */
+export interface QtyEntry {
+  qty: number;
+  unit?: string | null;
+}
+export interface QtyTotalValue {
+  total: number;
+  label: string;
+  title?: string;
+}
+export const sumQty = (entries: QtyEntry[]): QtyTotalValue => {
+  const total = Math.round(entries.reduce((sum, e) => sum + (e.qty || 0), 0) * 1000) / 1000;
+  const units = [...new Set(entries.map((e) => e.unit).filter(Boolean))] as string[];
+  if (units.length === 1) return { total, label: units[0] };
+  if (units.length === 0) return { total, label: "" };
+  return { total, label: "mixed", title: `Different units: ${units.join(", ")}` };
+};
+
+/** `sumQty` rendered as a plain string ("3000 KGS", "3500 mixed") — e.g. a Kpi hint. */
+export const qtyText = (entries: QtyEntry[]): string => {
+  const q = sumQty(entries);
+  return q.label ? `${q.total} ${q.label}` : `${q.total}`;
+};
+
 export const LINE_STATUS_LABEL: Record<LineStatus, string> = {
   sourcing: "Sourcing",
   approval: "Awaiting Approval",
