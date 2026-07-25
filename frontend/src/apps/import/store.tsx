@@ -363,9 +363,9 @@ interface ImportStoreValue {
   canCancelPo: (po: PurchaseOrder) => boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; fxRate: number; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
   /** Correct an already-submitted request. Pre-approval only — the RPC re-checks. */
-  updateRequest: (input: { requestId: string; note: string | null; fxRate: number; items: EditRequestLine[] }) => Promise<void>;
+  updateRequest: (input: { requestId: string; note: string | null; items: EditRequestLine[] }) => Promise<void>;
   /** Cancel a whole request (kept, marked cancelled). Pre-approval only. */
   cancelRequest: (requestId: string, reason: string) => Promise<void>;
   saveSourcing: (input: {
@@ -861,15 +861,9 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // ---- workflow mutations ----
       submitRequest: async (input) => {
         const id = await submitRequestWrite(input);
-        // No sourcing in Import: lines are born at Approval, so notify the
-        // approver(s) matched to each line's INR-equivalent value directly.
-        const approvers = new Set<string>();
-        for (const l of input.items) {
-          // Mirrors the RPC's value math exactly — no GST on an import line.
-          const inr = Math.round(l.quantity * l.rate * input.fxRate * 100) / 100;
-          const who = approverForAmount(inr);
-          if (who) approvers.add(who);
-        }
+        // No sourcing in Import and no value banding: lines are born at Approval
+        // and EVERY request routes to all active configured approvers.
+        const approvers = new Set(approvalBands.filter((b) => b.active).map((b) => b.approverUserId));
         await safeAnnounce({
           entityType: "request",
           entityId: id,

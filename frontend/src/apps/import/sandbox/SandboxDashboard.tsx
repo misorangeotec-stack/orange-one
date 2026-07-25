@@ -32,8 +32,6 @@ export default function SandboxDashboard() {
   if (s.isApprover) cards.push({ label: "Approvals", count: s.approvalRequestQueue.length, to: `${B}/queues/approvals` });
   if (s.canGeneratePo) cards.push({ label: "PO Workbench", count: s.poRequestQueue.length, to: `${B}/po/workbench` });
   if (s.canSharePo) cards.push({ label: "Share PO", count: stageCount("share_po"), to: `${B}/queues/share` });
-  if (s.canCollectPi) cards.push({ label: "Collect PI", count: stageCount("collect_pi"), to: `${B}/queues/collect-pi` });
-  if (s.canAdvancePayment) cards.push({ label: "Advance", count: stageCount("advance_payment"), to: `${B}/queues/advance` });
   if (s.canFollowup) cards.push({ label: "Follow-up", count: stageCount("follow_up"), to: `${B}/queues/follow-up` });
   if (s.canInward) cards.push({ label: "Inward", count: stageCount("inward"), to: `${B}/queues/inward` });
   if (s.canTally) cards.push({ label: "Tally", count: stageCount("tally"), to: `${B}/queues/tally` });

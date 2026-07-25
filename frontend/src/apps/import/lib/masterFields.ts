@@ -61,11 +61,12 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         { key: "address", label: "Address", type: "textarea" },
       ];
     case "vendor_item_price":
+      // Import is a pure quantity requisition — a vendor-item mapping no longer
+      // carries a rate. The row simply records which items a vendor supplies.
       return [
         { key: "vendor_id", label: "Vendor", type: "select", required: true, options: ctx.vendorOptions ?? [], placeholder: "Select vendor" },
         { key: "item_id", label: "Item", type: "select", required: true, options: ctx.itemOptions ?? [], placeholder: "Select item" },
-        { key: "currency", label: "Currency", type: "text", required: true, placeholder: "e.g. USD" },
-        { key: "rate", label: "Rate (per unit, foreign)", type: "text", required: true, placeholder: "e.g. 12.50" },
+        { key: "currency", label: "Currency", type: "text", placeholder: "e.g. USD" },
       ];
   }
 }
@@ -123,9 +124,8 @@ export function describePayload(
     case "category":
       return name;
     case "vendor_item_price": {
-      const rate = s("rate");
       const ccy = s("currency") || "";
-      return rate ? `${ccy} ${rate}`.trim() : "Vendor-item price";
+      return ccy ? `Vendor-item (${ccy})` : "Vendor-item";
     }
   }
 }

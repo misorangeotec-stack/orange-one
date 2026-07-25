@@ -210,7 +210,6 @@ export default function Masters() {
             { header: "Vendor", render: (r) => <span className="font-medium text-navy">{s.vendorById(r.vendorId)?.name ?? "—"}</span> },
             { header: "Item", render: (r) => s.itemById(r.itemId)?.name ?? <span className="text-grey-2">—</span> },
             { header: "Currency", render: (r) => r.currency },
-            { header: "Rate", render: (r) => r.rate },
           ] as MasterColumn<VendorItemPrice>[]}
           fields={masterFields("vendor_item_price", ctx)}
           emptyValues={emptyValuesFor("vendor_item_price")}

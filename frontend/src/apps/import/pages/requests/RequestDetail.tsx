@@ -9,7 +9,7 @@ import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
-import { inr, fxMoney, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
+import { lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
 import QtyTotal from "../../components/QtyTotal";
@@ -40,10 +40,6 @@ export default function RequestDetail() {
   }
   const co = s.companyById(request.companyId);
   const lines = s.itemsForRequest(request.id);
-  // Totals for the footer: value sums (FCY + INR) and a mixed-unit-aware qty sum
-  // over every line the table shows.
-  const totalFx = lines.reduce((sum, l) => sum + (l.lineValueFx ?? 0), 0);
-  const totalInr = lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0);
 
   // A request may span categories, so the header lists every distinct one its
   // lines carry. Lines predating per-line category fall back to the header's.
@@ -160,9 +156,6 @@ export default function RequestDetail() {
                 <th className="font-medium px-4 py-3">Qty</th>
                 <th className="font-medium px-4 py-3">Status</th>
                 <th className="font-medium px-4 py-3">Vendor</th>
-                <th className="font-medium px-4 py-3">Rate</th>
-                <th className="font-medium px-4 py-3">Value ({request.currency ?? "FCY"})</th>
-                <th className="font-medium px-4 py-3">Value (INR)</th>
                 <th className="font-medium px-4 py-3">PO</th>
               </tr>
             </thead>
@@ -177,9 +170,6 @@ export default function RequestDetail() {
                     <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
                     <td className="px-4 py-3"><span className={lineBadge(l.status)} title={l.rejectReason ?? l.cancelReason ?? undefined}>{LINE_STATUS_LABEL[l.status]}</span></td>
                     <td className="px-4 py-3 whitespace-nowrap">{s.vendorById(l.finalVendorId)?.name ?? "—"}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{fxMoney(l.finalRate, l.currency)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{fxMoney(l.lineValueFx, l.currency)}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{inr(l.lineValue)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {po ? <Link to={`/import/pos/${po.id}`} className="text-orange hover:underline font-medium">{po.poNo}</Link> : "—"}
                     </td>
@@ -189,18 +179,13 @@ export default function RequestDetail() {
             </tbody>
             {lines.length > 0 && (
               <tfoot>
-                {/* Totals align under their own columns: Qty under Qty, and the two
-                    value totals under Value (FCY) / Value (INR). The label span
-                    covers the leading Category + Item columns. */}
+                {/* Qty total aligns under the Qty column. */}
                 <tr className="border-t-2 border-line bg-orange-soft/50">
                   <td colSpan={2} className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
                   <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">
                     <QtyTotal entries={lines.map((l) => ({ qty: l.quantity, unit: l.unit }))} />
                   </td>
                   <td colSpan={3} />
-                  <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">{fxMoney(totalFx, request.currency)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap font-bold text-navy">{inr(totalInr)}</td>
-                  <td />
                 </tr>
               </tfoot>
             )}

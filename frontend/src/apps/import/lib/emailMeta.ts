@@ -97,21 +97,20 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     reason && reason.trim() ? { label, text: reason.trim() } : undefined;
 
   return {
-    // 1. Requisition raised → approver
-    submitted(input: { vendorId: string; companyId: string; currency: string; fxRate: number; items: Array<{ itemId: string; quantity: number; unit: string; rate: number }> }): ImportEmailMeta {
-      const lines: LineLike[] = input.items.map((l, idx) => ({
-        id: String(idx), requestId: "", itemId: l.itemId, quantity: l.quantity, unit: l.unit,
-        finalRate: l.rate, currency: input.currency,
-        lineValueFx: Math.round(l.quantity * l.rate * 100) / 100,
-        lineValue: Math.round(l.quantity * l.rate * input.fxRate * 100) / 100,
-      }));
-      const t = totalsOf(lines, input.currency);
+    // 1. Requisition raised → approver. Import is a pure quantity requisition:
+    // no rate, no value — the email lists items and quantities only.
+    submitted(input: { vendorId: string; companyId: string; currency: string; items: Array<{ itemId: string; quantity: number; unit: string }> }): ImportEmailMeta {
+      const lines = input.items;
+      const itemsRow = {
+        label: "Items",
+        value: `${lines.length} item${lines.length === 1 ? "" : "s"} · ${qtyText(lines.map((l) => ({ qty: l.quantity, unit: l.unit })))}`,
+      };
       return {
         subject: `New import requisition - ${vName(input.vendorId)}`,
         eyebrow: "New requisition", headline: "A purchase requisition needs your approval",
         action: "raised an import requisition",
-        rows: [{ label: "Vendor", value: vName(input.vendorId) }, { label: "Company", value: cName(input.companyId) }, t.row, t.itemsRow],
-        items: lines.map(lineItem),
+        rows: [{ label: "Vendor", value: vName(input.vendorId) }, { label: "Company", value: cName(input.companyId) }, itemsRow],
+        items: lines.map((l) => ({ name: iName(l.itemId), meta: qtyText([{ qty: l.quantity, unit: l.unit }]) })),
         ctaLabel: "Open Approvals", ctaPath: `${B}/queues/approvals`,
       };
     },
@@ -165,22 +164,21 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       };
     },
 
-    // 4. PO shared → Collect-PI owner
+    // 4. PO shared → Follow-up owner (no PI/payment step in a quantity requisition)
     poShared(poId: string, input?: { dispatchDate?: string | null; paymentTerms?: string | null; remarks?: string | null; name?: string | null }): ImportEmailMeta {
       const po = poOf(poId);
       return {
-        subject: `PO shared - collect the PI${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "PO shared", headline: "PO shared with the vendor - collect the PI(s)",
+        subject: `PO shared - follow up on dispatch${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "PO shared", headline: "PO shared with the vendor - follow up on dispatch",
         action: "shared the PO with the vendor",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         rows: [
           { label: "Vendor", value: vName(po?.vendorId) },
-          { label: "Total", value: inr(po?.totalValue ?? null), sub: po?.totalValueFx != null ? fxMoney(po.totalValueFx, po.currency ?? "") : undefined },
           ...(input?.dispatchDate ? [{ label: "Expected dispatch", value: formatDate(input.dispatchDate) }] : []),
           ...(input?.name ? [{ label: "PO document", value: input.name }] : []),
         ],
         note: reasonNote("Remarks", input?.remarks),
-        ctaLabel: "Open Collect-PI queue", ctaPath: `${B}/queues/collect-pi`,
+        ctaLabel: "Open Follow-up queue", ctaPath: `${B}/queues/follow-up`,
       };
     },
 

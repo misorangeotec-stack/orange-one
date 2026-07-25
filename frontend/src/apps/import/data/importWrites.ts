@@ -426,16 +426,13 @@ export interface NewRequestLine {
   categoryId: string;
   quantity: number;
   unit: string;
-  /** Rate in the vendor's foreign currency (auto-filled from the price master, editable). */
-  rate: number;
   lineRemark: string | null;
 }
 
 /**
- * Stage 1 — submit an import request. The vendor is chosen on the header (fixed),
- * each line carries its foreign-currency rate, and a request-time FX rate lets
- * the server derive the INR line value that routes the approval tier. No sourcing.
- * Returns the request id.
+ * Stage 1 — submit an import request. Import is a pure quantity requisition: a
+ * line carries only category / item / quantity. The RPC still accepts p_fx_rate
+ * (frozen signature) but ignores it — we pass a harmless 1. Returns the request id.
  */
 export async function submitRequest(input: {
   companyId: string;
@@ -444,7 +441,6 @@ export async function submitRequest(input: {
    *  header column is NOT NULL and exists only so pre-existing reads keep working. */
   categoryId: string | null;
   currency: string;
-  fxRate: number;
   note: string | null;
   items: NewRequestLine[];
 }): Promise<string> {
@@ -454,13 +450,12 @@ export async function submitRequest(input: {
     p_category_id: input.categoryId,
     p_note: input.note ?? "",
     p_currency: input.currency,
-    p_fx_rate: input.fxRate,
+    p_fx_rate: 1, // ignored by the RPC; kept to satisfy the frozen signature
     p_items: input.items.map((l) => ({
       item_id: l.itemId,
       category_id: l.categoryId,
       quantity: l.quantity,
       unit: l.unit,
-      rate: l.rate,
       line_remark: l.lineRemark ?? "",
     })) as unknown as Json,
   });
@@ -486,20 +481,18 @@ export interface EditRequestLine extends NewRequestLine {
 export async function updateRequest(input: {
   requestId: string;
   note: string | null;
-  fxRate: number;
   items: EditRequestLine[];
 }): Promise<void> {
   const { error } = await db.rpc("fms_import_update_request", {
     p_request_id: input.requestId,
     p_note: input.note ?? "",
-    p_fx_rate: input.fxRate,
+    p_fx_rate: 1, // ignored (quantity requisition); kept for the frozen signature
     p_items: input.items.map((l) => ({
       id: l.id,
       item_id: l.itemId,
       category_id: l.categoryId,
       quantity: l.quantity,
       unit: l.unit,
-      rate: l.rate,
       line_remark: l.lineRemark ?? "",
     })) as unknown as Json,
   });

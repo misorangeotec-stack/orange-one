@@ -395,10 +395,12 @@ export const poInInward = (idx: ImportIndex, p: PurchaseOrder) =>
 export const poInTally = (idx: ImportIndex, p: PurchaseOrder) =>
   p.currentStage !== "cancelled" && unbookedGrnsForPo(idx, p.id).length > 0;
 
+// Collect-PI and Advance-Payment are retired (Import is a pure quantity
+// requisition): they are absent from this list, so no queue entry or Control
+// Center count is ever produced for them. The predicates + completed-entry
+// builders below are kept for any legacy PO but nothing routes into them.
 const PO_STEPS: { stepKey: StepKey; match: (idx: ImportIndex, p: PurchaseOrder) => boolean }[] = [
   { stepKey: "share_po", match: poInSharePo },
-  { stepKey: "collect_pi", match: poInCollectPi },
-  { stepKey: "advance_payment", match: poInAdvance },
   { stepKey: "follow_up", match: poInFollowUp },
   { stepKey: "inward", match: poInInward },
   { stepKey: "tally", match: poInTally },

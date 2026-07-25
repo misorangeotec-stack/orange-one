@@ -11,7 +11,7 @@
  */
 import type { ApprovalBand, RequestItem, StepOwner } from "../types";
 import type { StepKey } from "./steps";
-import { lineInApproval, requestApprovalTotal, type QueueEntry } from "./queues";
+import { lineInApproval, type QueueEntry } from "./queues";
 
 /** The slice of `ImportData` owner resolution reads — nothing more. */
 export interface OwnerSnapshot {
@@ -38,15 +38,17 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
     else linesByRequest.set(l.requestId, [l]);
   }
 
-  // Band selection mirrors the SQL exactly (`order by sort_order, min_amount
-  // limit 1`) so the client and the RPC can never pick different bands.
-  const approverForAmount = (amount: number): string | null => {
-    const band = [...data.approvalBands]
+  // Approvals no longer route by value. Every active row in the matrix is an
+  // eligible approver (a single person, or a small list). `approverForAmount`
+  // ignores the amount and returns the FIRST active approver (kept for callers
+  // that want one representative); `activeApproverIds` returns them all.
+  const activeApproverIds = (): string[] =>
+    [...data.approvalBands]
       .filter((b) => b.active)
       .sort((a, b) => a.sortOrder - b.sortOrder || a.minAmount - b.minAmount)
-      .find((b) => amount >= b.minAmount && (b.maxAmount === null || amount <= b.maxAmount));
-    return band?.approverUserId ?? null;
-  };
+      .map((b) => b.approverUserId);
+
+  const approverForAmount = (_amount: number): string | null => activeApproverIds()[0] ?? null;
 
   const stepOwnerFor = (stepKey: string): StepOwner | undefined =>
     data.stepOwners.find((o) => o.stepKey === stepKey);
@@ -55,16 +57,14 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   /**
    * Every step reads its owners from `step_owners`, except `approval` — there the
-   * owner depends on the REQUISITION's approval total (the matrix band), plus any
-   * per-line manual reassign. The entry is requisition-scoped, so `entityId` is a
-   * request id.
+   * owners are ALL active configured approvers (no value banding any more), plus
+   * any per-line manual reassign. The entry is requisition-scoped, so `entityId`
+   * is a request id.
    */
   const ownerIdsOf = (e: QueueEntry): string[] => {
     if (e.stepKey === ("approval" as StepKey)) {
       const lines = linesByRequest.get(e.entityId) ?? [];
-      const ids = new Set<string>();
-      const appr = approverForAmount(requestApprovalTotal(lines));
-      if (appr) ids.add(appr);
+      const ids = new Set<string>(activeApproverIds());
       for (const l of lines) if (lineInApproval(l) && l.assignedApproverId) ids.add(l.assignedApproverId);
       return [...ids];
     }

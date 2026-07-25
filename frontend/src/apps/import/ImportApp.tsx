@@ -16,7 +16,7 @@ import EditRequest from "./pages/requests/EditRequest";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
 import ApprovalsQueue from "./pages/queues/ApprovalsQueue";
-import { SharePoQueue, CollectPiQueue, AdvanceQueue, FollowUpQueue, InwardQueue, TallyQueue } from "./pages/queues/PoQueues";
+import { SharePoQueue, FollowUpQueue, InwardQueue, TallyQueue } from "./pages/queues/PoQueues";
 import PoWorkbench from "./pages/po/PoWorkbench";
 import PoList from "./pages/po/PoList";
 import PoDetail from "./pages/po/PoDetail";
@@ -72,8 +72,6 @@ export default function ImportApp() {
             {/* No Sourcing queue in Import — vendors + pricing are fixed masters. */}
             <Route path="queues/approvals" element={<ApprovalsQueue />} />
             <Route path="queues/share" element={<SharePoQueue />} />
-            <Route path="queues/collect-pi" element={<CollectPiQueue />} />
-            <Route path="queues/advance" element={<AdvanceQueue />} />
             <Route path="queues/follow-up" element={<FollowUpQueue />} />
             <Route path="queues/inward" element={<InwardQueue />} />
             <Route path="queues/tally" element={<TallyQueue />} />

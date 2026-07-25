@@ -9,10 +9,10 @@ import { hydrateLine, useRequestForm, type RequestFormInit } from "./useRequestF
 /**
  * Correct a request you already submitted — allowed only while nothing on it has
  * been decided. Reuses the New Request grid wholesale; the differences are that
- * Company / Vendor / Currency are locked (prices are vendor-scoped, so changing
- * the vendor is a different request, not a correction) and that saving calls
- * update_request, which matches lines by id so each keeps its history, its SLA
- * anchor and any manual approver routing.
+ * Company / Vendor are locked (items are vendor-scoped, so changing the vendor is
+ * a different request, not a correction) and that saving calls update_request,
+ * which matches lines by id so each keeps its history, its SLA anchor and any
+ * manual approver routing.
  *
  * The gate is re-checked server-side by the RPC — this page's guard is a
  * courtesy so the user sees a sentence instead of a rejection.
@@ -26,7 +26,6 @@ export default function EditRequest() {
   const lines = request ? s.itemsForRequest(request.id) : [];
   const editable = request ? s.canEditRequest(request) : false;
 
-  // The request carries no FX column — it lives on the lines, set at submit.
   const init: RequestFormInit | null =
     request && editable
       ? {
@@ -34,7 +33,6 @@ export default function EditRequest() {
           companyId: request.companyId,
           vendorId: request.vendorId ?? "",
           currency: request.currency ?? "",
-          fxRate: lines[0]?.fxRateAtRequest != null ? String(lines[0]!.fxRateAtRequest) : "",
           note: request.note ?? "",
           lines: lines.map(hydrateLine),
         }
@@ -43,7 +41,6 @@ export default function EditRequest() {
   // Hooks must run unconditionally, so the form is created before the guards.
   const form = useRequestForm({ mode: "edit", init });
   const [busy, setBusy] = useState(false);
-  const [partial, setPartial] = useState<string[] | null>(null);
 
   if (!request) {
     return (
@@ -72,7 +69,6 @@ export default function EditRequest() {
 
   const save = async () => {
     form.setErr(null);
-    setPartial(null);
     const invalid = form.validate();
     if (invalid) return form.setErr(invalid);
 
@@ -81,7 +77,6 @@ export default function EditRequest() {
       await s.updateRequest({
         requestId: request.id,
         note: form.note.trim() || null,
-        fxRate: Number(form.fxRate),
         items: form.filled.map((l) => ({
           // null id ⇒ a row added during this edit; the RPC inserts it.
           id: l.dbId,
@@ -89,19 +84,10 @@ export default function EditRequest() {
           categoryId: l.categoryId,
           quantity: Number(l.qty),
           unit: l.unit,
-          rate: Number(l.rate),
           lineRemark: l.remark.trim() || null,
         })),
       });
-
-      // Same rule as raising: a price-list write never gates the request.
-      const failures = await form.savePriceList();
-      if (failures.length === 0) {
-        navigate(`/import/requests/${request.id}`);
-        return;
-      }
-      setPartial(failures);
-      setBusy(false);
+      navigate(`/import/requests/${request.id}`);
     } catch (e) {
       form.setErr((e as Error).message);
       setBusy(false);
@@ -114,27 +100,12 @@ export default function EditRequest() {
         <Link to={`/import/requests/${request.id}`} className="text-[12.5px] text-grey hover:text-navy">← {request.requestNo}</Link>
         <h1 className="text-[22px] font-bold text-navy mt-1">Edit {request.requestNo}</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Change quantities, rates or items while the request is still awaiting approval. The company, vendor and
-          currency are fixed — raise a new request if those need to change.
+          Change quantities or items while the request is still awaiting approval. The company and vendor are fixed —
+          raise a new request if those need to change.
         </p>
       </div>
 
       <RequestForm form={form}>
-        {partial && (
-          <div className="rounded-xl border border-ryg-amber/50 bg-ryg-amber/10 p-3 text-[12.5px] space-y-1">
-            <p className="font-semibold text-navy">
-              Your changes were saved. {partial.length} price{partial.length === 1 ? "" : "s"} couldn't be saved to the price list:
-            </p>
-            <ul className="list-disc pl-5 text-grey">
-              {partial.map((f, i) => <li key={i}>{f}</li>)}
-            </ul>
-            <p className="text-grey-2">The request itself is unaffected.</p>
-            <button type="button" className="text-teal underline" onClick={() => navigate(`/import/requests/${request.id}`)}>
-              Open the request →
-            </button>
-          </div>
-        )}
-
         <div className="flex items-center gap-3">
           <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
           <Button variant="ghost" onClick={() => navigate(`/import/requests/${request.id}`)} disabled={busy}>Cancel</Button>

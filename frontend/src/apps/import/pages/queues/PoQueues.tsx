@@ -6,13 +6,8 @@ import { formatDate, formatDateTime, todayIso } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs, { type StageMode, type StageScope } from "@/shared/components/ui/StageTabs";
 import { useImportStore } from "../../store";
-import { inr } from "../../lib/format";
-import MoneyCell from "../../components/MoneyCell";
 import {
   allReceived,
-  piCoverage,
-  poInAdvance,
-  poInCollectPi,
   poInFollowUp,
   poInInward,
   poInSharePo,
@@ -28,8 +23,8 @@ import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
-import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
-import type { PurchaseOrder, Pi, Payment, Followup, Grn, TallyBooking } from "../../types";
+import { SharePoModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
+import type { PurchaseOrder, Followup, Grn, TallyBooking } from "../../types";
 
 const PILL = "inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5";
 
@@ -50,7 +45,6 @@ function StepQueuePage<E>({
   renderAction,
   extraColumns,
   hideDue = false,
-  hideMoney = false,
   rowClassName,
   completed,
 }: {
@@ -66,8 +60,6 @@ function StepQueuePage<E>({
   extraColumns?: (QueueColumn<PurchaseOrder> & { after?: string })[];
   /** Hide the generic SLA "Due" column (e.g. Follow-up, where dispatch date is the only due). */
   hideDue?: boolean;
-  /** Hide the Value + Pending (₹) columns (e.g. Inward, which shows qty instead). */
-  hideMoney?: boolean;
   /** Override the row tint. Defaults to the generic SLA overdue tint (created + SLA). */
   rowClassName?: (po: PurchaseOrder) => string;
   /**
@@ -113,12 +105,6 @@ function StepQueuePage<E>({
   const columns: QueueColumn<PurchaseOrder>[] = [
     { key: "po", header: "PO No.", cell: (p) => <span className="font-semibold text-navy">{p.poNo}</span>, sortValue: (p) => p.poNo, filter: { kind: "text", get: (p) => p.poNo }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (p) => vendorName(p), sortValue: (p) => vendorName(p), filter: { kind: "select", get: (p) => vendorName(p) }, tdClassName: "whitespace-nowrap" },
-    ...(hideMoney
-      ? []
-      : [
-          { key: "value", header: "Value", cell: (p: PurchaseOrder) => <MoneyCell inrValue={p.totalValue} fxValue={p.totalValueFx} currency={p.currency} />, sortValue: (p: PurchaseOrder) => p.totalValue, filter: { kind: "number" as const, get: (p: PurchaseOrder) => p.totalValue }, tdClassName: "whitespace-nowrap" },
-          { key: "pending", header: "Pending", cell: (p: PurchaseOrder) => <MoneyCell inrValue={s.pendingAmount(p)} fxValue={s.pendingFxAmount(p)} currency={p.currency} />, sortValue: (p: PurchaseOrder) => s.pendingAmount(p), filter: { kind: "number" as const, get: (p: PurchaseOrder) => s.pendingAmount(p) }, tdClassName: "whitespace-nowrap" },
-        ]),
     { key: "created", header: "In stage since", cell: (p) => formatDate(since(p)), sortValue: (p) => since(p), filter: { kind: "date", get: (p) => since(p).slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     ...(!hideDue ? [{ key: "due", header: "Due", cell: (p: PurchaseOrder) => <DueCell dueIso={dueIso(p)} />, sortValue: (p: PurchaseOrder) => dueIso(p) ?? "9999-99-99", filter: { kind: "date" as const, get: (p: PurchaseOrder) => dueIso(p) ?? "" }, tdClassName: "whitespace-nowrap" }] : []),
   ];
@@ -330,109 +316,7 @@ export function SharePoQueue() {
   );
 }
 
-/* ---------------------------- Step 6: Collect PI -------------------------- */
-export function CollectPiQueue() {
-  const s = useImportStore();
-  const [piPo, setPiPo] = useState<PurchaseOrder | null>(null);
-  const editPi = useEntryModal<Pi>();
-  const piStatusLabel = (p: PurchaseOrder) => (piCoverage(s.importIndex, p).hasPi ? "Partial PI" : "Awaiting PI");
-
-  // Entries are PI ROWS, not POs — a PO with two of three lines covered is
-  // legitimately still pending here AND has two completed PIs.
-  const vendorOf = (e: StageEntry<Pi>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
-  const piColumns: QueueColumn<StageEntry<Pi>>[] = [
-    ...poRefColumns<Pi>(s, vendorOf),
-    { key: "piNo", header: "Vendor PI No.", cell: (e) => <span className="font-semibold text-navy">{e.row.vendorPiNo}</span>, sortValue: (e) => e.row.vendorPiNo, filter: { kind: "text", get: (e) => e.row.vendorPiNo }, tdClassName: "whitespace-nowrap" },
-    { key: "piValue", header: "PI Value", cell: (e) => inr(e.row.piValue), sortValue: (e) => e.row.piValue, filter: { kind: "number", get: (e) => e.row.piValue }, tdClassName: "whitespace-nowrap" },
-    { key: "lines", header: "Lines", cell: (e) => numFmt(s.piItemsForPi(e.row.id).length), sortValue: (e) => s.piItemsForPi(e.row.id).length, tdClassName: "whitespace-nowrap" },
-    { key: "piStatus", header: "Status", cell: (e) => <span className={`${PILL} text-grey-2 bg-page`}>{e.row.status.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.status, filter: { kind: "select", get: (e) => e.row.status.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap" },
-    ...entryMetaColumns<Pi>(s, "Collected On"),
-  ];
-
-  return (
-    <>
-      <StepQueuePage<Pi>
-        title="Collect PI Stage"
-        subtitle="Shared POs awaiting the vendor's PI(s) — partially-collected POs stay until every line has a PI."
-        filter={(p) => poInCollectPi(s.importIndex, p)}
-        completed={{
-          entries: s.completedPiEntries,
-          columns: piColumns,
-          subtitle: "PIs already collected. Each stays editable until a payment lands against it or goods arrive.",
-          emptyMessage: "PIs you collect will appear here, and stay editable until a payment or a goods receipt lands.",
-          renderAction: (e) => editAction(e, s.canCollectPi, () => editPi.openEdit(e.row), () => editPi.openView(e.row)),
-        }}
-        extraColumns={[
-          {
-            key: "piStatus",
-            header: "PI Status",
-            after: "vendor",
-            sortValue: (p) => piStatusLabel(p),
-            filter: { kind: "select", get: (p) => piStatusLabel(p), options: ["Awaiting PI", "Partial PI"] },
-            tdClassName: "whitespace-nowrap",
-            cell: (p) => {
-              const c = piCoverage(s.importIndex, p);
-              if (!c.hasPi) return <span className={`${PILL} text-grey-2 bg-page`}>Awaiting PI</span>;
-              return (
-                <span className="inline-flex items-center gap-2">
-                  <span className={`${PILL} text-yellow bg-[#FFF7E6]`}>Partial PI</span>
-                  <span className="text-[12px] text-grey-2 normal-case tracking-normal">{c.full}/{c.total} lines</span>
-                </span>
-              );
-            },
-          },
-        ]}
-        renderAction={(p) => <ActionButton label="Add PI" onClick={() => setPiPo(p)} />}
-      />
-      {piPo && <AddPiModal po={piPo} open onClose={() => setPiPo(null)} />}
-      {editPi.row && <AddPiModal po={s.poById(editPi.row.poId)!} open editing={editPi.row} readOnly={editPi.isView} onClose={editPi.close} />}
-    </>
-  );
-}
-
-/* ---------------------------- Step 6: Payment ------------------------------- */
-export function AdvanceQueue() {
-  const s = useImportStore();
-  const [advPo, setAdvPo] = useState<PurchaseOrder | null>(null);
-  const editPay = useEntryModal<Payment>();
-
-  // Import pays in the vendor's currency, so the foreign amount is the number
-  // that matters here — the INR figure is a derived equivalent at the day's rate.
-  // Both are shown: the FX amount is what was agreed, the INR is what left the bank.
-  const vendorOf = (e: StageEntry<Payment>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
-  const fxAmount = (e: StageEntry<Payment>) => `${e.row.currency ?? ""} ${(e.row.amountFx ?? 0).toLocaleString("en-IN")}`.trim();
-  const payColumns: QueueColumn<StageEntry<Payment>>[] = [
-    ...poRefColumns<Payment>(s, vendorOf),
-    { key: "amountFx", header: "Amount", cell: (e) => <span className="font-semibold text-navy">{fxAmount(e)}</span>, sortValue: (e) => e.row.amountFx ?? 0, filter: { kind: "number", get: (e) => e.row.amountFx ?? 0 }, tdClassName: "whitespace-nowrap" },
-    { key: "fxRate", header: "Rate", cell: (e) => (e.row.fxRate ? e.row.fxRate.toLocaleString("en-IN") : "—"), sortValue: (e) => e.row.fxRate ?? 0, tdClassName: "whitespace-nowrap" },
-    { key: "amount", header: "INR Value", cell: (e) => inr(e.row.amount), sortValue: (e) => e.row.amount, filter: { kind: "number", get: (e) => e.row.amount }, tdClassName: "whitespace-nowrap" },
-    { key: "paidOn", header: "Paid On", cell: (e) => formatDate(e.row.paidOn), sortValue: (e) => e.row.paidOn, filter: { kind: "date", get: (e) => e.row.paidOn }, tdClassName: "whitespace-nowrap" },
-    { key: "utr", header: "UTR / Ref", cell: (e) => e.row.utrRef ?? "—", sortValue: (e) => e.row.utrRef ?? "", filter: { kind: "text", get: (e) => e.row.utrRef ?? "" }, tdClassName: "whitespace-nowrap" },
-    ...entryMetaColumns<Payment>(s, "Recorded On"),
-  ];
-
-  return (
-    <>
-      <StepQueuePage<Payment>
-        title="Payment Stage"
-        subtitle="Import POs awaiting their 100% advance payment (accounts records the transfer)."
-        filter={(p) => poInAdvance(s.importIndex, p)}
-        renderAction={(p) => <ActionButton label="Record Payment" onClick={() => setAdvPo(p)} />}
-        completed={{
-          entries: s.completedAdvanceEntries,
-          columns: payColumns,
-          subtitle: "Payments already recorded. Each stays editable until a follow-up is logged against the PO.",
-          emptyMessage: "Payments you record will appear here, and stay editable until a follow-up is logged.",
-          renderAction: (e) => editAction(e, s.canRecordPayment, () => editPay.openEdit(e.row), () => editPay.openView(e.row)),
-        }}
-      />
-      {advPo && <PaymentModal po={advPo} open onClose={() => setAdvPo(null)} kind="advance" />}
-      {editPay.row && <PaymentModal po={s.poById(editPay.row.poId)!} open editing={editPay.row} readOnly={editPay.isView} onClose={editPay.close} kind={editPay.row.kind} />}
-    </>
-  );
-}
-
-/* --------------------------- Step 7: Follow-up ----------------------------- */
+/* --------------------------- Step 5: Follow-up ----------------------------- */
 export function FollowUpQueue() {
   const s = useImportStore();
   const [followPo, setFollowPo] = useState<PurchaseOrder | null>(null);
@@ -587,7 +471,6 @@ export function InwardQueue() {
         title="Inward Stage"
         subtitle="POs with goods still to be received — a partially-received PO stays here until every line lands."
         filter={(p) => poInInward(s.importIndex, p)}
-        hideMoney
         hideDue
         completed={{
           entries: s.completedGrnEntries,

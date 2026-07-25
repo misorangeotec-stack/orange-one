@@ -8,8 +8,6 @@ import type { PurchaseOrder } from "../types";
 const STAGES = [
   { key: "generated", label: "Generated" },
   { key: "share_po", label: "Share PO" },
-  { key: "collect_pi", label: "Collect PI" },
-  { key: "advance_payment", label: "Advance" },
   { key: "follow_up", label: "Follow-up" },
   { key: "inward", label: "Inward" },
   { key: "tally", label: "Tally" },
@@ -19,11 +17,10 @@ const STAGES = [
 const TALLY_INDEX = STAGES.findIndex((st) => st.key === "tally");
 
 function activeIndex(po: PurchaseOrder, tallyPending: boolean): number {
-  // A PO closes the moment goods are all received AND fully paid — which
-  // fms_import_refresh_po does BEFORE the Tally step is necessarily done. So a
-  // 'closed' PO can still have an unbooked GRN, i.e. its Tally step is genuinely
-  // outstanding. Sit the rail on Tally in that case so the node isn't ticked;
-  // otherwise a terminal stage sits at the final "Closed" node.
+  // A PO closes once goods are all received AND booked in Tally. A 'closed' PO
+  // can still have an unbooked GRN if it closed on an earlier receipt, i.e. its
+  // Tally step is genuinely outstanding. Sit the rail on Tally in that case so
+  // the node isn't ticked; otherwise a terminal stage sits at the final "Closed".
   if (po.currentStage === "closed" && tallyPending) return TALLY_INDEX;
   if (po.currentStage === "closed" || po.currentStage === "cancelled") return STAGES.length - 1;
   const i = STAGES.findIndex((st) => st.key === po.currentStage);
