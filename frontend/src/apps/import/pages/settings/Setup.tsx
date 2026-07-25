@@ -9,8 +9,8 @@ import EmailNotificationsSection from "./EmailNotificationsSection";
 
 /**
  * Setup — the no-code configuration backbone (admin only). Wire up step owners,
- * each step's due date, the amount-tiered approval matrix, the process
- * coordinators, and who owns each master (and so reviews its new-entry requests).
+ * each step's due date, the list of approvers, the process coordinators, and who
+ * owns each master (and so reviews its new-entry requests).
  */
 export default function Setup() {
   const [tab, setTab] = useState("owners");
@@ -18,7 +18,7 @@ export default function Setup() {
   const tabs = [
     { key: "owners", label: "Step Owners" },
     { key: "sla", label: "Due Dates" },
-    { key: "approval", label: "Approval Matrix" },
+    { key: "approval", label: "Approvers" },
     { key: "roles", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
     { key: "notifications", label: "Notifications" },
@@ -29,8 +29,8 @@ export default function Setup() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Wire up the workflow without code — who owns each step, when each step falls due, how approvals route by
-          value, who oversees the whole process, and who owns each master.
+          Wire up the workflow without code — who owns each step, when each step falls due, who approves
+          requisitions, who oversees the whole process, and who owns each master.
         </p>
       </div>
 

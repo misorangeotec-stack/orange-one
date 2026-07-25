@@ -4,17 +4,17 @@ import ImportApp from "./ImportApp";
 
 /**
  * Manifest for the Import Purchase FMS — a master-driven, multi-item import
- * workflow with FIXED vendors + fixed vendor-item pricing (no sourcing):
- * Request (company → vendor → items) → tiered Approval → vendor-wise PO →
- * Share PO → Collect PI → 100%-advance Payment (foreign currency + live FX) →
- * Follow-up → GRN → Tally. Built as a dedicated relational module (tables
- * prefixed `fms_import_`), separate from the domestic `procurement` app.
+ * QUANTITY requisition with FIXED vendors (no sourcing, no pricing):
+ * Request (company → vendor → items + quantity) → Approval (any configured
+ * approver) → vendor-wise PO → Share PO → Follow-up → GRN → Tally. Built as a
+ * dedicated relational module (tables prefixed `fms_import_`), separate from
+ * the domestic `procurement` app.
  */
 export const importApp: AppManifest = {
   id: "import",
   name: appName("import"),
   description:
-    "Import procurement: fixed vendors + vendor-item price list, foreign-currency POs with a live exchange rate, amount-tiered approval, and a 100%-advance payment step.",
+    "Import procurement: fixed vendors and a quantity-only requisition (no pricing) — request items by quantity, approve, raise a vendor PO, then track dispatch, goods receipt, and Tally booking.",
   basePath: appBasePath("import"),
   status: "live",
   category: appCategory("import"),
