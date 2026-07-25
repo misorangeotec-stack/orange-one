@@ -10,13 +10,15 @@
 export type ProductionStatus =
   | "awaiting_material_handover"
   | "awaiting_rm_transfer"
+  | "awaiting_quality"
+  | "awaiting_additional_issue_slip"
   | "awaiting_transfer_slip"
   | "awaiting_production"
-  | "awaiting_quality"
   | "awaiting_mc_testing"
   | "awaiting_pm_handover"
   | "awaiting_pm_transfer"
   | "awaiting_packing"
+  | "awaiting_ready_to_dispatch"
   | "awaiting_fg_transfer"
   | "closed"
   | "on_hold"
@@ -60,12 +62,39 @@ export interface HandoverBomLine {
   lotNo: string | null;
 }
 
-/** One packaging line of the packing-material handover: the packaging item (from
- *  the packaging master, carrying its own unit) and the quantity handed over. */
+/** One packaging line captured at the LOG BOOK ENTRY: the packaging item (from the
+ *  packaging master, carrying its own unit), the auto/base quantity, an optional
+ *  EXTRA quantity and the line total (base + extra; the old 7% buffer was dropped —
+ *  Extra is entered manually, auto-filled to 7% only for CAP items on the client).
+ *  extraBuffered (kept = extra for back-compat) / total are server-computed. */
 export interface PackingBomLine {
   packagingItemId: string | null;
   unitId: string | null;
   qty: number | null;
+  extra: number | null;
+  extraBuffered: number | null;
+  total: number | null;
+}
+
+/** One additional-raw-material line of an Additional Issue Slip round. */
+export interface AisLine {
+  rawMaterialId: string | null;
+  qty: number | null;
+  unitId: string | null;
+}
+
+/** One Additional Issue Slip loop round: the top-up FG qty + additional RM, and
+ *  the re-loop progress (top-up handover lines + RM-transfer Tally entry). */
+export interface AisRound {
+  round: number;
+  aisQty: number | null;
+  aisBomLines: AisLine[];
+  mhLines: HandoverBomLine[] | null;
+  mhDone: boolean;
+  rmtTally: string | null;
+  rmtDone: boolean;
+  issuedAt: string | null;
+  issuedBy: string | null;
 }
 
 /** One quality test round (approve / reject) inside the quality-checking step. */
@@ -109,6 +138,8 @@ export interface ProductionRequest {
   // legacy cards; display falls back to the single columns above.
   bomLines: BomLine[];
   fgItemId: string | null;
+  // FG total quantity to produce (issue slip). RM line quantities must sum to it.
+  fgQty: number | null;
   issueRemarks: string | null;
   raisedBy: string | null;
   requesterName: string;
@@ -146,6 +177,8 @@ export interface ProductionRequest {
   // pe_* / scrap columns; packed + loose are the two ts_* columns below.
   tsPackedQty: number | null;
   tsLooseQty: number | null; // = actualQty − peLabQty − tsPackedQty
+  // Production loss entered at the log book. Actual Output = Expected − Loss − Scrap.
+  tsProductionLoss: number | null;
   tsAttachmentPath: string | null;
   tsAttachmentName: string | null;
   tsRemarks: string | null;
@@ -177,12 +210,20 @@ export interface ProductionRequest {
   qcAt: string | null;
   qcBy: string | null;
 
-  // step 6: mc_testing — a single approve/reject (mcStatus = "approved" | "rejected")
+  // Additional Issue Slip loop (QC-reject top-ups). Rounds accumulate; the card
+  // re-enters handover → rm_transfer → quality per round until QC approves.
+  aisRounds: AisRound[];
+  aisAt: string | null;
+  aisBy: string | null;
+
+  // mc_testing — approve / reject / bypass (mcStatus). Bypass is admin-only.
   mcActualDate: string | null;
   mcStatus: string | null;
   mcRemarks: string | null;
   mcAttachmentPath: string | null;
   mcAttachmentName: string | null;
+  mcBypassedBy: string | null;
+  mcBypassedAt: string | null;
   mcAt: string | null;
   mcBy: string | null;
 
@@ -213,13 +254,19 @@ export interface ProductionRequest {
   pkAt: string | null;
   pkBy: string | null;
 
-  // step 10: fg_transfer (UI "FG Transfer to Godown") — two Tally-entry ticks close the card
+  // ready_to_dispatch — the holding bay after packing (bulk-advanced to fg_transfer)
+  rtdAt: string | null;
+  rtdBy: string | null;
+
+  // fg_transfer (UI "FG Transfer to Godown") — closes the card via an uploaded Tally file
   fgActualDate: string | null;
   fgStatus: string | null;
   finalQty: number | null;
   fgRemarks: string | null;
-  fgProdToFg: boolean; // "Production → Finished Goods" Tally entry made
-  fgToHojiwala: boolean; // "Finished Goods → Hojiwala" Tally entry made
+  fgProdToFg: boolean; // legacy tick (kept, unused) — "Production → Finished Goods"
+  fgToHojiwala: boolean; // legacy tick (kept, unused) — "Finished Goods → Hojiwala"
+  fgAttachmentPath: string | null; // uploaded Tally voucher file
+  fgAttachmentName: string | null;
   fgAt: string | null;
   fgBy: string | null;
   closedAt: string | null;

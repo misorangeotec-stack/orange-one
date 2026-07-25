@@ -76,6 +76,20 @@ interface QueueTableProps<T> {
   exportTitle?: string;
   /** Extra "what this means" lines for the export's About sheet. */
   exportNotes?: string[];
+  /**
+   * Opt in to row multi-select + a bulk-action bar (used by Ready to Dispatch and
+   * FG Transfer). Adds a leading checkbox column and a header select-all over the
+   * currently filtered rows; `renderBulkActions` renders the action buttons for the
+   * selected rows and is given a `clear()` to reset the selection after acting.
+   * Omitting it leaves the table exactly as it was for every other queue.
+   */
+  selectable?: { renderBulkActions: (selected: T[], clear: () => void) => ReactNode };
+  /**
+   * Hide the in-body group-header rows. The group filter dropdown still works —
+   * this only drops the repeated "· N" header bands, e.g. where a Status column
+   * already conveys the grouping and the bands are just noise.
+   */
+  hideGroupHeaders?: boolean;
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
@@ -113,10 +127,13 @@ export default function QueueTable<T>({
   exportName,
   exportTitle,
   exportNotes,
+  selectable,
+  hideGroupHeaders,
 }: QueueTableProps<T>) {
   const [filters, setFilters] = useState<Record<string, FilterVal>>({});
   const [group, setGroup] = useState<string>(initialGroup ?? "all");
   const [sort, setSort] = useState<SortState>(initialSort ?? null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   const { idOf, nameOf: groupNameOf, allLabel } = groupBy;
 
@@ -197,7 +214,10 @@ export default function QueueTable<T>({
     list = list
       .map((row, i) => ({ row, i }))
       .sort((a, b) => {
-        const cn = nameOf(a.row).localeCompare(nameOf(b.row)); // primary: keep groups together
+        // Group is the primary sort ONLY when its header bands are shown. With
+        // hideGroupHeaders the group is just a filter (no visible bands), so a
+        // column sort like "Raised" must order the whole list, not within-group.
+        const cn = hideGroupHeaders ? 0 : nameOf(a.row).localeCompare(nameOf(b.row));
         if (cn !== 0) return cn;
         if (col && sort) {
           const va = col.sortValue!(a.row);
@@ -222,7 +242,20 @@ export default function QueueTable<T>({
   }, [sorted]);
 
   const pg = usePagination(sorted, { resetKey: `${JSON.stringify(filters)}|${group}|${sort?.key}|${sort?.dir}` });
-  const colSpan = columns.length + (actions ? 1 : 0);
+  const colSpan = columns.length + (actions ? 1 : 0) + (selectable ? 1 : 0);
+
+  // Row multi-select (opt-in). Selection is over the currently filtered rows.
+  const selectedRows = selectable ? sorted.filter((r) => selectedKeys.has(rowKey(r))) : [];
+  const allSelected = !!selectable && sorted.length > 0 && sorted.every((r) => selectedKeys.has(rowKey(r)));
+  const clearSelection = () => setSelectedKeys(new Set());
+  const toggleRow = (key: string) =>
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  const toggleAll = () => setSelectedKeys(allSelected ? new Set() : new Set(sorted.map(rowKey)));
 
   const onSort = (key: string) =>
     setSort((prev) => (prev?.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -361,6 +394,14 @@ export default function QueueTable<T>({
         )}
       </div>
 
+      {selectable && selectedRows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2.5 rounded-xl border border-orange/40 bg-orange/5 px-3.5 py-2.5">
+          <span className="text-[12.5px] font-semibold text-navy">{selectedRows.length} selected</span>
+          <button onClick={clearSelection} className="text-[12px] font-medium text-grey-2 hover:text-orange">Clear</button>
+          <div className="ml-auto flex flex-wrap items-center gap-2">{selectable.renderBulkActions(selectedRows, clearSelection)}</div>
+        </div>
+      )}
+
       {rows.length === 0 ? (
         <EmptyState title={emptyTitle} message={emptyMessage} />
       ) : (
@@ -369,6 +410,11 @@ export default function QueueTable<T>({
             <table className="w-full text-[13.5px] border-separate border-spacing-0">
               <thead>
                 <tr className="text-left text-grey-2">
+                  {selectable && (
+                    <th className="px-4 pt-3 pb-2.5 border-b border-line w-px">
+                      <input type="checkbox" className="h-4 w-4 accent-orange align-middle" checked={allSelected} onChange={toggleAll} aria-label="Select all" />
+                    </th>
+                  )}
                   {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line w-px whitespace-nowrap">Actions</th>}
                   {columns.map((c) => (
                     <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${c.align === "right" ? "text-right" : ""}`}>
@@ -385,6 +431,7 @@ export default function QueueTable<T>({
                 </tr>
                 {/* Typed per-column filter row */}
                 <tr className="bg-page/50">
+                  {selectable && <th className="px-3 py-2.5 border-b border-line" />}
                   {actions && <th className="px-3 py-2.5 border-b border-line" />}
                   {columns.map((c) => (
                     <th key={c.key} className="px-3 py-2.5 border-b border-line align-middle font-normal">
@@ -405,7 +452,7 @@ export default function QueueTable<T>({
                   pg.pageItems.map((row, idx) => {
                     const thisName = nameOf(row);
                     const prevName = idx > 0 ? nameOf(pg.pageItems[idx - 1]) : null;
-                    const showHeader = thisName !== prevName;
+                    const showHeader = !hideGroupHeaders && thisName !== prevName;
                     return (
                       <QueueRows key={rowKey(row)}>
                         {showHeader && (
@@ -420,6 +467,11 @@ export default function QueueTable<T>({
                           </tr>
                         )}
                         <tr className={`hover:bg-page/60 ${rowClassName?.(row) ?? ""}`}>
+                          {selectable && (
+                            <td className="px-4 py-3 border-b border-line/70">
+                              <input type="checkbox" className="h-4 w-4 accent-orange align-middle" checked={selectedKeys.has(rowKey(row))} onChange={() => toggleRow(rowKey(row))} aria-label="Select row" />
+                            </td>
+                          )}
                           {actions && <td className="px-4 py-3 border-b border-line/70 whitespace-nowrap">{actions(row)}</td>}
                           {columns.map((c) => (
                             <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>

@@ -64,6 +64,8 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 export interface ProductionConfig {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
+  /** Admin-set starting number for the continuous batch counter (default 1). */
+  batchSeqStart: number;
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -84,6 +86,8 @@ export interface ProductionData {
   requests: ProductionRequest[];
   activity: ProductionActivity[];
   notifications: ProductionNotification[];
+  /** The next Lot/Batch (Issue Slip) number that will be issued (preview, no consume). */
+  batchNoPreview: string;
 }
 
 const num = (v: any): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
@@ -124,6 +128,7 @@ const mapRequest = (r: any): ProductionRequest => ({
       }))
     : [],
   fgItemId: r.fg_item_id ?? null,
+  fgQty: num(r.fg_qty),
   issueRemarks: r.issue_remarks ?? null,
   raisedBy: r.raised_by ?? null,
   requesterName: r.requester_name,
@@ -171,6 +176,7 @@ const mapRequest = (r: any): ProductionRequest => ({
     : [],
   tsPackedQty: num(r.ts_packed_qty),
   tsLooseQty: num(r.ts_loose_qty),
+  tsProductionLoss: num(r.ts_production_loss),
   tsAttachmentPath: r.ts_attachment_path ?? null,
   tsAttachmentName: r.ts_attachment_name ?? null,
   tsRemarks: r.ts_remarks ?? null,
@@ -208,11 +214,42 @@ const mapRequest = (r: any): ProductionRequest => ({
   qcAt: r.qc_at ?? null,
   qcBy: r.qc_by ?? null,
 
+  aisRounds: Array.isArray(r.ais_rounds)
+    ? r.ais_rounds.map((x: any) => ({
+        round: Number(x.round) || 0,
+        aisQty: num(x.ais_qty),
+        aisBomLines: Array.isArray(x.ais_bom_lines)
+          ? x.ais_bom_lines.map((l: any) => ({
+              rawMaterialId: l.raw_material_id ?? null,
+              qty: num(l.qty),
+              unitId: l.unit_id ?? null,
+            }))
+          : [],
+        mhLines: Array.isArray(x.mh_lines)
+          ? x.mh_lines.map((l: any) => ({
+              rawMaterialId: l.raw_material_id ?? null,
+              unitId: l.unit_id ?? null,
+              qty: num(l.qty),
+              lotNo: l.lot_no ?? null,
+            }))
+          : null,
+        mhDone: !!x.mh_done,
+        rmtTally: x.rmt_tally ?? null,
+        rmtDone: !!x.rmt_done,
+        issuedAt: x.issued_at ?? null,
+        issuedBy: x.issued_by ?? null,
+      }))
+    : [],
+  aisAt: r.ais_at ?? null,
+  aisBy: r.ais_by ?? null,
+
   mcActualDate: r.mc_actual_date ?? null,
   mcStatus: r.mc_status ?? null,
   mcRemarks: r.mc_remarks ?? null,
   mcAttachmentPath: r.mc_attachment_path ?? null,
   mcAttachmentName: r.mc_attachment_name ?? null,
+  mcBypassedBy: r.mc_bypassed_by ?? null,
+  mcBypassedAt: r.mc_bypassed_at ?? null,
   mcAt: r.mc_at ?? null,
   mcBy: r.mc_by ?? null,
 
@@ -225,6 +262,9 @@ const mapRequest = (r: any): ProductionRequest => ({
         packagingItemId: l.packaging_item_id ?? null,
         unitId: l.unit_id ?? null,
         qty: num(l.qty),
+        extra: num(l.extra),
+        extraBuffered: num(l.extra_buffered),
+        total: num(l.total),
       }))
     : [],
   pmhRemarks: r.pmh_remarks ?? null,
@@ -246,12 +286,17 @@ const mapRequest = (r: any): ProductionRequest => ({
   pkAt: r.pk_at ?? null,
   pkBy: r.pk_by ?? null,
 
+  rtdAt: r.rtd_at ?? null,
+  rtdBy: r.rtd_by ?? null,
+
   fgActualDate: r.fg_actual_date ?? null,
   fgStatus: r.fg_status ?? null,
   finalQty: num(r.final_qty),
   fgRemarks: r.fg_remarks ?? null,
   fgProdToFg: !!r.fg_prod_to_fg,
   fgToHojiwala: !!r.fg_to_hojiwala,
+  fgAttachmentPath: r.fg_attachment_path ?? null,
+  fgAttachmentName: r.fg_attachment_name ?? null,
   fgAt: r.fg_at ?? null,
   fgBy: r.fg_by ?? null,
   closedAt: r.closed_at ?? null,
@@ -322,7 +367,11 @@ export async function fetchProductionData(): Promise<ProductionData> {
   const config: ProductionConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
+    batchSeqStart: Number(byKey.get("batch_seq_start")?.start ?? 1) || 1,
   };
+
+  // The next Lot/Batch number to be issued (preview — does not consume the counter).
+  const { data: batchPeek } = await db.rpc("fms_production_peek_batch_no");
 
   return {
     stepOwners: stepOwners.map(mapStepOwner),
@@ -338,5 +387,6 @@ export async function fetchProductionData(): Promise<ProductionData> {
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
+    batchNoPreview: (batchPeek as string) ?? "",
   };
 }

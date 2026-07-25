@@ -14,23 +14,25 @@ const STAGES: { key: string; label: string; step: StepKey | null }[] = [
   { key: "generated", label: "Generated", step: null },
   { key: "material_handover", label: "Handover", step: "material_handover" },
   { key: "rm_transfer", label: "RM Transfer", step: "rm_transfer" },
+  { key: "quality_check", label: "Quality", step: "quality_check" },
   { key: "transfer_slip", label: "Log Book", step: "transfer_slip" },
   { key: "production_entry", label: "Production", step: "production_entry" },
-  { key: "quality_check", label: "Quality", step: "quality_check" },
   { key: "mc_testing", label: "M/C Testing", step: "mc_testing" },
-  { key: "pm_handover", label: "PM Handover", step: "pm_handover" },
   { key: "pm_transfer", label: "PM Transfer", step: "pm_transfer" },
   { key: "packing_entry", label: "Packing", step: "packing_entry" },
+  { key: "ready_to_dispatch", label: "Dispatch", step: "ready_to_dispatch" },
   { key: "fg_transfer", label: "FG Transfer", step: "fg_transfer" },
   { key: "closed", label: "Closed", step: null },
 ];
 
 /** Which node the card is sitting on. A closed card sits on (and finishes) the
- *  final node; every other status sits on its current step. Generated (index 0)
- *  is always complete for a live card, so the floor is 1. */
+ *  final node; every other status sits on its current step. The additional-issue-
+ *  slip branch is a QC-reject state — show it on the Quality node. Generated
+ *  (index 0) is always complete for a live card, so the floor is 1. */
 function activeIndex(r: ProductionRequest): number {
   if (r.status === "closed") return STAGES.length - 1;
-  const i = STAGES.findIndex((st) => st.step === r.currentStep);
+  const currentStep = r.currentStep === "additional_issue_slip" ? "quality_check" : r.currentStep;
+  const i = STAGES.findIndex((st) => st.step === currentStep);
   return i < 1 ? 1 : i;
 }
 

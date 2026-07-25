@@ -9,16 +9,25 @@ import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { formatDateTime } from "@/shared/lib/time";
-import { dmy, requestSubject } from "../lib/format";
+import { dmy, requestSubject, STATUS_LABEL } from "../lib/format";
 import { STEP_CONFIG } from "../lib/stepConfig";
 import type { StageEntry, QueueStep } from "../lib/queues";
 import StepModal from "./StepModal";
+import StatusPill from "./StatusPill";
 import { useProductionStore } from "../store";
 import type { ProductionRequest } from "../types";
+
+/** "dd-mm-yyyy" → "yyyy-mm-dd" so date columns whose display value is dd-mm-yyyy
+ *  (the captured Handover/Transferred dates) sort and range-filter chronologically
+ *  instead of lexicographically by day. */
+const isoFromDmy = (v: string): string => (/^\d{2}-\d{2}-\d{4}$/.test(v) ? v.split("-").reverse().join("-") : v);
 
 interface Row {
   request: ProductionRequest;
   dueIso: string | null;
+  /** A read-only visibility row (the card's actionable step is elsewhere), e.g. a
+   *  QC-rejected lot surfaced under Quality Check while it's in the AIS loop. */
+  tracking: boolean;
 }
 
 /**
@@ -28,7 +37,20 @@ interface Row {
  * screen renders through this one component; it reads the step's config (title,
  * captured column, action label) from lib/stepConfig.
  */
-export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
+export default function StageQueue({
+  stepKey,
+  rowPrint,
+  rowExcel,
+}: {
+  stepKey: QueueStep;
+  /** When set, a "Print" action is shown on each COMPLETED row (e.g. print the
+   *  issue slip with the issued lot numbers after material handover is recorded,
+   *  or the Batch Card once the log book is recorded). */
+  rowPrint?: (r: ProductionRequest) => void;
+  /** When set, a "Download Excel" action is shown on each COMPLETED row (e.g. the
+   *  Batch Card .xlsx on the Log Book queue). */
+  rowExcel?: (r: ProductionRequest) => void;
+}) {
   const s = useProductionStore();
   const session = useSession();
   const cfg = STEP_CONFIG[stepKey];
@@ -39,17 +61,26 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   const stage = useStageMode(completedEntries, session.user?.id ?? "");
 
   const today = todayLocalIso();
-  const rows: Row[] = useMemo(
-    () =>
-      s
-        .myQueue(stepKey)
-        .map((e) => {
-          const request = s.requestById(e.requestId);
-          return request ? { request, dueIso: e.dueIso } : null;
-        })
-        .filter((r): r is Row => r !== null),
-    [s, stepKey],
-  );
+  const rows: Row[] = useMemo(() => {
+    const actionRows = s
+      .myQueue(stepKey)
+      .map((e) => {
+        const request = s.requestById(e.requestId);
+        return request ? { request, dueIso: e.dueIso, tracking: false } : null;
+      })
+      .filter((r): r is Row => r !== null);
+    // Read-only visibility rows (e.g. QC-rejected lots living in the AIS loop).
+    const trackRows = s
+      .trackingFor(stepKey)
+      .map((e) => {
+        const request = s.requestById(e.requestId);
+        return request ? { request, dueIso: e.dueIso, tracking: true } : null;
+      })
+      .filter((r): r is Row => r !== null);
+    return [...actionRows, ...trackRows];
+  }, [s, stepKey]);
+
+  const hasTracking = rows.some((r) => r.tracking);
 
   const columns: QueueColumn<Row>[] = [
     {
@@ -61,13 +92,33 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         </Link>
       ),
       sortValue: ({ request }) => request.reqNo,
+      filter: { kind: "text", get: ({ request }) => `${request.reqNo} ${request.jobcardNo ?? ""}` },
       tdClassName: "whitespace-nowrap",
     },
     {
       key: "subject",
       header: "Lot/Batch Card No.",
       cell: ({ request: r }) => <span className="text-navy">{requestSubject(r)}</span>,
+      sortValue: ({ request }) => requestSubject(request),
       filter: { kind: "text", get: ({ request }) => requestSubject(request) },
+    },
+    // Status column only when there's a mix (a tracking row present) — otherwise a
+    // plain queue's rows all share one status and the column is just noise.
+    ...(hasTracking
+      ? [{
+          key: "status",
+          header: "Status",
+          cell: ({ request }: Row) => <StatusPill status={request.status} />,
+          filter: { kind: "select" as const, get: ({ request }: Row) => STATUS_LABEL[request.status] },
+        }]
+      : []),
+    {
+      key: "raised",
+      header: "Raised",
+      cell: ({ request }) => <span className="text-grey-2">{formatDateTime(request.submittedAt)}</span>,
+      sortValue: ({ request }) => request.submittedAt,
+      filter: { kind: "date", get: ({ request }) => request.submittedAt.slice(0, 10) },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "due",
@@ -78,6 +129,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         return <span className={overdue ? "text-ryg-red font-semibold" : "text-navy"}>{dmy(dueIso)}</span>;
       },
       sortValue: ({ dueIso }) => dueIso ?? "9999-99-99",
+      filter: { kind: "date", get: ({ dueIso }) => dueIso ?? "" },
     },
   ];
 
@@ -98,14 +150,19 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       key: "subject",
       header: "Lot/Batch Card No.",
       cell: (e) => <span className="text-navy">{requestSubject(e.row)}</span>,
+      sortValue: (e) => requestSubject(e.row),
       filter: { kind: "text", get: (e) => requestSubject(e.row) },
     },
     {
       key: cfg.captured.key,
       header: cfg.captured.header,
       cell: (e) => <span className="text-navy">{cfg.captured.get(e.row)}</span>,
-      sortValue: (e) => cfg.captured.get(e.row),
-      filter: { kind: "text", get: (e) => cfg.captured.get(e.row) },
+      // Date captures (Handover date / Transferred) display dd-mm-yyyy — sort and
+      // filter them chronologically via the ISO form, not the shown string.
+      sortValue: (e) => (cfg.captured.isDate ? isoFromDmy(cfg.captured.get(e.row)) : cfg.captured.get(e.row)),
+      filter: cfg.captured.isDate
+        ? { kind: "date", get: (e) => isoFromDmy(cfg.captured.get(e.row)) }
+        : { kind: "text", get: (e) => cfg.captured.get(e.row) },
       tdClassName: "whitespace-nowrap",
     },
     {
@@ -141,6 +198,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           <span className="text-grey-2">—</span>
         ),
       sortValue: (e) => e.editedAtIso ?? "",
+      filter: { kind: "date", get: (e) => (e.editedAtIso ?? "").slice(0, 10) },
       tdClassName: "whitespace-nowrap",
     },
   ];
@@ -171,14 +229,22 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           emptyTitle="Nothing here yet"
           emptyMessage={cfg.completedBlurb}
           actions={(e) => (
-            <StageRowAction
-              as="button"
-              lockReason={e.lockReason}
-              canEdit={s.canActOn(stepKey, e.row)}
-              permissionReason="Only an owner of this step can edit the entry."
-              onEdit={() => editing.openEdit(e.row)}
-              onView={() => editing.openView(e.row)}
-            />
+            <div className="flex items-center gap-2">
+              <StageRowAction
+                as="button"
+                lockReason={e.lockReason}
+                canEdit={s.canActOn(stepKey, e.row)}
+                permissionReason="Only an owner of this step can edit the entry."
+                onEdit={() => editing.openEdit(e.row)}
+                onView={() => editing.openView(e.row)}
+              />
+              {rowExcel && (
+                <Button size="sm" variant="ghost" onClick={() => rowExcel(e.row)}>Excel</Button>
+              )}
+              {rowPrint && (
+                <Button size="sm" variant="ghost" onClick={() => rowPrint(e.row)}>Print</Button>
+              )}
+            </div>
           )}
         />
       ) : (
@@ -191,9 +257,12 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rowsLabel="job cards"
           emptyTitle="Nothing waiting on you"
           emptyMessage="Job cards needing your action will appear here."
-          actions={({ request }) => (
+          actions={({ request, tracking }) => (
+            // Tracking rows (a rejected lot mid-top-up loop) open the same step modal
+            // but it blocks approve/reject/save with a message until the additional RM
+            // is transferred to production — hence "Review" rather than the action label.
             <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
-              {cfg.actionLabel}
+              {tracking ? "Review" : cfg.actionLabel}
             </Button>
           )}
         />

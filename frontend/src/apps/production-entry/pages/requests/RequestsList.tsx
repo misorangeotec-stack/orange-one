@@ -1,8 +1,10 @@
 import { Link, useSearchParams } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
-import { formatDate } from "@/shared/lib/time";
+import { formatDateTime } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { STATUS_LABEL } from "../../lib/format";
+import { numOrDash, STATUS_LABEL } from "../../lib/format";
+import { buildIssueSlipExport } from "../../lib/issueSlipVm";
+import { printIssueSlip } from "../../lib/printIssueSlip";
 import { useProductionStore } from "../../store";
 import type { ProductionRequest, ProductionStatus } from "../../types";
 
@@ -15,43 +17,45 @@ export default function RequestsList() {
   const statusParam = params.get("status");
   const initialGroup = statusParam && statusParam in STATUS_LABEL ? statusParam : undefined;
 
+  const slLookups = {
+    fgItemName: (id: string | null) => s.fgItemById(id)?.name ?? "",
+    rawMaterialName: (id: string | null) => s.rawMaterialById(id)?.name ?? "",
+  };
+
   const columns: QueueColumn<ProductionRequest>[] = [
-    {
-      key: "reqNo",
-      header: "Job Card",
-      cell: (r) => (
-        <Link to={`/production-entry/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">{r.reqNo}</Link>
-      ),
-      sortValue: (r) => r.reqNo,
-      filter: { kind: "text", get: (r) => `${r.reqNo} ${r.jobcardNo}` },
-      tdClassName: "whitespace-nowrap",
-    },
     {
       key: "jobcard",
       header: "Lot/Batch Card No.",
-      cell: (r) => <span className="text-navy">{r.jobcardNo}</span>,
-      filter: { kind: "text", get: (r) => r.jobcardNo },
-    },
-    {
-      key: "rm",
-      header: "Raw Material",
-      // Primary (mirrored first) raw material; a "+N" badge flags a multi-RM BOM.
-      cell: (r) => {
-        const extra = Math.max(0, r.bomLines.length - 1);
-        return (
-          <span className="text-grey-2">
-            {s.rawMaterialById(r.rawMaterialId)?.name ?? "—"}
-            {extra > 0 && <span className="ml-1.5 text-[11px] text-grey-2">+{extra}</span>}
-          </span>
-        );
-      },
-      filter: { kind: "select", get: (r) => s.rawMaterialById(r.rawMaterialId)?.name ?? "—" },
+      // The Lot/Batch Card number is the primary identifier (the internal Job Card
+      // no. is hidden); it links to the card detail. Search still matches both.
+      cell: (r) => (
+        <Link to={`/production-entry/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">{r.jobcardNo || r.reqNo}</Link>
+      ),
+      sortValue: (r) => r.jobcardNo || r.reqNo,
+      filter: { kind: "text", get: (r) => `${r.jobcardNo} ${r.reqNo}` },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "fg",
       header: "FG Item",
-      cell: (r) => <span className="text-grey-2">{s.fgItemById(r.fgItemId)?.name ?? "—"}</span>,
+      cell: (r) => <span className="text-navy">{s.fgItemById(r.fgItemId)?.name ?? "—"}</span>,
       filter: { kind: "select", get: (r) => s.fgItemById(r.fgItemId)?.name ?? "—" },
+    },
+    {
+      key: "fgQty",
+      header: "FG Qty",
+      align: "right",
+      cell: (r) => {
+        const unit = s.unitById(s.fgItemById(r.fgItemId)?.unitId ?? null)?.name;
+        return (
+          <span className="text-navy tabular-nums">
+            {numOrDash(r.fgQty)}
+            {unit && r.fgQty != null && <span className="text-grey-2 font-normal"> {unit}</span>}
+          </span>
+        );
+      },
+      sortValue: (r) => r.fgQty ?? 0,
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "status",
@@ -62,8 +66,9 @@ export default function RequestsList() {
     {
       key: "submitted",
       header: "Raised",
-      cell: (r) => <span className="text-grey-2">{formatDate(r.submittedAt)}</span>,
+      cell: (r) => <span className="text-grey-2">{formatDateTime(r.submittedAt)}</span>,
       sortValue: (r) => r.submittedAt,
+      filter: { kind: "date", get: (r) => r.submittedAt },
       tdClassName: "whitespace-nowrap",
     },
   ];
@@ -71,7 +76,7 @@ export default function RequestsList() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">All Job Cards</h1>
+        <h1 className="text-[22px] font-bold text-navy">All Issue Slips</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">Every production job card you're allowed to see, newest first.</p>
       </div>
       <QueueTable<ProductionRequest>
@@ -80,11 +85,21 @@ export default function RequestsList() {
         columns={columns}
         groupBy={{ idOf: (r) => r.status, nameOf: (id) => STATUS_LABEL[id as ProductionStatus] ?? id, allLabel: "All statuses", label: "Status" }}
         initialGroup={initialGroup}
+        hideGroupHeaders
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="job cards"
         exportName="Production_Job_Cards"
         emptyTitle="No job cards yet"
         emptyMessage="Job cards raised on the floor will appear here."
+        actions={(r) => (
+          <div className="flex items-center gap-3">
+            <Link to={`/production-entry/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">Open</Link>
+            {s.canEditRequest(r) && (
+              <Link to={`/production-entry/requests/${r.id}/edit`} className="text-[12.5px] font-semibold text-orange hover:underline">Edit</Link>
+            )}
+            <button type="button" onClick={() => printIssueSlip(buildIssueSlipExport(r, slLookups))} className="text-[12.5px] font-semibold text-orange hover:underline">Print</button>
+          </div>
+        )}
       />
     </div>
   );

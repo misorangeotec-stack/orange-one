@@ -12,7 +12,9 @@ import {
   holdRequest as holdRequestWrite,
   insertMaster as insertMasterWrite,
   markNotificationsRead as markNotificationsReadWrite,
+  markReadyToDispatch as markReadyToDispatchWrite,
   qualityDocumentUrl as qualityDocumentUrlWrite,
+  recordFgTransferBulk as recordFgTransferBulkWrite,
   recordStep as recordStepWrite,
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
@@ -20,8 +22,10 @@ import {
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
   submitRequest as submitRequestWrite,
+  updateRequest as updateRequestWrite,
   updateMaster as updateMasterWrite,
   updateStep as updateStepWrite,
+  uploadStepDocument as uploadStepDocumentWrite,
   type MasterInput,
   type RequestInput,
   type StepOwnerInput,
@@ -33,6 +37,7 @@ import {
   isOpenRequest,
   productionDueIso,
   productionSnapshotFrom,
+  trackingRequestsFor,
   type ProductionSnapshot,
   type QueueEntry,
   type QueueStep,
@@ -94,6 +99,8 @@ interface ProductionStoreValue {
   stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
+  batchSeqStart: number;
+  batchNoPreview: string;
 
   // capabilities
   isAdmin: boolean;
@@ -126,10 +133,16 @@ interface ProductionStoreValue {
   requestById: (id: string) => ProductionRequest | undefined;
   myRequests: ProductionRequest[];
   isOpenRequest: (r: ProductionRequest) => boolean;
+  /** Whether the issue slip may still be edited (raiser/admin/coordinator, and the
+   *  card is still awaiting its first material handover). Mirrors the RPC gate. */
+  canEditRequest: (r: ProductionRequest) => boolean;
 
   // queues
   queueEntries: QueueEntry[];
   myQueue: (stepKey: QueueStep) => QueueEntry[];
+  /** Read-only visibility rows shown in a step's Pending list though the card's
+   *  actionable step is elsewhere (e.g. a QC-rejected lot in the AIS loop). */
+  trackingFor: (stepKey: QueueStep) => { requestId: string; dueIso: string | null }[];
   dueIsoFor: (r: ProductionRequest, stepKey: QueueStep) => string | null;
   completedFor: (stepKey: QueueStep) => StageEntry<ProductionRequest>[];
   personName: (id: string | null) => string;
@@ -143,8 +156,11 @@ interface ProductionStoreValue {
 
   // workflow writes
   submitRequest: (input: RequestInput) => Promise<string>;
+  updateRequest: (requestId: string, input: RequestInput) => Promise<void>;
   recordStep: (stepKey: QueueStep, r: ProductionRequest, payload: StepPayload) => Promise<void>;
   updateStep: (stepKey: QueueStep, r: ProductionRequest, payload: StepPayload) => Promise<void>;
+  markReadyToDispatch: (requestIds: string[]) => Promise<number>;
+  transferFgBulk: (requestIds: string[], file: File) => Promise<number>;
   holdRequest: (r: ProductionRequest, hold: boolean, reason: string) => Promise<void>;
   cancelRequest: (r: ProductionRequest, reason: string) => Promise<void>;
 
@@ -155,6 +171,7 @@ interface ProductionStoreValue {
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
+  setBatchSeqStart: (start: number) => Promise<void>;
 
   // master writes
   insertMaster: (mt: ProductionMasterType, input: MasterInput) => Promise<void>;
@@ -174,6 +191,11 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     queryKey: productionQueryKey(userId),
     queryFn: fetchProductionData,
     enabled: !!session.user,
+    // Serve cached data instantly instead of re-running the heavy 13-table fetch on
+    // every mount / window-focus (which left step modals showing 0s while it ran).
+    // Writes call invalidate(), so data still refreshes immediately after any change.
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 
   // Org-wide names so a colleague's completed entry never renders blank.
@@ -193,6 +215,8 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
+  const batchSeqStart = data?.config.batchSeqStart ?? 1;
+  const batchNoPreview = data?.batchNoPreview ?? "";
 
   const value = useMemo<ProductionStoreValue>(() => {
     const uid = userId ?? "";
@@ -213,6 +237,15 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     // owners configured, then only those owners (or admin / coordinator).
     const issueSlipOwners = stepOwnerFor("issue_slip")?.employeeIds ?? [];
     const canRaise = issueSlipOwners.length === 0 || isAdmin || isProcessCoordinator || issueSlipOwners.includes(uid);
+
+    // Mirrors fms_production_request_editable + the RPC authz: the raiser / admin /
+    // coordinator may edit an issue slip while it is still awaiting the FIRST
+    // material handover (mh_at null excludes the AIS re-loop, which re-enters the
+    // same status). The disabled button is a courtesy — the RPC re-checks this.
+    const canEditRequest = (r: ProductionRequest): boolean =>
+      (r.raisedBy === uid || isAdmin || isProcessCoordinator) &&
+      r.status === "awaiting_material_handover" &&
+      r.mhAt == null;
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -282,6 +315,11 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         return r ? canActOn(stepKey, r) : false;
       });
 
+    const trackingFor = (stepKey: QueueStep): { requestId: string; dueIso: string | null }[] =>
+      trackingRequestsFor(snapshot, stepKey)
+        .filter((r) => canActOn(stepKey, r))
+        .map((r) => ({ requestId: r.id, dueIso: productionDueIso(snapshot, r, stepKey) }));
+
     const idById = <T extends NamedMaster>(rows: T[], id: string | null): T | undefined =>
       id ? rows.find((c) => c.id === id) : undefined;
 
@@ -315,6 +353,8 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       stepOwnerFor,
       processCoordinatorIds,
       stepSla,
+      batchSeqStart,
+      batchNoPreview,
 
       isAdmin,
       isProcessCoordinator,
@@ -373,9 +413,11 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       requestById: (id) => requestMap.get(id),
       myRequests: requests.filter((r) => r.raisedBy === uid),
       isOpenRequest,
+      canEditRequest,
 
       queueEntries,
       myQueue,
+      trackingFor,
       dueIsoFor: (r, stepKey) => productionDueIso(snapshot, r, stepKey),
       completedFor: (stepKey) => completedForPure(snapshot, stepKey),
       personName,
@@ -396,6 +438,10 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         await invalidate();
         return id;
       },
+      updateRequest: async (requestId, input) => {
+        await updateRequestWrite(requestId, input);
+        await invalidate();
+      },
       recordStep: async (stepKey, r, payload) => {
         await recordStepWrite(stepKey, r.id, payload);
         await invalidate();
@@ -403,6 +449,18 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       updateStep: async (stepKey, r, payload) => {
         await updateStepWrite(stepKey, r.id, payload);
         await invalidate();
+      },
+      markReadyToDispatch: async (requestIds) => {
+        const moved = await markReadyToDispatchWrite(requestIds);
+        await invalidate();
+        return moved;
+      },
+      transferFgBulk: async (requestIds, file) => {
+        // Upload the shared Tally voucher once, then close every selected card with it.
+        const up = await uploadStepDocumentWrite(requestIds[0] ?? "shared", "fgtransfer", file);
+        const moved = await recordFgTransferBulkWrite(requestIds, up.path, up.name);
+        await invalidate();
+        return moved;
       },
       holdRequest: async (r, hold, reason) => {
         await holdRequestWrite(r.id, hold, reason);
@@ -429,6 +487,10 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite("process_coordinators", { user_ids: userIds });
         await invalidate();
       },
+      setBatchSeqStart: async (start) => {
+        await setConfigWrite("batch_seq_start", { start });
+        await invalidate();
+      },
 
       insertMaster: async (mt, input) => {
         await insertMasterWrite(mt, input);
@@ -442,7 +504,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   }, [
     isLoading, error, dir, userId, isAdmin, designations, categories, rawMaterials, packagingItems, fgItems, units,
     masterManagers, masterRequests, requests, activity, notifications, stepOwners, processCoordinatorIds,
-    stepSla, queryClient, session.user, orgPeople,
+    stepSla, batchSeqStart, batchNoPreview, queryClient, session.user, orgPeople,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -22,13 +22,14 @@ const ic = {
 const QUEUE_PATH: Record<QueueStep, string> = {
   material_handover: "material-handover",
   rm_transfer: "rm-transfer",
+  quality_check: "quality",
+  additional_issue_slip: "additional-issue-slip",
   transfer_slip: "transfer-slip",
   production_entry: "production",
-  quality_check: "quality",
   mc_testing: "mc-testing",
-  pm_handover: "pm-handover",
   pm_transfer: "pm-transfer",
   packing_entry: "packing",
+  ready_to_dispatch: "ready-to-dispatch",
   fg_transfer: "fg-transfer",
 };
 
@@ -42,15 +43,15 @@ export function buildProductionNav(opts: {
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
-    ...(opts.hasRequests ? [{ label: "All Job Cards", to: `${B}/requests`, icon: ic.list }] : []),
-    // Generate Batch Card is shown only to users who may raise a job card (Raise
+    ...(opts.hasRequests ? [{ label: "All Issue Slips", to: `${B}/requests`, icon: ic.list }] : []),
+    // Generate Issue Slip is shown only to users who may raise a job card (Raise
     // Request step owners, or everyone when no owners are configured).
     ...(opts.canRaise
       ? [
-          { label: "Generate Batch Card", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
-          { label: "My Job Cards", to: `${B}/my-requests`, icon: ic.mine },
+          { label: "Generate Issue Slip", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
+          { label: "My Issue Slips", to: `${B}/my-requests`, icon: ic.mine },
         ]
-      : [{ label: "My Job Cards", to: `${B}/my-requests`, icon: ic.mine, section: "Actions" }]),
+      : [{ label: "My Issue Slips", to: `${B}/my-requests`, icon: ic.mine, section: "Actions" }]),
     { label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests },
   ];
 

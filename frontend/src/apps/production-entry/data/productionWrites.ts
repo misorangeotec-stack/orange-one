@@ -22,17 +22,19 @@ export interface RequestLineInput {
 }
 
 export interface RequestInput {
-  jobcardNo: string;
+  /** FG total quantity to produce; the RM line quantities must sum to this. */
+  fgTotalQty: string;
   bomLines: RequestLineInput[];
   fgItemId: string;
   issueRemarks: string | null;
   requesterName: string;
 }
 
+/** Raise a job card. The Lot/Batch number is auto-generated server-side. */
 export async function submitRequest(input: RequestInput): Promise<string> {
   const { data, error } = await db.rpc("fms_production_submit_request", {
     p: {
-      jobcard_no: input.jobcardNo,
+      fg_qty: input.fgTotalQty ?? "",
       bom_lines: input.bomLines.map((l) => ({
         raw_material_id: l.rawMaterialId,
         required_qty: l.qty ?? "",
@@ -47,6 +49,25 @@ export async function submitRequest(input: RequestInput): Promise<string> {
   return data as string;
 }
 
+/** Edit an issue slip (step 1). Server-gated: only while it is still awaiting the
+ *  first material handover, and only by the raiser / admin / coordinator. */
+export async function updateRequest(requestId: string, input: RequestInput): Promise<void> {
+  const { error } = await db.rpc("fms_production_update_request", {
+    p_req: requestId,
+    p: {
+      fg_qty: input.fgTotalQty ?? "",
+      bom_lines: input.bomLines.map((l) => ({
+        raw_material_id: l.rawMaterialId,
+        required_qty: l.qty ?? "",
+        unit_id: l.unitId ?? "",
+      })),
+      fg_item_id: input.fgItemId,
+      issue_remarks: input.issueRemarks ?? "",
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
 /* ------------------------------- stage records ---------------------------- */
 
 /** payload keys are the jsonb keys the matching RPC reads (see lib/stepConfig.ts).
@@ -57,26 +78,30 @@ export type StepPayload = Record<string, unknown>;
 const RECORD_RPC: Record<QueueStep, string> = {
   material_handover: "fms_production_record_material_handover",
   rm_transfer: "fms_production_record_rm_transfer",
+  quality_check: "fms_production_record_quality",
+  additional_issue_slip: "fms_production_record_additional_issue_slip",
   transfer_slip: "fms_production_record_transfer_slip",
   production_entry: "fms_production_record_production",
-  quality_check: "fms_production_record_quality",
   mc_testing: "fms_production_record_mc_testing",
-  pm_handover: "fms_production_record_pm_handover",
   pm_transfer: "fms_production_record_pm_transfer",
   packing_entry: "fms_production_record_packing",
-  fg_transfer: "fms_production_record_fg_transfer",
+  // ready_to_dispatch & fg_transfer use dedicated multi-select pages + the bulk
+  // helpers below; these entries exist only to satisfy the map type.
+  ready_to_dispatch: "fms_production_mark_ready_to_dispatch",
+  fg_transfer: "fms_production_record_fg_transfer_bulk",
 };
 
 const UPDATE_RPC: Record<QueueStep, string> = {
   material_handover: "fms_production_update_material_handover",
   rm_transfer: "fms_production_update_rm_transfer",
+  quality_check: "fms_production_update_quality",
+  additional_issue_slip: "fms_production_update_additional_issue_slip",
   transfer_slip: "fms_production_update_transfer_slip",
   production_entry: "fms_production_update_production",
-  quality_check: "fms_production_update_quality",
   mc_testing: "fms_production_update_mc_testing",
-  pm_handover: "fms_production_update_pm_handover",
   pm_transfer: "fms_production_update_pm_transfer",
   packing_entry: "fms_production_update_packing",
+  ready_to_dispatch: "fms_production_mark_ready_to_dispatch",
   fg_transfer: "fms_production_update_fg_transfer",
 };
 
@@ -88,6 +113,24 @@ export async function recordStep(step: QueueStep, requestId: string, payload: St
 export async function updateStep(step: QueueStep, requestId: string, payload: StepPayload): Promise<void> {
   const { error } = await db.rpc(UPDATE_RPC[step], { p_req: requestId, p: payload });
   if (error) throw new Error(error.message);
+}
+
+/** Bulk: move the selected packed cards on to FG transfer. Returns how many moved. */
+export async function markReadyToDispatch(requestIds: string[]): Promise<number> {
+  const { data, error } = await db.rpc("fms_production_mark_ready_to_dispatch", { p_reqs: requestIds });
+  if (error) throw new Error(error.message);
+  return (data as number) ?? 0;
+}
+
+/** Bulk: close the selected FG-transfer cards with one uploaded Tally voucher file. */
+export async function recordFgTransferBulk(requestIds: string[], path: string, name: string): Promise<number> {
+  const { data, error } = await db.rpc("fms_production_record_fg_transfer_bulk", {
+    p_reqs: requestIds,
+    p_path: path,
+    p_name: name,
+  });
+  if (error) throw new Error(error.message);
+  return (data as number) ?? 0;
 }
 
 export async function holdRequest(requestId: string, hold: boolean, reason: string): Promise<void> {

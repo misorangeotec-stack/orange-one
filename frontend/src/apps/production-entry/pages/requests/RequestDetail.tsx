@@ -1,15 +1,20 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
-import { formatDate, formatDateTime } from "@/shared/lib/time";
+import { formatDateTime } from "@/shared/lib/time";
 import StepModal from "../../components/StepModal";
 import ProductionStepper from "../../components/ProductionStepper";
+import ExportButtons from "../../components/ExportButtons";
 import StatusPill from "../../components/StatusPill";
+import { exportIssueSlipXlsx } from "../../lib/exportIssueSlip";
+import { buildIssueSlipExport, buildAisIssueSlipExport } from "../../lib/issueSlipVm";
+import { printIssueSlip } from "../../lib/printIssueSlip";
+import { buildBatchCardExport, exportBatchCardXlsx, printBatchCard } from "../../lib/batchCard";
 import { dmy, numOrDash, requestSubject } from "../../lib/format";
 import { openStep, stepDoneAt, stepDoneBy, type QueueStep } from "../../lib/queues";
 import { STEPS } from "../../lib/steps";
@@ -31,7 +36,7 @@ function Stage({ title, when, by, detail, state }: { title: string; when: string
           <span className="text-[13.5px] font-semibold text-navy">{title}</span>
           <span className={`text-[11px] font-semibold uppercase tracking-wide ${tone}`}>{label}</span>
         </div>
-        {when && <div className="text-[12.5px] text-grey-2">{formatDate(when)}{by ? ` · ${by}` : ""}</div>}
+        {when && <div className="text-[12.5px] text-grey-2">{formatDateTime(when)}{by ? ` · ${by}` : ""}</div>}
         {detail && <div className="text-[12.5px] text-grey mt-0.5">{detail}</div>}
       </div>
     </div>
@@ -62,19 +67,31 @@ function stepDetail(step: QueueStep, r: ProductionRequest): string | null {
       const res = r.qcStatus ? r.qcStatus[0].toUpperCase() + r.qcStatus.slice(1) : null;
       return [n ? `Test ${n}` : null, res, r.qcRetestDue ? `retest by ${dmy(r.qcRetestDue)}` : null].filter(Boolean).join(" · ") || null;
     }
+    case "additional_issue_slip": {
+      const last = r.aisRounds[r.aisRounds.length - 1];
+      return [last?.aisQty != null ? `Extra ${last.aisQty}` : null, r.aisRounds.length ? `${r.aisRounds.length} slip${r.aisRounds.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
+    }
     case "mc_testing": return [r.mcStatus ? r.mcStatus[0].toUpperCase() + r.mcStatus.slice(1) : null, r.mcRemarks].filter(Boolean).join(" · ") || null;
-    case "pm_handover": return [r.pmhQty != null ? `Packed ${r.pmhQty}` : null, r.pmhBomLines.length ? `${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
     case "pm_transfer": return r.pmtAt ? `Transferred${r.pmhBomLines.length ? ` · ${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : ""}` : null;
     case "packing_entry": {
       const net = r.actualQty != null ? Math.round((r.actualQty - (r.peLabQty ?? 0)) * 1000) / 1000 : null;
       return [r.pkAt ? "Logged" : null, net != null ? `Net ${net}` : null, r.pmhBomLines.length ? `${r.pmhBomLines.length} packaging item${r.pmhBomLines.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") || null;
     }
-    case "fg_transfer": return [r.fgProdToFg ? "Prod→FG ✓" : null, r.fgToHojiwala ? "FG→Hojiwala ✓" : null, r.closedAt ? "closed" : null].filter(Boolean).join(" · ") || null;
+    case "ready_to_dispatch": return r.rtdAt ? "Marked ready to dispatch" : null;
+    case "fg_transfer": return [r.fgAttachmentName ? "Tally file uploaded" : null, r.closedAt ? "closed" : null].filter(Boolean).join(" · ") || null;
+    default: return null;
   }
 }
 
+/** Steps handled by a dedicated multi-select page, not the per-card StepModal. */
+const BULK_STEP_SLUG: Partial<Record<QueueStep, string>> = {
+  ready_to_dispatch: "ready-to-dispatch",
+  fg_transfer: "fg-transfer",
+};
+
 export default function RequestDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const s = useProductionStore();
   const session = useSession();
   const r = id ? s.requestById(id) : undefined;
@@ -117,6 +134,19 @@ export default function RequestDetail() {
 
   const activity = s.activityFor("request", r.id);
 
+  // FG quantity + any Additional Issue Slip top-ups (QC rejects add extra FG qty).
+  const fgUnitName = s.unitById(s.fgItemById(r.fgItemId)?.unitId ?? null)?.name ?? null;
+  const aisAdditional = r.aisRounds.reduce((a, rd) => a + (rd.aisQty ?? 0), 0);
+  const totalFgQty = (r.fgQty ?? 0) + aisAdditional;
+  const fgQtyLabel = (q: number | null) => (q == null ? "—" : `${Math.round(q * 1000) / 1000}${fgUnitName ? ` ${fgUnitName}` : ""}`);
+
+  // Lookups the issue-slip + batch-card view-model builders need.
+  const issueSlipLookups = {
+    fgItemName: (id: string | null) => s.fgItemById(id)?.name ?? "",
+    rawMaterialName: (id: string | null) => s.rawMaterialById(id)?.name ?? "",
+    packagingItemName: (id: string | null) => s.packagingItemById(id)?.name ?? "",
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-5">
       <div className="flex items-start justify-between gap-4">
@@ -128,7 +158,16 @@ export default function RequestDetail() {
           <p className="text-[13.5px] text-grey-2 mt-1">Lot/Batch Card {requestSubject(r)} · raised by {r.requesterName}</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
-          {cur && canActNow && <Button size="sm" onClick={() => setModalStep(cur)}>{STEP_CONFIG[cur].actionLabel}</Button>}
+          {cur && canActNow && (
+            BULK_STEP_SLUG[cur]
+              ? <Button size="sm" onClick={() => navigate(`/production-entry/queues/${BULK_STEP_SLUG[cur]}`)}>{STEP_CONFIG[cur].actionLabel}</Button>
+              : <Button size="sm" onClick={() => setModalStep(cur)}>{STEP_CONFIG[cur].actionLabel}</Button>
+          )}
+          {s.canEditRequest(r) && (
+            <Link to={`/production-entry/requests/${r.id}/edit`}>
+              <Button size="sm" variant="ghost">Edit</Button>
+            </Link>
+          )}
           {canHold && (
             <Button size="sm" variant="ghost" onClick={() => (r.status === "on_hold" ? void s.holdRequest(r, false, "") : setHoldOpen(true))}>
               {r.status === "on_hold" ? "Resume" : "Hold"}
@@ -145,7 +184,14 @@ export default function RequestDetail() {
       </Card>
 
       <Card className="p-5">
-        <SectionHeading>Batch Card</SectionHeading>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <SectionHeading>Batch Card</SectionHeading>
+          <ExportButtons
+            label="issue slip"
+            onDownloadExcel={() => exportIssueSlipXlsx(buildIssueSlipExport(r, issueSlipLookups))}
+            onPrint={() => printIssueSlip(buildIssueSlipExport(r, issueSlipLookups))}
+          />
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-3">
           <Field
             label="FG Item"
@@ -157,8 +203,18 @@ export default function RequestDetail() {
             })()}
           />
           <Field label="Lot/Batch Card Number" value={r.jobcardNo} />
+          <Field
+            label={aisAdditional > 0 ? "Original FG Quantity" : "FG Quantity"}
+            value={fgQtyLabel(r.fgQty)}
+          />
+          {aisAdditional > 0 && (
+            <Field
+              label="Total FG Quantity"
+              value={`${fgQtyLabel(totalFgQty)} (incl. +${Math.round(aisAdditional * 1000) / 1000} additional)`}
+            />
+          )}
           <Field label="Requester" value={r.requesterName} />
-          <Field label="Raised" value={formatDate(r.submittedAt)} />
+          <Field label="Raised" value={formatDateTime(r.submittedAt)} />
           {r.issueRemarks && <Field label="Remarks" value={r.issueRemarks} className="col-span-2 sm:col-span-3" />}
         </div>
 
@@ -226,6 +282,63 @@ export default function RequestDetail() {
             </div>
           )}
         </div>
+        {/* Additional Issue Slips — QC-reject top-ups. Each carries its own extra
+            FG quantity and extra raw material, tagged so they're clearly separate
+            from the original issue slip above. */}
+        {r.aisRounds.length > 0 && (
+          <div className="mt-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">
+              Additional Issue Slips <span className="text-orange normal-case tracking-normal font-medium">· QC top-ups</span>
+            </div>
+            <div className="space-y-3">
+              {r.aisRounds.map((rd, i) => (
+                <div key={i} className="rounded-xl border border-orange/40 overflow-hidden">
+                  <div className="flex flex-wrap items-center justify-between gap-2 bg-orange-soft px-3 py-2 border-b border-orange/30">
+                    <span className="text-[12.5px] font-semibold text-navy">Additional Slip {rd.round}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[12.5px] text-navy">
+                        Additional FG Qty: <span className="font-bold tabular-nums text-orange">+{numOrDash(rd.aisQty)}</span>
+                        {fgUnitName ? ` ${fgUnitName}` : ""}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => printIssueSlip(buildAisIssueSlipExport(r, rd, issueSlipLookups))}
+                        className="text-[12px] font-semibold text-orange hover:underline"
+                      >
+                        Print
+                      </button>
+                    </div>
+                  </div>
+                  <table className="w-full text-[13px]">
+                    <thead>
+                      <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                        <th className="font-medium px-3 py-2">Additional Raw Material</th>
+                        <th className="font-medium px-3 py-2 text-right w-28">Qty</th>
+                        <th className="font-medium px-3 py-2 w-32">Unit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rd.aisBomLines.map((l, j) => (
+                        <tr key={j} className="border-b border-line/70 last:border-0">
+                          <td className="px-3 py-2 text-navy">{s.rawMaterialById(l.rawMaterialId)?.name ?? "—"}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.qty)}</td>
+                          <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="px-3 py-1.5 text-[11.5px] text-grey-2 bg-page/40 border-t border-line">
+                    {[
+                      rd.issuedAt ? `Issued ${formatDateTime(rd.issuedAt)}` : null,
+                      rd.mhDone ? "handed over" : "awaiting handover",
+                      rd.rmtDone ? "transferred to production" : rd.mhDone ? "awaiting RM transfer" : null,
+                    ].filter(Boolean).join(" · ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {r.status === "on_hold" && r.holdReason && (
           <div className="mt-4 rounded-xl bg-page px-3.5 py-2.5 text-[12.5px] text-grey">On hold: {r.holdReason}</div>
         )}
@@ -233,6 +346,24 @@ export default function RequestDetail() {
           <div className="mt-4 rounded-xl bg-page px-3.5 py-2.5 text-[12.5px] text-grey">Cancelled: {r.cancelReason}</div>
         )}
       </Card>
+
+      {/* Batch Card report — available once the Log Book Entry is done (tsAt set).
+          Reprises the BOM with actual transfer/use/variance + output metrics. */}
+      {stepDoneAt("transfer_slip", r) && (
+        <Card className="p-5">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <SectionHeading>Batch Card Report</SectionHeading>
+            <ExportButtons
+              label="batch card"
+              onDownloadExcel={() => exportBatchCardXlsx(buildBatchCardExport(r, issueSlipLookups))}
+              onPrint={() => printBatchCard(buildBatchCardExport(r, issueSlipLookups))}
+            />
+          </div>
+          <p className="text-[12.5px] text-grey-2 mt-1">
+            Actual transfer, use, variance and output — captured through the log book entry.
+          </p>
+        </Card>
+      )}
 
       <Card className="p-5 space-y-4">
         <h2 className="text-[15px] font-bold text-navy">Progress</h2>

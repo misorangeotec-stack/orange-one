@@ -8,7 +8,7 @@ import Pagination from "@/shared/components/ui/Pagination";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
-import { formatDate } from "@/shared/lib/time";
+import { formatDateTime } from "@/shared/lib/time";
 import RequestMasterModal from "../components/RequestMasterModal";
 import { useProductionStore } from "../store";
 import { PRODUCTION_MASTER_TYPES, type ProductionMasterRequest } from "../types";
@@ -142,7 +142,7 @@ export default function MasterRequests() {
                         <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
                         <td className="px-4 py-3">{describePayload(r.masterType, r.proposedPayload)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{s.profileById(r.requestedBy ?? "")?.name ?? "—"}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
+                        <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(r.createdAt)}</td>
                         <td className="px-4 py-3">{statusBadge(r.status)}</td>
                         <td className="px-4 py-3">
                           {r.status === "approved" ? (
@@ -182,7 +182,7 @@ export default function MasterRequests() {
           <FieldLabel label="Name" required>
             <TextInput value={name} onChange={(e) => setName(e.target.value)} />
           </FieldLabel>
-          {approving && <p className="text-[12px] text-grey-2">Requested by {s.profileById(approving.requestedBy ?? "")?.name ?? "—"} on {formatDate(approving.createdAt)}.</p>}
+          {approving && <p className="text-[12px] text-grey-2">Requested by {s.profileById(approving.requestedBy ?? "")?.name ?? "—"} on {formatDateTime(approving.createdAt)}.</p>}
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
       </Modal>

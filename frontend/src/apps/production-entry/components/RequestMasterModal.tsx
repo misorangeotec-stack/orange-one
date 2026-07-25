@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import { formatDate } from "@/shared/lib/time";
+import { formatDateTime } from "@/shared/lib/time";
 import { useProductionStore } from "../store";
 import { PRODUCTION_MASTER_TYPES, type ProductionMasterType } from "../types";
 import {
@@ -61,7 +61,7 @@ export default function RequestMasterModal({
     );
     if (dup) {
       const who = s.profileById(dup.requestedBy ?? "")?.name ?? "someone";
-      return `Already requested by ${who} on ${formatDate(dup.createdAt)} — it's awaiting review.`;
+      return `Already requested by ${who} on ${formatDateTime(dup.createdAt)} — it's awaiting review.`;
     }
     return null;
   }, [mt, values, s]);

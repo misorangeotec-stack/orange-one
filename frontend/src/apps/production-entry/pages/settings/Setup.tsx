@@ -4,6 +4,7 @@ import StepOwnersSection from "./StepOwnersSection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import StepDueDatesSection from "./StepDueDatesSection";
+import BatchNumberingSection from "./BatchNumberingSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 
 export default function Setup() {
@@ -11,6 +12,7 @@ export default function Setup() {
   const tabs = [
     { key: "owners", label: "Step Owners" },
     { key: "due", label: "Due Dates" },
+    { key: "numbering", label: "Batch Numbering" },
     { key: "coordinators", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
     { key: "notifications", label: "Notifications" },
@@ -26,6 +28,7 @@ export default function Setup() {
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
       {tab === "owners" && <StepOwnersSection />}
       {tab === "due" && <StepDueDatesSection />}
+      {tab === "numbering" && <BatchNumberingSection />}
       {tab === "coordinators" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}
       {tab === "notifications" && <EmailNotificationsSection />}

@@ -166,7 +166,12 @@ export default function LineGrid<T extends LineGridRow>({
 
   return (
     <div className={cn("rounded-xl border border-line overflow-x-auto", className)}>
-      <table className="w-full text-[13.5px]">
+      {/* table-fixed, not auto: a long value in one cell (e.g. a wide item name)
+          must NOT expand its column and crush the fixed-width ones next to it
+          (Qty collapsing to the spinner). With fixed layout the explicit column
+          widths hold and cells that carry only a `min-w` (Item, Remark) absorb
+          the slack — the truncating Combobox/inputs then clip instead of grow. */}
+      <table className="w-full table-fixed text-[13.5px]">
         <thead>
           <tr className="text-left text-grey-2 border-b border-line bg-page/60">
             {columns.map((c) => (
