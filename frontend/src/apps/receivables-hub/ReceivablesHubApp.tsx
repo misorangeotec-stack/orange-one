@@ -19,6 +19,7 @@ import SalesReport from "@hub/pages/SalesReport";
 import DayBook from "@hub/pages/DayBook";
 import PurchaseReport from "@hub/pages/PurchaseReport";
 import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
+import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -88,6 +89,9 @@ function HubRoutes() {
           {/* Finance → Receivables — Talligence receivables clone on the rpt_receivables_*
               snapshot; own company + FY pickers. */}
           <Route path="reports/finance-receivables" element={<ReceivablesMasterReport />} />
+          {/* Finance → Payables — sign-mirror of Receivables (Sundry Creditors) on the
+              rpt_payables_* snapshot; own company + FY pickers, same as Receivables. */}
+          <Route path="reports/finance-payables" element={<PayablesMasterReport />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />

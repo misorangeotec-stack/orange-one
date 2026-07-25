@@ -198,12 +198,13 @@ export const REPORTS: ReportEntry[] = [
   {
     id: "finance-payables",
     title: "Payables",
-    purpose: "What we owe each supplier — outstanding, overdue and advances, by bill.",
+    purpose: "What we owe each supplier — outstanding, overdue, on-account and advances, by bill.",
     category: "finance",
+    path: "reports/finance-payables",
     icon: HandCoins,
     source: "tally",
-    status: "soon",
-    keywords: ["payables", "creditors", "supplier", "overdue"],
+    status: "live",
+    keywords: ["payables", "creditors", "supplier", "vendor", "outstanding", "overdue", "on account", "advance", "bills payable", "ageing"],
   },
   {
     id: "finance-income",
