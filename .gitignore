@@ -59,3 +59,10 @@ supabase/.temp/
 
 # Claude Code local runtime state (lock files, session scratch)
 .claude/
+
+# Local business documents — PDFs / Word / Excel reference material, not source.
+# Kept on disk for working reference; never committed.
+Misc/
+SOP/
+files/
+FMS/
