@@ -6,7 +6,9 @@ import { FYProvider } from "@hub/lib/fyContext";
 import { ReceivablesScopeProvider } from "@hub/lib/scope";
 import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
+import RequireRole from "@/core/platform/RequireRole";
 import UserLayout from "@hub/layouts/UserLayout";
+import CLevelDashboard from "@hub/pages/CLevelDashboard";
 import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import FollowupsPage from "@hub/pages/Followups";
@@ -127,6 +129,16 @@ function HubRoutes() {
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
               a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
           <Route path="reports/dso" element={<DsoReport />} />
+          {/* Admin-only executive dashboard (board-level financials). Guarded here AND hidden from the
+              catalogue/sidebar for non-admins — see reportCatalog.ts adminOnly. */}
+          <Route
+            path="reports/c-level"
+            element={
+              <RequireRole roles={["admin"]}>
+                <CLevelDashboard />
+              </RequireRole>
+            }
+          />
           <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
           <Route path="reports/profit-loss" element={<ProfitLossReport />} />
           <Route path="reports/trial-balance" element={<TrialBalanceReport />} />

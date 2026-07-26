@@ -10,6 +10,7 @@ import {
   HandCoins,
   Landmark,
   Layers,
+  LayoutDashboard,
   NotebookText,
   PackageX,
   Percent as PercentIcon,
@@ -57,6 +58,7 @@ export type ReportStatus = "live" | "soon";
 export type ReportCategoryId =
   | "master-reports"
   | "finance"
+  | "dashboards"
   | "receivables"
   | "collections"
   | "customers"
@@ -68,6 +70,8 @@ export interface ReportCategory {
   title: string;
   blurb: string;
   icon: LucideIcon;
+  /** Admin-only category — hidden from non-admins in the landing rail and the sidebar sub-nav. */
+  adminOnly?: boolean;
 }
 
 export interface ReportSubcategory {
@@ -92,6 +96,8 @@ export interface ReportEntry {
   status: ReportStatus;
   /** Extra words that should match in search but appear in neither title nor purpose. */
   keywords?: string[];
+  /** Admin-only report — route-guarded AND hidden from the catalogue/sidebar for non-admins. */
+  adminOnly?: boolean;
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
@@ -108,6 +114,13 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Finance",
     blurb: "Receivables, payables, income and expense — straight from the Tally books.",
     icon: Landmark,
+  },
+  {
+    id: "dashboards",
+    title: "Dashboards",
+    blurb: "At-a-glance executive scoreboards built from the live Tally books.",
+    icon: LayoutDashboard,
+    adminOnly: true,
   },
   {
     id: "receivables",
@@ -236,6 +249,21 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "soon",
     keywords: ["sales gain", "margin", "profit"],
+  },
+
+  // ── Dashboards ─────────────────────────────────────────────────────────────
+  {
+    id: "c-level-dashboard",
+    title: "C-Level Dashboard",
+    purpose:
+      "The whole company on one screen — sales, profit, ratios, funds, top parties, duties and stock, per company.",
+    category: "dashboards",
+    path: "reports/c-level",
+    icon: LayoutDashboard,
+    source: "tally",
+    status: "live",
+    adminOnly: true,
+    keywords: ["executive", "c-level", "ceo", "cfo", "board", "kpi", "ratios", "gross profit", "net profit"],
   },
 
   // ── Receivables ────────────────────────────────────────────────────────────
@@ -517,6 +545,18 @@ export function searchReports(q: string): ReportEntry[] {
   return REPORTS.filter((r) =>
     [r.title, r.purpose, ...(r.keywords ?? [])].some((s) => s.toLowerCase().includes(needle)),
   );
+}
+
+/**
+ * Admin visibility. Reports/categories flagged `adminOnly` are dropped for non-admins so a
+ * board-level dashboard never even appears in the list. The route is guarded separately
+ * (see ReceivablesHubApp.tsx) — hiding a row is not an access control on its own.
+ */
+export function reportCategoriesFor(isAdmin: boolean): ReportCategory[] {
+  return REPORT_CATEGORIES.filter((c) => isAdmin || !c.adminOnly);
+}
+export function visibleReports(isAdmin: boolean): ReportEntry[] {
+  return REPORTS.filter((r) => isAdmin || !r.adminOnly);
 }
 
 /**

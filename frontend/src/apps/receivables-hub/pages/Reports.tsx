@@ -4,15 +4,17 @@ import { ChevronRight, FileText, Search } from "lucide-react";
 import { Badge } from "@hub/components/ui/badge";
 import { Input } from "@hub/components/ui/input";
 import {
-  REPORT_CATEGORIES,
   categoryById,
+  reportCategoriesFor,
   reportHref,
   reportsInCategory,
   searchReports,
   subcategoriesInCategory,
+  visibleReports,
   type ReportCategoryId,
   type ReportEntry,
 } from "@hub/lib/reportCatalog";
+import { useSession } from "@/core/platform/session";
 
 /**
  * The report catalogue.
@@ -102,12 +104,18 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 export default function Reports() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
+  const { isAdmin } = useSession();
 
+  // Admin-only categories/reports (e.g. the C-Level Dashboard) never appear for non-admins.
+  const cats = useMemo(() => reportCategoriesFor(isAdmin), [isAdmin]);
+  const visible = useMemo(() => new Set(visibleReports(isAdmin).map((r) => r.id)), [isAdmin]);
+
+  const requested = categoryById(params.get("cat") ?? "");
   const selected: ReportCategoryId =
-    (categoryById(params.get("cat") ?? "")?.id as ReportCategoryId) ?? REPORT_CATEGORIES[0].id;
+    requested && cats.some((c) => c.id === requested.id) ? requested.id : cats[0].id;
 
   const searching = query.trim().length > 0;
-  const matches = useMemo(() => searchReports(query), [query]);
+  const matches = useMemo(() => searchReports(query).filter((r) => visible.has(r.id)), [query, visible]);
 
   const pick = (id: ReportCategoryId) => {
     setQuery("");
@@ -115,7 +123,7 @@ export default function Reports() {
   };
 
   const category = categoryById(selected)!;
-  const rows = reportsInCategory(selected);
+  const rows = reportsInCategory(selected).filter((r) => visible.has(r.id));
   const subcategories = subcategoriesInCategory(selected);
 
   return (
@@ -145,7 +153,7 @@ export default function Reports() {
         {!searching && (
           <nav className="w-full lg:w-52 shrink-0 lg:sticky lg:top-4">
             <ul className="rounded-lg border border-border bg-surface overflow-hidden divide-y divide-border">
-              {REPORT_CATEGORIES.map((c) => {
+              {cats.map((c) => {
                 const active = c.id === selected;
                 return (
                   <li key={c.id}>
