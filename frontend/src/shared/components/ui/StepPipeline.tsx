@@ -76,11 +76,19 @@ export default function StepPipeline<K extends string>({
   selectedKeys,
   onChange,
   groups,
+  interactive = true,
 }: {
   nodes: StepPipelineNode<K>[];
   selectedKeys: K[];
   onChange: (next: K[]) => void;
   groups?: StepPipelineGroup<K>[];
+  /**
+   * Filtering rail (default) vs read-only display. On a home dashboard the rail is
+   * purely informational — `onChange` is a no-op there — so `interactive={false}`
+   * drops the "Click a step to filter / Select all / Clear all" chrome and renders
+   * each node as static, keeping only the bottleneck read-out.
+   */
+  interactive?: boolean;
 }) {
   const railRef = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
@@ -129,21 +137,14 @@ export default function StepPipeline<K extends string>({
     const uniqueBottleneck = isWorst && worstCount === 1;
     const clear = n.total === 0;
 
-    return (
-      <div key={n.stepKey} className="flex items-center shrink-0">
-        <button
-          type="button"
-          onClick={() => toggle(n.stepKey)}
-          aria-pressed={isSel}
-          aria-label={`${n.label}: ${n.delayed} delayed, ${n.today} due today, ${n.total} open${isSel ? " (selected)" : ""}`}
-          title={`${n.label} — ${n.delayed} delayed, ${n.today} due today, ${n.total} open`}
-          className={`relative w-[116px] rounded-card border bg-white px-2.5 pt-2.5 pb-2 text-center shadow-soft
-            transition-[transform,box-shadow,border-color] duration-200
-            hover:-translate-y-0.5 hover:shadow-card
-            focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/20
-            ${isSel ? "border-orange ring-4 ring-orange/15" : "border-line hover:border-orange/40"}`}
-        >
-          {isSel && (
+    const interactiveCls = interactive
+      ? `cursor-pointer transition-[transform,box-shadow,border-color] duration-200 hover:-translate-y-0.5 hover:shadow-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/20 ${isSel ? "border-orange ring-4 ring-orange/15" : "border-line hover:border-orange/40"}`
+      : "border-line";
+    const nodeCls = `relative w-[116px] rounded-card border bg-white px-2.5 pt-2.5 pb-2 text-center shadow-soft ${interactiveCls}`;
+
+    const inner = (
+      <>
+        {isSel && (
             <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-orange text-white flex items-center justify-center">
               <Check className="w-2.5 h-2.5" />
             </span>
@@ -180,54 +181,92 @@ export default function StepPipeline<K extends string>({
             )}
           </div>
 
-          <div className="h-[15px] mt-1">
-            {uniqueBottleneck && (
-              <span className="inline-block text-[9px] font-bold uppercase tracking-wide rounded-pill px-1.5 py-px bg-[#FDECEC] text-ryg-red">
-                Bottleneck
-              </span>
-            )}
+        <div className="h-[15px] mt-1">
+          {uniqueBottleneck && (
+            <span className="inline-block text-[9px] font-bold uppercase tracking-wide rounded-pill px-1.5 py-px bg-[#FDECEC] text-ryg-red">
+              Bottleneck
+            </span>
+          )}
+        </div>
+      </>
+    );
+
+    const label = `${n.label} — ${n.delayed} delayed, ${n.today} due today, ${n.total} open`;
+
+    return (
+      <div key={n.stepKey} className="flex items-center shrink-0">
+        {interactive ? (
+          <button
+            type="button"
+            onClick={() => toggle(n.stepKey)}
+            aria-pressed={isSel}
+            aria-label={`${label}${isSel ? " (selected)" : ""}`}
+            title={label}
+            className={nodeCls}
+          >
+            {inner}
+          </button>
+        ) : (
+          <div aria-label={label} title={label} className={nodeCls}>
+            {inner}
           </div>
-        </button>
+        )}
 
         {connector && <div className="w-4 h-0.5 rounded-full bg-line shrink-0" aria-hidden />}
       </div>
     );
   };
 
+  const totalDelayed = nodes.reduce((sum, n) => sum + n.delayed, 0);
+  // The header carries filter chrome (Select all / Clear all / the "click to
+  // filter" hint) only in interactive mode. Read-only dashboards keep just the
+  // status read-out and the scroll chevrons, so it never renders a dead control.
+  const showHeader = interactive || allClear || overflow || (!interactive && totalDelayed > 0);
+
   return (
     <div className="space-y-2.5">
-      <div className="flex items-center justify-between gap-3">
-        {allClear ? (
-          <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ryg-green">
-            <span className="w-1.5 h-1.5 rounded-full bg-ryg-green" />
-            All clear — nothing delayed
-          </span>
-        ) : (
-          <span className="text-[12px] text-grey">
-            {noneSelected ? "Click a step to filter — pick several to combine them." : `${selectedKeys.length} of ${nodes.length} steps selected`}
-          </span>
-        )}
-
-        <div className="flex items-center gap-3 shrink-0">
-          <button type="button" onClick={() => onChange(nodes.map((n) => n.stepKey))} disabled={allSelected} className={linkBtn}>
-            Select all
-          </button>
-          <span className="text-line">·</span>
-          <button type="button" onClick={() => onChange([])} disabled={noneSelected} className={linkBtn}>
-            Clear all
-          </button>
-          {overflow && (
-            <span className="flex items-center gap-1 pl-1">
-              <button type="button" onClick={() => scrollBy(-320)} aria-label="Scroll left" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-grey-2 hover:bg-page">
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <button type="button" onClick={() => scrollBy(320)} aria-label="Scroll right" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-grey-2 hover:bg-page">
-                <ChevronRight className="h-4 w-4" />
-              </button>
+      {showHeader && (
+        <div className="flex items-center justify-between gap-3">
+          {allClear ? (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ryg-green">
+              <span className="w-1.5 h-1.5 rounded-full bg-ryg-green" />
+              All clear — nothing delayed
+            </span>
+          ) : interactive ? (
+            <span className="text-[12px] text-grey">
+              {noneSelected ? "Click a step to filter — pick several to combine them." : `${selectedKeys.length} of ${nodes.length} steps selected`}
+            </span>
+          ) : (
+            <span className="text-[12px] font-medium text-grey">
+              <span className="text-ryg-red font-semibold">{totalDelayed}</span> delayed across the process
             </span>
           )}
+
+          <div className="flex items-center gap-3 shrink-0">
+            {interactive && (
+              <>
+                <button type="button" onClick={() => onChange(nodes.map((n) => n.stepKey))} disabled={allSelected} className={linkBtn}>
+                  Select all
+                </button>
+                <span className="text-line">·</span>
+                <button type="button" onClick={() => onChange([])} disabled={noneSelected} className={linkBtn}>
+                  Clear all
+                </button>
+              </>
+            )}
+            {overflow && (
+              <span className="flex items-center gap-1 pl-1">
+                <button type="button" onClick={() => scrollBy(-320)} aria-label="Scroll left" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-grey-2 hover:bg-page">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={() => scrollBy(320)} aria-label="Scroll right" className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-line text-grey-2 hover:bg-page">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {groups ? (
         /* ---- Grouped: one labelled block per stage, wrapping down the page. ---- */

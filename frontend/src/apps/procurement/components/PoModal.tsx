@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 interface VendorGroup {
@@ -36,6 +38,7 @@ export default function PoModal({
   readOnly?: boolean;
 }) {
   const s = useProcurementStore();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busyVendorId, setBusyVendorId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -96,16 +99,27 @@ export default function PoModal({
     setErr(null);
     setBusyVendorId(g.vendorId);
     try {
-      await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      const poId = await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      // What's left in the PO pool after this generate — computed from the lines
+      // we just converted, NOT re-read off the store (the `s` in this closure is
+      // the pre-write snapshot, so its pool would still look non-empty and the
+      // dialog would linger on an empty "nothing waiting" state).
+      const done = new Set(ids);
+      const remaining = lines.filter((l) => !done.has(l.id));
+      if (remaining.length === 0) {
+        // The whole requisition is now on POs — jump straight to the PO just made
+        // instead of leaving an empty pool dialog open.
+        onClose();
+        navigate(`/procurement/pos/${poId}`);
+        return;
+      }
+      // Anything left — another vendor, or items deliberately held back for a
+      // second PO — keeps the dialog open with those lines still ticked-off.
       setSelected((prev) => {
         const next = new Set(prev);
         ids.forEach((id) => next.delete(id));
         return next;
       });
-      // `generatePo` awaits the refetch, so the pool below is already post-write.
-      // Anything left — another vendor, or items deliberately held back for a
-      // second PO — keeps the dialog open.
-      if (s.poDeskLinesForRequest(request.id).length === 0) onClose();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -209,26 +223,36 @@ export default function PoModal({
                       );
                     })}
                   </tbody>
+                  {picked.length > 0 && (
+                    <tfoot>
+                      <tr className="border-t-2 border-line bg-orange-soft/50">
+                        {actionable && <td className="px-3 py-2" />}
+                        <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                        <td className="px-2 py-2 font-bold text-navy whitespace-nowrap">
+                          <QtyTotal entries={picked.map((l) => ({ qty: l.finalQty ?? l.quantity, unit: l.unit }))} />
+                        </td>
+                        <td className="px-2 py-2" />
+                        <td className="px-2 py-2 font-bold text-navy whitespace-nowrap">{inr(gst)}</td>
+                        <td className="px-2 py-2" />
+                        <td className="px-3 py-2 text-right font-bold text-navy whitespace-nowrap">{inr(total)}</td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
 
-              {g.vendorId ? (
-                <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-2 rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
-                  <Money label="Base" value={base} />
-                  <Money label="GST" value={gst} />
-                  <Money label="Total (incl. GST)" value={total} strong />
-                  {!readOnly && (
-                    <Button size="sm" onClick={() => generate(g)} disabled={busy || picked.length === 0}>
-                      {busy ? "Generating…" : "Generate PO"}
-                    </Button>
-                  )}
-                </div>
-              ) : (
+              {!g.vendorId ? (
                 <p className="text-[11.5px] text-ryg-red">
                   These items have no vendor, so they cannot be turned into a PO. Send the requisition back through
                   Sourcing.
                 </p>
-              )}
+              ) : !readOnly ? (
+                <div className="flex justify-end rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
+                  <Button size="sm" onClick={() => generate(g)} disabled={busy || picked.length === 0}>
+                    {busy ? "Generating…" : "Generate PO"}
+                  </Button>
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -242,17 +266,5 @@ export default function PoModal({
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>
-  );
-}
-
-/** One figure in the Base / GST / Total strip. */
-function Money({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
-  return (
-    <div className="text-right">
-      <div className="text-[11.5px] text-grey-2">{label}</div>
-      <div className={strong ? "text-[15px] font-bold text-navy" : "text-[13px] font-semibold text-grey"}>
-        {inr(value)}
-      </div>
-    </div>
   );
 }

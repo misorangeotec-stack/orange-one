@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
@@ -36,6 +37,7 @@ export default function PoModal({
   readOnly?: boolean;
 }) {
   const s = useImportStore();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busyVendorId, setBusyVendorId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -104,15 +106,26 @@ export default function PoModal({
     setErr(null);
     setBusyVendorId(g.vendorId);
     try {
-      await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      const poId = await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      // Compute the leftover pool from the lines we just converted, not from the
+      // store (the `s` in this closure is the pre-write snapshot).
+      const done = new Set(ids);
+      const remaining = lines.filter((l) => !done.has(l.id));
+      if (remaining.length === 0) {
+        // Whole requisition is on POs now — go straight to the PO just made
+        // instead of leaving an empty pool dialog (or bouncing to the workbench).
+        onClose();
+        navigate(`/import/pos/${poId}`);
+        return;
+      }
+      // Anything left — another vendor, or items held back for a second PO —
+      // keeps the dialog open with those lines ticked-off. (The effect above is a
+      // safety net if the pool empties by some other path.)
       setSelected((prev) => {
         const next = new Set(prev);
         ids.forEach((id) => next.delete(id));
         return next;
       });
-      // Closing when the pool empties is handled by the effect above (which sees
-      // the post-refetch state). Anything left — another vendor, or items held
-      // back for a second PO — keeps the dialog open.
     } catch (e) {
       setErr((e as Error).message);
     } finally {

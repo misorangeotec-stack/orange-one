@@ -13,6 +13,7 @@ import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxSt
 import type { FsCompany, FsNode, BalanceSheetView, PnlView } from "./financialStatements";
 import type { TbNode, TbView } from "./trialBalance";
 import type { LedgerBillRow } from "./ledgerOutstanding";
+import type { LedgerVoucherRow } from "./ledgerVouchers";
 
 const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
 
@@ -40,13 +41,18 @@ function formatMoneyCells(ws: XLSX.WorkSheet, firstRow0: number, rowCount: numbe
   }
 }
 
-function sheetName(c: FsCompany, used: Set<string>): string {
-  const base = (c.location ? `${c.company}-${c.location}` : c.company).replace(/[\\/?*[\]:]/g, "").slice(0, 28) || "Company";
-  let name = base;
+/** A ≤28-char, Excel-legal, de-duped worksheet name for `base` (strips \ / ? * [ ] :, suffixes ~N). */
+function uniqueSheetName(base: string, used: Set<string>): string {
+  const clean = base.replace(/[\\/?*[\]:]/g, "").slice(0, 28) || "Sheet";
+  let name = clean;
   let n = 2;
-  while (used.has(name)) name = `${base.slice(0, 26)}~${n++}`;
+  while (used.has(name)) name = `${clean.slice(0, 26)}~${n++}`;
   used.add(name);
   return name;
+}
+
+function sheetName(c: FsCompany, used: Set<string>): string {
+  return uniqueSheetName(c.location ? `${c.company}-${c.location}` : c.company, used);
 }
 
 function header(showReconcile: boolean): string[] {
@@ -287,4 +293,126 @@ export function exportLedgerOutstandingXlsx(input: {
   XLSX.utils.book_append_sheet(wb, ws, "Ledger Outstanding");
 
   finish(wb, `Ledger_Outstanding_${ledgerName}`);
+}
+
+/** One ledger's statement, ready to render as a worksheet (shared by the single + multi export). */
+export interface LedgerBlock {
+  ledgerName: string;
+  company?: FsCompany;
+  periodLabel: string;
+  opening: number;
+  closing: number;
+  rows: { row: LedgerVoucherRow; balance: number }[];
+}
+
+/** Build ONE ledger's worksheet (identical to the single-ledger sheet) and append it as `tabName`. */
+function appendLedgerSheet(wb: XLSX.WorkBook, block: LedgerBlock, tabName: string): void {
+  const { ledgerName, company, periodLabel, opening, closing, rows } = block;
+  const aoa: Cell[][] = [];
+
+  aoa.push([`Ledger Vouchers — ${ledgerName}`]);
+  aoa.push(["Ledger", ledgerName]);
+  if (company) {
+    aoa.push(["Company", company.location ? `${company.company} (${company.location})` : company.company]);
+  }
+  aoa.push(["Period", periodLabel]);
+  aoa.push(["Source", "Tally vouchers via ConnectWave (running balance folds from the opening balance)"]);
+  aoa.push([]);
+
+  const headerRow0 = aoa.length;
+  aoa.push(["Date", "Particulars", "Vch Type", "Vch No", "Debit", "Credit", "Balance"]);
+
+  const openRow0 = aoa.length;
+  aoa.push(["", "Opening Balance", "", "", "", "", drcrCell(opening)]);
+
+  let debitTot = 0;
+  let creditTot = 0;
+  for (const { row, balance } of rows) {
+    if (row.amount > 0) debitTot += row.amount;
+    else creditTot += -row.amount;
+    aoa.push([
+      ymd(row.date),
+      row.particulars ?? "",
+      row.voucherType ?? "",
+      row.voucherNo ?? "",
+      row.amount > 0.5 ? Math.round(row.amount) : "",
+      row.amount < -0.5 ? Math.round(-row.amount) : "",
+      drcrCell(balance),
+    ]);
+  }
+
+  const totalRow0 = aoa.length;
+  aoa.push(["", "Current Total", "", "", Math.round(debitTot), Math.round(creditTot), ""]);
+  const closeRow0 = aoa.length;
+  aoa.push(["", "Closing Balance", "", "", "", "", drcrCell(closing)]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [{ wch: 12 }, { wch: 40 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+  formatMoneyCells(ws, headerRow0 + 2, rows.length, [4, 5]);
+  formatMoneyCells(ws, totalRow0, 1, [4, 5]);
+  styleRow(ws, 0, 7, HEADER_STYLE);
+  styleRow(ws, headerRow0, 7, HEADER_STYLE);
+  styleRow(ws, openRow0, 7, TOTAL_STYLE);
+  styleRow(ws, totalRow0, 7, TOTAL_STYLE);
+  styleRow(ws, closeRow0, 7, GRAND_TOTAL_STYLE);
+  XLSX.utils.book_append_sheet(wb, ws, tabName);
+}
+
+/** Single-ledger export — one sheet named "Ledger Vouchers" (unchanged). */
+export function exportLedgerVouchersXlsx(input: LedgerBlock): void {
+  const wb = XLSX.utils.book_new();
+  appendLedgerSheet(wb, input, "Ledger Vouchers");
+  finish(wb, `Ledger_Vouchers_${input.ledgerName}`);
+}
+
+/** Multi-ledger export — a Summary tab, then one tab per ledger (same layout as the single sheet). */
+export function exportLedgerVouchersMultiXlsx(blocks: LedgerBlock[]): void {
+  const wb = XLSX.utils.book_new();
+
+  // ── Summary sheet ──────────────────────────────────────────────────────────────
+  const s: Cell[][] = [];
+  s.push(["Ledger Vouchers — Summary"]);
+  s.push(["Ledgers", blocks.length]);
+  s.push(["Source", "Tally vouchers via ConnectWave (per-ledger running balance folds from opening)"]);
+  s.push([]);
+  const sHeaderRow0 = s.length;
+  s.push(["Ledger", "Company", "Period", "Opening", "Debit", "Credit", "Closing"]);
+  let grandDr = 0;
+  let grandCr = 0;
+  for (const b of blocks) {
+    let debit = 0;
+    let credit = 0;
+    for (const { row } of b.rows) {
+      if (row.amount > 0) debit += row.amount;
+      else credit += -row.amount;
+    }
+    grandDr += debit;
+    grandCr += credit;
+    s.push([
+      b.ledgerName,
+      b.company ? (b.company.location ? `${b.company.company} (${b.company.location})` : b.company.company) : "",
+      b.periodLabel,
+      drcrCell(b.opening),
+      Math.round(debit),
+      Math.round(credit),
+      drcrCell(b.closing),
+    ]);
+  }
+  const sTotalRow0 = s.length;
+  s.push(["GRAND TOTAL", "", "", "", Math.round(grandDr), Math.round(grandCr), ""]);
+
+  const sws = XLSX.utils.aoa_to_sheet(s);
+  sws["!cols"] = [{ wch: 40 }, { wch: 26 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }];
+  formatMoneyCells(sws, sHeaderRow0 + 1, blocks.length, [4, 5]);
+  formatMoneyCells(sws, sTotalRow0, 1, [4, 5]);
+  styleRow(sws, 0, 7, HEADER_STYLE);
+  styleRow(sws, sHeaderRow0, 7, HEADER_STYLE);
+  styleRow(sws, sTotalRow0, 7, GRAND_TOTAL_STYLE);
+  XLSX.utils.book_append_sheet(wb, sws, "Summary");
+
+  // ── One tab per ledger ─────────────────────────────────────────────────────────
+  const used = new Set<string>(["Summary"]);
+  for (const b of blocks) appendLedgerSheet(wb, b, uniqueSheetName(b.ledgerName, used));
+
+  finish(wb, `Ledger_Vouchers_${blocks.length}_ledgers`);
 }

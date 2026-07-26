@@ -274,7 +274,7 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
   const sb = getConnectwaveSupabase();
   // Each order key below is that table's PRIMARY key — the uniqueness fetchAll requires.
   // (ext_ledger_group is keyed by ledger_id, NOT tally_name: 387 names repeat across companies.)
-  const [custRows, invRows, metaRes, groupRows, tagRows, companyRows, ledgerGroupRows, redmarkRows] = await Promise.all([
+  const [custRows, invRows, metaRes, groupRows, tagRows, companyRows, ledgerGroupRows, redmarkRows, lastSyncRes] = await Promise.all([
     fetchAll<CustSnap>(() => sb.from("collection_customer_snapshot").select("*"), ["tenant_id", "ledger_id"]),
     fetchAll<InvSnap>(() => sb.from("collection_invoice_snapshot").select("*"), ["tenant_id", "ledger_id", "bill_ref"]),
     sb.from("collection_meta").select("*").maybeSingle(),
@@ -294,6 +294,11 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
     // flags the customer as "Red Mark" on the Live (Tally) screens (KPI/badge/filter/report). This
     // REPLACES the old creditLimit===1 sentinel as the driver of the flag on this source.
     fetchAll<{ ledger_id: string }>(() => sb.from("ext_redmark").select("ledger_id"), ["ledger_id"]),
+    // The "Data updated as of" banner: the REAL last Tally sync time (any company, IST clock string),
+    // not collection_meta.refreshed_at — that is re-stamped nightly by the snapshot job even when nothing
+    // synced, so it would read "today" on a day with no pull. This RPC returns max(tally_sync_run.finished_at)
+    // converted to Asia/Kolkata; null when there are no sync runs yet (then we fall back to refreshed_at).
+    sb.rpc("receivables_last_sync"),
   ]);
 
   // Musters are read LIVE (small, editable) and applied over the snapshot by ledger GUID, so a
@@ -454,6 +459,10 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
 
   const asOf = (metaRes.data as any)?.as_of_date ?? "";
   const refreshedAt = (metaRes.data as any)?.refreshed_at ?? "";
+  // "Data updated as of" = the real last Tally sync (IST), falling back to the snapshot-refresh stamp only
+  // if no sync run has ever been recorded. `lastSyncRes.data` is the RPC's scalar text (or null).
+  const lastSyncIST = (lastSyncRes as any)?.data ?? null;
+  const lastUpdated = lastSyncIST || refreshedAt;
   // Dashboard trend = the month list (drives the Month selector) + org-wide totals per month.
   const trend: TrendPoint[] = [...dashAgg.entries()]
     .map(([month, v]) => ({ month, sales: v.sales, receipts: v.receipts, outstanding: v.outstanding }))
@@ -467,7 +476,7 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
 
   const dash = {
     asOfDate: asOf,
-    lastUpdated: refreshedAt,
+    lastUpdated,
     trend,
     kpis: {} as any,
     riskTrend: [], aging: [], riskSegmentation: [], topRiskyCustomers: [], alerts: [],

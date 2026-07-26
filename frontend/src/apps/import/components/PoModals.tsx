@@ -173,7 +173,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
                     <td className="px-3 py-2">
                       <TextInput
                         type="number"
-                        className={`w-24 ${locked ? "bg-page/70 text-grey-2 cursor-not-allowed" : ""}`}
+                        className={`w-28 min-w-[6.5rem] text-right tabular-nums ${locked ? "bg-page/70 text-grey-2 cursor-not-allowed" : ""}`}
                         value={qty[pi.id] ?? ""}
                         min={0}
                         max={remaining}

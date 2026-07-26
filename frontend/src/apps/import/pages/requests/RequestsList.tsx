@@ -70,6 +70,7 @@ export default function RequestsList() {
   };
 
   const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "company", header: "Company", cell: (r) => companyName(r.companyId), sortValue: (r) => companyName(r.companyId), filter: { kind: "select", get: (r) => companyName(r.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request No.", cell: (r) => <span className="font-semibold text-navy">{r.requestNo}</span>, sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     // Filter on the FULL list, not the compact label — typing "SPARES" must still
     // find a request where SPARES is only the second category.
@@ -112,6 +113,7 @@ export default function RequestsList() {
           rowKey={(r) => r.id}
           columns={columns}
           groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+          hideGroupHeaders
           rowsLabel="requests"
           emptyTitle="No requests"
           emptyMessage="Raise a purchase request to get started."

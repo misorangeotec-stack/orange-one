@@ -1363,6 +1363,22 @@ export default function CustomerRiskRegister() {
         {visibleCols.has("locations") && (() => { const f = freezeStick("locations", { bg }); return (
           <TableCell style={f.style} className={`text-sm whitespace-nowrap ${f.className}`} title={r.locations?.join(", ")}>{showList(r.locations)}</TableCell>
         ); })()}
+        {/* Next Follow-up — MUST render here (right after the freezable block:
+            Customer / Sales Person / Company / Location) to match the `columns` array
+            order that the header and GRAND TOTAL rows iterate. Rendering it later shifts
+            every money cell one column left of its header (Collected under Sales, etc.). */}
+        {visibleCols.has("nextFollowupDate") && (
+          <TableCell onClick={(e) => e.stopPropagation()}>
+            {r.followupEntity ? (
+              <NextFollowupCell
+                latest={latestByEntity.get(entityKey(r.followupEntity.type, r.followupEntity.name))}
+                onLog={() => setFollowupTarget(r.followupEntity!)}
+              />
+            ) : (
+              <span className="text-[10px] text-muted-foreground">—</span>
+            )}
+          </TableCell>
+        )}
         {visibleCols.has("openingBalance") && <TableCell className="text-sm text-right font-mono">{fmt(r.openingBalance)}</TableCell>}
         {visibleCols.has("sales") && <TableCell className="text-sm text-right font-mono">{fmt(r.sales)}</TableCell>}
         {visibleCols.has("receipts") && <TableCell className="text-sm text-right font-mono">{fmt(r.receipts)}</TableCell>}
@@ -1443,18 +1459,6 @@ export default function CustomerRiskRegister() {
           <TableCell>
             {isHeader ? <span className="text-[10px] text-muted-foreground">—</span> : r.blocked ? (
               <Badge variant="outline" className="text-[10px] px-1.5 py-0 rounded-button bg-destructive/15 text-destructive border-destructive/30">Red Mark</Badge>
-            ) : (
-              <span className="text-[10px] text-muted-foreground">—</span>
-            )}
-          </TableCell>
-        )}
-        {visibleCols.has("nextFollowupDate") && (
-          <TableCell onClick={(e) => e.stopPropagation()}>
-            {r.followupEntity ? (
-              <NextFollowupCell
-                latest={latestByEntity.get(entityKey(r.followupEntity.type, r.followupEntity.name))}
-                onLog={() => setFollowupTarget(r.followupEntity!)}
-              />
             ) : (
               <span className="text-[10px] text-muted-foreground">—</span>
             )}

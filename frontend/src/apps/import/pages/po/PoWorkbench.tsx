@@ -88,6 +88,7 @@ export default function PoWorkbench() {
   };
 
   const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "company", header: "Company", cell: (r) => companyName(r.companyId), sortValue: (r) => companyName(r.companyId), filter: { kind: "select", get: (r) => companyName(r.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (r) => <Link to={`/import/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">{r.requestNo}</Link>, sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => itemsCell(poolLines(r)), sortValue: (r) => poolLines(r).length, filter: { kind: "text", get: (r) => itemsText(r) } },
     { key: "qty", header: "Total Qty", cell: (r) => <QtyTotal entries={qtyEntries(r)} />, sortValue: (r) => qtyOf(r).total, filter: { kind: "number", get: (r) => qtyOf(r).total }, tdClassName: "whitespace-nowrap" },
@@ -99,6 +100,7 @@ export default function PoWorkbench() {
   ];
 
   const completedColumns: QueueColumn<StageEntry<PurchaseOrder>>[] = [
+    { key: "company", header: "Company", cell: (e) => companyName(e.companyId ?? ""), sortValue: (e) => companyName(e.companyId ?? ""), filter: { kind: "select", get: (e) => companyName(e.companyId ?? "") }, tdClassName: "whitespace-nowrap" },
     { key: "po", header: "PO No.", cell: (e) => <Link to={`/import/pos/${e.poId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => s.vendorById(e.row.vendorId)?.name ?? "—", sortValue: (e) => s.vendorById(e.row.vendorId)?.name ?? "", filter: { kind: "select", get: (e) => s.vendorById(e.row.vendorId)?.name ?? "—" }, tdClassName: "whitespace-nowrap" },
     { key: "lines", header: "Lines", cell: (e) => s.poItemsForPo(e.row.id).length, sortValue: (e) => s.poItemsForPo(e.row.id).length, tdClassName: "whitespace-nowrap" },
@@ -147,6 +149,7 @@ export default function PoWorkbench() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowsLabel="POs"
             emptyTitle="Nothing here yet"
             emptyMessage="POs you generate will appear here. Only the PO number is amendable — and only until the PO is shared."
@@ -166,6 +169,7 @@ export default function PoWorkbench() {
             rowKey={(r) => r.id}
             columns={columns}
             groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to PO"

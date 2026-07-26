@@ -13,9 +13,10 @@ import SuppliesApp from "./SuppliesApp";
  * take both approvals; Stationery, Office Maintenance and every Services/Maintenance
  * request go straight to handover.
  *
- * It is a UNIVERSAL app (apps/universal.ts): every signed-in user reaches it with no
- * per-user grant, because any employee must be able to raise a supply request. The nav
- * and RLS are what scope it — a person with no ownership sees only their own requests.
+ * Access is granted per user in Module access, like every other module (it used to be
+ * a universal app — see apps/universal.ts — but that let everyone reach it regardless
+ * of their grant, which admins didn't want). The nav and RLS scope it further — a
+ * person with no ownership sees only their own requests.
  */
 export const officeSuppliesApp: AppManifest = {
   id: "office-supplies",

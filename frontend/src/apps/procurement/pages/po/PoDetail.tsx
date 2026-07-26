@@ -10,6 +10,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
+import QtyTotal from "../../components/QtyTotal";
 import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "../../components/DocLinks";
@@ -145,15 +146,30 @@ export default function PoDetail() {
       {/* Action bar */}
       {open && (
         <div className="flex flex-wrap gap-2">
+          {/* Forward-progress buttons show ONLY at the PO's current stage, so the
+              action bar offers just the one logical next step. Cancellation
+              (below) is an escape hatch and stays available at every stage. */}
           {s.canSharePo && po.currentStage === "share_po" && <Button size="sm" variant="ghost" onClick={() => setModal("share")}>Share PO</Button>}
-          {s.canCollectPi && po.currentStage !== "share_po" && !piFullyCollected && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Add PI</Button>}
+          {s.canCollectPi && po.currentStage === "collect_pi" && !piFullyCollected && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Add PI</Button>}
           {s.canRecordPayment && po.currentStage === "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("advance")}>Record Advance</Button>}
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
-          {s.canInward && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
-          {s.canTally && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
-          {s.canRecordPayment && po.currentStage !== "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
+          {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
+          {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
+          {/* Balance payment isn't a tracked step — it's recordable from Follow-up
+              onward (never at Share/Collect-PI/Advance, where it isn't due yet). */}
+          {s.canRecordPayment && pending > 0 && (po.currentStage === "follow_up" || po.currentStage === "inward" || po.currentStage === "tally") && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
           {s.canRequestPoCancel(po) && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("reqcancel")}>Request cancellation</Button>}
           {s.canCancelPo(po) && !cancelRequest && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("cancel")}>Cancel PO</Button>}
+        </div>
+      )}
+
+      {/* A PO closes on all-received + fully-paid BEFORE its Tally entry, so a
+          closed PO can still owe Tally (unbooked GRN). The action bar above is
+          open-only, so surface just the Tally action here — book_tally accepts a
+          closed PO. Mirrors poInTally, which keeps it in the Tally queue too. */}
+      {!open && po.currentStage === "closed" && !tallyBooked && s.canTally && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>
         </div>
       )}
 
@@ -180,6 +196,24 @@ export default function PoDetail() {
                   );
                 })}
               </tbody>
+              {items.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-line bg-orange-soft/50">
+                    <td className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                    <td />
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      <QtyTotal entries={items.map((pi) => ({ qty: pi.qty, unit: s.lineById(pi.requestItemId)?.unit }))} />
+                    </td>
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      <QtyTotal entries={items.map((pi) => ({ qty: pi.receivedQty, unit: s.lineById(pi.requestItemId)?.unit }))} />
+                    </td>
+                    <td />
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      {inr(items.reduce((sum, pi) => sum + (pi.lineValue ?? 0), 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </ScrollableTable>
         )}
@@ -200,6 +234,16 @@ export default function PoDetail() {
                     </tr>
                   ))}
                 </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-line bg-orange-soft/50">
+                    <td className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                    <td />
+                    <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                      {inr(pis.reduce((sum, p) => sum + (p.piValue ?? 0), 0))}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
               </table>
             </ScrollableTable>
           )

@@ -102,7 +102,7 @@ function StepQueuePage<E>({
   }, [completed?.entries, scope, user.id]);
 
   const vendorName = (p: PurchaseOrder) => s.vendorById(p.vendorId)?.name ?? "—";
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyName = (id: string | null) => s.companyById(id)?.name ?? "—";
   // "In stage since" and the due date come from lib/queues.ts — the same functions
   // the FMS Control Center uses, so the two can never disagree. The due date is the
   // step's admin-configured anchor + working days (Setup → Due Dates); for follow_up
@@ -111,6 +111,7 @@ function StepQueuePage<E>({
   const dueIso = (p: PurchaseOrder) => s.dueIsoForPo(p, p.currentStage as StepKey);
 
   const columns: QueueColumn<PurchaseOrder>[] = [
+    { key: "company", header: "Company", cell: (p) => companyName(p.companyId), sortValue: (p) => companyName(p.companyId), filter: { kind: "select", get: (p) => companyName(p.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "po", header: "PO No.", cell: (p) => <span className="font-semibold text-navy">{p.poNo}</span>, sortValue: (p) => p.poNo, filter: { kind: "text", get: (p) => p.poNo }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (p) => vendorName(p), sortValue: (p) => vendorName(p), filter: { kind: "select", get: (p) => vendorName(p) }, tdClassName: "whitespace-nowrap" },
     ...(hideMoney
@@ -154,11 +155,15 @@ function StepQueuePage<E>({
           <QueueTable
             rows={completedRows}
             rowKey={(e) => e.id}
-            columns={completed.columns}
+            columns={[
+              { key: "company", header: "Company", cell: (e) => companyName(e.companyId), sortValue: (e) => companyName(e.companyId), filter: { kind: "select", get: (e) => companyName(e.companyId) }, tdClassName: "whitespace-nowrap" },
+              ...completed.columns,
+            ]}
             // companyId is stamped onto the entry at build time on purpose: QueueTable
             // calls idOf from inside its sort comparator, so a lookup here would be
             // O(n·m) over a list that grows for the life of the business.
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowsLabel="entries"
             emptyTitle="Nothing here yet"
             emptyMessage={completed.emptyMessage}
@@ -175,6 +180,7 @@ function StepQueuePage<E>({
             rowKey={(p) => p.id}
             columns={columns}
             groupBy={{ idOf: (p) => p.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowClassName={rowClassName ?? ((p) => overdueRowClass(dueIso(p)))}
             rowsLabel="POs"
             emptyMessage="POs needing your action will appear here."

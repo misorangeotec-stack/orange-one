@@ -474,20 +474,50 @@ export async function saveSourcingRequest(input: {
   if (error) throw new Error(error.message);
 }
 
-/** Stage 3 — one approval decision for the whole requisition, banded on its total. */
+/**
+ * A per-line override the approver may apply while approving (Stage 3). `null`
+ * on qty/rate keeps the stored value; `gstPct` null clears GST. The `""`-for-null
+ * convention matches the RPC's `nullif(...,'')` reads, exactly like sourcing.
+ */
+export interface ApprovalLineOverride {
+  requestItemId: string;
+  finalQty: number | null;
+  finalRate: number | null;
+  gstPct: number | null;
+}
+
+const approvalLinesParam = (lines?: ApprovalLineOverride[] | null): Json | undefined =>
+  lines && lines.length
+    ? (lines.map((l) => ({
+        request_item_id: l.requestItemId,
+        final_qty: l.finalQty ?? "",
+        final_rate: l.finalRate ?? "",
+        gst_pct: l.gstPct ?? "",
+      })) as unknown as Json)
+    : undefined;
+
+/**
+ * Stage 3 — one approval decision for the whole requisition, banded on its total.
+ * Returns the RPC outcome: 'approved' | 'rerouted' | 'ok'. 'rerouted' means an
+ * override raised the total into a higher band the caller can't approve, so the
+ * new numbers were kept and it went back to that band for a decision.
+ */
 export async function decideApprovalRequest(input: {
   requestId: string;
   decision: ApprovalDecision;
   overrideVendorId?: string | null;
   reason?: string | null;
-}): Promise<void> {
-  const { error } = await supabase.rpc("fms_purchase_decide_approval_request", {
+  lines?: ApprovalLineOverride[] | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("fms_purchase_decide_approval_request", {
     p_request_id: input.requestId,
     p_decision: input.decision,
     p_override_vendor_id: input.overrideVendorId ?? undefined,
     p_reason: input.reason ?? "",
+    p_lines: approvalLinesParam(input.lines),
   });
   if (error) throw new Error(error.message);
+  return (data as string | null) ?? "ok";
 }
 
 /** Stage 3 correction — change an already-approved requisition's decision. */
@@ -496,14 +526,17 @@ export async function updateApprovalRequest(input: {
   decision: Exclude<ApprovalDecision, "hold" | "resume">;
   overrideVendorId?: string | null;
   reason?: string | null;
-}): Promise<void> {
-  const { error } = await supabase.rpc("fms_purchase_update_approval_request", {
+  lines?: ApprovalLineOverride[] | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("fms_purchase_update_approval_request", {
     p_request_id: input.requestId,
     p_decision: input.decision,
     p_override_vendor_id: input.overrideVendorId ?? undefined,
     p_reason: input.reason ?? "",
+    p_lines: approvalLinesParam(input.lines),
   });
   if (error) throw new Error(error.message);
+  return (data as string | null) ?? "ok";
 }
 
 /**

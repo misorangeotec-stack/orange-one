@@ -19,6 +19,7 @@ import SettingsLayout from "./pages/settings/SettingsLayout";
 import Organization from "./pages/settings/Organization";
 import Locations from "./pages/settings/Locations";
 import Permissions from "./pages/settings/Permissions";
+import EmailNotifications from "./pages/settings/EmailNotifications";
 import NotFound from "./pages/system/NotFound";
 
 const MANAGER = ["admin", "hod", "sub_hod"] as const;
@@ -58,6 +59,7 @@ export default function TaskManagementApp() {
               <Route index element={<Organization />} />
               <Route path="locations" element={<Locations />} />
               <Route path="permissions" element={<Permissions />} />
+              <Route path="notifications" element={<EmailNotifications />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

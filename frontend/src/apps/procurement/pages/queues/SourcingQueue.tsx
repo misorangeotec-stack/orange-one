@@ -28,7 +28,7 @@ export default function SourcingQueue() {
   const editRequest = useEntryModal<PurchaseRequest>();
   const stage = useStageMode(s.completedSourcingRequestEntries, user.id);
 
-  const companyName = (id: string) => s.companyById(id)?.name ?? "—";
+  const companyName = (id: string | null) => s.companyById(id)?.name ?? "—";
   /** Admin-configured: anchor step's completion + N working days (Setup → Due Dates). */
   const dueIso = (r: PurchaseRequest) => s.dueIsoForRequest(r, "sourcing");
 
@@ -67,6 +67,7 @@ export default function SourcingQueue() {
   );
 
   const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
+    { key: "company", header: "Company", cell: (e) => companyName(e.companyId), sortValue: (e) => companyName(e.companyId), filter: { kind: "select", get: (e) => companyName(e.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     {
       key: "items", header: "Items",
@@ -83,6 +84,19 @@ export default function SourcingQueue() {
       filter: { kind: "text", get: (e) => itemSummary(e.row).text },
     },
     { key: "vendor", header: "Vendor", cell: (e) => vendorOf(e.row), sortValue: (e) => vendorOf(e.row), filter: { kind: "select", get: (e) => vendorOf(e.row) }, tdClassName: "whitespace-nowrap" },
+    {
+      key: "qty", header: "Total Qty",
+      cell: (e) => {
+        const u = qtyUnit(e.row);
+        return (
+          <span title={u.title}>
+            {totalQty(e.row)}
+            {u.label && <span className="ml-1 text-[11.5px] text-grey-2">{u.label}</span>}
+          </span>
+        );
+      },
+      sortValue: (e) => totalQty(e.row), filter: { kind: "number", get: (e) => totalQty(e.row) }, tdClassName: "whitespace-nowrap",
+    },
     { key: "value", header: "Request Value", cell: (e) => inr(sourcedValue(e.row)), sortValue: (e) => sourcedValue(e.row), filter: { kind: "number", get: (e) => sourcedValue(e.row) }, tdClassName: "whitespace-nowrap" },
     { key: "sourcedAt", header: "Sourced On", cell: (e) => formatDateTime(e.atIso), sortValue: (e) => e.atIso, filter: { kind: "date", get: (e) => e.atIso.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     {
@@ -95,6 +109,7 @@ export default function SourcingQueue() {
   ];
 
   const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "company", header: "Company", cell: (r) => companyName(r.companyId), sortValue: (r) => companyName(r.companyId), filter: { kind: "select", get: (r) => companyName(r.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     {
       key: "items", header: "Items",
@@ -155,6 +170,7 @@ export default function SourcingQueue() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Requisitions you source will appear here, and stay editable until the approver decides."
@@ -177,6 +193,7 @@ export default function SourcingQueue() {
             rowKey={(r) => r.id}
             columns={columns}
             groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to source"

@@ -49,6 +49,7 @@ type SortDir = "asc" | "desc";
 
 const GROUP_KEY = "orangeone.home.groupBySource";
 const EXPANDED_KEY = "orangeone.home.expandedSources";
+const SCOPE_KEY = "orangeone.home.scope";
 
 function readPref<T>(key: string, fallback: T): T {
   try {
@@ -136,6 +137,20 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [stages, setStages] = useState<string[]>([]);
   const [assignment, setAssignment] = useState<string[]>([]);
   const [q, setQ] = useState("");
+
+  // Admins receive the whole book (they own no workflow steps, so a strict
+  // personal filter would otherwise leave them empty). This tab lets them narrow
+  // to just what is theirs — the default — and switch back to the full view.
+  // Non-admins are already scoped to their own work by each provider, so the tab
+  // is hidden for them and scope is pinned to "all" (a no-op on their data).
+  const [scope, setScope] = useState<"mine" | "all">(() =>
+    isAdmin ? readPref(SCOPE_KEY, "mine") : "all"
+  );
+  const setScopePref = (s: "mine" | "all") => {
+    setScope(s);
+    writePref(SCOPE_KEY, s);
+    if (s === "mine") setAssignment([]); // drop any stale You/Team chip
+  };
   const [sort, setSort] = useState<SortKey>("urgency");
   const [dir, setDir] = useState<SortDir>("asc");
 
@@ -168,13 +183,14 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const preBucket = useMemo(
     () =>
       tagged.filter(({ item }) => {
+        if (scope === "mine" && item.assignment !== "direct") return false;
         if (sources.length && !sources.includes(item.source)) return false;
         if (stages.length && !stages.includes(item.stage ?? "—")) return false;
         if (assignment.length && !assignment.includes(item.assignment)) return false;
         if (q && !matchesSearch(q, item.ref, item.detail, item.sourceLabel, item.stage)) return false;
         return true;
       }),
-    [tagged, sources, stages, assignment, q]
+    [tagged, scope, sources, stages, assignment, q]
   );
 
   const counts = useMemo(() => {
@@ -184,6 +200,13 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   }, [preBucket]);
 
   const tileCount = (t: Bucket) => (t === "tomorrow" ? counts.tomorrow + counts.dayAfter : counts[t]);
+
+  // In Mine mode the "N of M items" denominator should be the scoped total, not
+  // the whole book — otherwise an admin sees "3 of 250".
+  const scopedTotal = useMemo(
+    () => (scope === "mine" ? tagged.filter((t) => t.item.assignment === "direct").length : state.items.length),
+    [tagged, scope, state.items.length]
+  );
 
   const rows = useMemo(() => {
     const filtered = bucketFilter ? preBucket.filter((r) => inTile(r.bucket, bucketFilter)) : preBucket;
@@ -311,6 +334,8 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         pending={pending}
         settling={state.isSettling}
         isAdmin={isAdmin}
+        scope={scope}
+        onScopeChange={setScopePref}
       />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
@@ -334,7 +359,7 @@ export function MyWorkView({ state }: { state: AggregateState }) {
             <div>
               <h2 className="text-[15px] font-semibold text-navy leading-tight">My work</h2>
               <p className="text-[11.5px] text-grey-2">
-                {rows.length} of {state.items.length} item{state.items.length === 1 ? "" : "s"}
+                {rows.length} of {scopedTotal} item{scopedTotal === 1 ? "" : "s"}
                 {state.isSettling && " · still loading some sources"}
               </p>
             </div>
@@ -387,16 +412,19 @@ export function MyWorkView({ state }: { state: AggregateState }) {
                     would be two ways to set one thing. */}
                 <FilterCell />
                 <FilterCell>
-                  <MultiSelect
-                    values={assignment}
-                    onChange={setAssignment}
-                    options={[
-                      { value: "direct", label: "You" },
-                      { value: "team", label: "Your team" },
-                    ]}
-                    placeholder="Anyone"
-                    className="w-full"
-                  />
+                  {/* Redundant in Mine mode — everything shown is already yours. */}
+                  {scope === "all" && (
+                    <MultiSelect
+                      values={assignment}
+                      onChange={setAssignment}
+                      options={[
+                        { value: "direct", label: "You" },
+                        { value: "team", label: "Your team" },
+                      ]}
+                      placeholder="Anyone"
+                      className="w-full"
+                    />
+                  )}
                 </FilterCell>
               </tr>
             </thead>
@@ -430,6 +458,13 @@ export function MyWorkView({ state }: { state: AggregateState }) {
                         actionLabel="Clear all filters"
                         onAction={clearAll}
                       />
+                    ) : scope === "mine" ? (
+                      <EmptyState
+                        title="Nothing assigned to you personally"
+                        message="No tasks, approvals or workflow steps are on your plate right now."
+                        actionLabel="Show all work"
+                        onAction={() => setScopePref("all")}
+                      />
                     ) : (
                       <EmptyState
                         title="Nothing on your plate"
@@ -450,7 +485,9 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         )}
       </Card>
 
-      <SourceStrip sources={state.sources} hasStepUnits={state.hasStepUnits} />
+      {/* An all-work readout — its raw per-source counts are unscoped, so hide it
+          in Mine mode to keep the screen self-consistent. */}
+      {scope === "all" && <SourceStrip sources={state.sources} hasStepUnits={state.hasStepUnits} />}
     </div>
   );
 }
@@ -466,6 +503,8 @@ function Hero({
   pending,
   settling,
   isAdmin,
+  scope,
+  onScopeChange,
 }: {
   greeting: string;
   name: string;
@@ -475,6 +514,8 @@ function Hero({
   pending: number;
   settling: boolean;
   isAdmin: boolean;
+  scope: "mine" | "all";
+  onScopeChange: (s: "mine" | "all") => void;
 }) {
   return (
     <div className="relative overflow-hidden rounded-card bg-navy text-white px-5 py-5 sm:px-6 sm:py-6">
@@ -502,16 +543,23 @@ function Hero({
                 to deal with today.
               </>
             )}
-            {isAdmin && <span className="ml-1.5 text-white/45">Showing all work (admin).</span>}
+            {isAdmin && (
+              <span className="ml-1.5 text-white/45">
+                {scope === "mine" ? "Showing your work." : "Showing all work (admin)."}
+              </span>
+            )}
           </p>
         </div>
 
-        {!settling && pending > 0 && (
-          <div className="flex items-center gap-2">
-            {overdue > 0 && <HeroPill tone="red" value={overdue} label={overdue === 1 ? "overdue" : "overdue"} />}
-            {dueToday > 0 && <HeroPill tone="amber" value={dueToday} label="due today" />}
-          </div>
-        )}
+        <div className="flex flex-col items-end gap-2">
+          {isAdmin && <ScopeTabs scope={scope} onChange={onScopeChange} />}
+          {!settling && pending > 0 && (
+            <div className="flex items-center gap-2">
+              {overdue > 0 && <HeroPill tone="red" value={overdue} label={overdue === 1 ? "overdue" : "overdue"} />}
+              {dueToday > 0 && <HeroPill tone="amber" value={dueToday} label="due today" />}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -528,6 +576,35 @@ function HeroPill({ tone, value, label }: { tone: "red" | "amber"; value: number
       <span className="text-[15px] font-bold tabular-nums">{value}</span>
       {label}
     </span>
+  );
+}
+
+/** Admin-only scope switch in the banner: personal work vs. the whole book. */
+function ScopeTabs({ scope, onChange }: { scope: "mine" | "all"; onChange: (s: "mine" | "all") => void }) {
+  const tabs: { value: "mine" | "all"; label: string }[] = [
+    { value: "mine", label: "My work" },
+    { value: "all", label: "All work" },
+  ];
+  return (
+    <div className="inline-flex items-center rounded-pill bg-white/10 p-0.5 backdrop-blur">
+      {tabs.map((t) => {
+        const active = scope === t.value;
+        return (
+          <button
+            key={t.value}
+            type="button"
+            onClick={() => onChange(t.value)}
+            aria-pressed={active}
+            className={cn(
+              "rounded-pill px-3 py-1 text-[12px] font-semibold transition-colors",
+              active ? "bg-white text-navy" : "text-white/70 hover:text-white"
+            )}
+          >
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

@@ -4,6 +4,7 @@ import StepOwnersSection from "./StepOwnersSection";
 import MasterOwnersSection from "./MasterOwnersSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import StepDueDatesSection from "./StepDueDatesSection";
+import EmailNotificationsSection from "./EmailNotificationsSection";
 
 export default function Setup() {
   const [tab, setTab] = useState("owners");
@@ -12,6 +13,7 @@ export default function Setup() {
     { key: "due", label: "Due Dates" },
     { key: "coordinators", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
+    { key: "notifications", label: "Notifications" },
   ];
   return (
     <div className="space-y-5">
@@ -26,6 +28,7 @@ export default function Setup() {
       {tab === "due" && <StepDueDatesSection />}
       {tab === "coordinators" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}
+      {tab === "notifications" && <EmailNotificationsSection />}
     </div>
   );
 }

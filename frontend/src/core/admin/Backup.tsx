@@ -24,7 +24,7 @@ const DATABASES: Db[] = [
   {
     key: "identity",
     label: "Identity / auth",
-    ref: "coshondiqdhorwvibrwu",
+    ref: "icutjkrqkbzwvmnfbzpr",
     blurb: "Users, roles, departments, hierarchy, tasks, recurring tasks, notifications, RPC functions + RLS policies.",
   },
   {

@@ -22,6 +22,7 @@ export default function PoList() {
   const stageLabel = (p: PurchaseOrder) => PO_STAGE_LABEL[p.currentStage] ?? stepByKey(p.currentStage)?.short ?? p.currentStage;
 
   const columns: QueueColumn<PurchaseOrder>[] = [
+    { key: "company", header: "Company", cell: (p) => companyName(p.companyId), sortValue: (p) => companyName(p.companyId), filter: { kind: "select", get: (p) => companyName(p.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "po", header: "PO No.", cell: (p) => <span className="font-semibold text-navy">{p.poNo}</span>, sortValue: (p) => p.poNo, filter: { kind: "text", get: (p) => p.poNo }, tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (p) => vendorName(p), sortValue: (p) => vendorName(p), filter: { kind: "select", get: (p) => vendorName(p) }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (p) => s.poItemsForPo(p.id).length, sortValue: (p) => s.poItemsForPo(p.id).length, filter: { kind: "number", get: (p) => s.poItemsForPo(p.id).length } },
@@ -44,6 +45,7 @@ export default function PoList() {
           rowKey={(p) => p.id}
           columns={columns}
           groupBy={{ idOf: (p) => p.companyId, nameOf: companyName, allLabel: "All companies" }}
+          hideGroupHeaders
           rowsLabel="POs"
           emptyTitle="No purchase orders yet"
           emptyMessage="Generate POs from the PO Workbench."

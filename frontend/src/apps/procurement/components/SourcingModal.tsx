@@ -7,6 +7,7 @@ import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import RequestMasterModal from "./RequestMasterModal";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
+import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 /** One shortlisted vendor. Deliberately carries NO rate — see the header note. */
@@ -555,13 +556,16 @@ export default function SourcingModal({
                         </span>
                       </td>
                       <td className="px-2 py-1.5">
-                        <input
-                          type="number"
-                          className={num}
-                          value={r.qty}
-                          disabled={!on}
-                          onChange={(e) => setCell(r.lineId, "qty", e.target.value)}
-                        />
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            className={num}
+                            value={r.qty}
+                            disabled={!on}
+                            onChange={(e) => setCell(r.lineId, "qty", e.target.value)}
+                          />
+                          {line?.unit && <span className="shrink-0 text-[11.5px] text-grey-2">{line.unit}</span>}
+                        </div>
                       </td>
                       {(["rate", "gstPct", "leadTimeDays"] as const).map((f) => (
                         <td key={f} className="px-2 py-1.5">
@@ -589,6 +593,23 @@ export default function SourcingModal({
                   </tr>
                 )}
               </tbody>
+              {pickedRows.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-line bg-orange-soft/50 text-[13px]">
+                    {!readOnly && <td className="px-3 py-2" />}
+                    <td className="px-3 py-2 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                    <td className="px-2 py-2 font-bold text-navy whitespace-nowrap">
+                      <QtyTotal
+                        entries={pickedRows.map((r) => ({ qty: Number(r.qty) || 0, unit: lineById.get(r.lineId)?.unit }))}
+                      />
+                    </td>
+                    <td className="px-2 py-2" />
+                    <td className="px-2 py-2 font-bold text-navy whitespace-nowrap">{inr(requestGst)}</td>
+                    <td className="px-2 py-2" />
+                    <td className="px-3 py-2 text-right font-bold text-navy whitespace-nowrap">{inr(requestValue)}</td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
           {/* Unticked ≠ rejected — say so, or "submit" looks like it drops them. */}
@@ -599,12 +620,6 @@ export default function SourcingModal({
               later.
             </p>
           )}
-        </div>
-
-        <div className="flex flex-wrap items-center justify-end gap-x-8 gap-y-2 rounded-xl bg-orange-soft/50 px-3.5 py-2.5">
-          <Money label="Base" value={requestBase} />
-          <Money label="GST" value={requestGst} />
-          <Money label="Total (incl. GST)" value={requestValue} strong />
         </div>
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
@@ -626,17 +641,5 @@ export default function SourcingModal({
       />
       )}
     </Modal>
-  );
-}
-
-/** One figure in the Base / GST / Total strip. */
-function Money({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
-  return (
-    <div className="text-right">
-      <div className="text-[11.5px] text-grey-2">{label}</div>
-      <div className={strong ? "text-[15px] font-bold text-navy" : "text-[13px] font-semibold text-grey"}>
-        {inr(value)}
-      </div>
-    </div>
   );
 }

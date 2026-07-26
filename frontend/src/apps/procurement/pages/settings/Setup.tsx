@@ -5,6 +5,7 @@ import StepDueDatesSection from "./StepDueDatesSection";
 import ApprovalMatrixSection from "./ApprovalMatrixSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
+import EmailNotificationsSection from "./EmailNotificationsSection";
 
 /**
  * Setup — the no-code configuration backbone (admin only). Wire up step owners,
@@ -20,6 +21,7 @@ export default function Setup() {
     { key: "approval", label: "Approval Matrix" },
     { key: "roles", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
+    { key: "notifications", label: "Notifications" },
   ];
 
   return (
@@ -39,6 +41,7 @@ export default function Setup() {
       {tab === "approval" && <ApprovalMatrixSection />}
       {tab === "roles" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}
+      {tab === "notifications" && <EmailNotificationsSection />}
     </div>
   );
 }

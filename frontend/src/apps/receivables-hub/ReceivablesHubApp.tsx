@@ -6,7 +6,9 @@ import { FYProvider } from "@hub/lib/fyContext";
 import { ReceivablesScopeProvider } from "@hub/lib/scope";
 import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
+import RequireRole from "@/core/platform/RequireRole";
 import UserLayout from "@hub/layouts/UserLayout";
+import CLevelDashboard from "@hub/pages/CLevelDashboard";
 import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import FollowupsPage from "@hub/pages/Followups";
@@ -15,7 +17,14 @@ import SalespersonCollectionReport from "@hub/pages/SalespersonCollectionReport"
 import CustomerDetail from "@hub/pages/CustomerDetail";
 import ImportDashboard from "@hub/pages/ImportDashboard";
 import Reports from "@hub/pages/Reports";
+import SalesReport from "@hub/pages/SalesReport";
+import PurchaseReport from "@hub/pages/PurchaseReport";
+import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
+import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
+import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
+import DayBook from "@hub/pages/DayBook";
 import AgingReport from "@hub/pages/AgingReport";
+import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
 import RedMarkCustomersReport from "@hub/pages/RedMarkCustomersReport";
 import CollectionPerformanceReport from "@hub/pages/CollectionPerformanceReport";
@@ -27,6 +36,9 @@ import ProfitLossReport from "@hub/pages/ProfitLossReport";
 import TrialBalanceReport from "@hub/pages/TrialBalanceReport";
 import LedgerOutstandingList from "@hub/pages/LedgerOutstandingList";
 import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
+import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
+import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
+import SalesRegister from "@hub/pages/SalesRegister";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -42,10 +54,11 @@ import Settings from "@hub/pages/Settings";
  * only add the Hub-local providers here. The `.hub-root` wrapper scopes the
  * Hub's design tokens (see src/index.css).
  *
- * LIVE (TALLY) MODE: rather than duplicate every screen/menu with a "Live …" copy, an
- * admin-only topbar switch (see UserLayout + lib/liveMode) flips the WHOLE hub's data source to
- * the ConnectWave live-Tally snapshot. Same routes/URLs, different backend — so `HubRoutes`
- * wraps the router in a single <ReceivablesSourceProvider> whose value follows the toggle.
+ * DATA SOURCE: Live (Tally) is the DEFAULT for everyone. Rather than duplicate every screen/menu
+ * with a "Live …" copy, a topbar switch (see UserLayout + lib/liveMode) lets a PERMITTED user flip
+ * the WHOLE hub back to the legacy pipeline source. Same routes/URLs, different backend — so
+ * `HubRoutes` wraps the router in a single <ReceivablesSourceProvider> whose value follows the toggle
+ * (Live by default; "default"/legacy only when a permitted user opts in).
  */
 function HubRoutes() {
   const { liveMode } = useLiveMode();
@@ -67,7 +80,28 @@ function HubRoutes() {
           <Route path="group/:id" element={<CustomerDetail />} />
           <Route path="import" element={<ImportDashboard />} />
           <Route path="reports" element={<Reports />} />
+          {/* Master Reports. Reads the precomputed rpt_sales_* snapshot of the Tally mirror,
+              so it is source-agnostic — no Live/pipeline gate, same as the financial
+              statements. It carries its own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/sales" element={<SalesReport />} />
+          {/* Purchase Report — purchase-side twin of the Sales Report, same source-agnostic
+              rpt_purchase_* snapshot, own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/purchase" element={<PurchaseReport />} />
+          {/* Day Book — single-company single-day dashboard on the rpt_day_book snapshot;
+              source-agnostic, carries its own company + date pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/day-book" element={<DayBook />} />
+          {/* Finance → Receivables — Talligence receivables clone on the rpt_receivables_*
+              snapshot; own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/finance-receivables" element={<ReceivablesMasterReport />} />
+          {/* Finance → Payables — sign-mirror of Receivables (Sundry Creditors) on the
+              rpt_payables_* snapshot; own company + FY pickers, same as Receivables. */}
+          <Route path="reports/finance-payables" element={<PayablesMasterReport />} />
+          {/* Finance → Income — Talligence income clone on the rpt_income_* P&L-movement snapshot
+              (Sales Accounts + Direct/Indirect Incomes); own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/finance-income" element={<IncomeMasterReport />} />
           <Route path="reports/aging" element={<AgingReport />} />
+          {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
+          <Route path="reports/top-exposure" element={<TopExposureReport />} />
           <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
           {/* One page, two reports: ?below=0 is "Zero Collections", ?below=30 is "Below 30%".
               Zero collection is the 0% case, so they share an engine — see lib/collections.ts.
@@ -96,11 +130,26 @@ function HubRoutes() {
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
               a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
           <Route path="reports/dso" element={<DsoReport />} />
+          {/* Admin-only executive dashboard (board-level financials). Guarded here AND hidden from the
+              catalogue/sidebar for non-admins — see reportCatalog.ts adminOnly. */}
+          <Route
+            path="reports/c-level"
+            element={
+              <RequireRole roles={["admin"]}>
+                <CLevelDashboard />
+              </RequireRole>
+            }
+          />
           <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
           <Route path="reports/profit-loss" element={<ProfitLossReport />} />
           <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
           <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
           <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
+          {/* Live (Tally) only — the pages render a "Not applicable" panel on the default pipeline. */}
+          <Route path="reports/ledger-voucher" element={<LedgerVoucherList />} />
+          <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
+          {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
+          <Route path="reports/sales-register" element={<SalesRegister />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

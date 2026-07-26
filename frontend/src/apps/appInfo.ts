@@ -70,6 +70,18 @@ export const APPS: Record<string, AppInfo> = {
     category: "fms",
     subGroup: "Purchase",
   },
+  sampling: {
+    name: "Ink / RM Sampling",
+    basePath: "/sampling",
+    category: "fms",
+    subGroup: "Sampling",
+  },
+  "production-entry": {
+    name: "Production Entry",
+    basePath: "/production-entry",
+    category: "fms",
+    subGroup: "Production",
+  },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",

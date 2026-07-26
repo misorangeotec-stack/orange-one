@@ -20,6 +20,7 @@ export default function SourcingQueue() {
   const dueIso = (l: RequestItem) => s.dueIsoForLine(l, "sourcing");
 
   const columns: QueueColumn<RequestItem>[] = [
+    { key: "company", header: "Company", cell: (l) => companyName(companyOf(l) ?? ""), sortValue: (l) => companyName(companyOf(l) ?? ""), filter: { kind: "select", get: (l) => companyName(companyOf(l) ?? "") }, tdClassName: "whitespace-nowrap" },
     {
       key: "request", header: "Request", sortValue: (l) => requestNo(l), filter: { kind: "text", get: (l) => requestNo(l) }, tdClassName: "whitespace-nowrap",
       cell: (l) => {
@@ -46,6 +47,7 @@ export default function SourcingQueue() {
           rowKey={(l) => l.id}
           columns={columns}
           groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
+          hideGroupHeaders
           rowClassName={(l) => overdueRowClass(dueIso(l))}
           rowsLabel="lines"
           emptyTitle="Nothing to source"

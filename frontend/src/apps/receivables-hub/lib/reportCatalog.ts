@@ -1,18 +1,24 @@
 import {
   AlarmClock,
+  BarChart3,
   BookOpen,
   Calculator,
   CalendarClock,
+  Crown,
   FolderTree,
   Gauge,
   HandCoins,
+  Landmark,
   Layers,
+  LayoutDashboard,
+  NotebookText,
   PackageX,
   Percent as PercentIcon,
   ReceiptText,
   Scale,
   ScrollText,
   ShieldAlert,
+  ShoppingCart,
   TrendingUp,
   UserCheck,
   Users,
@@ -50,6 +56,9 @@ export type ReportSource = "pipeline" | "tally";
 export type ReportStatus = "live" | "soon";
 
 export type ReportCategoryId =
+  | "master-reports"
+  | "finance"
+  | "dashboards"
   | "receivables"
   | "collections"
   | "customers"
@@ -61,6 +70,8 @@ export interface ReportCategory {
   title: string;
   blurb: string;
   icon: LucideIcon;
+  /** Admin-only category — hidden from non-admins in the landing rail and the sidebar sub-nav. */
+  adminOnly?: boolean;
 }
 
 export interface ReportSubcategory {
@@ -85,9 +96,32 @@ export interface ReportEntry {
   status: ReportStatus;
   /** Extra words that should match in search but appear in neither title nor purpose. */
   keywords?: string[];
+  /** Admin-only report — route-guarded AND hidden from the catalogue/sidebar for non-admins. */
+  adminOnly?: boolean;
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
+  // First in the rail on purpose — these are the headline management reports, and this
+  // array's order IS the landing-page tab order and the sidebar sub-nav order.
+  {
+    id: "master-reports",
+    title: "Master Reports",
+    blurb: "The headline management reports, read straight from the Tally books.",
+    icon: BarChart3,
+  },
+  {
+    id: "finance",
+    title: "Finance",
+    blurb: "Receivables, payables, income and expense — straight from the Tally books.",
+    icon: Landmark,
+  },
+  {
+    id: "dashboards",
+    title: "Dashboards",
+    blurb: "At-a-glance executive scoreboards built from the live Tally books.",
+    icon: LayoutDashboard,
+    adminOnly: true,
+  },
   {
     id: "receivables",
     title: "Receivables",
@@ -127,6 +161,111 @@ export const REPORT_SUBCATEGORIES: ReportSubcategory[] = [
 ];
 
 export const REPORTS: ReportEntry[] = [
+  // ── Master Reports ─────────────────────────────────────────────────────────
+  {
+    id: "sales-report",
+    title: "Sales Report",
+    purpose: "The full sales picture — year, quarter, month, week, geography, product and customer.",
+    category: "master-reports",
+    path: "reports/sales",
+    icon: BarChart3,
+    source: "tally",
+    status: "live",
+    keywords: ["sales", "revenue", "turnover", "geography", "product", "contributing customers", "ageing"],
+  },
+  {
+    id: "purchase-report",
+    title: "Purchase Report",
+    purpose: "The full purchase picture — year, quarter, month, week, geography, product and vendor.",
+    category: "master-reports",
+    path: "reports/purchase",
+    icon: ShoppingCart,
+    source: "tally",
+    status: "live",
+    keywords: ["purchase", "vendor", "supplier", "payable", "procurement", "creditors", "ageing", "bill"],
+  },
+  {
+    id: "day-book-dashboard",
+    title: "Day Book",
+    purpose: "One day at a glance — sales, purchases, income & expense, products and vouchers.",
+    category: "master-reports",
+    path: "reports/day-book",
+    icon: BookOpen,
+    source: "tally",
+    status: "live",
+    keywords: ["day book", "daybook", "today", "vouchers", "collection", "payment", "income", "expense"],
+  },
+
+  // ── Finance ────────────────────────────────────────────────────────────────
+  {
+    id: "finance-receivables",
+    title: "Receivables",
+    purpose: "Outstanding, overdue, on-account and advances per customer — the Talligence receivables view.",
+    category: "finance",
+    path: "reports/finance-receivables",
+    icon: ReceiptText,
+    source: "tally",
+    status: "live",
+    keywords: ["receivables", "outstanding", "overdue", "on account", "advance", "bills receivable", "ageing", "debtors"],
+  },
+  {
+    id: "finance-payables",
+    title: "Payables",
+    purpose: "What we owe each supplier — outstanding, overdue, on-account and advances, by bill.",
+    category: "finance",
+    path: "reports/finance-payables",
+    icon: HandCoins,
+    source: "tally",
+    status: "live",
+    keywords: ["payables", "creditors", "supplier", "vendor", "outstanding", "overdue", "on account", "advance", "bills payable", "ageing"],
+  },
+  {
+    id: "finance-income",
+    title: "Income",
+    purpose: "Income by group, sub-group and ledger — year, quarter and month, straight from the Tally books.",
+    category: "finance",
+    path: "reports/finance-income",
+    icon: TrendingUp,
+    source: "tally",
+    status: "live",
+    keywords: ["income", "revenue", "sales accounts", "direct income", "indirect income", "P&L", "profit and loss"],
+  },
+  {
+    id: "finance-expense",
+    title: "Expense",
+    purpose: "Expense ledgers and their movement, straight from the Tally books.",
+    category: "finance",
+    icon: Wallet,
+    source: "tally",
+    status: "soon",
+    keywords: ["expense", "cost", "overheads"],
+  },
+  {
+    id: "finance-sales-gain",
+    title: "Sales Gain Report",
+    purpose: "Margin and gain analysis on the sales book.",
+    category: "finance",
+    icon: PercentIcon,
+    source: "tally",
+    status: "soon",
+    keywords: ["sales gain", "margin", "profit"],
+  },
+
+  // ── Dashboards ─────────────────────────────────────────────────────────────
+  {
+    id: "c-level-dashboard",
+    title: "C-Level Dashboard",
+    purpose:
+      "The whole company on one screen — sales, profit, ratios, funds, top parties, duties and stock, per company.",
+    category: "dashboards",
+    path: "reports/c-level",
+    icon: LayoutDashboard,
+    source: "tally",
+    status: "live",
+    adminOnly: true,
+    keywords: ["executive", "c-level", "ceo", "cfo", "board", "kpi", "ratios", "gross profit", "net profit"],
+  },
+
   // ── Receivables ────────────────────────────────────────────────────────────
   {
     id: "aging",
@@ -151,6 +290,18 @@ export const REPORTS: ReportEntry[] = [
     source: "pipeline",
     status: "live",
     keywords: ["aged", "90", "180", "chase"],
+  },
+  {
+    id: "top-exposure",
+    title: "Top 50 Credit Exposure & Overdue Accounts",
+    purpose:
+      "The biggest exposure / most-overdue customers as a ranked call-list, with credit limit, utilisation and terms.",
+    category: "receivables",
+    path: "reports/top-exposure",
+    icon: Crown,
+    source: "tally", // Live (Tally) only — shows a "Not applicable" panel on the default pipeline.
+    status: "live",
+    keywords: ["top 50", "exposure", "call list", "credit limit", "utilisation", "over limit", "overdue", "chase"],
   },
   {
     id: "dso",
@@ -320,10 +471,23 @@ export const REPORTS: ReportEntry[] = [
     purpose: "One ledger's full statement — every voucher against it, with a running balance.",
     category: "tally",
     subcategory: "books-registers",
+    path: "reports/ledger-voucher",
     icon: ScrollText,
     source: "tally",
-    status: "soon",
-    keywords: ["ledger statement", "account"],
+    status: "live",
+    keywords: ["ledger statement", "account", "vouchers", "running balance"],
+  },
+  {
+    id: "sales-register",
+    title: "Sales Register",
+    purpose: "Every sales & daybook voucher line — party, particulars, qty, rate and revenue, as booked.",
+    category: "tally",
+    subcategory: "books-registers",
+    path: "reports/sales-register",
+    icon: NotebookText,
+    source: "tally",
+    status: "live",
+    keywords: ["register", "sales register", "voucher", "gstin", "particulars", "quantity", "rate", "revenue", "foc", "challan", "credit note", "debit note"],
   },
   {
     id: "group-summary",
@@ -377,10 +541,23 @@ export function subcategoriesInCategory(id: ReportCategoryId): ReportSubcategory
 /** Free-text match over title, purpose and keywords. Blank query returns everything. */
 export function searchReports(q: string): ReportEntry[] {
   const needle = q.trim().toLowerCase();
-  if (!needle) return REPORTS;
-  return REPORTS.filter((r) =>
+  const pool = REPORTS;
+  if (!needle) return pool;
+  return pool.filter((r) =>
     [r.title, r.purpose, ...(r.keywords ?? [])].some((s) => s.toLowerCase().includes(needle)),
   );
+}
+
+/**
+ * Admin visibility. Reports/categories flagged `adminOnly` are dropped for non-admins so a
+ * board-level dashboard never even appears in the list. The route is guarded separately
+ * (see ReceivablesHubApp.tsx) — hiding a row is not an access control on its own.
+ */
+export function reportCategoriesFor(isAdmin: boolean): ReportCategory[] {
+  return REPORT_CATEGORIES.filter((c) => isAdmin || !c.adminOnly);
+}
+export function visibleReports(isAdmin: boolean): ReportEntry[] {
+  return REPORTS.filter((r) => isAdmin || !r.adminOnly);
 }
 
 /**
@@ -428,19 +605,24 @@ export function reportCrumbs(pathname: string, search: string): Crumb[] | null {
     return cat ? [root, { label: cat.title }] : null;
   }
 
-  // Ledger Outstandings has a /:ledgerId detail sub-route with no catalogue entry of its own.
-  // Give it the same trail as the list, with "Ledger Outstandings" linking back to the list (the
-  // detail page's own Tally-style header carries the ledger name). The list itself (exact path)
-  // falls through to findReport below and ends at a non-link "Ledger Outstandings".
-  const loList = `${BASE}/reports/ledger-outstanding`;
-  if (pathname.startsWith(`${loList}/`)) {
-    const entry = REPORTS.find((r) => r.id === "ledger-outstanding");
-    const cat = entry ? categoryById(entry.category) : undefined;
-    return [
-      root,
-      ...(cat ? [{ label: cat.title, to: categoryHref(cat.id), collapsible: true }] : []),
-      { label: entry?.title ?? "Ledger Outstandings", to: loList },
-    ];
+  // Ledger Outstandings and Ledger Vouchers each have a /:ledgerId detail sub-route with no catalogue
+  // entry of its own. Give it the same trail as the list, with the report title linking back to the
+  // list (the detail page's own Tally-style header carries the ledger name). The list itself (exact
+  // path) falls through to findReport below and ends at a non-link title.
+  for (const detail of [
+    { id: "ledger-outstanding", fallback: "Ledger Outstandings" },
+    { id: "ledger-voucher", fallback: "Ledger Vouchers" },
+  ]) {
+    const listPath = `${BASE}/reports/${detail.id}`;
+    if (pathname.startsWith(`${listPath}/`)) {
+      const entry = REPORTS.find((r) => r.id === detail.id);
+      const cat = entry ? categoryById(entry.category) : undefined;
+      return [
+        root,
+        ...(cat ? [{ label: cat.title, to: categoryHref(cat.id), collapsible: true }] : []),
+        { label: entry?.title ?? detail.fallback, to: listPath },
+      ];
+    }
   }
 
   const report = findReport(pathname, search);

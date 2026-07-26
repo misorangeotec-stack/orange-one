@@ -227,11 +227,14 @@ export default function Sidebar({
         </div>
 
         <nav className={cn("flex-1 overflow-y-auto py-4 space-y-0.5", rail ? "px-2" : "px-3")}>
+          {/* Keyed by to+index, NOT by `to` alone: an app may legitimately list the
+              same destination twice (Sampling shows one shared step under both of
+              its branch headings), and a duplicate React key silently drops a row. */}
           {nodes.map((node, idx) =>
             node.kind === "item" ? (
               rail ? (
                 <RailButton
-                  key={node.item.to}
+                  key={`${node.item.to}#${idx}`}
                   icon={node.item.icon}
                   active={isActivePath(pathname, node.item.to)}
                   to={node.item.to}
@@ -240,7 +243,7 @@ export default function Sidebar({
                   onLeave={scheduleClose}
                 />
               ) : (
-                <div key={node.item.to}>
+                <div key={`${node.item.to}#${idx}`}>
                   {node.item.section && <SectionLabel label={node.item.section} first={idx === 0} />}
                   <Row item={node.item} onNavigate={onNavigate} />
                 </div>

@@ -361,6 +361,100 @@ export function findings(roots: FsNode[], companyLabel: string, only?: FsStateme
     .sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
 }
 
+/**
+ * AS-OF DATE SUPPORT
+ *
+ * Our `ours` column is each ledger's full CLOSINGBALANCE, which in Tally's ledger export includes
+ * vouchers dated anywhere in the open book — INCLUDING future/post-dated entries (annual insurance,
+ * scheduled EMIs, etc.). Tally's own Trial Balance / P&L report, however, is run "as of" a date and
+ * excludes anything dated after it. So the two legitimately disagree by exactly the out-of-window
+ * vouchers (verified to the paisa on the Surat book, 20-Jul-2026: every P&L gap = its future-dated
+ * entries).
+ *
+ * To make our column line up with Tally, we let the user pick a window [from, to] (to defaults to the
+ * snapshot's as-of date) and subtract each statement line's vouchers dated OUTSIDE it, via the
+ * `fs_oow_adj` RPC (see fetchOutOfWindow). No connector change — an RPC + a supporting index on the
+ * mirror. The Tally column itself is a fixed snapshot and cannot be re-sliced, so the comparison is
+ * exact only at to = the snapshot date; other dates move our side alone (documented in the UI).
+ */
+/** yyyy-mm-dd → yyyymmdd (vch_date is a yyyymmdd string, sorts lexically). */
+const isoToYmd = (iso: string): string => iso.replace(/-/g, "");
+
+/** A company to trim: its guid and the statement's from_date, which is the FY-start FLOOR (see below). */
+export interface OowCompany {
+  companyGuid: string;
+  fromDate: string; // yyyy-mm-dd — the trial balance's from_date
+}
+
+/**
+ * Per-company, per-NODE-NAME Dr-positive sum of vouchers dated OUTSIDE the window [fromIso, toIso] — the
+ * amount to remove from that statement line's `ours` so the column reads "as of" the window. Keyed by
+ * company_guid then the line's `name` (group OR ledger — the same key `v_fs_line` nests on).
+ *
+ * Sourced from the `fs_oow_adj` RPC. Two reasons it must be keyed by NAME, not ledger guid:
+ *  1. RLS — `tally_voucher_line` has RLS on with no anon policy, so a direct browser read returns
+ *     nothing; the RPC is SECURITY DEFINER (same pattern as ledger_txn_by_id).
+ *  2. The statement is built from the group-level Trial Balance, so a group like "INSURANCE EXP" is a
+ *     single line with NO ledger children. The RPC therefore rolls each ledger's out-of-window amount
+ *     up its whole group chain (exactly how `v_fs_line` rolls `our_closing` up), returning one row per
+ *     group name plus one per ledger-line name, so every statement line has a match.
+ *
+ * CRITICAL — the FY-start floor (p_floor). A book can span more than one financial year (Surat runs
+ * 1-Apr-25 → 31-Mar-27), so the voucher table holds prior-FY lines too. But a P&L line's closing is the
+ * CURRENT FY's net only. The RPC clamps `vch_date >= p_floor` (the statement's from_date) so we only
+ * ever touch this-FY vouchers; by default (from = from_date) the pre-`from` branch is empty.
+ */
+export async function fetchOutOfWindow(
+  companies: OowCompany[],
+  fromIso: string | null,
+  toIso: string | null,
+): Promise<Record<string, Record<string, number>>> {
+  const out: Record<string, Record<string, number>> = {};
+  if (companies.length === 0 || (!fromIso && !toIso)) return out;
+
+  const cw = getConnectwaveSupabase();
+  const toYmd = toIso ? isoToYmd(toIso) : "99999999"; // no upper bound → nothing is "after"
+  const fromYmd = fromIso ? isoToYmd(fromIso) : null;
+
+  await Promise.all(
+    companies.map(async (c) => {
+      const floor = isoToYmd(c.fromDate); // never subtract anything before the statement's FY start
+      const bucket: Record<string, number> = (out[c.companyGuid] = {});
+      const { data, error } = await cw.rpc("fs_oow_adj", {
+        p_tenant: `acct_orange::${c.companyGuid}`,
+        p_floor: floor,
+        p_from: fromYmd ?? floor, // no lower bound clips nothing (with the floor already at FY start)
+        p_to: toYmd,
+      });
+      if (error) throw new Error(error.message);
+      for (const r of (data ?? []) as { name: string | null; dr_positive: number | string | null }[]) {
+        if (!r.name) continue;
+        bucket[r.name] = Number(r.dr_positive) || 0;
+      }
+    }),
+  );
+  return out;
+}
+
+/**
+ * Return a copy of the tree with every node's `ours` (and `gap`) reduced by its own out-of-window
+ * amount, so the statement reads "as of" the chosen window. Keyed by node NAME: the RPC already rolled
+ * each group up its chain (mirroring how `v_fs_line` builds a group's `our_closing`), so each line is
+ * adjusted directly — no tree summation. With an empty map the values are unchanged (only new objects).
+ */
+export function adjustRootsAsOf(roots: FsNode[], adjByName: Record<string, number>): FsNode[] {
+  const build = (n: FsNode): FsNode => {
+    const ours = n.ours === null ? null : n.ours - (adjByName[n.name] ?? 0);
+    return {
+      ...n,
+      children: n.children.map(build),
+      ours,
+      gap: ours === null ? null : n.tally - ours,
+    };
+  };
+  return roots.map(build);
+}
+
 /** Sum of a top-level group's Tally figure, 0 when the company has no such group. */
 function topLevelTally(roots: FsNode[], name: string): number {
   return roots.filter((n) => n.name === name).reduce((s, n) => s + n.tally, 0);

@@ -79,10 +79,10 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
  * store. Routes are added stage by stage as each build phase lands (the case + the
  * approvals, clearance, the interview, the settlement, closure, monitoring).
  *
- * There is no <RequireModule> here and no per-user grant: `hr-exit` is a universal
- * app (apps/universal.ts), so App.tsx mounts it for every signed-in user. What each
- * person can actually see is decided by the nav, the store's capability flags and —
- * authoritatively — RLS.
+ * App.tsx already wraps this whole app in <RequireModule appId="hr-exit">, so only
+ * admins and users granted the module in Module access reach it — this file adds no
+ * further gate of its own. What each person then sees inside is decided by the nav,
+ * the store's capability flags and — authoritatively — RLS.
  */
 export default function ExitApp() {
   return (

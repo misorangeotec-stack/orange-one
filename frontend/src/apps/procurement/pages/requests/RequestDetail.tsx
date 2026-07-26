@@ -10,6 +10,8 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
+import QtyTotal from "../../components/QtyTotal";
+import RequestStepper from "../../components/RequestStepper";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -43,10 +45,6 @@ export default function RequestDetail() {
   const anyInSourcing = lines.some((l) => l.status === "sourcing");
   const anyInApproval = lines.some((l) => l.status === "approval" || l.status === "on_hold");
   const mixedVendors = s.requestHasMixedVendors(request.id);
-  /** Cancel is the only per-line action left — everything else acts on the whole
-   *  requisition from the header. No cancellable line ⇒ no Actions column at all. */
-  const canCancel = (l: RequestItem) => l.status === "approved_pending_po" && (s.canGeneratePo || s.canSource);
-  const showActions = lines.some(canCancel);
 
   // Activity for the request + all its lines, newest first.
   const lineIds = new Set(lines.map((l) => l.id));
@@ -152,6 +150,11 @@ export default function RequestDetail() {
         </p>
       )}
 
+      {/* Progress rail — the full lifecycle from this requisition through to Tally,
+          sitting on the least-advanced line. Kept above the details, per the
+          "progress block is always first" convention. */}
+      <Card className="px-4 py-4"><RequestStepper request={request} /></Card>
+
       {request.note && (
         // Was inverted: the word "Note:" was navy and bold while the note itself sat in
         // grey — the label outshouting its own data.
@@ -165,7 +168,6 @@ export default function RequestDetail() {
           <table className="w-full text-[13.5px]">
             <thead>
               <tr className="text-left text-grey-2 border-b border-line">
-                {showActions && <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>}
                 <th className="font-medium px-4 py-3">Item</th>
                 <th className="font-medium px-4 py-3">Qty</th>
                 <th className="font-medium px-4 py-3">Status</th>
@@ -182,18 +184,6 @@ export default function RequestDetail() {
                 const po = poItem ? s.poById(poItem.poId) : undefined;
                 return (
                   <tr key={l.id} className="border-b border-line/70 last:border-0 hover:bg-page/60 align-middle">
-                    {showActions && (
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {/* Source / Approve moved to the requisition header — they act
-                            on every item at once. Cancel is the only per-line action
-                            left, so the whole column hides when nothing is cancellable. */}
-                        {canCancel(l) ? (
-                          <button onClick={() => { setReason(""); setErr(null); setCancelling(l); }} className="text-[12.5px] font-semibold text-ryg-red hover:underline">Cancel</button>
-                        ) : (
-                          <span className="text-[12px] text-grey-2">—</span>
-                        )}
-                      </td>
-                    )}
                     <td className="px-4 py-3 font-medium text-navy">{s.itemLabel(l.itemId)}</td>
                     <td className="px-4 py-3 whitespace-nowrap">{l.quantity} {l.unit}</td>
                     <td className="px-4 py-3">
@@ -214,6 +204,21 @@ export default function RequestDetail() {
                 );
               })}
             </tbody>
+            {lines.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-line bg-orange-soft/50 align-middle">
+                  <td className="px-4 py-3 text-right text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
+                  <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                    <QtyTotal entries={lines.map((l) => ({ qty: l.quantity, unit: l.unit }))} />
+                  </td>
+                  <td colSpan={4} />
+                  <td className="px-4 py-3 font-bold text-navy whitespace-nowrap">
+                    {inr(lines.reduce((sum, l) => sum + (l.lineValue ?? 0), 0))}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
           </table>
         </ScrollableTable>
       </Card>

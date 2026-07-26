@@ -7,8 +7,9 @@ import SharedKpi from "@/shared/components/ui/Kpi";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
-import { formatDate } from "@/shared/lib/time";
-import { EMPTY_COUNTS, bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
+import { bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
+import { queueRollup } from "@/shared/lib/fmsDashboard";
+import DueChip from "@/shared/components/dashboard/DueChip";
 import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
 import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
@@ -16,7 +17,7 @@ import type { QueueEntry } from "../../lib/queues";
 import { ownerResolver } from "../../lib/owners";
 import { linkResolver } from "../../lib/links";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
-import StepPipeline, { type StepPipelineNode } from "@/shared/components/ui/StepPipeline";
+import StepPipeline from "@/shared/components/ui/StepPipeline";
 import type { RequestItem } from "../../types";
 import { appName } from "@/apps/appInfo";
 
@@ -53,33 +54,10 @@ export default function ControlCenter() {
   const todayIso = todayLocalIso();
   const bucketFor = (e: QueueEntry): Bucket | null => bucketOf(e.dueIso, todayIso);
 
-  // ---- one pass: KPI totals + per-step delayed/today/total counts ----
-  const { counts, nodes } = useMemo(() => {
-    const totals: Record<Bucket, number> = { ...EMPTY_COUNTS };
-    const perStep = new Map<StepKey, { delayed: number; today: number; total: number }>();
-    for (const st of PIPELINE_STEPS) perStep.set(st.key, { delayed: 0, today: 0, total: 0 });
-
-    for (const e of s.queueEntries) {
-      const b = bucketOf(e.dueIso, todayIso);
-      if (b) totals[b]++;
-      const rec = perStep.get(e.stepKey);
-      if (!rec) continue;
-      // Counted regardless of bucket — including the far-future ones bucketOf returns
-      // null for. This is what lets a step's ✓ mean "empty" instead of "nothing due in
-      // the next 24 hours", which is what it used to claim while holding work.
-      rec.total++;
-      if (b === "delayed") rec.delayed++;
-      else if (b === "today") rec.today++;
-    }
-
-    const pipeline: StepPipelineNode<StepKey>[] = PIPELINE_STEPS.map((st) => ({
-      stepKey: st.key,
-      index: st.index,
-      label: st.short,
-      ...perStep.get(st.key)!,
-    }));
-    return { counts: totals, nodes: pipeline };
-  }, [s.queueEntries, todayIso]);
+  // ---- KPI totals + per-step counts. The one-pass reduction lives in
+  // @/shared/lib/fmsDashboard, shared with the home dashboard, so the two boards
+  // (and the cross-FMS scoreboard) can never drift. ----
+  const { counts, nodes } = useMemo(() => queueRollup(s.queueEntries, PIPELINE_STEPS, todayIso), [s.queueEntries, todayIso]);
 
   const pending = counts.delayed + counts.today;
 
@@ -151,6 +129,14 @@ export default function ControlCenter() {
   }, [s.queueEntries, selectedSteps, scope, todayIso]);
 
   const columns: QueueColumn<QueueEntry>[] = [
+    {
+      key: "company",
+      header: "Company",
+      cell: (e) => s.companyById(e.companyId)?.name ?? "—",
+      sortValue: (e) => s.companyById(e.companyId)?.name ?? "—",
+      filter: { kind: "select", get: (e) => s.companyById(e.companyId)?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
     {
       key: "ref",
       header: "Ref",
@@ -254,6 +240,7 @@ export default function ControlCenter() {
           rowKey={(e) => `${e.stepKey}:${e.entityId}`}
           columns={columns}
           groupBy={{ idOf: (e) => e.companyId, nameOf: (id) => s.companyById(id)?.name ?? "—", allLabel: "All companies" }}
+          hideGroupHeaders
           rowClassName={(e) => (bucketFor(e) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="entries"
           emptyTitle="Nothing here"
@@ -287,36 +274,6 @@ export default function ControlCenter() {
 
       <ReassignModal line={reassign} onClose={() => setReassign(null)} />
     </div>
-  );
-}
-
-/**
- * The entry's due date with a Delayed / Today / Tomorrow chip.
- *
- * Distinct from `DueCell`, which shows an overdue / due-today chip only: this one
- * colours by the Control Center's four-way bucket. Both now take an
- * already-computed `dueIso` from `lib/queues.ts`, so they can never disagree.
- */
-function DueChip({ dueIso, todayIso }: { dueIso: string | null; todayIso: string }) {
-  if (!dueIso) return <span className="text-grey-2">No date</span>;
-  const b = bucketOf(dueIso, todayIso);
-  const chip =
-    b === "delayed"
-      ? { cls: "bg-[#FDECEC] text-ryg-red", text: "Delayed" }
-      : b === "today"
-        ? { cls: "bg-[#FFF7E6] text-yellow", text: "Today" }
-        : b === "tomorrow"
-          ? { cls: "bg-page text-grey-2", text: "Tomorrow" }
-          : null;
-  return (
-    <span className={b === "delayed" ? "text-ryg-red font-semibold" : b === "today" ? "text-yellow font-medium" : "text-grey"}>
-      {formatDate(dueIso)}
-      {chip && (
-        <span className={`ml-1.5 inline-block text-[10px] font-semibold uppercase tracking-wide rounded-full px-1.5 py-0.5 align-middle ${chip.cls}`}>
-          {chip.text}
-        </span>
-      )}
-    </span>
   );
 }
 

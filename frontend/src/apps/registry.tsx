@@ -7,6 +7,8 @@ import { importApp } from "./import/meta";
 import { hrRecruitmentApp } from "./hr-recruitment/meta";
 import { hrExitApp } from "./hr-exit/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
+import { samplingApp } from "./sampling/meta";
+import { productionEntryApp } from "./production-entry/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
@@ -33,11 +35,17 @@ export const apps: AppManifest[] = [
   // user to the import team (not universal). Runs alongside domestic `procurement`.
   importApp,
   hrRecruitmentApp,
-  // Universal (apps/universal.ts): no per-user grant — every employee must be able to
-  // raise their own resignation, and there is no bulk grant to fall back on.
+  // Granted per user like every other module (was universal — see apps/universal.ts —
+  // but that let everyone see it regardless of their grant, which admins didn't want).
   hrExitApp,
-  // Universal (apps/universal.ts): every employee can raise an office-supply request.
+  // Granted per user like every other module (was universal — see apps/universal.ts).
   officeSuppliesApp,
+  // Sampling FMS — separate module (own fms_sampling_* tables), granted per user to
+  // the sampling team (not universal). Ink / raw-material lab sampling.
+  samplingApp,
+  // Production Entry FMS — separate module (own fms_production_* tables), granted per
+  // user to the production team (not universal). Ink production job-card tracker.
+  productionEntryApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];

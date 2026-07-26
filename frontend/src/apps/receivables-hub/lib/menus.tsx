@@ -47,6 +47,8 @@ export interface ReceivablesMenuChild {
   title: string;
   url: string;
   icon?: LucideIcon;
+  /** Admin-only sub-nav entry (e.g. the Dashboards category). Hidden from non-admins. */
+  adminOnly?: boolean;
 }
 
 export interface ReceivablesMenu {
@@ -88,6 +90,7 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
       title: c.title,
       url: categoryHref(c.id),
       icon: c.icon,
+      adminOnly: c.adminOnly,
     })),
   },
   { key: "settings", title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },
@@ -100,7 +103,10 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
 export function visibleMenusFor(isAdmin: boolean, hiddenKeys: string[]): ReceivablesMenu[] {
   if (isAdmin) return RECEIVABLES_MENUS;
   const hidden = new Set(hiddenKeys);
-  return RECEIVABLES_MENUS.filter((m) => !m.adminOnly && !hidden.has(m.key));
+  return RECEIVABLES_MENUS.filter((m) => !m.adminOnly && !hidden.has(m.key)).map((m) =>
+    // Drop admin-only sub-nav children (e.g. the Dashboards category) for non-admins.
+    m.children ? { ...m, children: m.children.filter((c) => !c.adminOnly) } : m,
+  );
 }
 
 /** Menus eligible for the per-user permission matrix (admin-only menus are excluded). */

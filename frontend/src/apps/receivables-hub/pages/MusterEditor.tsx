@@ -39,6 +39,8 @@ import {
 } from "@hub/lib/musterApi";
 import { fetchCompanyMap, makeCompanyResolver, companyGuidOf, type CompanyMapRow } from "@hub/lib/companyMap";
 import { formatDateDMY } from "@hub/lib/utils";
+import { MasterIoBar } from "@hub/pages/MusterIoBar";
+import { tagIo, groupIo, companyIo, otherPaymentIo, redMarkIo } from "@hub/lib/musterIo";
 
 const PAGE_SIZE = 25;
 type FilterMode = "all" | "unchecked" | "new";
@@ -217,6 +219,22 @@ function Toolbar({
   );
 }
 
+/** Plain-English list of the active filters, recorded on the export's "About" sheet. */
+function describeFilters(o: {
+  search?: string; mode?: FilterMode; balanceOnly?: boolean;
+  allocs?: string[]; companies?: string[]; locations?: string[];
+}): string[] {
+  const out: string[] = [];
+  if (o.search?.trim()) out.push(`Search: "${o.search.trim()}"`);
+  if (o.mode === "unchecked") out.push("Only unchecked");
+  if (o.mode === "new") out.push("Only new");
+  if (o.balanceOnly) out.push("Only rows with a balance");
+  if (o.allocs?.length) out.push(`Allocation: ${o.allocs.join(", ")}`);
+  if (o.companies?.length) out.push(`Companies: ${o.companies.join(", ")}`);
+  if (o.locations?.length) out.push(`Locations: ${o.locations.join(", ")}`);
+  return out;
+}
+
 function useMusterFilters() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<FilterMode>("all");
@@ -325,6 +343,11 @@ function TagMuster({ rows, snapByGuid, companyOptions, locationOptions, onReload
       <datalist id="muster-categories">
         {["A", "B", "C", "D", "E", "AA", ...categories].filter((v, i, a) => a.indexOf(v) === i).map((c) => <option key={c} value={c} />)}
       </datalist>
+      <div className="flex justify-end pb-2">
+        <MasterIoBar io={tagIo(snapByGuid)} exportRows={view} existingRows={rows}
+          activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations })}
+          onReload={onReload} />
+      </div>
       <Toolbar
         search={f.search} onSearch={f.setSearch} filter={f.filter} onFilter={f.setFilter}
         counts={counts} balanceOnly={f.balanceOnly} onToggleBalance={() => f.setBalanceOnly((v) => !v)}
@@ -479,6 +502,11 @@ function GroupMuster({ rows, snapByGuid, companyOptions, locationOptions, onRelo
     <>
       <datalist id="muster-groups">{groups.map((g) => <option key={g} value={g} />)}</datalist>
       <datalist id="muster-teams">{teams.map((t) => <option key={t} value={t} />)}</datalist>
+      <div className="flex justify-end pb-2">
+        <MasterIoBar io={groupIo(snapByGuid)} exportRows={view} existingRows={rows}
+          activeFilters={describeFilters({ search: f.search, mode: f.filter, balanceOnly: f.balanceOnly, companies: f.companies, locations: f.locations })}
+          onReload={onReload} />
+      </div>
       <Toolbar
         search={f.search} onSearch={f.setSearch} filter={f.filter} onFilter={f.setFilter}
         counts={counts} balanceOnly={f.balanceOnly} onToggleBalance={() => f.setBalanceOnly((v) => !v)}
@@ -601,6 +629,9 @@ function CompanyMuster({ rows, custCounts, onReload }: {
 
   return (
     <>
+      <div className="flex justify-end pb-3">
+        <MasterIoBar io={companyIo(custCounts)} exportRows={rows} existingRows={rows} activeFilters={[]} onReload={onReload} />
+      </div>
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
@@ -960,6 +991,8 @@ function OtherPaymentMuster({ rows, snap, snapByGuid, companyOptions, locationOp
             <MultiSelect label="Allocation" options={["Against Invoice", "On Account"]} selected={allocs} onChange={setAllocs} />
             <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
             <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
+            <MasterIoBar io={otherPaymentIo(snapByGuid)} exportRows={view} existingRows={rows}
+              activeFilters={describeFilters({ search, allocs, companies, locations })} onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />Add payment
             </Button>
@@ -1285,6 +1318,8 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
           <div className="flex items-center gap-2 flex-wrap">
             <MultiSelect label="Location" options={locationOptions} selected={locations} onChange={setLocations} />
             <MultiSelect label="Company" options={companyOptions} selected={companies} onChange={setCompanies} />
+            <MasterIoBar io={redMarkIo(snapByGuid)} exportRows={view} existingRows={rows}
+              activeFilters={describeFilters({ search, companies, locations })} onReload={onReload} />
             <Button size="sm" onClick={() => setAddOpen(true)} className="gap-1.5">
               <Plus className="h-4 w-4" />Add Red Mark
             </Button>
