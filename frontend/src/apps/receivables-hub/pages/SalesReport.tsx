@@ -6,13 +6,15 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Clock, FileSpreadsheet,
-  Layers, MapPin, Package, RefreshCw, TrendingUp, UserCheck, Users,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, CalendarClock, Clock, FileSpreadsheet,
+  Layers, MapPin, Package, RefreshCw, TrendingDown, TrendingUp, UserCheck, Users, Wallet,
+  type LucideIcon,
 } from "lucide-react";
 
 import { Card } from "@hub/components/ui/card";
 import { Button } from "@hub/components/ui/button";
 import { Input } from "@hub/components/ui/input";
+import { cn } from "@hub/lib/utils";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { companyLabel } from "@hub/components/TallyReportFrame";
@@ -110,14 +112,124 @@ function WeeklyTooltip({
   );
 }
 
-/** The three headline tiles. */
-function KpiTile({ title, value, hint }: { title: string; value: number; hint: string }) {
+/* ---- Hero banner (Control-Center styling) -------------------------------- */
+
+/**
+ * The navy header block, styled to match the portal's "My Control Center" hero:
+ * an orange corner wash over a navy gradient, a live-source chip in the eyebrow,
+ * a one-line dynamic summary of where the year stands, and the company / FY /
+ * refresh controls sitting on the dark surface (top-right, like the scope tabs).
+ */
+function SalesHero({
+  company,
+  fy,
+  periodLabel,
+  metaLine,
+  summary,
+  growthPct,
+  loading,
+  controls,
+}: {
+  company?: string;
+  fy: string;
+  periodLabel: string;
+  metaLine?: string;
+  summary: React.ReactNode;
+  growthPct: number | null;
+  loading: boolean;
+  controls: React.ReactNode;
+}) {
   return (
-    <Card className="rounded-card border-border bg-surface shadow-sm px-4 py-3">
-      <div className="text-[13px] font-semibold text-primary">{title}</div>
-      <div className="text-2xl font-bold text-navy leading-tight mt-1">{fmtSales(value)}</div>
-      <div className="text-[11px] text-muted-foreground mt-0.5">{hint}</div>
-    </Card>
+    <div className="relative overflow-hidden rounded-card bg-navy text-white px-5 py-5 sm:px-6 sm:py-6">
+      {/* Warm corner wash — brand orange, kept subtle so the text stays first. */}
+      <div className="pointer-events-none absolute -top-24 -right-16 w-80 h-80 rounded-full bg-orange/25 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-navy via-navy/95 to-transparent" />
+
+      <div className="relative flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-medium text-white/55">
+            <span className="inline-flex items-center gap-1.5 rounded-pill bg-emerald-400/15 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-300">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Live · Tally
+            </span>
+            {company && <span className="font-semibold text-white/75">{company}</span>}
+            <span className="text-white/30">·</span>
+            <span>FY {fy}</span>
+            <span className="text-white/30">·</span>
+            <span>{periodLabel}</span>
+          </p>
+          <h1 className="mt-1.5 flex items-center gap-2 text-[24px] font-bold tracking-tight sm:text-[27px]">
+            <BarChart3 className="h-6 w-6 text-orange" /> Sales Report
+          </h1>
+          <p className="mt-1.5 max-w-2xl text-[13.5px] text-white/75">{summary}</p>
+          {metaLine && <p className="mt-1.5 text-[11px] text-white/40">{metaLine}</p>}
+        </div>
+
+        <div className="flex flex-col items-stretch gap-2.5 sm:items-end">
+          {controls}
+          {growthPct != null && !loading && <HeroGrowthPill pct={growthPct} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroGrowthPill({ pct }: { pct: number }) {
+  const up = pct >= 0;
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-pill px-3 py-1.5 text-[12.5px] font-semibold backdrop-blur",
+        up ? "bg-emerald-400/20 text-emerald-200" : "bg-ryg-red/20 text-[#ffb4ac]",
+      )}
+    >
+      {up ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
+      <span className="tabular-nums">{Math.abs(pct).toFixed(1)}%</span>
+      <span className="font-medium opacity-80">YoY · YTD</span>
+    </span>
+  );
+}
+
+/* ---- KPI cards (Control-Center styling) ---------------------------------- */
+
+type KpiTone = "orange" | "slate" | "grey" | "up" | "down";
+
+const KPI_TONE: Record<KpiTone, { chip: string; value: string; glow: string }> = {
+  orange: { chip: "bg-orange-soft text-orange", value: "text-navy", glow: "from-orange/10" },
+  slate: { chip: "bg-[#EAF0FA] text-navy", value: "text-navy", glow: "from-navy/[0.07]" },
+  grey: { chip: "bg-page text-grey-2", value: "text-grey", glow: "from-grey-2/[0.07]" },
+  up: { chip: "bg-[#E7F6EE] text-emerald-600", value: "text-emerald-600", glow: "from-emerald-500/10" },
+  down: { chip: "bg-[#FDECEC] text-ryg-red", value: "text-ryg-red", glow: "from-ryg-red/10" },
+};
+
+/** A headline tile: uppercase label, big money value, hint, and a tinted icon chip. */
+function KpiCard({
+  tone,
+  label,
+  value,
+  hint,
+  icon: Icon,
+}: {
+  tone: KpiTone;
+  label: string;
+  value: string;
+  hint: string;
+  icon: LucideIcon;
+}) {
+  const t = KPI_TONE[tone];
+  return (
+    <div className="group relative overflow-hidden rounded-card border border-line bg-white px-4 py-3.5 transition-all hover:-translate-y-0.5 hover:shadow-card">
+      <div className={cn("pointer-events-none absolute inset-0 bg-gradient-to-br to-transparent opacity-100", t.glow)} />
+      <div className="relative flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">{label}</div>
+          <div className={cn("mt-1 text-[26px] font-bold leading-none tabular-nums sm:text-[28px]", t.value)}>{value}</div>
+          <div className="mt-1.5 truncate text-[11px] text-grey">{hint}</div>
+        </div>
+        <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] [&>svg]:h-4 [&>svg]:w-4", t.chip)}>
+          <Icon />
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -311,66 +423,89 @@ export default function SalesReport() {
 
   const errText = error instanceof Error ? error.message : coError;
 
+  /* ------------------------------------------------------------- hero bits */
+
+  const heroLoading = isLoading || coLoading;
+  const growthPct = data ? pctChange(data.kpi.ytd, data.kpi.pytd) : null;
+
+  const heroSummary: React.ReactNode = heroLoading
+    ? "Gathering the sales book…"
+    : data
+      ? (
+        <>
+          <span className="font-semibold text-white">{fmtSales(data.kpi.ytd)}</span> booked so far this year
+          {growthPct != null && (
+            <>
+              , {growthPct >= 0 ? "up" : "down"}{" "}
+              <span className="font-semibold text-white">{Math.abs(growthPct).toFixed(1)}%</span>{" "}
+              versus the same point last year
+            </>
+          )}
+          .
+        </>
+      )
+      : "Sales posted to the Sales Accounts group, ex-GST — straight from the Tally books.";
+
+  const heroMeta = [
+    `Last refreshed: ${
+      lastRefresh?.ran_at
+        ? new Date(lastRefresh.ran_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
+        : "never"
+    }`,
+    "Currency ₹",
+    "Auto-refreshes daily at 8:00 PM",
+  ].join("   ·   ");
+
+  // Company / FY / Refresh, restyled to sit on the navy hero (translucent white,
+  // like the Control Center's scope tabs) instead of the light shadcn surface.
+  const darkControl =
+    "h-9 rounded-input border border-white/15 bg-white/10 px-3 text-sm text-white backdrop-blur " +
+    "transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-white/25";
+  const heroControls = (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <select
+        value={companyGuid}
+        onChange={(e) => pick(e.target.value, fy)}
+        className={cn(darkControl, "max-w-[220px] cursor-pointer truncate [&>option]:text-navy")}
+      >
+        {companies.map((c) => (
+          <option key={c.companyGuid} value={c.companyGuid}>{companyLabel(c)}</option>
+        ))}
+      </select>
+      <select
+        value={fy}
+        onChange={(e) => pick(companyGuid, e.target.value)}
+        className={cn(darkControl, "cursor-pointer [&>option]:text-navy")}
+      >
+        {fyOptions.map((f) => <option key={f} value={f}>FY {f}</option>)}
+      </select>
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={busy || !companyGuid}
+        className={cn(darkControl, "inline-flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50")}
+      >
+        <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} />
+        {busy ? "Refreshing…" : "Refresh"}
+      </button>
+    </div>
+  );
+
   /* ------------------------------------------------------------------ view */
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto space-y-3">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-            <BarChart3 className="h-6 w-6 text-primary" /> Sales Report
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Sales posted to the Sales Accounts group, ex-GST, straight from the Tally books.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={companyGuid}
-            onChange={(e) => pick(e.target.value, fy)}
-            className="h-9 rounded-input border border-border bg-surface px-3 text-sm max-w-[280px] truncate"
-          >
-            {companies.map((c) => (
-              <option key={c.companyGuid} value={c.companyGuid}>{companyLabel(c)}</option>
-            ))}
-          </select>
-          <select
-            value={fy}
-            onChange={(e) => pick(companyGuid, e.target.value)}
-            className="h-9 rounded-input border border-border bg-surface px-3 text-sm"
-          >
-            {fyOptions.map((f) => <option key={f} value={f}>FY {f}</option>)}
-          </select>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9 gap-1.5"
-            onClick={onRefresh}
-            disabled={busy || !companyGuid}
-          >
-            <RefreshCw className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
-            {busy ? "Refreshing…" : "Refresh"}
-          </Button>
-        </div>
-      </div>
-
-      {/* Meta strip — mirrors the source report's "Last Sync / F.Y. / Currency" band. */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground border-y border-border/60 py-1.5">
-        {company && <span className="font-medium text-foreground">{company.rawName}</span>}
-        <span className="inline-flex items-center gap-1">
-          <Clock className="h-3 w-3" />
-          Last refreshed:{" "}
-          {lastRefresh?.ran_at
-            ? new Date(lastRefresh.ran_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
-            : "never"}
-        </span>
-        <span>F.Y. is {fy}</span>
-        <span>Period: {dmy(period.from)} to {dmy(period.asOn)}</span>
-        <span>Currency is ₹</span>
-        <span className="opacity-70">Auto-refreshes daily at 8:00 PM</span>
-      </div>
+      {/* ── Hero ───────────────────────────────────────────────────────── */}
+      <SalesHero
+        company={company?.rawName}
+        fy={fy}
+        periodLabel={`${dmy(period.from)} → ${dmy(period.asOn)}`}
+        metaLine={heroMeta}
+        summary={heroSummary}
+        growthPct={growthPct}
+        loading={heroLoading}
+        controls={heroControls}
+      />
 
       {busy && (
         <div className="space-y-1">
@@ -430,14 +565,42 @@ export default function SalesReport() {
         <div className="py-16 text-center text-muted-foreground text-sm">No sales data for this company.</div>
       ) : (
         <>
-          {/* ── KPI trio ─────────────────────────────────────────────── */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <KpiTile title="Current Year Sales (YTD)" value={data.kpi.ytd}
-                     hint={`${dmy(period.from)} to ${dmy(period.asOn)}`} />
-            <KpiTile title="Previous Year Sales (PYTD)" value={data.kpi.pytd}
-                     hint={`${dmy(period.pFrom)} to ${dmy(period.pAsOn)}`} />
-            <KpiTile title="Previous Year Sales (Total)" value={data.kpi.py_total}
-                     hint={`FY ${prior} full year`} />
+          {/* ── KPI row ──────────────────────────────────────────────── */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KpiCard
+              tone="orange"
+              icon={Wallet}
+              label="Current Year (YTD)"
+              value={fmtSales(data.kpi.ytd)}
+              hint={`${dmy(period.from)} → ${dmy(period.asOn)}`}
+            />
+            <KpiCard
+              tone="slate"
+              icon={CalendarClock}
+              label="Previous Year (PYTD)"
+              value={fmtSales(data.kpi.pytd)}
+              hint={`${dmy(period.pFrom)} → ${dmy(period.pAsOn)}`}
+            />
+            <KpiCard
+              tone="grey"
+              icon={BarChart3}
+              label="Previous Year (Total)"
+              value={fmtSales(data.kpi.py_total)}
+              hint={`FY ${prior} full year`}
+            />
+            {(() => {
+              const g = pctChange(data.kpi.ytd, data.kpi.pytd);
+              const up = (g ?? 0) >= 0;
+              return (
+                <KpiCard
+                  tone={g == null ? "grey" : up ? "up" : "down"}
+                  icon={g == null ? BarChart3 : up ? TrendingUp : TrendingDown}
+                  label="YoY Growth (YTD)"
+                  value={g == null ? "—" : `${up ? "+" : "−"}${Math.abs(g).toFixed(1)}%`}
+                  hint="This year vs same point last year"
+                />
+              );
+            })()}
           </div>
 
           {/* ── Yearly · Quarterly · Monthly ─────────────────────────── */}
