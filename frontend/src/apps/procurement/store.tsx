@@ -173,6 +173,9 @@ interface ProcurementStoreValue {
   activeCategories: Category[];
   itemGroupsByCategory: (categoryId: string) => ItemGroup[];
   itemsByGroup: (itemGroupId: string) => Item[];
+  /** Every active item under a category (via its item groups) — the request form
+   *  picks Category → Item directly, with the group step hidden. */
+  itemsForCategory: (categoryId: string) => Item[];
   categoryById: (id: string | null) => Category | undefined;
   itemGroupById: (id: string | null) => ItemGroup | undefined;
   itemById: (id: string | null) => Item | undefined;
@@ -705,6 +708,11 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       itemGroupsByCategory: (categoryId) =>
         itemGroups.filter((g) => g.categoryId === categoryId).sort(byName),
       itemsByGroup: (itemGroupId) => items.filter((i) => i.itemGroupId === itemGroupId).sort(byName),
+      itemsForCategory: (categoryId) => {
+        if (!categoryId) return [];
+        const groupIds = new Set(itemGroups.filter((g) => g.categoryId === categoryId && g.active).map((g) => g.id));
+        return items.filter((i) => i.active && groupIds.has(i.itemGroupId)).sort(byName);
+      },
       categoryById: (id) => (id ? categories.find((c) => c.id === id) : undefined),
       itemGroupById: (id) => (id ? itemGroups.find((g) => g.id === id) : undefined),
       itemById: (id) => (id ? items.find((i) => i.id === id) : undefined),

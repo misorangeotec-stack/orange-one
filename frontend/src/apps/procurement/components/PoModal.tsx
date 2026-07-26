@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
@@ -37,6 +38,7 @@ export default function PoModal({
   readOnly?: boolean;
 }) {
   const s = useProcurementStore();
+  const navigate = useNavigate();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busyVendorId, setBusyVendorId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -97,16 +99,27 @@ export default function PoModal({
     setErr(null);
     setBusyVendorId(g.vendorId);
     try {
-      await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      const poId = await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      // What's left in the PO pool after this generate — computed from the lines
+      // we just converted, NOT re-read off the store (the `s` in this closure is
+      // the pre-write snapshot, so its pool would still look non-empty and the
+      // dialog would linger on an empty "nothing waiting" state).
+      const done = new Set(ids);
+      const remaining = lines.filter((l) => !done.has(l.id));
+      if (remaining.length === 0) {
+        // The whole requisition is now on POs — jump straight to the PO just made
+        // instead of leaving an empty pool dialog open.
+        onClose();
+        navigate(`/procurement/pos/${poId}`);
+        return;
+      }
+      // Anything left — another vendor, or items deliberately held back for a
+      // second PO — keeps the dialog open with those lines still ticked-off.
       setSelected((prev) => {
         const next = new Set(prev);
         ids.forEach((id) => next.delete(id));
         return next;
       });
-      // `generatePo` awaits the refetch, so the pool below is already post-write.
-      // Anything left — another vendor, or items deliberately held back for a
-      // second PO — keeps the dialog open.
-      if (s.poDeskLinesForRequest(request.id).length === 0) onClose();
     } catch (e) {
       setErr((e as Error).message);
     } finally {

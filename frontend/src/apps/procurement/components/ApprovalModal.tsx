@@ -151,7 +151,7 @@ export default function ApprovalModal({
   const setCell = (lineId: string, field: "qty" | "rate" | "gst", value: string) =>
     setOvr((prev) => ({ ...prev, [lineId]: { ...(prev[lineId] ?? { qty: "", rate: "", gst: "" }), [field]: value } }));
 
-  const num = "w-24 rounded-lg border border-line px-2 py-1 text-[13px] text-navy focus:outline-none focus:ring-2 focus:ring-orange/30";
+  const num = "w-28 min-w-[6.5rem] rounded-lg border border-line px-2 py-1 text-[13px] text-navy text-right tabular-nums focus:outline-none focus:ring-2 focus:ring-orange/30";
 
   /** Build the per-line override payload from the edited cells. */
   const overrideLines = () =>

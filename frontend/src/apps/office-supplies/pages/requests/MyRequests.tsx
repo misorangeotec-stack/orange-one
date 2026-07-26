@@ -13,6 +13,14 @@ export default function MyRequests() {
 
   const columns: QueueColumn<SupplyRequest>[] = [
     {
+      key: "company",
+      header: "Company",
+      cell: (r) => s.companyById(r.companyId)?.name ?? "—",
+      sortValue: (r) => s.companyById(r.companyId)?.name ?? "—",
+      filter: { kind: "select", get: (r) => s.companyById(r.companyId)?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "reqNo",
       header: "Request",
       cell: (r) => (
@@ -73,6 +81,7 @@ export default function MyRequests() {
         rows={s.myRequests}
         rowKey={(r) => r.id}
         columns={columns}
+        hideGroupHeaders
         groupBy={{
           idOf: (r) => r.companyId,
           nameOf: (id) => s.companyById(id)?.name ?? "—",

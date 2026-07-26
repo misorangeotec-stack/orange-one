@@ -163,7 +163,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
                     <td className="px-3 py-2">
                       <TextInput
                         type="number"
-                        className={`w-24 ${locked ? "bg-page/70 text-grey-2 cursor-not-allowed" : ""}`}
+                        className={`w-28 min-w-[6.5rem] text-right tabular-nums ${locked ? "bg-page/70 text-grey-2 cursor-not-allowed" : ""}`}
                         value={qty[pi.id] ?? ""}
                         min={0}
                         max={remaining}
@@ -649,7 +649,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
                     <td className="px-3 py-2 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
                     <td className="px-3 py-2">{it.qty}</td>
                     <td className="px-3 py-2">{it.receivedQty}</td>
-                    <td className="px-3 py-2"><TextInput type="number" className="w-24" value={qty[it.id] ?? ""} onChange={(e) => setQty((p) => ({ ...p, [it.id]: e.target.value }))} /></td>
+                    <td className="px-3 py-2"><TextInput type="number" className="w-28 min-w-[6.5rem] text-right tabular-nums" value={qty[it.id] ?? ""} onChange={(e) => setQty((p) => ({ ...p, [it.id]: e.target.value }))} /></td>
                   </tr>
                 );
               })}

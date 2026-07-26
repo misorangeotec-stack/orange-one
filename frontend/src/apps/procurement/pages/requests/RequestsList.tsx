@@ -49,6 +49,7 @@ export default function RequestsList() {
   };
 
   const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "company", header: "Company", cell: (r) => companyName(r.companyId), sortValue: (r) => companyName(r.companyId), filter: { kind: "select", get: (r) => companyName(r.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request No.", cell: (r) => <span className="font-semibold text-navy">{r.requestNo}</span>, sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     { key: "category", header: "Category", cell: (r) => categoryName(r), sortValue: (r) => categoryName(r), filter: { kind: "select", get: (r) => categoryName(r) }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => s.itemsForRequest(r.id).length, sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "number", get: (r) => s.itemsForRequest(r.id).length } },
@@ -89,6 +90,7 @@ export default function RequestsList() {
           rowKey={(r) => r.id}
           columns={columns}
           groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+          hideGroupHeaders
           rowsLabel="requests"
           emptyTitle="No requests"
           emptyMessage="Raise a purchase request to get started."

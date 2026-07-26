@@ -67,6 +67,7 @@ export default function SourcingQueue() {
   );
 
   const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
+    { key: "company", header: "Company", cell: (e) => companyName(e.companyId ?? ""), sortValue: (e) => companyName(e.companyId ?? ""), filter: { kind: "select", get: (e) => companyName(e.companyId ?? "") }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     {
       key: "items", header: "Items",
@@ -108,6 +109,7 @@ export default function SourcingQueue() {
   ];
 
   const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "company", header: "Company", cell: (r) => companyName(r.companyId), sortValue: (r) => companyName(r.companyId), filter: { kind: "select", get: (r) => companyName(r.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     {
       key: "items", header: "Items",
@@ -168,6 +170,7 @@ export default function SourcingQueue() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Requisitions you source will appear here, and stay editable until the approver decides."
@@ -190,6 +193,7 @@ export default function SourcingQueue() {
             rowKey={(r) => r.id}
             columns={columns}
             groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to source"

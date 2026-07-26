@@ -87,7 +87,7 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
     {
       key: "qty",
       header: <span className="block text-right">Qty</span>,
-      className: "w-36",
+      className: "w-36 min-w-[8.5rem]",
       cell: (row, api) => (
         // The unit is the item master's, not something you pick — so it sits
         // inside the box as a read-only suffix rather than costing a column.

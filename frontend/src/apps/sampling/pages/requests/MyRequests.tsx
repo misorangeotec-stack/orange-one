@@ -13,6 +13,14 @@ export default function MyRequests() {
 
   const columns: QueueColumn<SamplingRequest>[] = [
     {
+      key: "company",
+      header: "Company",
+      cell: (r) => s.companyById(r.companyId)?.name ?? "—",
+      sortValue: (r) => s.companyById(r.companyId)?.name ?? "—",
+      filter: { kind: "select", get: (r) => s.companyById(r.companyId)?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "reqNo",
       header: "Request",
       cell: (r) => (
@@ -81,6 +89,7 @@ export default function MyRequests() {
           allLabel: "All companies",
           label: "Company",
         }}
+        hideGroupHeaders
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="requests"
         exportName="My_Sampling_Requests"

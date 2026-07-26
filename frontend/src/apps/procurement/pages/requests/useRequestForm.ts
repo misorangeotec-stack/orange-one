@@ -7,7 +7,9 @@ import { useProcurementStore } from "../../store";
 
 /**
  * Everything New Request and Edit Request share: the form state, the
- * Category → Group → Item derivation, validation. Domestic has no vendor,
+ * Category → Item derivation, validation. The item-group step is hidden — an
+ * item is picked straight under its category (the group is resolved behind the
+ * scenes only when requesting a brand-new item). Domestic has no vendor,
  * currency, FX or rate at request time (those are chosen at sourcing), so this
  * is the slim cousin of Import's hook.
  */
@@ -18,7 +20,6 @@ export interface RequestLine extends LineGridRow {
   dbId: string | null;
   /** Category of THIS line — rows are free to differ. */
   categoryId: string;
-  groupId: string;
   itemId: string;
   qty: string;
   unit: string;
@@ -29,7 +30,6 @@ export const makeEmptyLine = (): RequestLine => ({
   uid: newUid(),
   dbId: null,
   categoryId: "",
-  groupId: "",
   itemId: "",
   // Genuinely empty — LineGrid appends a blank row whenever the last one stops
   // being blank, so a default here would loop.
@@ -39,24 +39,23 @@ export const makeEmptyLine = (): RequestLine => ({
 });
 
 /**
- * A fresh row that carries the previous row's Category + Item Group forward, so
- * a requisition of many items in one group is not "re-pick the category every
- * line". Only the classifiers are inherited — item, qty, unit and remark stay
- * empty, and the user can still change category/group on the new row. Because
- * `isLineBlank` ignores category/group (see below), this inherited row still
- * tests blank, so LineGrid keeps treating it as the single trailing blank row.
+ * A fresh row that carries the previous row's Category forward, so a requisition
+ * of many items in one category is not "re-pick the category every line". Only
+ * the classifier is inherited — item, qty, unit and remark stay empty, and the
+ * user can still change category on the new row. Because `isLineBlank` ignores
+ * category (see below), this inherited row still tests blank, so LineGrid keeps
+ * treating it as the single trailing blank row.
  */
 export const makeInheritedLine = (prev?: RequestLine): RequestLine => ({
   ...makeEmptyLine(),
   categoryId: prev?.categoryId ?? "",
-  groupId: prev?.groupId ?? "",
 });
 
 /**
  * Blankness is item-level: a row is blank until it names an item, a qty or a
- * remark. Category/Group are deliberately NOT tested — an inherited trailing
- * row carries them, and counting them would make LineGrid append blank rows
- * forever (and would flag the trailing row as an incomplete line).
+ * remark. Category is deliberately NOT tested — an inherited trailing row
+ * carries it, and counting it would make LineGrid append blank rows forever
+ * (and would flag the trailing row as an incomplete line).
  * `dbId` is NOT tested either — a hydrated row is blank only if the user emptied it.
  */
 export const isLineBlank = (l: RequestLine) => !l.itemId && !l.qty && !l.remark;
@@ -98,32 +97,24 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     [s.activeCategories]
   );
 
-  /** Groups under a row's category. */
-  const groupOptionsFor = (line: RequestLine): ComboOption[] =>
-    line.categoryId
-      ? s.itemGroupsByCategory(line.categoryId).filter((g) => g.active).map((g) => ({ value: g.id, label: g.name }))
-      : [];
-
-  /** Items under a row's group, minus ones another row already took. */
+  /** Items under a row's category (via its groups), minus ones another row already took. */
   const itemOptionsFor = (line: RequestLine): ComboOption[] => {
-    if (!line.groupId) return [];
+    if (!line.categoryId) return [];
     const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.itemId).map((l) => l.itemId));
     return s
-      .itemsByGroup(line.groupId)
-      .filter((it) => it.active && !taken.has(it.id))
+      .itemsForCategory(line.categoryId)
+      .filter((it) => !taken.has(it.id))
       .map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || undefined }));
   };
 
-  const raiseGroup = (line: RequestLine) => (name: string) => {
-    if (!line.categoryId) {
-      setErr("Pick a category first.");
+  const raiseItem = (line: RequestLine) => (name: string) => {
+    // No group step in the form — request the item under the category's first group.
+    const grp = line.categoryId ? s.itemGroupsByCategory(line.categoryId).filter((g) => g.active)[0] : undefined;
+    if (!grp) {
+      setErr("Pick a category with at least one item group first.");
       return;
     }
-    setRaise({ mt: "item_group", prefill: { name, category_id: line.categoryId } });
-  };
-  const raiseItem = (line: RequestLine) => (name: string) => {
-    if (!line.groupId) return;
-    setRaise({ mt: "item", prefill: { name, item_group_id: line.groupId } });
+    setRaise({ mt: "item", prefill: { name, item_group_id: grp.id } });
   };
 
   const filled = lines.filter((l) => !isLineBlank(l));
@@ -146,7 +137,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     requested, setRequested,
     raise, setRaise,
     companyOptions, categoryOptions,
-    groupOptionsFor, itemOptionsFor, raiseGroup, raiseItem,
+    itemOptionsFor, raiseItem,
     itemById: s.itemById,
     filled, validate,
   };
@@ -155,11 +146,10 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
 export type RequestFormApi = ReturnType<typeof useRequestForm>;
 
 /** Turn a saved line into a grid row: fresh uid, DB id kept in dbId. */
-export const hydrateLine = (item: RequestItem, groupIdOfItem: (itemId: string) => string): RequestLine => ({
+export const hydrateLine = (item: RequestItem): RequestLine => ({
   uid: newUid(),
   dbId: item.id,
   categoryId: item.categoryId ?? "",
-  groupId: groupIdOfItem(item.itemId),
   itemId: item.itemId,
   qty: String(item.quantity ?? ""),
   unit: item.unit ?? "",

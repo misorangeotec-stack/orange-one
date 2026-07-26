@@ -80,6 +80,7 @@ export default function ApprovalsQueue() {
   const itemsText = (r: PurchaseRequest) => s.itemsForRequest(r.id).map((l) => s.itemById(l.itemId)?.name ?? "").join(", ");
 
   const columns: QueueColumn<PurchaseRequest>[] = [
+    { key: "company", header: "Company", cell: (r) => companyName(r.companyId), sortValue: (r) => companyName(r.companyId), filter: { kind: "select", get: (r) => companyName(r.companyId) }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (r) => requestLink(r), sortValue: (r) => r.requestNo, filter: { kind: "text", get: (r) => r.requestNo }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => itemsCell(r), sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "text", get: (r) => itemsText(r) } },
     { key: "qty", header: "Total Qty", cell: (r) => <QtyTotal entries={qtyEntries(underDecision(r))} />, sortValue: (r) => pendingQty(r).total, filter: { kind: "number", get: (r) => pendingQty(r).total }, tdClassName: "whitespace-nowrap" },
@@ -92,6 +93,7 @@ export default function ApprovalsQueue() {
   // A rejection is a completed decision too — exactly the kind of thing an
   // approver looks back at — so it appears here, locked (there is no un-reject).
   const completedColumns: QueueColumn<StageEntry<PurchaseRequest>>[] = [
+    { key: "company", header: "Company", cell: (e) => companyName(e.companyId ?? ""), sortValue: (e) => companyName(e.companyId ?? ""), filter: { kind: "select", get: (e) => companyName(e.companyId ?? "") }, tdClassName: "whitespace-nowrap" },
     { key: "request", header: "Request", cell: (e) => requestLink(e.row), sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (e) => itemsCell(e.row), sortValue: (e) => s.itemsForRequest(e.row.id).length, filter: { kind: "text", get: (e) => itemsText(e.row) } },
     { key: "qty", header: "Total Qty", cell: (e) => <QtyTotal entries={qtyEntries(s.itemsForRequest(e.row.id))} />, sortValue: (e) => doneQty(e.row).total, filter: { kind: "number", get: (e) => doneQty(e.row).total }, tdClassName: "whitespace-nowrap" },
@@ -136,6 +138,7 @@ export default function ApprovalsQueue() {
             rowKey={(e) => e.id}
             columns={completedColumns}
             groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Decisions you make will appear here, and stay revisable until the PO is generated."
@@ -155,6 +158,7 @@ export default function ApprovalsQueue() {
             rowKey={(r) => r.id}
             columns={columns}
             groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
+            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to approve"

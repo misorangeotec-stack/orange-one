@@ -9,15 +9,15 @@ import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine }
 
 /**
  * The body shared by New Request and Edit Request: the Company header and the
- * Category → Group → Item grid. Each page supplies its own action bar as
- * `children`. In edit mode the Company is a read-only readout — changing it is
- * a different request, not a correction.
+ * Category → Item grid. Each page supplies its own action bar as `children`. In
+ * edit mode the Company is a read-only readout — changing it is a different
+ * request, not a correction.
  */
 export default function RequestForm({ form, children }: { form: RequestFormApi; children?: ReactNode }) {
   const {
     mode, companyId, setCompanyId, note, setNote, err, requested, setRequested,
-    raise, setRaise, companyOptions, categoryOptions, groupOptionsFor, itemOptionsFor,
-    raiseGroup, raiseItem, itemById, lines, setLines,
+    raise, setRaise, companyOptions, categoryOptions, itemOptionsFor,
+    raiseItem, itemById, lines, setLines,
   } = form;
 
   const locked = mode === "edit";
@@ -32,8 +32,8 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
           ref={api.focusRef as (el: ComboboxHandle | null) => void}
           value={row.categoryId}
           onChange={(v) => {
-            // A new category invalidates the group + item chosen under the old one.
-            api.patch({ categoryId: v, groupId: "", itemId: "", unit: "" });
+            // A new category invalidates the item chosen under the old one.
+            api.patch({ categoryId: v, itemId: "", unit: "" });
             api.advance();
           }}
           options={categoryOptions}
@@ -43,29 +43,6 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
           onTriggerKeyDown={api.keyHandler}
           onCreate={(name) => setRaise({ mt: "category", prefill: { name } })}
           createLabel={(q) => `Request new category “${q}”`}
-        />
-      ),
-    },
-    {
-      key: "group",
-      header: "Item Group",
-      className: "w-44",
-      cell: (row, api) => (
-        <Combobox
-          ref={api.focusRef as (el: ComboboxHandle | null) => void}
-          value={row.groupId}
-          onChange={(v) => {
-            api.patch({ groupId: v, itemId: "", unit: "" });
-            api.advance();
-          }}
-          options={groupOptionsFor(row)}
-          placeholder={row.categoryId ? "Item group…" : "Pick a category first"}
-          disabled={!row.categoryId}
-          searchable
-          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
-          onTriggerKeyDown={api.keyHandler}
-          onCreate={raiseGroup(row)}
-          createLabel={(q) => `Request new item group “${q}”`}
         />
       ),
     },
@@ -83,8 +60,8 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             api.advance();
           }}
           options={itemOptionsFor(row)}
-          placeholder={row.groupId ? "Search & select an item…" : "Pick a group first"}
-          disabled={!row.groupId}
+          placeholder={row.categoryId ? "Search & select an item…" : "Pick a category first"}
+          disabled={!row.categoryId}
           searchable
           triggerClassName="px-2.5 py-1.5 text-[13.5px]"
           onTriggerKeyDown={api.keyHandler}
@@ -96,7 +73,7 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
     {
       key: "qty",
       header: <span className="block text-right">Qty</span>,
-      className: "w-32",
+      className: "w-32 min-w-[7rem]",
       cell: (row, api) => (
         <TextInput
           ref={api.focusRef as (el: HTMLInputElement | null) => void}
@@ -162,14 +139,14 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
             rows={lines}
             onRowsChange={setLines}
             columns={columns}
-            // New trailing row inherits Category + Item Group from the row above,
-            // so a multi-item requisition in one group isn't "re-pick every line".
+            // New trailing row inherits the Category from the row above, so a
+            // multi-item requisition in one category isn't "re-pick every line".
             makeEmptyRow={() => makeInheritedLine(lines[lines.length - 1])}
             isRowBlank={isLineBlank}
           />
           <p className="text-[12px] text-grey-2">
-            Each row has its own category. Press Tab or Enter at the end of a row to start the next one. Missing an item,
-            group or category? Type its name to request it.
+            Each row has its own category. Press Tab or Enter at the end of a row to start the next one. Missing an item
+            or category? Type its name to request it.
           </p>
           {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>}
         </div>

@@ -22,15 +22,13 @@ export default function EditRequest() {
   const lines = request ? s.itemsForRequest(request.id) : [];
   const editable = request ? s.canEditRequest(request) : false;
 
-  const groupIdOfItem = (itemId: string) => s.itemById(itemId)?.itemGroupId ?? "";
-
   const init: RequestFormInit | null =
     request && editable
       ? {
           requestId: request.id,
           companyId: request.companyId,
           note: request.note ?? "",
-          lines: lines.map((l) => hydrateLine(l, groupIdOfItem)),
+          lines: lines.map((l) => hydrateLine(l)),
         }
       : null;
 

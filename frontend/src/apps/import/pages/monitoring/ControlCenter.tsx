@@ -126,6 +126,14 @@ export default function ControlCenter() {
 
   const columns: QueueColumn<QueueEntry>[] = [
     {
+      key: "company",
+      header: "Company",
+      cell: (e) => s.companyById(e.companyId ?? "")?.name ?? "—",
+      sortValue: (e) => s.companyById(e.companyId ?? "")?.name ?? "—",
+      filter: { kind: "select", get: (e) => s.companyById(e.companyId ?? "")?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "ref",
       header: "Ref",
       cell: (e) => (
@@ -227,6 +235,7 @@ export default function ControlCenter() {
           rowKey={(e) => `${e.stepKey}:${e.entityId}`}
           columns={columns}
           groupBy={{ idOf: (e) => e.companyId, nameOf: (id) => s.companyById(id)?.name ?? "—", allLabel: "All companies" }}
+          hideGroupHeaders
           rowClassName={(e) => (bucketFor(e) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="entries"
           emptyTitle="Nothing here"

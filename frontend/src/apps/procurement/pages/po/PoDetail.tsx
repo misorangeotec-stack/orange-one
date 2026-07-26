@@ -146,13 +146,18 @@ export default function PoDetail() {
       {/* Action bar */}
       {open && (
         <div className="flex flex-wrap gap-2">
+          {/* Forward-progress buttons show ONLY at the PO's current stage, so the
+              action bar offers just the one logical next step. Cancellation
+              (below) is an escape hatch and stays available at every stage. */}
           {s.canSharePo && po.currentStage === "share_po" && <Button size="sm" variant="ghost" onClick={() => setModal("share")}>Share PO</Button>}
-          {s.canCollectPi && po.currentStage !== "share_po" && !piFullyCollected && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Add PI</Button>}
+          {s.canCollectPi && po.currentStage === "collect_pi" && !piFullyCollected && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Add PI</Button>}
           {s.canRecordPayment && po.currentStage === "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("advance")}>Record Advance</Button>}
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
-          {s.canInward && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
-          {s.canTally && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
-          {s.canRecordPayment && po.currentStage !== "advance_payment" && pending > 0 && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
+          {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
+          {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
+          {/* Balance payment isn't a tracked step — it's recordable from Follow-up
+              onward (never at Share/Collect-PI/Advance, where it isn't due yet). */}
+          {s.canRecordPayment && pending > 0 && (po.currentStage === "follow_up" || po.currentStage === "inward" || po.currentStage === "tally") && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
           {s.canRequestPoCancel(po) && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("reqcancel")}>Request cancellation</Button>}
           {s.canCancelPo(po) && !cancelRequest && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("cancel")}>Cancel PO</Button>}
         </div>

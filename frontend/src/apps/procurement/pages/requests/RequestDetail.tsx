@@ -11,6 +11,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useProcurementStore } from "../../store";
 import { inr, lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import QtyTotal from "../../components/QtyTotal";
+import RequestStepper from "../../components/RequestStepper";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
 import ActivityTimeline from "../../components/ActivityTimeline";
@@ -148,6 +149,11 @@ export default function RequestDetail() {
           one requisition. Contact an admin to re-source these items individually.
         </p>
       )}
+
+      {/* Progress rail — the full lifecycle from this requisition through to Tally,
+          sitting on the least-advanced line. Kept above the details, per the
+          "progress block is always first" convention. */}
+      <Card className="px-4 py-4"><RequestStepper request={request} /></Card>
 
       {request.note && (
         // Was inverted: the word "Note:" was navy and bold while the note itself sat in

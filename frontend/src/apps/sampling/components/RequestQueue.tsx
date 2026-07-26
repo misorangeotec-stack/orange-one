@@ -89,6 +89,14 @@ export default function RequestQueue({
 
   const columns: QueueColumn<Row>[] = [
     {
+      key: "company",
+      header: "Company",
+      cell: ({ request }) => s.companyById(request.companyId)?.name ?? "—",
+      sortValue: ({ request }) => s.companyById(request.companyId)?.name ?? "—",
+      filter: { kind: "select", get: ({ request }) => s.companyById(request.companyId)?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "reqNo",
       header: "Request",
       cell: ({ request: r }) => (
@@ -125,6 +133,14 @@ export default function RequestQueue({
   ];
 
   const completedColumns: QueueColumn<StageEntry<SamplingRequest>>[] = [
+    {
+      key: "company",
+      header: "Company",
+      cell: (e) => s.companyById(e.row.companyId)?.name ?? "—",
+      sortValue: (e) => s.companyById(e.row.companyId)?.name ?? "—",
+      filter: { kind: "select", get: (e) => s.companyById(e.row.companyId)?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
     {
       key: "reqNo",
       header: "Request",
@@ -208,6 +224,7 @@ export default function RequestQueue({
             allLabel: "All companies",
             label: "Company",
           }}
+          hideGroupHeaders
           rowsLabel="requests"
           emptyTitle="Nothing here yet"
           emptyMessage={completedBlurb}
@@ -233,6 +250,7 @@ export default function RequestQueue({
             allLabel: "All companies",
             label: "Company",
           }}
+          hideGroupHeaders
           initialSort={{ key: "due", dir: "asc" }}
           rowsLabel="requests"
           emptyTitle="Nothing waiting on you"
