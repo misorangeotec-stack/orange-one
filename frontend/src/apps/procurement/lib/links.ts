@@ -25,3 +25,29 @@ export function linkResolver(requestItems: LineRef[]): (e: QueueEntry) => string
     return `${PROC_BASE}/pos/${e.entityId}`;
   };
 }
+
+export const PROC_REQUESTS = `${PROC_BASE}/requests`;
+export const PROC_POS = `${PROC_BASE}/pos`;
+
+/**
+ * Where a PO stage opens from the dashboard's "Purchase orders by stage" card.
+ *
+ * A PO only exists from `share_po` onwards, and every live stage has its own queue
+ * page — so the stage key maps straight onto a queue route. The two terminal stages
+ * (`closed`, `cancelled`) have no queue and fall back to the PO list.
+ */
+const PO_STAGE_QUEUE: Record<string, string> = {
+  share_po: `${PROC_BASE}/queues/share`,
+  collect_pi: `${PROC_BASE}/queues/collect-pi`,
+  advance_payment: `${PROC_BASE}/queues/advance`,
+  follow_up: `${PROC_BASE}/queues/follow-up`,
+  inward: `${PROC_BASE}/queues/inward`,
+  tally: `${PROC_BASE}/queues/tally`,
+  closed: PROC_POS,
+  cancelled: PROC_POS,
+};
+
+/** Undefined for an unknown stage, so the row simply stays un-clickable. */
+export function poStageHref(stage: string): string | undefined {
+  return PO_STAGE_QUEUE[stage];
+}
