@@ -233,12 +233,13 @@ export const REPORTS: ReportEntry[] = [
   {
     id: "finance-expense",
     title: "Expense",
-    purpose: "Expense ledgers and their movement, straight from the Tally books.",
+    purpose: "Expense by group, sub-group and ledger — year, quarter and month, straight from the Tally books.",
     category: "finance",
+    path: "reports/finance-expense",
     icon: Wallet,
     source: "tally",
-    status: "soon",
-    keywords: ["expense", "cost", "overheads"],
+    status: "live",
+    keywords: ["expense", "cost", "overheads", "direct expenses", "indirect expenses", "purchase accounts", "P&L", "profit and loss"],
   },
   {
     id: "finance-sales-gain",

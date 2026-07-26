@@ -23,6 +23,7 @@ import PurchaseReport from "@hub/pages/PurchaseReport";
 import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
 import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
 import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
+import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -98,6 +99,10 @@ function HubRoutes() {
           {/* Finance → Income — Talligence income clone on the rpt_income_* P&L-movement snapshot
               (Sales Accounts + Direct/Indirect Incomes); own company + FY pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/finance-income" element={<IncomeMasterReport />} />
+          {/* Finance → Expense — sign-mirror of Income on the rpt_expense_* P&L-movement snapshot
+              (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
+              pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/finance-expense" element={<ExpenseMasterReport />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />
