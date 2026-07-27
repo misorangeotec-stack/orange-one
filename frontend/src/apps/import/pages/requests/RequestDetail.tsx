@@ -12,6 +12,7 @@ import { useImportStore } from "../../store";
 import { lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import SourcingModal from "../../components/SourcingModal";
 import ApprovalModal from "../../components/ApprovalModal";
+import RequestStepper from "../../components/RequestStepper";
 import QtyTotal from "../../components/QtyTotal";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import type { RequestItem } from "../../types";
@@ -137,6 +138,11 @@ export default function RequestDetail() {
           </p>
         </Card>
       )}
+
+      {/* Progress rail — the full lifecycle from this requisition through to Tally,
+          sitting on the least-advanced line. Kept above the details, per the
+          "progress block is always first" convention. */}
+      <Card className="px-4 py-4"><RequestStepper request={request} /></Card>
 
       {request.note && (
         // Was inverted: the word "Note:" was navy and bold while the note itself sat in
