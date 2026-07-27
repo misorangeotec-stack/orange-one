@@ -4,8 +4,9 @@ import Card from "@/shared/components/ui/Card";
 import Tabs from "@/shared/components/ui/Tabs";
 import Combobox from "@/shared/components/ui/Combobox";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import PillToggle from "@/shared/components/ui/PillToggle";
+import DateRangeFilter, { EMPTY_RANGE, dateInRange, rangeKey, rangeLabel, type DateRange } from "@/shared/components/ui/DateRangeFilter";
 import { TextInput } from "@/shared/components/ui/Form";
-import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
 import ActiveFilters, { type ActiveFilter } from "@/shared/components/ui/ActiveFilters";
 import { usePagination } from "@/shared/lib/usePagination";
@@ -17,7 +18,7 @@ import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import { countsTowardMetrics, isRecurringTask } from "../mock/selectors";
 import { parseTaskFilters, taskLinkSignature } from "../lib/taskLink";
-import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
+import { STATUS_FILTER_OPTIONS, matchesStatusFilter, isOverdueTask, type StatusFilter } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 import PersonalTaskModal from "../components/PersonalTaskModal";
@@ -58,6 +59,12 @@ export default function TasksList() {
   const [exactWeek, setExactWeek] = useStickyState<string | null>(sticky, "exactWeek", initialFilters.week ?? null);
   // Exclude personal + N/A tasks (set when arriving from a score number).
   const [metricOnly, setMetricOnly] = useStickyState(sticky, "metricOnly", initialFilters.metricOnly);
+  // Date windows on the two date columns — plain sticky state, deliberately not
+  // part of the deep-link contract in lib/taskLink.
+  const [assignedRange, setAssignedRange] = useStickyState<DateRange>(sticky, "assignedRange", EMPTY_RANGE);
+  const [dueRange, setDueRange] = useStickyState<DateRange>(sticky, "dueRange", EMPTY_RANGE);
+  // A condition, not a status — ANDs with the status filter rather than joining it.
+  const [overdueOnly, setOverdueOnly] = useStickyState(sticky, "overdueOnly", false);
   const [sort, setSort] = useStickyState<TaskSort>(sticky, "sort", DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
   // The tab. Was read from ?view= and written back with a setParams that wholesale-
@@ -92,9 +99,11 @@ export default function TasksList() {
     if (kind === "recurring") list = list.filter(isRecurringTask);
     else if (kind === "oneoff") list = list.filter((t) => !isRecurringTask(t) && !t.isPersonal);
     if (personalOnly) list = list.filter((t) => t.isPersonal);
+    if (overdueOnly) list = list.filter(isOverdueTask);
+    list = list.filter((t) => dateInRange(t.createdAt, assignedRange) && dateInRange(t.dueDate, dueRange));
     if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
-  }, [mine, scope, exactWeek, metricOnly, relation, statuses, kind, personalOnly, q, user.id]);
+  }, [mine, scope, exactWeek, metricOnly, relation, statuses, kind, personalOnly, overdueOnly, assignedRange, dueRange, q, user.id]);
 
   const counts = useMemo(
     () => ({
@@ -134,7 +143,9 @@ export default function TasksList() {
   // back the clamped 1 while the list is still hydrating and destroy the restore.
   const pageState = useStickyState(sticky, "page", 1);
   const pg = usePagination(sorted, {
-    resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${sort.key}|${sort.dir}`,
+    // The ranges go through rangeKey — they're fresh objects on every change, so
+    // interpolating them directly would collapse to a constant "[object Object]".
+    resetKey: `${view}|${statuses.join(",")}|${kind}|${q}|${relation}|${scope}|${exactWeek ?? ""}|${metricOnly}|${personalOnly}|${overdueOnly}|${rangeKey(assignedRange)}|${rangeKey(dueRange)}|${sort.key}|${sort.dir}`,
     pageState,
   });
 
@@ -175,6 +186,24 @@ export default function TasksList() {
       label: "Other tasks only",
       onClear: () => setPersonalOnly(false),
     });
+  if (overdueOnly)
+    activeFilters.push({
+      key: "overdue",
+      label: "Overdue only",
+      onClear: () => setOverdueOnly(false),
+    });
+  if (rangeLabel(assignedRange))
+    activeFilters.push({
+      key: "assignedRange",
+      label: `Assigned: ${rangeLabel(assignedRange)}`,
+      onClear: () => setAssignedRange(EMPTY_RANGE),
+    });
+  if (rangeLabel(dueRange))
+    activeFilters.push({
+      key: "dueRange",
+      label: `Due: ${rangeLabel(dueRange)}`,
+      onClear: () => setDueRange(EMPTY_RANGE),
+    });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   const clearAll = () => {
     setStatuses([]);
@@ -184,6 +213,9 @@ export default function TasksList() {
     setExactWeek(null);
     setMetricOnly(false);
     setPersonalOnly(false);
+    setOverdueOnly(false);
+    setAssignedRange(EMPTY_RANGE);
+    setDueRange(EMPTY_RANGE);
   };
 
   return (
@@ -236,42 +268,41 @@ export default function TasksList() {
             active={view}
             onChange={(k) => setView(k as View)}
           />
+          {/* Only the filters with no column of their own live up here — the rest
+              sit in the table's own filter row, under the column they narrow. */}
           <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
-            <Combobox
-              value={relation}
-              onChange={(v) => setRelation(v as Relation)}
-              className="w-full sm:w-auto sm:min-w-[190px]"
-              align="right"
-              options={RELATION_OPTIONS.map((r) => ({ value: r.value, label: r.label }))}
-            />
-            <MultiSelect
-              values={statuses}
-              onChange={(v) => setStatuses(v as StatusFilter[])}
-              placeholder="Any status"
-              className="w-full sm:w-auto sm:min-w-[150px]"
-              align="right"
-              options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
-            />
-            <Combobox
+            <PillToggle<"all" | "recurring" | "oneoff">
               value={kind}
-              onChange={(v) => setKind(v as "all" | "recurring" | "oneoff")}
-              className="w-full sm:w-auto sm:min-w-[140px]"
-              align="right"
+              onChange={setKind}
               options={[
-                { value: "all", label: "All task types" },
+                { value: "all", label: "All types" },
                 { value: "recurring", label: "Recurring" },
                 { value: "oneoff", label: "One-off" },
               ]}
             />
-            <div className="relative w-full sm:w-auto">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 text-grey-2" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <TextInput
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search tasks…"
-                className="pl-9 py-2 w-full sm:w-56 text-[13px]"
-              />
-            </div>
+            {/* ANDs with the status filter — see the note in types/index.ts. */}
+            <PillToggle<"all" | "overdue">
+              value={overdueOnly ? "overdue" : "all"}
+              onChange={(v) => {
+                const on = v === "overdue";
+                setOverdueOnly(on);
+                // Overdue work sits in EARLIER weeks, which the week scope strips
+                // out — without widening, this filter always reads as empty.
+                if (on) setScope("all");
+              }}
+              options={[
+                { value: "all", label: "Any due date" },
+                { value: "overdue", label: "Overdue" },
+              ]}
+            />
+            <Combobox
+              value={relation}
+              onChange={(v) => setRelation(v as Relation)}
+              className="w-full sm:w-auto sm:min-w-[190px]"
+              triggerClassName="py-1.5 text-[13px]"
+              align="right"
+              options={RELATION_OPTIONS.map((r) => ({ value: r.value, label: r.label }))}
+            />
           </div>
         </div>
 
@@ -283,23 +314,55 @@ export default function TasksList() {
           />
         )}
 
-        {filtered.length === 0 ? (
-          <div className="border-t border-line">
-            <EmptyState
-              title="No tasks here"
-              message={view === "all" ? "Tasks assigned to you will appear here." : "Nothing in this view right now."}
-              actionLabel={canCreate ? "New Task" : undefined}
-              actionTo={canCreate ? "/task-management/tasks/new" : undefined}
-            />
-          </div>
-        ) : (
-          <>
-            <div className="border-t border-line">
-              <TaskTable tasks={pg.pageItems} sort={sort} onSort={onSort} />
-            </div>
-            <Pagination state={pg} rowsLabel="tasks" />
-          </>
-        )}
+        {/* Rendered even with no matching rows — the filter controls live in this
+            table's header, so swapping in an EmptyState would take away the very
+            controls needed to undo the filter that emptied it. */}
+        <div className="border-t border-line">
+          <TaskTable
+            tasks={pg.pageItems}
+            sort={sort}
+            onSort={onSort}
+            emptyMessage={view === "all" ? "Tasks assigned to you will appear here." : "Nothing in this view right now."}
+            filterRow={{
+              title: (
+                <div className="relative">
+                  <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-grey-2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                  <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search tasks…" className="pl-8 py-1.5 text-[12.5px]" />
+                </div>
+              ),
+              createdAt: (
+                <DateRangeFilter
+                  value={assignedRange}
+                  onChange={setAssignedRange}
+                  placeholder="Any"
+                  className="w-full"
+                  triggerClassName="py-1.5 px-2 gap-1 text-[12.5px]"
+                />
+              ),
+              dueDate: (
+                <DateRangeFilter
+                  value={dueRange}
+                  onChange={setDueRange}
+                  placeholder="Any"
+                  className="w-full"
+                  triggerClassName="py-1.5 px-2 gap-1 text-[12.5px]"
+                />
+              ),
+              status: (
+                <MultiSelect
+                  values={statuses}
+                  onChange={(v) => setStatuses(v as StatusFilter[])}
+                  placeholder="All"
+                  className="w-full"
+                  align="right"
+                  triggerClassName="py-1.5 px-2.5 text-[12.5px]"
+                  options={STATUS_FILTER_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+                />
+              ),
+            }}
+          />
+        </div>
+        <Pagination state={pg} rowsLabel="tasks" />
       </Card>
     </div>
   );

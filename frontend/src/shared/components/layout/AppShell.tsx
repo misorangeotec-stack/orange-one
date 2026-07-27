@@ -99,7 +99,14 @@ export default function AppShell({
           onMenu={() => setDrawer(true)}
         />
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-[1180px] mx-auto px-4 sm:px-6 py-6">
+          {/*
+            1440, not 1180: the wide tables (All Tasks now runs to 1210px with its
+            Department column + filter row) were forced into horizontal scroll by
+            the old cap with room to spare on screen. Portal-wide on purpose —
+            every app's tables get the same breathing room, and the mx-auto keeps
+            narrower screens unchanged.
+          */}
+          <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-6">
             {banner}
             <Outlet />
           </div>

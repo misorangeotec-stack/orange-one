@@ -289,6 +289,26 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<TaskStoreValue>(() => {
     const { downlineIds } = dir;
 
+    /**
+     * Refresh the task cache after a write.
+     *
+     * Invalidates the WHOLE ["taskData"] tree, but only AWAITS the core slice.
+     * That distinction matters: the activity timeline is org-scale and `fetchAll`
+     * pages it 1000 rows at a time, sequentially. Because it is nested under the
+     * ["taskData"] prefix, `await invalidateQueries(["taskData"])` waited on a
+     * full re-download of every activity row before a mutation's promise settled
+     * — so "Mark as complete" sat on "Saving…" long after the row was written,
+     * and for an admin (RLS-visible = the whole org) it could look hung outright.
+     *
+     * This applies to the WRITE path the same reasoning the deferred query above
+     * already applies to the cold load: the timeline may catch up in its own
+     * time; nothing the user is looking at blocks on it.
+     */
+    const refreshTaskData = async () => {
+      void queryClient.invalidateQueries({ queryKey: ["taskData", "activity"] });
+      await queryClient.invalidateQueries({ queryKey: ["taskData", user?.id ?? null], exact: true });
+    };
+
     // Org-wide id → person map (name + avatar only) so activity actors can be
     // named even when they fall outside the viewer's RLS-scoped directory — e.g.
     // a Director in another department who assigned a recurring task. Without
@@ -346,7 +366,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // then refetches. Other task mutations stay inert no-ops until wired.
       createTask: async (input) => {
         const id = await insertTask({ ...input, locationIds: input.locationIds ?? [], createdBy: user.id });
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return id;
       },
       // Personal tasks: self-assigned, flagged is_personal, no locations. Excluded
@@ -363,47 +383,47 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           isPersonal: true,
           createdBy: user.id,
         });
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return id;
       },
       updatePersonalTask: async (id, patch) => {
         await updatePersonalTaskWrite(id, patch);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       deletePersonalTask: async (id) => {
         await deletePersonalTaskWrite(id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       updateTask: async (id, patch) => {
         await updateTaskWrite(id, patch);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       deleteTask: async (id) => {
         await deleteTaskWrite(id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the
       // status-change activity (started is logged by the write itself); refetch after.
       startTask: async (id) => {
         await startTaskWrite(id, user.id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       completeTask: async (id, note) => {
         await completeTaskWrite(id, user.id, note);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       // reopenTask: LIVE. Reverses a completion (current-week only, gated in the UI):
       // status → in_progress, completed_at cleared, and a 'reopened' activity logged.
       reopenTask: async (id) => {
         await reopenTaskWrite(id, user.id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
       // task UPDATE RLS (same path as complete). Reversible; excluded from reports
       // in the selectors. Only offered for "when" instances (see isWhenTask).
       setTaskNotApplicable: async (id, value) => {
         await setTaskNotApplicableWrite(id, value);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       isWhenTask: (task) => {
         if (!task.recurringTaskId) return false;
@@ -422,12 +442,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         if (targetWeek > currentWeek) {
           const newId = await rescheduleTaskWrite(task, args.followUpDate);
           if (args.note && newId) await addRemarkWrite(newId, args.note, []);
-          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          await refreshTaskData();
           return newId;
         }
         if (!revisionInfo(task).allowed) return null; // weekly revision limit / closed guard
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return null;
       },
       // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
@@ -437,14 +457,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
         const newId = await rescheduleTaskWrite(task, newDueDate);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return newId;
       },
       // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
       addRemark: async (id, note, mentionedIds) => {
         await addRemarkWrite(id, note, mentionedIds);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         // Fans out @mention notifications, so refresh the feed's own key too.
         await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
       },
@@ -503,7 +523,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
             /* template saved; today's instance will be created by the next cron run */
           }
         }
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return id;
       },
       updateRecurring: async (id, patch) => {
@@ -533,7 +553,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
             /* saved; today's instance will be created by the next cron run */
           }
         }
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       toggleRecurring: async (id) => {
         const cur = recurringTasks.find((r) => r.id === id);
@@ -549,19 +569,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
             /* toggled active; today's instance will be created by the next cron run */
           }
         }
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       // Manual on-demand generation (force = true): creates today's instance on
       // any day, ignoring the schedule. Idempotent. Returns the task id so the UI
       // can jump straight to it.
       generateRecurringNow: async (id) => {
         const taskId = await generateRecurringNowWrite(id, true);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return taskId;
       },
       deleteRecurring: async (id) => {
         await deleteRecurringWrite(id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
 
       // ---- locations ----
@@ -586,9 +606,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         }));
         try {
           await setTaskLocationDoneWrite(taskLocationId, done, user.id);
-          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          await refreshTaskData();
         } catch (e) {
-          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          await refreshTaskData();
           throw e;
         }
       },
@@ -601,9 +621,9 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         }));
         try {
           await setTaskLocationNaWrite(taskLocationId, na, user.id);
-          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          await refreshTaskData();
         } catch (e) {
-          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          await refreshTaskData();
           throw e;
         }
       },
@@ -629,22 +649,22 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         } catch (e) {
           // Failure path still awaits: the optimistic patch is wrong and must be
           // rolled back to server truth before the caller surfaces the error.
-          await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          await refreshTaskData();
           throw e;
         }
       },
       addLocation: async (input) => {
         const id = await insertLocationWrite({ ...input, createdBy: user.id });
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
         return id;
       },
       editLocation: async (id, input) => {
         await updateLocationWrite(id, input);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       removeLocation: async (id) => {
         await deleteLocationWrite(id);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       canManageLocations: role === "admin",
 
@@ -700,13 +720,13 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           greenPct,
           createdBy: user.id,
         });
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
 
       workspace,
       updateWorkspace: async (patch) => {
         await updateWorkspaceSettingsWrite(patch);
-        await queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        await refreshTaskData();
       },
       canManageWorkspace: role === "admin",
 

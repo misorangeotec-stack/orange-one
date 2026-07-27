@@ -6,6 +6,8 @@
  * Identity types (AppRole, AvatarColor, Department, Profile) are now portal-wide
  * and live in core/platform; re-exported here so existing imports keep resolving.
  */
+import { todayIso } from "@/shared/lib/time";
+
 export type { AppRole, AvatarColor, Department, Profile } from "@/core/platform/types";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "shifted";
@@ -16,6 +18,12 @@ export type TaskStatus = "pending" | "in_progress" | "completed" | "revised" | "
  * N/A tasks. `StatusFilter` is the status enum plus that pseudo-value, and the
  * helpers below are the single source of truth for the dropdown options and the
  * filtering rule (N/A overrides the underlying status, matching StatusChip).
+ *
+ * "Overdue" is deliberately NOT in here. It is a CONDITION that cuts across
+ * statuses — an overdue task is simultaneously Pending or In Progress — so as an
+ * option in this OR-list it read as "overdue OR in progress" when users meant
+ * "in progress AND overdue". It lives in its own AND filter instead; see
+ * `isOverdueTask` below and the Overdue toggle in TaskBrowser / TasksList.
  */
 export type StatusFilter = TaskStatus | "not_applicable";
 
@@ -27,6 +35,21 @@ export const STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "shifted", label: "Shifted" },
   { value: "not_applicable", label: "Not Applicable" },
 ];
+
+/**
+ * Past its due date and still open — the one definition behind the red due date,
+ * the Overdue pill, the Overdue stat tile and the Overdue filter toggle, so they
+ * can never disagree on a row. Completed and shifted tasks are closed, so they
+ * can't be overdue; a parked N/A instance isn't being chased either.
+ *
+ * ANDs with the status filter rather than joining it — see the note above.
+ */
+export const isOverdueTask = (t: { status: TaskStatus; notApplicable: boolean; dueDate: string | null }): boolean =>
+  !t.notApplicable &&
+  t.status !== "completed" &&
+  t.status !== "shifted" &&
+  !!t.dueDate &&
+  t.dueDate < todayIso();
 
 /** A task's effective status for filtering: N/A overrides the underlying status. */
 export const effectiveStatus = (t: { status: TaskStatus; notApplicable: boolean }): StatusFilter =>

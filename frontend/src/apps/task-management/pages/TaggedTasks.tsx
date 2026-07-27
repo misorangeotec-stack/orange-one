@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
+import PillToggle from "@/shared/components/ui/PillToggle";
 import { TextInput } from "@/shared/components/ui/Form";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -12,7 +13,7 @@ import { rememberReturnTo } from "@/shared/lib/returnTo";
 import { matchesSearch } from "@/shared/lib/search";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
-import { STATUS_FILTER_OPTIONS, matchesStatusFilter, type StatusFilter } from "../types";
+import { STATUS_FILTER_OPTIONS, matchesStatusFilter, isOverdueTask, type StatusFilter } from "../types";
 import TaskTable, { DEFAULT_TASK_SORT, nextSort, sortTasks, type TaskSort, type TaskSortKey } from "../components/TaskTable";
 import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 
@@ -26,6 +27,8 @@ export default function TaggedTasks() {
   const [q, setQ] = useStickyState(sticky, "q", "");
   const [scope, setScope] = useStickyState<Scope>(sticky, "scope", "week");
   const [statuses, setStatuses] = useStickyState<StatusFilter[]>(sticky, "statuses", []);
+  // A condition, not a status — ANDs with the status filter (see types/index.ts).
+  const [overdueOnly, setOverdueOnly] = useStickyState(sticky, "overdueOnly", false);
   const [sort, setSort] = useStickyState<TaskSort>(sticky, "sort", DEFAULT_TASK_SORT);
   const onSort = (key: TaskSortKey) => setSort((s) => nextSort(s, key));
 
@@ -51,9 +54,10 @@ export default function TaggedTasks() {
   const filtered = useMemo(() => {
     let list = scopeTasks(mine, scope);
     if (statuses.length) list = list.filter((t) => matchesStatusFilter(t, statuses));
+    if (overdueOnly) list = list.filter(isOverdueTask);
     if (q.trim()) list = list.filter((t) => matchesSearch(q, t.title, t.description));
     return list;
-  }, [mine, scope, statuses, q]);
+  }, [mine, scope, statuses, overdueOnly, q]);
 
   const sorted = useMemo(
     () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
@@ -61,7 +65,7 @@ export default function TaggedTasks() {
   );
 
   const pageState = useStickyState(sticky, "page", 1);
-  const pg = usePagination(sorted, { resetKey: `${scope}|${statuses.join(",")}|${q}|${sort.key}|${sort.dir}`, pageState });
+  const pg = usePagination(sorted, { resetKey: `${scope}|${statuses.join(",")}|${overdueOnly}|${q}|${sort.key}|${sort.dir}`, pageState });
 
   const activeFilters: ActiveFilter[] = [];
   if (statuses.length)
@@ -70,9 +74,12 @@ export default function TaggedTasks() {
       label: `Status: ${STATUS_FILTER_OPTIONS.filter((s) => statuses.includes(s.value)).map((s) => s.label).join(", ")}`,
       onClear: () => setStatuses([]),
     });
+  if (overdueOnly)
+    activeFilters.push({ key: "overdue", label: "Overdue only", onClear: () => setOverdueOnly(false) });
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
   const clearAll = () => {
     setStatuses([]);
+    setOverdueOnly(false);
     setQ("");
   };
 
@@ -96,6 +103,20 @@ export default function TaggedTasks() {
       <Card className="overflow-hidden">
         <div className="px-4 pt-3 flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap items-center gap-2.5 pb-2 w-full sm:w-auto">
+            <PillToggle<"all" | "overdue">
+              value={overdueOnly ? "overdue" : "all"}
+              onChange={(v) => {
+                const on = v === "overdue";
+                setOverdueOnly(on);
+                // Overdue work sits in EARLIER weeks, which the week scope strips
+                // out — without widening, this filter always reads as empty.
+                if (on) setScope("all");
+              }}
+              options={[
+                { value: "all", label: "Any due date" },
+                { value: "overdue", label: "Overdue" },
+              ]}
+            />
             <MultiSelect
               values={statuses}
               onChange={(v) => setStatuses(v as StatusFilter[])}

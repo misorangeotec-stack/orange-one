@@ -114,7 +114,7 @@ export default function TeamTasks() {
               </ul>
             )}
           </Card>
-          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." hideWeekFilter initialFilters={initialFilters} stickyScope={sticky} />
+          <TaskBrowser tasks={teamTasks} people={team} emptyMessage="No team tasks match these filters." hideWeekFilter initialFilters={initialFilters} onRequestAllTime={() => setScope("all")} stickyScope={sticky} />
         </>
       )}
     </div>

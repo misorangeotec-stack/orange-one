@@ -25,6 +25,7 @@ export default function MultiSelect({
   placeholder = "Any",
   disabled,
   className,
+  triggerClassName,
   align = "left",
   searchable,
 }: {
@@ -35,6 +36,8 @@ export default function MultiSelect({
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  /** Extra classes on the trigger button — used to slim it down inside a table cell. */
+  triggerClassName?: string;
   align?: "left" | "right";
   /** Force the search box on/off; default: show once there are more than 6 options. */
   searchable?: boolean;
@@ -131,7 +134,8 @@ export default function MultiSelect({
           "w-full flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-left transition",
           "outline-none focus:border-orange focus:ring-4 focus:ring-orange/10",
           disabled ? "bg-page text-grey-2 cursor-not-allowed" : "text-ink hover:border-[#d9e2f0] cursor-pointer",
-          open && "border-orange ring-4 ring-orange/10"
+          open && "border-orange ring-4 ring-orange/10",
+          triggerClassName
         )}
       >
         <span className={cn("flex-1 truncate", selectedLabels.length === 0 && "text-grey-2")}>{summary}</span>

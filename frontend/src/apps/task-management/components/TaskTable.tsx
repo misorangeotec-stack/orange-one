@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import Avatar from "@/shared/components/ui/Avatar";
@@ -10,14 +10,22 @@ import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import { isRecurringTask } from "../mock/selectors";
 import { taskDetailPath } from "../lib/taskLink";
-import { RECURRENCE_LABEL, type Task } from "../types";
+import { RECURRENCE_LABEL, isOverdueTask, type Task } from "../types";
 import StatusChip from "./StatusChip";
 import EditTaskModal from "./EditTaskModal";
 import PersonalTaskModal from "./PersonalTaskModal";
 
-export type TaskSortKey = "title" | "createdBy" | "assignedTo" | "createdAt" | "dueDate" | "status";
+export type TaskSortKey = "title" | "department" | "createdBy" | "assignedTo" | "createdAt" | "dueDate" | "status";
 export type SortDir = "asc" | "desc";
 export type TaskSort = { key: TaskSortKey; dir: SortDir };
+
+/**
+ * One filter control per column, rendered in a second header row directly under
+ * the column it narrows — so each control is labelled by its own column instead
+ * of sitting in an anonymous wall of dropdowns above the table. Keys match
+ * TaskSortKey; omit one to leave that column's filter cell empty.
+ */
+export type TaskFilterCells = Partial<Record<TaskSortKey, ReactNode>>;
 
 export const DEFAULT_TASK_SORT: TaskSort = { key: "dueDate", dir: "asc" };
 
@@ -29,13 +37,21 @@ export function nextSort(sort: TaskSort, key: TaskSortKey): TaskSort {
 }
 
 /** Sort a task list by the chosen column. `nameOf` resolves a user id to a
- *  display name so the person columns sort by name, not by raw UUID. */
-export function sortTasks(tasks: Task[], sort: TaskSort, nameOf: (id: string | null) => string | undefined): Task[] {
+ *  display name so the person columns sort by name, not by raw UUID; `deptNameOf`
+ *  does the same for the Department column (only All Tasks shows it, so the other
+ *  callers may omit it — without one, department sorting is a no-op). */
+export function sortTasks(
+  tasks: Task[],
+  sort: TaskSort,
+  nameOf: (id: string | null) => string | undefined,
+  deptNameOf?: (id: string | null) => string | undefined,
+): Task[] {
   const dir = sort.dir === "asc" ? 1 : -1;
   const today = todayIso();
   const val = (t: Task): string => {
     switch (sort.key) {
       case "title": return t.title?.toLowerCase() ?? "";
+      case "department": return (deptNameOf?.(t.departmentId) ?? "~").toLowerCase(); // no department sorts last (asc)
       case "createdBy": return (nameOf(t.createdBy) ?? "").toLowerCase();
       case "assignedTo": return (nameOf(t.assignedTo) ?? "~").toLowerCase(); // unassigned sorts last (asc)
       case "createdAt": return t.createdAt ?? "9999-99-99";
@@ -91,14 +107,30 @@ function SortTh({ label, sortKey, sort, onSort, align = "left", className }: {
 
 /**
  * Shared task table: one header row, aligned sortable columns, and a row per
- * task. Used by My Tasks, Team Tasks and All Tasks so they all look identical.
- * The caller does the filtering, sorting and pagination, then hands the page's
- * tasks in here; `sort` / `onSort` drive the header indicators.
+ * task. Used by My Tasks, Team Tasks, All Tasks and Tagged so they all look
+ * identical. The caller does the filtering, sorting and pagination, then hands
+ * the page's tasks in here; `sort` / `onSort` drive the header indicators.
+ *
+ * Pass `filterRow` to get a second header row holding one filter control per
+ * column. The caller owns those controls (the filter STATE lives with the
+ * filtering), this just places them in the right cells.
  */
-export default function TaskTable({ tasks, sort, onSort }: {
+export default function TaskTable({ tasks, sort, onSort, showDepartment = false, filterRow, emptyMessage }: {
   tasks: Task[];
   sort: TaskSort;
   onSort: (k: TaskSortKey) => void;
+  /** Show a Department column. Only All Tasks spans departments; the other views
+   *  are already scoped to one, where the column would be a constant. */
+  showDepartment?: boolean;
+  /** Per-column filter controls, rendered in a second header row. */
+  filterRow?: TaskFilterCells;
+  /**
+   * Shown as a full-width row when `tasks` is empty. Callers with a `filterRow`
+   * MUST render this table even with no rows and use this instead of swapping in
+   * an EmptyState — otherwise a filter that matches nothing takes the filter row
+   * off screen with it, leaving no way to undo the filter.
+   */
+  emptyMessage?: ReactNode;
 }) {
   const { profileById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
   const { user, role } = useSession();
@@ -156,28 +188,65 @@ export default function TaskTable({ tasks, sort, onSort }: {
   const editTask = editId ? tasks.find((t) => t.id === editId) : undefined;
   const personalEditTask = personalEditId ? tasks.find((t) => t.id === personalEditId) : undefined;
 
+  const colCount = showDepartment ? 8 : 7;
+  // Three configurations, three minimums — a single value would either crush the
+  // search box in the Task cell or give Tagged Tasks (no filter row) horizontal
+  // scroll it never had. Tailwind needs literal class names, hence the ternaries.
+  const minWidth = !filterRow ? "min-w-[930px]" : showDepartment ? "min-w-[1210px]" : "min-w-[1060px]";
+
   return (
     <>
     <ScrollableTable>
-      <table className="w-full min-w-[930px] text-[13px] border-collapse table-fixed">
+      <table className={cn("w-full text-[13px] border-collapse table-fixed", minWidth)}>
         <thead>
           <tr className="text-grey-2 text-[11px] uppercase tracking-wide bg-page/50 border-b border-line">
             <SortTh label="Task" sortKey="title" sort={sort} onSort={onSort} className="px-4" />
-            <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[170px]" />
-            <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[170px]" />
-            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[110px]" />
-            <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[110px]" />
+            {showDepartment && <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className="w-[150px]" />}
+            <SortTh label="Created By" sortKey="createdBy" sort={sort} onSort={onSort} className="w-[160px]" />
+            <SortTh label="Assigned To" sortKey="assignedTo" sort={sort} onSort={onSort} className="w-[160px]" />
+            <SortTh label="Assigned" sortKey="createdAt" sort={sort} onSort={onSort} className="w-[120px]" />
+            <SortTh label="Due" sortKey="dueDate" sort={sort} onSort={onSort} className="w-[120px]" />
             <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="w-[130px]" />
-            <th className="w-[96px]" />
+            <th className="w-[90px]" />
           </tr>
+          {filterRow && (
+            /*
+             * onKeyDown/stopPropagation is load-bearing, not defensive.
+             * ScrollableTable scrolls the table on arrow keys and only bows out
+             * when the event target is an INPUT/TEXTAREA/SELECT. The status
+             * MultiSelect has exactly 6 options, one short of the threshold that
+             * gives it a search box, so its menu's focus target is a bare div —
+             * and React portals bubble through the REACT tree, not the DOM tree.
+             * Without this, arrowing through that dropdown scrolls the table
+             * sideways underneath it.
+             */
+            <tr className="bg-page/40 border-b border-line" onKeyDown={(e) => e.stopPropagation()}>
+              <th className="px-3 py-2 font-normal text-left align-middle">{filterRow.title}</th>
+              {showDepartment && <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.department}</th>}
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.createdBy}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.assignedTo}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.createdAt}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.dueDate}</th>
+              <th className="px-2 py-2 font-normal text-left align-middle">{filterRow.status}</th>
+              <th />
+            </tr>
+          )}
         </thead>
         <tbody className="divide-y divide-line">
+          {tasks.length === 0 && emptyMessage && (
+            <tr>
+              <td colSpan={colCount} className="px-4 py-10 text-center text-[13px] text-grey">{emptyMessage}</td>
+            </tr>
+          )}
           {tasks.map((task) => {
             const creator = profileById(task.createdBy);
             const assignee = profileById(task.assignedTo);
             const dept = departmentById(task.departmentId);
             const closed = task.status === "completed" || task.status === "shifted";
-            const overdue = isOverdue(task.dueDate) && !closed;
+            // One definition of overdue for the red due date, the Overdue pill and
+            // the Overdue status filter — they must never disagree on a row. Note
+            // it also excludes parked N/A instances, which aren't being chased.
+            const overdue = isOverdueTask(task);
             const recurrence = task.recurringTaskId ? getRecurring(task.recurringTaskId)?.recurrenceType : undefined;
             const recurring = isRecurringTask(task);
             // Assigned to me and not yet opened. Cleared by TaskDetail on open.
@@ -238,27 +307,38 @@ export default function TaskTable({ tasks, sort, onSort }: {
                   {task.description?.trim() && (
                     <div className="text-[12px] text-grey mt-0.5 truncate">{task.description}</div>
                   )}
-                  <div className="text-[11.5px] text-grey-2 mt-0.5 truncate">
-                    {dept?.name ?? "—"}
-                    {task.followUpDate && (
-                      // A closed task needs no chasing, so its follow-up reads as plain history.
-                      <span
-                        className={cn(
-                          closed
-                            ? ""
-                            : isOverdue(task.followUpDate)
-                              ? "text-[#d4493f] font-medium"
-                              : isToday(task.followUpDate)
-                                ? "text-orange font-medium"
-                                : "",
-                        )}
-                      >
-                        {` · follow-up ${dateLabel(task.followUpDate)}`}
-                        {closed ? "" : isOverdue(task.followUpDate) ? " (overdue)" : isToday(task.followUpDate) ? " (today)" : ""}
-                      </span>
-                    )}
-                  </div>
+                  {/* The department moves OUT of this subtitle when it has its own
+                      column, so it isn't printed twice on the same row. */}
+                  {(!showDepartment || task.followUpDate) && (
+                    <div className="text-[11.5px] text-grey-2 mt-0.5 truncate">
+                      {!showDepartment && (dept?.name ?? "—")}
+                      {task.followUpDate && (
+                        // A closed task needs no chasing, so its follow-up reads as plain history.
+                        <span
+                          className={cn(
+                            closed
+                              ? ""
+                              : isOverdue(task.followUpDate)
+                                ? "text-[#d4493f] font-medium"
+                                : isToday(task.followUpDate)
+                                  ? "text-orange font-medium"
+                                  : "",
+                          )}
+                        >
+                          {`${showDepartment ? "" : " · "}follow-up ${dateLabel(task.followUpDate)}`}
+                          {closed ? "" : isOverdue(task.followUpDate) ? " (overdue)" : isToday(task.followUpDate) ? " (today)" : ""}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </td>
+
+                {/* Department (All Tasks only — elsewhere it's in the Task subtitle) */}
+                {showDepartment && (
+                  <td className="px-3 py-3 align-middle">
+                    <span className="text-[12.5px] text-navy truncate block">{dept?.name ?? "—"}</span>
+                  </td>
+                )}
 
                 {/* Created By */}
                 <td className="px-3 py-3 align-middle">
@@ -286,9 +366,22 @@ export default function TaskTable({ tasks, sort, onSort }: {
                   <span className={cn("text-[12.5px] font-medium", overdue ? "text-[#d4493f]" : "text-navy")}>{dateLabel(task.dueDate)}</span>
                 </td>
 
-                {/* Status */}
+                {/* Status — the Overdue pill sits BESIDE the status, not instead of
+                    it: overdue is derived (past due + still open), so the task is
+                    still genuinely Pending or In Progress underneath. */}
                 <td className="px-3 py-3 align-middle text-center">
-                  <StatusChip status={task.status} notApplicable={task.notApplicable} />
+                  <div className="flex flex-col items-center gap-1">
+                    <StatusChip status={task.status} notApplicable={task.notApplicable} />
+                    {overdue && (
+                      <span
+                        title={`Overdue — was due ${dateLabel(task.dueDate)}`}
+                        className="inline-flex items-center gap-1 rounded-pill px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[#FDECEA] text-[#d4493f] whitespace-nowrap"
+                      >
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="7" x2="12" y2="13" /><line x1="12" y1="17" x2="12" y2="17" /></svg>
+                        Overdue
+                      </span>
+                    )}
+                  </div>
                 </td>
 
                 {/* Edit + Delete (pending one-offs only) + chevron */}

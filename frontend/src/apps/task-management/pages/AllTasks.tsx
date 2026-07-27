@@ -50,7 +50,7 @@ export default function AllTasks() {
         <ScopeToggle scope={scope} onChange={setScope} />
       </div>
 
-      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter initialFilters={initialFilters} enableExport exportSubtitle={`Scope: ${scope === "week" ? "This week" : "All time"}`} stickyScope={sticky} />
+      <TaskBrowser tasks={scopedTasks} people={profiles} departments={departments} emptyMessage="No tasks match these filters." hideWeekFilter initialFilters={initialFilters} enableExport exportSubtitle={`Scope: ${scope === "week" ? "This week" : "All time"}`} onRequestAllTime={() => setScope("all")} stickyScope={sticky} />
     </div>
   );
 }
