@@ -7,7 +7,7 @@ import { cn } from "@/shared/lib/cn";
 import RequestMasterModal from "./RequestMasterModal";
 import QtyTotal from "./QtyTotal";
 import { masterTypeLabel } from "../lib/masterFields";
-import { isLineBlank, makeEmptyLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
+import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine } from "../pages/requests/useRequestForm";
 
 /**
  * The body shared by New Request and Edit Request: the header fields, the line
@@ -152,7 +152,9 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
               rows={lines}
               onRowsChange={setLines}
               columns={columns}
-              makeEmptyRow={makeEmptyLine}
+              // New trailing row inherits the Category from the row above, so a
+              // multi-item requisition in one category isn't "re-pick every line".
+              makeEmptyRow={() => makeInheritedLine(lines[lines.length - 1])}
               isRowBlank={isLineBlank}
               footer={
                 // Label spans Category+Item; the Qty total sits under Qty, and the
@@ -171,7 +173,8 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
               }
             />
             <p className="text-[12px] text-grey-2">
-              Every item in the category is listed. Pick the items you need and enter a quantity for each.
+              Each row has its own category. Press Tab or Enter at the end of a row to start the next one. Missing an
+              item or category? Type its name to request it.
             </p>
             {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>}
           </div>
