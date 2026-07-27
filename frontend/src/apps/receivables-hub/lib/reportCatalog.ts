@@ -244,12 +244,13 @@ export const REPORTS: ReportEntry[] = [
   {
     id: "finance-sales-gain",
     title: "Sales Gain Report",
-    purpose: "Margin and gain analysis on the sales book.",
+    purpose: "Gain and margin on the sales book — by state, salesperson, customer and item.",
     category: "finance",
+    path: "reports/finance-sales-gain",
     icon: PercentIcon,
     source: "tally",
-    status: "soon",
-    keywords: ["sales gain", "margin", "profit"],
+    status: "live",
+    keywords: ["sales gain", "margin", "profit", "gross profit", "cost of goods", "cogs", "product margin"],
   },
 
   // ── Dashboards ─────────────────────────────────────────────────────────────

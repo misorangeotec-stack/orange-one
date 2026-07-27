@@ -24,6 +24,7 @@ import ReceivablesMasterReport from "@hub/pages/ReceivablesMasterReport";
 import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
 import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
 import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
+import SalesGainReport from "@hub/pages/SalesGainReport";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -103,6 +104,11 @@ function HubRoutes() {
               (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
               pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/finance-expense" element={<ExpenseMasterReport />} />
+          {/* Finance → Sales Gain — margin on the sales book, over the rpt_sales_gain_* snapshot.
+              Gain is DERIVED (Tally stores no cost): cost is priced per item from that item's own
+              VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own
+              company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/finance-sales-gain" element={<SalesGainReport />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />
