@@ -25,6 +25,7 @@ import PayablesMasterReport from "@hub/pages/PayablesMasterReport";
 import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
 import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
 import SalesGainReport from "@hub/pages/SalesGainReport";
+import SalesDashboard from "@hub/pages/SalesDashboard";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -109,6 +110,11 @@ function HubRoutes() {
               VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own
               company + FY pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/finance-sales-gain" element={<SalesGainReport />} />
+          {/* Dashboards → Sales Dashboard — the Talligence composite screen. Unlike every master
+              report it spans FOUR spines (sales / income / expense / receivables), so its RPC
+              returns meta.tie_* and the page warns when two separately-crons'd snapshots drift.
+              Own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/sales-dashboard" element={<SalesDashboard />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />

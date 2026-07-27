@@ -255,6 +255,19 @@ export const REPORTS: ReportEntry[] = [
 
   // ── Dashboards ─────────────────────────────────────────────────────────────
   {
+    id: "sales-dashboard",
+    title: "Sales Dashboard",
+    purpose:
+      "Sales, income, expense and receivables on one screen — with geography, products, customers and salespersons.",
+    category: "dashboards",
+    path: "reports/sales-dashboard",
+    icon: BarChart3,
+    source: "tally",
+    status: "live",
+    keywords: ["sales dashboard", "revenue", "income", "expense", "receivables", "AR", "geography",
+               "emerging products", "non performing", "salesperson", "contributing customers"],
+  },
+  {
     id: "c-level-dashboard",
     title: "C-Level Dashboard",
     purpose:

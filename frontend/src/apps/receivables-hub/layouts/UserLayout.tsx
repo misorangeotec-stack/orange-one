@@ -82,6 +82,9 @@ const FY_PINNED_ROUTES = [
   "/outstanding-dashboard/reports/finance-income",
   "/outstanding-dashboard/reports/finance-expense",
   "/outstanding-dashboard/reports/finance-sales-gain",
+  // The Sales Dashboard carries its own company + FY picker for the same reason, and names the FY
+  // and its prior year on every one of its thirteen panels.
+  "/outstanding-dashboard/reports/sales-dashboard",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its
