@@ -85,6 +85,10 @@ const FY_PINNED_ROUTES = [
   // The Sales Dashboard carries its own company + FY picker for the same reason, and names the FY
   // and its prior year on every one of its thirteen panels.
   "/outstanding-dashboard/reports/sales-dashboard",
+  // Its purchase-side twin, same reason. Note this entry is currently redundant — the match below
+  // is a startsWith and "/reports/purchase" is already listed above — but the Purchase Report could
+  // move, and a route relying on another route's prefix is not something to leave implicit.
+  "/outstanding-dashboard/reports/purchase-dashboard",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its

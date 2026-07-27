@@ -268,6 +268,20 @@ export const REPORTS: ReportEntry[] = [
                "emerging products", "non performing", "salesperson", "contributing customers"],
   },
   {
+    id: "purchase-dashboard",
+    title: "Purchase Dashboard",
+    purpose:
+      "Purchase, income, expense and payables on one screen — with geography, vendors and top products.",
+    category: "dashboards",
+    path: "reports/purchase-dashboard",
+    icon: ShoppingCart,
+    source: "tally",
+    status: "live",
+    keywords: ["purchase dashboard", "procurement", "vendor", "supplier", "payables", "AP",
+               "creditors", "geography", "income", "expense", "contributing vendors",
+               "top products", "base units"],
+  },
+  {
     id: "c-level-dashboard",
     title: "C-Level Dashboard",
     purpose:

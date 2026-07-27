@@ -26,6 +26,7 @@ import IncomeMasterReport from "@hub/pages/IncomeMasterReport";
 import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
 import SalesGainReport from "@hub/pages/SalesGainReport";
 import SalesDashboard from "@hub/pages/SalesDashboard";
+import PurchaseDashboard from "@hub/pages/PurchaseDashboard";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -115,6 +116,12 @@ function HubRoutes() {
               returns meta.tie_* and the page warns when two separately-crons'd snapshots drift.
               Own company + FY pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/sales-dashboard" element={<SalesDashboard />} />
+          {/* Dashboards → Purchase Dashboard — the purchase-side twin. Rides rpt_purchase_line for
+              KPI / monthly / geography / vendors (ONE spine, so there is no tie_geo to report),
+              plus a new rpt_purchase_dashboard_ap ledger walk for month-end payables — the only
+              precomputed piece, and the month-end AP source Finance → Payables never had.
+              Own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/purchase-dashboard" element={<PurchaseDashboard />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />
