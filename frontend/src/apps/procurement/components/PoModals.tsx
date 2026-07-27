@@ -730,10 +730,16 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
   };
   const grnOptions: ComboOption[] = unbooked.map((g) => ({ value: g.id, label: grnLabel(g) }));
 
+  const hasExistingDoc = !!editing?.documentPath;
+  // A Tally entry must carry its invoice document. Edits are exempt: bookings made
+  // before this rule have none, and a typo fix must not demand the PDF in hand.
+  const docSatisfied = !!editing || !!file;
+
   const save = async () => {
     setErr(null);
     if (!tallyNo.trim()) return setErr("Tally invoice number is required.");
     if (!editing && unbooked.length > 0 && !grnId) return setErr("Select the goods receipt this invoice is booked against.");
+    if (!docSatisfied) return setErr("Attach the Tally invoice document.");
     setBusy(true);
     try {
       let doc: { path: string; name: string } | null = null;
@@ -761,7 +767,7 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
   return (
     <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <TallyDocLink booking={editing} /> : undefined} title={editing ? (readOnly ? "Tally Booking" : "Edit Tally Booking") : "Book in Tally"}
       subtitle={editing ? `${po.poNo} · correct the invoice details. The receipt it is booked against cannot be changed.` : `${po.poNo} · one invoice per goods receipt — partial receipts included.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Book"}</Button></>}>
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !docSatisfied || !tallyNo.trim() || (!editing && unbooked.length > 0 && !grnId)}>{busy ? "Saving…" : editing ? "Save Changes" : "Book"}</Button></>}>
       <div className="space-y-3.5">
         <FieldLabel label="Against GRN" required={!editing && unbooked.length > 0}>
           {editing ? (
@@ -782,11 +788,12 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
         </FieldLabel>
         <FieldLabel label="Tally Invoice No." required><TextInput value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} placeholder="e.g. 2627/PUR/0123" /></FieldLabel>
         {!readOnly && (
-          <FieldLabel label="Tally Invoice Document" hint="PDF or any file · optional">
+          <FieldLabel label="Tally Invoice Document" required={!editing}
+            hint={editing ? (hasExistingDoc ? "leave as-is to keep the attached file" : "optional on this older booking") : "PDF or any file · required"}>
           <div className="flex items-center gap-2.5">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
               <Upload className="h-4 w-4" />
-              {file ? "Change file" : "Choose file"}
+              {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
               <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             </label>
@@ -794,6 +801,10 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
               <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
                 <span className="max-w-[220px] truncate text-navy">{file.name}</span>
                 <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+              </span>
+            ) : editing && hasExistingDoc ? (
+              <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                Current: <span className="max-w-[220px] truncate text-navy">{editing.documentName ?? "attached file"}</span>
               </span>
             ) : (
               <span className="text-[12.5px] text-grey-2">No file selected</span>
