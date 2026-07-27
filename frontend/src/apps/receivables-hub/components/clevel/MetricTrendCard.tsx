@@ -4,7 +4,9 @@ import DeltaBadge from "./DeltaBadge";
 import TrendChart from "./TrendChart";
 import { fmtINRMoney } from "@hub/lib/utils";
 import { SERIES_CURRENT, SERIES_PRIOR } from "@hub/lib/chartColors";
-import type { MonthPoint } from "@hub/lib/clevelDashboard";
+// Sourced from execDashboard (the surviving C-Level data layer), not clevelDashboard — the two
+// declare an identical shape and this lets the superseded lib be deleted without touching this file.
+import type { MonthPoint } from "@hub/lib/execDashboard";
 
 /**
  * The PDF's dominant card shape: a big ₹ headline with a "% vs prior year" badge and the

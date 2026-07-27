@@ -282,8 +282,26 @@ export const REPORTS: ReportEntry[] = [
                "top products", "base units"],
   },
   {
-    id: "c-level-dashboard",
+    id: "exec-dashboard",
     title: "C-Level Dashboard",
+    purpose:
+      "The whole company on one screen — sales, profitability, ratios, funds, parties, stock and taxes.",
+    category: "dashboards",
+    path: "reports/c-level-dashboard",
+    icon: LayoutDashboard,
+    source: "tally",
+    status: "live",
+    adminOnly: true,
+    keywords: ["executive", "c-level", "ceo", "cfo", "board", "kpi", "ratios", "gross profit",
+               "net profit", "current ratio", "quick ratio", "return on equity", "debt to equity",
+               "operating expense", "available funds", "bank", "duties", "taxes", "stock groups",
+               "fast moving", "slow moving", "non moving"],
+  },
+  // The 2026-07-23 original, superseded by `exec-dashboard` above. Kept routed only so the two
+  // can be compared side by side before it is deleted; see clevel-dashboard-reconciliation.md.
+  {
+    id: "c-level-dashboard",
+    title: "C-Level Dashboard (old)",
     purpose:
       "The whole company on one screen — sales, profit, ratios, funds, top parties, duties and stock, per company.",
     category: "dashboards",

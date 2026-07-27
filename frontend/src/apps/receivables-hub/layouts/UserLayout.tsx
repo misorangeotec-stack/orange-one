@@ -89,6 +89,9 @@ const FY_PINNED_ROUTES = [
   // is a startsWith and "/reports/purchase" is already listed above — but the Purchase Report could
   // move, and a route relying on another route's prefix is not something to leave implicit.
   "/outstanding-dashboard/reports/purchase-dashboard",
+  // The C-Level Dashboard, same reason again — it names the FY and its prior year on nearly all
+  // of its twenty-two panels, and its balance-sheet half is additionally pinned to the sync date.
+  "/outstanding-dashboard/reports/c-level-dashboard",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its

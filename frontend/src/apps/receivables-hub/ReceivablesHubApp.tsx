@@ -9,6 +9,7 @@ import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
 import RequireRole from "@/core/platform/RequireRole";
 import UserLayout from "@hub/layouts/UserLayout";
 import CLevelDashboard from "@hub/pages/CLevelDashboard";
+import ExecDashboard from "@hub/pages/ExecDashboard";
 import Dashboard from "@hub/pages/Dashboard";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import FollowupsPage from "@hub/pages/Followups";
@@ -153,8 +154,22 @@ function HubRoutes() {
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
               a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
           <Route path="reports/dso" element={<DsoReport />} />
-          {/* Admin-only executive dashboard (board-level financials). Guarded here AND hidden from the
-              catalogue/sidebar for non-admins — see reportCatalog.ts adminOnly. */}
+          {/* Admin-only executive dashboard — the Talligence C-Level clone, 22 panels on the
+              nightly rpt_clevel_dashboard_cache snapshot. Own company + FY pickers (see
+              FY_PINNED_ROUTES). Guarded here AND hidden from the catalogue/sidebar for
+              non-admins — see reportCatalog.ts adminOnly. */}
+          <Route
+            path="reports/c-level-dashboard"
+            element={
+              <RequireRole roles={["admin"]}>
+                <ExecDashboard />
+              </RequireRole>
+            }
+          />
+          {/* The 2026-07-23 original, superseded by the route above. Its clevel_pl_monthly /
+              mv_clevel_ledger source has a DISABLED refresh cron, so it reports stale figures;
+              routed only until the replacement is signed off, then deleted along with
+              supabase/clevel-mirror/. */}
           <Route
             path="reports/c-level"
             element={
