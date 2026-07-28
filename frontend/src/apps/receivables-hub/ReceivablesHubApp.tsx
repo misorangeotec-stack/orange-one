@@ -28,6 +28,7 @@ import ExpenseMasterReport from "@hub/pages/ExpenseMasterReport";
 import SalesGainReport from "@hub/pages/SalesGainReport";
 import SalesDashboard from "@hub/pages/SalesDashboard";
 import PurchaseDashboard from "@hub/pages/PurchaseDashboard";
+import StockAnalysis from "@hub/pages/StockAnalysis";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -123,6 +124,13 @@ function HubRoutes() {
               precomputed piece, and the month-end AP source Finance → Payables never had.
               Own company + FY pickers (see FY_PINNED_ROUTES). */}
           <Route path="reports/purchase-dashboard" element={<PurchaseDashboard />} />
+          {/* Inventory → Stock Analysis — the Talligence inventory clone, and the FIRST report on
+              the inventory spine rather than a ledger one. Rides two new precomputed tables
+              (rpt_stock_analysis_item / _move) because nothing existing could answer "when did this
+              item last move": rpt_sales_item / rpt_purchase_item / rpt_day_book_item each see one
+              family of voucher natures and none sees stock journals, delivery challans, credit
+              notes or rejections. Own company + FY pickers (see FY_PINNED_ROUTES). */}
+          <Route path="reports/stock-analysis" element={<StockAnalysis />} />
           <Route path="reports/aging" element={<AgingReport />} />
           {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
           <Route path="reports/top-exposure" element={<TopExposureReport />} />

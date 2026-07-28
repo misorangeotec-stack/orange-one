@@ -24,6 +24,7 @@ import {
   Users,
   UserX,
   Wallet,
+  Warehouse,
   type LucideIcon,
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
@@ -58,6 +59,7 @@ export type ReportStatus = "live" | "soon";
 export type ReportCategoryId =
   | "master-reports"
   | "finance"
+  | "inventory"
   | "dashboards"
   | "receivables"
   | "collections"
@@ -114,6 +116,14 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Finance",
     blurb: "Receivables, payables, income and expense — straight from the Tally books.",
     icon: Landmark,
+  },
+  // Talligence files Stock Analysis under Report → Inventory, and this is the first report on
+  // the inventory spine (stock masters + voucher inventory lines) rather than the ledger one.
+  {
+    id: "inventory",
+    title: "Inventory",
+    blurb: "What is on the shelf, what it is worth, and what has stopped moving.",
+    icon: Warehouse,
   },
   {
     id: "dashboards",
@@ -251,6 +261,21 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "live",
     keywords: ["sales gain", "margin", "profit", "gross profit", "cost of goods", "cogs", "product margin"],
+  },
+
+  // ── Inventory ──────────────────────────────────────────────────────────────
+  {
+    id: "stock-analysis",
+    title: "Stock Analysis",
+    purpose: "Stock value by category and group, monthly inward/outward, and what has stopped moving.",
+    category: "inventory",
+    path: "reports/stock-analysis",
+    icon: Warehouse,
+    source: "tally",
+    status: "live",
+    keywords: ["stock", "inventory", "closing stock", "stock value", "product group", "product category",
+               "bad stock", "non moving", "dead stock", "slow moving", "inward", "outward", "expired",
+               "expiry", "base units", "godown", "item"],
   },
 
   // ── Dashboards ─────────────────────────────────────────────────────────────

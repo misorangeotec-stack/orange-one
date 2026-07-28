@@ -89,6 +89,10 @@ const FY_PINNED_ROUTES = [
   // is a startsWith and "/reports/purchase" is already listed above — but the Purchase Report could
   // move, and a route relying on another route's prefix is not something to leave implicit.
   "/outstanding-dashboard/reports/purchase-dashboard",
+  // Stock Analysis carries its own company + FY picker, and additionally stamps the date its
+  // closing figures are actually as at (the mirror's last sync, which is not the same thing as
+  // the FY). A topbar FY selector would be a third control over the same period.
+  "/outstanding-dashboard/reports/stock-analysis",
   // The C-Level Dashboard, same reason again — it names the FY and its prior year on nearly all
   // of its twenty-two panels, and its balance-sheet half is additionally pinned to the sync date.
   "/outstanding-dashboard/reports/c-level-dashboard",
