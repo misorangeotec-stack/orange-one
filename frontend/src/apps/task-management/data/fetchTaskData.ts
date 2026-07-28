@@ -227,6 +227,46 @@ export async function fetchTaskData(): Promise<TaskData> {
 }
 
 /**
+ * Re-read JUST the tasks a write touched, with their location checklists.
+ *
+ * `fetchTaskData` above is the whole-dataset loader; awaiting it after every
+ * mutation is what made "Creating…" / "Saving…" hang. For an admin it is ~24
+ * sequential requests (15 of them `task_locations`), and each one re-evaluates
+ * the task RLS predicate over the entire org. This is the targeted alternative:
+ * two indexed reads whose cost does not grow with the org.
+ *
+ * Not optimistic — it reads server truth for the affected rows, so the cache can
+ * never drift from the database. A task that is no longer RLS-visible simply
+ * comes back absent (the caller leaves the cached copy alone rather than
+ * inventing one).
+ *
+ * Takes an array because two mutations move two tasks at once: a shift marks the
+ * original `shifted` AND creates a continuation task.
+ */
+export async function fetchTasksByIds(ids: string[]): Promise<Task[]> {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  if (wanted.length === 0) return [];
+
+  const [taskRes, locRes] = await Promise.all([
+    supabase.from("tasks").select("*").in("id", wanted),
+    supabase.from("task_locations").select("*").in("task_id", wanted),
+  ]);
+  if (taskRes.error) throw new Error(taskRes.error.message);
+  if (locRes.error) throw new Error(locRes.error.message);
+
+  // Same grouping as fetchTaskData, so a task refreshed this way is shaped
+  // identically to one that arrived in the full payload.
+  const locsByTask = new Map<string, TaskLocation[]>();
+  for (const row of locRes.data ?? []) {
+    const tl = mapTaskLocation(row);
+    const list = locsByTask.get(tl.taskId) ?? [];
+    list.push(tl);
+    locsByTask.set(tl.taskId, list);
+  }
+  return (taskRes.data ?? []).map(mapTask).map((t) => ({ ...t, locations: locsByTask.get(t.id) ?? [] }));
+}
+
+/**
  * Deferred, non-blocking companion to `fetchTaskData`: the org-scale activity
  * timeline + notification rows. Loaded in a background query so a cold first
  * load isn't gated on paging through the whole org's history. Every consumer

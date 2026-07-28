@@ -8,7 +8,7 @@ import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
-import { fetchTaskData, fetchTaskActivity, type TaskData } from "../data/fetchTaskData";
+import { fetchTaskData, fetchTaskActivity, fetchTasksByIds, type TaskData } from "../data/fetchTaskData";
 import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
 import {
   insertTask,
@@ -247,6 +247,35 @@ function patchTaskLocation(
   });
 }
 
+/**
+ * Merge freshly-read tasks into every cached taskData query — replacing the ones
+ * already there, appending the ones that are new. Server truth, not a guess, so
+ * this can't drift from the database (see `fetchTasksByIds`).
+ *
+ * Same `!prev.tasks` guard as patchTaskLocation above: the ["taskData"] prefix
+ * also matches the deferred ["taskData","activity",…] query, whose payload has no
+ * `tasks` array.
+ */
+function upsertTasksInCache(queryClient: QueryClient, fresh: Task[]) {
+  if (fresh.length === 0) return;
+  queryClient.setQueriesData<TaskData>({ queryKey: ["taskData"] }, (prev) => {
+    if (!prev || !prev.tasks) return prev;
+    const byId = new Map(fresh.map((t) => [t.id, t] as const));
+    const tasks = prev.tasks.map((t) => byId.get(t.id) ?? t);
+    for (const t of fresh) if (!prev.tasks.some((p) => p.id === t.id)) tasks.push(t);
+    return { ...prev, tasks };
+  });
+}
+
+/** Drop a deleted task from every cached taskData query. */
+function removeTaskFromCache(queryClient: QueryClient, taskId: string) {
+  queryClient.setQueriesData<TaskData>({ queryKey: ["taskData"] }, (prev) => {
+    if (!prev || !prev.tasks) return prev;
+    if (!prev.tasks.some((t) => t.id === taskId)) return prev;
+    return { ...prev, tasks: prev.tasks.filter((t) => t.id !== taskId) };
+  });
+}
+
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
   const { user, role } = useSession();
   const dir = useDirectory();
@@ -309,6 +338,35 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       await queryClient.invalidateQueries({ queryKey: ["taskData", user?.id ?? null], exact: true });
     };
 
+    /**
+     * Refresh after a write that touched a KNOWN, small set of tasks — which is
+     * almost all of them (create, complete, start, reopen, N/A, edit, remark,
+     * reschedule, shift).
+     *
+     * `refreshTaskData` above still re-downloads the whole dataset, and awaiting
+     * that is what kept "Creating…" / "Saving…" on screen: for an admin it is ~24
+     * sequential requests, each re-evaluating the task RLS predicate across the
+     * entire org. Awaiting TWO indexed reads instead makes the wait independent of
+     * how big the org's task history is.
+     *
+     * The full invalidate still fires, just not awaited — it reconciles anything
+     * the write changed indirectly (the DB trigger's activity rows, another task's
+     * shifted_to link) while the user is already looking at the result.
+     */
+    const refreshTasks = async (...ids: (string | null | undefined)[]) => {
+      const wanted = ids.filter((id): id is string => !!id);
+      if (wanted.length === 0) return refreshTaskData();
+      try {
+        upsertTasksInCache(queryClient, await fetchTasksByIds(wanted));
+      } catch {
+        // A failed targeted read is not a failed write — fall through to the full
+        // refresh rather than leaving the caller thinking the mutation broke.
+        await refreshTaskData();
+        return;
+      }
+      void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+    };
+
     // Org-wide id → person map (name + avatar only) so activity actors can be
     // named even when they fall outside the viewer's RLS-scoped directory — e.g.
     // a Director in another department who assigned a recurring task. Without
@@ -366,7 +424,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // then refetches. Other task mutations stay inert no-ops until wired.
       createTask: async (input) => {
         const id = await insertTask({ ...input, locationIds: input.locationIds ?? [], createdBy: user.id });
-        await refreshTaskData();
+        // Must land in the cache BEFORE the caller navigates to /tasks/:id.
+        await refreshTasks(id);
         return id;
       },
       // Personal tasks: self-assigned, flagged is_personal, no locations. Excluded
@@ -383,47 +442,49 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           isPersonal: true,
           createdBy: user.id,
         });
-        await refreshTaskData();
+        await refreshTasks(id);
         return id;
       },
       updatePersonalTask: async (id, patch) => {
         await updatePersonalTaskWrite(id, patch);
-        await refreshTaskData();
+        await refreshTasks(id);
       },
       deletePersonalTask: async (id) => {
         await deletePersonalTaskWrite(id);
-        await refreshTaskData();
+        removeTaskFromCache(queryClient, id);
+        void queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       updateTask: async (id, patch) => {
         await updateTaskWrite(id, patch);
-        await refreshTaskData();
+        await refreshTasks(id);
       },
       deleteTask: async (id) => {
         await deleteTaskWrite(id);
-        await refreshTaskData();
+        removeTaskFromCache(queryClient, id);
+        void queryClient.invalidateQueries({ queryKey: ["taskData"] });
       },
       // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the
       // status-change activity (started is logged by the write itself); refetch after.
       startTask: async (id) => {
         await startTaskWrite(id, user.id);
-        await refreshTaskData();
+        await refreshTasks(id);
       },
       completeTask: async (id, note) => {
         await completeTaskWrite(id, user.id, note);
-        await refreshTaskData();
+        await refreshTasks(id);
       },
       // reopenTask: LIVE. Reverses a completion (current-week only, gated in the UI):
       // status → in_progress, completed_at cleared, and a 'reopened' activity logged.
       reopenTask: async (id) => {
         await reopenTaskWrite(id, user.id);
-        await refreshTaskData();
+        await refreshTasks(id);
       },
       // setTaskNotApplicable: LIVE. A plain not_applicable column update under the
       // task UPDATE RLS (same path as complete). Reversible; excluded from reports
       // in the selectors. Only offered for "when" instances (see isWhenTask).
       setTaskNotApplicable: async (id, value) => {
         await setTaskNotApplicableWrite(id, value);
-        await refreshTaskData();
+        await refreshTasks(id);
       },
       isWhenTask: (task) => {
         if (!task.recurringTaskId) return false;
@@ -442,12 +503,14 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         if (targetWeek > currentWeek) {
           const newId = await rescheduleTaskWrite(task, args.followUpDate);
           if (args.note && newId) await addRemarkWrite(newId, args.note, []);
-          await refreshTaskData();
+          // BOTH tasks changed: the original is marked 'shifted' (and gets its
+          // shifted_to link), the continuation is brand new.
+          await refreshTasks(id, newId);
           return newId;
         }
         if (!revisionInfo(task).allowed) return null; // weekly revision limit / closed guard
         await reviseTaskWrite(id, user.id, { ...args, currentRevisionCount: task.revisionCount });
-        await refreshTaskData();
+        await refreshTasks(id);
         return null;
       },
       // rescheduleTask: LIVE (B4). Same/earlier week → move due date; future week →
@@ -457,14 +520,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         const task = tasks.find((t) => t.id === id);
         if (!task || !newDueDate) return null;
         const newId = await rescheduleTaskWrite(task, newDueDate);
-        await refreshTaskData();
+        // A future-week reschedule shifts: original + continuation both change.
+        // Same/earlier week just moves the due date, so newId is null and this
+        // collapses to the single-task refresh.
+        await refreshTasks(id, newId);
         return newId;
       },
       // addRemark: LIVE (B4). Posts a remark + fans out @mention notifications via
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
       addRemark: async (id, note, mentionedIds) => {
         await addRemarkWrite(id, note, mentionedIds);
-        await refreshTaskData();
+        // The remark row itself lands in task_activity (background slice); what the
+        // task row needs is its bumped last_remark_at.
+        await refreshTasks(id);
         // Fans out @mention notifications, so refresh the feed's own key too.
         await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
       },
@@ -576,7 +644,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // can jump straight to it.
       generateRecurringNow: async (id) => {
         const taskId = await generateRecurringNowWrite(id, true);
-        await refreshTaskData();
+        // The UI jumps straight to this task, so it must be in the cache first.
+        await refreshTasks(taskId);
         return taskId;
       },
       deleteRecurring: async (id) => {
@@ -606,8 +675,13 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         }));
         try {
           await setTaskLocationDoneWrite(taskLocationId, done, user.id);
-          await refreshTaskData();
+          // NOT awaited — same reasoning as setTaskLocationsDone below: the
+          // optimistic patch already shows the final state, so awaiting a full
+          // reload only kept the checkbox disabled for the length of it.
+          void queryClient.invalidateQueries({ queryKey: ["taskData"] });
         } catch (e) {
+          // Failure path still awaits: the optimistic patch is wrong and must be
+          // rolled back to server truth before the caller surfaces the error.
           await refreshTaskData();
           throw e;
         }
@@ -621,7 +695,7 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         }));
         try {
           await setTaskLocationNaWrite(taskLocationId, na, user.id);
-          await refreshTaskData();
+          void queryClient.invalidateQueries({ queryKey: ["taskData"] }); // see above
         } catch (e) {
           await refreshTaskData();
           throw e;
