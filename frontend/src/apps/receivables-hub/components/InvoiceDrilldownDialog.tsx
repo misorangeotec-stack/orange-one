@@ -38,6 +38,17 @@ export interface InvoiceDrillRow {
   voucherType: SaleType;
   /** Synthetic reconciliation line bridging gross bills → the report's net figure. */
   isAdjustment?: boolean;
+  /** An ON-ACCOUNT line: money already received from this customer that is tagged to no invoice.
+   *  Carries a NEGATIVE `pending`, so a ledger's rows read as invoices − on-account = the report's
+   *  net figure. Sinks below the invoices in every bucket, and — like the reconciliation line — is
+   *  dropped the moment any popup filter is on, since a filter means "show me this subset of
+   *  BILLS" and a ledger-level credit belongs to no bill. */
+  isOnAccount?: boolean;
+  /** Label shown in the first column for an on-account line (the voucher type, or the summary
+   *  wording when no voucher explains it). MUST live in its own field: `customerName` is the
+   *  bucketing key, so writing the label there would file the credit under a phantom customer
+   *  of its own instead of under the ledger it belongs to. */
+  onAccountLabel?: string;
 }
 
 interface Props {
@@ -96,7 +107,9 @@ const COL_DEFS: { key: ColKey; label: string; align?: "right"; money?: boolean }
 
 const exportVal = (key: ColKey, r: InvoiceDrillRow): string | number => {
   switch (key) {
-    case "customerName": return r.customerName;
+    // On-account lines sit under their ledger's subtotal, which already names the customer —
+    // so the first column carries the credit's own label, matching what is on screen.
+    case "customerName": return r.isOnAccount ? (r.onAccountLabel ?? "On Account") : r.customerName;
     case "number":       return r.number;
     case "billRefName":  return r.billRefName;
     case "date":         return formatDateDMY(r.date);
@@ -145,6 +158,12 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     return STATUS_ORDER.filter((s) => present.has(s)).map(cap);
   }, [rows]);
 
+  /** Any popup filter narrowing the bill set. Gates BOTH the on-account lines and the
+   *  reconciliation line, so a filtered view is purely bill-level and always self-consistent. */
+  const filtersActive =
+    customerNames.length > 0 || companies.length > 0 || locations.length > 0 ||
+    saleTypes.length > 0 || statuses.length > 0 || search.trim().length > 0;
+
   const filtered = useMemo(() => {
     const custSet = new Set(customerNames);
     const coSet = new Set(companies);
@@ -153,6 +172,9 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const statusSet = new Set(statuses.map((s) => s.toLowerCase()));
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
+      // On-account lines are ledger-level, not bill-level: keep them in the default view (where
+      // they make the total tie to the report) and drop them under any filter.
+      if (r.isOnAccount) return !filtersActive;
       if (customerNames.length && !custSet.has(r.customerName)) return false;
       if (companies.length && !coSet.has(r.company)) return false;
       if (locations.length && !locSet.has(r.location)) return false;
@@ -161,17 +183,24 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
       if (q && !(r.customerName.toLowerCase().includes(q) || (r.number ?? "").toLowerCase().includes(q) || (r.billRefName ?? "").toLowerCase().includes(q))) return false;
       return true;
     });
-  }, [rows, customerNames, companies, locations, saleTypes, statuses, search]);
+  }, [rows, customerNames, companies, locations, saleTypes, statuses, search, filtersActive]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
     const dir = sortDir === "asc" ? 1 : -1;
     const textKeys: ColKey[] = ["customerName", "number", "billRefName", "date", "dueDate", "voucherType", "status"];
-    arr.sort((a, b) =>
-      textKeys.includes(sortKey)
+    arr.sort((a, b) => {
+      // On-account lines always sink below the invoices, whatever the sort — the bucket reads
+      // "invoices, then what has been received against none of them, then the net".
+      if (!!a.isOnAccount !== !!b.isOnAccount) return a.isOnAccount ? 1 : -1;
+      // Within them, the dateless catch-all ("no entry detail") goes last: name what we can
+      // account for first, and leave the unexplained remainder at the bottom where it reads as
+      // a balancing figure rather than as another entry.
+      if (a.isOnAccount && b.isOnAccount && !a.date !== !b.date) return a.date ? -1 : 1;
+      return textKeys.includes(sortKey)
         ? dir * String(a[sortKey] ?? "").localeCompare(String(b[sortKey] ?? ""))
-        : dir * ((a[sortKey] as number) - (b[sortKey] as number)),
-    );
+        : dir * ((a[sortKey] as number) - (b[sortKey] as number));
+    });
     return arr;
   }, [filtered, sortKey, sortDir]);
 
@@ -186,10 +215,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
 
   // Reconcile each ledger's bill-level pending to the report's net figure — but only
   // in the default (unfiltered) view, since a popup filter shows a subset of bills.
-  const reconcile =
-    ledgerFigures != null &&
-    !customerNames.length && !companies.length && !locations.length &&
-    !saleTypes.length && !statuses.length && !search.trim();
+  const reconcile = ledgerFigures != null && !filtersActive;
 
   // Bucket rows into groups/ledgers with subtotals, ordered by the active sort column.
   type Bucket = { key: string; label: string; sub?: string; rows: InvoiceDrillRow[]; amount: number; received: number; pending: number };
@@ -340,6 +366,17 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
 
   /** Render one data cell for a visible column. */
   const renderCell = (key: ColKey, r: InvoiceDrillRow): ReactNode => {
+    if (r.isOnAccount) {
+      // On-account line: a real Tally entry where we could name one (voucher no in `number`,
+      // its date in `date`), or the balancing "no entry detail" line where we could not.
+      // Rendered like a credit — negative pending, no invoice value, no age.
+      if (key === "customerName") return <TableCell key={key} className="whitespace-nowrap text-muted-foreground">↳ {r.onAccountLabel || "On Account"}</TableCell>;
+      if (key === "number")       return <TableCell key={key} className="font-mono whitespace-nowrap max-w-[160px] truncate text-muted-foreground" title={r.number || "—"}>{r.number || "—"}</TableCell>;
+      if (key === "billRefName")  return <TableCell key={key} className="text-muted-foreground whitespace-nowrap max-w-[220px] truncate" title={r.billRefName || "—"}>{r.billRefName || "—"}</TableCell>;
+      if (key === "date")         return <TableCell key={key} className="text-muted-foreground whitespace-nowrap">{r.date ? formatDateDMY(r.date) : "—"}</TableCell>;
+      if (key === "pending")      return <TableCell key={key} className="text-right font-mono text-emerald-700 font-medium">{fmt(r.pending)}</TableCell>;
+      return <TableCell key={key} />;
+    }
     if (r.isAdjustment) {
       // Reconciliation line: label in the first column, only Received/Pending carry values.
       if (key === "customerName") return <TableCell key={key} className="whitespace-nowrap italic text-muted-foreground">{r.billRefName}</TableCell>;
@@ -432,6 +469,49 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     </TableRow>
   );
 
+  /** A striking row inside a ledger: a label plus one figure in the Pending column. */
+  const renderBridgeRow = (
+    rowKey: string, label: string, value: number, indentClass: string, strong: boolean,
+  ): ReactNode => (
+    <TableRow key={rowKey} className={`text-[13px] bg-muted/20 ${indentClass}`}>
+      {visibleDefs.map((d, idx) => {
+        const edge = strong ? "border-t border-border" : "border-t border-border/50";
+        if (idx === 0) return (
+          <TableCell key={d.key} className={`whitespace-nowrap uppercase tracking-wide text-[11px] text-muted-foreground ${edge}`}>
+            {label}
+          </TableCell>
+        );
+        if (d.key === "pending") return (
+          <TableCell key={d.key} className={`text-right font-mono font-semibold ${edge} ${strong ? "text-destructive" : ""}`}>
+            {fmt(value)}
+          </TableCell>
+        );
+        return <TableCell key={d.key} className={edge} />;
+      })}
+    </TableRow>
+  );
+
+  /** A ledger's rows, with the on-account bridge struck through them:
+   *      invoices → INVOICE TOTAL → on-account entries → NET.
+   *  Without the two bridge rows the reader sees bills, then credits, then only a net figure up
+   *  in the header — and cannot tell what the invoices alone came to, which is usually the very
+   *  number they opened the popup to check. */
+  const renderBucketRows = (bucket: Bucket, keyPrefix: string, indentClass: string): ReactNode[] => {
+    const firstOnAcct = bucket.rows.findIndex((r) => r.isOnAccount);
+    const out: ReactNode[] = [];
+    bucket.rows.forEach((r, i) => {
+      if (i === firstOnAcct) {
+        const invTotal = bucket.rows.slice(0, i).reduce((s, x) => s + x.pending, 0);
+        out.push(renderBridgeRow(`${keyPrefix}|invtotal`, `Invoice total (${i} invoices)`, invTotal, indentClass, false));
+      }
+      out.push(renderInvoiceRow(r, `${keyPrefix}|${r.number}|${r.billRefName}|${i}`, indentClass));
+    });
+    if (firstOnAcct >= 0) {
+      out.push(renderBridgeRow(`${keyPrefix}|net`, "Net after on account", bucket.pending, indentClass, true));
+    }
+    return out;
+  };
+
   const buildExport = (): { blob: Blob; filename: string } => {
     const aoa: (string | number)[][] = [];
     aoa.push([title]);
@@ -471,7 +551,7 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
       for (const m of money) a[m.idx] = v[m.key];
       return a;
     };
-    const invCountOf = (c: Bucket) => c.rows.filter((r) => !r.isAdjustment).length;
+    const invCountOf = (c: Bucket) => c.rows.filter((r) => !r.isAdjustment && !r.isOnAccount).length;
     const ledgerLabel = (c: Bucket) => `${c.label}${c.sub ? ` — ${c.sub}` : ""} (${invCountOf(c)} invoices)`;
     // Mirror the on-screen view: Groups → group subtotal → ledger subtotal → invoices.
     // Track 0-indexed subtotal rows so they can be styled (green) afterwards.
@@ -744,11 +824,11 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
                     {renderSummaryRow(`g:${g.key}`, g.label, undefined, g.ledgers.length, "ledgers", g, 0, isOpen(g.key), () => toggle(g.key))}
                     {isOpen(g.key) && g.ledgers.map((c) => {
                       const ck = `${g.key}|${c.key}`;
-                      const invCount = c.rows.filter((r) => !r.isAdjustment).length;
+                      const invCount = c.rows.filter((r) => !r.isAdjustment && !r.isOnAccount).length;
                       return (
                         <Fragment key={`c:${ck}`}>
                           {renderSummaryRow(`c:${ck}`, c.label, c.sub, invCount, "invoices", c, 1, isOpen(ck), () => toggle(ck))}
-                          {isOpen(ck) && c.rows.map((r, i) => renderInvoiceRow(r, `${ck}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-16"))}
+                          {isOpen(ck) && renderBucketRows(c, ck, "[&>td:first-child]:pl-16")}
                         </Fragment>
                       );
                     })}
@@ -757,11 +837,11 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
               ) : (
                 // Ledger → Invoices (open by default)
                 customerTree.map((c) => {
-                  const invCount = c.rows.filter((r) => !r.isAdjustment).length;
+                  const invCount = c.rows.filter((r) => !r.isAdjustment && !r.isOnAccount).length;
                   return (
                     <Fragment key={`c:${c.key}`}>
                       {renderSummaryRow(`c:${c.key}`, c.label, c.sub, invCount, "invoices", c, 0, isOpen(c.key), () => toggle(c.key))}
-                      {isOpen(c.key) && c.rows.map((r, i) => renderInvoiceRow(r, `${c.key}|${r.number}|${r.billRefName}|${i}`, "[&>td:first-child]:pl-10"))}
+                      {isOpen(c.key) && renderBucketRows(c, c.key, "[&>td:first-child]:pl-10")}
                     </Fragment>
                   );
                 })

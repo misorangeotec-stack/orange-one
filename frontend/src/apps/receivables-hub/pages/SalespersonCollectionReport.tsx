@@ -36,6 +36,8 @@ import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
+import { creditsOfLedger } from "@hub/lib/agingReport";
+import { loadOnAccountEntries, displayableEntries, type OnAccountEntry } from "@hub/lib/onAccountEntries";
 import { ddmmyyyy, isoToMonthLabel, monthEndLong, monthLabelToEndDate } from "@hub/lib/months";
 import type { Customer, SaleType } from "@hub/lib/types";
 
@@ -79,7 +81,7 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
-type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pending" | "collectionPct" | "collectionPctPrev";
+type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
 type ViewMode = "customer" | "group";
 
@@ -116,7 +118,18 @@ interface Metrics {
    *  allocated, this is about where it came from, and these rupees already sit inside both. Shown
    *  as a footnote, deliberately not as a fourth column, so the two axes are never added together. */
   receivedOther: number;
+  /** Due Pending NET of on-account (what the column shows). */
   pending: number;
+  /** Due Pending BEFORE on-account is deducted — the sum of the bills themselves.
+   *  Kept because the drill-down's invoice list totals to this, and because a customer must
+   *  never drop off the report just because their whole due is covered by untagged money. */
+  pendingGross: number;
+  /** Money already received from this customer but tagged to NO invoice, applied against the
+   *  due (so 0 ≤ onAccount ≤ pendingGross, and pending = pendingGross − onAccount).
+   *  Live source + current month + no sale-type filter only; 0 everywhere else. */
+  onAccount: number;
+  /** Not-yet-overdue slice of `pending`, i.e. bills coming due before month-end — NET of any
+   *  on-account that spilled past the overdue slice, so `pending − dueSoon` can never go < 0. */
   dueSoon: number;
 }
 interface CustomerLine { id: string; name: string; company: string; location: string; m: Metrics; mPrev: Metrics; }
@@ -147,7 +160,7 @@ const spName = (s: string | undefined): string => {
 };
 
 const emptyMetrics = (): Metrics => ({
-  sales: 0, salesGst: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, receivedOther: 0, pending: 0, dueSoon: 0,
+  sales: 0, salesGst: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, receivedOther: 0, pending: 0, pendingGross: 0, onAccount: 0, dueSoon: 0,
 });
 const addInto = (t: Metrics, m: Metrics): void => {
   t.sales             += m.sales;
@@ -161,6 +174,8 @@ const addInto = (t: Metrics, m: Metrics): void => {
   t.receivedAgainst   += m.receivedAgainst;
   t.receivedOther     += m.receivedOther;
   t.pending           += m.pending;
+  t.pendingGross      += m.pendingGross;
+  t.onAccount         += m.onAccount;
   t.dueSoon           += m.dueSoon;
 };
 const collectionPct = (m: Metrics): number | null => (m.due > 0 ? (m.received / m.due) * 100 : null);
@@ -237,6 +252,9 @@ export default function SalespersonCollectionReport() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   // Invoice drill-down popup (current month only).
   const [drill, setDrill] = useState<{ title: string; subtitle: string; rows: InvoiceDrillRow[]; ledgerFigures: Record<string, number> } | null>(null);
+  // Bumped per drill open, so a slow on-account entry lookup from a previous popup can never
+  // land on the one the user is actually looking at.
+  const drillSeqRef = useRef(0);
   // "Less advances & credits" popup — a LEDGER-level list, not a bill-level one, so it does not
   // reuse InvoiceDrilldownDialog. Groups start COLLAPSED: the point of the popup is which Tally
   // groups the credits sit in, and 80+ ledger rows bury that.
@@ -284,6 +302,13 @@ export default function SalespersonCollectionReport() {
   // customer's sales mix via projectAmt(). All 5 types selected = no filter.
   const saleTypeActive = saleTypes.length > 0 && saleTypes.length < ALL_SALE_TYPES.length;
   const saleTypeSet = useMemo(() => new Set(saleTypes), [saleTypes]);
+
+  /** Whether Due / Due Pending are shown NET of on-account (money received but tagged to no
+   *  invoice). See the derivation in metricsForMonth for why each gate is load-bearing:
+   *  the legacy pipeline already nets it upstream, and a sale-type filter puts the two sides
+   *  of the subtraction on different bases. The current-month gate lives in metricsForMonth,
+   *  since only that branch has a bill list. */
+  const netOnAccount = isLive && !saleTypeActive;
 
   /** Fraction of a customer's activity belonging to the selected sale types
    *  (by full-year sales mix). Customers with no sales mix put their whole
@@ -519,6 +544,8 @@ export default function SalespersonCollectionReport() {
         : projectAmt((mt?.salesGst ?? 0) * 100_000, undefined, share);
     let outstanding: number;
     let openDue: number;
+    let pendingGross: number;
+    let onAccount = 0;
     let dueSoon = 0; // not-yet-overdue bills coming due by month-end (current month only)
     if (month === asOfMonth) {
       // Outstanding/overdue carry a per-type breakdown at the customer level → project exactly.
@@ -538,7 +565,23 @@ export default function SalespersonCollectionReport() {
           if (dd > asOf && dd <= monthEnd) dueSoon += inv.pending;
         }
       }
-      openDue = projectAmt(c.overdue, c.overdueByType, share) + dueSoon;
+      const grossOverdue = projectAmt(c.overdue, c.overdueByType, share);
+      pendingGross = grossOverdue + dueSoon;
+      // ON ACCOUNT — money this customer has already paid us that is settling no open invoice:
+      // untagged receipts PLUS credit sitting on a named bill (machine advances, credit notes).
+      // Both reduced their LEDGER balance but left the old bills reading unpaid, so the bill-based
+      // figure above chases money already banked. Take it off (capped at the due, so a customer's
+      // surplus credit can never push their OWN due below zero).
+      //   Live only: the legacy pipeline already nets this upstream — deducting again would
+      //   understate what is owed. Current month only: past months carry monthly totals with no
+      //   bill list to net against. Never under a sale-type filter: c.outstanding has no per-type
+      //   split, so the two sides of the subtraction would be on different bases.
+      onAccount = netOnAccount ? Math.min(creditsOfLedger(c, detail).total, pendingGross) : 0;
+      // Take it off the already-overdue slice FIRST, spilling into the not-yet-due slice only once
+      // that is exhausted — otherwise the "As on today" sub-column (pending − dueSoon) prints
+      // a negative whenever the credit exceeds what is actually past due.
+      dueSoon = Math.max(0, dueSoon - Math.max(0, onAccount - grossOverdue));
+      openDue = pendingGross - onAccount;
     } else {
       // Past months: outstanding carries a per-type breakdown in the trend (lakhs → rupees);
       // overdue does not, so it falls back to the sales-mix share.
@@ -570,6 +613,8 @@ export default function SalespersonCollectionReport() {
         const overdueRatio = opTotal > 1e-9 ? (c.otherPaymentsOverdueAdj ?? 0) / opTotal : 0;
         openDue = Math.max(0, openDue - projectAmt(cumOp * overdueRatio, undefined, share));
       }
+      // No bill list for a past month, so nothing to net on-account against: gross == net.
+      pendingGross = openDue;
     }
     // Split `received` into on-account vs against-invoice by the month's raw allocation mix
     // (scale-invariant ratio, so the sale-type projection on `received` carries through).
@@ -594,8 +639,8 @@ export default function SalespersonCollectionReport() {
     // `outstanding` is sign-preserving in every branch, so these roll up the tree via addInto.
     const outstandingDebit = outstanding > 0 ? outstanding : 0;
     const outstandingCredit = outstanding < 0 ? -outstanding : 0;
-    return { sales, salesGst, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, receivedOther: opReceipts, pending: openDue, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, otherPaymentsCumByCustomerMonth, receivedSplitByCustomerMonth]);
+    return { sales, salesGst, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, receivedOther: opReceipts, pending: openDue, pendingGross, onAccount, dueSoon };
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, netOnAccount, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, otherPaymentsCumByCustomerMonth, receivedSplitByCustomerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {
@@ -637,7 +682,10 @@ export default function SalespersonCollectionReport() {
   const activeRows = useMemo(
     () => filteredCustomers.filter((c) => {
       const m = customerMetrics.get(c.id);
-      return m != null && (Math.round(m.outstanding) !== 0 || Math.round(m.due) !== 0);
+      // Test the GROSS due, never the net: a customer whose entire due is covered by untagged
+      // money nets to zero, and must still be listed (that is exactly the case worth chasing up
+      // with accounts). Netting must change figures, never the population.
+      return m != null && (Math.round(m.outstanding) !== 0 || Math.round(m.pendingGross + m.received) !== 0);
     }),
     [filteredCustomers, customerMetrics],
   );
@@ -759,6 +807,14 @@ export default function SalespersonCollectionReport() {
       // dropped — otherwise the popup total falls short of the report's headline figure.
       const ledgerInfo = new Map<string, { c: Customer; groupName: string }>();
       const keysWithRows = new Set<string>();
+      // On-account per ledger key, plus the guids backing it so the entries behind it can be
+      // looked up. Only for the due/pending categories: Outstanding is already the net ledger
+      // balance, so on-account is baked into it and deducting again would double-count.
+      const onAcctByKey = new Map<string, number>();
+      const guidsByKey = new Map<string, string[]>();
+      /** Credit sitting on a NAMED bill (advances, credit notes) — the half of on-account that
+       *  needs no lookup, because the bill list is already in the browser. */
+      const creditBillsByKey = new Map<string, { ref: string; date: string; amount: number }[]>();
       for (const id of customerIds) {
         const c = customerById.get(id);
         if (!c) continue;
@@ -769,8 +825,23 @@ export default function SalespersonCollectionReport() {
         if (m) {
           const fig = category === "outstanding" ? startMonthOutstanding(m) : category === "due" ? m.due : m.pending;
           ledgerFigures[key] = (ledgerFigures[key] ?? 0) + fig;
+          if (category !== "outstanding" && m.onAccount > 0) {
+            onAcctByKey.set(key, (onAcctByKey.get(key) ?? 0) + m.onAccount);
+            const g = guidsByKey.get(key);
+            if (g) g.push(id); else guidsByKey.set(key, [id]);
+          }
         }
         for (const inv of customerDetail[id]?.invoices ?? []) {
+          // Bills carrying a NEGATIVE balance are credit the customer has already paid — a machine
+          // advance, a credit note — filed against a bill ref only because whoever keyed the
+          // receipt typed one. Collect them so the drill-down can name them in the on-account
+          // block; they are never invoice rows.
+          if (inv.pending < 0) {
+            const list = creditBillsByKey.get(key);
+            const cb = { ref: inv.billRefName || inv.number, date: inv.date, amount: -inv.pending };
+            if (list) list.push(cb); else creditBillsByKey.set(key, [cb]);
+            continue;
+          }
           if (inv.billType === "Agst Ref" || inv.amount <= 0) continue;
           if (inv.pending <= 0) continue;
           if (dueOnly && new Date(inv.dueDate) > monthEnd) continue;
@@ -789,7 +860,9 @@ export default function SalespersonCollectionReport() {
       // pending). This keeps each such ledger — and the grand total — equal to the base
       // report. The dialog's per-ledger reconciliation leaves these untouched (already net).
       for (const [key, fig] of Object.entries(ledgerFigures)) {
-        if (keysWithRows.has(key) || Math.abs(fig) < 1) continue;
+        // A key carrying on-account already has rows (and its own bridge below), so it must not
+        // also get this line — the two would net against each other and undershoot the figure.
+        if (keysWithRows.has(key) || onAcctByKey.has(key) || Math.abs(fig) < 1) continue;
         const info = ledgerInfo.get(key);
         if (!info) continue;
         const { c, groupName } = info;
@@ -807,7 +880,75 @@ export default function SalespersonCollectionReport() {
         : category === "due"
         ? `Due upto ${monthEndLong(selectedMonth)} — open invoices`
         : "Total Pending — open invoices";
-      setDrill({ title: catLabel, subtitle: entityLabel, rows, ledgerFigures });
+
+      /** Invoice rows (gross) + the on-account bridge. Called twice: once immediately with only
+       *  the totals we already know, then again once the entries behind them arrive. The FIGURES
+       *  are identical both times — only the detail gets richer, so nothing moves under the
+       *  reader. */
+      const withOnAccount = (entriesByLedger?: Map<string, OnAccountEntry[]>): InvoiceDrillRow[] => {
+        const out = [...rows];
+        for (const [key, total] of onAcctByKey) {
+          const info = ledgerInfo.get(key);
+          if (!info) continue;
+          const { c, groupName } = info;
+          const base = {
+            customerName: c.name, groupName, company: c.company, location: c.location,
+            amount: 0, received: 0, dueDate: "", overdueDays: 0,
+            status: "pending" as const, voucherType: "other" as const, isOnAccount: true,
+          };
+          // `total` is already CAPPED at the ledger's due, so the pieces are allocated against it
+          // in order and anything past it is dropped — a customer holding more credit than they
+          // owe has that surplus in Outstanding, not in Due Pending.
+          let remaining = total;
+          const take = (label: string, number: string, ref: string, date: string, amount: number) => {
+            const applied = Math.min(remaining, amount);
+            if (applied < 1) return;
+            remaining -= applied;
+            out.push({ ...base, onAccountLabel: label, number, billRefName: ref, date, pending: -applied });
+          };
+          // 1. Credit filed against a named bill. Already in the browser, so it needs no lookup
+          //    and shows immediately. The ref itself ("M/C ADV", "CN/332/25-26") is what tells the
+          //    reader whether it is an advance or a credit note — we do not guess from the name.
+          for (const cb of creditBillsByKey.get(key) ?? []) {
+            take("Advance / credit note", "", cb.ref, cb.date, cb.amount);
+          }
+          // 2. Credit filed against no bill at all — named from the voucher lookup where Tally
+          //    has one. Pool every guid behind this ledger key first.
+          const entries = entriesByLedger
+            ? (guidsByKey.get(key) ?? []).flatMap((g) => entriesByLedger.get(g) ?? [])
+            : undefined;
+          const { shown } = displayableEntries(entries, remaining);
+          const namedUntagged = shown.length > 0;
+          for (const e of shown) {
+            take(e.voucherType, e.voucherNo ?? "", e.narration ?? "", e.date, e.amount);
+          }
+          // 3. Whatever no entry explains — for ~96 of the 169 ledgers book-wide that is the whole
+          //    untagged figure, because the money is an opening balance keyed with no bill breakup.
+          if (remaining >= 1) {
+            out.push({
+              ...base,
+              onAccountLabel: namedUntagged
+                ? "On Account — no entry detail"
+                : "On Account — opening balance / unallocated",
+              number: "", billRefName: "", date: "",
+              pending: -remaining,
+            });
+          }
+        }
+        return out;
+      };
+
+      const seq = ++drillSeqRef.current;
+      setDrill({ title: catLabel, subtitle: entityLabel, rows: withOnAccount(), ledgerFigures });
+      // Name the actual receipts, lazily. The popup is already correct and complete without
+      // this; a slow or failed lookup simply leaves the summary line in place.
+      const guids = [...guidsByKey.values()].flat();
+      if (guids.length) {
+        void loadOnAccountEntries(guids).then((byLedger) => {
+          if (drillSeqRef.current !== seq) return;   // a newer drill has since been opened
+          setDrill((prev) => (prev ? { ...prev, rows: withOnAccount(byLedger) } : prev));
+        });
+      }
     },
     [customerById, customerDetail, selectedMonth, customerGroupMap, customerMetrics],
   );
@@ -911,7 +1052,7 @@ export default function SalespersonCollectionReport() {
     ]);
     aoa.push([`Group by: ${groupBy.map((d) => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → ")}`]);
     aoa.push([]);
-    aoa.push(["Group", salesLabel, salesPrevLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, "Net Debit", "Net Credit", outstandingNowLabel, `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
+    aoa.push(["Group", salesLabel, salesPrevLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, "Net Debit", "Net Credit", outstandingNowLabel, "Due Pending (Gross)", "Less On Account", `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
     // Pre-order flatten of the roll-up (parents before children), indented by depth.
     // mPrev is carried so the previous-month Sales column can be exported per row.
     const flat: { depth: number; label: string; m: Metrics; mPrev: Metrics }[] = [];
@@ -924,36 +1065,66 @@ export default function SalespersonCollectionReport() {
     walk(sortedRoots);
     for (const d of flat) {
       const pct = collectionPct(d.m);
-      aoa.push([`${"    ".repeat(d.depth)}${d.label}`, d.m.sales, d.mPrev.sales, d.m.due, d.m.receivedOnAccount, d.m.receivedAgainst, d.m.received, d.m.outstandingDebit, d.m.outstandingCredit, d.m.outstanding, d.m.pending - d.m.dueSoon, d.m.dueSoon, d.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
+      aoa.push([`${"    ".repeat(d.depth)}${d.label}`, d.m.sales, d.mPrev.sales, d.m.due, d.m.receivedOnAccount, d.m.receivedAgainst, d.m.received, d.m.outstandingDebit, d.m.outstandingCredit, d.m.outstanding, d.m.pendingGross, d.m.onAccount, d.m.pending - d.m.dueSoon, d.m.dueSoon, d.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
     }
     const totalPct = collectionPct(totals);
-    aoa.push(["Grand Total", totals.sales, totalsPrev.sales, totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.outstandingDebit, totals.outstandingCredit, totals.outstanding, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
+    aoa.push(["Grand Total", totals.sales, totalsPrev.sales, totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.outstandingDebit, totals.outstandingCredit, totals.outstanding, totals.pendingGross, totals.onAccount, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 34 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 13 } }];
+    ws["!cols"] = [{ wch: 34 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 15 } }];
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
     const headerRow = 9; // 1-indexed column-header row (8 meta rows incl. Sale Type/Search + Group-by)
     const firstData = headerRow + 1;
     const lastData = firstData + flat.length; // includes grand total
     for (let row = firstData; row <= lastData; row++) {
-      for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"]) {
+      for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"]) {
         const cell = ws[`${col}${row}`];
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
-      const pctCell = ws[`N${row}`];
+      const pctCell = ws[`P${row}`];
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
-    styleRow(ws, 0, 14, HEADER_STYLE);                     // title banner
-    styleRow(ws, headerRow - 1, 14, HEADER_STYLE);         // column header row (0-indexed)
-    styleRow(ws, headerRow + flat.length, 14, GRAND_TOTAL_STYLE); // Grand Total row
+    styleRow(ws, 0, 16, HEADER_STYLE);                     // title banner
+    styleRow(ws, headerRow - 1, 16, HEADER_STYLE);         // column header row (0-indexed)
+    styleRow(ws, headerRow + flat.length, 16, GRAND_TOTAL_STYLE); // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     saveAs(blob, `Salesperson-Collection_${selectedMonth}_${asOfDate}.xlsx`);
   };
+
+  // Ledgers sitting in net credit, grouped by their TALLY group (master data — a new group in
+  // Tally appears here on its own; nothing is hardcoded). Same row set and same as-on basis the
+  // Outstanding card uses, so the popup total equals the card's credit line exactly.
+  // MUST stay above the loading/error early returns: it is a hook, and React counts hooks per
+  // render. Below them it ran only once data had arrived, so the first post-load render had one
+  // hook more than the loading render — "Rendered more hooks than during the previous render",
+  // which crashes the page. Only ever visible on a COLD cache, since a persisted query makes
+  // `loading` false on the very first render and the early return never fires.
+  const creditLedgers = useMemo(() => {
+    const rows = activeRows
+      .filter((c) => c.outstanding < 0)
+      .map((c) => ({
+        name: c.name,
+        group: c.tallyGroup || "—",
+        company: [c.company, c.location].filter(Boolean).join(" · "),
+        amount: -c.outstanding,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+    const byGroup = new Map<string, { group: string; total: number; rows: typeof rows }>();
+    for (const r of rows) {
+      const g = byGroup.get(r.group) ?? { group: r.group, total: 0, rows: [] as typeof rows };
+      g.total += r.amount; g.rows.push(r); byGroup.set(r.group, g);
+    }
+    return {
+      groups: Array.from(byGroup.values()).sort((a, b) => b.total - a.total),
+      total: rows.reduce((s, r) => s + r.amount, 0),
+      count: rows.length,
+    };
+  }, [activeRows]);
 
   /* ── Render ── */
   if (loading) {
@@ -1005,38 +1176,21 @@ export default function SalespersonCollectionReport() {
       ] : undefined,
       sub: totals.outstandingCredit > 0 ? undefined
         : `Dr ${fmt(totals.outstandingDebit)} · Cr ${fmt(totals.outstandingCredit)}` },
-    { label: "Due Pending",       value: fmt(totals.pending),     icon: TrendingDown,   warn: true  },
+    // Due Pending is shown NET of on-account — money already banked but tagged to no invoice.
+    // Same treatment as the Outstanding card above: show the bridge instead of a bare number,
+    // and let the deduction be opened into its invoices + the entries behind it.
+    { label: "Due Pending",       value: fmt(totals.pending),     icon: TrendingDown,   warn: true,
+      breakdown: totals.onAccount > 0 ? [
+        { label: "Bills overdue / due", value: fmt(totals.pendingGross) },
+        { label: "Less On Account", value: `−${fmt(totals.onAccount)}`,
+          onClick: () => openDrill(allCustomerIds, "pending", "All customers") },
+      ] : undefined },
     {
       label: "Collection %",
       value: collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`,
       icon: Percent, warn: false,
     },
   ];
-
-  // Ledgers sitting in net credit, grouped by their TALLY group (master data — a new group in
-  // Tally appears here on its own; nothing is hardcoded). Same row set and same as-on basis the
-  // Outstanding card uses, so the popup total equals the card's credit line exactly.
-  const creditLedgers = useMemo(() => {
-    const rows = activeRows
-      .filter((c) => c.outstanding < 0)
-      .map((c) => ({
-        name: c.name,
-        group: c.tallyGroup || "—",
-        company: [c.company, c.location].filter(Boolean).join(" · "),
-        amount: -c.outstanding,
-      }))
-      .sort((a, b) => b.amount - a.amount);
-    const byGroup = new Map<string, { group: string; total: number; rows: typeof rows }>();
-    for (const r of rows) {
-      const g = byGroup.get(r.group) ?? { group: r.group, total: 0, rows: [] as typeof rows };
-      g.total += r.amount; g.rows.push(r); byGroup.set(r.group, g);
-    }
-    return {
-      groups: Array.from(byGroup.values()).sort((a, b) => b.total - a.total),
-      total: rows.reduce((s, r) => s + r.amount, 0),
-      count: rows.length,
-    };
-  }, [activeRows]);
 
   const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
     { key: "salesperson",   label: "Salesperson", wrap: true, width: "w-[110px]" },
@@ -1049,6 +1203,8 @@ export default function SalespersonCollectionReport() {
     { key: "receivedOnAccount", label: "On Account",        align: "right" },
     { key: "receivedAgainst",   label: "Against Invoices",  align: "right" },
     { key: "received",          label: "Total",             align: "right" },
+    { key: "pendingGross",  label: "Gross",             align: "right" },
+    { key: "onAccount",     label: "On Account",        align: "right" },
     { key: "pending",       label: "Due Pending",       align: "right" },
     { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right", width: "w-[95px]", wrap: true },
     { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right", width: "w-[95px]", wrap: true },
@@ -1062,7 +1218,14 @@ export default function SalespersonCollectionReport() {
   const onAccountCol = COLS.find((c) => c.key === "receivedOnAccount")!;
   const againstCol   = COLS.find((c) => c.key === "receivedAgainst")!;
   const totalCol     = COLS.find((c) => c.key === "received")!;
-  const pendingCol   = COLS.find((c) => c.key === "pending")!;
+  const pendingCol      = COLS.find((c) => c.key === "pending")!;
+  const pendingGrossCol = COLS.find((c) => c.key === "pendingGross")!;
+  const onAccountCol2   = COLS.find((c) => c.key === "onAccount")!;
+  /** The Gross / On Account bridge sub-columns only carry meaning where the netting is actually
+   *  applied — on the legacy feed, a past month or under a sale-type filter Gross == Total and
+   *  On Account is always 0, so showing them would be two columns of noise. */
+  const showOnAccountCols = netOnAccount && isCurrentMonth;
+  const pendingSubCols = showOnAccountCols ? 5 : 3;
 
   /** A sortable column header cell (used for every non-grouped column). */
   const sortHead = (
@@ -1155,10 +1318,25 @@ export default function SalespersonCollectionReport() {
         </>}
         <TableCell className={`${sz}text-right font-mono ${bold}${outstandingExpanded ? "" : "border-l border-border"}`}>{fmt(m.outstanding)}</TableCell>
         {pendingExpanded && <>
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.pending - m.dueSoon)}</TableCell>
+          {showOnAccountCols && <>
+            <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.pendingGross)}</TableCell>
+            <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{m.onAccount > 0 ? `−${fmt(m.onAccount)}` : fmt(0)}</TableCell>
+          </>}
+          <TableCell className={`${sz}text-right font-mono text-muted-foreground ${showOnAccountCols ? "" : "border-l border-border/60"}`}>{fmt(m.pending - m.dueSoon)}</TableCell>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.dueSoon)}</TableCell>
         </>}
-        {drillCell(ids, "pending", label, `${sz}text-right font-mono ${bold}${m.pending > 0 ? "text-destructive" : ""}`, fmt(m.pending))}
+        {drillCell(ids, "pending", label, `${sz}text-right font-mono ${bold}${m.pending > 0 ? "text-destructive" : ""}`, (
+          <>
+            {fmt(m.pending)}
+            {/* Money already banked but tagged to no invoice — shown under the figure it was taken
+                off, so the row explains itself without needing the + breakup opened. */}
+            {m.onAccount > 0 && (
+              <span className="block text-[10px] font-normal leading-tight text-muted-foreground whitespace-nowrap">
+                less On Account {fmt(m.onAccount)}
+              </span>
+            )}
+          </>
+        ))}
         <TableCell className={`${sz}text-right font-mono ${pctStyle(pct)}`}>{pct === null ? "—" : `${pct.toFixed(1)}%`}</TableCell>
         <TableCell className={`${sz}text-right font-mono ${pctStyle(pctPrev)}`}>{prevMonth == null || pctPrev === null ? "—" : `${pctPrev.toFixed(1)}%`}</TableCell>
       </>
@@ -1205,7 +1383,7 @@ export default function SalespersonCollectionReport() {
 
   // Total column count (for empty-state colSpan): chevron + label + metric columns.
   // Metric columns: sales, salesPrev, due, received, outstandingNow, pending, collectionPct, collectionPctPrev = 8.
-  const metricColCount = 8 + (receivedExpanded ? 2 : 0) + (outstandingExpanded ? 2 : 0) + (pendingExpanded ? 2 : 0);
+  const metricColCount = 8 + (receivedExpanded ? 2 : 0) + (outstandingExpanded ? 2 : 0) + (pendingExpanded ? pendingSubCols - 1 : 0);
   const totalColCount = 2 + metricColCount;
   // Noun for the top-level row count (the first group-by dimension, e.g. "salesperson").
   const groupByLabel = (C_DIMENSIONS.find((x) => x.key === groupBy[0])?.label ?? "group").toLowerCase();
@@ -1393,6 +1571,25 @@ export default function SalespersonCollectionReport() {
           <li><span className="font-medium">Outstanding</span> = Net Debit (parties who owe) − Net Credit (parties sitting in advance).</li>
           <li><span className="font-medium">Due Pending</span> = overdue as on {formatDateLong(asOfDate)} (matches the dashboard) + bills coming due by {selectedMonth ? monthEndLong(selectedMonth) : "month-end"}. Due = Pending + Received.</li>
           <li><span className="font-medium">Received</span> = On Account (advance / unallocated) + Against Invoices; includes manual "other payments".</li>
+          {showOnAccountCols ? (
+            <li>
+              <span className="font-medium">On Account</span> = money the customer has already paid us that is settling no
+              open invoice — untagged receipts, machine advances and credit notes alike. It reduces the ledger balance but
+              leaves every old bill reading unpaid, so both <span className="font-medium">{dueLabel}</span> and{" "}
+              <span className="font-medium">Due Pending</span> are shown after deducting it — otherwise the report chases
+              money already banked. Capped at each customer's own due, so Due Pending can never exceed their Outstanding.
+              Click the "less On Account" line to see the invoices and the entries behind it.
+            </li>
+          ) : (
+            <li>
+              <span className="font-medium">On Account</span> is not deducted in this view
+              {saleTypeActive
+                ? " because a Sale Type filter is active — Outstanding carries no per-sale-type split, so the deduction would compare two different bases."
+                : !isCurrentMonth
+                ? " because past months carry monthly totals only, with no bill-wise detail to net against."
+                : " on this data source — it is already netted upstream."}
+            </li>
+          )}
           <li>Use the +/− toggles to show or hide each breakup.</li>
         </ul>
       </details>
@@ -1460,7 +1657,7 @@ export default function SalespersonCollectionReport() {
                   </TableHead>
                 )}
                 {pendingExpanded ? (
-                  <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
+                  <TableHead colSpan={pendingSubCols} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                     <span className="inline-flex items-center justify-center">{pendingCol.label}{pendingToggle}</span>
                   </TableHead>
                 ) : (
@@ -1506,7 +1703,16 @@ export default function SalespersonCollectionReport() {
                   )}
                   {pendingExpanded && (
                     <>
-                      <TableHead className="text-xs font-medium text-foreground/60 whitespace-nowrap text-right border-l border-border">{pendingNowLabel}</TableHead>
+                      {showOnAccountCols && [pendingGrossCol, onAccountCol2].map((col) => (
+                        <TableHead
+                          key={col.key}
+                          className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "pendingGross" ? "border-l border-border" : ""}`}
+                          onClick={() => toggleSort(col.key)}
+                        >
+                          <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
+                        </TableHead>
+                      ))}
+                      <TableHead className={`text-xs font-medium text-foreground/60 whitespace-nowrap text-right ${showOnAccountCols ? "" : "border-l border-border"}`}>{pendingNowLabel}</TableHead>
                       <TableHead className="text-xs font-medium text-foreground/60 whitespace-nowrap text-right">{pendingTillLabel}</TableHead>
                       <TableHead
                         className="text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right"

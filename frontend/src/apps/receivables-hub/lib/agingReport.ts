@@ -368,6 +368,64 @@ export function ledgerAdjBill(
   };
 }
 
+/** A customer's credit balance, split by how Tally happened to file it. */
+export interface LedgerCredits {
+  /** Credit sitting on a NAMED bill ref — machine advances, credit notes. Positive magnitude. */
+  onBills: number;
+  /** Credit tagged to no bill at all — the residual against the ledger. Positive magnitude. */
+  untagged: number;
+  /** onBills + untagged: everything the customer has paid that is settling no open invoice. */
+  total: number;
+}
+
+/**
+ * ON ACCOUNT — money the customer has already paid us that is settling no open invoice.
+ *
+ *   untagged = Σ(bill pending) − c.outstanding          (clamped at 0)
+ *   onBills  = Σ|pending| over bills with NEGATIVE pending
+ *   total    = untagged + onBills
+ *
+ * `untagged` is the mirror image of `ledgerAdjBill`'s amount: a receipt Tally never allocated
+ * reduces the LEDGER balance but leaves every old invoice reading unpaid, so the bill-wise sum
+ * runs ahead of the ledger by exactly that amount. Verified on the live book against the wholly
+ * independent `rpt_receivables_ledger.on_account` — agrees to the rupee.
+ *
+ * ⚠ WHY `onBills` COUNTS TOO. Tally files the same rupee two different ways depending only on
+ * whether whoever keyed the receipt typed a reference: type `M/C ADV` and it becomes a bill with
+ * a negative balance; leave it blank and it becomes on-account. That is a data-entry accident,
+ * not a business fact, and the customer's ledger already nets both. Worked example — O FAB
+ * (MACHINE): invoice +₹2.15 Cr, advance `M/C ADV` −₹1.75 Cr, untagged −₹0.40 Cr, closing ₹0.
+ * Counting only `untagged` still left ₹1.75 Cr of "overdue" against a customer whose own balance
+ * says they owe nothing. Counting both closes it: measured book-wide 28-Jul-2026, the ledgers
+ * showing overdue above their outstanding go 59 (₹10.18 Cr) → 22 (₹3.60 Cr) with untagged alone
+ * → **0 (₹0)** with both.
+ *
+ * No double count: `untagged` is derived from Σ pending which ALREADY carries the negative bills,
+ * so the two components are disjoint (proof: for O FAB, 0.40 + 1.75 = 2.15 = the whole invoice).
+ *
+ * Safe against manual Other Payments: liveOtherPayments reduces `c.outstanding` and the bills'
+ * `pending` by the same total, so anything it could not place on a bill correctly lands in
+ * `untagged`.
+ *
+ * `untagged` returns 0 (not a negative) when the bills fall SHORT of the ledger — that residue is
+ * a receivable with no bill behind it, not credit, and must never be handed back to the customer.
+ *
+ * ⚠ Meaningless under a sale-type filter: `c.outstanding` carries no per-type split, so the two
+ * sides of the subtraction would be measured on different bases. Callers must skip it there —
+ * the same rule AgingReport / OverdueAgingReport / CustomerCategoryReport already apply to
+ * `ledgerAdjBill`.
+ */
+export function creditsOfLedger(c: Customer, detail: CustomerDetail | undefined): LedgerCredits {
+  let sumPending = 0;
+  let onBills = 0;
+  for (const inv of detail?.invoices ?? []) {
+    sumPending += inv.pending;
+    if (inv.pending < 0) onBills -= inv.pending;
+  }
+  const untagged = Math.max(0, sumPending - c.outstanding);
+  return { onBills, untagged, total: onBills + untagged };
+}
+
 /* ── Drill-down matchers ───────────────────────────────────────────────────── */
 
 export interface PathSegment {
