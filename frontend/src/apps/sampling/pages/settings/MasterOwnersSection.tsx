@@ -7,9 +7,10 @@ import { useSamplingStore } from "../../store";
 import { SAMPLING_MASTER_TYPES, type SamplingMasterType } from "../../types";
 
 /**
- * Master Owners (admin only). Company is the only master. Its owner(s) may add and
- * edit companies on the Masters page. Leave it unassigned and it falls back to
- * admins.
+ * Master Owners (admin only). One row per master in SAMPLING_MASTER_TYPES —
+ * add a master there and its row appears here with no change to this file.
+ * A master's owner(s) may add and edit its rows on the Masters page; leave a
+ * master unassigned and it falls back to admins.
  */
 export default function MasterOwnersSection() {
   const s = useSamplingStore();

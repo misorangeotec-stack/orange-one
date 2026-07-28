@@ -19,7 +19,14 @@ export interface RequestInput {
   direction: Direction;
   requirementType: RequirementType | null;
   requesterName: string;
+  /** Inward: the supplier / customer. Outward: the company we send to (required). */
   partyName: string | null;
+  /** The rest of the party block + the sender are OUTWARD-only; null on inward. */
+  partyAddress: string | null;
+  partyContactName: string | null;
+  partyContactMobile: string | null;
+  senderId: string | null;
+  senderName: string | null;
   productDesc: string;
   sampleItems: SampleItem[];
   collectorId: string | null;
@@ -42,6 +49,14 @@ export async function submitRequest(input: RequestInput): Promise<string> {
       requirement_type: input.requirementType ?? "",
       requester_name: input.requesterName,
       party_name: input.partyName ?? "",
+      party_address: input.partyAddress ?? "",
+      party_contact_name: input.partyContactName ?? "",
+      party_contact_mobile: input.partyContactMobile ?? "",
+      // ALWAYS send this key, even empty: its PRESENCE is what tells the RPC this
+      // is the new client, which is what switches the outward party-block
+      // requirements on. Drop the key and outward silently stops validating.
+      sender_id: input.senderId ?? "",
+      sender_name: input.senderName ?? "",
       product_desc: input.productDesc,
       sample_items: input.sampleItems,
       collector_id: input.collectorId ?? "",
@@ -408,7 +423,7 @@ export async function updateCompany(id: string, input: CompanyInput): Promise<vo
   if (error) throw new Error(error.message);
 }
 
-/** Collector + hand-over recipient masters: a display name mapped to an app user. */
+/** Collector, hand-over recipient + sender masters: a display name mapped to an app user. */
 export interface PersonMasterInput {
   name: string;
   userId: string;
@@ -437,6 +452,15 @@ export async function insertRecipient(input: PersonMasterInput): Promise<void> {
 }
 export async function updateRecipient(id: string, input: PersonMasterInput): Promise<void> {
   const { error } = await db.from("fms_sampling_handover_recipients").update(personRow(input)).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function insertSender(input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_senders").insert(personRow(input));
+  if (error) throw new Error(error.message);
+}
+export async function updateSender(id: string, input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_senders").update(personRow(input)).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

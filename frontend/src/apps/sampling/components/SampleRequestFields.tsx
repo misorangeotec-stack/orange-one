@@ -11,8 +11,17 @@ import {
   type SampleRow,
 } from "../pages/requests/useSampleRequestForm";
 
-const VIA_OPTIONS: ComboOption[] = [
+/**
+ * The sample source FOLLOWS the direction — "Import" is meaningless when we are
+ * the ones sending. Picking a direction clears whatever source was chosen, so a
+ * value from the other set can never survive a change of mind.
+ */
+const INWARD_VIA_OPTIONS: ComboOption[] = [
   { value: "import", label: "Import" },
+  { value: "domestic", label: "Domestic" },
+];
+const OUTWARD_VIA_OPTIONS: ComboOption[] = [
+  { value: "export", label: "Export" },
   { value: "domestic", label: "Domestic" },
 ];
 const DIRECTION_OPTIONS: ComboOption[] = [
@@ -100,11 +109,14 @@ function SamplesGrid({ form }: { form: SampleRequestFormApi }) {
 }
 
 /**
- * The intake fields, grouped into Basics · Sample details · Outcome. The form
- * branches on `direction` (and, for inward, `requirementType`): the competitor
- * path collects a list of colour/quantity samples + a picked collector + who to
- * hand to + transport; the new-product path is leaner; outward drops the
- * competitor fields. State lives in useSampleRequestForm.
+ * The intake fields, grouped into Basics · Sample details · Outcome.
+ *
+ * `direction` is asked FIRST and gates everything after it — the sample source's
+ * options, and which Sample-details fields appear. Inward (and, within it,
+ * `requirementType`) collects colour/quantity samples + a picked collector + who
+ * to hand to + transport. Outward instead collects the party IN FULL — company,
+ * address, contact person, contact mobile — plus who will send it, all required.
+ * State lives in useSampleRequestForm.
  */
 export default function SampleRequestFields({ form }: { form: SampleRequestFormApi }) {
   const {
@@ -114,6 +126,10 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
     requirementType, setRequirementType,
     requesterName, setRequesterName,
     partyName, setPartyName,
+    partyAddress, setPartyAddress,
+    partyContactName, setPartyContactName,
+    partyContactMobile, setPartyContactMobile,
+    senderId, setSenderId,
     productDesc, setProductDesc,
     labTestingRequired, setLabTestingRequired,
     collectorId, setCollectorId,
@@ -122,12 +138,12 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
     desiredResult, setDesiredResult,
     additionalInfo, setAdditionalInfo,
     err,
-    companyOptions, collectorOptions, recipientOptions,
+    companyOptions, collectorOptions, recipientOptions, senderOptions,
     isInward, isOutward, isCompetitor,
   } = form;
 
   const partyLabel = isOutward
-    ? "Customer / Company (send sample to)"
+    ? "Company name (send sample to)"
     : isCompetitor
       ? "Customer / Company (sample received from)"
       : "Supplier Name";
@@ -146,24 +162,31 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
         <FieldLabel label="Company" required>
           <Combobox value={companyId} onChange={setCompanyId} options={companyOptions} placeholder="Select company" autoAdvance />
         </FieldLabel>
-        <FieldLabel label="Sample source" required>
-          <Combobox
-            value={receiveVia}
-            onChange={(v) => setReceiveVia(v as ReceiveVia)}
-            options={VIA_OPTIONS}
-            placeholder="Import or Domestic"
-            autoAdvance
-          />
-        </FieldLabel>
+        {/* Direction comes BEFORE the source — it decides the source's options. */}
         <FieldLabel label="Direction" required>
           <Combobox
             value={direction}
             onChange={(v) => {
               setDirection(v as Direction);
               setRequirementType("");
+              // A source chosen for the other direction must not survive: Import
+              // is inward-only, Export is outward-only.
+              setReceiveVia("");
             }}
             options={DIRECTION_OPTIONS}
             placeholder="Inward or Outward"
+            autoAdvance
+          />
+        </FieldLabel>
+        <FieldLabel label="Sample source" required>
+          <Combobox
+            value={receiveVia}
+            onChange={(v) => setReceiveVia(v as ReceiveVia)}
+            options={isOutward ? OUTWARD_VIA_OPTIONS : INWARD_VIA_OPTIONS}
+            placeholder={
+              direction ? (isOutward ? "Export or Domestic" : "Import or Domestic") : "Choose a direction first"
+            }
+            disabled={!direction}
             autoAdvance
           />
         </FieldLabel>
@@ -185,9 +208,57 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
 
       {detailsReady && (
         <Section title="Sample details">
-          <FieldLabel label={partyLabel}>
-            <TextInput value={partyName} onChange={(e) => setPartyName(e.target.value)} placeholder="Name" />
+          <FieldLabel label={partyLabel} required={isOutward}>
+            <TextInput
+              value={partyName}
+              onChange={(e) => setPartyName(e.target.value)}
+              placeholder={isOutward ? "e.g. Acme Printing Pvt Ltd" : "Name"}
+            />
           </FieldLabel>
+
+          {/* Outward carries the party IN FULL: whoever ships the sample needs an
+              address and someone to call, and the request needs to say who is
+              sending it. All required — the submit RPC re-checks each one. */}
+          {isOutward && (
+            <>
+              <FieldLabel label="Contact person" required>
+                <TextInput
+                  value={partyContactName}
+                  onChange={(e) => setPartyContactName(e.target.value)}
+                  placeholder="Who to ask for"
+                />
+              </FieldLabel>
+              <FieldLabel label="Contact mobile" required>
+                <TextInput
+                  value={partyContactMobile}
+                  onChange={(e) => setPartyContactMobile(e.target.value)}
+                  placeholder="Mobile number"
+                />
+              </FieldLabel>
+              <FieldLabel label="Who will send the sample" required>
+                <Combobox
+                  value={senderId}
+                  onChange={setSenderId}
+                  options={senderOptions}
+                  placeholder={senderOptions.length ? "Select a sender" : "Add senders in Masters first"}
+                  searchable
+                />
+              </FieldLabel>
+              {/* Full width and last in the group: an address is the one wide
+                  value here, and spanning it keeps the two contact fields on a
+                  row together rather than split across it. */}
+              <div className="sm:col-span-2">
+                <FieldLabel label="Address" required>
+                  <TextArea
+                    rows={2}
+                    value={partyAddress}
+                    onChange={(e) => setPartyAddress(e.target.value)}
+                    placeholder="Where the sample is being sent"
+                  />
+                </FieldLabel>
+              </div>
+            </>
+          )}
 
           <div className="sm:col-span-2">
             <FieldLabel label={productLabel} required>

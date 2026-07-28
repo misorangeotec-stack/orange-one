@@ -2,20 +2,23 @@ import { useState } from "react";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useSamplingStore } from "../../store";
-import type { Collector, Company, HandoverRecipient } from "../../types";
+import type { Collector, Company, HandoverRecipient, Sender } from "../../types";
 
-type Tab = "company" | "collector" | "recipient";
+type Tab = "company" | "collector" | "recipient" | "sender";
 const TABS: { key: Tab; label: string }[] = [
   { key: "company", label: "Companies" },
   { key: "collector", label: "Collectors" },
   { key: "recipient", label: "Hand-over recipients" },
+  { key: "sender", label: "Senders" },
 ];
 
 /**
- * Sampling Masters — three masters, tabbed:
- *   Company (structural), Collector and Hand-over recipient (each maps to an app
- *   user so the chosen person can action their step and see it in their queue).
- * Editable by admins and the relevant master's owner (Setup → Master Owners).
+ * Sampling Masters — four masters, tabbed:
+ *   Company (structural), and three people-masters — Collector, Hand-over
+ *   recipient and Sender — each mapping to an app user so the chosen person can
+ *   action their step and see it in their queue (collect / receive inward, send
+ *   outward). Editable by admins and the relevant master's owner (Setup → Master
+ *   Owners).
  */
 export default function Masters() {
   const s = useSamplingStore();
@@ -34,8 +37,8 @@ export default function Masters() {
     { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0" },
   ];
 
-  // Shared shape for the two people-masters (Collector / Hand-over recipient).
-  const personColumns = (): MasterColumn<Collector | HandoverRecipient>[] => [
+  // Shared shape for the three people-masters (Collector / Hand-over recipient / Sender).
+  const personColumns = (): MasterColumn<Collector | HandoverRecipient | Sender>[] => [
     { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
     { header: "Portal user", render: (r) => <span className="text-grey-2">{s.personName(r.userId)}</span> },
     { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
@@ -57,8 +60,9 @@ export default function Masters() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Masters</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Companies, collectors and hand-over recipients. Collectors and recipients each map to a portal user so the
-          chosen person can action their step. Editable by admins and each master's owner (Setup → Master Owners).
+          Companies, collectors, hand-over recipients and senders. Collectors, recipients and senders each map to a
+          portal user so the chosen person can action their step. Editable by admins and each master's owner
+          (Setup → Master Owners).
         </p>
       </div>
 
@@ -133,6 +137,27 @@ export default function Masters() {
           }}
           onToggleActive={async (row, active) =>
             s.updateRecipient(row.id, { name: row.name, userId: row.userId, active, sortOrder: row.sortOrder })
+          }
+        />
+      )}
+
+      {tab === "sender" && (
+        <MasterCrud<Sender>
+          singular="Sender"
+          rows={s.senders}
+          columns={personColumns()}
+          fields={personFields}
+          searchText={(r) => `${r.name} ${s.personName(r.userId)}`}
+          canManage={s.canManage("sender")}
+          emptyValues={{ name: "", userId: "", sortOrder: "0" }}
+          toValues={(r) => ({ name: r.name, userId: r.userId, sortOrder: String(r.sortOrder) })}
+          onSubmit={async (id, v, active) => {
+            const input = personInput(v, active);
+            if (id) await s.updateSender(id, input);
+            else await s.insertSender(input);
+          }}
+          onToggleActive={async (row, active) =>
+            s.updateSender(row.id, { name: row.name, userId: row.userId, active, sortOrder: row.sortOrder })
           }
         />
       )}

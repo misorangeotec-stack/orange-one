@@ -174,6 +174,16 @@ export default function RequestDetail() {
           <Field label="Direction" value={directionLabel(r.direction)} />
           {r.direction === "inward" && <Field label="Requirement type" value={requirementTypeLabel(r.requirementType)} />}
           <Field label={r.direction === "outward" ? "Send to" : "Party"} value={r.partyName} />
+          {/* The outward party block. Rows raised before it existed carry nulls,
+              which Field already renders as "—". */}
+          {r.direction === "outward" && (
+            <>
+              <Field label="Contact person" value={r.partyContactName} />
+              <Field label="Contact mobile" value={r.partyContactMobile} />
+              <Field label="Address" value={r.partyAddress} className="col-span-2 sm:col-span-3" />
+              <Field label="Sender" value={r.senderId ? name(r.senderId) : r.senderName} />
+            </>
+          )}
           <Field label="Requester" value={r.requesterName} />
           <Field label="Product / description" value={r.productDesc} className="col-span-2 sm:col-span-3" />
           {(r.sampleItems.length > 0 || r.colourQty) && (

@@ -14,6 +14,7 @@ import type {
   SamplingMasterType,
   SamplingNotification,
   SamplingRequest,
+  Sender,
   StepOwner,
 } from "../types";
 
@@ -32,6 +33,7 @@ type Tbl =
   | "fms_sampling_companies"
   | "fms_sampling_collectors"
   | "fms_sampling_handover_recipients"
+  | "fms_sampling_senders"
   | "fms_sampling_master_managers"
   | "fms_sampling_requests"
   | "fms_sampling_activity"
@@ -70,6 +72,7 @@ export interface SamplingData {
   companies: Company[];
   collectors: Collector[];
   recipients: HandoverRecipient[];
+  senders: Sender[];
   masterManagers: SamplingMasterManager[];
   requests: SamplingRequest[];
   activity: SamplingActivity[];
@@ -99,6 +102,14 @@ const mapRecipient = (r: any): HandoverRecipient => ({
   sortOrder: r.sort_order ?? 0,
 });
 
+const mapSender = (r: any): Sender => ({
+  id: r.id,
+  name: r.name,
+  userId: r.user_id,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+});
+
 const mapMasterManager = (r: any): SamplingMasterManager => ({
   id: r.id,
   masterType: r.master_type as SamplingMasterType,
@@ -115,6 +126,9 @@ const mapRequest = (r: any): SamplingRequest => ({
   raisedBy: r.raised_by ?? null,
   requesterName: r.requester_name,
   partyName: r.party_name ?? null,
+  partyAddress: r.party_address ?? null,
+  partyContactName: r.party_contact_name ?? null,
+  partyContactMobile: r.party_contact_mobile ?? null,
   productDesc: r.product_desc ?? null,
   colourQty: r.colour_qty ?? null,
   sampleItems: Array.isArray(r.sample_items) ? r.sample_items : [],
@@ -133,6 +147,8 @@ const mapRequest = (r: any): SamplingRequest => ({
   receivedDate: r.received_date ?? null,
   receivedAt: r.received_at ?? null,
   receivedBy: r.received_by ?? null,
+  senderId: r.sender_id ?? null,
+  senderName: r.sender_name ?? null,
   sentDate: r.sent_date ?? null,
   gateEntryNo: r.gate_entry_no ?? null,
   sentQty: r.sent_qty ?? null,
@@ -227,7 +243,7 @@ const mapNotification = (r: any): SamplingNotification => ({
 });
 
 export async function fetchSamplingData(): Promise<SamplingData> {
-  const [stepOwners, configRows, designations, companies, collectors, recipients, masterManagers, requests, activity, notifications] =
+  const [stepOwners, configRows, designations, companies, collectors, recipients, senders, masterManagers, requests, activity, notifications] =
     await Promise.all([
       fetchAll("fms_sampling_step_owners"),
       fetchAll("fms_sampling_config", "key"),
@@ -235,6 +251,7 @@ export async function fetchSamplingData(): Promise<SamplingData> {
       fetchAll("fms_sampling_companies"),
       fetchAll("fms_sampling_collectors"),
       fetchAll("fms_sampling_handover_recipients"),
+      fetchAll("fms_sampling_senders"),
       fetchAll("fms_sampling_master_managers"),
       fetchAll("fms_sampling_requests", "submitted_at"),
       fetchAll("fms_sampling_activity"),
@@ -254,6 +271,7 @@ export async function fetchSamplingData(): Promise<SamplingData> {
     companies: companies.map(mapCompany),
     collectors: collectors.map(mapCollector),
     recipients: recipients.map(mapRecipient),
+    senders: senders.map(mapSender),
     masterManagers: masterManagers.map(mapMasterManager),
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),

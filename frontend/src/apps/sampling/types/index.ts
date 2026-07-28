@@ -10,7 +10,12 @@
  * Every DB row is mapped snake_case → camelCase in data/samplingFetch.ts.
  */
 
-export type ReceiveVia = "import" | "domestic";
+/**
+ * The sample source FOLLOWS the direction: inward is Import / Domestic, outward
+ * is Export / Domestic. The union is the sum of both sets — the pairing is
+ * enforced by the form (SampleRequestFields) and re-checked by the submit RPC.
+ */
+export type ReceiveVia = "import" | "domestic" | "export";
 export type Direction = "inward" | "outward";
 export type RequirementType = "competitor" | "new_product";
 export type TransportBorne = "Yes" | "No";
@@ -54,7 +59,12 @@ export interface SamplingRequest {
   requirementType: RequirementType | null;
   raisedBy: string | null;
   requesterName: string;
+  /** Inward: the supplier / customer it came from. Outward: the company we send it to. */
   partyName: string | null;
+  // The rest of the party block is OUTWARD-only (null on inward).
+  partyAddress: string | null;
+  partyContactName: string | null;
+  partyContactMobile: string | null;
   productDesc: string | null;
   colourQty: string | null;             // legacy single value (old rows)
   sampleItems: SampleItem[];            // the colour/quantity samples (all directions/types)
@@ -77,6 +87,14 @@ export interface SamplingRequest {
   receivedDate: string | null;
   receivedAt: string | null;
   receivedBy: string | null;
+
+  /**
+   * Outward only: the chosen sender (an app user) — notified on raise and
+   * authorized on send_sample. Null on inward, and on outward rows raised before
+   * the sender master existed (those fall to the step owners).
+   */
+  senderId: string | null;
+  senderName: string | null;
 
   // send_sample (outward)
   sentDate: string | null;
@@ -188,15 +206,25 @@ export interface HandoverRecipient {
   sortOrder: number;
 }
 
+/** A curated sender — "who will send the sample" (outward). Maps to an app user. */
+export interface Sender {
+  id: string;
+  name: string;
+  userId: string;
+  active: boolean;
+  sortOrder: number;
+}
+
 /* ------------------------------ master governance ------------------------- */
 
 /** The ownable master types. All are ownable but never "requestable". */
-export type SamplingMasterType = "company" | "collector" | "recipient";
+export type SamplingMasterType = "company" | "collector" | "recipient" | "sender";
 
 export const SAMPLING_MASTER_TYPES: { value: SamplingMasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
   { value: "collector", label: "Collector", plural: "Collectors" },
   { value: "recipient", label: "Hand-over recipient", plural: "Hand-over recipients" },
+  { value: "sender", label: "Sender", plural: "Senders" },
 ];
 
 export interface SamplingMasterManager {

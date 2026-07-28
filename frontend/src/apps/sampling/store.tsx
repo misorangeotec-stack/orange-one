@@ -13,6 +13,7 @@ import {
   insertCollector as insertCollectorWrite,
   insertCompany as insertCompanyWrite,
   insertRecipient as insertRecipientWrite,
+  insertSender as insertSenderWrite,
   markNotificationsRead as markNotificationsReadWrite,
   recordCollect as recordCollectWrite,
   recordConfirm as recordConfirmWrite,
@@ -45,6 +46,7 @@ import {
   updateSampleReceived as updateSampleReceivedWrite,
   updateSampleToLab as updateSampleToLabWrite,
   updateSend as updateSendWrite,
+  updateSender as updateSenderWrite,
   updateTesting as updateTestingWrite,
   type CollectInput,
   type CompanyInput,
@@ -96,6 +98,7 @@ import type {
   SamplingMasterType,
   SamplingNotification,
   SamplingRequest,
+  Sender,
   StepOwner,
 } from "./types";
 
@@ -121,6 +124,8 @@ interface SamplingStoreValue {
   activeCollectors: Collector[];
   recipients: HandoverRecipient[];
   activeRecipients: HandoverRecipient[];
+  senders: Sender[];
+  activeSenders: Sender[];
 
   // config
   stepOwners: StepOwner[];
@@ -134,7 +139,7 @@ interface SamplingStoreValue {
   isStepOwner: (stepKey: StepKey) => boolean;
   canActOn: (stepKey: StepKey, r: SamplingRequest) => boolean;
 
-  // master governance (company only)
+  // master governance
   masterManagers: SamplingMasterManager[];
   managerIdsFor: (masterType: SamplingMasterType) => string[];
   canManage: (masterType: SamplingMasterType) => boolean;
@@ -209,6 +214,8 @@ interface SamplingStoreValue {
   updateCollector: (id: string, input: PersonMasterInput) => Promise<void>;
   insertRecipient: (input: PersonMasterInput) => Promise<void>;
   updateRecipient: (id: string, input: PersonMasterInput) => Promise<void>;
+  insertSender: (input: PersonMasterInput) => Promise<void>;
+  updateSender: (id: string, input: PersonMasterInput) => Promise<void>;
 }
 
 const Ctx = createContext<SamplingStoreValue | null>(null);
@@ -235,6 +242,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
   const companies = data?.companies ?? [];
   const collectors = data?.collectors ?? [];
   const recipients = data?.recipients ?? [];
+  const senders = data?.senders ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const requests = data?.requests ?? [];
   const activity = data?.activity ?? [];
@@ -266,7 +274,9 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
       // Whoever received the sample is the one who sends it on to the lab.
       (stepKey === "sample_to_lab" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
-      (stepKey === "result_received" && !!r.labResultToId && r.labResultToId === uid);
+      (stepKey === "result_received" && !!r.labResultToId && r.labResultToId === uid) ||
+      // Outward: the chosen sender dispatches it (the inward collector's twin).
+      (stepKey === "send_sample" && !!r.senderId && r.senderId === uid);
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -366,6 +376,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       activeCollectors: byPersonOrder(collectors),
       recipients,
       activeRecipients: byPersonOrder(recipients),
+      senders,
+      activeSenders: byPersonOrder(senders),
 
       stepOwners,
       stepOwnerFor,
@@ -570,9 +582,19 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await updateRecipientWrite(id, input);
         await invalidate();
       },
+      insertSender: async (input) => {
+        await insertSenderWrite(input);
+        await invalidate();
+      },
+      updateSender: async (id, input) => {
+        await updateSenderWrite(id, input);
+        await invalidate();
+      },
     };
   }, [
-    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, masterManagers, requests, activity,
+    // EVERY master array belongs here — leave one out and its dropdown keeps
+    // rendering the pre-edit list until something else re-memoises.
+    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, senders, masterManagers, requests, activity,
     notifications, stepOwners, processCoordinatorIds, stepSla, queryClient,
     // personName closes over orgPeople; without this the names stay "Unknown user".
     orgPeople,

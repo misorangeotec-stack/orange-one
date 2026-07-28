@@ -9,7 +9,18 @@ import type {
 
 export const directionLabel = (d: Direction): string => (d === "inward" ? "Inward" : "Outward");
 
-export const receiveViaLabel = (v: ReceiveVia): string => (v === "import" ? "Import" : "Domestic");
+/**
+ * A RECORD, not a ternary: this is the one place the source is turned into words,
+ * and it feeds the detail page, the Requests-list column AND that column's select
+ * filter. A ternary silently mislabels any member it doesn't name (an Export
+ * sample read as "Domestic"); the record makes the compiler demand every one.
+ */
+const RECEIVE_VIA_LABEL: Record<ReceiveVia, string> = {
+  import: "Import",
+  domestic: "Domestic",
+  export: "Export",
+};
+export const receiveViaLabel = (v: ReceiveVia): string => RECEIVE_VIA_LABEL[v] ?? "—";
 
 export const requirementTypeLabel = (t: RequirementType | null): string =>
   t === "competitor" ? "Competitor Sample Testing" : t === "new_product" ? "New Supplier / Product Testing" : "—";
