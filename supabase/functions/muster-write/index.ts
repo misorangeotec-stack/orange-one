@@ -22,6 +22,8 @@
 //     (ext_other_payments is per-TRANSACTION, so unlike the musters above it has no natural key —
 //      the bigint id PK addresses a row. Every row still carries the Tally ledger GUID, which is
 //      what the Live (Tally) netting groups by.)
+//   POST body { action: "update_segment_config", company_guid, small_max_pct, medium_max_pct }
+//     -> { ok: true }  (the Customer Profile screen's "Edit Segments" bands, per company)
 //
 // Deploy (identity project):
 //   supabase secrets set CONNECTWAVE_URL=<Tally CoPilot .env SUPABASE_URL> \
@@ -331,6 +333,38 @@ Deno.serve(async (req) => {
       .select("ledger_id");
     if (error) return json(400, { error: error.message });
     if (!data?.length) return json(404, { error: `red mark ${ledger_id} not found` });
+    return json(200, { ok: true });
+  }
+
+  // ---- update_segment_config (ext_customer_segment_config, keyed by the Tally COMPANY GUID) ----
+  // The Customer Profile screen's "Edit Segments" bands. UPSERT for exactly the reason
+  // update_company_map documents: most companies have no row until someone first edits their bands,
+  // so an `update` would match nothing and return ok:true while saving NOTHING.
+  // The DB also enforces 0 < small < medium < 100; validate here too so the user gets a readable
+  // message instead of a raw constraint-violation string.
+  if (body.action === "update_segment_config") {
+    const company_guid = clean(body.company_guid);
+    if (!company_guid) return json(400, { error: "company_guid required" });
+
+    const small = Number(body.small_max_pct);
+    const medium = Number(body.medium_max_pct);
+    if (!Number.isFinite(small) || !Number.isFinite(medium)) {
+      return json(400, { error: "small_max_pct and medium_max_pct must be numbers" });
+    }
+    if (!(small > 0 && small < medium && medium < 100)) {
+      return json(400, { error: "bands must satisfy 0 < small < medium < 100" });
+    }
+
+    const { error } = await cw
+      .from("ext_customer_segment_config")
+      .upsert({
+        company_guid,
+        small_max_pct: small,
+        medium_max_pct: medium,
+        updated_at: new Date().toISOString(),
+        updated_by,
+      }, { onConflict: "company_guid" });
+    if (error) return json(400, { error: error.message });
     return json(200, { ok: true });
   }
 

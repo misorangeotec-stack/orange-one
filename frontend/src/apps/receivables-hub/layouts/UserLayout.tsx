@@ -102,6 +102,10 @@ const FY_PINNED_ROUTES = [
   // The C-Level Dashboard, same reason again — it names the FY and its prior year on nearly all
   // of its twenty-two panels, and its balance-sheet half is additionally pinned to the sync date.
   "/outstanding-dashboard/reports/c-level-dashboard",
+  // Customer Profile carries its own company + FY picker, and every bucket on it is a comparison
+  // between the chosen FY and the one before — a topbar multi-FY selector would make "new" and
+  // "non active" meaningless.
+  "/outstanding-dashboard/reports/customer-profile",
   "/outstanding-dashboard/reports/overdue",
   "/outstanding-dashboard/reports/dormant",
   // The Category Report's balance/aging half is a property of the whole book, while its

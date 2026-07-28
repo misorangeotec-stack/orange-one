@@ -19,6 +19,7 @@ import {
   ScrollText,
   ShieldAlert,
   ShoppingCart,
+  Sparkles,
   TrendingUp,
   UserCheck,
   Users,
@@ -61,6 +62,7 @@ export type ReportCategoryId =
   | "finance"
   | "inventory"
   | "dashboards"
+  | "insights"
   | "receivables"
   | "collections"
   | "customers"
@@ -130,6 +132,16 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Dashboards",
     blurb: "At-a-glance executive scoreboards built from the live Tally books.",
     icon: LayoutDashboard,
+    adminOnly: true,
+  },
+  // Talligence files Customer Profile under its own top-level "Insights" nav, not under Report —
+  // these read the book to describe the customer BASE (who is new, who left, who is growing)
+  // rather than to state a balance. Admin-only, like Dashboards.
+  {
+    id: "insights",
+    title: "Insights",
+    blurb: "How the customer base is moving — who is new, who is returning, who has gone quiet.",
+    icon: Sparkles,
     adminOnly: true,
   },
   {
@@ -276,6 +288,22 @@ export const REPORTS: ReportEntry[] = [
     keywords: ["stock", "inventory", "closing stock", "stock value", "product group", "product category",
                "bad stock", "non moving", "dead stock", "slow moving", "inward", "outward", "expired",
                "expiry", "base units", "godown", "item"],
+  },
+
+  // ── Insights ───────────────────────────────────────────────────────────────
+  {
+    id: "customer-profile",
+    title: "Customer Profile",
+    purpose: "How the customer base is moving — new, returning, gone quiet — and the money behind each group.",
+    category: "insights",
+    path: "reports/customer-profile",
+    icon: Users,
+    source: "tally",
+    status: "live",
+    adminOnly: true,
+    keywords: ["customer", "customers", "new customers", "existing customers", "non active", "dormant",
+               "churn", "segment", "segmental", "small", "medium", "large", "journey", "lifecycle",
+               "customer base", "insights", "contribution", "average sales"],
   },
 
   // ── Dashboards ─────────────────────────────────────────────────────────────

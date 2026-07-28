@@ -29,6 +29,7 @@ import SalesGainReport from "@hub/pages/SalesGainReport";
 import SalesDashboard from "@hub/pages/SalesDashboard";
 import PurchaseDashboard from "@hub/pages/PurchaseDashboard";
 import StockAnalysis from "@hub/pages/StockAnalysis";
+import CustomerProfile from "@hub/pages/CustomerProfile";
 import AgingReport from "@hub/pages/AgingReport";
 import TopExposureReport from "@hub/pages/TopExposureReport";
 import OtherPaymentsReport from "@hub/pages/OtherPaymentsReport";
@@ -173,6 +174,20 @@ function HubRoutes() {
               of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
               a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
           <Route path="reports/dso" element={<DsoReport />} />
+          {/* Admin-only — the Talligence "Insights → Customer Profile" clone, the first report in
+              the Insights category. Needed a new table (rpt_customer_profile_year): nothing
+              precomputed a per-customer, per-FY sales aggregate, and the lifecycle buckets are a
+              year-over-year comparison that on FY-split books has to reach ACROSS tenants (the
+              prior year lives in a different book). Own company + FY pickers — see
+              FY_PINNED_ROUTES. */}
+          <Route
+            path="reports/customer-profile"
+            element={
+              <RequireRole roles={["admin"]}>
+                <CustomerProfile />
+              </RequireRole>
+            }
+          />
           {/* Admin-only executive dashboard — the Talligence C-Level clone, 22 panels on the
               nightly rpt_clevel_dashboard_cache snapshot. Own company + FY pickers (see
               FY_PINNED_ROUTES). Guarded here AND hidden from the catalogue/sidebar for
