@@ -28,6 +28,7 @@ import { hrExitProvider } from "./providers/hrExit";
 import { officeSuppliesProvider } from "./providers/officeSupplies";
 import { samplingProvider } from "./providers/sampling";
 import { productionEntryProvider } from "./providers/production-entry";
+import { orderToDispatchProvider } from "./providers/order-to-dispatch";
 
 export const myWorkProviders: MyWorkProvider[] = [
   tasksProvider,
@@ -39,4 +40,5 @@ export const myWorkProviders: MyWorkProvider[] = [
   officeSuppliesProvider,
   samplingProvider,
   productionEntryProvider,
+  orderToDispatchProvider,
 ];

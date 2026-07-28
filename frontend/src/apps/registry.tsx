@@ -9,6 +9,7 @@ import { hrExitApp } from "./hr-exit/meta";
 import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { productionEntryApp } from "./production-entry/meta";
+import { orderToDispatchApp } from "./order-to-dispatch/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
@@ -46,6 +47,10 @@ export const apps: AppManifest[] = [
   // Production Entry FMS — separate module (own fms_production_* tables), granted per
   // user to the production team (not universal). Ink production job-card tracker.
   productionEntryApp,
+  // Order to Dispatch FMS — separate module (own fms_dispatch_* tables), granted
+  // per user to the sales, stores, accounts and plant teams. Sales order through
+  // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
+  orderToDispatchApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];

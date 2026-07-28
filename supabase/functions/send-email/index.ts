@@ -261,7 +261,9 @@ function noteBox(label: string, text: string): string {
 }
 
 interface Row {
-  id: string; kind: string; to_user_id: string; to_email: string | null;
+  // to_user_id is NULL for an EXTERNAL recipient (a customer) — see migration
+  // 20260801120300. Nothing in the send path reads it; to_email is what matters.
+  id: string; kind: string; to_user_id: string | null; to_email: string | null; to_name?: string | null;
   actor_id: string | null; entity_id: string | null; payload: Record<string, unknown>;
   status: string; attempts: number;
 }
@@ -327,17 +329,62 @@ async function compose(row: Row): Promise<Composed | null> {
       replyTo,
     };
   }
+  // ---- the CUSTOMER-FACING mail ------------------------------------------
+  // The one message this portal sends outside the company: the customer being
+  // told their planned dispatch date. It must come BEFORE the shared FMS
+  // renderer, which assumes an internal reader.
+  //
+  // Three deliberate differences from every internal template:
+  //   · no actor row — "A colleague updated a document" is meaningless here;
+  //   · no CTA — an external recipient cannot sign in to the portal;
+  //   · the footer names Orange O Tec rather than the internal hub.
+  // Reply-To still points at whoever recorded the step, so a customer replying
+  // reaches the store keeper.
+  if (row.kind === "order-to-dispatch_customer_dispatch_plan") {
+    const p = (row.payload ?? {}) as Record<string, unknown>;
+    const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
+    const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+    const customer = str(p.customer, row.to_name ?? "Customer");
+    const orderNo = str(p.orderNo, "your order");
+    const planned = str(p.plannedDate, "");
+    const subject = str(p.subject, `Your order ${orderNo} is planned for dispatch`);
+    const headline = planned ? `Planned for dispatch on ${planned}` : "Your order is planned for dispatch";
+    const inner =
+      docChip(`Order ${orderNo}`) +
+      detailRows([
+        { label: "Order no.", value: orderNo },
+        { label: "Order date", value: str(p.orderDate, "-") },
+        { label: "Planned dispatch", value: planned || "-" },
+        { label: "Mode", value: str(p.type, "-") },
+      ]) +
+      itemList(arr(p.items)) +
+      (str(p.body) ? noteBox("Message", str(p.body)) : "");
+    return {
+      subject,
+      html: emailShell({
+        eyebrow: "Dispatch update",
+        headline,
+        inner,
+        tag: "Orange O Tec",
+        footer: `<b style="color:${GREY};">Orange O Tec</b> &middot; dispatch intimation for ${customer}.<br>Replies reach the team member handling your order.`,
+      }),
+      text: `${headline}\n\nOrder: ${orderNo}\n${str(p.body)}`,
+      replyTo,
+    };
+  }
+
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     const isSupplies = row.kind.startsWith("office-supplies_");
     const isProduction = row.kind.startsWith("production-entry_");
-    const appLabel = isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isProduction ? "/production-entry" : isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    const isDispatch = row.kind.startsWith("order-to-dispatch_");
+    const appLabel = isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);

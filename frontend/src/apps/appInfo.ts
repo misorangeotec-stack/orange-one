@@ -82,6 +82,14 @@ export const APPS: Record<string, AppInfo> = {
     category: "fms",
     subGroup: "Production",
   },
+  // Picks up where Production Entry ends: that module closes at "FG Transfer to
+  // Godown", this one takes the goods from the godown to the customer.
+  "order-to-dispatch": {
+    name: "Order to Dispatch",
+    basePath: "/order-to-dispatch",
+    category: "fms",
+    subGroup: "Dispatch",
+  },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",
