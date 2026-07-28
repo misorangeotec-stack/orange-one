@@ -23,7 +23,7 @@ import type { ImportData } from "../data/importFetch";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import type { StepKey } from "./steps";
 import { DEFAULT_STEP_SLA, addWorkingDays, localDateIso, type StepSla } from "./sla";
-import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, PurchaseRequest, RequestItem, TallyBooking } from "../types";
+import type { Followup, Grn, GrnItem, Payment, Pi, PiItem, PoItem, PurchaseOrder, PurchaseRequest, QcInspection, QcItem, RequestItem, TallyBooking } from "../types";
 
 /**
  * The slice of `ImportData` these rules actually read. A structural subset
@@ -41,6 +41,10 @@ export type ImportSnapshot = Pick<
   | "grns"
   | "grnItems"
   | "tallyBookings"
+  | "qcInspections"
+  | "qcItems"
+  // QC is gated per category, so the masters are part of the queue snapshot now.
+  | "categories"
   | "payments"
   | "followups"
   | "activity"
@@ -83,6 +87,14 @@ export interface ImportIndex {
   grnItemsByGrn: Map<string, GrnItem[]>;
   tallyByPo: Map<string, TallyBooking[]>;
   bookedGrnIds: Set<string>;
+  /** The Tally booking that captured a receipt — the QC step's SLA anchor. */
+  tallyByGrn: Map<string, TallyBooking>;
+  poItemById: Map<string, PoItem>;
+  /** Categories flagged `qcRequired` in Masters. Seeded to Raw Material only. */
+  qcRequiredCategoryIds: Set<string>;
+  qcByGrn: Map<string, QcInspection>;
+  qcByPo: Map<string, QcInspection[]>;
+  qcItemsByInspection: Map<string, QcItem[]>;
   paymentsByPo: Map<string, Payment[]>;
   followupsByPo: Map<string, Followup[]>;
   /** Latest activity `created_at` seen for a PO id or a PI id. */
@@ -107,6 +119,12 @@ export function buildImportIndex(data: ImportSnapshot): ImportIndex {
     grnItemsByGrn: new Map(),
     tallyByPo: new Map(),
     bookedGrnIds: new Set(),
+    tallyByGrn: new Map(),
+    poItemById: new Map(),
+    qcRequiredCategoryIds: new Set(),
+    qcByGrn: new Map(),
+    qcByPo: new Map(),
+    qcItemsByInspection: new Map(),
     paymentsByPo: new Map(),
     followupsByPo: new Map(),
     latestActivityByEntity: new Map(),
@@ -114,14 +132,26 @@ export function buildImportIndex(data: ImportSnapshot): ImportIndex {
     requestItemById: new Map(),
   };
 
-  for (const it of data.poItems) push(idx.poItemsByPo, it.poId, it);
+  for (const it of data.poItems) {
+    push(idx.poItemsByPo, it.poId, it);
+    idx.poItemById.set(it.id, it);
+  }
+  for (const c of data.categories) if (c.qcRequired) idx.qcRequiredCategoryIds.add(c.id);
+  for (const q of data.qcInspections) {
+    idx.qcByGrn.set(q.grnId, q);
+    push(idx.qcByPo, q.poId, q);
+  }
+  for (const qi of data.qcItems) push(idx.qcItemsByInspection, qi.inspectionId, qi);
   for (const pi of data.pis) push(idx.pisByPo, pi.poId, pi);
   for (const pii of data.piItems) push(idx.piItemsByPi, pii.piId, pii);
   for (const g of data.grns) push(idx.grnsByPo, g.poId, g);
   for (const gi of data.grnItems) push(idx.grnItemsByGrn, gi.grnId, gi);
   for (const t of data.tallyBookings) {
     push(idx.tallyByPo, t.poId, t);
-    if (t.grnId) idx.bookedGrnIds.add(t.grnId);
+    if (t.grnId) {
+      idx.bookedGrnIds.add(t.grnId);
+      idx.tallyByGrn.set(t.grnId, t);
+    }
   }
   for (const p of data.payments) push(idx.paymentsByPo, p.poId, p);
   for (const f of data.followups) push(idx.followupsByPo, f.poId, f);
@@ -227,6 +257,49 @@ export function unbookedGrnsForPo(idx: ImportIndex, poId: string): Grn[] {
   return (idx.grnsByPo.get(poId) ?? []).filter((g) => !idx.bookedGrnIds.has(g.id));
 }
 
+/* ----- QC inspection + the purchase-return branch ------------------------ */
+
+/**
+ * The lines of a receipt that QC actually inspects — those whose category is
+ * flagged `qcRequired` in Masters. A receipt of Machine or Spare Parts returns
+ * an empty list and never becomes QC work; today only Raw Material is flagged.
+ *
+ * Mirrors `fms_import_grn_needs_qc()`, which walks the same
+ * grn_item → po_item → request_item → category chain server-side.
+ */
+export function qcLinesForGrn(idx: ImportIndex, grnId: string): GrnItem[] {
+  return (idx.grnItemsByGrn.get(grnId) ?? []).filter((gi) => {
+    const poItem = idx.poItemById.get(gi.poItemId);
+    const line = poItem ? idx.requestItemById.get(poItem.requestItemId) : undefined;
+    return !!line?.categoryId && idx.qcRequiredCategoryIds.has(line.categoryId);
+  });
+}
+
+/** `qcWaivedAt` marks receipts that predate the QC step — they never raise work. */
+export const grnNeedsQc = (idx: ImportIndex, g: Grn): boolean =>
+  !g.qcWaivedAt && qcLinesForGrn(idx, g.id).length > 0;
+
+/** Receipts booked in Tally, carrying QC-required material, still uninspected. */
+export function uninspectedGrnsForPo(idx: ImportIndex, poId: string): Grn[] {
+  return (idx.grnsByPo.get(poId) ?? []).filter(
+    (g) => idx.bookedGrnIds.has(g.id) && grnNeedsQc(idx, g) && !idx.qcByGrn.has(g.id),
+  );
+}
+
+export const rejectedInspectionsForPo = (idx: ImportIndex, poId: string): QcInspection[] =>
+  (idx.qcByPo.get(poId) ?? []).filter((q) => q.result === "rejected");
+
+/** A rejection raises the return immediately — there is no separate request step. */
+export const returnsPendingForPo = (idx: ImportIndex, poId: string): QcInspection[] =>
+  rejectedInspectionsForPo(idx, poId).filter((q) => !q.returnTallyRef);
+
+export const gateOutPendingForPo = (idx: ImportIndex, poId: string): QcInspection[] =>
+  rejectedInspectionsForPo(idx, poId).filter((q) => !!q.returnTallyRef && !q.gateRegisterNo);
+
+/** Only the rejected lines of an inspection travel into the return and the gate pass. */
+export const rejectedItemsFor = (idx: ImportIndex, inspectionId: string): QcItem[] =>
+  (idx.qcItemsByInspection.get(inspectionId) ?? []).filter((i) => i.rejectedQty > 0);
+
 export function pendingAmount(idx: ImportIndex, p: PurchaseOrder): number {
   const paid = (idx.paymentsByPo.get(p.id) ?? []).reduce((a, x) => a + x.amount, 0);
   return Math.max(0, p.totalValue - paid);
@@ -315,6 +388,20 @@ export function poStepCompletedIso(idx: ImportIndex, po: PurchaseOrder, step: St
       return unbookedGrnsForPo(idx, po.id).length > 0
         ? null
         : maxIso((idx.tallyByPo.get(po.id) ?? []).map((t) => t.createdAt));
+    case "qc_inspection":
+      return uninspectedGrnsForPo(idx, po.id).length > 0
+        ? null
+        : maxIso((idx.qcByPo.get(po.id) ?? []).map((q) => q.inspectedAt));
+    // The branch steps only ever "complete" for a PO that had a rejection; a PO
+    // with none has no work here and no completion date either.
+    case "purchase_return":
+      return returnsPendingForPo(idx, po.id).length > 0
+        ? null
+        : maxIso(rejectedInspectionsForPo(idx, po.id).map((q) => q.returnedAt));
+    case "gate_outward":
+      return gateOutPendingForPo(idx, po.id).length > 0
+        ? null
+        : maxIso(rejectedInspectionsForPo(idx, po.id).map((q) => q.gateOutAt));
     default:
       return null;
   }
@@ -359,6 +446,20 @@ export function poDueIso(idx: ImportIndex, data: ImportSnapshot, po: PurchaseOrd
 
   if (step === "tally") return after(minIso(unbookedGrnsForPo(idx, po.id).map((g) => g.createdAt)));
 
+  // The QC branch is trigger-anchored for the same reason Tally is: QC is per
+  // RECEIPT and the branch steps are per INSPECTION, so a PO with three
+  // deliveries has no single date to count from. Each clocks off its own oldest
+  // outstanding item, and gets no `po.createdAt` fallback.
+  if (step === "qc_inspection") {
+    return after(minIso(uninspectedGrnsForPo(idx, po.id).map((g) => idx.tallyByGrn.get(g.id)?.createdAt ?? null)));
+  }
+  if (step === "purchase_return") {
+    return after(minIso(returnsPendingForPo(idx, po.id).map((q) => q.inspectedAt)));
+  }
+  if (step === "gate_outward") {
+    return after(minIso(gateOutPendingForPo(idx, po.id).map((q) => q.returnedAt)));
+  }
+
   const { anchor } = slaFor(data, step);
   return after(poStepCompletedIso(idx, po, anchor) ?? po.createdAt);
 }
@@ -395,6 +496,18 @@ export const poInInward = (idx: ImportIndex, p: PurchaseOrder) =>
 export const poInTally = (idx: ImportIndex, p: PurchaseOrder) =>
   p.currentStage !== "cancelled" && unbookedGrnsForPo(idx, p.id).length > 0;
 
+/**
+ * The QC branch, all state-derived rather than `currentStage`-equality, so a PO
+ * that is legitimately in two places at once (say a second consignment arriving
+ * while the first awaits inspection) shows up in both queues.
+ */
+export const poInQc = (idx: ImportIndex, p: PurchaseOrder) =>
+  p.currentStage !== "cancelled" && uninspectedGrnsForPo(idx, p.id).length > 0;
+export const poInPurchaseReturn = (idx: ImportIndex, p: PurchaseOrder) =>
+  p.currentStage !== "cancelled" && returnsPendingForPo(idx, p.id).length > 0;
+export const poInGateOutward = (idx: ImportIndex, p: PurchaseOrder) =>
+  p.currentStage !== "cancelled" && gateOutPendingForPo(idx, p.id).length > 0;
+
 // Collect-PI and Advance-Payment are retired (Import is a pure quantity
 // requisition): they are absent from this list, so no queue entry or Control
 // Center count is ever produced for them. The predicates + completed-entry
@@ -404,6 +517,9 @@ const PO_STEPS: { stepKey: StepKey; match: (idx: ImportIndex, p: PurchaseOrder) 
   { stepKey: "follow_up", match: poInFollowUp },
   { stepKey: "inward", match: poInInward },
   { stepKey: "tally", match: poInTally },
+  { stepKey: "qc_inspection", match: poInQc },
+  { stepKey: "purchase_return", match: poInPurchaseReturn },
+  { stepKey: "gate_outward", match: poInGateOutward },
 ];
 
 /**
@@ -606,8 +722,38 @@ export function grnLockReason(data: ImportSnapshot, idx: ImportIndex, g: Grn): s
   return null;
 }
 
-export function tallyLockReason(data: ImportSnapshot, t: TallyBooking): string | null {
-  return terminalReason(poOf(data, t.poId), "Tally booking");
+/**
+ * A booking is editable until its NEXT step captures it — which is now QC, not
+ * merely "the PO is still open". Mirrors `fms_import_tally_editable()`.
+ */
+export function tallyLockReason(data: ImportSnapshot, idx: ImportIndex, t: TallyBooking): string | null {
+  const term = terminalReason(poOf(data, t.poId), "Tally booking");
+  if (term) return term;
+  if (t.grnId && idx.qcByGrn.has(t.grnId)) return "This receipt has already been inspected by QC.";
+  return null;
+}
+
+/** Mirrors `fms_import_qc_editable()` — the return entry is what freezes it. */
+export function qcLockReason(data: ImportSnapshot, q: QcInspection): string | null {
+  const po = poOf(data, q.poId);
+  if (po?.currentStage === "cancelled") return "This PO is cancelled — its QC inspection can no longer be edited.";
+  if (q.returnTallyRef) return "The purchase return has already been entered against this inspection.";
+  return null;
+}
+
+/** Mirrors `fms_import_purchase_return_editable()` — the gate outward freezes it. */
+export function purchaseReturnLockReason(data: ImportSnapshot, q: QcInspection): string | null {
+  const po = poOf(data, q.poId);
+  if (po?.currentStage === "cancelled") return "This PO is cancelled — its return entry can no longer be edited.";
+  if (q.gateRegisterNo) return "The gate outward has already been recorded against this return.";
+  return null;
+}
+
+/** The last step of the branch: nothing downstream freezes it. */
+export function gateOutwardLockReason(data: ImportSnapshot, q: QcInspection): string | null {
+  const po = poOf(data, q.poId);
+  if (po?.currentStage === "cancelled") return "This PO is cancelled — its gate outward can no longer be edited.";
+  return null;
 }
 
 /** Shared shape for the five child-row stages: same fields, different row type. */
@@ -653,8 +799,60 @@ export const completedFollowupEntries = (data: ImportSnapshot, idx: ImportIndex)
 export const completedGrnEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<Grn>[] =>
   data.grns.map((g) => poChildEntry(data, "inward", g, g.receivedBy, grnLockReason(data, idx, g)));
 
-export const completedTallyEntries = (data: ImportSnapshot): StageEntry<TallyBooking>[] =>
-  data.tallyBookings.map((t) => poChildEntry(data, "tally", t, t.bookedBy, tallyLockReason(data, t)));
+export const completedTallyEntries = (data: ImportSnapshot, idx: ImportIndex): StageEntry<TallyBooking>[] =>
+  data.tallyBookings.map((t) => poChildEntry(data, "tally", t, t.bookedBy, tallyLockReason(data, idx, t)));
+
+/**
+ * The QC branch's three histories. All three read the SAME inspection row, so
+ * `poChildEntry` (which keys on `createdAt` / `editedAt`) is the wrong shape —
+ * each step has its own actor, its own completion stamp and its own edit stamp.
+ */
+function qcStageEntry(
+  data: ImportSnapshot,
+  stepKey: StepKey,
+  q: QcInspection,
+  atIso: string,
+  actorId: string | null,
+  editedAtIso: string | null,
+  editedById: string | null,
+  lockReason: string | null,
+): StageEntry<QcInspection> {
+  const po = poOf(data, q.poId);
+  return {
+    id: q.id,
+    stepKey,
+    poId: q.poId,
+    ref: po?.poNo ?? "—",
+    companyId: po?.companyId ?? null,
+    actorId,
+    atIso,
+    editedAtIso,
+    editedById,
+    lockReason,
+    row: q,
+  };
+}
+
+export const completedQcEntries = (data: ImportSnapshot): StageEntry<QcInspection>[] =>
+  data.qcInspections.map((q) =>
+    qcStageEntry(data, "qc_inspection", q, q.inspectedAt, q.inspectedBy, q.editedAt, q.editedBy, qcLockReason(data, q)),
+  );
+
+export const completedPurchaseReturnEntries = (data: ImportSnapshot): StageEntry<QcInspection>[] =>
+  data.qcInspections
+    .filter((q) => !!q.returnedAt)
+    .map((q) =>
+      qcStageEntry(data, "purchase_return", q, q.returnedAt!, q.returnedBy, q.returnEditedAt, q.returnEditedBy,
+        purchaseReturnLockReason(data, q)),
+    );
+
+export const completedGateOutwardEntries = (data: ImportSnapshot): StageEntry<QcInspection>[] =>
+  data.qcInspections
+    .filter((q) => !!q.gateOutAt)
+    .map((q) =>
+      qcStageEntry(data, "gate_outward", q, q.gateOutAt!, q.gateOutBy, q.gateEditedAt, q.gateEditedBy,
+        gateOutwardLockReason(data, q)),
+    );
 
 /* ----- The request-scope stages ------------------------------------------ */
 

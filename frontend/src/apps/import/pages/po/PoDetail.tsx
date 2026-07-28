@@ -10,7 +10,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
 import { qtyText, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
-import { SharePoModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
+import { SharePoModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import { GrnPhotoLink, TallyDocLink, PoDocLink } from "../../components/DocLinks";
 
@@ -24,7 +24,7 @@ export default function PoDetail() {
   const { id } = useParams();
   const s = useImportStore();
   const [tab, setTab] = useState("items");
-  const [modal, setModal] = useState<"share" | "followup" | "grn" | "tally" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
+  const [modal, setModal] = useState<"share" | "followup" | "grn" | "tally" | "qc" | "return" | "gateout" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
 
   const po = s.poById(id ?? null);
   if (!po) {
@@ -46,6 +46,14 @@ export default function PoDetail() {
   const allReceived = items.length > 0 && items.every((it) => it.receivedQty >= it.qty);
   const unbookedGrns = s.unbookedGrnsForPo(po.id);
   const tallyBooked = unbookedGrns.length === 0;
+
+  // The QC branch. Each button appears only while its own step actually owes
+  // work, so the bar keeps offering exactly one logical next step.
+  const qcPending = s.uninspectedGrnsForPo(po.id).length > 0;
+  const pendingReturn = s.qcInspections.find((q) => q.poId === po.id && q.result === "rejected" && !q.returnTallyRef);
+  const pendingGate = s.qcInspections.find(
+    (q) => q.poId === po.id && q.result === "rejected" && !!q.returnTallyRef && !q.gateRegisterNo,
+  );
 
   // Activity for the PO, newest first.
   const activity = s.activity
@@ -138,6 +146,9 @@ export default function PoDetail() {
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
           {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
           {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
+          {s.canQc && qcPending && <Button size="sm" variant="ghost" onClick={() => setModal("qc")}>Record QC</Button>}
+          {s.canPurchaseReturn && pendingReturn && <Button size="sm" variant="ghost" onClick={() => setModal("return")}>Book purchase return</Button>}
+          {s.canGateOutward && pendingGate && <Button size="sm" variant="ghost" onClick={() => setModal("gateout")}>Gate out</Button>}
           {s.canRequestPoCancel(po) && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("reqcancel")}>Request cancellation</Button>}
           {s.canCancelPo(po) && !cancelRequest && <Button size="sm" variant="ghost" className="!text-ryg-red hover:!border-ryg-red" onClick={() => setModal("cancel")}>Cancel PO</Button>}
         </div>
@@ -233,6 +244,9 @@ export default function PoDetail() {
       <SharePoModal po={po} open={modal === "share"} onClose={() => setModal(null)} />
       <GrnModal po={po} open={modal === "grn"} onClose={() => setModal(null)} />
       <TallyModal po={po} open={modal === "tally"} onClose={() => setModal(null)} />
+      <QcModal po={po} open={modal === "qc"} onClose={() => setModal(null)} />
+      {pendingReturn && <PurchaseReturnModal po={po} inspection={pendingReturn} open={modal === "return"} onClose={() => setModal(null)} />}
+      {pendingGate && <GateOutwardModal po={po} inspection={pendingGate} open={modal === "gateout"} onClose={() => setModal(null)} />}
       <FollowupModal po={po} open={modal === "followup"} onClose={() => setModal(null)} />
       <RequestCancelModal po={po} open={modal === "reqcancel"} onClose={() => setModal(null)} />
       <CancelPoModal po={po} request={cancelRequest ?? null} open={modal === "cancel"} onClose={() => setModal(null)} />

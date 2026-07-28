@@ -46,12 +46,14 @@ export interface CategoryInput {
   name: string;
   active: boolean;
   sortOrder: number;
+  /** Goods in this category must clear QC Inspection after their Tally entry. */
+  qcRequired: boolean;
 }
 
 export async function insertCategory(input: CategoryInput & { createdBy: string }): Promise<string> {
   const { data, error } = await supabase
     .from("fms_purchase_categories")
-    .insert({ name: input.name, active: input.active, sort_order: input.sortOrder, created_by: input.createdBy })
+    .insert({ name: input.name, active: input.active, sort_order: input.sortOrder, qc_required: input.qcRequired, created_by: input.createdBy })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -61,7 +63,7 @@ export async function insertCategory(input: CategoryInput & { createdBy: string 
 export async function updateCategory(id: string, input: CategoryInput): Promise<void> {
   const { error } = await supabase
     .from("fms_purchase_categories")
-    .update({ name: input.name, active: input.active, sort_order: input.sortOrder })
+    .update({ name: input.name, active: input.active, sort_order: input.sortOrder, qc_required: input.qcRequired })
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -1073,6 +1075,147 @@ export async function uploadTallyDocument(poId: string, file: File): Promise<{ p
 
 /** Create a short-lived signed URL to view/download a stored Tally invoice. */
 export async function tallyDocumentUrl(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(PI_DOCS_BUCKET).createSignedUrl(path, 60 * 10);
+  if (error) throw new Error(error.message);
+  return data.signedUrl;
+}
+
+/* ============ QC inspection + the purchase-return branch ================ */
+
+/** One row per QC-required line of the receipt: how much of it was rejected. */
+export type QcLineInput = { poItemId: string; rejectedQty: number; remark?: string | null };
+
+const qcItemsPayload = (items: QcLineInput[]) =>
+  items.map((i) => ({
+    po_item_id: i.poItemId,
+    rejected_qty: i.rejectedQty,
+    remark: i.remark ?? null,
+  })) as unknown as Json;
+
+export async function recordQc(input: {
+  grnId: string;
+  items: QcLineInput[];
+  remarks?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc("fms_purchase_record_qc", {
+    p_grn_id: input.grnId,
+    p_items: qcItemsPayload(input.items),
+    p_remarks: input.remarks ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+export async function updateQc(input: {
+  inspectionId: string;
+  items: QcLineInput[];
+  remarks?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_qc", {
+    p_inspection_id: input.inspectionId,
+    p_items: qcItemsPayload(input.items),
+    p_remarks: input.remarks ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Tally reference AND document are both mandatory — the server refuses without them. */
+export async function recordPurchaseReturn(input: {
+  inspectionId: string;
+  tallyRef: string;
+  documentPath: string;
+  documentName: string;
+  remarks?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_record_purchase_return", {
+    p_inspection_id: input.inspectionId,
+    p_tally_ref: input.tallyRef,
+    p_document_path: input.documentPath,
+    p_document_name: input.documentName,
+    p_remarks: input.remarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updatePurchaseReturn(input: {
+  inspectionId: string;
+  tallyRef: string;
+  documentPath?: string | null;   // null => keep the existing document
+  documentName?: string | null;
+  remarks?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_purchase_return", {
+    p_inspection_id: input.inspectionId,
+    p_tally_ref: input.tallyRef,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function recordGateOutward(input: {
+  inspectionId: string;
+  gateRegisterNo: string;
+  outDate: string | null;
+  remarks?: string | null;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_record_gate_outward", {
+    p_inspection_id: input.inspectionId,
+    p_gate_register_no: input.gateRegisterNo,
+    p_out_date: input.outDate ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateGateOutward(input: {
+  inspectionId: string;
+  gateRegisterNo: string;
+  outDate: string | null;
+  remarks?: string | null;
+  documentPath?: string | null;   // null => keep the existing document
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_gate_outward", {
+    p_inspection_id: input.inspectionId,
+    p_gate_register_no: input.gateRegisterNo,
+    p_out_date: input.outDate ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Each QC-branch step keeps its documents under its own prefix in the shared bucket. */
+const uploadUnder = async (prefix: string, poId: string, file: File) => {
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const path = `${poId}/${prefix}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(PI_DOCS_BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  return { path, name: file.name };
+};
+
+export const uploadQcDocument = (poId: string, file: File) => uploadUnder("qc", poId, file);
+export const uploadReturnDocument = (poId: string, file: File) => uploadUnder("return", poId, file);
+export const uploadGateDocument = (poId: string, file: File) => uploadUnder("gate", poId, file);
+
+export async function qcDocumentUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from(PI_DOCS_BUCKET).createSignedUrl(path, 60 * 10);
   if (error) throw new Error(error.message);
   return data.signedUrl;

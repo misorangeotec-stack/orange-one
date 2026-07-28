@@ -13,7 +13,8 @@
  *   • `follow_up` — its due date is the vendor's promised dispatch date (captured
  *     at Share PO), not an SLA. See `dispatchDueForPo` in queues.ts.
  *   • `inward` — untimed: receiving can never be late, so it has no due date at all.
- *   • `tally` — trigger-anchored, see {@link TRIGGER_STEPS}.
+ *   • `tally`, `qc_inspection`, `purchase_return`, `gate_outward` — trigger-anchored,
+ *     see {@link TRIGGER_STEPS}.
  * Their `anchor` entries are inert, as is `days` for the first two.
  */
 import { createStepSlaModel, type StepSla as StepSlaBase, type StepSlaMap as StepSlaMapBase } from "@/shared/lib/stepSla";
@@ -33,11 +34,28 @@ export const resolveStepSla = model.resolveStepSla;
  * `days` stays admin-configurable; `anchor` is inert and never read.
  *
  * Each GRN is its own invoice, so `tally` keys off the oldest one still unbooked.
+ *
+ * The QC branch needs the same treatment for the same reason: QC is per RECEIPT
+ * and the return/gate steps are per INSPECTION, while `poStepCompletedIso` is
+ * per-PO. A PO with three deliveries has no single "the" date to count from, so
+ * each of these clocks off its own oldest outstanding item.
  */
 export const TRIGGER_STEPS: Partial<Record<StepKey, { dueAfter: string; rule: string }>> = {
   tally: {
     dueAfter: "Oldest unbooked goods receipt (GRN)",
     rule: "Each GRN is its own invoice; the oldest unbooked one sets the deadline.",
+  },
+  qc_inspection: {
+    dueAfter: "Oldest Tally-booked receipt awaiting inspection",
+    rule: "QC is per receipt; the oldest booked-but-uninspected one sets the deadline.",
+  },
+  purchase_return: {
+    dueAfter: "Oldest QC rejection with no return entry",
+    rule: "A rejection raises the return immediately; the oldest unentered one sets the deadline.",
+  },
+  gate_outward: {
+    dueAfter: "Oldest return entry with no gate outward",
+    rule: "The material leaves after the return is booked; the oldest un-gated one sets the deadline.",
   },
 };
 

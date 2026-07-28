@@ -74,16 +74,33 @@ export default function Masters() {
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
             { header: "Item Groups", render: (r) => s.itemGroupsByCategory(r.id).length },
+            {
+              // Drives the QC Inspection step: a goods receipt carrying any
+              // QC-required category must be inspected before the PO can close.
+              // Everything else still ends at Tally.
+              header: "QC Required",
+              render: (r) =>
+                r.qcRequired ? (
+                  <span className="inline-flex items-center rounded-full bg-[#EAF1FE] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-blue">Yes</span>
+                ) : (
+                  <span className="text-grey-2">No</span>
+                ),
+            },
           ] as MasterColumn<Category>[]}
           fields={masterFields("category", ctx)}
           emptyValues={emptyValuesFor("category")}
-          toValues={(r) => ({ name: r.name })}
+          toValues={(r) => ({ name: r.name, qc_required: r.qcRequired ? "yes" : "no" })}
           onSubmit={async (id, v, active) => {
-            const input = { name: v.name.trim(), active, sortOrder: s.categoryById(id)?.sortOrder ?? 0 };
+            const input = {
+              name: v.name.trim(),
+              active,
+              sortOrder: s.categoryById(id)?.sortOrder ?? 0,
+              qcRequired: v.qc_required === "yes",
+            };
             if (id) await s.editCategory(id, input);
             else await s.createCategory(input);
           }}
-          onToggleActive={async (r, active) => s.editCategory(r.id, { name: r.name, active, sortOrder: r.sortOrder })}
+          onToggleActive={async (r, active) => s.editCategory(r.id, { name: r.name, active, sortOrder: r.sortOrder, qcRequired: r.qcRequired })}
         />
       )}
 

@@ -7,7 +7,7 @@ type Store = ReturnType<typeof useProcurementStore>;
 /**
  * The full Purchase FMS lifecycle as rail stages, in order: the four
  * request-scoped steps (Request → Sourcing → Approval → Generate PO) followed by
- * the PO lifecycle (Share PO … Tally) and the terminal `closed` node.
+ * the PO lifecycle (Share PO … QC Inspection) and the terminal `closed` node.
  *
  * BOTH the Request screen (RequestStepper) and the PO screen (PoStepper) build
  * their rail from THIS list, so the journey reads identically on either side —
@@ -16,6 +16,12 @@ type Store = ReturnType<typeof useProcurementStore>;
  *
  * `generated` maps to the `po` step for owner captions via `stageStepKey`,
  * matching how the PO stepper has always resolved that node.
+ *
+ * `purchase_return` and `gate_outward` are marked `branch`: they only exist for a
+ * PO whose QC inspection REJECTED something. `buildFlowNodes` drops them for
+ * everyone else, so the ordinary rail stays 11 nodes + Closed — which matters
+ * because PoStageRail prints `i + 1` in each pending circle, making the node
+ * order a user-visible step numbering that has to line up with STEPS[].index.
  */
 export const FLOW_STAGES = [
   { key: "request", label: "Request" },
@@ -28,6 +34,9 @@ export const FLOW_STAGES = [
   { key: "follow_up", label: "Follow-up" },
   { key: "inward", label: "Inward" },
   { key: "tally", label: "Tally" },
+  { key: "qc_inspection", label: "QC Inspection" },
+  { key: "purchase_return", label: "Purchase Return", branch: true },
+  { key: "gate_outward", label: "Gate Outward", branch: true },
   { key: "closed", label: "Closed" },
 ] as const;
 
@@ -37,16 +46,20 @@ export const flowIndex = (key: string): number => FLOW_STAGES.findIndex((st) => 
 /** First PO-scoped node — everything before it is request-side. */
 export const SHARE_PO_INDEX = flowIndex("share_po");
 export const TALLY_INDEX = flowIndex("tally");
-export const CLOSED_INDEX = FLOW_STAGES.length - 1;
+export const QC_INDEX = flowIndex("qc_inspection");
+
+/** The stages actually shown for a PO: the branch nodes only once it has a rejection. */
+const visibleStages = (showReturnBranch: boolean) =>
+  FLOW_STAGES.filter((st) => showReturnBranch || !("branch" in st && st.branch));
 
 /**
- * Resolve every FLOW_STAGES entry to a rail node captioned with the department
- * and people who own that step. Identical resolution to PoStepper: personName
- * (not profileById), because the directory is RLS-scoped to self + downline +
- * same-department peers, so cross-department owners would render blank.
+ * Resolve every visible FLOW_STAGES entry to a rail node captioned with the
+ * department and people who own that step. Identical resolution to PoStepper:
+ * personName (not profileById), because the directory is RLS-scoped to self +
+ * downline + same-department peers, so cross-department owners would render blank.
  */
-export function buildFlowNodes(s: Store): PoStageRailNode[] {
-  return FLOW_STAGES.map((st) => {
+export function buildFlowNodes(s: Store, showReturnBranch = false): PoStageRailNode[] {
+  return visibleStages(showReturnBranch).map((st) => {
     const stepKey = stageStepKey(st.key);
     // `closed` has no backing step, so it has no owners to show.
     if (!stepKey) {
@@ -68,13 +81,30 @@ export function buildFlowNodes(s: Store): PoStageRailNode[] {
 }
 
 /**
- * Map a PO's `current_stage` onto its FLOW_STAGES index. A live PO's earliest
- * real stage is share_po (its request half is already done); a PO that closed
- * with an unbooked GRN sits on Tally (its Tally step is genuinely outstanding).
+ * Map a PO's `current_stage` onto its index in the VISIBLE node list.
+ *
+ * A live PO's earliest real stage is share_po (its request half is already done).
+ * A PO that closed with an unbooked GRN sits on Tally, and one that closed with a
+ * receipt still uninspected sits on QC — in both cases the step is genuinely
+ * outstanding even though the stage machine says `closed`, and ticking it would
+ * be a lie.
  */
-export function poFlowIndex(currentStage: string, tallyPending: boolean): number {
-  if (currentStage === "closed" && tallyPending) return TALLY_INDEX;
-  if (currentStage === "closed" || currentStage === "cancelled") return CLOSED_INDEX;
-  const i = flowIndex(currentStage);
-  return i < SHARE_PO_INDEX ? SHARE_PO_INDEX : i;
+export function poFlowIndex(
+  currentStage: string,
+  tallyPending: boolean,
+  showReturnBranch = false,
+  qcPending = false,
+): number {
+  const stages = visibleStages(showReturnBranch);
+  const at = (key: string) => stages.findIndex((st) => st.key === key);
+  const closedIndex = stages.length - 1;
+
+  if (currentStage === "closed" && tallyPending) return at("tally");
+  if (currentStage === "closed" && qcPending) return at("qc_inspection");
+  if (currentStage === "closed" || currentStage === "cancelled") return closedIndex;
+  const i = at(currentStage);
+  // The lower clamp catches a legacy PO parked on the retired collect_pi /
+  // advance_payment stages, and any stage missing from the visible list.
+  const sharePoIndex = at("share_po");
+  return i < sharePoIndex ? sharePoIndex : i;
 }

@@ -4,7 +4,8 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { Link } from "react-router-dom";
 import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
 // NOT time.ts's todayIso(): that is documented "local" but is really the UTC
@@ -15,8 +16,8 @@ import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
 import PoItemsReadout from "./PoItemsReadout";
-import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "./DocLinks";
-import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, TallyBooking } from "../types";
+import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink, QcDocLink, ReturnDocLink, GateDocLink } from "./DocLinks";
+import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, QcInspection, TallyBooking } from "../types";
 
 const PAYMENT_TERMS: ComboOption[] = [
   { value: "full_advance", label: "100% Advance" },
@@ -811,6 +812,445 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
             )}
           </div>
         </FieldLabel>
+        )}
+        <FieldLabel label="Remarks" hint="Optional">
+          <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+        </FieldLabel>
+        <Err msg={err} />
+      </div>
+    </Modal>
+  );
+}
+
+/* ============ QC inspection + the purchase-return branch ================= */
+
+/**
+ * A reference panel every QC-branch modal opens with: the PO the material came
+ * in on, plus the Tally paperwork behind this particular receipt. The whole point
+ * of the return step is "which PO is this against", so it leads.
+ */
+function QcRefPanel({ po, grn }: { po: PurchaseOrder; grn?: Grn }) {
+  const s = useProcurementStore();
+  const booking = grn ? s.tallyBookings.find((t) => t.grnId === grn.id) : undefined;
+  return (
+    <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Field label="PO No.">
+          <Link to={`/procurement/pos/${po.id}`} target="_blank" className="font-semibold text-navy hover:text-orange hover:underline">
+            {po.poNo}
+          </Link>
+        </Field>
+        <Field label="Vendor">{s.vendorById(po.vendorId)?.name ?? undefined}</Field>
+        <Field label="Tally PO No.">{po.tallyPoNo ?? undefined}</Field>
+        <Field label="Tally Invoice">{booking?.tallyPiNo ?? undefined}</Field>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * QC Inspection — the decision is ITEM-WISE and covers ONLY the lines whose
+ * category is flagged `qc_required` in Masters (Raw Material today). A receipt of
+ * anything else never reaches this modal.
+ *
+ * `result` is derived, not chosen: any rejected quantity makes it a rejection,
+ * which is what opens the return branch. The chip shows that live so nobody has
+ * to guess what the Save button is about to do.
+ */
+export function QcModal({
+  po, grn, open, onClose, editing, readOnly = false,
+}: { po: PurchaseOrder; grn?: Grn; open: boolean; onClose: () => void; editing?: QcInspection; readOnly?: boolean }) {
+  const s = useProcurementStore();
+  // On edit the receipt comes from the inspection; on create it is passed in (or
+  // defaults to the oldest one still awaiting inspection).
+  const pending = s.uninspectedGrnsForPo(po.id);
+  const target: Grn | undefined = editing
+    ? s.grnsForPo(po.id).find((g) => g.id === editing.grnId)
+    : grn ?? pending[0];
+
+  const lines = target ? s.qcLinesForGrn(target.id) : [];
+  const [rejected, setRejected] = useState<Record<string, string>>({});
+  const [remark, setRemark] = useState<Record<string, string>>({});
+  const [remarks, setRemarks] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const rj: Record<string, string> = {};
+    const rm: Record<string, string> = {};
+    const existing = editing ? s.qcItemsFor(editing.id) : [];
+    for (const l of lines) {
+      const prev = existing.find((x) => x.poItemId === l.poItemId);
+      rj[l.poItemId] = String(prev?.rejectedQty ?? 0);
+      rm[l.poItemId] = prev?.remark ?? "";
+    }
+    setRejected(rj);
+    setRemark(rm);
+    setRemarks(editing?.remarks ?? "");
+    setFile(null);
+    setErr(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, po.id, target?.id, editing?.id]);
+
+  const anyRejected = lines.some((l) => Number(rejected[l.poItemId] ?? 0) > 0);
+  const overRejected = lines.some((l) => Number(rejected[l.poItemId] ?? 0) > l.receivedQty);
+  const hasExistingDoc = !!editing?.documentPath;
+
+  const save = async () => {
+    setErr(null);
+    if (!target) return setErr("There is no goods receipt awaiting inspection on this PO.");
+    if (overRejected) return setErr("Rejected quantity cannot exceed the quantity received on this receipt.");
+    setBusy(true);
+    try {
+      let doc: { path: string; name: string } | null = null;
+      if (file) doc = await s.uploadQcDocument(po.id, file);
+      const items = lines.map((l) => ({
+        poItemId: l.poItemId,
+        rejectedQty: Number(rejected[l.poItemId] ?? 0) || 0,
+        remark: remark[l.poItemId]?.trim() || null,
+      }));
+      if (editing) {
+        await s.updateQc({ inspectionId: editing.id, poId: po.id, items, remarks: remarks.trim() || null, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+      } else {
+        await s.recordQc({ grnId: target.id, poId: po.id, items, remarks: remarks.trim() || null, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+      }
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <QcDocLink qc={editing} /> : undefined} size="2xl"
+      title={editing ? (readOnly ? "QC Inspection" : "Edit QC Inspection") : "Record QC Inspection"}
+      subtitle={`${po.poNo} · quality check on the received material. Enter a rejected quantity per item — leave everything at 0 to approve.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !target || overRejected}>{busy ? "Saving…" : editing ? "Save Changes" : anyRejected ? "Record rejection" : "Approve"}</Button></>}>
+      <div className="space-y-5">
+        <QcRefPanel po={po} grn={target} />
+
+        {!target ? (
+          <p className="text-[13px] text-grey-2">Every goods receipt on this PO has already been inspected.</p>
+        ) : (
+          <>
+            <div>
+              <div className={`${SECTION_HEADING_CLASS} mb-1.5 flex items-center justify-between`}>
+                <span>Material inspected</span>
+                <span className={cn(
+                  "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                  anyRejected ? "bg-[#FDECEC] text-ryg-red" : "bg-[#E9F8EF] text-ryg-green",
+                )}>
+                  {anyRejected ? "Rejected" : "Approved"}
+                </span>
+              </div>
+              <div className="rounded-xl border border-line overflow-hidden">
+                <table className="w-full text-[13px]">
+                  <thead>
+                    <tr className="text-grey-2 border-b border-line bg-page/60">
+                      <th className="px-4 py-2.5 text-left font-medium">Item</th>
+                      <th className="px-4 py-2.5 text-right font-medium w-36">Received</th>
+                      <th className="px-4 py-2.5 text-right font-medium w-44">Rejected Qty</th>
+                      <th className="px-4 py-2.5 text-left font-medium w-56">Remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lines.map((gi) => {
+                      const poItem = s.poItemsForPo(po.id).find((p) => p.id === gi.poItemId);
+                      const line = poItem ? s.lineById(poItem.requestItemId) : undefined;
+                      const unit = line?.unit ? ` ${line.unit}` : "";
+                      const over = Number(rejected[gi.poItemId] ?? 0) > gi.receivedQty;
+                      return (
+                        <tr key={gi.id} className="border-b border-line/70 last:border-0">
+                          <td className="px-4 py-2.5 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
+                          <td className="px-4 py-2.5 text-right whitespace-nowrap">{gi.receivedQty}{unit}</td>
+                          <td className="px-4 py-2.5">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* min-w, not a bare w: a 4-digit qty plus its unit collapses otherwise. */}
+                              <TextInput type="number" min={0} className={cn("min-w-[7rem] text-right", over && "border-ryg-red")}
+                                value={rejected[gi.poItemId] ?? ""}
+                                onChange={(e) => setRejected((p) => ({ ...p, [gi.poItemId]: e.target.value }))} />
+                              {line?.unit && <span className="w-10 text-[12.5px] text-grey-2">{line.unit}</span>}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <TextInput value={remark[gi.poItemId] ?? ""} placeholder="why"
+                              onChange={(e) => setRemark((p) => ({ ...p, [gi.poItemId]: e.target.value }))} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <Hint>
+                Only Raw Material lines are inspected — anything else on this receipt is not subject to QC.
+                {anyRejected ? " The rejected items go straight into the purchase return." : ""}
+              </Hint>
+            </div>
+
+            {!readOnly && (
+              <FieldLabel label="QC Report" hint={editing && hasExistingDoc ? "leave as-is to keep the attached file" : "optional"}>
+                <div className="flex items-center gap-2.5">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                    <Upload className="h-4 w-4" />
+                    {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
+                    <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                      onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {file ? (
+                    <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
+                      <span className="max-w-[220px] truncate text-navy">{file.name}</span>
+                      <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                    </span>
+                  ) : editing && hasExistingDoc ? (
+                    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                      Current: <span className="max-w-[220px] truncate text-navy">{editing.documentName ?? "attached file"}</span>
+                    </span>
+                  ) : (
+                    <span className="text-[12.5px] text-grey-2">No file selected</span>
+                  )}
+                </div>
+              </FieldLabel>
+            )}
+            <FieldLabel label="Remarks" hint="Optional">
+              <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            </FieldLabel>
+          </>
+        )}
+        <Err msg={err} />
+      </div>
+    </Modal>
+  );
+}
+
+/** The rejected lines of an inspection, read-only — what the return actually covers. */
+function RejectedItemsReadout({ po, inspection }: { po: PurchaseOrder; inspection: QcInspection }) {
+  const s = useProcurementStore();
+  const items = s.rejectedItemsFor(inspection.id);
+  return (
+    <div>
+      <div className={`${SECTION_HEADING_CLASS} mb-1.5`}>Items being returned</div>
+      <div className="rounded-xl border border-line overflow-hidden">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="text-grey-2 border-b border-line bg-page/60">
+              <th className="px-4 py-2.5 text-left font-medium">Item</th>
+              <th className="px-4 py-2.5 text-right font-medium w-36">Received</th>
+              <th className="px-4 py-2.5 text-right font-medium w-36">Rejected</th>
+              <th className="px-4 py-2.5 text-left font-medium">QC remark</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 ? (
+              <tr><td colSpan={4} className="px-4 py-3 text-grey-2">No rejected items.</td></tr>
+            ) : items.map((qi) => {
+              const poItem = s.poItemsForPo(po.id).find((p) => p.id === qi.poItemId);
+              const line = poItem ? s.lineById(poItem.requestItemId) : undefined;
+              const unit = line?.unit ? ` ${line.unit}` : "";
+              return (
+                <tr key={qi.id} className="border-b border-line/70 last:border-0">
+                  <td className="px-4 py-2.5 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">{qi.receivedQty}{unit}</td>
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap font-semibold text-ryg-red">{qi.rejectedQty}{unit}</td>
+                  <td className="px-4 py-2.5 text-grey-2">{qi.remark ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Purchase Return Entry in Tally. Both the Tally reference and the document are
+ * MANDATORY — and unlike the Book-in-Tally document (which could only ever be a
+ * client-side rule, because older bookings have none) the server refuses without
+ * them, since this step has no legacy rows.
+ */
+export function PurchaseReturnModal({
+  po, inspection, open, onClose, editing = false, readOnly = false,
+}: { po: PurchaseOrder; inspection: QcInspection; open: boolean; onClose: () => void; editing?: boolean; readOnly?: boolean }) {
+  const s = useProcurementStore();
+  const grn = s.grnsForPo(po.id).find((g) => g.id === inspection.grnId);
+  const [tallyRef, setTallyRef] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setTallyRef(inspection.returnTallyRef ?? "");
+    setRemarks(inspection.returnRemarks ?? "");
+    setFile(null);
+    setErr(null);
+  }, [open, inspection.id, inspection.returnTallyRef, inspection.returnRemarks]);
+
+  const hasExistingDoc = !!inspection.returnDocPath;
+  // On create the document is required outright; on edit the stored one stands in.
+  const docSatisfied = !!file || (editing && hasExistingDoc);
+
+  const save = async () => {
+    setErr(null);
+    if (!tallyRef.trim()) return setErr("The Tally reference number is required.");
+    if (!docSatisfied) return setErr("Attach the purchase return document.");
+    setBusy(true);
+    try {
+      let doc: { path: string; name: string } | null = null;
+      if (file) doc = await s.uploadReturnDocument(po.id, file);
+      if (editing) {
+        await s.updatePurchaseReturn({ inspectionId: inspection.id, tallyRef: tallyRef.trim(), documentPath: doc?.path ?? null, documentName: doc?.name ?? null, remarks: remarks.trim() || null });
+      } else {
+        await s.recordPurchaseReturn({ inspectionId: inspection.id, poId: po.id, tallyRef: tallyRef.trim(), documentPath: doc!.path, documentName: doc!.name, remarks: remarks.trim() || null });
+      }
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<ReturnDocLink qc={inspection} />} size="2xl"
+      title={editing ? (readOnly ? "Purchase Return Entry" : "Edit Purchase Return Entry") : "Purchase Return Entry in Tally"}
+      subtitle={`${po.poNo} · book the return of the QC-rejected material in Tally.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !tallyRef.trim() || !docSatisfied}>{busy ? "Saving…" : editing ? "Save Changes" : "Record return"}</Button></>}>
+      <div className="space-y-5">
+        <QcRefPanel po={po} grn={grn} />
+        <RejectedItemsReadout po={po} inspection={inspection} />
+        <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
+          <FieldLabel label="Tally Reference No." required>
+            <TextInput value={tallyRef} onChange={(e) => setTallyRef(e.target.value)} placeholder="e.g. 2627/PR/0007" />
+          </FieldLabel>
+          {!readOnly && (
+            <FieldLabel label="Return Document" required={!editing}
+              hint={editing && hasExistingDoc ? "leave as-is to keep the attached file" : "PDF or any file · required"}>
+              <div className="flex items-center gap-2.5">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                  <Upload className="h-4 w-4" />
+                  {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
+                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </label>
+                {file ? (
+                  <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
+                    <span className="max-w-[180px] truncate text-navy">{file.name}</span>
+                    <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                  </span>
+                ) : editing && hasExistingDoc ? (
+                  <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                    Current: <span className="max-w-[180px] truncate text-navy">{inspection.returnDocName ?? "attached file"}</span>
+                  </span>
+                ) : (
+                  <span className="text-[12.5px] text-grey-2">No file selected</span>
+                )}
+              </div>
+            </FieldLabel>
+          )}
+        </div>
+        <FieldLabel label="Remarks" hint="Optional">
+          <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+        </FieldLabel>
+        <Err msg={err} />
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Gate Register Outward — the last step of the rejection branch. The outward date
+ * cannot be in the future, the same rule the follow-up's actual dispatch date
+ * carries: you cannot record a movement that has not happened.
+ */
+export function GateOutwardModal({
+  po, inspection, open, onClose, editing = false, readOnly = false,
+}: { po: PurchaseOrder; inspection: QcInspection; open: boolean; onClose: () => void; editing?: boolean; readOnly?: boolean }) {
+  const s = useProcurementStore();
+  const grn = s.grnsForPo(po.id).find((g) => g.id === inspection.grnId);
+  const [gateNo, setGateNo] = useState("");
+  const [outDate, setOutDate] = useState("");
+  const [remarks, setRemarks] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setGateNo(inspection.gateRegisterNo ?? "");
+    setOutDate(inspection.gateOutDate ?? todayLocalIso());
+    setRemarks(inspection.gateRemarks ?? "");
+    setFile(null);
+    setErr(null);
+  }, [open, inspection.id, inspection.gateRegisterNo, inspection.gateOutDate, inspection.gateRemarks]);
+
+  const hasExistingDoc = !!inspection.gateDocPath;
+
+  const save = async () => {
+    setErr(null);
+    if (!gateNo.trim()) return setErr("The gate register number is required.");
+    if (!outDate) return setErr("Enter the outward date.");
+    if (outDate > todayLocalIso()) return setErr("The outward date cannot be in the future.");
+    setBusy(true);
+    try {
+      let doc: { path: string; name: string } | null = null;
+      if (file) doc = await s.uploadGateDocument(po.id, file);
+      const payload = { inspectionId: inspection.id, gateRegisterNo: gateNo.trim(), outDate, remarks: remarks.trim() || null, documentPath: doc?.path ?? null, documentName: doc?.name ?? null };
+      if (editing) await s.updateGateOutward(payload);
+      else await s.recordGateOutward({ ...payload, poId: po.id });
+      onClose();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<GateDocLink qc={inspection} />} size="2xl"
+      title={editing ? (readOnly ? "Gate Register Outward" : "Edit Gate Register Outward") : "Gate Register Outward"}
+      subtitle={`${po.poNo} · record the rejected material leaving the premises. This closes the process.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !gateNo.trim() || !outDate}>{busy ? "Saving…" : editing ? "Save Changes" : "Record gate outward"}</Button></>}>
+      <div className="space-y-5">
+        <QcRefPanel po={po} grn={grn} />
+        <RejectedItemsReadout po={po} inspection={inspection} />
+        <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
+          <FieldLabel label="Gate Register No." required>
+            <TextInput value={gateNo} onChange={(e) => setGateNo(e.target.value)} placeholder="e.g. GRO-0142" />
+          </FieldLabel>
+          <FieldLabel label="Outward Date" required>
+            <TextInput type="date" max={todayLocalIso()} value={outDate} onChange={(e) => setOutDate(e.target.value)} />
+            <Hint>Cannot be in the future — record it when the material actually leaves.</Hint>
+          </FieldLabel>
+        </div>
+        {!readOnly && (
+          <FieldLabel label="Gate Pass" hint={editing && hasExistingDoc ? "leave as-is to keep the attached file" : "optional"}>
+            <div className="flex items-center gap-2.5">
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                <Upload className="h-4 w-4" />
+                {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
+                <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {file ? (
+                <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
+                  <span className="max-w-[220px] truncate text-navy">{file.name}</span>
+                  <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                </span>
+              ) : editing && hasExistingDoc ? (
+                <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                  Current: <span className="max-w-[220px] truncate text-navy">{inspection.gateDocName ?? "attached file"}</span>
+                </span>
+              ) : (
+                <span className="text-[12.5px] text-grey-2">No file selected</span>
+              )}
+            </div>
+          </FieldLabel>
         )}
         <FieldLabel label="Remarks" hint="Optional">
           <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />

@@ -43,6 +43,9 @@ const PO_STAGE_QUEUE: Record<string, string> = {
   follow_up: `${PROC_BASE}/queues/follow-up`,
   inward: `${PROC_BASE}/queues/inward`,
   tally: `${PROC_BASE}/queues/tally`,
+  qc_inspection: `${PROC_BASE}/queues/qc`,
+  purchase_return: `${PROC_BASE}/queues/purchase-return`,
+  gate_outward: `${PROC_BASE}/queues/gate-outward`,
   closed: PROC_POS,
   cancelled: PROC_POS,
 };

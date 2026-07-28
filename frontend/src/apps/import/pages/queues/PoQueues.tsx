@@ -12,6 +12,9 @@ import {
   poInInward,
   poInSharePo,
   poInTally,
+  poInQc,
+  poInPurchaseReturn,
+  poInGateOutward,
   poQty,
   grnQty,
   sinceIso,
@@ -23,8 +26,8 @@ import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
-import { SharePoModal, FollowupModal, GrnModal, TallyModal } from "../../components/PoModals";
-import type { PurchaseOrder, Followup, Grn, TallyBooking } from "../../types";
+import { SharePoModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal } from "../../components/PoModals";
+import type { PurchaseOrder, Followup, Grn, QcInspection, TallyBooking } from "../../types";
 
 const PILL = "inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5";
 
@@ -601,6 +604,207 @@ export function TallyQueue() {
       />
       {tallyPo && <TallyModal po={tallyPo} open onClose={() => setTallyPo(null)} />}
       {editBooking.row && <TallyModal po={s.poById(editBooking.row.poId)!} open editing={editBooking.row} readOnly={editBooking.isView} onClose={editBooking.close} />}
+    </>
+  );
+}
+
+/* ============ QC inspection + the purchase-return branch ================= */
+
+type Store = ReturnType<typeof useImportStore>;
+
+/** Rejected-quantity summary for one inspection — the number that matters at a glance. */
+function rejectedSummary(s: Store, inspectionId: string): string {
+  const items = s.rejectedItemsFor(inspectionId);
+  if (items.length === 0) return "—";
+  const qty = items.reduce((a, x) => a + x.rejectedQty, 0);
+  return `${items.length} item${items.length === 1 ? "" : "s"} · ${numFmt(qty)}`;
+}
+
+/** Quantity sitting in the QC-required lines of receipts still awaiting inspection. */
+function qcPendingQty(s: Store, poId: string): number {
+  return s.uninspectedGrnsForPo(poId).reduce(
+    (a, g) => a + s.qcLinesForGrn(g.id).reduce((b, gi) => b + gi.receivedQty, 0),
+    0,
+  );
+}
+
+const pendingReturnFor = (s: Store, poId: string) =>
+  s.qcInspections.find((q) => q.poId === poId && q.result === "rejected" && !q.returnTallyRef);
+
+const pendingGateFor = (s: Store, poId: string) =>
+  s.qcInspections.find((q) => q.poId === poId && q.result === "rejected" && !!q.returnTallyRef && !q.gateRegisterNo);
+
+export function QcQueue() {
+  const s = useImportStore();
+  const [qcPo, setQcPo] = useState<PurchaseOrder | null>(null);
+  const editQc = useEntryModal<QcInspection>();
+
+  const vendorOf = (e: StageEntry<QcInspection>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
+  const qcColumns: QueueColumn<StageEntry<QcInspection>>[] = [
+    ...poRefColumns<QcInspection>(s, vendorOf),
+    {
+      key: "result",
+      header: "Result",
+      cell: (e) => (
+        <span className={`${PILL} ${e.row.result === "rejected" ? "bg-ryg-red/10 text-ryg-red" : "bg-ryg-green/10 text-ryg-green"}`}>
+          {e.row.result === "rejected" ? "Rejected" : "Approved"}
+        </span>
+      ),
+      sortValue: (e) => e.row.result,
+      filter: { kind: "text", get: (e) => e.row.result },
+      tdClassName: "whitespace-nowrap",
+    },
+    { key: "rejected", header: "Rejected", cell: (e) => rejectedSummary(s, e.row.id), sortValue: (e) => s.rejectedItemsFor(e.row.id).length, tdClassName: "whitespace-nowrap" },
+    { key: "remarks", header: "Remarks", cell: (e) => e.row.remarks ?? "—", sortValue: (e) => e.row.remarks ?? "", filter: { kind: "text", get: (e) => e.row.remarks ?? "" } },
+    ...entryMetaColumns<QcInspection>(s, "Inspected On"),
+  ];
+
+  return (
+    <>
+      <StepQueuePage<QcInspection>
+        title="QC Inspection"
+        subtitle="Receipts booked in Tally awaiting a quality check. Only Raw Material is inspected — every other purchase ends at Tally."
+        filter={(p) => poInQc(s.importIndex, p)}
+        completed={{
+          entries: s.completedQcEntries,
+          columns: qcColumns,
+          subtitle: "Inspections you have recorded. Editable until the purchase return is entered against them.",
+          emptyMessage: "Inspections you record will appear here.",
+          renderAction: (e) => editAction(e, s.canQc, () => editQc.openEdit(e.row), () => editQc.openView(e.row)),
+        }}
+        extraColumns={[
+          {
+            key: "toInspect",
+            header: "To Inspect",
+            after: "vendor",
+            tdClassName: "whitespace-nowrap",
+            cell: (p) => {
+              const n = s.uninspectedGrnsForPo(p.id).length;
+              return <span className="font-semibold text-navy">{n} receipt{n === 1 ? "" : "s"}</span>;
+            },
+            sortValue: (p) => s.uninspectedGrnsForPo(p.id).length,
+          },
+          {
+            key: "qcQty",
+            header: "Qty Awaiting QC",
+            after: "toInspect",
+            tdClassName: "whitespace-nowrap",
+            cell: (p) => numFmt(qcPendingQty(s, p.id)),
+            sortValue: (p) => qcPendingQty(s, p.id),
+            filter: { kind: "number", get: (p) => qcPendingQty(s, p.id) },
+          },
+        ]}
+        renderAction={(p) => <ActionButton label="Record QC" onClick={() => setQcPo(p)} />}
+      />
+      {qcPo && <QcModal po={qcPo} open onClose={() => setQcPo(null)} />}
+      {editQc.row && <QcModal po={s.poById(editQc.row.poId)!} open editing={editQc.row} readOnly={editQc.isView} onClose={editQc.close} />}
+    </>
+  );
+}
+
+export function PurchaseReturnQueue() {
+  const s = useImportStore();
+  const [target, setTarget] = useState<QcInspection | null>(null);
+  const editReturn = useEntryModal<QcInspection>();
+
+  const vendorOf = (e: StageEntry<QcInspection>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
+  const columns: QueueColumn<StageEntry<QcInspection>>[] = [
+    ...poRefColumns<QcInspection>(s, vendorOf),
+    { key: "tallyRef", header: "Tally Reference No.", cell: (e) => <span className="font-semibold text-navy">{e.row.returnTallyRef ?? "—"}</span>, sortValue: (e) => e.row.returnTallyRef ?? "", filter: { kind: "text", get: (e) => e.row.returnTallyRef ?? "" }, tdClassName: "whitespace-nowrap" },
+    { key: "rejected", header: "Returned", cell: (e) => rejectedSummary(s, e.row.id), sortValue: (e) => s.rejectedItemsFor(e.row.id).length, tdClassName: "whitespace-nowrap" },
+    { key: "remarks", header: "Remarks", cell: (e) => e.row.returnRemarks ?? "—", sortValue: (e) => e.row.returnRemarks ?? "", filter: { kind: "text", get: (e) => e.row.returnRemarks ?? "" } },
+    ...entryMetaColumns<QcInspection>(s, "Booked On"),
+  ];
+
+  return (
+    <>
+      <StepQueuePage<QcInspection>
+        title="Purchase Return Entry (Tally)"
+        subtitle="QC rejected this material — book the purchase return in Tally. The Tally reference and the document are both required."
+        filter={(p) => poInPurchaseReturn(s.importIndex, p)}
+        completed={{
+          entries: s.completedPurchaseReturnEntries,
+          columns,
+          subtitle: "Return entries you have booked. Editable until the material is gated out.",
+          emptyMessage: "Purchase returns you book will appear here.",
+          renderAction: (e) => editAction(e, s.canPurchaseReturn, () => editReturn.openEdit(e.row), () => editReturn.openView(e.row)),
+        }}
+        extraColumns={[
+          {
+            key: "toReturn",
+            header: "Rejected Items",
+            after: "vendor",
+            tdClassName: "whitespace-nowrap",
+            cell: (p) => {
+              const q = pendingReturnFor(s, p.id);
+              const n = q ? s.rejectedItemsFor(q.id).length : 0;
+              return <span className="font-semibold text-navy">{n} item{n === 1 ? "" : "s"}</span>;
+            },
+            sortValue: (p) => {
+              const q = pendingReturnFor(s, p.id);
+              return q ? s.rejectedItemsFor(q.id).length : 0;
+            },
+          },
+        ]}
+        renderAction={(p) => {
+          const pending = pendingReturnFor(s, p.id);
+          return pending ? <ActionButton label="Book return" onClick={() => setTarget(pending)} /> : null;
+        }}
+      />
+      {target && <PurchaseReturnModal po={s.poById(target.poId)!} inspection={target} open onClose={() => setTarget(null)} />}
+      {editReturn.row && (
+        <PurchaseReturnModal po={s.poById(editReturn.row.poId)!} inspection={editReturn.row} open editing readOnly={editReturn.isView} onClose={editReturn.close} />
+      )}
+    </>
+  );
+}
+
+export function GateOutwardQueue() {
+  const s = useImportStore();
+  const [target, setTarget] = useState<QcInspection | null>(null);
+  const editGate = useEntryModal<QcInspection>();
+
+  const vendorOf = (e: StageEntry<QcInspection>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
+  const columns: QueueColumn<StageEntry<QcInspection>>[] = [
+    ...poRefColumns<QcInspection>(s, vendorOf),
+    { key: "gateNo", header: "Gate Register No.", cell: (e) => <span className="font-semibold text-navy">{e.row.gateRegisterNo ?? "—"}</span>, sortValue: (e) => e.row.gateRegisterNo ?? "", filter: { kind: "text", get: (e) => e.row.gateRegisterNo ?? "" }, tdClassName: "whitespace-nowrap" },
+    { key: "outDate", header: "Outward Date", cell: (e) => (e.row.gateOutDate ? formatDate(e.row.gateOutDate) : "—"), sortValue: (e) => e.row.gateOutDate ?? "", tdClassName: "whitespace-nowrap" },
+    { key: "rejected", header: "Gated Out", cell: (e) => rejectedSummary(s, e.row.id), sortValue: (e) => s.rejectedItemsFor(e.row.id).length, tdClassName: "whitespace-nowrap" },
+    ...entryMetaColumns<QcInspection>(s, "Recorded On"),
+  ];
+
+  return (
+    <>
+      <StepQueuePage<QcInspection>
+        title="Gate Register Outward"
+        subtitle="Returned material waiting to leave the premises. Recording the gate outward closes the process."
+        filter={(p) => poInGateOutward(s.importIndex, p)}
+        completed={{
+          entries: s.completedGateOutwardEntries,
+          columns,
+          subtitle: "Gate outwards you have recorded.",
+          emptyMessage: "Gate outwards you record will appear here.",
+          renderAction: (e) => editAction(e, s.canGateOutward, () => editGate.openEdit(e.row), () => editGate.openView(e.row)),
+        }}
+        extraColumns={[
+          {
+            key: "returnRef",
+            header: "Return Ref.",
+            after: "vendor",
+            tdClassName: "whitespace-nowrap",
+            cell: (p) => <span className="font-semibold text-navy">{pendingGateFor(s, p.id)?.returnTallyRef ?? "—"}</span>,
+            sortValue: (p) => pendingGateFor(s, p.id)?.returnTallyRef ?? "",
+          },
+        ]}
+        renderAction={(p) => {
+          const pending = pendingGateFor(s, p.id);
+          return pending ? <ActionButton label="Gate out" onClick={() => setTarget(pending)} /> : null;
+        }}
+      />
+      {target && <GateOutwardModal po={s.poById(target.poId)!} inspection={target} open onClose={() => setTarget(null)} />}
+      {editGate.row && (
+        <GateOutwardModal po={s.poById(editGate.row.poId)!} inspection={editGate.row} open editing readOnly={editGate.isView} onClose={editGate.close} />
+      )}
     </>
   );
 }

@@ -4050,6 +4050,7 @@ export type Database = {
           created_by: string | null
           id: string
           name: string
+          qc_required: boolean
           sort_order: number
           updated_at: string
         }
@@ -4059,6 +4060,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           name: string
+          qc_required?: boolean
           sort_order?: number
           updated_at?: string
         }
@@ -4068,6 +4070,7 @@ export type Database = {
           created_by?: string | null
           id?: string
           name?: string
+          qc_required?: boolean
           sort_order?: number
           updated_at?: string
         }
@@ -4265,6 +4268,7 @@ export type Database = {
           pi_ref: string | null
           po_id: string
           po_ref: string | null
+          qc_waived_at: string | null
           received_by: string | null
         }
         Insert: {
@@ -4281,6 +4285,7 @@ export type Database = {
           pi_ref?: string | null
           po_id: string
           po_ref?: string | null
+          qc_waived_at?: string | null
           received_by?: string | null
         }
         Update: {
@@ -4297,6 +4302,7 @@ export type Database = {
           pi_ref?: string | null
           po_id?: string
           po_ref?: string | null
+          qc_waived_at?: string | null
           received_by?: string | null
         }
         Relationships: [
@@ -4770,6 +4776,162 @@ export type Database = {
             columns: ["request_item_id"]
             isOneToOne: true
             referencedRelation: "fms_purchase_request_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_purchase_qc_inspections: {
+        Row: {
+          created_at: string
+          document_name: string | null
+          document_path: string | null
+          edited_at: string | null
+          edited_by: string | null
+          gate_doc_name: string | null
+          gate_doc_path: string | null
+          gate_edited_at: string | null
+          gate_edited_by: string | null
+          gate_out_at: string | null
+          gate_out_by: string | null
+          gate_out_date: string | null
+          gate_register_no: string | null
+          gate_remarks: string | null
+          grn_id: string
+          id: string
+          inspected_at: string
+          inspected_by: string | null
+          po_id: string
+          remarks: string | null
+          result: string
+          return_doc_name: string | null
+          return_doc_path: string | null
+          return_edited_at: string | null
+          return_edited_by: string | null
+          return_remarks: string | null
+          return_tally_ref: string | null
+          returned_at: string | null
+          returned_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          gate_doc_name?: string | null
+          gate_doc_path?: string | null
+          gate_edited_at?: string | null
+          gate_edited_by?: string | null
+          gate_out_at?: string | null
+          gate_out_by?: string | null
+          gate_out_date?: string | null
+          gate_register_no?: string | null
+          gate_remarks?: string | null
+          grn_id: string
+          id?: string
+          inspected_at?: string
+          inspected_by?: string | null
+          po_id: string
+          remarks?: string | null
+          result: string
+          return_doc_name?: string | null
+          return_doc_path?: string | null
+          return_edited_at?: string | null
+          return_edited_by?: string | null
+          return_remarks?: string | null
+          return_tally_ref?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_name?: string | null
+          document_path?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
+          gate_doc_name?: string | null
+          gate_doc_path?: string | null
+          gate_edited_at?: string | null
+          gate_edited_by?: string | null
+          gate_out_at?: string | null
+          gate_out_by?: string | null
+          gate_out_date?: string | null
+          gate_register_no?: string | null
+          gate_remarks?: string | null
+          grn_id?: string
+          id?: string
+          inspected_at?: string
+          inspected_by?: string | null
+          po_id?: string
+          remarks?: string | null
+          result?: string
+          return_doc_name?: string | null
+          return_doc_path?: string | null
+          return_edited_at?: string | null
+          return_edited_by?: string | null
+          return_remarks?: string | null
+          return_tally_ref?: string | null
+          returned_at?: string | null
+          returned_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_qc_inspections_grn_id_fkey"
+            columns: ["grn_id"]
+            isOneToOne: true
+            referencedRelation: "fms_purchase_grns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_purchase_qc_inspections_po_id_fkey"
+            columns: ["po_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_pos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fms_purchase_qc_items: {
+        Row: {
+          created_at: string
+          id: string
+          inspection_id: string
+          po_item_id: string
+          received_qty: number
+          rejected_qty: number
+          remark: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inspection_id: string
+          po_item_id: string
+          received_qty: number
+          rejected_qty?: number
+          remark?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inspection_id?: string
+          po_item_id?: string
+          received_qty?: number
+          rejected_qty?: number
+          remark?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_purchase_qc_items_inspection_id_fkey"
+            columns: ["inspection_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_qc_inspections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_purchase_qc_items_po_item_id_fkey"
+            columns: ["po_item_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_po_items"
             referencedColumns: ["id"]
           },
         ]
@@ -7539,6 +7701,78 @@ export type Database = {
           p_tally_pi_no: string
         }
         Returns: string
+      }
+      fms_purchase_gate_outward_editable: {
+        Args: { p_inspection_id: string }
+        Returns: boolean
+      }
+      fms_purchase_grn_needs_qc: { Args: { p_grn_id: string }; Returns: boolean }
+      fms_purchase_qc_editable: { Args: { p_inspection_id: string }; Returns: boolean }
+      fms_purchase_purchase_return_editable: {
+        Args: { p_inspection_id: string }
+        Returns: boolean
+      }
+      fms_purchase_record_qc: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_grn_id: string
+          p_items: Json
+          p_remarks?: string
+        }
+        Returns: string
+      }
+      fms_purchase_update_qc: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_inspection_id: string
+          p_items: Json
+          p_remarks?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_record_purchase_return: {
+        Args: {
+          p_document_name: string
+          p_document_path: string
+          p_inspection_id: string
+          p_remarks?: string
+          p_tally_ref: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_purchase_return: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_inspection_id: string
+          p_remarks?: string
+          p_tally_ref: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_record_gate_outward: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_gate_register_no: string
+          p_inspection_id: string
+          p_out_date?: string
+          p_remarks?: string
+        }
+        Returns: undefined
+      }
+      fms_purchase_update_gate_outward: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_gate_register_no: string
+          p_inspection_id: string
+          p_out_date?: string
+          p_remarks?: string
+        }
+        Returns: undefined
       }
       fms_purchase_can_act_po: { Args: { p_uid: string }; Returns: boolean }
       fms_purchase_cancel_line: {

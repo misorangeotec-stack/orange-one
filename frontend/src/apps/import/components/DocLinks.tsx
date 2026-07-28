@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { FileText, Image } from "lucide-react";
 import { useImportStore } from "../store";
-import type { Grn, Pi, PurchaseOrder, TallyBooking } from "../types";
+import type { Grn, Pi, PurchaseOrder, QcInspection, TallyBooking } from "../types";
 
 /**
  * The stored-file links, one per document a PO can carry.
@@ -72,6 +72,29 @@ export function TallyDocLink({ booking }: { booking: TallyBooking }) {
   return (
     <DocButton name={booking.documentName} fallback="View invoice" icon="file" getUrl={() => s.tallyDocumentUrl(booking.documentPath!)} />
   );
+}
+
+/**
+ * The QC branch's three attachments. All three hang off the same inspection row
+ * but are separate documents belonging to separate steps, so each gets its own
+ * link rather than one generic component.
+ */
+export function QcDocLink({ qc }: { qc: QcInspection }) {
+  const s = useImportStore();
+  if (!qc.documentPath) return null;
+  return <DocButton name={qc.documentName} fallback="View QC report" icon="file" getUrl={() => s.qcDocumentUrl(qc.documentPath!)} />;
+}
+
+export function ReturnDocLink({ qc }: { qc: QcInspection }) {
+  const s = useImportStore();
+  if (!qc.returnDocPath) return null;
+  return <DocButton name={qc.returnDocName} fallback="View return document" icon="file" getUrl={() => s.qcDocumentUrl(qc.returnDocPath!)} />;
+}
+
+export function GateDocLink({ qc }: { qc: QcInspection }) {
+  const s = useImportStore();
+  if (!qc.gateDocPath) return null;
+  return <DocButton name={qc.gateDocName} fallback="View gate pass" icon="file" getUrl={() => s.qcDocumentUrl(qc.gateDocPath!)} />;
 }
 
 /** Opens the stored PO PDF via a fresh short-lived signed URL. */

@@ -419,6 +419,72 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
       };
     },
 
+    // QC inspection + the purchase-return branch
+    tallyBooked(input: { poId: string; tallyPiNo: string }): ProcurementEmailMeta {
+      const po = poOf(input.poId);
+      return {
+        subject: `Ready for QC inspection${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "Booked in Tally", headline: "Booked in Tally - the receipt is ready for QC inspection",
+        action: "booked the receipt in Tally",
+        docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
+        rows: [
+          { label: "Vendor", value: vName(po?.vendorId) },
+          { label: "Tally invoice", value: input.tallyPiNo },
+        ],
+        ctaLabel: "Open QC queue", ctaPath: `${B}/queues/qc`,
+      };
+    },
+    qcRecorded(input: { poId: string; rejectedCount: number; remarks: string | null }): ProcurementEmailMeta {
+      const po = poOf(input.poId);
+      const rejected = input.rejectedCount > 0;
+      return {
+        subject: rejected
+          ? `QC REJECTED - raise the purchase return${po?.poNo ? ` (PO #${po.poNo})` : ""}`
+          : `QC approved - process closed${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: rejected ? "QC rejected" : "QC approved",
+        headline: rejected
+          ? "QC rejected material - book the purchase return in Tally"
+          : "QC approved - the purchase order is closed",
+        action: rejected ? "rejected material at QC" : "approved the QC inspection",
+        docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
+        rows: [
+          { label: "Vendor", value: vName(po?.vendorId) },
+          ...(rejected ? [{ label: "Items rejected", value: String(input.rejectedCount) }] : []),
+        ],
+        note: reasonNote("QC remarks", input.remarks),
+        ctaLabel: rejected ? "Open purchase-return queue" : "Open the PO",
+        ctaPath: rejected ? `${B}/queues/purchase-return` : `${B}/pos/${input.poId}`,
+      };
+    },
+    purchaseReturnEntered(input: { poId: string; tallyRef: string }): ProcurementEmailMeta {
+      const po = poOf(input.poId);
+      return {
+        subject: `Purchase return booked - gate the material out${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "Purchase return", headline: "Purchase return booked in Tally - gate the material out",
+        action: "booked the purchase return in Tally",
+        docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
+        rows: [
+          { label: "Vendor", value: vName(po?.vendorId) },
+          { label: "Tally reference", value: input.tallyRef },
+        ],
+        ctaLabel: "Open gate outward queue", ctaPath: `${B}/queues/gate-outward`,
+      };
+    },
+    gateOutwardRecorded(input: { poId: string; gateRegisterNo: string }): ProcurementEmailMeta {
+      const po = poOf(input.poId);
+      return {
+        subject: `Rejected material gated out - process closed${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "Gate outward", headline: "Rejected material gated out - the purchase order is closed",
+        action: "recorded the gate register outward",
+        docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
+        rows: [
+          { label: "Vendor", value: vName(po?.vendorId) },
+          { label: "Gate register", value: input.gateRegisterNo },
+        ],
+        ctaLabel: "Open the PO", ctaPath: `${B}/pos/${input.poId}`,
+      };
+    },
+
     // Manual reminders
     reminder(kind: "nudge" | "escalate", label: string): ProcurementEmailMeta {
       const esc = kind === "escalate";

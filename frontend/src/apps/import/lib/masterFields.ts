@@ -39,7 +39,19 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         { key: "location", label: "Location", type: "text", placeholder: "e.g. Surat (optional)" },
       ];
     case "category":
-      return [{ key: "name", label: "Category name", type: "text", required: true, placeholder: "e.g. Raw Material" }];
+      return [
+        { key: "name", label: "Category name", type: "text", required: true, placeholder: "e.g. Raw Material" },
+        {
+          key: "qc_required",
+          label: "QC inspection required",
+          type: "select",
+          options: [
+            { value: "no", label: "No — the flow ends at Tally" },
+            { value: "yes", label: "Yes — inspect after the Tally entry" },
+          ],
+          placeholder: "No",
+        },
+      ];
     case "item_group":
       return [
         { key: "category_id", label: "Category", type: "select", required: true, options: ctx.categoryOptions, placeholder: "Select category" },

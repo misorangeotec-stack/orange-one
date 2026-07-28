@@ -10,7 +10,9 @@
  * shown for them, and no line/PO ever routes into them (submit_request enters
  * lines directly at `approval`; share_po advances straight to `follow_up`).
  *
- * The flow ends at `tally`, and a PO closes on goods received (GRN) + Tally.
+ * The flow ends at `qc_inspection` for material that needs a quality check, and
+ * at `tally` for everything else. Steps 9-10 are a BRANCH, not part of the happy
+ * path: they only ever hold work when an inspection REJECTS something.
  */
 import type { StepDefBase } from "@/shared/lib/fmsQueue";
 
@@ -24,7 +26,10 @@ export type StepKey =
   | "advance_payment"
   | "follow_up"
   | "inward"
-  | "tally";
+  | "tally"
+  | "qc_inspection"
+  | "purchase_return"
+  | "gate_outward";
 
 /** Import's instance of the shared step shape (see `@/shared/lib/fmsQueue`). */
 export type StepDef = StepDefBase<StepKey, "request" | "po">;
@@ -37,6 +42,9 @@ export const STEPS: StepDef[] = [
   { key: "follow_up", index: 5, title: "Follow-up", short: "Follow-up", scope: "po" },
   { key: "inward", index: 6, title: "Inward (GRN)", short: "Inward", scope: "po" },
   { key: "tally", index: 7, title: "System Entry (Tally)", short: "Tally", scope: "po" },
+  { key: "qc_inspection", index: 8, title: "QC Inspection", short: "QC", scope: "po" },
+  { key: "purchase_return", index: 9, title: "Purchase Return Entry (Tally)", short: "Purchase Return", scope: "po" },
+  { key: "gate_outward", index: 10, title: "Gate Register Outward", short: "Gate Outward", scope: "po" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);

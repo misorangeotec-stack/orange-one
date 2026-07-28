@@ -25,6 +25,12 @@ export interface Category {
   name: string;
   active: boolean;
   sortOrder: number;
+  /**
+   * Goods in this category must clear QC Inspection after their Tally entry
+   * before the PO can close. Opt-in — seeded true for Raw Material only, so every
+   * other kind of purchase still ends at Tally.
+   */
+  qcRequired: boolean;
   createdAt: string;
 }
 
@@ -320,6 +326,8 @@ export interface Grn {
   /** Set when this entry was CORRECTED via an update_* RPC (never by the stage machine). */
   editedAt: string | null;
   editedBy: string | null;
+  /** Receipts that predate the QC step; stamped once by the QC migration. Never raise a QC work-item. */
+  qcWaivedAt: string | null;
   createdAt: string;
 }
 
@@ -344,6 +352,68 @@ export interface TallyBooking {
   editedAt: string | null;
   editedBy: string | null;
   createdAt: string;
+}
+
+export type QcResult = "approved" | "rejected";
+
+/**
+ * One QC inspection per Tally-booked goods receipt. The decision is ITEM-WISE
+ * (see {@link QcItem}) and `result` is derived server-side: any rejected quantity
+ * makes it `rejected`, which opens the return branch. An approved inspection is
+ * the end of the flow.
+ *
+ * The purchase-return entry and the gate outward are exactly one per rejected
+ * inspection, so they live here as columns rather than in tables of their own.
+ */
+export interface QcInspection {
+  id: string;
+  poId: string;
+  grnId: string;
+  result: QcResult;
+  remarks: string | null;
+  documentPath: string | null;
+  documentName: string | null;
+  inspectedAt: string;
+  inspectedBy: string | null;
+  editedAt: string | null;
+  editedBy: string | null;
+
+  /** Purchase Return Entry in Tally — both the reference and the document are mandatory. */
+  returnTallyRef: string | null;
+  returnRemarks: string | null;
+  returnDocPath: string | null;
+  returnDocName: string | null;
+  returnedAt: string | null;
+  returnedBy: string | null;
+  returnEditedAt: string | null;
+  returnEditedBy: string | null;
+
+  /** Gate Register Outward — closes the rejection branch. */
+  gateRegisterNo: string | null;
+  gateOutDate: string | null;
+  gateRemarks: string | null;
+  gateDocPath: string | null;
+  gateDocName: string | null;
+  gateOutAt: string | null;
+  gateOutBy: string | null;
+  gateEditedAt: string | null;
+  gateEditedBy: string | null;
+
+  createdAt: string;
+}
+
+export interface QcItem {
+  id: string;
+  inspectionId: string;
+  poItemId: string;
+  /**
+   * What THIS receipt delivered for the line — a snapshot, because
+   * `PoItem.receivedQty` is the rollup across every GRN and is the wrong number
+   * to cap a rejection against.
+   */
+  receivedQty: number;
+  rejectedQty: number;
+  remark: string | null;
 }
 
 export type PaymentKind = "advance" | "installment";

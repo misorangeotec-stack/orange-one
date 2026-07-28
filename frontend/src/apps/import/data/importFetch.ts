@@ -32,6 +32,9 @@ import type {
   Grn,
   GrnItem,
   TallyBooking,
+  QcInspection,
+  QcItem,
+  QcResult,
   Payment,
   Followup,
   PaymentTerms,
@@ -78,6 +81,8 @@ type Tbl =
   | "fms_import_grns"
   | "fms_import_grn_items"
   | "fms_import_tally_bookings"
+  | "fms_import_qc_inspections"
+  | "fms_import_qc_items"
   | "fms_import_payments"
   | "fms_import_followups"
   | "fms_import_activity"
@@ -139,6 +144,8 @@ export interface ImportData {
   grns: Grn[];
   grnItems: GrnItem[];
   tallyBookings: TallyBooking[];
+  qcInspections: QcInspection[];
+  qcItems: QcItem[];
   payments: Payment[];
   followups: Followup[];
   activity: Activity[];
@@ -159,6 +166,7 @@ const mapCategory = (r: any): Category => ({
   name: r.name,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
+  qcRequired: r.qc_required ?? false,
   createdAt: r.created_at,
 });
 
@@ -404,6 +412,7 @@ const mapGrn = (r: any): Grn => ({
   receivedBy: r.received_by ?? null,
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
+  qcWaivedAt: r.qc_waived_at ?? null,
   createdAt: r.created_at,
 });
 
@@ -427,6 +436,47 @@ const mapTally = (r: any): TallyBooking => ({
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
   createdAt: r.created_at,
+});
+
+const mapQcInspection = (r: any): QcInspection => ({
+  id: r.id,
+  poId: r.po_id,
+  grnId: r.grn_id,
+  result: r.result as QcResult,
+  remarks: r.remarks ?? null,
+  documentPath: r.document_path ?? null,
+  documentName: r.document_name ?? null,
+  inspectedAt: r.inspected_at,
+  inspectedBy: r.inspected_by ?? null,
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
+  returnTallyRef: r.return_tally_ref ?? null,
+  returnRemarks: r.return_remarks ?? null,
+  returnDocPath: r.return_doc_path ?? null,
+  returnDocName: r.return_doc_name ?? null,
+  returnedAt: r.returned_at ?? null,
+  returnedBy: r.returned_by ?? null,
+  returnEditedAt: r.return_edited_at ?? null,
+  returnEditedBy: r.return_edited_by ?? null,
+  gateRegisterNo: r.gate_register_no ?? null,
+  gateOutDate: r.gate_out_date ?? null,
+  gateRemarks: r.gate_remarks ?? null,
+  gateDocPath: r.gate_doc_path ?? null,
+  gateDocName: r.gate_doc_name ?? null,
+  gateOutAt: r.gate_out_at ?? null,
+  gateOutBy: r.gate_out_by ?? null,
+  gateEditedAt: r.gate_edited_at ?? null,
+  gateEditedBy: r.gate_edited_by ?? null,
+  createdAt: r.created_at,
+});
+
+const mapQcItem = (r: any): QcItem => ({
+  id: r.id,
+  inspectionId: r.inspection_id,
+  poItemId: r.po_item_id,
+  receivedQty: Number(r.received_qty),
+  rejectedQty: Number(r.rejected_qty),
+  remark: r.remark ?? null,
 });
 
 const mapPayment = (r: any): Payment => ({
@@ -517,6 +567,8 @@ export async function fetchImportData(): Promise<ImportData> {
     grns,
     grnItems,
     tallyBookings,
+    qcInspections,
+    qcItems,
     payments,
     followups,
     activity,
@@ -545,6 +597,8 @@ export async function fetchImportData(): Promise<ImportData> {
     fetchAll("fms_import_grns"),
     fetchAll("fms_import_grn_items"),
     fetchAll("fms_import_tally_bookings"),
+    fetchAll("fms_import_qc_inspections"),
+    fetchAll("fms_import_qc_items"),
     fetchAll("fms_import_payments"),
     fetchAll("fms_import_followups"),
     fetchAll("fms_import_activity"),
@@ -582,6 +636,8 @@ export async function fetchImportData(): Promise<ImportData> {
     grns: grns.map(mapGrn),
     grnItems: grnItems.map(mapGrnItem),
     tallyBookings: tallyBookings.map(mapTally),
+    qcInspections: qcInspections.map(mapQcInspection),
+    qcItems: qcItems.map(mapQcItem),
     payments: payments.map(mapPayment),
     followups: followups.map(mapFollowup),
     activity: activity.map(mapActivity),

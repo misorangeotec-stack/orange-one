@@ -17,7 +17,19 @@ import type { PurchaseRequest } from "../types";
  */
 export default function RequestStepper({ request }: { request: PurchaseRequest }) {
   const s = useProcurementStore();
-  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s), [s]);
+  // The return branch belongs on this requisition's rail only if one of its POs
+  // actually had a QC rejection. Computed here, before the nodes, because the
+  // node list and the active index must be measured against the SAME array.
+  const showReturnBranch = useMemo(() => {
+    const poIds = new Set(
+      s.itemsForRequest(request.id)
+        .map((l) => s.poItemForLine(l.id)?.poId)
+        .filter((id): id is string => !!id),
+    );
+    return s.qcInspections.some((q) => poIds.has(q.poId) && q.result === "rejected");
+  }, [s, request]);
+
+  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s, showReturnBranch), [s, showReturnBranch]);
 
   const { activeIndex, finished } = useMemo(() => {
     const lines = s.itemsForRequest(request.id);
@@ -35,17 +47,31 @@ export default function RequestStepper({ request }: { request: PurchaseRequest }
     if (open.some((l) => l.status === "approved_pending_po")) return { activeIndex: flowIndex("generated"), finished: false };
 
     // Every open line is on a PO — sit on the least-advanced PO; finished only
-    // when they're all closed AND Tally-booked.
+    // when they're all closed AND Tally-booked AND QC-cleared.
     const pos = open
       .map((l) => s.poItemForLine(l.id))
       .map((pi) => (pi ? s.poById(pi.poId) : undefined))
       .filter((po): po is NonNullable<typeof po> => !!po);
     if (pos.length === 0) return { activeIndex: flowIndex("generated"), finished: false };
 
-    const idx = Math.min(...pos.map((po) => poFlowIndex(po.currentStage, s.unbookedGrnsForPo(po.id).length > 0)));
-    const allDone = pos.every((po) => po.currentStage === "closed" && s.unbookedGrnsForPo(po.id).length === 0);
+    const idx = Math.min(
+      ...pos.map((po) =>
+        poFlowIndex(
+          po.currentStage,
+          s.unbookedGrnsForPo(po.id).length > 0,
+          showReturnBranch,
+          s.uninspectedGrnsForPo(po.id).length > 0,
+        ),
+      ),
+    );
+    const allDone = pos.every(
+      (po) =>
+        po.currentStage === "closed" &&
+        s.unbookedGrnsForPo(po.id).length === 0 &&
+        s.uninspectedGrnsForPo(po.id).length === 0,
+    );
     return { activeIndex: idx, finished: allDone };
-  }, [s, request]);
+  }, [s, request, showReturnBranch]);
 
   return <PoStageRail nodes={nodes} activeIndex={activeIndex} finished={finished} />;
 }

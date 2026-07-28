@@ -1,11 +1,15 @@
 /**
- * The 10 canonical Purchase FMS workflow steps (code-defined, 1-based display
+ * The 13 canonical Purchase FMS workflow steps (code-defined, 1-based display
  * index). step_key is the stable identifier used by fms_purchase_step_owners and
- * the stage logic. Stages 1–4 act on the request/item-line; 5–10 on the PO.
+ * the stage logic. Stages 1–4 act on the request/item-line; 5–13 on the PO.
  *
- * The flow ends at `tally`. Settling the vendor's balance is an accounts activity
- * on the vendor's credit terms, not a procurement work-item to chase in a queue —
- * balance payments stay *recordable* on PoDetail, but no step tracks them.
+ * Steps 12–13 are a BRANCH, not part of the happy path: they only ever hold work
+ * when a QC inspection rejects something. An approved inspection closes the flow
+ * at step 11, and a purchase with no QC-required category closes at step 10.
+ *
+ * Settling the vendor's balance is an accounts activity on the vendor's credit
+ * terms, not a procurement work-item to chase in a queue — balance payments stay
+ * *recordable* on PoDetail, but no step tracks them.
  */
 import type { StepDefBase } from "@/shared/lib/fmsQueue";
 
@@ -19,7 +23,10 @@ export type StepKey =
   | "advance_payment"
   | "follow_up"
   | "inward"
-  | "tally";
+  | "tally"
+  | "qc_inspection"
+  | "purchase_return"
+  | "gate_outward";
 
 /** Purchase's instance of the shared step shape (see `@/shared/lib/fmsQueue`). */
 export type StepDef = StepDefBase<StepKey, "request" | "po">;
@@ -35,6 +42,9 @@ export const STEPS: StepDef[] = [
   { key: "follow_up", index: 8, title: "Follow-up", short: "Follow-up", scope: "po" },
   { key: "inward", index: 9, title: "Inward (GRN)", short: "Inward", scope: "po" },
   { key: "tally", index: 10, title: "System Entry (Tally)", short: "Tally", scope: "po" },
+  { key: "qc_inspection", index: 11, title: "QC Inspection", short: "QC", scope: "po" },
+  { key: "purchase_return", index: 12, title: "Purchase Return Entry (Tally)", short: "Purchase Return", scope: "po" },
+  { key: "gate_outward", index: 13, title: "Gate Register Outward", short: "Gate Outward", scope: "po" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);

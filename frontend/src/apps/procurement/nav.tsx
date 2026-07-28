@@ -66,6 +66,9 @@ export function buildProcurementNav(opts: {
   canFollowup: boolean;
   canInward: boolean;
   canTally: boolean;
+  canQc: boolean;
+  canPurchaseReturn: boolean;
+  canGateOutward: boolean;
   canMonitor: boolean;
   /** Real signed-in admin, not in demo mode → show the "Demo mode" entry point. */
   canDemo: boolean;
@@ -96,6 +99,9 @@ export function buildProcurementNav(opts: {
     { show: opts.canFollowup, label: "Follow-up", to: `${B}/queues/follow-up`, icon: ic.orders },
     { show: opts.canInward, label: "Inward", to: `${B}/queues/inward`, icon: ic.orders },
     { show: opts.canTally, label: "Tally", to: `${B}/queues/tally`, icon: ic.orders },
+    { show: opts.canQc, label: "QC Inspection", to: `${B}/queues/qc`, icon: ic.orders },
+    { show: opts.canPurchaseReturn, label: "Purchase Return", to: `${B}/queues/purchase-return`, icon: ic.orders },
+    { show: opts.canGateOutward, label: "Gate Outward", to: `${B}/queues/gate-outward`, icon: ic.orders },
   ];
   let queueSectionUsed = false;
   for (const q of stepQueues) {

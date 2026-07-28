@@ -11,7 +11,7 @@ import { useProcurementStore } from "../../store";
 import { inr, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
 import QtyTotal from "../../components/QtyTotal";
-import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
+import { SharePoModal, AddPiModal, PaymentModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink } from "../../components/DocLinks";
 import type { PurchaseOrder } from "../../types";
@@ -21,7 +21,7 @@ export default function PoDetail() {
   const { id } = useParams();
   const s = useProcurementStore();
   const [tab, setTab] = useState("items");
-  const [modal, setModal] = useState<"share" | "pi" | "advance" | "payment" | "followup" | "grn" | "tally" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
+  const [modal, setModal] = useState<"share" | "pi" | "advance" | "payment" | "followup" | "grn" | "tally" | "qc" | "return" | "gateout" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
 
   const po = s.poById(id ?? null);
   if (!po) {
@@ -47,6 +47,14 @@ export default function PoDetail() {
   const allReceived = items.length > 0 && items.every((it) => it.receivedQty >= it.qty);
   const unbookedGrns = s.unbookedGrnsForPo(po.id);
   const tallyBooked = unbookedGrns.length === 0;
+
+  // The QC branch. Each button appears only while its own step actually owes
+  // work, so the bar keeps offering exactly one logical next step.
+  const qcPending = s.uninspectedGrnsForPo(po.id).length > 0;
+  const pendingReturn = s.qcInspections.find((q) => q.poId === po.id && q.result === "rejected" && !q.returnTallyRef);
+  const pendingGate = s.qcInspections.find(
+    (q) => q.poId === po.id && q.result === "rejected" && !!q.returnTallyRef && !q.gateRegisterNo,
+  );
 
   // Comma-separated names of the items a PI covers (via its PI items → PO lines).
   const piItemNames = (p: (typeof pis)[number]): string =>
@@ -155,6 +163,9 @@ export default function PoDetail() {
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
           {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
           {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
+          {s.canQc && qcPending && <Button size="sm" variant="ghost" onClick={() => setModal("qc")}>Record QC</Button>}
+          {s.canPurchaseReturn && pendingReturn && <Button size="sm" variant="ghost" onClick={() => setModal("return")}>Book purchase return</Button>}
+          {s.canGateOutward && pendingGate && <Button size="sm" variant="ghost" onClick={() => setModal("gateout")}>Gate out</Button>}
           {/* Balance payment isn't a tracked step — it's recordable from Follow-up
               onward (never at Share/Collect-PI/Advance, where it isn't due yet). */}
           {s.canRecordPayment && pending > 0 && (po.currentStage === "follow_up" || po.currentStage === "inward" || po.currentStage === "tally") && <Button size="sm" onClick={() => setModal("payment")}>Record Payment</Button>}
@@ -167,9 +178,10 @@ export default function PoDetail() {
           closed PO can still owe Tally (unbooked GRN). The action bar above is
           open-only, so surface just the Tally action here — book_tally accepts a
           closed PO. Mirrors poInTally, which keeps it in the Tally queue too. */}
-      {!open && po.currentStage === "closed" && !tallyBooked && s.canTally && (
+      {!open && po.currentStage === "closed" && ((!tallyBooked && s.canTally) || (qcPending && s.canQc)) && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>
+          {!tallyBooked && s.canTally && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
+          {qcPending && s.canQc && <Button size="sm" variant="ghost" onClick={() => setModal("qc")}>Record QC</Button>}
         </div>
       )}
 
@@ -332,6 +344,9 @@ export default function PoDetail() {
       <PaymentModal po={po} open={modal === "payment"} onClose={() => setModal(null)} kind="installment" />
       <GrnModal po={po} open={modal === "grn"} onClose={() => setModal(null)} />
       <TallyModal po={po} open={modal === "tally"} onClose={() => setModal(null)} />
+      <QcModal po={po} open={modal === "qc"} onClose={() => setModal(null)} />
+      {pendingReturn && <PurchaseReturnModal po={po} inspection={pendingReturn} open={modal === "return"} onClose={() => setModal(null)} />}
+      {pendingGate && <GateOutwardModal po={po} inspection={pendingGate} open={modal === "gateout"} onClose={() => setModal(null)} />}
       <FollowupModal po={po} open={modal === "followup"} onClose={() => setModal(null)} />
       <RequestCancelModal po={po} open={modal === "reqcancel"} onClose={() => setModal(null)} />
       <CancelPoModal po={po} request={cancelRequest ?? null} open={modal === "cancel"} onClose={() => setModal(null)} />

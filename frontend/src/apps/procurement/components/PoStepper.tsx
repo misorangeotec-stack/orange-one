@@ -19,18 +19,24 @@ export default function PoStepper({ po }: { po: PurchaseOrder }) {
   // Tally is genuinely done only once every goods receipt has its invoice; an
   // unbooked GRN means the step is still open even on a PO that closed early.
   const tallyPending = s.unbookedGrnsForPo(po.id).length > 0;
+  // Same rule one step later: a booked receipt still owing QC keeps that node open.
+  const qcPending = s.uninspectedGrnsForPo(po.id).length > 0;
+  // The return branch is only part of this PO's journey if QC actually rejected
+  // something — otherwise those two nodes never existed for it.
+  const showReturnBranch = s.qcInspections.some((q) => q.poId === po.id && q.result === "rejected");
 
-  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s), [s]);
+  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s, showReturnBranch), [s, showReturnBranch]);
 
   return (
     <PoStageRail
       nodes={nodes}
-      activeIndex={poFlowIndex(po.currentStage, tallyPending)}
+      activeIndex={poFlowIndex(po.currentStage, tallyPending, showReturnBranch, qcPending)}
       // A 'closed' PO has finished its final stage — the last node is DONE
-      // (green check), not in progress. But a PO that closed with Tally still
-      // pending isn't truly finished: poFlowIndex sits it on Tally (in progress),
-      // so it must NOT be flagged finished. (Cancelled stays highlighted, not ticked.)
-      finished={po.currentStage === "closed" && !tallyPending}
+      // (green check), not in progress. But a PO that closed with Tally or QC
+      // still pending isn't truly finished: poFlowIndex sits it on that node (in
+      // progress), so it must NOT be flagged finished. (Cancelled stays
+      // highlighted, not ticked.)
+      finished={po.currentStage === "closed" && !tallyPending && !qcPending}
     />
   );
 }

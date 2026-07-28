@@ -32,6 +32,8 @@ import type {
   Grn,
   GrnItem,
   TallyBooking,
+  QcInspection,
+  QcItem,
   Payment,
   Followup,
   Activity,
@@ -58,6 +60,13 @@ import {
   completedFollowupEntries,
   completedGrnEntries,
   completedTallyEntries,
+  completedQcEntries,
+  completedPurchaseReturnEntries,
+  completedGateOutwardEntries,
+  qcLinesForGrn,
+  grnNeedsQc,
+  uninspectedGrnsForPo as uninspectedGrnsForPoPure,
+  rejectedItemsFor as rejectedItemsForPure,
   completedSourcingEntries,
   completedApprovalEntries,
   completedSourcingRequestEntries,
@@ -136,6 +145,17 @@ import {
   bookTally as bookTallyWrite,
   uploadTallyDocument as uploadTallyDocumentWrite,
   tallyDocumentUrl as tallyDocumentUrlWrite,
+  recordQc as recordQcWrite,
+  updateQc as updateQcWrite,
+  recordPurchaseReturn as recordPurchaseReturnWrite,
+  updatePurchaseReturn as updatePurchaseReturnWrite,
+  recordGateOutward as recordGateOutwardWrite,
+  updateGateOutward as updateGateOutwardWrite,
+  uploadQcDocument as uploadQcDocumentWrite,
+  uploadReturnDocument as uploadReturnDocumentWrite,
+  uploadGateDocument as uploadGateDocumentWrite,
+  qcDocumentUrl as qcDocumentUrlWrite,
+  type QcLineInput,
   announce as announceWrite,
   reassignLine as reassignLineWrite,
   markNotificationsRead as markNotificationsReadWrite,
@@ -272,6 +292,9 @@ interface ProcurementStoreValue {
   completedFollowupEntries: StageEntry<Followup>[];
   completedGrnEntries: StageEntry<Grn>[];
   completedTallyEntries: StageEntry<TallyBooking>[];
+  completedQcEntries: StageEntry<QcInspection>[];
+  completedPurchaseReturnEntries: StageEntry<QcInspection>[];
+  completedGateOutwardEntries: StageEntry<QcInspection>[];
   /** Per-LINE history. Retained for the legacy path; the queue pages use the request-level lists below. */
   completedSourcingEntries: StageEntry<RequestItem>[];
   completedApprovalEntries: StageEntry<RequestItem>[];
@@ -304,6 +327,8 @@ interface ProcurementStoreValue {
   grns: Grn[];
   grnItems: GrnItem[];
   tallyBookings: TallyBooking[];
+  qcInspections: QcInspection[];
+  qcItems: QcItem[];
   payments: Payment[];
   followups: Followup[];
   pisForPo: (poId: string) => Pi[];
@@ -315,6 +340,16 @@ interface ProcurementStoreValue {
    */
   unbookedGrnsForPo: (poId: string) => Grn[];
   grnItemsForGrn: (grnId: string) => GrnItem[];
+  /** Receipts booked in Tally that still owe a QC inspection. */
+  uninspectedGrnsForPo: (poId: string) => Grn[];
+  /** The lines of a receipt QC actually inspects (qc_required categories only). */
+  qcLinesForGrn: (grnId: string) => GrnItem[];
+  grnNeedsQc: (grn: Grn) => boolean;
+  qcForGrn: (grnId: string) => QcInspection | null;
+  qcById: (inspectionId: string) => QcInspection | null;
+  /** Only the rejected lines — what travels into the return and the gate pass. */
+  rejectedItemsFor: (inspectionId: string) => QcItem[];
+  qcItemsFor: (inspectionId: string) => QcItem[];
   tallyForPo: (poId: string) => TallyBooking[];
   paymentsForPo: (poId: string) => Payment[];
   paymentsForPi: (piId: string) => Payment[];
@@ -359,6 +394,9 @@ interface ProcurementStoreValue {
   canFollowup: boolean;
   canInward: boolean;
   canTally: boolean;
+  canQc: boolean;
+  canPurchaseReturn: boolean;
+  canGateOutward: boolean;
 
   // PO cancellation (vendor-requested, approver-only)
   poCancelRequests: PoCancelRequest[];
@@ -439,6 +477,16 @@ interface ProcurementStoreValue {
   bookTally: (input: { poId: string; grnId: string | null; tallyPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<string>;
   uploadTallyDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   tallyDocumentUrl: (path: string) => Promise<string>;
+  recordQc: (input: { grnId: string; poId: string; items: QcLineInput[]; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
+  updateQc: (input: { inspectionId: string; poId: string; items: QcLineInput[]; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  recordPurchaseReturn: (input: { inspectionId: string; poId: string; tallyRef: string; documentPath: string; documentName: string; remarks?: string | null }) => Promise<void>;
+  updatePurchaseReturn: (input: { inspectionId: string; tallyRef: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<void>;
+  recordGateOutward: (input: { inspectionId: string; poId: string; gateRegisterNo: string; outDate: string | null; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updateGateOutward: (input: { inspectionId: string; gateRegisterNo: string; outDate: string | null; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  uploadQcDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
+  uploadReturnDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
+  uploadGateDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
+  qcDocumentUrl: (path: string) => Promise<string>;
 
   // activity + notifications (Phase 5)
   activity: Activity[];
@@ -548,6 +596,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
   const grns = data?.grns ?? [];
   const grnItems = data?.grnItems ?? [];
   const tallyBookings = data?.tallyBookings ?? [];
+  const qcInspections = data?.qcInspections ?? [];
+  const qcItems = data?.qcItems ?? [];
   const payments = data?.payments ?? [];
   const followups = data?.followups ?? [];
   const activity = data?.activity ?? [];
@@ -560,7 +610,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     // pages and the FMS Control Center count the identical work-items.
     // `config` rides along so the pure due-date rules can read the admin's per-step SLA.
     const snapshot: ProcSnapshot = {
-      requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings, payments, followups, activity,
+      requests, requestItems, pos, poItems, pis, piItems, grns, grnItems, tallyBookings,
+      qcInspections, qcItems, categories, payments, followups, activity,
       config: { processCoordinatorIds, amountBasis, stepSla },
     };
     const procIndex = buildProcIndex(snapshot);
@@ -776,7 +827,10 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       completedAdvanceEntries: completedAdvanceEntries(snapshot, procIndex),
       completedFollowupEntries: completedFollowupEntries(snapshot, procIndex),
       completedGrnEntries: completedGrnEntries(snapshot, procIndex),
-      completedTallyEntries: completedTallyEntries(snapshot),
+      completedTallyEntries: completedTallyEntries(snapshot, procIndex),
+      completedQcEntries: completedQcEntries(snapshot),
+      completedPurchaseReturnEntries: completedPurchaseReturnEntries(snapshot),
+      completedGateOutwardEntries: completedGateOutwardEntries(snapshot),
       completedSourcingEntries: completedSourcingEntries(snapshot, procIndex),
       completedApprovalEntries: completedApprovalEntries(snapshot, procIndex),
       completedSourcingRequestEntries: completedSourcingRequestEntries(snapshot, procIndex),
@@ -810,6 +864,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       grns,
       grnItems,
       tallyBookings,
+      qcInspections,
+      qcItems,
       payments,
       followups,
       followupsForPi: (piId) => followups.filter((f) => f.piId === piId).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -826,6 +882,13 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           .filter((g) => g.poId === poId && !tallyBookings.some((t) => t.grnId === g.id))
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       grnItemsForGrn: (grnId) => grnItems.filter((x) => x.grnId === grnId),
+      uninspectedGrnsForPo: (poId) => uninspectedGrnsForPoPure(procIndex, poId),
+      qcLinesForGrn: (grnId) => qcLinesForGrn(procIndex, grnId),
+      grnNeedsQc: (grn) => grnNeedsQc(procIndex, grn),
+      qcForGrn: (grnId) => qcInspections.find((q) => q.grnId === grnId) ?? null,
+      qcById: (inspectionId) => qcInspections.find((q) => q.id === inspectionId) ?? null,
+      rejectedItemsFor: (inspectionId) => rejectedItemsForPure(procIndex, inspectionId),
+      qcItemsFor: (inspectionId) => qcItems.filter((x) => x.inspectionId === inspectionId),
       tallyForPo: (poId) => tallyBookings.filter((t) => t.poId === poId),
       paymentsForPo: (poId) => payments.filter((p) => p.poId === poId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
       paymentsForPi: (piId) => payments.filter((p) => p.piId === piId).sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
@@ -840,6 +903,9 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       canFollowup: isStepOwner("follow_up"),
       canInward: isStepOwner("inward"),
       canTally: isStepOwner("tally"),
+      canQc: isStepOwner("qc_inspection"),
+      canPurchaseReturn: isStepOwner("purchase_return"),
+      canGateOutward: isStepOwner("gate_outward"),
 
       // ---- PO cancellation (vendor-requested, approver-only) ----
       poCancelRequests,
@@ -1224,11 +1290,83 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       },
       // Tally is the last step — booking the invoice ends the flow, so there is
       // no downstream owner to notify.
+      // Tally used to be the last step, so this announced nothing. It now hands
+      // off to QC — but ONLY when the receipt actually carries QC-required
+      // material; for everything else Tally is still where the flow ends.
       bookTally: async (input) => {
         const id = await bookTallyWrite(input);
+        const grn = input.grnId ? grns.find((g) => g.id === input.grnId) : undefined;
+        if (grn && grnNeedsQc(procIndex, grn)) {
+          await safeAnnounce({
+            entityType: "po",
+            entityId: input.poId,
+            type: "tally_booked",
+            text: "Booked in Tally — the receipt is ready for QC inspection",
+            recipients: ownerIdsOf("qc_inspection"),
+            meta: email.tallyBooked({ poId: input.poId, tallyPiNo: input.tallyPiNo }),
+          });
+        }
         await invalidate();
         return id;
       },
+
+      recordQc: async (input) => {
+        const id = await recordQcWrite(input);
+        const rejected = input.items.filter((i) => i.rejectedQty > 0);
+        await safeAnnounce({
+          entityType: "po",
+          entityId: input.poId,
+          type: rejected.length > 0 ? "qc_rejected" : "qc_approved",
+          text: rejected.length > 0
+            ? "QC rejected material — book the purchase return in Tally"
+            : "QC approved — the purchase order is closed",
+          // An approval ends the flow, so there is no downstream owner to tell.
+          recipients: rejected.length > 0 ? ownerIdsOf("purchase_return") : [],
+          meta: email.qcRecorded({ poId: input.poId, rejectedCount: rejected.length, remarks: input.remarks ?? null }),
+        });
+        await invalidate();
+        return id;
+      },
+      updateQc: async (input) => {
+        await updateQcWrite(input);
+        await invalidate();
+      },
+      recordPurchaseReturn: async (input) => {
+        await recordPurchaseReturnWrite(input);
+        await safeAnnounce({
+          entityType: "po",
+          entityId: input.poId,
+          type: "purchase_return_entered",
+          text: "Purchase return booked in Tally — gate the material out",
+          recipients: ownerIdsOf("gate_outward"),
+          meta: email.purchaseReturnEntered({ poId: input.poId, tallyRef: input.tallyRef }),
+        });
+        await invalidate();
+      },
+      updatePurchaseReturn: async (input) => {
+        await updatePurchaseReturnWrite(input);
+        await invalidate();
+      },
+      recordGateOutward: async (input) => {
+        await recordGateOutwardWrite(input);
+        await safeAnnounce({
+          entityType: "po",
+          entityId: input.poId,
+          type: "gate_outward_recorded",
+          text: "Rejected material gated out — the purchase order is closed",
+          recipients: [],
+          meta: email.gateOutwardRecorded({ poId: input.poId, gateRegisterNo: input.gateRegisterNo }),
+        });
+        await invalidate();
+      },
+      updateGateOutward: async (input) => {
+        await updateGateOutwardWrite(input);
+        await invalidate();
+      },
+      uploadQcDocument: uploadQcDocumentWrite,
+      uploadReturnDocument: uploadReturnDocumentWrite,
+      uploadGateDocument: uploadGateDocumentWrite,
+      qcDocumentUrl: qcDocumentUrlWrite,
       uploadTallyDocument: (poId, file) => uploadTallyDocumentWrite(poId, file),
       tallyDocumentUrl: (path) => tallyDocumentUrlWrite(path),
 
@@ -1432,6 +1570,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     grns,
     grnItems,
     tallyBookings,
+    qcInspections,
+    qcItems,
     payments,
     followups,
     activity,

@@ -83,6 +83,9 @@ export const PO_STAGE_LABEL: Record<string, string> = {
   follow_up: "Follow-up",
   inward: "Inward",
   tally: "Tally",
+  qc_inspection: "QC",
+  purchase_return: "Purchase Return",
+  gate_outward: "Gate Outward",
   closed: "Closed",
   cancelled: "Cancelled",
 };
@@ -94,6 +97,10 @@ export const PO_STAGE_CLASS: Record<string, string> = {
   follow_up: "text-orange bg-orange-soft",
   inward: "text-teal bg-[#E6F8F6]",
   tally: "text-teal bg-[#E6F8F6]",
+  qc_inspection: "text-blue bg-[#EAF1FE]",
+  // The return branch reads as an exception, not as progress.
+  purchase_return: "text-ryg-red bg-[#FDECEC]",
+  gate_outward: "text-ryg-red bg-[#FDECEC]",
   closed: "text-ryg-green bg-[#E9F8EF]",
   cancelled: "text-grey-2 bg-page",
 };

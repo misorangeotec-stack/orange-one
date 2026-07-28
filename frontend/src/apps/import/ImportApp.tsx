@@ -16,7 +16,7 @@ import EditRequest from "./pages/requests/EditRequest";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
 import ApprovalsQueue from "./pages/queues/ApprovalsQueue";
-import { SharePoQueue, FollowUpQueue, InwardQueue, TallyQueue } from "./pages/queues/PoQueues";
+import { SharePoQueue, FollowUpQueue, InwardQueue, TallyQueue, QcQueue, PurchaseReturnQueue, GateOutwardQueue } from "./pages/queues/PoQueues";
 import PoWorkbench from "./pages/po/PoWorkbench";
 import PoList from "./pages/po/PoList";
 import PoDetail from "./pages/po/PoDetail";
@@ -75,6 +75,9 @@ export default function ImportApp() {
             <Route path="queues/follow-up" element={<FollowUpQueue />} />
             <Route path="queues/inward" element={<InwardQueue />} />
             <Route path="queues/tally" element={<TallyQueue />} />
+            <Route path="queues/qc" element={<QcQueue />} />
+            <Route path="queues/purchase-return" element={<PurchaseReturnQueue />} />
+            <Route path="queues/gate-outward" element={<GateOutwardQueue />} />
             <Route path="po/workbench" element={<PoWorkbench />} />
             <Route path="pos" element={<PoList />} />
             <Route path="pos/:id" element={<PoDetail />} />

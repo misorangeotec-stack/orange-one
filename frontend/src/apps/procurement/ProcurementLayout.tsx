@@ -39,6 +39,9 @@ export default function ProcurementLayout() {
     canFollowup,
     canInward,
     canTally,
+    canQc,
+    canPurchaseReturn,
+    canGateOutward,
     isProcessCoordinator,
     myNotifications,
     profileById,
@@ -60,13 +63,16 @@ export default function ProcurementLayout() {
         canFollowup,
         canInward,
         canTally,
+        canQc,
+        canPurchaseReturn,
+        canGateOutward,
         canMonitor: isAdmin || isProcessCoordinator,
         canDemo: realAdmin && !demoActive,
         // Badge only what THIS user can act on — a vendor owner shouldn't see a
         // count for item requests they can't resolve.
         pendingReviews: resolvableRequests.length,
       }),
-    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
+    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, canQc, canPurchaseReturn, canGateOutward, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
   );
 
   // Resolve the deep-link for a notification's entity.

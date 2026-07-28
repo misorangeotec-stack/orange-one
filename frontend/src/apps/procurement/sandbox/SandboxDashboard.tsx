@@ -39,6 +39,9 @@ export default function SandboxDashboard() {
   if (s.canFollowup) cards.push({ label: "Follow-up", count: stageCount("follow_up"), to: `${B}/queues/follow-up` });
   if (s.canInward) cards.push({ label: "Inward", count: stageCount("inward"), to: `${B}/queues/inward` });
   if (s.canTally) cards.push({ label: "Tally", count: stageCount("tally"), to: `${B}/queues/tally` });
+  if (s.canQc) cards.push({ label: "QC Inspection", count: stageCount("qc_inspection"), to: `${B}/queues/qc` });
+  if (s.canPurchaseReturn) cards.push({ label: "Purchase Return", count: stageCount("purchase_return"), to: `${B}/queues/purchase-return` });
+  if (s.canGateOutward) cards.push({ label: "Gate Outward", count: stageCount("gate_outward"), to: `${B}/queues/gate-outward` });
   if (s.isProcessCoordinator) cards.push({ label: `${appName("procurement")} Control Center`, count: openPos.length + s.sourcingRequestQueue.length + s.approvalRequestQueue.length + s.poRequestQueue.length, to: `${B}/monitoring` });
 
   const notifs = s.myNotifications.slice(0, 6);
