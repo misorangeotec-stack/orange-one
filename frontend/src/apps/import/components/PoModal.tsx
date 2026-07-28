@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
+import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
 import QtyTotal from "./QtyTotal";
@@ -13,13 +15,24 @@ interface VendorGroup {
   lines: RequestItem[];
 }
 
+/** What the PO Desk types/attaches for ONE vendor's PO before generating it. */
+interface PoEntry {
+  tallyPoNo: string;
+  file: File | null;
+}
+const EMPTY_ENTRY: PoEntry = { tallyPoNo: "", file: null };
+
 /**
  * Stage 4 — generate this requisition's POs.
  *
  * A PO never spans two requisitions, so the unit of work is the requisition and
  * the modal is scoped to exactly one. Within it a PO is still per VENDOR: a
  * legacy requisition sourced across two vendors yields one section each and two
- * POs, because `fms_purchase_generate_po` refuses a mixed-vendor line list.
+ * POs, because `fms_import_generate_po` refuses a mixed-vendor line list.
+ *
+ * The Tally PO number and the PO PDF are captured HERE, not at Share PO: the PO
+ * Desk is who raises the PO in Tally and produces the file. Both are per VENDOR
+ * for the same reason the Generate button is — one PO, one number, one PDF.
  *
  * Lines are read live from the store by id rather than captured on open, so each
  * generate makes its own section disappear without a remount.
@@ -39,6 +52,7 @@ export default function PoModal({
   const s = useImportStore();
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [entries, setEntries] = useState<Record<string, PoEntry>>({});
   const [busyVendorId, setBusyVendorId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -68,6 +82,15 @@ export default function PoModal({
     setErr(null);
   }, [open, requestId, lines.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* Deliberately a SEPARATE effect, and deliberately NOT keyed on lines.length.
+     Generating vendor A's PO shrinks the pool, which refires the effect above —
+     folding this into it would wipe the number and file vendor B had already
+     typed and chosen. Typed input survives until the dialog is reopened. */
+  useEffect(() => {
+    if (!open) return;
+    setEntries({});
+  }, [open, requestId]);
+
   /* Once the last line has become a PO the pool is empty — close, rather than
      leave an empty "nothing waiting for a PO" shell open. `generate` can't do
      this itself: it holds the pre-write store snapshot in its closure, so its own
@@ -96,6 +119,10 @@ export default function PoModal({
       return next;
     });
 
+  const entryOf = (vendorId: string): PoEntry => entries[vendorId] ?? EMPTY_ENTRY;
+  const patchEntry = (vendorId: string, patch: Partial<PoEntry>) =>
+    setEntries((prev) => ({ ...prev, [vendorId]: { ...(prev[vendorId] ?? EMPTY_ENTRY), ...patch } }));
+
   const generate = async (g: VendorGroup) => {
     if (!g.vendorId) return;
     const ids = g.lines.filter((l) => selected.has(l.id)).map((l) => l.id);
@@ -103,10 +130,37 @@ export default function PoModal({
       setErr("Tick at least one item for this vendor.");
       return;
     }
+    const entry = entryOf(g.vendorId);
+    if (!entry.tallyPoNo.trim()) {
+      setErr("Enter the PO number generated in Tally for this vendor.");
+      return;
+    }
+    if (!entry.file) {
+      setErr("Attach this vendor's PO PDF.");
+      return;
+    }
     setErr(null);
     setBusyVendorId(g.vendorId);
     try {
-      const poId = await s.generatePo({ vendorId: g.vendorId, companyId: request.companyId, requestItemIds: ids });
+      // Upload BEFORE generating, so a failed upload never leaves a PO that can
+      // never be shared. The PO id does not exist yet, so the object is keyed by
+      // requisition; the stored path is opaque to everything downstream.
+      const doc = await s.uploadNewPoDocument(request.id, entry.file);
+      const poId = await s.generatePo({
+        vendorId: g.vendorId,
+        companyId: request.companyId,
+        requestItemIds: ids,
+        tallyPoNo: entry.tallyPoNo.trim(),
+        documentPath: doc.path,
+        documentName: doc.name,
+      });
+      // This vendor is done — drop its entry so a lingering dialog cannot
+      // re-submit the same file against a second PO.
+      setEntries((prev) => {
+        const next = { ...prev };
+        delete next[g.vendorId!];
+        return next;
+      });
       // Compute the leftover pool from the lines we just converted, not from the
       // store (the `s` in this closure is the pre-write snapshot).
       const done = new Set(ids);
@@ -147,6 +201,8 @@ export default function PoModal({
           const picked = g.lines.filter((l) => selected.has(l.id));
           const actionable = !readOnly && !!g.vendorId;
           const busy = busyVendorId === g.vendorId;
+          const entry = g.vendorId ? entryOf(g.vendorId) : EMPTY_ENTRY;
+          const ready = picked.length > 0 && !!entry.tallyPoNo.trim() && !!entry.file;
 
           return (
             <div key={g.vendorId ?? "__none"} className="space-y-1.5">
@@ -234,10 +290,39 @@ export default function PoModal({
 
               {g.vendorId ? (
                 !readOnly && (
-                  <div className="flex justify-end">
-                    <Button size="sm" onClick={() => generate(g)} disabled={busy || picked.length === 0}>
-                      {busy ? "Generating…" : "Generate PO"}
-                    </Button>
+                  <div className="space-y-3 rounded-xl bg-orange-soft/50 px-3.5 py-3">
+                    <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+                      <FieldLabel label="Tally PO Number" required hint="Generated in Tally/ERP">
+                        <TextInput
+                          value={entry.tallyPoNo}
+                          onChange={(e) => patchEntry(g.vendorId!, { tallyPoNo: e.target.value })}
+                          placeholder="e.g. 2627/PO/0042"
+                        />
+                      </FieldLabel>
+                      <FieldLabel label="PO PDF" required hint="PDF or any file — sent to the vendor">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                            <Upload className="h-4 w-4" />
+                            {entry.file ? "Change file" : "Choose file"}
+                            <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                              onChange={(e) => patchEntry(g.vendorId!, { file: e.target.files?.[0] ?? null })} />
+                          </label>
+                          {entry.file ? (
+                            <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                              <span className="max-w-[200px] truncate text-navy">{entry.file.name}</span>
+                              <button type="button" onClick={() => patchEntry(g.vendorId!, { file: null })} className="shrink-0 text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                            </span>
+                          ) : (
+                            <span className="text-[12.5px] text-grey-2">No file selected</span>
+                          )}
+                        </div>
+                      </FieldLabel>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button size="sm" onClick={() => generate(g)} disabled={busy || !ready}>
+                        {busy ? "Generating…" : "Generate PO"}
+                      </Button>
+                    </div>
                   </div>
                 )
               ) : (

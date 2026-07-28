@@ -831,10 +831,13 @@ export function approvalLockReason(line: RequestItem): string | null {
   return null;
 }
 
-/** The generated PO is amendable (its number only) until it goes to the vendor. */
+/**
+ * The generated PO is amendable until it goes to the vendor — its number, the
+ * Tally PO number and the PO PDF, all three of which the PO stage records.
+ */
 export function poGenLockReason(p: PurchaseOrder): string | null {
   if (p.currentStage === "closed" || p.currentStage === "cancelled") return `This PO is ${p.currentStage} — it can no longer be edited.`;
-  if (p.sharedAt) return "This PO has already been shared with the vendor — its number can no longer be changed.";
+  if (p.sharedAt) return "This PO has already been shared with the vendor — its details can no longer be changed.";
   return null;
 }
 

@@ -29,7 +29,7 @@ interface LineLike {
 interface PoLike {
   id: string; poNo?: string | null; vendorId?: string | null; companyId?: string | null;
   totalValue?: number | null; paymentTerms?: string | null;
-  dispatchDate?: string | null; documentName?: string | null;
+  dispatchDate?: string | null; documentName?: string | null; tallyPoNo?: string | null;
 }
 interface PoItemLike { id: string; poId: string; requestItemId: string; qty?: number | null; rate?: number | null; lineValue?: number | null }
 
@@ -213,7 +213,13 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
     },
 
     // 4. PO generated → Share-PO owner
-    poGenerated(input: { poId: string; vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }): ProcurementEmailMeta {
+    //
+    // The Tally PO number and the document name come in as INPUTS, not off a PO
+    // row: this is built the instant the PO is created, before the store has
+    // refetched, so `poOf(poId)` would find nothing (see the data-source rule at
+    // the top of this file). Carrying them means the sharer learns both from the
+    // notification instead of having to open the PO.
+    poGenerated(input: { poId: string; vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null; tallyPoNo?: string | null; documentName?: string | null }): ProcurementEmailMeta {
       const lines = input.requestItemIds.map(lineOf).filter(Boolean) as LineLike[];
       const t = totalsOf(lines);
       return {
@@ -221,14 +227,24 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
         eyebrow: "PO generated", headline: "A new PO is ready to share with the vendor",
         action: "generated a PO",
         docLabel: input.poNo ? `PO #${input.poNo}` : undefined,
-        rows: [{ label: "Vendor", value: vName(input.vendorId) }, { label: "Company", value: cName(input.companyId) }, t.row, t.itemsRow],
+        rows: [
+          { label: "Vendor", value: vName(input.vendorId) },
+          { label: "Company", value: cName(input.companyId) },
+          ...(input.tallyPoNo ? [{ label: "Tally PO No.", value: input.tallyPoNo }] : []),
+          ...(input.documentName ? [{ label: "PO document", value: input.documentName }] : []),
+          t.row, t.itemsRow,
+        ],
         items: lines.map(lineItem),
         ctaLabel: "Open Share-PO queue", ctaPath: `${B}/queues/share`,
       };
     },
 
     // 5. PO shared → Collect-PI owner
-    poShared(poId: string, input?: { dispatchDate?: string | null; paymentTerms?: string | null; remarks?: string | null; name?: string | null }): ProcurementEmailMeta {
+    //
+    // The Tally PO number and the document name are read off the STORE row, not
+    // passed in: they belong to the PO stage and were set when the PO was
+    // generated, so the pre-share snapshot this is built from already has both.
+    poShared(poId: string, input?: { dispatchDate?: string | null; paymentTerms?: string | null; remarks?: string | null }): ProcurementEmailMeta {
       const po = poOf(poId);
       const terms = input?.paymentTerms ?? po?.paymentTerms ?? null;
       const dispatch = input?.dispatchDate ?? po?.dispatchDate ?? null;
@@ -240,9 +256,10 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
         rows: [
           { label: "Vendor", value: vName(po?.vendorId) },
           { label: "Total", value: inr(po?.totalValue ?? null) },
+          ...(po?.tallyPoNo ? [{ label: "Tally PO No.", value: po.tallyPoNo }] : []),
           ...(dispatch ? [{ label: "Expected dispatch", value: formatDate(dispatch) }] : []),
           ...(terms ? [{ label: "Payment terms", value: PAYMENT_TERMS_LABEL[terms] ?? terms }] : []),
-          ...(input?.name ? [{ label: "PO document", value: input.name }] : []),
+          ...(po?.documentName ? [{ label: "PO document", value: po.documentName }] : []),
         ],
         note: reasonNote("Remarks", input?.remarks),
         ctaLabel: "Open Collect-PI queue", ctaPath: `${B}/queues/collect-pi`,

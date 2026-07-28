@@ -316,7 +316,7 @@ export function SharePoQueue() {
     <>
       <StepQueuePage<PurchaseOrder>
         title="Share PO Stage"
-        subtitle="POs to send to the vendor — attach the PO PDF and mark shared."
+        subtitle="POs to send to the vendor — confirm the dispatch date, then mark shared."
         filter={(p) => poInSharePo(s.importIndex, p)}
         renderAction={(p) => <ActionButton label="Share PO" onClick={() => setSharePo(p)} />}
         completed={{

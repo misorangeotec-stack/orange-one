@@ -7428,8 +7428,11 @@ export type Database = {
       fms_import_generate_po: {
         Args: {
           p_company_id: string
+          p_document_name?: string
+          p_document_path?: string
           p_po_no?: string
           p_request_item_ids: string[]
+          p_tally_po_no?: string
           p_vendor_id: string
         }
         Returns: string
@@ -7629,6 +7632,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_import_update_po_details: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_po_id: string
+          p_po_no: string
+          p_tally_po_no: string
+        }
+        Returns: undefined
+      }
       fms_import_update_po_no: {
         Args: { p_po_id: string; p_po_no: string }
         Returns: undefined
@@ -7641,7 +7654,7 @@ export type Database = {
           p_payment_terms: string
           p_po_id: string
           p_remarks?: string
-          p_tally_po_no: string
+          p_tally_po_no?: string
         }
         Returns: undefined
       }
@@ -7826,8 +7839,11 @@ export type Database = {
       fms_purchase_generate_po: {
         Args: {
           p_company_id: string
+          p_document_name?: string
+          p_document_path?: string
           p_po_no?: string
           p_request_item_ids: string[]
+          p_tally_po_no?: string
           p_vendor_id: string
         }
         Returns: string
@@ -8039,6 +8055,16 @@ export type Database = {
         }
         Returns: undefined
       }
+      fms_purchase_update_po_details: {
+        Args: {
+          p_document_name?: string
+          p_document_path?: string
+          p_po_id: string
+          p_po_no: string
+          p_tally_po_no: string
+        }
+        Returns: undefined
+      }
       fms_purchase_update_po_no: {
         Args: { p_po_id: string; p_po_no: string }
         Returns: undefined
@@ -8051,7 +8077,7 @@ export type Database = {
           p_payment_terms: string
           p_po_id: string
           p_remarks?: string
-          p_tally_po_no: string
+          p_tally_po_no?: string
         }
         Returns: undefined
       }

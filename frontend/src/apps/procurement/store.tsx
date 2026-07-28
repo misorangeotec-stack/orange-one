@@ -131,11 +131,12 @@ import {
   updateGrn as updateGrnWrite,
   updateTally as updateTallyWrite,
   updateApproval as updateApprovalWrite,
-  updatePoNo as updatePoNoWrite,
+  updatePoDetails as updatePoDetailsWrite,
   addPi as addPiWrite,
   uploadPiDocument as uploadPiDocumentWrite,
   piDocumentUrl as piDocumentUrlWrite,
   uploadPoDocument as uploadPoDocumentWrite,
+  uploadNewPoDocument as uploadNewPoDocumentWrite,
   poDocumentUrl as poDocumentUrlWrite,
   recordPayment as recordPaymentWrite,
   recordFollowup as recordFollowupWrite,
@@ -435,7 +436,7 @@ interface ProcurementStoreValue {
   }) => Promise<void>;
   /** @deprecated per-LINE; kept for legacy mixed-vendor requisitions. */
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
-  generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
+  generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null; tallyPoNo: string; documentPath: string; documentName: string }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
   /** Correct an already-submitted request. Pre-sourcing only — the RPC re-checks. */
   updateRequest: (input: { requestId: string; note: string | null; items: EditRequestLine[] }) => Promise<void>;
@@ -449,25 +450,28 @@ interface ProcurementStoreValue {
   declinePoCancel: (requestId: string, note?: string | null) => Promise<void>;
 
   // PO lifecycle mutations
-  sharePo: (poId: string, input?: { path: string | null; name: string | null; tallyPoNo: string | null; remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
+  sharePo: (poId: string, input?: { remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
   /**
    * Stage edits. Each is refused server-side once the next step is done — these
    * wrappers only carry the payload; the RPC is the gate.
    */
-  updateSharePo: (input: { poId: string; tallyPoNo: string; paymentTerms: string; dispatchDate: string; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updateSharePo: (input: { poId: string; paymentTerms: string; dispatchDate: string; remarks?: string | null }) => Promise<void>;
   updatePi: (input: { piId: string; vendorPiNo: string; items: { poItemId: string; qty: number }[]; piValue: number; paymentTerms?: string | null; dispatchDate?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
   updatePayment: (input: { paymentId: string; amount: number; paidOn?: string | null; utrRef?: string | null; piRemarks?: string | null }) => Promise<void>;
   updateFollowup: (input: { followupId: string; dispatchStatus: string; actualDispatchDate?: string | null; lrNo?: string | null; transportDetails?: string | null; revisedDispatchDate?: string | null; remarks?: string | null; piRemarks?: string | null }) => Promise<void>;
   updateGrn: (input: { grnId: string; items: { poItemId: string; receivedQty: number; condition?: string }[]; poRef: string; piRef?: string | null; gateRegisterNo?: string | null; condition?: string | null; note?: string | null; photoPath?: string | null; photoName?: string | null }) => Promise<void>;
   updateTally: (input: { bookingId: string; tallyPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<void>;
   updateApproval: (input: { lineId: string; decision: string; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
-  updatePoNo: (poId: string, poNo: string) => Promise<void>;
+  /** Correct what the PO stage recorded. Refused server-side once the PO is shared. */
+  updatePoDetails: (input: { poId: string; poNo: string; tallyPoNo: string; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
   /** True while the Share PO entry may still be corrected. Mirrors the server rule. */
   canEditSharePo: (po: PurchaseOrder) => boolean;
   addPi: (input: { poId: string; vendorPiNo: string; piValue: number; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
   uploadPiDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   piDocumentUrl: (path: string) => Promise<string>;
   uploadPoDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
+  /** The PO PDF for a PO that does not exist yet — keyed by requisition. */
+  uploadNewPoDocument: (requestId: string, file: File) => Promise<{ path: string; name: string }>;
   poDocumentUrl: (path: string) => Promise<string>;
   recordPayment: (input: { poId: string; piId: string | null; kind: "advance" | "installment"; amount: number; paidOn: string | null; utrRef: string | null; piRemarks?: string | null }) => Promise<string>;
   recordFollowup: (input: { poId: string; dispatchStatus: string; actualDispatchDate: string | null; lrNo: string | null; transportDetails: string | null; revisedDispatchDate: string | null; remarks: string | null; piRemarks?: string | null }) => Promise<void>;
@@ -1072,12 +1076,18 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           type: "po_generated",
           text: "A new PO is ready to share with the vendor",
           recipients: ownerIdsOf("share_po"),
+          // Built from the INPUT, never from `pos`: the PO was created a
+          // millisecond ago and `invalidate()` has not run, so the store snapshot
+          // in this closure does not contain it yet. (Same rule as the file
+          // header of emailMeta.ts.)
           meta: email.poGenerated({
             poId: id,
             vendorId: input.vendorId,
             companyId: input.companyId,
             requestItemIds: input.requestItemIds,
             poNo: input.poNo ?? null,
+            tallyPoNo: input.tallyPoNo,
+            documentName: input.documentName,
           }),
         });
         await invalidate();
@@ -1164,18 +1174,21 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
 
       // ---- PO lifecycle mutations ----
       sharePo: async (poId, input) => {
-        await sharePoWrite(poId, input?.path ?? null, input?.name ?? null, input?.tallyPoNo ?? null, input?.remarks ?? null, input?.paymentTerms ?? null, input?.dispatchDate ?? null);
+        await sharePoWrite(poId, input?.remarks ?? null, input?.paymentTerms ?? null, input?.dispatchDate ?? null);
         await safeAnnounce({
           entityType: "po",
           entityId: poId,
           type: "po_shared",
           text: "PO shared with the vendor — collect the PI(s)",
           recipients: ownerIdsOf("collect_pi"),
+          // The Tally PO number and the document name are no longer passed in —
+          // they belong to the PO stage. poShared() reads them off the store row,
+          // which is safe: this runs BEFORE invalidate(), on a pre-share snapshot
+          // that already carries both (they were set when the PO was generated).
           meta: email.poShared(poId, {
             dispatchDate: input?.dispatchDate ?? null,
             paymentTerms: input?.paymentTerms ?? null,
             remarks: input?.remarks ?? null,
-            name: input?.name ?? null,
           }),
         });
         await invalidate();
@@ -1194,7 +1207,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       updateGrn: async (input) => { await updateGrnWrite(input); await invalidate(); },
       updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
       updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
-      updatePoNo: async (poId, poNo) => { await updatePoNoWrite(poId, poNo); await invalidate(); },
+      updatePoDetails: async (input) => { await updatePoDetailsWrite(input); await invalidate(); },
       canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(procIndex, po) === null,
       addPi: async (input) => {
         const id = await addPiWrite(input);
@@ -1220,6 +1233,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       uploadGrnPhoto: (poId, file) => uploadGrnPhotoWrite(poId, file),
       grnPhotoUrl: (path) => grnPhotoUrlWrite(path),
       uploadPoDocument: (poId, file) => uploadPoDocumentWrite(poId, file),
+      uploadNewPoDocument: (requestId, file) => uploadNewPoDocumentWrite(requestId, file),
       poDocumentUrl: (path) => poDocumentUrlWrite(path),
       recordPayment: async (input) => {
         const id = await recordPaymentWrite(input);

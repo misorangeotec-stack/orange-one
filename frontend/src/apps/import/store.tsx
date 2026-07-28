@@ -120,6 +120,7 @@ import {
   uploadPiDocument as uploadPiDocumentWrite,
   piDocumentUrl as piDocumentUrlWrite,
   uploadPoDocument as uploadPoDocumentWrite,
+  uploadNewPoDocument as uploadNewPoDocumentWrite,
   poDocumentUrl as poDocumentUrlWrite,
   recordPayment as recordPaymentWrite,
   uploadPaymentAdvice as uploadPaymentAdviceWrite,
@@ -152,7 +153,7 @@ import {
   updateGrn as updateGrnWrite,
   updateTally as updateTallyWrite,
   updateApproval as updateApprovalWrite,
-  updatePoNo as updatePoNoWrite,
+  updatePoDetails as updatePoDetailsWrite,
   type ImportEntity,
   type CompanyInput,
   type CategoryInput,
@@ -417,7 +418,7 @@ interface ImportStoreValue {
   decideApproval: (input: { requestItemId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   /** One decision for the whole requisition, banded on its total (Import's request-scoped approval). `override` carries revised per-line rates. */
   decideApprovalRequest: (input: { requestId: string; decision: ApprovalDecision; overrideVendorId?: string | null; reason?: string | null; rates?: { requestItemId: string; rate: number }[] | null }) => Promise<void>;
-  generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null }) => Promise<string>;
+  generatePo: (input: { vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null; tallyPoNo: string; documentPath: string; documentName: string }) => Promise<string>;
   cancelLine: (requestItemId: string, reason: string) => Promise<void>;
   /** A PO-side owner logs the vendor's request to cancel a PO. Returns the request id. */
   requestPoCancel: (poId: string, reason: string, vendorRef?: string | null) => Promise<string>;
@@ -427,11 +428,13 @@ interface ImportStoreValue {
   declinePoCancel: (requestId: string, note?: string | null) => Promise<void>;
 
   // PO lifecycle mutations
-  sharePo: (poId: string, input?: { path: string | null; name: string | null; tallyPoNo: string | null; remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
+  sharePo: (poId: string, input?: { remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
   addPi: (input: { poId: string; vendorPiNo: string; piValue: number; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
   uploadPiDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   piDocumentUrl: (path: string) => Promise<string>;
   uploadPoDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
+  /** The PO PDF for a PO that does not exist yet — keyed by requisition. */
+  uploadNewPoDocument: (requestId: string, file: File) => Promise<{ path: string; name: string }>;
   poDocumentUrl: (path: string) => Promise<string>;
   recordPayment: (input: { poId: string; piId: string | null; kind: "advance" | "installment"; amount: number; amountFx?: number | null; currency?: string | null; fxRate?: number | null; details?: string | null; advicePath?: string | null; adviceName?: string | null; paidOn: string | null; utrRef: string | null; piRemarks?: string | null }) => Promise<string>;
   uploadPaymentAdvice: (poId: string, file: File) => Promise<{ path: string; name: string }>;
@@ -459,7 +462,7 @@ interface ImportStoreValue {
   // stage edits — correcting an entry until the next step is done. Each RPC
   // re-checks its lock server-side and logs in-transaction, so none of these
   // needs a separate announce.
-  updateSharePo: (input: { poId: string; tallyPoNo: string; paymentTerms: string; dispatchDate: string; remarks?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  updateSharePo: (input: { poId: string; paymentTerms: string; dispatchDate: string; remarks?: string | null }) => Promise<void>;
   updatePi: (input: { piId: string; vendorPiNo: string; items: PiItemInput[]; piValue: number; paymentTerms?: string | null; dispatchDate?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
   updatePayment: (input: { paymentId: string; amount: number; amountFx?: number | null; currency?: string | null; fxRate?: number | null; paidOn?: string | null; utrRef?: string | null; piRemarks?: string | null; details?: string | null; advicePath?: string | null; adviceName?: string | null }) => Promise<void>;
   updateFollowup: (input: { followupId: string; dispatchStatus: string; actualDispatchDate?: string | null; lrNo?: string | null; transportDetails?: string | null; revisedDispatchDate?: string | null; remarks?: string | null; piRemarks?: string | null }) => Promise<void>;
@@ -468,7 +471,8 @@ interface ImportStoreValue {
   updateApproval: (input: { lineId: string; decision: string; overrideVendorId?: string | null; reason?: string | null }) => Promise<void>;
   /** Correct a whole requisition's approval decision (approve | override | reject). `override` re-prices the approved lines. */
   updateApprovalRequest: (input: { requestId: string; decision: string; overrideVendorId?: string | null; reason?: string | null; rates?: { requestItemId: string; rate: number }[] | null }) => Promise<void>;
-  updatePoNo: (poId: string, poNo: string) => Promise<void>;
+  /** Correct what the PO stage recorded. Refused server-side once the PO is shared. */
+  updatePoDetails: (input: { poId: string; poNo: string; tallyPoNo: string; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
   /** True when the signed-in user may still correct this PO's share details. */
   canEditSharePo: (po: PurchaseOrder) => boolean;
 
@@ -1043,7 +1047,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           type: "po_generated",
           text: "A new PO is ready to share with the vendor",
           recipients: ownerIdsOf("share_po"),
-          meta: email.poGenerated({ poId: id, vendorId: input.vendorId, companyId: input.companyId, requestItemIds: input.requestItemIds, poNo: input.poNo ?? null }),
+          // Built from the INPUT, never from `pos`: the PO was created a
+          // millisecond ago and `invalidate()` has not run, so the store snapshot
+          // in this closure does not contain it yet.
+          meta: email.poGenerated({ poId: id, vendorId: input.vendorId, companyId: input.companyId, requestItemIds: input.requestItemIds, poNo: input.poNo ?? null, tallyPoNo: input.tallyPoNo, documentName: input.documentName }),
         });
         await invalidate();
         return id;
@@ -1108,13 +1115,24 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
       // ---- PO lifecycle mutations ----
       sharePo: async (poId, input) => {
-        await sharePoWrite(poId, input?.path ?? null, input?.name ?? null, input?.tallyPoNo ?? null, input?.remarks ?? null, input?.paymentTerms ?? null, input?.dispatchDate ?? null);
+        await sharePoWrite(poId, input?.remarks ?? null, input?.paymentTerms ?? null, input?.dispatchDate ?? null);
         await safeAnnounce({
           entityType: "po",
           entityId: poId,
           type: "po_shared",
-          text: "PO shared with the vendor — collect the PI(s)",
-          recipients: ownerIdsOf("collect_pi"),
+          // `follow_up`, NOT `collect_pi`. This line was copied from RM Domestic,
+          // where sharing routes to the Collect-PI step. Import is a pure quantity
+          // requisition with no PI and no advance (20260727120000), so share_po
+          // advances straight to `follow_up` — but the notification kept going to
+          // whoever still owns the retired `collect_pi` key, while the people who
+          // actually inherit the PO were told nothing. The email body and CTA have
+          // always said "follow up on dispatch"; only the recipients disagreed.
+          text: "PO shared with the vendor — follow up on dispatch",
+          recipients: ownerIdsOf("follow_up"),
+          // The Tally PO number and the document name are no longer passed in —
+          // they belong to the PO stage. poShared() reads them off the store row,
+          // which is safe: this runs BEFORE invalidate(), on a pre-share snapshot
+          // that already carries both (they were set when the PO was generated).
           meta: email.poShared(poId, input),
         });
         await invalidate();
@@ -1137,6 +1155,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       uploadGrnPhoto: (poId, file) => uploadGrnPhotoWrite(poId, file),
       grnPhotoUrl: (path) => grnPhotoUrlWrite(path),
       uploadPoDocument: (poId, file) => uploadPoDocumentWrite(poId, file),
+      uploadNewPoDocument: (requestId, file) => uploadNewPoDocumentWrite(requestId, file),
       poDocumentUrl: (path) => poDocumentUrlWrite(path),
       uploadPaymentAdvice: (poId, file) => uploadPaymentAdviceWrite(poId, file),
       paymentAdviceUrl: (path) => paymentAdviceUrlWrite(path),
@@ -1276,7 +1295,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
       updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
       updateApprovalRequest: async (input) => { await updateApprovalRequestWrite(input); await invalidate(); },
-      updatePoNo: async (poId, poNo) => { await updatePoNoWrite(poId, poNo); await invalidate(); },
+      updatePoDetails: async (input) => { await updatePoDetailsWrite(input); await invalidate(); },
       canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(importIndex, po) === null,
 
       // ---- activity + notifications (Phase 5) ----

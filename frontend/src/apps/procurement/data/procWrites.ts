@@ -593,18 +593,32 @@ export async function decideApproval(input: {
   if (error) throw new Error(error.message);
 }
 
-/** Stage 4 — generate a vendor × company PO from chosen approved lines. Returns the PO id. */
+/**
+ * Stage 4 — generate a vendor × company PO from chosen approved lines. Returns
+ * the PO id.
+ *
+ * `tallyPoNo` and the document are REQUIRED server-side: the PO stage owns the
+ * Tally PO number and the PO PDF (they used to be captured at Share PO). Upload
+ * the file with `uploadNewPoDocument` first and pass its path here, so the PO
+ * row is created complete in one statement.
+ */
 export async function generatePo(input: {
   vendorId: string;
   companyId: string;
   requestItemIds: string[];
   poNo?: string | null;
+  tallyPoNo: string;
+  documentPath: string;
+  documentName: string;
 }): Promise<string> {
   const { data, error } = await supabase.rpc("fms_purchase_generate_po", {
     p_vendor_id: input.vendorId,
     p_company_id: input.companyId,
     p_request_item_ids: input.requestItemIds,
     p_po_no: input.poNo ?? undefined,
+    p_tally_po_no: input.tallyPoNo,
+    p_document_path: input.documentPath,
+    p_document_name: input.documentName,
   });
   if (error) throw new Error(error.message);
   return data as string;
@@ -696,20 +710,21 @@ export async function declinePoCancel(requestId: string, note?: string | null): 
 
 /* ===================== PO lifecycle RPCs (Stages 5–10) =================== */
 
+/**
+ * Mark the PO shared with the vendor.
+ *
+ * The Tally PO number and the PO PDF are NOT sent: they belong to the PO stage
+ * now, and the RPC checks what is stored on the PO instead. It still refuses to
+ * share a PO that has neither.
+ */
 export async function sharePo(
   poId: string,
-  documentPath?: string | null,
-  documentName?: string | null,
-  tallyPoNo?: string | null,
   remarks?: string | null,
   paymentTerms?: string | null,
   dispatchDate?: string | null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_purchase_share_po", {
     p_po_id: poId,
-    p_document_path: documentPath ?? undefined,
-    p_document_name: documentName ?? undefined,
-    p_tally_po_no: tallyPoNo ?? undefined,
     p_remarks: remarks ?? undefined,
     p_payment_terms: paymentTerms ?? undefined,
     p_dispatch_date: dispatchDate ?? undefined,
@@ -723,25 +738,22 @@ export async function sharePo(
  * Separate from `sharePo` on purpose. `sharePo` is the step ITSELF: it moves the
  * stage on and stamps who/when. This only amends what was recorded, leaves
  * `shared_at`/`shared_by` untouched, and — unlike `sharePo` — the RPC refuses
- * once the next step has been done. Omit `documentPath` to keep the existing PDF.
+ * once the next step has been done.
+ *
+ * Amends only what Share PO owns. The Tally PO number and the PO PDF are the PO
+ * stage's; correct those with `updatePoDetails` (possible until the PO is shared).
  */
 export async function updateSharePo(input: {
   poId: string;
-  tallyPoNo: string;
   paymentTerms: string;
   dispatchDate: string;
   remarks?: string | null;
-  documentPath?: string | null;
-  documentName?: string | null;
 }): Promise<void> {
   const { error } = await supabase.rpc("fms_purchase_update_share_po", {
     p_po_id: input.poId,
-    p_tally_po_no: input.tallyPoNo,
     p_payment_terms: input.paymentTerms,
     p_dispatch_date: input.dispatchDate,
     p_remarks: input.remarks ?? undefined,
-    p_document_path: input.documentPath ?? undefined,
-    p_document_name: input.documentName ?? undefined,
   });
   if (error) throw new Error(error.message);
 }
@@ -869,8 +881,28 @@ export async function updateApproval(input: {
   if (error) throw new Error(error.message);
 }
 
-export async function updatePoNo(poId: string, poNo: string): Promise<void> {
-  const { error } = await supabase.rpc("fms_purchase_update_po_no", { p_po_id: poId, p_po_no: poNo });
+/**
+ * Correct what the PO stage recorded — the PO number, the Tally PO number and
+ * the PO PDF. Legal only until the PO is shared with the vendor (the RPC
+ * re-checks `fms_purchase_po_editable` server-side).
+ *
+ * Omit `documentPath` to keep the attached PDF. It can be replaced but never
+ * removed: a PO with no PDF cannot be shared.
+ */
+export async function updatePoDetails(input: {
+  poId: string;
+  poNo: string;
+  tallyPoNo: string;
+  documentPath?: string | null;
+  documentName?: string | null;
+}): Promise<void> {
+  const { error } = await supabase.rpc("fms_purchase_update_po_details", {
+    p_po_id: input.poId,
+    p_po_no: input.poNo,
+    p_tally_po_no: input.tallyPoNo,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+  });
   if (error) throw new Error(error.message);
 }
 
@@ -932,6 +964,30 @@ export async function piDocumentUrl(path: string): Promise<string> {
 export async function uploadPoDocument(poId: string, file: File): Promise<{ path: string; name: string }> {
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
   const path = `po/${poId}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from(PI_DOCS_BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(error.message);
+  return { path, name: file.name };
+}
+
+/**
+ * The same upload, for a PO that does not exist YET.
+ *
+ * The PO PDF is now attached when the PO is generated, and only
+ * `fms_purchase_generate_po` can mint the PO id — so there is nothing to
+ * namespace by. Keyed by the requisition instead, still under the `po/` prefix
+ * that keeps PO PDFs apart from vendor PI files. The stored path is opaque to
+ * everything downstream (`poDocumentUrl` signs whatever it is given), so the two
+ * layouts coexist happily.
+ *
+ * Upload first, generate second: a failed upload then never creates a PO. The
+ * reverse — generate, then fail to attach — would leave a PO that can never be
+ * shared. An orphaned object costs nothing; a stranded PO costs a person's day.
+ */
+export async function uploadNewPoDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+  const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+  const path = `po/new/${requestId}/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage
     .from(PI_DOCS_BUCKET)
     .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });

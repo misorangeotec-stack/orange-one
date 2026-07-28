@@ -5,7 +5,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { SECTION_HEADING_CLASS, Field } from "@/shared/components/ui/Readout";
+import { SECTION_HEADING_CLASS, Field, FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
 // NOT time.ts's todayIso(): that is documented "local" but is really the UTC
@@ -204,58 +204,52 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
   );
 }
 
-/* --------------------------- Share PO (upload PDF) ------------------------ */
+/* ------------------------------- Share PO -------------------------------- */
+/**
+ * The Tally PO number and the PO PDF are SHOWN, not captured: the PO Desk
+ * records both when it generates the PO, and they stay amendable there until
+ * the PO is shared. This step owns the expected dispatch date and the remarks.
+ */
 export function SharePoModal({ po, open, editing = false, onClose, readOnly = false }: { po: PurchaseOrder; open: boolean; editing?: boolean; onClose: () => void; readOnly?: boolean }) {
   const s = useImportStore();
-  const [tallyPoNo, setTallyPoNo] = useState("");
   const [dispatch, setDispatch] = useState("");
   const [remarks, setRemarks] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    // Editing shows what was actually recorded; sharing starts blank. Seeding the
-    // Tally number when sharing would invite blind-accepting a stale value.
-    setTallyPoNo(editing ? po.tallyPoNo ?? "" : "");
     setDispatch(po.dispatchDate ?? "");
     setRemarks(editing ? po.shareRemarks ?? "" : "");
-    setFile(null);
     setErr(null);
-  }, [open, editing, po.id, po.dispatchDate, po.tallyPoNo, po.shareRemarks]);
+  }, [open, editing, po.id, po.dispatchDate, po.shareRemarks]);
 
-  const hasExistingDoc = !!po.documentPath;
-  // Sharing requires the PDF. Editing does not: no new file simply means "keep the
-  // one already attached".
-  const docSatisfied = editing ? hasExistingDoc || !!file : !!file;
+  /**
+   * A PO generated BEFORE the Tally number and PDF moved to the PO stage can
+   * reach this queue with neither. It is not stranded — the PO stage stays
+   * editable until a PO is shared — so point the sharer at where to fix it
+   * rather than letting them submit something the server will refuse anyway.
+   */
+  const missingPoStageData = !po.tallyPoNo || !po.documentPath;
 
   const save = async () => {
     setErr(null);
-    if (!tallyPoNo.trim()) return setErr("Enter the PO number generated in Tally.");
+    if (missingPoStageData) return setErr("This PO has no Tally PO number or PDF yet — add them on the PO stage first.");
     if (!dispatch) return setErr("Enter the expected dispatch date.");
-    if (!docSatisfied) return setErr(editing ? "Attach the PO PDF." : "Attach the PO PDF to mark it shared.");
     setBusy(true);
     try {
-      // Upload first, so a failed upload never half-writes the row. The superseded
-      // file is left in storage on purpose — uploads are immutable timestamped
-      // keys, and the document's history is part of what this stage records.
-      const doc = file ? await s.uploadPoDocument(po.id, file) : null;
       if (editing) {
         await s.updateSharePo({
           poId: po.id,
-          tallyPoNo: tallyPoNo.trim(),
           // Import is always 100% advance; an edit must not quietly re-route the PO
           // off the Payment step, so the terms stay forced here exactly as at share.
           paymentTerms: "full_advance",
           dispatchDate: dispatch,
           remarks: remarks.trim() || null,
-          documentPath: doc?.path ?? null, // null ⇒ server keeps the existing document
-          documentName: doc?.name ?? null,
         });
       } else {
         // Import is always 100% advance — force full_advance so the PO routes to the Payment step.
-        await s.sharePo(po.id, { path: doc!.path, name: doc!.name, tallyPoNo: tallyPoNo.trim(), remarks: remarks.trim() || null, paymentTerms: "full_advance", dispatchDate: dispatch });
+        await s.sharePo(po.id, { remarks: remarks.trim() || null, paymentTerms: "full_advance", dispatchDate: dispatch });
       }
       onClose();
     } catch (e) {
@@ -269,14 +263,33 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
     <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<PoDocLink po={po} />} size="lg" title={editing ? (readOnly ? "Share Details" : "Edit Share Details") : "Share PO"}
       subtitle={editing
         ? `${po.poNo} · correct what was recorded when this PO was shared. Editable until the next step is done.`
-        : `${po.poNo} · confirm the dispatch date, attach the PO PDF, then mark it shared with the vendor. Import is 100% advance.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !docSatisfied || !tallyPoNo.trim() || !dispatch}>{busy ? (editing ? "Saving…" : "Sharing…") : editing ? "Save Changes" : "Share PO"}</Button></>}>
+        : `${po.poNo} · confirm the dispatch date, then mark it shared with the vendor. Import is 100% advance.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || missingPoStageData || !dispatch}>{busy ? (editing ? "Saving…" : "Sharing…") : editing ? "Save Changes" : "Share PO"}</Button></>}>
       <div className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5">
-          <FieldLabel label="Tally PO Number" required>
-            <TextInput value={tallyPoNo} onChange={(e) => setTallyPoNo(e.target.value)} placeholder="e.g. 2627/PO/0042" />
-            <Hint>Generated in Tally/ERP</Hint>
-          </FieldLabel>
+        {/* Recorded at the PO stage — shown here, never edited here. The link is
+            rendered only outside read-only mode: Modal puts the body inside a
+            disabled <fieldset>, so a button here would be dead. In view mode the
+            same link is already in `readOnlyHeader`. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5 rounded-xl bg-page px-3.5 py-3">
+          <Field label="Tally PO No.">{po.tallyPoNo ?? undefined}</Field>
+          {!readOnly && (
+            <div>
+              <div className={FIELD_LABEL_CLASS}>PO PDF</div>
+              <div className="mt-1">
+                {po.documentPath ? <PoDocLink po={po} /> : <span className="text-[12.5px] text-ryg-red">Not attached</span>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {missingPoStageData && (
+          <p className="text-[12.5px] text-ryg-red">
+            This PO has no Tally PO number or PDF yet. Add them on the PO stage (PO Workbench → Completed → Edit PO
+            Details) — it stays editable until the PO is shared.
+          </p>
+        )}
+
+        <div className="grid grid-cols-1 gap-x-4 gap-y-3.5">
           <FieldLabel label="Expected Dispatch Date" required>
             <TextInput type="date" value={dispatch} onChange={(e) => setDispatch(e.target.value)} />
             <Hint>Anchors the follow-up due date</Hint>
@@ -284,32 +297,6 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
         </div>
 
         <div className="border-t border-line/70" />
-
-        {!readOnly && (
-          <FieldLabel label="PO PDF" required={!editing}>
-          <div className="flex flex-wrap items-center gap-2.5">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
-              <Upload className="h-4 w-4" />
-              {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
-              <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            {file ? (
-              <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
-                <span className="max-w-[260px] truncate text-navy">{file.name}</span>
-                <button type="button" onClick={() => setFile(null)} className="shrink-0 text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
-              </span>
-            ) : editing && hasExistingDoc ? (
-              <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
-                Current: <span className="max-w-[260px] truncate text-navy">{po.documentName ?? "attached file"}</span>
-              </span>
-            ) : (
-              <span className="text-[12.5px] text-grey-2">No file selected</span>
-            )}
-          </div>
-          <Hint>{editing ? "Leave as-is to keep the attached file — the previous version is retained either way." : "PDF or any file — required to share"}</Hint>
-        </FieldLabel>
-        )}
 
         <FieldLabel label="Remarks" hint="Optional">
           <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Anything the vendor should know about this PO." />

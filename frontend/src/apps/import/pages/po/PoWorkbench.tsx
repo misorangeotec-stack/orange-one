@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { Upload, X } from "lucide-react";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
@@ -8,6 +9,7 @@ import StageRowAction from "@/shared/components/ui/StageRowAction";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { Field } from "@/shared/components/ui/Readout";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs from "@/shared/components/ui/StageTabs";
@@ -17,6 +19,7 @@ import { sumQty } from "../../lib/format";
 import QtyTotal from "../../components/QtyTotal";
 import PoModal from "../../components/PoModal";
 import PoItemsTable from "../../components/PoItemsTable";
+import { PoDocLink } from "../../components/DocLinks";
 import type { StageEntry } from "../../lib/queues";
 import type { PurchaseRequest, RequestItem, PurchaseOrder } from "../../types";
 
@@ -34,8 +37,18 @@ export default function PoWorkbench() {
   const [poRequest, setPoRequest] = useState<PurchaseRequest | null>(null);
   const editPo = useEntryModal<PurchaseOrder>();
   const [poNo, setPoNo] = useState("");
+  const [tallyPoNo, setTallyPoNo] = useState("");
+  const [editFile, setEditFile] = useState<File | null>(null);
   const [savingNo, setSavingNo] = useState(false);
   const [editErr, setEditErr] = useState<string | null>(null);
+
+  /** Seed the edit dialog from the row it was opened on. */
+  const seedEdit = (po: PurchaseOrder) => {
+    setPoNo(po.poNo);
+    setTallyPoNo(po.tallyPoNo ?? "");
+    setEditFile(null);
+    setEditErr(null);
+  };
   const stage = useStageMode(s.completedPoGenEntries, user.id);
 
   const companyName = (id: string) => s.companyById(id)?.name ?? "—";
@@ -102,6 +115,8 @@ export default function PoWorkbench() {
   const completedColumns: QueueColumn<StageEntry<PurchaseOrder>>[] = [
     { key: "company", header: "Company", cell: (e) => companyName(e.companyId ?? ""), sortValue: (e) => companyName(e.companyId ?? ""), filter: { kind: "select", get: (e) => companyName(e.companyId ?? "") }, tdClassName: "whitespace-nowrap" },
     { key: "po", header: "PO No.", cell: (e) => <Link to={`/import/pos/${e.poId}`} className="font-semibold text-navy hover:text-orange">{e.ref}</Link>, sortValue: (e) => e.ref, filter: { kind: "text", get: (e) => e.ref }, tdClassName: "whitespace-nowrap" },
+    { key: "tallyPo", header: "Tally PO No.", cell: (e) => e.row.tallyPoNo ?? "—", sortValue: (e) => e.row.tallyPoNo ?? "", filter: { kind: "text", get: (e) => e.row.tallyPoNo ?? "" }, tdClassName: "whitespace-nowrap" },
+    { key: "pdf", header: "PO PDF", cell: (e) => (e.row.documentPath ? <PoDocLink po={e.row} /> : <span className="text-grey-2">—</span>), tdClassName: "whitespace-nowrap" },
     { key: "vendor", header: "Vendor", cell: (e) => s.vendorById(e.row.vendorId)?.name ?? "—", sortValue: (e) => s.vendorById(e.row.vendorId)?.name ?? "", filter: { kind: "select", get: (e) => s.vendorById(e.row.vendorId)?.name ?? "—" }, tdClassName: "whitespace-nowrap" },
     { key: "lines", header: "Lines", cell: (e) => s.poItemsForPo(e.row.id).length, sortValue: (e) => s.poItemsForPo(e.row.id).length, tdClassName: "whitespace-nowrap" },
     { key: "stage", header: "Now At", cell: (e) => <span className="text-grey-2">{e.row.currentStage.replace(/_/g, " ")}</span>, sortValue: (e) => e.row.currentStage, filter: { kind: "select", get: (e) => e.row.currentStage.replace(/_/g, " ") }, tdClassName: "whitespace-nowrap" },
@@ -121,8 +136,8 @@ export default function PoWorkbench() {
         <h1 className="text-[22px] font-bold text-navy">PO Stage</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           {stage.showingCompleted
-            ? "POs already generated. The PO number stays editable until it is shared with the vendor."
-            : "Approved requisitions waiting for a PO. Open one to see its items and generate the PO."}
+            ? "POs already generated. The PO number, Tally PO number and PDF stay editable until the PO is shared with the vendor."
+            : "Approved requisitions waiting for a PO. Open one to see its items, enter the Tally PO number, attach the PO PDF and generate."}
         </p>
       </div>
 
@@ -152,14 +167,14 @@ export default function PoWorkbench() {
             hideGroupHeaders
             rowsLabel="POs"
             emptyTitle="Nothing here yet"
-            emptyMessage="POs you generate will appear here. Only the PO number is amendable — and only until the PO is shared."
+            emptyMessage="POs you generate will appear here. The PO number, Tally PO number and PDF stay amendable until the PO is shared."
             actions={(e) => (
               <StageRowAction
                 lockReason={e.lockReason}
                 canEdit={s.canGeneratePo}
                 permissionReason="Only the PO Desk can edit a PO."
-                onEdit={() => { editPo.openEdit(e.row); setPoNo(e.row.poNo); setEditErr(null); }}
-                onView={() => { editPo.openView(e.row); setPoNo(e.row.poNo); setEditErr(null); }}
+                onEdit={() => { editPo.openEdit(e.row); seedEdit(e.row); }}
+                onView={() => { editPo.openView(e.row); seedEdit(e.row); }}
               />
             )}
           />
@@ -192,27 +207,42 @@ export default function PoWorkbench() {
       />
 
       {/* The PO's items are shown for context (same layout as Approve / Generate
-          PO). Only po_no is amendable: vendor / company / lines are what the PO
-          IS, and changing them is a cancel-and-regenerate, not a correction. */}
+          PO). Only what the PO STAGE recorded is amendable — its number, the Tally
+          PO number and the PDF. Vendor / company / lines are what the PO IS, and
+          changing them is a cancel-and-regenerate, not a correction.
+
+          `readOnlyHeader` is load-bearing: in View mode the body is rendered
+          inside a disabled <fieldset>, so a PDF link placed there would be dead. */}
       <Modal
         open={editPo.row !== null}
         readOnly={editPo.isView}
+        readOnlyHeader={editPo.row ? <PoDocLink po={editPo.row} /> : undefined}
         onClose={editPo.close}
         size="2xl"
-        title={`${editPo.isView ? "PO" : "Edit PO"} — ${editPo.row?.poNo ?? ""}`}
-        subtitle={editPo.row ? `${s.vendorById(editPo.row.vendorId)?.name ?? "—"} · ${companyName(editPo.row.companyId)}${editPo.isView ? "" : " · the PO number is editable until the PO is shared with the vendor"}` : undefined}
+        title={`${editPo.isView ? "PO Details" : "Edit PO Details"} — ${editPo.row?.poNo ?? ""}`}
+        subtitle={editPo.row ? `${s.vendorById(editPo.row.vendorId)?.name ?? "—"} · ${companyName(editPo.row.companyId)}${editPo.isView ? "" : " · editable until the PO is shared with the vendor"}` : undefined}
         footer={
           editPo.isView ? (
             <Button variant="ghost" size="sm" onClick={editPo.close}>Close</Button>
           ) : (
             <>
               <Button variant="ghost" size="sm" onClick={editPo.close} disabled={savingNo}>Cancel</Button>
-              <Button size="sm" disabled={savingNo || !poNo.trim()} onClick={async () => {
+              <Button size="sm" disabled={savingNo || !poNo.trim() || !tallyPoNo.trim()} onClick={async () => {
                 if (!editPo.row) return;
                 setEditErr(null);
                 setSavingNo(true);
                 try {
-                  await s.updatePoNo(editPo.row.id, poNo.trim());
+                  // Upload first, so a failed upload never half-writes the row. The
+                  // superseded file is left in storage on purpose — uploads are
+                  // immutable timestamped keys and the document's history matters.
+                  const doc = editFile ? await s.uploadPoDocument(editPo.row.id, editFile) : null;
+                  await s.updatePoDetails({
+                    poId: editPo.row.id,
+                    poNo: poNo.trim(),
+                    tallyPoNo: tallyPoNo.trim(),
+                    documentPath: doc?.path ?? null, // null ⇒ server keeps the existing document
+                    documentName: doc?.name ?? null,
+                  });
                   editPo.close();
                 } catch (e) { setEditErr((e as Error).message); } finally { setSavingNo(false); }
               }}>{savingNo ? "Saving…" : "Save Changes"}</Button>
@@ -222,10 +252,41 @@ export default function PoWorkbench() {
       >
         <div className="space-y-4">
           {editPo.row && <PoItemsTable po={editPo.row} />}
-          {!editPo.isView && (
-            <FieldLabel label="PO Number" required>
-              <TextInput value={poNo} onChange={(e) => setPoNo(e.target.value)} />
-            </FieldLabel>
+          {editPo.isView ? (
+            <Field label="Tally PO No.">{editPo.row?.tallyPoNo ?? undefined}</Field>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
+                <FieldLabel label="PO Number" required>
+                  <TextInput value={poNo} onChange={(e) => setPoNo(e.target.value)} />
+                </FieldLabel>
+                <FieldLabel label="Tally PO Number" required hint="Generated in Tally/ERP">
+                  <TextInput value={tallyPoNo} onChange={(e) => setTallyPoNo(e.target.value)} placeholder="e.g. 2627/PO/0042" />
+                </FieldLabel>
+              </div>
+              <FieldLabel label="PO PDF" hint="Leave as-is to keep the attached file — the previous version is retained either way.">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                    <Upload className="h-4 w-4" />
+                    {editFile ? "Change file" : editPo.row?.documentPath ? "Replace file" : "Choose file"}
+                    <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                      onChange={(e) => setEditFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {editFile ? (
+                    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                      <span className="max-w-[260px] truncate text-navy">{editFile.name}</span>
+                      <button type="button" onClick={() => setEditFile(null)} className="shrink-0 text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                    </span>
+                  ) : editPo.row?.documentPath ? (
+                    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                      Current: <span className="max-w-[260px] truncate text-navy">{editPo.row.documentName ?? "attached file"}</span>
+                    </span>
+                  ) : (
+                    <span className="text-[12.5px] text-ryg-red">No PDF attached — the PO cannot be shared without one.</span>
+                  )}
+                </div>
+              </FieldLabel>
+            </>
           )}
           {editErr && <p className="text-[12.5px] text-ryg-red">{editErr}</p>}
         </div>
