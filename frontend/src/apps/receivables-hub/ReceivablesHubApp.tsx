@@ -48,6 +48,17 @@ import SalesRegister from "@hub/pages/SalesRegister";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
+// Customer Creation FMS. Its provider is mounted by CustomerOnboardingLayout so
+// the module's snapshot loads on these routes only — the hub's other pages must
+// not pay for a query they never read.
+import CustomerOnboardingLayout from "@hub/pages/customerOnboarding/CustomerOnboardingLayout";
+import CustomerOnboardingHome from "@hub/pages/customerOnboarding/Home";
+import CustomerAllRequests from "@hub/pages/customerOnboarding/AllRequests";
+import CustomerMyRequests from "@hub/pages/customerOnboarding/MyRequests";
+import CustomerNew from "@hub/pages/customerOnboarding/NewCustomer";
+import CustomerRequestDetail from "@hub/pages/customerOnboarding/RequestDetail";
+import CustomerPendingQueue from "@hub/pages/customerOnboarding/PendingQueue";
+import CustomerSettings from "@hub/pages/customerOnboarding/settings/CustomerSettings";
 
 /**
  * Root of the Receivables Hub app inside Orange One.
@@ -196,6 +207,25 @@ function HubRoutes() {
           <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
           {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
           <Route path="reports/sales-register" element={<SalesRegister />} />
+          {/* Customer Creation FMS.
+              Deliberately NOT wrapped in RequireRole: authorization here is
+              per-step, not per-role. Who may verify / approve / create a
+              customer comes from the module's step owners and is enforced by
+              RLS + the RPCs; a role gate on the route would be both too coarse
+              and, on its own, false comfort. */}
+          <Route path="customer-onboarding" element={<CustomerOnboardingLayout />}>
+            <Route index element={<CustomerOnboardingHome />} />
+            <Route path="new" element={<CustomerNew />} />
+            <Route path="mine" element={<CustomerMyRequests />} />
+            <Route path="all" element={<CustomerAllRequests />} />
+            {/* ONE queue page for all four back-office steps, keyed by ?step=.
+                Four routes would be four copies of the same table drifting
+                apart on what a column means. */}
+            <Route path="queue" element={<CustomerPendingQueue />} />
+            <Route path="settings" element={<CustomerSettings />} />
+            <Route path="requests/:id" element={<CustomerRequestDetail />} />
+            <Route path="requests/:id/edit" element={<CustomerNew />} />
+          </Route>
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

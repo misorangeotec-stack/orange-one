@@ -8,6 +8,7 @@ import { useFY } from "@hub/lib/fyContext";
 import { useLiveMode } from "@hub/lib/liveMode";
 import UserMenu from "@/shared/components/layout/UserMenu";
 import Breadcrumbs from "@/shared/components/layout/Breadcrumbs";
+import CustomerBell from "@hub/components/customerOnboarding/CustomerBell";
 import { RECEIVABLES_MENUS } from "@hub/lib/menus";
 import { reportCrumbs } from "@hub/lib/reportCatalog";
 import { pageLabelFor } from "@/apps/currentApp";
@@ -65,6 +66,11 @@ function formatAsOfDateTime(input: string): string {
  * the topbar from claiming otherwise.
  */
 const FY_PINNED_ROUTES = [
+  // Customer Onboarding reads the IDENTITY project, not the receivables data the
+  // FY selector scopes — a financial year means nothing to a customer's KYC form,
+  // and a control that cannot change what is below it is worse than no control.
+  // One entry covers the subtree (the match is a prefix test).
+  "/outstanding-dashboard/customer-onboarding",
   // The Sales Report carries its own FY picker in the page header (it needs to name the FY
   // AND its prior year on every panel). A topbar selector would be a second, disagreeing
   // control over the same thing.
@@ -197,6 +203,11 @@ export default function UserLayout() {
                   cannot change the numbers below it is worse than showing none. */}
               {!fyPinned && <FYMultiSelect />}
               <div className="h-6 w-px bg-border hidden sm:block" />
+              {/* Customer Onboarding's bell. Renders NOTHING for the many hub
+                  users who take no part in onboarding, so this is not a
+                  permanently-empty control — see CustomerBell's header for why
+                  it reads its own small query rather than the module store. */}
+              <CustomerBell />
               <UserMenu
                 user={{ name: user.name, designation: user.designation, color: user.avatarColor, roleLabel: ROLE_LABEL[role] ?? role }}
               />
