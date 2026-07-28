@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import SampleSummary from "./SampleSummary";
 import { useSamplingStore } from "../store";
 import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
@@ -10,6 +11,11 @@ import type { SamplingRequest } from "../types";
  * Record (or correct) the date an outward sample was DISPATCHED. Advances the
  * request to receipt confirmation. `editing` corrects it until the receipt is
  * confirmed; the server re-checks that lock.
+ *
+ * Opens with the SampleSummary recap: the dispatcher is packing this sample, so
+ * what was asked for — product, and the colour/quantity list — has to be on
+ * screen while they type what actually went. The gate outward entry no. comes
+ * LAST because it is stamped at the gate, after everything else is known.
  */
 export default function SendModal({
   open,
@@ -77,14 +83,15 @@ export default function SendModal({
       }
     >
       <div className="space-y-3.5">
+        {request && <SampleSummary request={request} />}
         <FieldLabel label="Date sent" hint="today by default — you can backdate, not post-date">
           <TextInput type="date" max={todayIso()} value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
         </FieldLabel>
+        <FieldLabel label="Quantity sent" hint="what actually went out, against the list above">
+          <TextInput value={sentQty} onChange={(e) => setSentQty(e.target.value)} placeholder="e.g. 500 ml" />
+        </FieldLabel>
         <FieldLabel label="Gate outward entry no.">
           <TextInput value={gateEntryNo} onChange={(e) => setGateEntryNo(e.target.value)} placeholder="e.g. GT/2627/118" />
-        </FieldLabel>
-        <FieldLabel label="Quantity">
-          <TextInput value={sentQty} onChange={(e) => setSentQty(e.target.value)} placeholder="e.g. 500 ml" />
         </FieldLabel>
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
