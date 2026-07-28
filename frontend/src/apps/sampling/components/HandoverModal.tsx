@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import SampleSummary from "./SampleSummary";
 import { useSamplingStore } from "../store";
 import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
@@ -11,6 +12,9 @@ import type { SamplingRequest } from "../types";
  * over, and an optional note. Recording closes the request. Handover is the last
  * step, so it stays editable after close (until held / cancelled); the server
  * re-checks that lock and refuses otherwise.
+ *
+ * Opens with the SampleSummary recap so the last person on the chain can see what
+ * the request was actually about — party, source, product, colour/quantity.
  */
 export default function HandoverModal({
   open,
@@ -76,6 +80,7 @@ export default function HandoverModal({
       }
     >
       <div className="space-y-3.5">
+        {request && <SampleSummary request={request} />}
         <FieldLabel label="Date handed over" hint="today by default — you can backdate, not post-date">
           <TextInput type="date" max={todayIso()} value={handoverDate} onChange={(e) => setHandoverDate(e.target.value)} />
         </FieldLabel>

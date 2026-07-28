@@ -48,7 +48,7 @@ const OUTWARD_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
   { key: "send_sample", label: "Sample Sent" },
   { key: "confirm_receipt", label: "Receipt Confirmed" },
-  { key: "testing", label: "Testing" },
+  // No Testing node: outward goes from receipt confirmation straight to the result.
   { key: "result", label: "Result" },
   { key: "result_handover", label: "Result Handover" },
   { key: "closed", label: "Closed" },

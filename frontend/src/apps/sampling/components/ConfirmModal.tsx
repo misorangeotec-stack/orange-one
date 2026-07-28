@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import SampleSummary from "./SampleSummary";
 import { useSamplingStore } from "../store";
 import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
  * Record (or correct) the date the party CONFIRMED receipt of an outward sample.
- * Advances the request to testing. `editing` corrects it until testing is
- * recorded; the server re-checks that lock.
+ * Advances the request straight to the RESULT — outward no longer runs a testing
+ * step. `editing` corrects it until the result is recorded; the server re-checks
+ * that lock.
+ *
+ * Opens with the SampleSummary recap so the confirmer sees what was sent —
+ * party, source, product, colour/quantity — without leaving the modal.
  */
 export default function ConfirmModal({
   open,
@@ -73,6 +78,7 @@ export default function ConfirmModal({
       }
     >
       <div className="space-y-3.5">
+        {request && <SampleSummary request={request} />}
         <FieldLabel label="Date the party received the sample" hint="today by default — you can backdate, not post-date">
           <TextInput type="date" max={todayIso()} value={partyReceivedDate} onChange={(e) => setPartyReceivedDate(e.target.value)} />
         </FieldLabel>

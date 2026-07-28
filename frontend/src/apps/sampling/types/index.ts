@@ -215,16 +215,43 @@ export interface Sender {
   sortOrder: number;
 }
 
+/**
+ * Which outward dispatches a receipt-confirmer covers. NOT the same union as
+ * ReceiveVia: a request maps onto it via `confirmerSourceOf` — export → export,
+ * anything else (including legacy 'import' outward rows) → domestic.
+ */
+export type ConfirmerSource = "domestic" | "export";
+
+export const CONFIRMER_SOURCE_LABEL: Record<ConfirmerSource, string> = {
+  domestic: "Domestic",
+  export: "Export",
+};
+
+/**
+ * A curated receipt confirmer — who may confirm receipt of an outward sample,
+ * SPLIT BY SOURCE so domestic and export can be different people. Additive to the
+ * confirm_receipt step owners in Setup, never a replacement for them.
+ */
+export interface Confirmer {
+  id: string;
+  name: string;
+  userId: string;
+  source: ConfirmerSource;
+  active: boolean;
+  sortOrder: number;
+}
+
 /* ------------------------------ master governance ------------------------- */
 
 /** The ownable master types. All are ownable but never "requestable". */
-export type SamplingMasterType = "company" | "collector" | "recipient" | "sender";
+export type SamplingMasterType = "company" | "collector" | "recipient" | "sender" | "confirmer";
 
 export const SAMPLING_MASTER_TYPES: { value: SamplingMasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
   { value: "collector", label: "Collector", plural: "Collectors" },
   { value: "recipient", label: "Hand-over recipient", plural: "Hand-over recipients" },
   { value: "sender", label: "Sender", plural: "Senders" },
+  { value: "confirmer", label: "Receipt confirmer", plural: "Receipt confirmers" },
 ];
 
 export interface SamplingMasterManager {

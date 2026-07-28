@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_sampling_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { Direction, ReceiveVia, RequirementType, SampleItem, SamplingEntityType, SamplingMasterType, TransportBorne } from "../types";
+import type { ConfirmerSource, Direction, ReceiveVia, RequirementType, SampleItem, SamplingEntityType, SamplingMasterType, TransportBorne } from "../types";
 
 /**
  * Sampling FMS write layer. The company master + config are written directly under
@@ -452,6 +452,21 @@ export async function insertRecipient(input: PersonMasterInput): Promise<void> {
 }
 export async function updateRecipient(id: string, input: PersonMasterInput): Promise<void> {
   const { error } = await db.from("fms_sampling_handover_recipients").update(personRow(input)).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** The confirmer master carries a source on top of the shared person shape. */
+export interface ConfirmerInput extends PersonMasterInput {
+  source: ConfirmerSource;
+}
+const confirmerRow = (input: ConfirmerInput) => ({ ...personRow(input), source: input.source });
+
+export async function insertConfirmer(input: ConfirmerInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_confirmers").insert(confirmerRow(input));
+  if (error) throw new Error(error.message);
+}
+export async function updateConfirmer(id: string, input: ConfirmerInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_confirmers").update(confirmerRow(input)).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

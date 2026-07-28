@@ -6,6 +6,8 @@ import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Collector,
   Company,
+  Confirmer,
+  ConfirmerSource,
   Designation,
   HandoverRecipient,
   SamplingActivity,
@@ -34,6 +36,7 @@ type Tbl =
   | "fms_sampling_collectors"
   | "fms_sampling_handover_recipients"
   | "fms_sampling_senders"
+  | "fms_sampling_confirmers"
   | "fms_sampling_master_managers"
   | "fms_sampling_requests"
   | "fms_sampling_activity"
@@ -73,6 +76,7 @@ export interface SamplingData {
   collectors: Collector[];
   recipients: HandoverRecipient[];
   senders: Sender[];
+  confirmers: Confirmer[];
   masterManagers: SamplingMasterManager[];
   requests: SamplingRequest[];
   activity: SamplingActivity[];
@@ -106,6 +110,15 @@ const mapSender = (r: any): Sender => ({
   id: r.id,
   name: r.name,
   userId: r.user_id,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapConfirmer = (r: any): Confirmer => ({
+  id: r.id,
+  name: r.name,
+  userId: r.user_id,
+  source: r.source as ConfirmerSource,
   active: r.active,
   sortOrder: r.sort_order ?? 0,
 });
@@ -243,7 +256,7 @@ const mapNotification = (r: any): SamplingNotification => ({
 });
 
 export async function fetchSamplingData(): Promise<SamplingData> {
-  const [stepOwners, configRows, designations, companies, collectors, recipients, senders, masterManagers, requests, activity, notifications] =
+  const [stepOwners, configRows, designations, companies, collectors, recipients, senders, confirmers, masterManagers, requests, activity, notifications] =
     await Promise.all([
       fetchAll("fms_sampling_step_owners"),
       fetchAll("fms_sampling_config", "key"),
@@ -252,6 +265,7 @@ export async function fetchSamplingData(): Promise<SamplingData> {
       fetchAll("fms_sampling_collectors"),
       fetchAll("fms_sampling_handover_recipients"),
       fetchAll("fms_sampling_senders"),
+      fetchAll("fms_sampling_confirmers"),
       fetchAll("fms_sampling_master_managers"),
       fetchAll("fms_sampling_requests", "submitted_at"),
       fetchAll("fms_sampling_activity"),
@@ -272,6 +286,7 @@ export async function fetchSamplingData(): Promise<SamplingData> {
     collectors: collectors.map(mapCollector),
     recipients: recipients.map(mapRecipient),
     senders: senders.map(mapSender),
+    confirmers: confirmers.map(mapConfirmer),
     masterManagers: masterManagers.map(mapMasterManager),
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),

@@ -97,8 +97,11 @@ function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | nul
       return r.labCompletedAt;
     case "testing":
       return r.direction === "inward" ? r.receivedAt : r.confirmedAt;
+    // Outward dropped `testing`, so the result's clock starts at the receipt
+    // confirmation. `testedAt` first, so a legacy row that DID pass through
+    // testing keeps its original anchor.
     case "result":
-      return r.testedAt;
+      return r.testedAt ?? r.confirmedAt;
     case "result_handover":
       return r.resultedAt;
     default:

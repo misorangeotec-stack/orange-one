@@ -1,3 +1,4 @@
+import { receiveViaLabel } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -18,6 +19,10 @@ export default function SampleSummary({ request: r }: { request: SamplingRequest
           {isOutward ? "Send to" : "Party"}
         </div>
         <div className="text-[13.5px] text-navy">{r.partyName || "—"}</div>
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Sample source</div>
+        <div className="text-[13.5px] text-navy">{receiveViaLabel(r.receiveVia)}</div>
       </div>
       <div>
         <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Product / description</div>

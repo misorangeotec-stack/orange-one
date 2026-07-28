@@ -2,23 +2,42 @@ import { useState } from "react";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useSamplingStore } from "../../store";
-import type { Collector, Company, HandoverRecipient, Sender } from "../../types";
+import {
+  CONFIRMER_SOURCE_LABEL,
+  type Collector,
+  type Company,
+  type Confirmer,
+  type ConfirmerSource,
+  type HandoverRecipient,
+  type Sender,
+} from "../../types";
 
-type Tab = "company" | "collector" | "recipient" | "sender";
+type Tab = "company" | "collector" | "recipient" | "sender" | "confirmer";
 const TABS: { key: Tab; label: string }[] = [
   { key: "company", label: "Companies" },
   { key: "collector", label: "Collectors" },
   { key: "recipient", label: "Hand-over recipients" },
   { key: "sender", label: "Senders" },
+  { key: "confirmer", label: "Receipt confirmers" },
+];
+
+const SOURCE_OPTIONS: ComboOption[] = [
+  { value: "domestic", label: "Domestic" },
+  { value: "export", label: "Export" },
 ];
 
 /**
- * Sampling Masters — four masters, tabbed:
- *   Company (structural), and three people-masters — Collector, Hand-over
- *   recipient and Sender — each mapping to an app user so the chosen person can
- *   action their step and see it in their queue (collect / receive inward, send
- *   outward). Editable by admins and the relevant master's owner (Setup → Master
- *   Owners).
+ * Sampling Masters — five masters, tabbed:
+ *   Company (structural), and four people-masters — Collector, Hand-over
+ *   recipient, Sender and Receipt confirmer — each mapping to an app user so the
+ *   chosen person can action their step and see it in their queue (collect /
+ *   receive inward; send / confirm receipt outward). Editable by admins and the
+ *   relevant master's owner (Setup → Master Owners).
+ *
+ * Receipt confirmer is the one master with a SOURCE: who may confirm receipt is
+ * mapped separately for Domestic and Export dispatches, so the two can be
+ * different people. Everyone listed for a source can action confirm_receipt on
+ * that source's requests, ON TOP of the step's global owners in Setup.
  */
 export default function Masters() {
   const s = useSamplingStore();
@@ -60,9 +79,9 @@ export default function Masters() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Masters</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Companies, collectors, hand-over recipients and senders. Collectors, recipients and senders each map to a
-          portal user so the chosen person can action their step. Editable by admins and each master's owner
-          (Setup → Master Owners).
+          Companies, collectors, hand-over recipients, senders and receipt confirmers. Each people-master maps to a
+          portal user so the chosen person can action their step; receipt confirmers are mapped separately for
+          Domestic and Export. Editable by admins and each master's owner (Setup → Master Owners).
         </p>
       </div>
 
@@ -158,6 +177,54 @@ export default function Masters() {
           }}
           onToggleActive={async (row, active) =>
             s.updateSender(row.id, { name: row.name, userId: row.userId, active, sortOrder: row.sortOrder })
+          }
+        />
+      )}
+
+      {tab === "confirmer" && (
+        <MasterCrud<Confirmer>
+          singular="Receipt confirmer"
+          rows={s.confirmers}
+          columns={[
+            { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
+            { header: "Portal user", render: (r) => <span className="text-grey-2">{s.personName(r.userId)}</span> },
+            {
+              header: "Source",
+              render: (r) => <span className="font-medium text-navy">{CONFIRMER_SOURCE_LABEL[r.source]}</span>,
+              className: "w-32",
+            },
+            { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
+          ]}
+          fields={[
+            { key: "name", label: "Display name", type: "text", required: true, placeholder: "e.g. Export desk" },
+            { key: "userId", label: "Portal user", type: "select", required: true, options: userOptions, hint: "the app user who confirms receipt" },
+            {
+              key: "source",
+              label: "Source",
+              type: "select",
+              required: true,
+              options: SOURCE_OPTIONS,
+              hint: "which dispatches this person covers — add the same person twice to cover both",
+            },
+            { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0" },
+          ]}
+          searchText={(r) => `${r.name} ${s.personName(r.userId)} ${CONFIRMER_SOURCE_LABEL[r.source]}`}
+          canManage={s.canManage("confirmer")}
+          emptyValues={{ name: "", userId: "", source: "domestic", sortOrder: "0" }}
+          toValues={(r) => ({ name: r.name, userId: r.userId, source: r.source, sortOrder: String(r.sortOrder) })}
+          onSubmit={async (id, v, active) => {
+            const input = { ...personInput(v, active), source: (v.source || "domestic") as ConfirmerSource };
+            if (id) await s.updateConfirmer(id, input);
+            else await s.insertConfirmer(input);
+          }}
+          onToggleActive={async (row, active) =>
+            s.updateConfirmer(row.id, {
+              name: row.name,
+              userId: row.userId,
+              source: row.source,
+              active,
+              sortOrder: row.sortOrder,
+            })
           }
         />
       )}

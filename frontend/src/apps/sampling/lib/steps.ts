@@ -9,7 +9,7 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * `lab_testing_required`):
  *   inward + NO lab testing:  request → sample_collect → sample_received (close)
  *   inward + lab testing:     request → sample_collect → sample_to_lab → lab_process → result_received (close)
- *   outward:                  request → send_sample → confirm_receipt → testing → result → result_handover
+ *   outward:                  request → send_sample → confirm_receipt → result → result_handover
  *
  * BOTH inward branches start at `sample_collect` — who collects and whom they hand
  * to is the same question either way. They diverge at the handover receipt: the
@@ -28,9 +28,13 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * A step that doesn't apply to a request is simply never its current_step, so its
  * queue never shows it — the queue reads `status`.
  *
- * `receive_sample` is LEGACY: it is how inward requests started before the lab gate
- * existed. Nothing routes into it any more, but rows raised then still sit in it, so
- * it stays wired and its queue self-hides once they drain.
+ * `receive_sample` and `testing` are both LEGACY. `receive_sample` is how inward
+ * requests started before the lab gate existed; `testing` is the step those same
+ * legacy rows run next, and it USED to sit on the outward path too until outward
+ * dropped it (confirm_receipt now advances straight to `result`). Nothing routes
+ * into either any more, but rows raised earlier still sit in them, so both stay
+ * wired and their queues self-hide once those rows drain. Both are filed under the
+ * `lab` branch, which is where a legacy inward row belongs.
  *
  * Statuses are NOT step keys — closed / on_hold / cancelled live in RequestStatus
  * (types/index.ts), never here.
@@ -81,7 +85,7 @@ export const STEPS: StepDef[] = [
   { key: "receive_sample", index: 7, title: "Sample Received at Lab", short: "Received", scope: "request", branches: ["lab"] },
   { key: "send_sample", index: 8, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
   { key: "confirm_receipt", index: 9, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
-  { key: "testing", index: 10, title: "Testing", short: "Testing", scope: "request", branches: ["outward"] },
+  { key: "testing", index: 10, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
   { key: "result", index: 11, title: "Result", short: "Result", scope: "request", branches: ["outward"] },
   { key: "result_handover", index: 12, title: "Result Handover", short: "Handover", scope: "request", branches: ["outward"] },
 ];
@@ -106,8 +110,10 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Collection", keys: ["sample_collect"] },
   { label: "No Lab — Received", keys: ["sample_received"] },
   { label: "Lab — To Lab", keys: ["sample_to_lab", "receive_sample"] },
-  { label: "Lab — Process", keys: ["lab_process"] },
+  // `testing` rides with the lab process: it is the legacy inward equivalent, and
+  // is no longer on the outward path at all.
+  { label: "Lab — Process", keys: ["lab_process", "testing"] },
   { label: "Lab — Result Received", keys: ["result_received"] },
   { label: "Outward — Movement", keys: ["send_sample", "confirm_receipt"] },
-  { label: "Outward — Testing & Result", keys: ["testing", "result", "result_handover"] },
+  { label: "Outward — Result", keys: ["result", "result_handover"] },
 ];

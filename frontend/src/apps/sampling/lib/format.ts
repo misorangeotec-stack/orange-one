@@ -1,5 +1,6 @@
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import type {
+  ConfirmerSource,
   Direction,
   ReceiveVia,
   RequestStatus,
@@ -21,6 +22,16 @@ const RECEIVE_VIA_LABEL: Record<ReceiveVia, string> = {
   export: "Export",
 };
 export const receiveViaLabel = (v: ReceiveVia): string => RECEIVE_VIA_LABEL[v] ?? "—";
+
+/**
+ * Which confirmer bucket a request falls in. MIRRORS the SQL function
+ * `fms_sampling_confirmer_source(text)` — export → export, ANYTHING ELSE →
+ * domestic. That default is deliberate: outward rows raised before Export
+ * existed carry 'import' and are domestic dispatches in practice. Change this
+ * and you must change the SQL in the same commit, or the UI will offer an
+ * action the server then refuses.
+ */
+export const confirmerSourceOf = (v: ReceiveVia): ConfirmerSource => (v === "export" ? "export" : "domestic");
 
 export const requirementTypeLabel = (t: RequirementType | null): string =>
   t === "competitor" ? "Competitor Sample Testing" : t === "new_product" ? "New Supplier / Product Testing" : "—";

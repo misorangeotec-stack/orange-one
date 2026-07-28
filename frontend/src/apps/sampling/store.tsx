@@ -13,6 +13,7 @@ import {
   insertCollector as insertCollectorWrite,
   insertCompany as insertCompanyWrite,
   insertRecipient as insertRecipientWrite,
+  insertConfirmer as insertConfirmerWrite,
   insertSender as insertSenderWrite,
   markNotificationsRead as markNotificationsReadWrite,
   recordCollect as recordCollectWrite,
@@ -46,10 +47,12 @@ import {
   updateSampleReceived as updateSampleReceivedWrite,
   updateSampleToLab as updateSampleToLabWrite,
   updateSend as updateSendWrite,
+  updateConfirmer as updateConfirmerWrite,
   updateSender as updateSenderWrite,
   updateTesting as updateTestingWrite,
   type CollectInput,
   type CompanyInput,
+  type ConfirmerInput,
   type ConfirmInput,
   type HandoverInput,
   type LabCompleteInput,
@@ -85,11 +88,13 @@ import {
   type SamplingSnapshot,
   type StageEntry,
 } from "./lib/queues";
+import { confirmerSourceOf } from "./lib/format";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
   Collector,
   Company,
+  Confirmer,
   Designation,
   HandoverRecipient,
   SamplingActivity,
@@ -126,6 +131,8 @@ interface SamplingStoreValue {
   activeRecipients: HandoverRecipient[];
   senders: Sender[];
   activeSenders: Sender[];
+  confirmers: Confirmer[];
+  activeConfirmers: Confirmer[];
 
   // config
   stepOwners: StepOwner[];
@@ -216,6 +223,8 @@ interface SamplingStoreValue {
   updateRecipient: (id: string, input: PersonMasterInput) => Promise<void>;
   insertSender: (input: PersonMasterInput) => Promise<void>;
   updateSender: (id: string, input: PersonMasterInput) => Promise<void>;
+  insertConfirmer: (input: ConfirmerInput) => Promise<void>;
+  updateConfirmer: (id: string, input: ConfirmerInput) => Promise<void>;
 }
 
 const Ctx = createContext<SamplingStoreValue | null>(null);
@@ -243,6 +252,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
   const collectors = data?.collectors ?? [];
   const recipients = data?.recipients ?? [];
   const senders = data?.senders ?? [];
+  const confirmers = data?.confirmers ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const requests = data?.requests ?? [];
   const activity = data?.activity ?? [];
@@ -276,7 +286,11 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       (stepKey === "sample_to_lab" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
       (stepKey === "result_received" && !!r.labResultToId && r.labResultToId === uid) ||
       // Outward: the chosen sender dispatches it (the inward collector's twin).
-      (stepKey === "send_sample" && !!r.senderId && r.senderId === uid);
+      (stepKey === "send_sample" && !!r.senderId && r.senderId === uid) ||
+      // Receipt confirmers are mapped PER SOURCE — a Domestic confirmer must not
+      // be offered an Export dispatch (the server refuses it either way).
+      (stepKey === "confirm_receipt" &&
+        confirmers.some((c) => c.active && c.userId === uid && c.source === confirmerSourceOf(r.receiveVia)));
 
     const personName = (id: string | null): string => {
       if (!id) return "—";
@@ -378,6 +392,8 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       activeRecipients: byPersonOrder(recipients),
       senders,
       activeSenders: byPersonOrder(senders),
+      confirmers,
+      activeConfirmers: byPersonOrder(confirmers),
 
       stepOwners,
       stepOwnerFor,
@@ -590,11 +606,19 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await updateSenderWrite(id, input);
         await invalidate();
       },
+      insertConfirmer: async (input) => {
+        await insertConfirmerWrite(input);
+        await invalidate();
+      },
+      updateConfirmer: async (id, input) => {
+        await updateConfirmerWrite(id, input);
+        await invalidate();
+      },
     };
   }, [
     // EVERY master array belongs here — leave one out and its dropdown keeps
     // rendering the pre-edit list until something else re-memoises.
-    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, senders, masterManagers, requests, activity,
+    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, senders, confirmers, masterManagers, requests, activity,
     notifications, stepOwners, processCoordinatorIds, stepSla, queryClient,
     // personName closes over orgPeople; without this the names stay "Unknown user".
     orgPeople,
