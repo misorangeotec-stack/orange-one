@@ -47,8 +47,8 @@ export default function EmailNotifications() {
           <h3 className="text-[15px] font-bold text-navy">Email notifications</h3>
           <p className="text-[12.5px] text-grey mt-1 leading-relaxed">
             When on, Task Management also emails the responsible person for the same events that raise an in-app
-            alert — a task assigned to them, being <b>@mentioned</b> in a remark, and being assigned a recurring
-            task. In-app bell alerts are unaffected.
+            alert — a task assigned to them, being <b>@mentioned</b> in a remark, being <b>@tagged</b> in a task's
+            description, and being assigned a recurring task. In-app bell alerts are unaffected.
           </p>
         </div>
 

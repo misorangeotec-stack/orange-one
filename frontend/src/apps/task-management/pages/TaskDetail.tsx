@@ -11,6 +11,7 @@ import { useTaskStore } from "../mock/store";
 import { useSession } from "../mock/session";
 import { returnToFor } from "@/shared/lib/returnTo";
 import { taskListRouteForRole, taskListLabelForRole } from "../lib/taskLink";
+import { renderMentions } from "../lib/mentions";
 import { locationLabel, RECURRENCE_LABEL, type ActivityType } from "../types";
 import StatusChip from "../components/StatusChip";
 import RemarkComposer from "../components/RemarkComposer";
@@ -24,7 +25,7 @@ type ModalKind = "revise" | "complete" | null;
 export default function TaskDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
-  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead } = useTaskStore();
+  const { getTask, getRecurring, activityFor, revisionInfo, startTask, reopenTask, rescheduleTask, profileById, actorById, departmentById, canWrite, canStatusActions, canReschedule, locationById, taskLocationsComplete, setTaskLocationDone, setTaskLocationNa, setTaskLocationsDone, isWhenTask, setTaskNotApplicable, deletePersonalTask, deleteTask, markTaskNotificationsRead, mentionablePeople } = useTaskStore();
   const { user, role } = useSession();
   const [modal, setModal] = useState<ModalKind>(null);
   const [starting, setStarting] = useState(false);
@@ -327,7 +328,7 @@ export default function TaskDetail() {
           <Card className="p-5">
             <h3 className="text-[13px] font-semibold text-navy mb-2">Description</h3>
             <p className="text-[14px] text-grey leading-relaxed whitespace-pre-wrap">
-              {task.description || "No description provided."}
+              {task.description ? renderMentions(task.description, mentionablePeople) : "No description provided."}
             </p>
           </Card>
 
@@ -477,7 +478,7 @@ export default function TaskDetail() {
                           <span className="text-[12.5px] font-semibold text-navy">{actor?.name ?? "Someone"}</span>
                           <span className="text-[11px] text-grey-2" title={formatDateTime(a.createdAt)}>{timeAgo(a.createdAt)}</span>
                         </div>
-                        <p className="text-[13px] text-ink leading-relaxed whitespace-pre-wrap">{renderMentions(a.note ?? "")}</p>
+                        <p className="text-[13px] text-ink leading-relaxed whitespace-pre-wrap">{renderMentions(a.note ?? "", mentionablePeople)}</p>
                       </div>
                     ) : (
                       <div className="py-0.5">
@@ -641,18 +642,6 @@ function LinkedTask({ label, id }: { label: string; id: string }) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
       </span>
     </Link>
-  );
-}
-
-/** Highlight @mentions inside remark text. */
-function renderMentions(text: string) {
-  const parts = text.split(/(@[\p{L}]+(?:\s[\p{L}]+)?)/gu);
-  return parts.map((p, i) =>
-    p.startsWith("@") ? (
-      <span key={i} className="text-orange font-medium">{p}</span>
-    ) : (
-      <span key={i}>{p}</span>
-    )
   );
 }
 

@@ -199,6 +199,12 @@ export interface Notification {
   userId: string;
   type: NotificationType;
   taskId: string | null;
+  /**
+   * The task_activity row this came from — set for a mention inside a REMARK,
+   * NULL for a mention in the task DESCRIPTION (which has no activity row). The
+   * message builder branches on it to word the two differently.
+   */
+  activityId: string | null;
   actorId: string | null;
   /**
    * Title of the linked task, carried by the fetch's embedded join rather than

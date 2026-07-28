@@ -35,7 +35,11 @@ export function notificationMessage(
     case "assigned":
       return <span>assigned you {title}</span>;
     case "mention":
-      return <span>mentioned you on {title}</span>;
+      // Same notification type, two sources: a mention inside a remark carries the
+      // activity row it came from; a tag in the task DESCRIPTION has none.
+      return n.activityId
+        ? <span>mentioned you on {title}</span>
+        : <span>tagged you in {title}</span>;
     default:
       // A notification_type added in SQL before the frontend knows about it must
       // still render a row rather than crash the bell.

@@ -106,6 +106,7 @@ const mapNotification = (r: any): Notification => ({
   userId: r.user_id,
   type: r.type as NotificationType,
   taskId: r.task_id,
+  activityId: r.activity_id ?? null,
   actorId: r.actor_id,
   // PostgREST returns the embedded row as an object (or null when the task is no
   // longer readable under RLS). Older callers that didn't request the join get
@@ -303,7 +304,7 @@ export async function fetchMyNotifications(userId: string): Promise<Notification
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await supabase
       .from("notifications")
-      .select("id,user_id,type,task_id,actor_id,read_at,created_at,tasks(title)")
+      .select("id,user_id,type,task_id,activity_id,actor_id,read_at,created_at,tasks(title)")
       .eq("user_id", userId)
       .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);

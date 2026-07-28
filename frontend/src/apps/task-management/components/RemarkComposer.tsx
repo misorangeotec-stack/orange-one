@@ -1,41 +1,28 @@
-import { useMemo, useRef, useState } from "react";
-import Avatar from "@/shared/components/ui/Avatar";
+import { useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import { useTaskStore } from "../mock/store";
+import MentionTextArea from "./MentionTextArea";
+import { extractMentionIds } from "../lib/mentions";
 
 /**
  * Remark box with @mention autocomplete. Mentioned users are resolved by scanning
  * the text for "@Full Name" against the people list, then passed to addRemark, which
  * (Stage B / B4) calls the add_task_remark RPC to persist the remark + fan out a
  * notification row per mentioned user.
+ *
+ * The input itself is the shared `MentionTextArea`, so remarks and task descriptions
+ * behave identically (multi-word names, keyboard nav).
  */
 export default function RemarkComposer({ taskId }: { taskId: string }) {
   const { addRemark, mentionablePeople, canRemark } = useTaskStore();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const taRef = useRef<HTMLTextAreaElement>(null);
-
-  // trailing "@token" → suggestions
-  const query = useMemo(() => {
-    const m = text.match(/@([\p{L}]*)$/u);
-    return m ? m[1].toLowerCase() : null;
-  }, [text]);
-
-  const suggestions = useMemo(() => {
-    if (query === null) return [];
-    return mentionablePeople.filter((p) => p.name.toLowerCase().includes(query)).slice(0, 5);
-  }, [query, mentionablePeople]);
-
-  const pick = (name: string) => {
-    setText((t) => t.replace(/@[\p{L}]*$/u, `@${name} `));
-    taRef.current?.focus();
-  };
 
   const post = async () => {
     const body = text.trim();
     if (!body || busy) return;
-    const mentioned = mentionablePeople.filter((p) => body.includes(`@${p.name}`)).map((p) => p.id);
+    const mentioned = extractMentionIds(body, mentionablePeople);
     setBusy(true);
     setError("");
     try {
@@ -58,41 +45,19 @@ export default function RemarkComposer({ taskId }: { taskId: string }) {
 
   return (
     <div className="relative">
-      <div className="rounded-xl border border-line bg-white focus-within:border-orange focus-within:ring-4 focus-within:ring-orange/10 transition">
-        <textarea
-          ref={taRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={2}
-          placeholder="Add a remark…  use @ to mention a teammate"
-          className="w-full resize-none bg-transparent px-3.5 py-2.5 text-[14px] text-ink placeholder:text-grey-2 outline-none"
-        />
-        <div className="flex items-center justify-between px-3 pb-2.5">
-          <span className="text-[11px] text-grey-2">Type @ to mention</span>
-          <Button size="sm" onClick={post} disabled={!text.trim() || busy}>
-            {busy ? "Posting…" : "Post remark"}
-          </Button>
-        </div>
+      <MentionTextArea
+        value={text}
+        onChange={setText}
+        rows={2}
+        placeholder="Add a remark…  use @ to mention a teammate"
+      />
+      <div className="mt-1.5 flex items-center justify-between">
+        <span className="text-[11px] text-grey-2">Type @ to mention</span>
+        <Button size="sm" onClick={post} disabled={!text.trim() || busy}>
+          {busy ? "Posting…" : "Post remark"}
+        </Button>
       </div>
       {error && <p className="mt-1.5 text-[12px] text-[#d4493f]">{error}</p>}
-
-      {suggestions.length > 0 && (
-        <div className="absolute left-0 right-0 mt-1 bg-white border border-line rounded-xl shadow-card z-20 overflow-hidden">
-          {suggestions.map((p) => (
-            <button
-              key={p.id}
-              onClick={() => pick(p.name)}
-              className="w-full flex items-center gap-2.5 px-3 py-2 hover:bg-page transition text-left"
-            >
-              <Avatar name={p.name} color={p.avatarColor} size={28} />
-              <span className="min-w-0">
-                <span className="block text-[13px] font-medium text-navy truncate">{p.name}</span>
-                <span className="block text-[11px] text-grey-2 truncate">{p.designation}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

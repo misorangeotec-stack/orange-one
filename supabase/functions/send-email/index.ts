@@ -297,6 +297,22 @@ async function compose(row: Row): Promise<Composed | null> {
       replyTo,
     };
   }
+  // Tagged in a task's DESCRIPTION (trg_tasks_description_mentions). Distinct from
+  // task_mention above, which is a mention inside a remark: this one fires when the task is
+  // created or its description is edited, and quotes the description rather than a comment.
+  if (row.kind === "task_description_mention") {
+    const description = String(row.payload?.description ?? "").trim();
+    const inner = actorRow(actorName, "tagged you in a task")
+      + taskCard(title, due ? "&#128197;" : "", due ? `Due ${due}` : "")
+      + (description ? quoteCard(description) : "")
+      + cta(link);
+    return {
+      subject: `${actorName} tagged you: ${title}`,
+      html: emailShell({ eyebrow: "Mention", headline: "You were tagged in a task", inner }),
+      text: `${actorName} tagged you in "${title}"${due ? `\nDue: ${due}` : ""}${description ? `:\n\n${description}` : ""}\n\nOpen: ${link}`,
+      replyTo,
+    };
+  }
   if (row.kind === "task_recurring_assigned") {
     const rTitle = String(row.payload?.title ?? "a task");
     const recurrence = String(row.payload?.recurrence ?? "Recurring task");

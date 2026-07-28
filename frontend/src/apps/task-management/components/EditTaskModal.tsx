@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
-import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useTaskStore } from "../mock/store";
 import LocationPicker from "./LocationPicker";
+import MentionTextArea from "./MentionTextArea";
 import type { Task } from "../types";
 
 /**
@@ -96,7 +97,12 @@ export default function EditTaskModal({
         </FieldLabel>
 
         <FieldLabel label="Description" hint="optional">
-          <TextArea rows={3} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add any details, context, or links…" />
+          <MentionTextArea
+            value={description}
+            onChange={setDescription}
+            rows={3}
+            placeholder="Add any details, context, or links…  use @ to tag a teammate"
+          />
         </FieldLabel>
 
         <div className="grid sm:grid-cols-2 gap-4">

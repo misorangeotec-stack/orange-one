@@ -190,10 +190,11 @@ export const activity: TaskActivity[] = [
 // taskTitle is null here as it is in production for a task you can no longer
 // read; the live fetch fills it from an embedded join.
 export const notifications: Notification[] = [
-  { id: "n1", userId: "u6", type: "mention", taskId: "t6", actorId: "u3", taskTitle: null, readAt: null, createdAt: dt(0, 8) },
-  { id: "n2", userId: "u6", type: "mention", taskId: "t4", actorId: "u4", taskTitle: null, readAt: null, createdAt: dt(-1, 15) },
-  { id: "n3", userId: "u6", type: "mention", taskId: "t1", actorId: "u3", taskTitle: null, readAt: dt(-1, 9), createdAt: dt(-1, 9) },
-  { id: "n4", userId: "u6", type: "assigned", taskId: "t2", actorId: "u3", taskTitle: null, readAt: null, createdAt: dt(0, 9) },
+  // activityId set = mentioned in a REMARK; null = tagged in the task DESCRIPTION.
+  { id: "n1", userId: "u6", type: "mention", taskId: "t6", activityId: "a1", actorId: "u3", taskTitle: null, readAt: null, createdAt: dt(0, 8) },
+  { id: "n2", userId: "u6", type: "mention", taskId: "t4", activityId: null, actorId: "u4", taskTitle: null, readAt: null, createdAt: dt(-1, 15) },
+  { id: "n3", userId: "u6", type: "mention", taskId: "t1", activityId: "a3", actorId: "u3", taskTitle: null, readAt: dt(-1, 9), createdAt: dt(-1, 9) },
+  { id: "n4", userId: "u6", type: "assigned", taskId: "t2", activityId: null, actorId: "u3", taskTitle: null, readAt: null, createdAt: dt(0, 9) },
 ];
 
 // ---- workspace settings (singleton) ----

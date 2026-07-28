@@ -2,12 +2,13 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
-import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import Combobox from "@/shared/components/ui/Combobox";
 import Avatar from "@/shared/components/ui/Avatar";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import LocationPicker from "../components/LocationPicker";
+import MentionTextArea from "../components/MentionTextArea";
 import { useReportsToSuffix } from "../components/ReportsToTag";
 
 /** Create a one-time task. Assignee options depend on the current user's role. */
@@ -95,7 +96,12 @@ export default function CreateTask() {
           </FieldLabel>
 
           <FieldLabel label="Description" hint="optional">
-            <TextArea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} placeholder="Add any details, context, or links…" />
+            <MentionTextArea
+              value={description}
+              onChange={setDescription}
+              rows={4}
+              placeholder="Add any details, context, or links…  use @ to tag a teammate"
+            />
           </FieldLabel>
 
           <div className="grid sm:grid-cols-2 gap-4">

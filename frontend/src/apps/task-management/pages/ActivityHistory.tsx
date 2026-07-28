@@ -12,6 +12,7 @@ import { timeAgo } from "@/shared/lib/time";
 import { useSession } from "../mock/session";
 import { useTaskStore } from "../mock/store";
 import type { ActivityType } from "../types";
+import { renderMentions } from "../lib/mentions";
 
 const TYPE_LABELS: Record<ActivityType, string> = {
   created: "Created", assigned: "Assigned", started: "Started", revised: "Revised",
@@ -119,7 +120,7 @@ export default function ActivityHistory() {
                     </span>
                     <span className="text-[10px] font-semibold uppercase tracking-wide rounded-pill px-1.5 py-0.5 bg-page text-grey-2">{TYPE_LABELS[a.type]}</span>
                   </div>
-                  {a.note && <p className="text-[12.5px] text-grey-2 mt-0.5">{a.note}</p>}
+                  {a.note && <p className="text-[12.5px] text-grey-2 mt-0.5">{renderMentions(a.note, mentionablePeople)}</p>}
                   <span className="text-[11px] text-grey-2">{timeAgo(a.createdAt)}</span>
                 </li>
               );
