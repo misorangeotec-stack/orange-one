@@ -909,13 +909,21 @@ export async function tallyDocumentUrl(path: string): Promise<string> {
 
 /* ============ QC inspection + the purchase-return branch ================ */
 
-/** One row per QC-required line of the receipt: how much of it was rejected. */
-export type QcLineInput = { poItemId: string; rejectedQty: number; remark?: string | null };
+/**
+ * One row per QC-required line of the receipt, carrying that line's verdict.
+ * The decision is whole-item — a rejected line goes back in full — so the caller
+ * states `rejected` plus what the receipt delivered, not a partial quantity.
+ */
+export type QcLineInput = { poItemId: string; rejected: boolean; receivedQty: number; remark?: string | null };
 
+// Both forms go on the wire: `rejected` is what the RPC reads, `rejected_qty` is
+// what the pre-decision RPC read, so the payload is correct either side of the
+// migration landing.
 const qcItemsPayload = (items: QcLineInput[]) =>
   items.map((i) => ({
     po_item_id: i.poItemId,
-    rejected_qty: i.rejectedQty,
+    rejected: i.rejected,
+    rejected_qty: i.rejected ? i.receivedQty : 0,
     remark: i.remark ?? null,
   })) as unknown as Json;
 

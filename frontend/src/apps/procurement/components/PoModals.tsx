@@ -848,14 +848,54 @@ function QcRefPanel({ po, grn }: { po: PurchaseOrder; grn?: Grn }) {
   );
 }
 
+/** A line's verdict. `""` is "not decided yet" — an inspection cannot be saved holding one. */
+type QcDecision = "" | "approved" | "rejected";
+
+/**
+ * The per-item verdict control.
+ *
+ * Whole-item by design: a line is either taken or sent back, never part-taken,
+ * so this is a two-way choice and not a quantity. Nothing is preselected —
+ * an inspection has to be a decision somebody made, not a default nobody changed.
+ */
+function QcDecisionToggle({ value, onChange }: { value: QcDecision; onChange: (v: QcDecision) => void }) {
+  const opts = [
+    { value: "approved" as const, label: "Approve", on: "border-ryg-green/40 bg-[#E9F8EF] text-ryg-green" },
+    { value: "rejected" as const, label: "Reject", on: "border-ryg-red/40 bg-[#FDECEC] text-ryg-red" },
+  ];
+  return (
+    <div className="inline-flex items-center gap-1.5">
+      {opts.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          aria-pressed={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "rounded-pill border px-3 py-1.5 text-[12px] font-semibold transition whitespace-nowrap",
+            value === o.value ? o.on : "border-line bg-white text-grey-2 hover:border-orange hover:text-orange",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /**
  * QC Inspection — the decision is ITEM-WISE and covers ONLY the lines whose
  * category is flagged `qc_required` in Masters (Raw Material today). A receipt of
  * anything else never reaches this modal.
  *
- * `result` is derived, not chosen: any rejected quantity makes it a rejection,
- * which is what opens the return branch. The chip shows that live so nobody has
- * to guess what the Save button is about to do.
+ * Every line must be explicitly approved or rejected before the step can be
+ * saved, and a rejection must say why. The inspection's `result` is still
+ * DERIVED — one rejected line makes the whole inspection a rejection, which is
+ * what opens the return branch — and the chip shows that live.
+ *
+ * A rejected line is stored as `rejectedQty = receivedQty`, i.e. the whole line
+ * goes back. The stored shape is unchanged, so the return and gate-outward steps
+ * read it exactly as they always have.
  */
 export function QcModal({
   po, grn, open, onClose, editing, readOnly = false,
@@ -869,7 +909,7 @@ export function QcModal({
     : grn ?? pending[0];
 
   const lines = target ? s.qcLinesForGrn(target.id) : [];
-  const [rejected, setRejected] = useState<Record<string, string>>({});
+  const [decision, setDecision] = useState<Record<string, QcDecision>>({});
   const [remark, setRemark] = useState<Record<string, string>>({});
   const [remarks, setRemarks] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -878,15 +918,17 @@ export function QcModal({
 
   useEffect(() => {
     if (!open) return;
-    const rj: Record<string, string> = {};
+    const dc: Record<string, QcDecision> = {};
     const rm: Record<string, string> = {};
     const existing = editing ? s.qcItemsFor(editing.id) : [];
     for (const l of lines) {
       const prev = existing.find((x) => x.poItemId === l.poItemId);
-      rj[l.poItemId] = String(prev?.rejectedQty ?? 0);
+      // Recording starts blank. Editing replays what was recorded — a line that
+      // carries a rejected quantity was a rejection.
+      dc[l.poItemId] = prev ? (prev.rejectedQty > 0 ? "rejected" : "approved") : "";
       rm[l.poItemId] = prev?.remark ?? "";
     }
-    setRejected(rj);
+    setDecision(dc);
     setRemark(rm);
     setRemarks(editing?.remarks ?? "");
     setFile(null);
@@ -894,22 +936,28 @@ export function QcModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po.id, target?.id, editing?.id]);
 
-  const anyRejected = lines.some((l) => Number(rejected[l.poItemId] ?? 0) > 0);
-  const overRejected = lines.some((l) => Number(rejected[l.poItemId] ?? 0) > l.receivedQty);
+  const anyRejected = lines.some((l) => decision[l.poItemId] === "rejected");
+  const allDecided = lines.length > 0 && lines.every((l) => !!decision[l.poItemId]);
+  const missingRemark = lines.some((l) => decision[l.poItemId] === "rejected" && !remark[l.poItemId]?.trim());
   const hasExistingDoc = !!editing?.documentPath;
+  const setAll = (v: QcDecision) => setDecision(Object.fromEntries(lines.map((l) => [l.poItemId, v])));
 
   const save = async () => {
     setErr(null);
     if (!target) return setErr("There is no goods receipt awaiting inspection on this PO.");
-    if (overRejected) return setErr("Rejected quantity cannot exceed the quantity received on this receipt.");
+    if (!allDecided) return setErr("Approve or reject every item before saving the inspection.");
+    if (missingRemark) return setErr("A rejected item needs a remark saying why it was rejected.");
     setBusy(true);
     try {
       let doc: { path: string; name: string } | null = null;
       if (file) doc = await s.uploadQcDocument(po.id, file);
+      // A rejection sends the line back in full, so the quantity the write layer
+      // stores against it IS what this receipt delivered.
       const items = lines.map((l) => ({
         poItemId: l.poItemId,
-        rejectedQty: Number(rejected[l.poItemId] ?? 0) || 0,
-        remark: remark[l.poItemId]?.trim() || null,
+        rejected: decision[l.poItemId] === "rejected",
+        receivedQty: l.receivedQty,
+        remark: decision[l.poItemId] === "rejected" ? remark[l.poItemId]?.trim() || null : null,
       }));
       if (editing) {
         await s.updateQc({ inspectionId: editing.id, poId: po.id, items, remarks: remarks.trim() || null, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
@@ -927,8 +975,8 @@ export function QcModal({
   return (
     <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <QcDocLink qc={editing} /> : undefined} size="2xl"
       title={editing ? (readOnly ? "QC Inspection" : "Edit QC Inspection") : "Record QC Inspection"}
-      subtitle={`${po.poNo} · quality check on the received material. Enter a rejected quantity per item — leave everything at 0 to approve.`}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !target || overRejected}>{busy ? "Saving…" : editing ? "Save Changes" : anyRejected ? "Record rejection" : "Approve"}</Button></>}>
+      subtitle={`${po.poNo} · quality check on the received material. Approve or reject each item — a rejected item needs a remark.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !target || !allDecided || missingRemark}>{busy ? "Saving…" : editing ? "Save Changes" : !allDecided ? "Record inspection" : anyRejected ? "Record rejection" : "Approve"}</Button></>}>
       <div className="space-y-5">
         <QcRefPanel po={po} grn={target} />
 
@@ -937,14 +985,24 @@ export function QcModal({
         ) : (
           <>
             <div>
-              <div className={`${SECTION_HEADING_CLASS} mb-1.5 flex items-center justify-between`}>
+              <div className={`${SECTION_HEADING_CLASS} mb-1.5 flex items-center justify-between gap-3`}>
                 <span>Material inspected</span>
-                <span className={cn(
-                  "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                  anyRejected ? "bg-[#FDECEC] text-ryg-red" : "bg-[#E9F8EF] text-ryg-green",
-                )}>
-                  {anyRejected ? "Rejected" : "Approved"}
-                </span>
+                <div className="flex items-center gap-3">
+                  {/* Bulk verdicts only earn their space once there is more than one line. */}
+                  {!readOnly && lines.length > 1 && (
+                    <span className="flex items-center gap-2 text-[11px] font-semibold normal-case tracking-normal">
+                      <button type="button" onClick={() => setAll("approved")} className="text-grey-2 transition hover:text-ryg-green">Approve all</button>
+                      <span className="text-line">·</span>
+                      <button type="button" onClick={() => setAll("rejected")} className="text-grey-2 transition hover:text-ryg-red">Reject all</button>
+                    </span>
+                  )}
+                  <span className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                    !allDecided ? "bg-page text-grey-2" : anyRejected ? "bg-[#FDECEC] text-ryg-red" : "bg-[#E9F8EF] text-ryg-green",
+                  )}>
+                    {!allDecided ? "Awaiting decision" : anyRejected ? "Rejected" : "Approved"}
+                  </span>
+                </div>
               </div>
               <div className="rounded-xl border border-line overflow-hidden">
                 <table className="w-full text-[13px]">
@@ -952,8 +1010,8 @@ export function QcModal({
                     <tr className="text-grey-2 border-b border-line bg-page/60">
                       <th className="px-4 py-2.5 text-left font-medium">Item</th>
                       <th className="px-4 py-2.5 text-right font-medium w-36">Received</th>
-                      <th className="px-4 py-2.5 text-right font-medium w-44">Rejected Qty</th>
-                      <th className="px-4 py-2.5 text-left font-medium w-56">Remark</th>
+                      <th className="px-4 py-2.5 text-center font-medium w-52">Decision</th>
+                      <th className="px-4 py-2.5 text-left font-medium w-64">Remark</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -961,22 +1019,24 @@ export function QcModal({
                       const poItem = s.poItemsForPo(po.id).find((p) => p.id === gi.poItemId);
                       const line = poItem ? s.lineById(poItem.requestItemId) : undefined;
                       const unit = line?.unit ? ` ${line.unit}` : "";
-                      const over = Number(rejected[gi.poItemId] ?? 0) > gi.receivedQty;
+                      const d = decision[gi.poItemId] ?? "";
+                      const needsRemark = d === "rejected" && !remark[gi.poItemId]?.trim();
                       return (
                         <tr key={gi.id} className="border-b border-line/70 last:border-0">
                           <td className="px-4 py-2.5 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
                           <td className="px-4 py-2.5 text-right whitespace-nowrap">{gi.receivedQty}{unit}</td>
                           <td className="px-4 py-2.5">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* min-w, not a bare w: a 4-digit qty plus its unit collapses otherwise. */}
-                              <TextInput type="number" min={0} className={cn("min-w-[7rem] text-right", over && "border-ryg-red")}
-                                value={rejected[gi.poItemId] ?? ""}
-                                onChange={(e) => setRejected((p) => ({ ...p, [gi.poItemId]: e.target.value }))} />
-                              {line?.unit && <span className="w-10 text-[12.5px] text-grey-2">{line.unit}</span>}
+                            <div className="flex justify-center">
+                              <QcDecisionToggle value={d} onChange={(v) => setDecision((p) => ({ ...p, [gi.poItemId]: v }))} />
                             </div>
                           </td>
                           <td className="px-4 py-2.5">
-                            <TextInput value={remark[gi.poItemId] ?? ""} placeholder="why"
+                            {/* Only a rejection has anything to explain, so the field opens with it. */}
+                            <TextInput
+                              value={remark[gi.poItemId] ?? ""}
+                              disabled={d !== "rejected"}
+                              placeholder={d === "rejected" ? "why it was rejected" : "—"}
+                              className={cn(needsRemark && "border-ryg-red", d !== "rejected" && "bg-page/70 cursor-not-allowed")}
                               onChange={(e) => setRemark((p) => ({ ...p, [gi.poItemId]: e.target.value }))} />
                           </td>
                         </tr>
@@ -987,7 +1047,9 @@ export function QcModal({
               </div>
               <Hint>
                 Only Raw Material lines are inspected — anything else on this receipt is not subject to QC.
-                {anyRejected ? " The rejected items go straight into the purchase return." : ""}
+                {anyRejected
+                  ? " A rejected item goes back in full — the whole received quantity flows into the purchase return."
+                  : !allDecided ? " Every item needs a decision before this step can be saved." : ""}
               </Hint>
             </div>
 

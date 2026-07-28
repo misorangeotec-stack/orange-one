@@ -1208,7 +1208,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
       recordQc: async (input) => {
         const id = await recordQcWrite(input);
-        const rejected = input.items.filter((i) => i.rejectedQty > 0);
+        const rejected = input.items.filter((i) => i.rejected);
         await safeAnnounce({
           entityType: "po",
           entityId: input.poId,
