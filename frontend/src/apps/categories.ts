@@ -14,11 +14,17 @@
  * tag the apps. Order here IS display order — there is no separate sort.
  */
 
-export type AppCategory = "productivity" | "fms" | "sales" | "control" | "mobile";
+export type AppCategory =
+  | "productivity" | "fms" | "onboarding" | "sales" | "control" | "mobile";
 
 export const CATEGORIES: { key: AppCategory; label: string }[] = [
   { key: "productivity", label: "Productivity" },
   { key: "fms", label: "FMS" },
+  // Its own group rather than an FMS entry, deliberately: onboarding is the
+  // gateway INTO the sales book, so it reads as the step between running the
+  // processes and reporting on what they produced. Sits between FMS and Sales &
+  // Receivables because that is the order the work actually happens in.
+  { key: "onboarding", label: "Onboarding" },
   { key: "sales", label: "Sales & Receivables" },
   { key: "control", label: "Control" },
   // Not a web app — the mobile grant gates login to the Orange One mobile Leads

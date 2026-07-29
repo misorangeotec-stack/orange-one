@@ -103,8 +103,10 @@ export const APPS: Record<string, AppInfo> = {
   "customer-onboarding": {
     name: "New Customer Onboarding",
     basePath: "/customer-onboarding",
-    category: "fms",
-    subGroup: "Sales",
+    // Its own top-level group, between FMS and Sales & Receivables. No subGroup:
+    // that is a second level INSIDE a category, and a lone app under a one-app
+    // heading would just be the same words twice.
+    category: "onboarding",
   },
   // The only FMS whose entity is permanent: assets and their dated tracks live
   // for years, and the thing that runs the workflow is a service JOB raised off
