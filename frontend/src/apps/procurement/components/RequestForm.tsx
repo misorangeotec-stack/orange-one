@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
+import DraftBar from "@/shared/components/ui/DraftBar";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import RequestMasterModal from "./RequestMasterModal";
@@ -12,12 +13,15 @@ import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine }
  * Category → Item grid. Each page supplies its own action bar as `children`. In
  * edit mode the Company is a read-only readout — changing it is a different
  * request, not a correction.
+ *
+ * Both draft affordances live here rather than on the pages, so New and Edit
+ * behave identically and a third caller would get them for free.
  */
 export default function RequestForm({ form, children }: { form: RequestFormApi; children?: ReactNode }) {
   const {
     mode, companyId, setCompanyId, note, setNote, err, requested, setRequested,
     raise, setRaise, companyOptions, categoryOptions, itemOptionsFor,
-    raiseItem, itemById, lines, setLines,
+    raiseItem, itemById, lines, setLines, draft,
   } = form;
 
   const locked = mode === "edit";
@@ -112,6 +116,11 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
   return (
     <>
       <Card className="p-5 space-y-4">
+        {/* -mb-1 trims DraftBar's own bottom margin against this Card's space-y. */}
+        <div className="-mb-1">
+          <DraftBar draft={draft} />
+        </div>
+
         <div className="grid sm:grid-cols-2 gap-4">
           {locked ? (
             <FieldLabel label="Company">

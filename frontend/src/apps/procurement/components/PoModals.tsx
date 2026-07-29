@@ -3,9 +3,12 @@ import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import DraftBar from "@/shared/components/ui/DraftBar";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { FIELD_LABEL_CLASS, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
+import { useStepDraft } from "@/shared/lib/useStepDraft";
+import { usePoStepDraftKey } from "../lib/draftKeys";
 import { todayIso, formatDate } from "@/shared/lib/time";
 // NOT time.ts's todayIso(): that is documented "local" but is really the UTC
 // date, so in IST it reads as yesterday until 05:30 and would reject a dispatch
@@ -95,6 +98,17 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false, stack
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po.id, editing?.id]);
 
+  // `stacked` is the read-only PI viewer opened from four other step modals —
+  // never a form, and it shares `po.id` with the real one, so it must not draft.
+  const draftKeyStr = usePoStepDraftKey("collect_pi", open && !readOnly && !stacked, editing?.id ?? po.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { vendorPiNo, qty },
+    // Merge onto the freshly seeded map: PO lines added since the draft keep
+    // their computed remaining-qty default instead of vanishing.
+    apply: (v) => { setVendorPiNo(v.vendorPiNo); setQty((prev) => ({ ...prev, ...v.qty })); },
+  });
+
   const save = async () => {
     setErr(null);
     if (!vendorPiNo.trim()) return setErr("Vendor PI number is required.");
@@ -109,6 +123,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false, stack
       } else {
         await s.addPi({ poId: po.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -124,6 +139,7 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false, stack
         : "Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Add PI"}</Button></>}>
       <div className="space-y-3.5">
+        <DraftBar draft={draft} />
         <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo />
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
@@ -245,6 +261,15 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
    */
   const missingPoStageData = !po.tallyPoNo || !po.documentPath;
 
+  // `editing` is a bare boolean here, so the create and edit forms of the SAME po
+  // would otherwise collide — they seed differently (edit carries shareRemarks).
+  const draftKeyStr = usePoStepDraftKey("share_po", open && !readOnly, `${editing ? "edit" : "new"}:${po.id}`);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { terms, dispatch, remarks },
+    apply: (v) => { setTerms(v.terms); setDispatch(v.dispatch); setRemarks(v.remarks); },
+  });
+
   const save = async () => {
     setErr(null);
     if (missingPoStageData) return setErr("This PO has no Tally PO number or PDF yet — add them on the PO stage first.");
@@ -261,6 +286,7 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
       } else {
         await s.sharePo(po.id, { remarks: remarks.trim() || null, paymentTerms: terms, dispatchDate: dispatch });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -276,6 +302,8 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
         : `${po.poNo} · confirm the terms and dispatch date, then mark it shared with the vendor.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || missingPoStageData || !dispatch}>{busy ? (editing ? "Saving…" : "Sharing…") : editing ? "Save Changes" : "Share PO"}</Button></>}>
       <div className="space-y-4">
+        <DraftBar draft={draft} />
+
         {/* Who this PO is for and from, plus what was recorded at the PO stage —
             shown here, never edited here. The PDF link is rendered only outside
             read-only mode: Modal puts the body inside a disabled <fieldset>, so a
@@ -357,6 +385,16 @@ export function PaymentModal({ po, open, onClose, kind, editing, readOnly = fals
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po.id, kind, editing?.id]);
 
+  // ⚠ `kind` is load-bearing: PoDetail mounts this component TWICE for the same
+  // PO — once for the advance, once for the balance — so without it the two
+  // dialogs would share one draft.
+  const draftKeyStr = usePoStepDraftKey("advance_payment", open && !readOnly, `${kind}:${editing?.id ?? po.id}`);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { amount, piRemarks, paidOn, utr },
+    apply: (v) => { setAmount(v.amount); setPiRemarks(v.piRemarks); setPaidOn(v.paidOn); setUtr(v.utr); },
+  });
+
   const save = async () => {
     setErr(null);
     const amt = Number(amount);
@@ -369,6 +407,7 @@ export function PaymentModal({ po, open, onClose, kind, editing, readOnly = fals
       } else {
         await s.recordPayment({ poId: po.id, piId: null, kind, amount: amt, paidOn, utrRef: utr.trim() || null, piRemarks: piRemarks.trim() || null });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -388,6 +427,7 @@ export function PaymentModal({ po, open, onClose, kind, editing, readOnly = fals
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until a follow-up is logged.` : `${po.poNo} · Pending ${inr(poPending)}`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Record"}</Button></>}>
       <div className="space-y-4">
+        <DraftBar draft={draft} />
         <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo showPi onViewPi={setViewPi} />
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -478,6 +518,25 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po?.id, editing?.id]);
 
+  // `po` is nullable here — the follow-up queue keeps a create slot mounted with
+  // `po={null}` — so the key falls to null and drafting simply stays off.
+  const draftKeyStr = usePoStepDraftKey("follow_up", open && !readOnly, editing?.id ?? po?.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { status, actual, lr, transport, revised, remarks, piRemarks },
+    apply: (v) => {
+      setStatus(v.status);
+      // Keep `onStatusChange`'s invariant: an actual dispatch date only means
+      // anything on a `dispatched` follow-up.
+      setActual(v.status === "dispatched" ? v.actual : "");
+      setLr(v.lr);
+      setTransport(v.transport);
+      setRevised(v.revised);
+      setRemarks(v.remarks);
+      setPiRemarks(v.piRemarks);
+    },
+  });
+
   if (!po) return null;
 
   // The actual dispatch date only means anything on a `dispatched` follow-up:
@@ -501,6 +560,7 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
       const payload = { dispatchStatus: status, actualDispatchDate: actual || null, lrNo: lr.trim() || null, transportDetails: transport.trim() || null, revisedDispatchDate: revised || null, remarks: remarks.trim() || null, piRemarks: piRemarks.trim() || null };
       if (editing) await s.updateFollowup({ followupId: editing.id, ...payload });
       else await s.recordFollowup({ poId: po.id, ...payload });
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -520,6 +580,7 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
       subtitle={editing ? "Correct what was recorded. Editable until goods are received." : due ? `Dispatch due ${formatDate(due)}` : undefined}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Save"}</Button></>}>
       <div className="space-y-4">
+        <DraftBar draft={draft} />
         <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo showPi onViewPi={setViewPi} />
 
         <div className="grid gap-4 lg:grid-cols-2">
@@ -642,6 +703,20 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po.id, editing?.id]);
 
+  const draftKeyStr = usePoStepDraftKey("inward", open && !readOnly, editing?.id ?? po.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { poRef, piRef, gate, condition, note, qty },
+    apply: (v) => {
+      setPoRef(v.poRef);
+      setPiRef(v.piRef);
+      setGate(v.gate);
+      setCondition(v.condition);
+      setNote(v.note);
+      setQty((prev) => ({ ...prev, ...v.qty }));
+    },
+  });
+
   const damaged = condition === "damaged" || condition === "partial_damage";
 
   const save = async () => {
@@ -658,6 +733,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
       } else {
         await s.recordGrn({ poId: po.id, piId: null, poRef: poRef.trim(), piRef: piRef.trim() || null, gateRegisterNo: gate.trim() || null, condition, note: note.trim() || null, items: lines, photoPath: photoDoc?.path ?? null, photoName: photoDoc?.name ?? null });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -679,6 +755,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until this receipt is booked in Tally.` : `${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : editing ? "Save Changes" : "Record receipt"}</Button></>}>
       <div className="space-y-3.5">
+        <DraftBar draft={draft} />
         <PoRefPanel po={po} readOnly={readOnly} showTallyPoNo showPi onViewPi={setViewPi} />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3.5">
           <FieldLabel label="PO Ref No." required>
@@ -798,6 +875,16 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
   // before this rule have none, and a typo fix must not demand the PDF in hand.
   const docSatisfied = !!editing || !!file;
 
+  // `fileHint` on the bar: a new booking cannot be saved without the invoice
+  // document, and a draft cannot carry a File — so say so rather than leave the
+  // Save button looking broken after a restore.
+  const draftKeyStr = usePoStepDraftKey("tally", open && !readOnly, editing?.id ?? po.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { grnId, tallyNo, remarks },
+    apply: (v) => { setGrnId(v.grnId); setTallyNo(v.tallyNo); setRemarks(v.remarks); },
+  });
+
   const save = async () => {
     setErr(null);
     if (!tallyNo.trim()) return setErr("Tally invoice number is required.");
@@ -814,6 +901,7 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
       } else {
         await s.bookTally({ poId: po.id, grnId: grnId || null, tallyPiNo: tallyNo.trim(), documentPath: doc?.path ?? null, documentName: doc?.name ?? null, remarks: remarks.trim() || null });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -843,6 +931,8 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
       subtitle={editing ? `${po.poNo} · correct the invoice details. The receipt it is booked against cannot be changed.` : `${po.poNo} · one invoice per goods receipt — partial receipts included.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !docSatisfied || !tallyNo.trim() || (!editing && unbooked.length > 0 && !grnId)}>{busy ? "Saving…" : editing ? "Save Changes" : "Book"}</Button></>}>
       <div className="space-y-4">
+        <DraftBar draft={draft} fileHint={!editing} />
+
         {/* `showTallyInvoice` without a `grn` lists every invoice already booked on
             this PO — the context for booking the next receipt, and on an edit the
             entry being corrected. */}
@@ -1022,6 +1112,19 @@ export function QcModal({
   const hasExistingDoc = !!editing?.documentPath;
   const setAll = (v: QcDecision) => setDecision(Object.fromEntries(lines.map((l) => [l.poItemId, v])));
 
+  // Keyed on the RECEIPT, not the PO: one PO can hold several uninspected GRNs,
+  // and `target` resolves implicitly to the first of them.
+  const draftKeyStr = usePoStepDraftKey("qc_inspection", open && !readOnly, editing?.id ?? target?.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { decision, remark, remarks },
+    apply: (v) => {
+      setDecision((prev) => ({ ...prev, ...v.decision }));
+      setRemark((prev) => ({ ...prev, ...v.remark }));
+      setRemarks(v.remarks);
+    },
+  });
+
   const save = async () => {
     setErr(null);
     if (!target) return setErr("There is no goods receipt awaiting inspection on this PO.");
@@ -1044,6 +1147,7 @@ export function QcModal({
       } else {
         await s.recordQc({ grnId: target.id, poId: po.id, items, remarks: remarks.trim() || null, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -1065,6 +1169,7 @@ export function QcModal({
       subtitle={`${po.poNo} · quality check on the received material. Approve or reject each item — a rejected item needs a remark.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !target || !allDecided || missingRemark}>{busy ? "Saving…" : editing ? "Save Changes" : !allDecided ? "Record inspection" : anyRejected ? "Record rejection" : "Approve"}</Button></>}>
       <div className="space-y-5">
+        <DraftBar draft={draft} />
         <QcRefPanel po={po} grn={target} readOnly={readOnly} />
 
         {!target ? (
@@ -1244,6 +1349,13 @@ export function PurchaseReturnModal({
   // On create the document is required outright; on edit the stored one stands in.
   const docSatisfied = !!file || (editing && hasExistingDoc);
 
+  const draftKeyStr = usePoStepDraftKey("purchase_return", open && !readOnly, inspection.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { tallyRef, remarks },
+    apply: (v) => { setTallyRef(v.tallyRef); setRemarks(v.remarks); },
+  });
+
   const save = async () => {
     setErr(null);
     if (!tallyRef.trim()) return setErr("The Tally reference number is required.");
@@ -1257,6 +1369,7 @@ export function PurchaseReturnModal({
       } else {
         await s.recordPurchaseReturn({ inspectionId: inspection.id, poId: po.id, tallyRef: tallyRef.trim(), documentPath: doc!.path, documentName: doc!.name, remarks: remarks.trim() || null });
       }
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -1278,6 +1391,8 @@ export function PurchaseReturnModal({
       subtitle={`${po.poNo} · book the return of the QC-rejected material in Tally.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !tallyRef.trim() || !docSatisfied}>{busy ? "Saving…" : editing ? "Save Changes" : "Record return"}</Button></>}>
       <div className="space-y-5">
+        <DraftBar draft={draft} fileHint={!editing || !hasExistingDoc} />
+
         {/* The purchase invoice this material was booked in on — number AND the
             stored invoice, since the return is raised against that document. */}
         <QcRefPanel po={po} grn={grn} readOnly={readOnly} />
@@ -1349,6 +1464,13 @@ export function GateOutwardModal({
 
   const hasExistingDoc = !!inspection.gateDocPath;
 
+  const draftKeyStr = usePoStepDraftKey("gate_outward", open && !readOnly, inspection.id);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { gateNo, outDate, remarks },
+    apply: (v) => { setGateNo(v.gateNo); setOutDate(v.outDate); setRemarks(v.remarks); },
+  });
+
   const save = async () => {
     setErr(null);
     if (!gateNo.trim()) return setErr("The gate register number is required.");
@@ -1361,6 +1483,7 @@ export function GateOutwardModal({
       const payload = { inspectionId: inspection.id, gateRegisterNo: gateNo.trim(), outDate, remarks: remarks.trim() || null, documentPath: doc?.path ?? null, documentName: doc?.name ?? null };
       if (editing) await s.updateGateOutward(payload);
       else await s.recordGateOutward({ ...payload, poId: po.id });
+      draft.clear();
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -1382,6 +1505,7 @@ export function GateOutwardModal({
       subtitle={`${po.poNo} · record the rejected material leaving the premises. This closes the process.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !gateNo.trim() || !outDate}>{busy ? "Saving…" : editing ? "Save Changes" : "Record gate outward"}</Button></>}>
       <div className="space-y-5">
+        <DraftBar draft={draft} />
         <QcRefPanel po={po} grn={grn} readOnly={readOnly} />
         <RejectedItemsReadout po={po} inspection={inspection} />
         <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">

@@ -32,7 +32,21 @@ export interface LineGridRow {
 }
 
 let uidSeq = 0;
-export const newUid = () => `r${++uidSeq}`;
+/**
+ * Random per PAGE LOAD, and load-bearing for drafts (`useStepDraft`).
+ *
+ * The counter alone resets to 0 on every reload, so a restored draft holding
+ * rows r1..r4 would collide with the very next row the user adds — duplicate
+ * React keys remount the <tr> mid-edit, focus jumps, and `patch` writes into
+ * the wrong row. The base makes a restored row's id unreachable by this load's
+ * counter.
+ *
+ * Safe to change the format: a uid never leaves the browser. Submit payloads
+ * carry the line's DB id (`dbId`) and never the uid, and hydrating a saved line
+ * always mints a fresh one.
+ */
+const uidBase = Math.random().toString(36).slice(2, 8);
+export const newUid = () => `r${uidBase}${++uidSeq}`;
 
 export interface LineCellApi<T extends LineGridRow> {
   /** Patch this row. */

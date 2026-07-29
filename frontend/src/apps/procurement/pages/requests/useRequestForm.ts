@@ -1,6 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
+import { draftKey } from "@/shared/lib/draftStore";
+import { useStepDraft } from "@/shared/lib/useStepDraft";
+import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import type { MasterValues } from "../../lib/masterFields";
 import type { MasterType, RequestItem } from "../../types";
 import { useProcurementStore } from "../../store";
@@ -67,6 +70,13 @@ export interface RequestFormInit {
   lines: RequestLine[];
 }
 
+/** Exactly what an unsaved requisition is worth keeping. Must stay JSON-safe. */
+interface RequestDraft {
+  companyId: string;
+  note: string;
+  lines: RequestLine[];
+}
+
 export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormInit | null }) {
   const { mode, init } = opts;
   const s = useProcurementStore();
@@ -87,6 +97,64 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     setNote(init.note);
     setLines(init.lines.length > 0 ? init.lines : [makeEmptyLine()]);
   }
+
+  /**
+   * Autosave, so an interruption stops costing the whole form.
+   *
+   * This is the longest-lived form in the app — a dozen item lines, raised on a
+   * shared shop-floor PC, routinely interrupted by a missing item master. The
+   * draft never leaves this browser and is dropped the moment the request is
+   * submitted (see NewRequest / EditRequest).
+   *
+   * NEW gets one in-flight draft per person; EDIT gets one per request, so two
+   * corrections in progress can't collide. `init` is null both while the store
+   * is still loading AND once the request is past editing — either way there is
+   * nothing to draft, which is what the null key means.
+   *
+   * The seed above runs during RENDER, not in an effect, so React discards that
+   * render and the hook below only ever sees seeded values. Moving that seed
+   * into a useEffect would race the restore.
+   */
+  const { user } = useEffectiveIdentity();
+  const key = !user?.id
+    ? null
+    : mode === "new"
+      ? draftKey(user.id, "procurement:request:new")
+      : init
+        ? draftKey(user.id, `procurement:request:${init.requestId}`)
+        : null;
+
+  const draft = useStepDraft<RequestDraft>({
+    key,
+    // err / requested / raise are transient UI and deliberately left out.
+    values: { companyId, note, lines },
+    /**
+     * What counts as a real change. Blank rows and uids are excluded because
+     * LineGrid appends its trailing blank row a tick AFTER this form seeds —
+     * comparing raw values made merely opening Edit look like unsaved work, and
+     * announced a restore over a form nobody had touched. Dropping `uid` also
+     * makes the comparison survive the per-load id namespace.
+     */
+    comparable: (v) => ({
+      companyId: v.companyId,
+      note: v.note.trim(),
+      lines: v.lines
+        .filter((l) => !isLineBlank(l))
+        .map((l) => ({
+          dbId: l.dbId,
+          categoryId: l.categoryId,
+          itemId: l.itemId,
+          qty: l.qty,
+          unit: l.unit,
+          remark: l.remark.trim(),
+        })),
+    }),
+    apply: (v) => {
+      setCompanyId(v.companyId);
+      setNote(v.note);
+      setLines(v.lines.length > 0 ? v.lines : [makeEmptyLine()]);
+    },
+  });
 
   const companyOptions: ComboOption[] = useMemo(
     () => s.activeCompanies.map((c) => ({ value: c.id, label: c.location ? `${c.name} — ${c.location}` : c.name })),
@@ -138,6 +206,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     itemOptionsFor, raiseItem,
     itemById: s.itemById,
     filled, validate,
+    draft,
   };
 }
 

@@ -3,8 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Upload, X } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
+import DraftBar from "@/shared/components/ui/DraftBar";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { useStepDraft } from "@/shared/lib/useStepDraft";
+import { usePoStepDraftKey } from "../lib/draftKeys";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
@@ -92,6 +95,48 @@ export default function PoModal({
     if (!open) return;
     setEntries({});
   }, [open, requestId]);
+
+  /**
+   * Autosave. Only the typed PO number survives — a `File` is not serialisable,
+   * and uploads happen inside `generate()`, so a restored draft shows the number
+   * with "No file selected" and Generate stays disabled until it is re-picked.
+   *
+   * There is deliberately NO `clear()` here. One key holds EVERY vendor's number
+   * for this requisition, so clearing on the first generate would wipe the
+   * vendors still to be done. Instead `comparable` ignores blank numbers and
+   * vendors that have left the pool — so once the last PO is generated the
+   * signature matches the baseline and the record deletes itself.
+   */
+  const draftKeyStr = usePoStepDraftKey("po", open && !readOnly, requestId);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: {
+      selected: [...selected],
+      numbers: Object.fromEntries(Object.entries(entries).map(([v, e]) => [v, e.tallyPoNo])),
+    },
+    comparable: (v) => ({
+      selected: v.selected,
+      numbers: Object.fromEntries(
+        Object.entries(v.numbers).filter(
+          ([vendorId, no]) => no.trim() !== "" && groups.some((g) => g.vendorId === vendorId),
+        ),
+      ),
+    }),
+    apply: (v) => {
+      const live = new Set(lines.map((l) => l.id));
+      setSelected(new Set(v.selected.filter((id) => live.has(id))));
+      // Merge onto whatever is already typed rather than replacing: the file
+      // handles in `entries` must survive a restore.
+      setEntries((prev) => {
+        const next = { ...prev };
+        for (const [vendorId, tallyPoNo] of Object.entries(v.numbers)) {
+          if (!tallyPoNo.trim()) continue;
+          next[vendorId] = { ...(next[vendorId] ?? EMPTY_ENTRY), tallyPoNo };
+        }
+        return next;
+      });
+    },
+  });
 
   if (!request) return null;
 
@@ -196,6 +241,8 @@ export default function PoModal({
       subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${poCount} PO${poCount === 1 ? "" : "s"}`}
     >
       <div className="space-y-4">
+        <DraftBar draft={draft} fileHint />
+
         {/* Who this PO is being raised FOR and against whom — the same block every
             other stage form opens with. The company used to be a fragment of the
             subtitle, which is not where anyone looks before raising an order. */}
