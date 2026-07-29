@@ -6,21 +6,21 @@ import { useProcurementStore } from "../../store";
 import QueueTable from "@/shared/components/ui/QueueTable";
 import { buildRequestColumns, companyNameOf } from "./requestColumns";
 
-/** Purchase Requests list — same queue-style per-column filters, grouped by company. */
-export default function RequestsList() {
+/** The purchase requests I raised — same table as the all-list, minus Requester. */
+export default function MyRequests() {
   const s = useProcurementStore();
 
-  const rows = useMemo(() => [...s.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [s.requests]);
+  const rows = useMemo(() => [...s.myRequests].sort((a, b) => b.createdAt.localeCompare(a.createdAt)), [s.myRequests]);
 
   const companyName = (id: string) => companyNameOf(s, id);
-  const columns = buildRequestColumns(s, { showRequester: true });
+  const columns = buildRequestColumns(s, { showRequester: false });
 
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-[22px] font-bold text-navy">Purchase Requests</h1>
-          <p className="text-[13.5px] text-grey-2 mt-1">Every request and where its items are in the pipeline.</p>
+          <h1 className="text-[22px] font-bold text-navy">My Purchase Requests</h1>
+          <p className="text-[13.5px] text-grey-2 mt-1">Purchase requests you raised.</p>
         </div>
         <Link to="/procurement/requests/new">
           <Button size="sm">+ New Request</Button>
@@ -34,9 +34,14 @@ export default function RequestsList() {
           columns={columns}
           groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies", label: "Company" }}
           hideGroupHeaders
+          initialSort={{ key: "created", dir: "desc" }}
           rowsLabel="requests"
-          emptyTitle="No requests"
-          emptyMessage="Raise a purchase request to get started."
+          exportName="My_Purchase_Requests"
+          emptyTitle="No requests yet"
+          emptyMessage="You haven't raised any purchase requests."
+          // Edit stays gated on canEditRequest, NOT on "it's mine": the request
+          // must also still be open with nothing sourced, and the RPC authorises
+          // against the real auth.uid().
           actions={(r) => (
             <>
               <Link to={`/procurement/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">View</Link>

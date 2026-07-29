@@ -208,7 +208,7 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
         docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
         rows: [{ label: "Vendor", value: vendorOfLines(lines) }, ...(lines[0] ? [{ label: "Item", value: iName(lines[0].itemId) }] : [])],
         note: reasonNote("Reason", reason),
-        ctaLabel: "Open my requests", ctaPath: `${B}/requests`,
+        ctaLabel: "Open my requests", ctaPath: `${B}/my-requests`,
       };
     },
 
@@ -355,7 +355,7 @@ export function makeProcurementEmail(deps: ProcurementEmailDeps) {
         docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
         rows: line ? [{ label: "Item", value: iName(line.itemId) }, { label: "Vendor", value: vName(line.finalVendorId) }] : [],
         note: reasonNote("Reason", reason),
-        ctaLabel: "Open my requests", ctaPath: `${B}/requests`,
+        ctaLabel: "Open my requests", ctaPath: `${B}/my-requests`,
       };
     },
 

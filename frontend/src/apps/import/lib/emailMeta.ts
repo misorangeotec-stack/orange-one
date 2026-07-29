@@ -155,7 +155,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
         docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
         rows: [{ label: "Vendor", value: vName(req?.vendorId) }, ...(lines[0] ? [{ label: "Item", value: iName(lines[0].itemId) }] : [])],
         note: reasonNote("Reason", reason),
-        ctaLabel: "Open my requests", ctaPath: `${B}/requests`,
+        ctaLabel: "Open my requests", ctaPath: `${B}/my-requests`,
       };
     },
 
@@ -320,7 +320,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
         docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
         rows: line ? [{ label: "Item", value: iName(line.itemId) }, { label: "Vendor", value: vName(req?.vendorId) }] : [],
         note: reasonNote("Reason", reason),
-        ctaLabel: "Open my requests", ctaPath: `${B}/requests`,
+        ctaLabel: "Open my requests", ctaPath: `${B}/my-requests`,
       };
     },
 

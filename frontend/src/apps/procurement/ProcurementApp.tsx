@@ -14,6 +14,7 @@ import ControlCenter from "./pages/monitoring/ControlCenter";
 import NewRequest from "./pages/requests/NewRequest";
 import EditRequest from "./pages/requests/EditRequest";
 import RequestsList from "./pages/requests/RequestsList";
+import MyRequests from "./pages/requests/MyRequests";
 import RequestDetail from "./pages/requests/RequestDetail";
 import SourcingQueue from "./pages/queues/SourcingQueue";
 import ApprovalsQueue from "./pages/queues/ApprovalsQueue";
@@ -67,6 +68,8 @@ export default function ProcurementApp() {
           <Route element={<ProcurementLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="requests" element={<RequestsList />} />
+            {/* Distinct segment, so it never shadows requests/new or requests/:id. */}
+            <Route path="my-requests" element={<MyRequests />} />
             <Route path="requests/new" element={<NewRequest />} />
             <Route path="requests/:id" element={<RequestDetail />} />
             <Route path="requests/:id/edit" element={<EditRequest />} />

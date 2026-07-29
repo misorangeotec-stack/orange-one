@@ -248,6 +248,8 @@ interface ImportStoreValue {
 
   // workflow data (Stages 1–4)
   requests: PurchaseRequest[];
+  /** The requests THIS user raised — powers the "My Requests" page. Persona-aware. */
+  myRequests: PurchaseRequest[];
   requestItems: RequestItem[];
   quotations: Quotation[];
   pos: PurchaseOrder[];
@@ -823,6 +825,10 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
       // ---- workflow data + selectors (Stages 1–4) ----
       requests,
+      // Scoped off the EFFECTIVE identity, not the session: this is a view filter,
+      // so switching persona in demo mode must re-scope it (unlike canEditRequest,
+      // which gates a write the server authorises against the real auth.uid()).
+      myRequests: requests.filter((r) => !!r.requesterId && r.requesterId === user.id),
       requestItems,
       quotations,
       pos,

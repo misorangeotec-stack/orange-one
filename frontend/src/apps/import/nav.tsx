@@ -14,6 +14,9 @@ const ic = {
   newRequest: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>
   ),
+  mine: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></svg>
+  ),
   masters: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 7l8-4 8 4-8 4-8-4z" /><path d="M4 12l8 4 8-4" /><path d="M4 17l8 4 8-4" /></svg>
   ),
@@ -76,7 +79,10 @@ export function buildImportNav(opts: {
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: `${B}`, icon: ic.dashboard, section: "Workspace" },
-    { label: "Purchase Requests", to: `${B}/requests`, icon: ic.requests },
+    { label: "All Purchase Requests", to: `${B}/requests`, icon: ic.requests },
+    // Ungated, like Production's "My Issue Slips" — a user with nothing raised
+    // just sees the empty state.
+    { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine },
     { label: "Purchase Orders", to: `${B}/pos`, icon: ic.orders },
     { label: "New Request", to: `${B}/requests/new`, icon: ic.newRequest, section: "Actions" },
   ];
