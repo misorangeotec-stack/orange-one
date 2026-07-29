@@ -36,7 +36,7 @@ import { allHref, detailHref, editHref } from "@hub/lib/customerOnboarding/route
 import { formLockReason, stageLockReason } from "@hub/lib/customerOnboarding/queues";
 import { stepTitle, type StepKey } from "@hub/lib/customerOnboarding/steps";
 import {
-  consumptionLabel, customerTypeLabel, dmy, inr, liveStatusLabel,
+  consumptionLabel, customerCategoryMeaning, customerTypeLabel, dmy, inr, liveStatusLabel,
   paymentTermsLabel, printingListLabel, requestSubject, securityLabel, stageLabel, yesNo,
 } from "@hub/lib/customerOnboarding/format";
 import type { CustomerRequest } from "@hub/lib/customerOnboarding/types";
@@ -313,7 +313,11 @@ export default function RequestDetail() {
                 correcting={correcting}
               />
               <FieldGrid>
-                <Field label="Customer category" value={r.shCustomerCategory} />
+                <Field
+                  label="Customer category"
+                  value={r.shCustomerCategory}
+                  hint={customerCategoryMeaning(r.shCustomerCategory) ?? undefined}
+                />
                 <Field label="Decision" value={r.shDecision} />
                 <Field
                   label="Director approval"

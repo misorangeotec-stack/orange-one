@@ -45,18 +45,56 @@ function daysSince(iso: string | null): number | null {
 }
 
 /**
- * The provider's traffic-light, coloured.
+ * The provider's traffic-light — colour AND, more importantly, its meaning.
  *
- * Verified live 29-07-2026 that the real vocabulary includes "Yellow", not the
- * "Amber" the docs imply — so match on the colour WORDS present rather than an
- * exact enum, and fall through to a neutral badge for anything unrecognised. A
- * grading nobody can read is worse than none.
+ * ⚠ THE COLOUR WORD ALONE IS NOT SAFE TO SHOW. The five grades do not form the
+ *   ranking a reader assumes:
+ *     Green  — filed the last 4 GSTR-1 on or before the due date
+ *     Yellow — files GSTR-1, but late
+ *     Red    — has NOT filed the last 2 GSTR-1
+ *     Orange — registration cancelled, or a Composition dealer
+ *     Black  — CANNOT DETERMINE, for want of data
+ *   "Black" is not a bad grade, it is the ABSENCE of one — and rendered as a
+ *   bare badge it reads like the worst grade on the list, to someone deciding a
+ *   credit limit. Orange is likewise a status, not a punctuality score. So every
+ *   badge carries its plain-English meaning beside it, and "Black" is relabelled
+ *   outright rather than shown as a colour.
+ *
+ * ⚠ jamku calls this feature BETA and says it may be inaccurate. It is a
+ *   prompt to look, never a verdict — hence the wording below.
  */
-function categoryTone(category: string): string {
-  if (/green/i.test(category)) return "border-emerald-400 text-emerald-700 dark:text-emerald-400";
-  if (/yellow|amber/i.test(category)) return "border-amber-400 text-amber-700 dark:text-amber-400";
-  if (/red/i.test(category)) return "border-destructive text-destructive";
-  return "";
+function categoryMeaning(category: string): { label: string; tone: string; means: string } {
+  if (/green/i.test(category)) {
+    return {
+      label: "Green filer", tone: "border-emerald-400 text-emerald-700 dark:text-emerald-400",
+      means: "filed the last 4 GSTR-1 returns on or before the due date",
+    };
+  }
+  if (/yellow|amber/i.test(category)) {
+    return {
+      label: "Yellow filer", tone: "border-amber-400 text-amber-700 dark:text-amber-400",
+      means: "files GSTR-1, but after the due date",
+    };
+  }
+  if (/red/i.test(category)) {
+    return {
+      label: "Red filer", tone: "border-destructive text-destructive",
+      means: "has not filed the last 2 GSTR-1 returns",
+    };
+  }
+  if (/orange/i.test(category)) {
+    return {
+      label: "Orange", tone: "border-amber-400 text-amber-700 dark:text-amber-400",
+      means: "registration is cancelled, or they are a Composition dealer",
+    };
+  }
+  if (/black/i.test(category)) {
+    return {
+      label: "Not graded", tone: "border-muted-foreground/40 text-muted-foreground",
+      means: "not enough filing data to classify — this is unknown, not bad",
+    };
+  }
+  return { label: category, tone: "", means: "" };
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
@@ -94,8 +132,8 @@ export default function GstComplianceCard({
           <Badge variant={inactive ? "destructive" : "secondary"}>{snapshot.status}</Badge>
         )}
         {c?.category && (
-          <Badge variant="outline" className={categoryTone(c.category)}>
-            {c.category} filer
+          <Badge variant="outline" className={categoryMeaning(c.category).tone}>
+            {categoryMeaning(c.category).label}
           </Badge>
         )}
       </div>
@@ -159,6 +197,17 @@ export default function GstComplianceCard({
 
       {c ? (
         <>
+          {/* The grade spelled out. A colour word is not self-explanatory, and
+              the person reading this is setting a credit limit on it. */}
+          {c.category && categoryMeaning(c.category).means && (
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {categoryMeaning(c.category).label}
+              </span>{" "}
+              — {categoryMeaning(c.category).means}.
+            </p>
+          )}
+
           <dl className="grid gap-1 sm:grid-cols-2">
             {gstr3b && (
               <Row

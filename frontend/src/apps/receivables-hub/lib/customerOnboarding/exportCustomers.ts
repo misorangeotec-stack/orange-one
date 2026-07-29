@@ -18,8 +18,8 @@
  */
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import {
-  consumptionLabel, customerTypeLabel, dmy, liveStatusLabel, paymentTermsLabel,
-  printingListLabel, securityLabel, statusLabel,
+  consumptionLabel, customerCategoryMeaning, customerTypeLabel, dmy, liveStatusLabel,
+  paymentTermsLabel, printingListLabel, securityLabel, statusLabel,
 } from "./format";
 import type { CustomerRequest } from "./types";
 
@@ -93,7 +93,11 @@ export function customerExportColumns(
     { header: "Verified By", width: 22, value: (r) => (r.accVerifiedBy ? personName(r.accVerifiedBy) : "") },
     { header: "Verified On", width: 13, value: (r) => d(r.accVerifiedDate ?? r.accVerifiedAt) },
 
+    // Letter and meaning in separate columns, deliberately: the bare letter stays
+    // filterable and pivotable in Excel, while the reader who has never seen the
+    // A–E scale still gets it in words.
     { header: "Category", width: 9, value: (r) => t(r.shCustomerCategory) },
+    { header: "Category Meaning", width: 34, value: (r) => customerCategoryMeaning(r.shCustomerCategory) ?? "" },
     { header: "Business Potential", width: 34, value: (r) => t(r.shBusinessPotential) },
     { header: "Sales Head Decision", width: 15, value: (r) => t(r.shDecision) },
     { header: "Sales Head Remarks", width: 34, value: (r) => t(r.shRemarks) },

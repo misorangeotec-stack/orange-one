@@ -29,18 +29,11 @@ import {
   CorrectionBar, DecisionBar, PanelField, StepActionPanel, type PanelDecision,
 } from "./StepActionPanel";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
-import { inr, requestSubject } from "@hub/lib/customerOnboarding/format";
+import {
+  customerCategoryLabel, customerCategoryMeaning, inr, requestSubject,
+} from "@hub/lib/customerOnboarding/format";
 import { localDateIso } from "@/shared/lib/workingDays";
 import { CUSTOMER_CATEGORY_OPTIONS, type CustomerRequest } from "@hub/lib/customerOnboarding/types";
-
-/** What each grade means, so five bare letters are not a guessing game. */
-const CATEGORY_HINT: Record<string, string> = {
-  A: "Key account — highest volume and reliability",
-  B: "Strong, regular buyer",
-  C: "Steady but modest",
-  D: "Occasional or unproven",
-  E: "Marginal — watch the exposure",
-};
 
 export default function SalesHeadPanel({
   request, mode = "decide", onDone,
@@ -179,13 +172,13 @@ export default function SalesHeadPanel({
           id="sh-category"
           label="Customer category"
           required
-          hint={category ? CATEGORY_HINT[category] : "Required before you can approve"}
+          hint={customerCategoryMeaning(category) ?? "Required before you can approve"}
         >
           <Select value={category} onValueChange={setCategory} disabled={busy}>
             <SelectTrigger id="sh-category"><SelectValue placeholder="Choose a grade" /></SelectTrigger>
             <SelectContent>
               {CUSTOMER_CATEGORY_OPTIONS.map((c) => (
-                <SelectItem key={c} value={c}>{c} — {CATEGORY_HINT[c]}</SelectItem>
+                <SelectItem key={c} value={c}>{customerCategoryLabel(c)}</SelectItem>
               ))}
             </SelectContent>
           </Select>

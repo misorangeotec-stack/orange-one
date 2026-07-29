@@ -57,6 +57,35 @@ export function yesNo(v: boolean | null | undefined): string {
 }
 
 /** A value for a read-only field, with the house em-dash for blanks. */
+/**
+ * What each A–E grade actually means.
+ *
+ * ⚠ THIS LIVES HERE, NOT IN THE PANEL THAT SETS IT. It began as a private const
+ *   inside SalesHeadPanel, which meant the ONE screen where the meaning was
+ *   already obvious (a dropdown you are actively choosing from) was the only
+ *   screen that showed it — while the Director's approval panel, the request
+ *   detail and the Excel export all rendered a bare letter to people who had
+ *   never seen the list. A grade nobody can read is not a grade.
+ */
+export const CUSTOMER_CATEGORY_MEANING: Record<string, string> = {
+  A: "Key account — highest volume and reliability",
+  B: "Strong, regular buyer",
+  C: "Steady but modest",
+  D: "Occasional or unproven",
+  E: "Marginal — watch the exposure",
+};
+
+/** Just the meaning, or null when the grade is unset or unrecognised. */
+export const customerCategoryMeaning = (c: string | null | undefined): string | null =>
+  (c && CUSTOMER_CATEGORY_MEANING[c]) || null;
+
+/** "A — Key account…", for one-line renderings like the Excel export. */
+export const customerCategoryLabel = (c: string | null | undefined): string => {
+  if (!c) return "";
+  const m = CUSTOMER_CATEGORY_MEANING[c];
+  return m ? `${c} — ${m}` : c;
+};
+
 export const orDash = (v: string | number | null | undefined): string =>
   v === null || v === undefined || v === "" ? "—" : String(v);
 

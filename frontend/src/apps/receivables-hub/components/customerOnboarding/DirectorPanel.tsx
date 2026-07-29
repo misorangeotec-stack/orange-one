@@ -17,7 +17,7 @@ import {
 } from "./StepActionPanel";
 import GstComplianceCard from "./GstComplianceCard";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
-import { customerTypeLabel, inr, paymentTermsLabel, requestSubject, securityLabel } from "@hub/lib/customerOnboarding/format";
+import { customerCategoryMeaning, customerTypeLabel, inr, paymentTermsLabel, requestSubject, securityLabel } from "@hub/lib/customerOnboarding/format";
 import { localDateIso } from "@/shared/lib/workingDays";
 import type { CustomerRequest } from "@hub/lib/customerOnboarding/types";
 
@@ -123,6 +123,11 @@ export default function DirectorPanel({
         <div>
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Grade</div>
           <div className="font-medium">{r.shCustomerCategory ?? "—"}</div>
+          {/* The Director never sees the picker Sales Head chose from, so a bare
+              letter here is a private code. Spell it out. */}
+          {customerCategoryMeaning(r.shCustomerCategory) && (
+            <div className="text-xs text-foreground">{customerCategoryMeaning(r.shCustomerCategory)}</div>
+          )}
           <div className="text-xs text-muted-foreground">by {s.personName(r.shDecidedBy)}</div>
         </div>
 
