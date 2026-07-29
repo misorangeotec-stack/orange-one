@@ -112,7 +112,6 @@ type ViewMode = "customer" | "group";
 
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY } from "@hub/lib/utils";
 import { sumOutstanding } from "@hub/lib/receivables";
-import { onAccountAgainstOverdue } from "@hub/lib/agingReport";
 import { matchesSearch } from "@/shared/lib/search";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFollowups } from "@hub/lib/useFollowups";
@@ -932,11 +931,12 @@ export default function CustomerRiskRegister() {
     return m;
   }, [allCustomers]);
 
+  /** On Account ALREADY deducted from these ledgers' overdue by the database — a lookup, not a
+   *  computation. The DB caps it per ledger, so adding the per-ledger figures up is exact.
+   *  ⚠ Do not go back to `onAccountAgainstOverdue` here: `r.overdue` is already net, and
+   *  deducting again understates the book by ~₹11.6 cr. */
   const onAccountOfIds = (ids: string[]): number =>
-    onAccountAgainstOverdue(
-      ids.map((id) => ledgerById.get(id)).filter((c): c is Customer => !!c),
-      customerDetail,
-    );
+    ids.reduce((t, id) => t + (ledgerById.get(id)?.onAccount ?? 0), 0);
 
   // Precomputed per consolidated row: this walks every bill of every ledger (~1,780 ledgers
   // book-wide), so it must never run from a cell renderer.
@@ -1167,7 +1167,12 @@ export default function CustomerRiskRegister() {
   const overdueForRow = (r: CustomerRow) => {
     if (agingBucketKeys.length > 0)
       return agingBucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0);
-    return r.overdue - onAccountOf(r);
+    // ⚠ `r.overdue` is ALREADY net of On Account — capped per ledger in the database since
+    // 30-07-2026. This used to read `r.overdue - onAccountOf(r)`; keeping that after the DB
+    // started netting was a double deduction worth ~₹11.6 cr book-wide.
+    // Note the bucket branch above stays GROSS, which is why the aging-bucket totals are larger
+    // than this column — on-account money has no invoice reference, so it belongs to no bracket.
+    return r.overdue;
   };
 
   // Collapse a multi-value company/location list to a single display label,
@@ -1231,7 +1236,9 @@ export default function CustomerRiskRegister() {
     overdue:           rows.reduce((s, r) => s + overdueForRow(r), 0),
     // The bridge behind it, for the Grand Total tooltip. Both are 0 unless the deduction
     // is actually applied, so the tooltip stays away when there is nothing to explain.
-    overdueGross:      rows.reduce((s, r) => s + r.overdue, 0),
+    // The GROSS side of the tooltip bridge. Must read `overdueGross`, not `overdue` — the latter
+    // is now the netted figure, which would make the tooltip read "X − Y = X" and not add up.
+    overdueGross:      rows.reduce((s, r) => s + ((r as { overdueGross?: number }).overdueGross ?? r.overdue), 0),
     onAccount:         rows.reduce((s, r) => s + onAccountOf(r), 0),
     creditLimit:       rows.reduce((s, r) => s + (r.creditLimit ?? 0), 0),
     proposedCreditLimit3M: rows.reduce((s, r) => s + (r.proposedCreditLimit3M ?? 0), 0),

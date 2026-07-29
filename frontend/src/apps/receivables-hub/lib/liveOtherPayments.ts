@@ -186,6 +186,12 @@ function settle(c: Customer, overdueDays: number, applied: number): number {
   if (!b) return 0;                     // not yet due → it was never in overdue/aging
   const removed = Math.min(applied, c.overdue);
   c.overdue = Math.max(0, c.overdue - applied);
+  // `overdueGross` must move with `overdue`, or the Overdue bridge every page renders
+  // (gross − on account = net) stops adding up by exactly the manual payments. The buckets are
+  // the gross basis too, and they are already being reduced on the next line — same reasoning.
+  // Only 4 ledgers carry both a manual Other Payment and an On Account credit (₹0.14 cr, measured
+  // 30-07-2026), so this keeps the arithmetic honest at a negligible scale.
+  if (c.overdueGross != null) c.overdueGross = Math.max(0, c.overdueGross - applied);
   c.agingBuckets[b] = Math.max(0, c.agingBuckets[b] - applied);
   return removed;
 }

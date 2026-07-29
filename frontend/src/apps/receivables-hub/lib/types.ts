@@ -101,7 +101,31 @@ export interface Customer {
    */
   paymentsOut?: number;
   outstanding: number;
+  /**
+   * Overdue NET of On Account, and capped so it can never exceed what this ledger actually owes.
+   *
+   * ⚠ On the Live source this is netted **in the database** since 30-07-2026
+   * (`collection_refresh()` post-pass) — NOT in the browser. Do not subtract On Account from this
+   * again: four pages used to, and doing both understates the book by ~₹11.6 cr.
+   * Use `overdueGross` for the bill-wise figure and `onAccount` for the bridge between them:
+   * `overdue === overdueGross − onAccount`, per ledger and in total.
+   */
   overdue: number;
+  /**
+   * Σ pending of past-due bills BEFORE On Account — what the bill-based reports (Aging /
+   * Overdue-120 / Category) show, and the top line of every Overdue bridge on screen.
+   * Absent on the legacy pipeline, where `overdue` already arrives net; fall back to `overdue`.
+   */
+  overdueGross?: number;
+  /**
+   * Money this customer has paid that settles no open invoice (untagged receipts + credit filed
+   * against a named bill), capped at THIS ledger's own gross overdue.
+   *
+   * 🔴 The cap is per ledger and load-bearing — credits total ₹17.92 cr book-wide but only
+   * ₹11.59 cr is consumable. Because it is capped per ledger, summing it over any grouping
+   * (customer, group, salesperson) gives the same answer, which is what lets every page agree.
+   */
+  onAccount?: number;
   maxOverdueDays: number;
   utilization: number;
   risk: RiskCategory;

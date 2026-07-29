@@ -145,19 +145,16 @@ export default function Dashboard() {
     });
   }, [groupedCustomers]);
 
-  // Top risky groups — top 10 by overdue, NET of On Account exactly like the customer list
-  // (which useAppData nets for us). Netted BEFORE the filter and the sort, so a group that has
-  // already paid us more than it owes drops off instead of being ranked on money in our bank.
-  // A group's constituentIds are real ledger ids (consolidateByGroup flattens its children's),
-  // and the deduction is capped per ledger, so this total matches the customer-mode one.
+  // Top risky groups — top 10 by overdue. `g.overdue` is ALREADY net of On Account (capped per
+  // ledger in the database, then rolled up by plain addition), so filtering on it here is what
+  // keeps a group that has already paid us more than it owes off the list. ⚠ Do NOT subtract
+  // On Account again — that was the double deduction removed on 30-07-2026.
   const topRiskyGroups = useMemo(() => {
     return [...groupedCustomers]
-      .map((g) => ({ g, overdue: g.overdue - onAccountOfIds(g.constituentIds ?? [g.id]) }))
-      .filter(({ overdue }) => overdue > 0)
+      .filter((g) => g.overdue > 0)
       .sort((a, b) => b.overdue - a.overdue)
-      .slice(0, 10)
-      .map(({ g, overdue }) => ({ ...g, overdue }));
-  }, [groupedCustomers, onAccountOfIds]);
+      .slice(0, 10);
+  }, [groupedCustomers]);
 
   const displayRiskSegmentation = isGroupMode ? groupRiskSegmentation : riskSegmentation;
   const displayTopRisky = isGroupMode
