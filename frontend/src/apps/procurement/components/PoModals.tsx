@@ -4,8 +4,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import { Field, FIELD_LABEL_CLASS, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
-import { Link } from "react-router-dom";
+import { FIELD_LABEL_CLASS, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
 import { todayIso, formatDate } from "@/shared/lib/time";
 // NOT time.ts's todayIso(): that is documented "local" but is really the UTC
@@ -16,6 +15,7 @@ import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
 import PoItemsReadout from "./PoItemsReadout";
+import PoRefPanel, { PoRefDocs } from "./PoRefPanel";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink, QcDocLink, ReturnDocLink, GateDocLink } from "./DocLinks";
 import type { PurchaseOrder, PoCancelRequest, Pi, Payment, Followup, Grn, QcInspection, TallyBooking } from "../types";
 
@@ -50,7 +50,7 @@ function Hint({ children }: { children: ReactNode }) {
 }
 
 /* ----------------------------- Add PI ------------------------------------ */
-export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi; readOnly?: boolean }) {
+export function AddPiModal({ po, open, onClose, editing, readOnly = false, stacked = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi; readOnly?: boolean; /** Opened on top of another step modal — see Modal's `stacked`. */ stacked?: boolean }) {
   const s = useProcurementStore();
   const items = s.poItemsForPo(po.id);
   const [vendorPiNo, setVendorPiNo] = useState("");
@@ -118,12 +118,13 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false }: { p
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "PI" : "Edit PI") : "Add PI"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} stacked={stacked} readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "PI" : "Edit PI") : "Add PI"}
       subtitle={editing
         ? `${po.poNo} · correct what was recorded. Editable until a payment lands against it or goods arrive.`
         : "Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Add PI"}</Button></>}>
       <div className="space-y-3.5">
+        <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo />
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
           <FieldLabel label="PI Value (incl GST)" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
@@ -275,21 +276,21 @@ export function SharePoModal({ po, open, editing = false, onClose, readOnly = fa
         : `${po.poNo} · confirm the terms and dispatch date, then mark it shared with the vendor.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || missingPoStageData || !dispatch}>{busy ? (editing ? "Saving…" : "Sharing…") : editing ? "Save Changes" : "Share PO"}</Button></>}>
       <div className="space-y-4">
-        {/* Recorded at the PO stage — shown here, never edited here. The link is
-            rendered only outside read-only mode: Modal puts the body inside a
-            disabled <fieldset>, so a button here would be dead. In view mode the
-            same link is already in `readOnlyHeader`. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3.5 rounded-xl bg-page px-3.5 py-3">
-          <Field label="Tally PO No.">{po.tallyPoNo ?? undefined}</Field>
+        {/* Who this PO is for and from, plus what was recorded at the PO stage —
+            shown here, never edited here. The PDF link is rendered only outside
+            read-only mode: Modal puts the body inside a disabled <fieldset>, so a
+            button here would be dead. In view mode the same link is already in
+            `readOnlyHeader`. */}
+        <PoRefPanel po={po} readOnly={readOnly} showTallyPoNo>
           {!readOnly && (
-            <div>
+            <div className="min-w-0">
               <div className={FIELD_LABEL_CLASS}>PO PDF</div>
               <div className="mt-1">
                 {po.documentPath ? <PoDocLink po={po} /> : <span className="text-[12.5px] text-ryg-red">Not attached</span>}
               </div>
             </div>
           )}
-        </div>
+        </PoRefPanel>
 
         {missingPoStageData && (
           <p className="text-[12.5px] text-ryg-red">
@@ -339,6 +340,8 @@ export function PaymentModal({ po, open, onClose, kind, editing, readOnly = fals
   const [utr, setUtr] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** A quick read-only look at a vendor PI, opened from the reference panel. */
+  const [viewPi, setViewPi] = useState<Pi | null>(null);
 
   const isAdvance = kind === "advance";
 
@@ -375,26 +378,50 @@ export function PaymentModal({ po, open, onClose, kind, editing, readOnly = fals
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} title={editing ? (readOnly ? "Payment" : "Edit payment") : isAdvance ? "Record advance" : "Record payment"}
+    <>
+    {/* Two columns: the payment being recorded on the left, the order it is
+        being paid against on the right. The dialog is `2xl` like every other PO
+        step — a payment used to be entered in a narrow box that named neither the
+        company, the vendor, nor a single thing the money was buying. */}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} size="2xl" readOnlyHeader={<PoRefDocs po={po} showPi />}
+      title={editing ? (readOnly ? "Payment" : "Edit payment") : isAdvance ? "Record advance" : "Record payment"}
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until a follow-up is logged.` : `${po.poNo} · Pending ${inr(poPending)}`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Record"}</Button></>}>
-      <div className="space-y-3.5">
-        <FieldLabel label="Amount (₹)" required hint={`Available on this PO: ${inr(poPending)}`}>
-          <TextInput type="number" value={amount} min={0} max={poPending} onChange={(e) => setAmount(e.target.value)} />
-        </FieldLabel>
-        <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Date"><TextInput type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></FieldLabel>
-          <FieldLabel label="UTR / Ref" hint="optional">
-            <TextInput value={utr} onChange={(e) => setUtr(e.target.value)} />
-            <Hint>Bank reference</Hint>
-          </FieldLabel>
+      <div className="space-y-4">
+        <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo showPi onViewPi={setViewPi} />
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-3.5">
+            <FieldLabel label="Amount (₹)" required hint={`Available on this PO: ${inr(poPending)}`}>
+              <TextInput type="number" value={amount} min={0} max={poPending} onChange={(e) => setAmount(e.target.value)} />
+            </FieldLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldLabel label="Date"><TextInput type="date" value={paidOn} onChange={(e) => setPaidOn(e.target.value)} /></FieldLabel>
+              <FieldLabel label="UTR / Ref" hint="optional">
+                <TextInput value={utr} onChange={(e) => setUtr(e.target.value)} />
+                <Hint>Bank reference</Hint>
+              </FieldLabel>
+            </div>
+            {/* NOT the vendor PI number — that is the real one in the panel above.
+                This is a free-text note, kept because rows already carry it. */}
+            <FieldLabel label="Note on PI" hint="optional">
+              <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. 50% against the PI above" />
+              <Hint>A remark only — it is not linked to the PI</Hint>
+            </FieldLabel>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className={SECTION_HEADING_CLASS}>What this PO covers</div>
+            <PoItemsReadout po={po} compact />
+          </div>
         </div>
-        <FieldLabel label="PI ref / remarks" hint="e.g. the vendor PI this covers · optional">
-          <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. against PI-8841" />
-        </FieldLabel>
         <Err msg={err} />
       </div>
     </Modal>
+    {/* Sibling, not child: a modal rendered inside the parent's body would land
+        inside its read-only fieldset and come up disabled. */}
+    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    </>
   );
 }
 
@@ -410,6 +437,8 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   const [piRemarks, setPiRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** A quick read-only look at a vendor PI, opened from the reference panel. */
+  const [viewPi, setViewPi] = useState<Pi | null>(null);
 
   // Follow-ups are recorded against the PO; seed from the latest PO-level record.
   const history = po ? s.followupsForPo(po.id) : [];
@@ -481,36 +510,56 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} size="2xl" title={editing && !readOnly ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
+    <>
+    {/* Two columns, deliberately: this dialog already carried the entry fields AND
+        the full follow-up history, so dropping the order context in as a third
+        stacked block would have made it scroll badly. The `2xl` width was going
+        spare — the new context lives in it rather than below. */}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} size="2xl" readOnlyHeader={<PoRefDocs po={po} showPi />}
+      title={editing && !readOnly ? `Edit Follow-up — ${po.poNo}` : `Follow-up — ${po.poNo}`}
       subtitle={editing ? "Correct what was recorded. Editable until goods are received." : due ? `Dispatch due ${formatDate(due)}` : undefined}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Save"}</Button></>}>
-      <div className="space-y-3.5">
-        <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance /></FieldLabel>
-        <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Actual Dispatch Date" required={status === "dispatched"}>
-            <TextInput type="date" value={actual} max={todayLocalIso()} onChange={(e) => setActual(e.target.value)} />
-            <Hint>The day the goods actually left — cannot be in the future</Hint>
-          </FieldLabel>
-          {status === "delayed" && (
-            <FieldLabel label="Revised Dispatch Date" required>
-              {/* Was min={actual}. `actual` is now empty on a `delayed` follow-up,
-                  which would leave this unbounded — a revised promise is future. */}
-              <TextInput type="date" value={revised} min={todayLocalIso()} onChange={(e) => setRevised(e.target.value)} />
-              <Hint>The new date the vendor promised</Hint>
-            </FieldLabel>
-          )}
-          <FieldLabel label="LR No."><TextInput value={lr} onChange={(e) => setLr(e.target.value)} /></FieldLabel>
-          <FieldLabel label="Transport"><TextInput value={transport} onChange={(e) => setTransport(e.target.value)} /></FieldLabel>
-        </div>
-        <FieldLabel label="Remarks" hint="what the vendor said this time · optional">
-          <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor confirmed dispatch by Fri; awaiting LR." />
-        </FieldLabel>
-        <FieldLabel label="PI ref / remarks" hint="the vendor PI this dispatch relates to · optional">
-          <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. PI-8841" />
-        </FieldLabel>
-        <Err msg={err} />
+      <div className="space-y-4">
+        <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo showPi onViewPi={setViewPi} />
 
-        <div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-3.5">
+            <FieldLabel label="Dispatch Status"><Combobox value={status} onChange={onStatusChange} options={DISPATCH} autoAdvance /></FieldLabel>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldLabel label="Actual Dispatch Date" required={status === "dispatched"}>
+                <TextInput type="date" value={actual} max={todayLocalIso()} onChange={(e) => setActual(e.target.value)} />
+                <Hint>The day the goods actually left — cannot be in the future</Hint>
+              </FieldLabel>
+              {status === "delayed" && (
+                <FieldLabel label="Revised Dispatch Date" required>
+                  {/* Was min={actual}. `actual` is now empty on a `delayed` follow-up,
+                      which would leave this unbounded — a revised promise is future. */}
+                  <TextInput type="date" value={revised} min={todayLocalIso()} onChange={(e) => setRevised(e.target.value)} />
+                  <Hint>The new date the vendor promised</Hint>
+                </FieldLabel>
+              )}
+              <FieldLabel label="LR No."><TextInput value={lr} onChange={(e) => setLr(e.target.value)} /></FieldLabel>
+              <FieldLabel label="Transport"><TextInput value={transport} onChange={(e) => setTransport(e.target.value)} /></FieldLabel>
+            </div>
+            <FieldLabel label="Remarks" hint="what the vendor said this time · optional">
+              <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. Vendor confirmed dispatch by Fri; awaiting LR." />
+            </FieldLabel>
+            {/* NOT the vendor PI number — that is the real one in the panel above.
+                This is a free-text note, kept because rows already carry it. */}
+            <FieldLabel label="Note on PI" hint="optional">
+              <TextInput value={piRemarks} onChange={(e) => setPiRemarks(e.target.value)} placeholder="e.g. part shipment against the PI above" />
+              <Hint>A remark only — it is not linked to the PI</Hint>
+            </FieldLabel>
+            <Err msg={err} />
+          </div>
+
+          <div className="space-y-3.5">
+            <div className="space-y-1.5">
+              <div className={SECTION_HEADING_CLASS}>What this PO covers</div>
+              <PoItemsReadout po={po} compact />
+            </div>
+
+            <div>
           <div className={cn(SECTION_HEADING_CLASS, "mb-1.5")}>
             Follow-up history{history.length ? ` · ${history.length}` : ""}
           </div>
@@ -540,9 +589,15 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
               })}
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
     </Modal>
+    {/* Sibling, not child: a modal rendered inside the parent's body would land
+        inside its read-only fieldset and come up disabled. */}
+    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    </>
   );
 }
 
@@ -562,6 +617,8 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** A quick read-only look at a vendor PI, opened from the reference panel. */
+  const [viewPi, setViewPi] = useState<Pi | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -610,10 +667,19 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <GrnPhotoLink grn={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
+    <>
+    <Modal open={open} onClose={onClose} readOnly={readOnly}
+      readOnlyHeader={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {editing && <GrnPhotoLink grn={editing} />}
+          <PoRefDocs po={po} showPi />
+        </div>
+      }
+      size="2xl" title={editing ? (readOnly ? "GRN" : "Edit GRN") : "Record GRN"}
       subtitle={editing ? `${po.poNo} · correct what was recorded. Editable until this receipt is booked in Tally.` : `${po.poNo} · goods receipt against the PO — partial receipts allowed.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !poRef.trim()}>{busy ? "Saving…" : editing ? "Save Changes" : "Record receipt"}</Button></>}>
       <div className="space-y-3.5">
+        <PoRefPanel po={po} readOnly={readOnly} showTallyPoNo showPi onViewPi={setViewPi} />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3.5">
           <FieldLabel label="PO Ref No." required>
             <TextInput value={poRef} onChange={(e) => setPoRef(e.target.value)} placeholder="e.g. 2627/PO/0042" />
@@ -658,9 +724,12 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
             )}
           </table>
         </div>
-        <FieldLabel label="PI Ref" hint="optional">
-          <TextInput value={piRef} onChange={(e) => setPiRef(e.target.value)} placeholder="e.g. PI-8841" />
-          <Hint>Vendor PI number, kept as a remark only</Hint>
+        {/* NOT the vendor PI number — that is the real one, with its attachment,
+            in the panel at the top. This is a free-text note, kept because
+            receipts already carry it. */}
+        <FieldLabel label="Note on PI" hint="optional">
+          <TextInput value={piRef} onChange={(e) => setPiRef(e.target.value)} placeholder="e.g. balance quantity of the PI above" />
+          <Hint>A remark only — it is not linked to the PI</Hint>
         </FieldLabel>
         <FieldLabel label="Note"><TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></FieldLabel>
         {!readOnly && (
@@ -685,6 +754,10 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
         <Err msg={err} />
       </div>
     </Modal>
+    {/* Sibling, not child: a modal rendered inside the parent's body would land
+        inside its read-only fieldset and come up disabled. */}
+    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    </>
   );
 }
 
@@ -699,6 +772,8 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** A quick read-only look at a vendor PI, opened from the reference panel. */
+  const [viewPi, setViewPi] = useState<Pi | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -753,86 +828,104 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
   const editedGrn = editing?.grnId ? s.grnsForPo(po.id).find((g) => g.id === editing.grnId) : undefined;
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <TallyDocLink booking={editing} /> : undefined} title={editing ? (readOnly ? "Tally Booking" : "Edit Tally Booking") : "Book in Tally"}
+    <>
+    {/* Two columns at `2xl`, like every other PO step. Booking an invoice used to
+        happen in a narrow box that named neither the company, the vendor, the PI
+        being invoiced, nor any of the goods the invoice is for. */}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} size="2xl"
+      readOnlyHeader={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {editing && <TallyDocLink booking={editing} />}
+          <PoRefDocs po={po} showPi showTallyInvoice />
+        </div>
+      }
+      title={editing ? (readOnly ? "Tally Booking" : "Edit Tally Booking") : "Book in Tally"}
       subtitle={editing ? `${po.poNo} · correct the invoice details. The receipt it is booked against cannot be changed.` : `${po.poNo} · one invoice per goods receipt — partial receipts included.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !docSatisfied || !tallyNo.trim() || (!editing && unbooked.length > 0 && !grnId)}>{busy ? "Saving…" : editing ? "Save Changes" : "Book"}</Button></>}>
-      <div className="space-y-3.5">
-        <FieldLabel label="Against GRN" required={!editing && unbooked.length > 0}>
-          {editing ? (
-            <>
-              <TextInput value={editedGrn ? grnLabel(editedGrn) : "—"} readOnly className="bg-page/70 text-grey-2 cursor-not-allowed" />
-              <Hint>Fixed — delete and re-book if the invoice is against the wrong receipt.</Hint>
-            </>
-          ) : (
-            <>
-              <Combobox value={grnId} onChange={setGrnId} options={grnOptions} autoAdvance />
-              <Hint>
-                {unbooked.length === 0
-                  ? "Every goods receipt on this PO is already booked."
-                  : `${unbooked.length} receipt${unbooked.length === 1 ? "" : "s"} awaiting an invoice.`}
-              </Hint>
-            </>
-          )}
-        </FieldLabel>
-        <FieldLabel label="Tally Invoice No." required><TextInput value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} placeholder="e.g. 2627/PUR/0123" /></FieldLabel>
-        {!readOnly && (
-          <FieldLabel label="Tally Invoice Document" required={!editing}
-            hint={editing ? (hasExistingDoc ? "leave as-is to keep the attached file" : "optional on this older booking") : "PDF or any file · required"}>
-          <div className="flex items-center gap-2.5">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
-              <Upload className="h-4 w-4" />
-              {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
-              <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            {file ? (
-              <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
-                <span className="max-w-[220px] truncate text-navy">{file.name}</span>
-                <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
-              </span>
-            ) : editing && hasExistingDoc ? (
-              <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
-                Current: <span className="max-w-[220px] truncate text-navy">{editing.documentName ?? "attached file"}</span>
-              </span>
-            ) : (
-              <span className="text-[12.5px] text-grey-2">No file selected</span>
+      <div className="space-y-4">
+        {/* `showTallyInvoice` without a `grn` lists every invoice already booked on
+            this PO — the context for booking the next receipt, and on an edit the
+            entry being corrected. */}
+        <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo showPi showTallyInvoice onViewPi={setViewPi} />
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-3.5">
+            <FieldLabel label="Against GRN" required={!editing && unbooked.length > 0}>
+              {editing ? (
+                <>
+                  <TextInput value={editedGrn ? grnLabel(editedGrn) : "—"} readOnly className="bg-page/70 text-grey-2 cursor-not-allowed" />
+                  <Hint>Fixed — delete and re-book if the invoice is against the wrong receipt.</Hint>
+                </>
+              ) : (
+                <>
+                  <Combobox value={grnId} onChange={setGrnId} options={grnOptions} autoAdvance />
+                  <Hint>
+                    {unbooked.length === 0
+                      ? "Every goods receipt on this PO is already booked."
+                      : `${unbooked.length} receipt${unbooked.length === 1 ? "" : "s"} awaiting an invoice.`}
+                  </Hint>
+                </>
+              )}
+            </FieldLabel>
+            <FieldLabel label="Tally Invoice No." required><TextInput value={tallyNo} onChange={(e) => setTallyNo(e.target.value)} placeholder="e.g. 2627/PUR/0123" /></FieldLabel>
+            {!readOnly && (
+              <FieldLabel label="Tally Invoice Document" required={!editing}
+                hint={editing ? (hasExistingDoc ? "leave as-is to keep the attached file" : "optional on this older booking") : "PDF or any file · required"}>
+              <div className="flex items-center gap-2.5">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                  <Upload className="h-4 w-4" />
+                  {file ? "Change file" : editing && hasExistingDoc ? "Replace file" : "Choose file"}
+                  <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                    onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                </label>
+                {file ? (
+                  <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
+                    <span className="max-w-[220px] truncate text-navy">{file.name}</span>
+                    <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                  </span>
+                ) : editing && hasExistingDoc ? (
+                  <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                    Current: <span className="max-w-[220px] truncate text-navy">{editing.documentName ?? "attached file"}</span>
+                  </span>
+                ) : (
+                  <span className="text-[12.5px] text-grey-2">No file selected</span>
+                )}
+              </div>
+            </FieldLabel>
             )}
+            <FieldLabel label="Remarks" hint="Optional">
+              <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
+            </FieldLabel>
+            <Err msg={err} />
           </div>
-        </FieldLabel>
-        )}
-        <FieldLabel label="Remarks" hint="Optional">
-          <TextArea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)} />
-        </FieldLabel>
-        <Err msg={err} />
+
+          <div className="space-y-1.5">
+            <div className={SECTION_HEADING_CLASS}>What this PO covers</div>
+            <PoItemsReadout po={po} compact />
+          </div>
+        </div>
       </div>
     </Modal>
+    {/* Sibling, not child: a modal rendered inside the parent's body would land
+        inside its read-only fieldset and come up disabled. */}
+    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    </>
   );
 }
 
 /* ============ QC inspection + the purchase-return branch ================= */
 
 /**
- * A reference panel every QC-branch modal opens with: the PO the material came
- * in on, plus the Tally paperwork behind this particular receipt. The whole point
- * of the return step is "which PO is this against", so it leads.
+ * The reference panel every QC-branch modal opens with — now the shared
+ * {@link PoRefPanel}, which is where this component ended up: it was the only
+ * step form in the app that named the vendor, so the rest of the flow was given
+ * the same block and the company was added to it.
+ *
+ * `grn` narrows the Tally-invoice cell to the booking for THIS receipt (a PO can
+ * hold several), which is the paperwork a return is raised against.
  */
-function QcRefPanel({ po, grn }: { po: PurchaseOrder; grn?: Grn }) {
-  const s = useProcurementStore();
-  const booking = grn ? s.tallyBookings.find((t) => t.grnId === grn.id) : undefined;
-  return (
-    <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Field label="PO No.">
-          <Link to={`/procurement/pos/${po.id}`} target="_blank" className="font-semibold text-navy hover:text-orange hover:underline">
-            {po.poNo}
-          </Link>
-        </Field>
-        <Field label="Vendor">{s.vendorById(po.vendorId)?.name ?? undefined}</Field>
-        <Field label="Tally PO No.">{po.tallyPoNo ?? undefined}</Field>
-        <Field label="Tally Invoice">{booking?.tallyPiNo ?? undefined}</Field>
-      </div>
-    </div>
-  );
+function QcRefPanel({ po, grn, readOnly = false }: { po: PurchaseOrder; grn?: Grn; readOnly?: boolean }) {
+  return <PoRefPanel po={po} grn={grn} readOnly={readOnly} showPoNo showTallyPoNo showTallyInvoice />;
 }
 
 /** A line's verdict. `""` is "not decided yet" — an inspection cannot be saved holding one. */
@@ -960,12 +1053,19 @@ export function QcModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={editing ? <QcDocLink qc={editing} /> : undefined} size="2xl"
+    <Modal open={open} onClose={onClose} readOnly={readOnly}
+      readOnlyHeader={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {editing && <QcDocLink qc={editing} />}
+          <PoRefDocs po={po} grn={target} showTallyInvoice />
+        </div>
+      }
+      size="2xl"
       title={editing ? (readOnly ? "QC Inspection" : "Edit QC Inspection") : "Record QC Inspection"}
       subtitle={`${po.poNo} · quality check on the received material. Approve or reject each item — a rejected item needs a remark.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !target || !allDecided || missingRemark}>{busy ? "Saving…" : editing ? "Save Changes" : !allDecided ? "Record inspection" : anyRejected ? "Record rejection" : "Approve"}</Button></>}>
       <div className="space-y-5">
-        <QcRefPanel po={po} grn={target} />
+        <QcRefPanel po={po} grn={target} readOnly={readOnly} />
 
         {!target ? (
           <p className="text-[13px] text-grey-2">Every goods receipt on this PO has already been inspected.</p>
@@ -1166,12 +1266,21 @@ export function PurchaseReturnModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<ReturnDocLink qc={inspection} />} size="2xl"
+    <Modal open={open} onClose={onClose} readOnly={readOnly}
+      readOnlyHeader={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <ReturnDocLink qc={inspection} />
+          <PoRefDocs po={po} grn={grn} showTallyInvoice />
+        </div>
+      }
+      size="2xl"
       title={editing ? (readOnly ? "Purchase Return Entry" : "Edit Purchase Return Entry") : "Purchase Return Entry in Tally"}
       subtitle={`${po.poNo} · book the return of the QC-rejected material in Tally.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !tallyRef.trim() || !docSatisfied}>{busy ? "Saving…" : editing ? "Save Changes" : "Record return"}</Button></>}>
       <div className="space-y-5">
-        <QcRefPanel po={po} grn={grn} />
+        {/* The purchase invoice this material was booked in on — number AND the
+            stored invoice, since the return is raised against that document. */}
+        <QcRefPanel po={po} grn={grn} readOnly={readOnly} />
         <RejectedItemsReadout po={po} inspection={inspection} />
         <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
           <FieldLabel label="Tally Reference No." required>
@@ -1261,12 +1370,19 @@ export function GateOutwardModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} readOnlyHeader={<GateDocLink qc={inspection} />} size="2xl"
+    <Modal open={open} onClose={onClose} readOnly={readOnly}
+      readOnlyHeader={
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <GateDocLink qc={inspection} />
+          <PoRefDocs po={po} grn={grn} showTallyInvoice />
+        </div>
+      }
+      size="2xl"
       title={editing ? (readOnly ? "Gate Register Outward" : "Edit Gate Register Outward") : "Gate Register Outward"}
       subtitle={`${po.poNo} · record the rejected material leaving the premises. This closes the process.`}
       footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !gateNo.trim() || !outDate}>{busy ? "Saving…" : editing ? "Save Changes" : "Record gate outward"}</Button></>}>
       <div className="space-y-5">
-        <QcRefPanel po={po} grn={grn} />
+        <QcRefPanel po={po} grn={grn} readOnly={readOnly} />
         <RejectedItemsReadout po={po} inspection={inspection} />
         <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
           <FieldLabel label="Gate Register No." required>

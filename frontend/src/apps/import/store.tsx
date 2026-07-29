@@ -190,6 +190,14 @@ interface ImportStoreValue {
   itemById: (id: string | null) => Item | undefined;
   vendorById: (id: string | null) => Vendor | undefined;
   companyById: (id: string | null) => Company | undefined;
+  /**
+   * The display name of a company / vendor — the counterparts to {@link itemLabel},
+   * and for the same reason: before these, every page hand-rolled its own
+   * `companyById(id)?.name` one-liner and the "— location" suffix drifted in and
+   * out. New code names a company or a vendor through these two.
+   */
+  companyLabel: (id: string | null) => string;
+  vendorLabel: (id: string | null) => string;
   activeVendors: Vendor[];
   /** The fixed price catalogue (all + active) and the (vendor, item) lookup. */
   vendorItemPrices: VendorItemPrice[];
@@ -763,6 +771,14 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       itemById: (id) => (id ? items.find((i) => i.id === id) : undefined),
       vendorById: (id) => (id ? vendors.find((v) => v.id === id) : undefined),
       companyById: (id) => (id ? companies.find((c) => c.id === id) : undefined),
+      companyLabel: (id) => {
+        const c = id ? companies.find((x) => x.id === id) : undefined;
+        if (!c) return "—";
+        // Two companies can share a name across locations, so the location is part
+        // of the identity whenever it is recorded. Same rendering as PoDetail's.
+        return c.location ? `${c.name} — ${c.location}` : c.name;
+      },
+      vendorLabel: (id) => (id ? vendors.find((v) => v.id === id)?.name ?? "—" : "—"),
       activeVendors: vendors.filter((v) => v.active).slice().sort((a, b) => a.name.localeCompare(b.name)),
       vendorItemPrices,
       priceFor: (vendorId, itemId) =>

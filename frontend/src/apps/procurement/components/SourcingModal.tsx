@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import RequestMasterModal from "./RequestMasterModal";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
@@ -341,6 +341,16 @@ export default function SourcingModal({
       }
     >
       <div className="space-y-4">
+        {/* Which company this requisition is being sourced FOR. A requisition
+            header carries no vendor — that is what this step decides — so the
+            company is the whole of the context here. */}
+        <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Company" value={s.companyLabel(request.companyId)} />
+            <Field label="Requisition No." value={request.requestNo} />
+          </div>
+        </div>
+
         {mixedVendors && (
           <p className="rounded-xl bg-ryg-red/10 px-3.5 py-2.5 text-[12.5px] text-ryg-red">
             This requisition's items were sourced to <strong>different vendors</strong> under the old per-item flow. One

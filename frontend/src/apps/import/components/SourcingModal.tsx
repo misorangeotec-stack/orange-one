@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import RequestMasterModal from "./RequestMasterModal";
 import { useImportStore } from "../store";
 import { inr, fxMoney } from "../lib/format";
@@ -151,6 +151,16 @@ export default function SourcingModal({
       }
     >
       <div className="space-y-4">
+        {/* Which company this line is being sourced FOR. This modal is scoped to a
+            single request line, so the company comes from its parent requisition —
+            a line carries no company of its own. */}
+        <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Company" value={s.companyLabel(s.requestById(line.requestId)?.companyId ?? null)} />
+            <Field label="Requisition No." value={s.requestById(line.requestId)?.requestNo} />
+          </div>
+        </div>
+
         <div className="space-y-2">
           {rows.map((r, i) => (
             <div key={i} className="rounded-xl border border-line p-3 space-y-2.5 bg-page/40">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import { Field } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
 import QtyTotal from "./QtyTotal";
 import type { PurchaseRequest, RequestItem } from "../types";
@@ -114,6 +115,17 @@ export default function ApprovalModal({
       }`}
     >
       <div className="space-y-4">
+        {/* Who this spend is being approved FOR, and against whom. The vendor is
+            in the subtitle too, but an approver reading a money decision should
+            not have to find it there. */}
+        <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Company" value={s.companyLabel(request.companyId)} />
+            <Field label="Requisition No." value={request.requestNo} />
+            <Field label="Recommended Vendor" value={s.vendorLabel(recommendedId)} />
+          </div>
+        </div>
+
         {/* ---- the items (quantity only) ---- */}
         <div className="overflow-x-auto rounded-xl border border-line">
           <table className="w-full min-w-[420px] text-[13px]">

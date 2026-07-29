@@ -3,6 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import { Field } from "@/shared/components/ui/Readout";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
@@ -225,6 +226,17 @@ export default function ApprovalModal({
       subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${s.vendorById(recommendedId)?.name ?? "—"}`}
     >
       <div className="space-y-4">
+        {/* Who this spend is being approved FOR, and against whom. The vendor is
+            in the subtitle too, but an approver reading a money decision should
+            not have to find it there. */}
+        <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Field label="Company" value={s.companyLabel(request.companyId)} />
+            <Field label="Requisition No." value={request.requestNo} />
+            <Field label="Recommended Vendor" value={s.vendorLabel(recommendedId)} />
+          </div>
+        </div>
+
         {/* ---- the shortlist ---- */}
         <div className="space-y-1.5">
           <span className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
