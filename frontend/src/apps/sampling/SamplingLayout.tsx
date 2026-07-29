@@ -30,9 +30,13 @@ export default function SamplingLayout() {
   const iAmRecipient = !!uid && s.requests.some((r) => r.handoverRecipientId === uid);
   const iAmResultRecipient = !!uid && s.requests.some((r) => r.labResultToId === uid);
 
-  // `receive_sample` is LEGACY — nothing routes into it any more. Shown ONLY while
-  // pre-lab-gate rows are actually sitting in it, so the entry retires itself.
+  // `receive_sample` and `testing` are both LEGACY — nothing routes into either any
+  // more (outward dropped testing; inward now runs lab_process). Shown ONLY while
+  // pre-lab-gate rows are actually sitting in them, so the entries retire themselves.
+  // Coordinators and admins are not special-cased here: `myQueue` runs `canActOn`,
+  // which is already true for them, so they keep seeing the entry while work exists.
   const canReceive = s.myQueue("receive_sample").length > 0;
+  const canTest = s.myQueue("testing").length > 0;
   const canCollect = s.isProcessCoordinator || s.isStepOwner("sample_collect") || s.myQueue("sample_collect").length > 0 || iAmCollector;
   const canSampleReceived = s.isProcessCoordinator || s.isStepOwner("sample_received") || s.myQueue("sample_received").length > 0 || iAmRecipient;
   const canSampleToLab = s.isProcessCoordinator || s.isStepOwner("sample_to_lab") || s.myQueue("sample_to_lab").length > 0 || iAmRecipient;
@@ -40,7 +44,6 @@ export default function SamplingLayout() {
   const canResultReceived = s.isProcessCoordinator || s.isStepOwner("result_received") || s.myQueue("result_received").length > 0 || iAmResultRecipient;
   const canSend = s.isProcessCoordinator || s.isStepOwner("send_sample") || s.myQueue("send_sample").length > 0;
   const canConfirm = s.isProcessCoordinator || s.isStepOwner("confirm_receipt") || s.myQueue("confirm_receipt").length > 0;
-  const canTest = s.isProcessCoordinator || s.isStepOwner("testing") || s.myQueue("testing").length > 0;
   const canResult = s.isProcessCoordinator || s.isStepOwner("result") || s.myQueue("result").length > 0;
   const canHandover = s.isProcessCoordinator || s.isStepOwner("result_handover") || s.myQueue("result_handover").length > 0;
   const canMonitor = s.isProcessCoordinator;

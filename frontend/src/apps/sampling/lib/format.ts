@@ -102,3 +102,63 @@ export const dmy = (iso: string | null | undefined): string =>
 
 /** A short one-line label for the request's product / party, for tables. */
 export const requestSubject = (r: SamplingRequest): string => r.productDesc ?? r.partyName ?? "—";
+
+/* ----------------------------- total quantity ------------------------------ */
+
+export interface QtySum {
+  /** The total, ready to print ("1,000 ml + 2 kg"). Empty when nothing could be added. */
+  text: string;
+  /** The raw lines that carried no leading number, so a caller can say they were left out. */
+  skipped: string[];
+}
+
+/**
+ * THE one place a request's sample quantities are added up.
+ *
+ * `SampleItem.quantity` is FREE TEXT ("500 ml", "2 kg", "500"), so this parses a
+ * leading number and treats the rest as the unit, then GROUPS BY UNIT: 500 ml +
+ * 500 ml + 2 kg reads "1,000 ml + 2 kg", never a meaningless bare 1002. That is
+ * why this does not reuse the Import/Procurement `sumQty` — that one takes a
+ * number and a unit off separate columns and collapses mixed units to "mixed",
+ * which it can afford because a requisition line has a real unit column.
+ *
+ * A line with no leading number CANNOT be added; it lands in `skipped` so the
+ * caller can say so, rather than silently under-reporting the total.
+ *
+ * Falls back to the legacy single `colourQty` string for rows raised before the
+ * sample_items grid existed, so an old outward request still totals.
+ */
+export const totalSampleQty = (r: SamplingRequest): QtySum => {
+  const values = r.sampleItems.length > 0 ? r.sampleItems.map((it) => it.quantity) : [r.colourQty ?? ""];
+
+  // Insertion-ordered, so the total reads in the order the lines were entered.
+  const groups = new Map<string, { unit: string; total: number }>();
+  const skipped: string[] = [];
+
+  for (const raw of values) {
+    const value = (raw ?? "").trim();
+    if (!value) continue;
+    // Thousands separators first — "1,000 ml" is one number, not "1".
+    const m = /^([0-9]*\.?[0-9]+)\s*(.*)$/.exec(value.replace(/,/g, ""));
+    if (!m) {
+      skipped.push(value);
+      continue;
+    }
+    const unit = m[2].trim();
+    const key = unit.toLowerCase();
+    const at = groups.get(key);
+    if (at) at.total += Number(m[1]);
+    else groups.set(key, { unit, total: Number(m[1]) });
+  }
+
+  const text = [...groups.values()]
+    .map((g) => {
+      // 3 dp, like the Import convention: fractional quantities without float noise.
+      const n = Math.round(g.total * 1000) / 1000;
+      const num = n.toLocaleString("en-IN", { maximumFractionDigits: 3 });
+      return g.unit ? `${num} ${g.unit}` : num;
+    })
+    .join(" + ");
+
+  return { text, skipped };
+};

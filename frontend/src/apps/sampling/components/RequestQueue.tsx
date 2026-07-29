@@ -31,7 +31,7 @@ export interface StageModalProps {
 }
 
 /**
- * A per-step STAGE view (receive / send / confirm / testing / result).
+ * A per-step STAGE view (collect / to-lab / send / confirm / result / handover).
  *
  * Two tabs over the same step: the work still owed — `store.myQueue(step)`, the
  * same entries the Control Center counts — and the work already done here, which

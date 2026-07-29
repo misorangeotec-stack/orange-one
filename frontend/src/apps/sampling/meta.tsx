@@ -19,7 +19,7 @@ export const samplingApp: AppManifest = {
   id: "sampling",
   name: appName("sampling"),
   description:
-    "Ink / raw-material sampling end to end: raise a request, receive or send-and-confirm the sample, record testing and the result, and close.",
+    "Ink / raw-material sampling end to end: raise a request, collect it for the lab or send-and-confirm it outward, record the result, and close.",
   basePath: appBasePath("sampling"),
   status: "live",
   category: appCategory("sampling"),

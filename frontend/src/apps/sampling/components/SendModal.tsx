@@ -4,7 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import SampleSummary from "./SampleSummary";
 import { useSamplingStore } from "../store";
-import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
+import { futureDateError, requestSubject, stepDateDefault, todayIso, totalSampleQty } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -16,6 +16,11 @@ import type { SamplingRequest } from "../types";
  * what was asked for — product, and the colour/quantity list — has to be on
  * screen while they type what actually went. The gate outward entry no. comes
  * LAST because it is stamped at the gate, after everything else is known.
+ *
+ * "Quantity sent" PRE-FILLS with the recap's total, because in the ordinary case
+ * what goes out is exactly what was asked for and retyping it is pure friction.
+ * It stays an editable free-text box: a short shipment is a real thing, and the
+ * dispatcher must be able to record what ACTUALLY went.
  */
 export default function SendModal({
   open,
@@ -41,7 +46,10 @@ export default function SendModal({
     if (open && request) {
       setSentDate(stepDateDefault(request.sentDate));
       setGateEntryNo(request.gateEntryNo ?? "");
-      setSentQty(request.sentQty ?? "");
+      // `??`, not `||`: a fresh dispatch has no stored quantity and takes the
+      // request's total; an edit or a read-only view keeps what was recorded,
+      // even where that deliberately differs from the total.
+      setSentQty(request.sentQty ?? totalSampleQty(request).text);
       setErr(null);
       setBusy(false);
     }
@@ -87,7 +95,7 @@ export default function SendModal({
         <FieldLabel label="Date sent" hint="today by default — you can backdate, not post-date">
           <TextInput type="date" max={todayIso()} value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
         </FieldLabel>
-        <FieldLabel label="Quantity sent" hint="what actually went out, against the list above">
+        <FieldLabel label="Quantity sent" hint="totalled from the list above — change it if what went out differs">
           <TextInput value={sentQty} onChange={(e) => setSentQty(e.target.value)} placeholder="e.g. 500 ml" />
         </FieldLabel>
         <FieldLabel label="Gate outward entry no.">

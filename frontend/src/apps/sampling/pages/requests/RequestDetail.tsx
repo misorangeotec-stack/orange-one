@@ -20,7 +20,7 @@ import ResultModal from "../../components/ResultModal";
 import HandoverModal from "../../components/HandoverModal";
 import SamplingStepper from "../../components/SamplingStepper";
 import StatusPill from "../../components/StatusPill";
-import { directionLabel, dmy, labTestingLabel, receiveViaLabel, requestSubject, requirementTypeLabel } from "../../lib/format";
+import { directionLabel, dmy, labTestingLabel, receiveViaLabel, requestSubject, requirementTypeLabel, totalSampleQty } from "../../lib/format";
 import { openStep } from "../../lib/queues";
 import type { StepKey } from "../../lib/steps";
 import { useSamplingStore } from "../../store";
@@ -85,6 +85,7 @@ export default function RequestDetail() {
   // the old testing → result → handover tail, so it reads on the legacy arm below.
   const isLegacyInward = r.status === "awaiting_receipt" || !!r.receivedAt;
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
+  const totalQty = totalSampleQty(r);
   const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
   const canCancel = (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
 
@@ -104,7 +105,7 @@ export default function RequestDetail() {
     : r.status === "awaiting_send" ? { label: "Record dispatch", modal: "send" }
     : r.status === "awaiting_confirm" ? { label: "Confirm receipt", modal: "confirm" }
     : r.status === "awaiting_testing" ? { label: "Record testing", modal: "testing" }
-    : r.status === "awaiting_result" ? { label: "Record result", modal: "result" }
+    : r.status === "awaiting_result" ? { label: "Record result received", modal: "result" }
     : r.status === "awaiting_handover" ? { label: "Record handover", modal: "handover" }
     : null;
 
@@ -201,6 +202,21 @@ export default function RequestDetail() {
                 </ul>
               ) : (
                 <div className="mt-1 text-[13.5px] text-navy">{r.colourQty ?? "—"}</div>
+              )}
+              {/* The same total the dispatcher is shown in SampleSummary, from the
+                  same helper — so the figure can never be spelled two ways. */}
+              {totalQty.text && (
+                <div className="mt-1.5 text-[13.5px] font-semibold text-navy">
+                  Total: {totalQty.text}
+                  {totalQty.skipped.length > 0 && (
+                    <span
+                      className="ml-1.5 text-[11.5px] font-normal text-grey-2"
+                      title={totalQty.skipped.join(", ")}
+                    >
+                      · {totalQty.skipped.length} line{totalQty.skipped.length > 1 ? "s" : ""} without a number not counted
+                    </span>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -349,16 +365,20 @@ export default function RequestDetail() {
                   />
                 </>
               )}
+              {/* Outward has no testing step. Still shown on a legacy outward row
+                  that genuinely passed through one, so its history is not erased. */}
+              {(r.direction === "inward" || r.testedAt) && (
+                <Field
+                  label="Testing"
+                  value={
+                    r.testedAt
+                      ? `${r.testingCompletedDate ? dmy(r.testingCompletedDate) : formatDate(r.testedAt)}${r.internalRef ? ` · ${r.internalRef}` : ""}${r.tentativeResultDate ? ` · result by ${dmy(r.tentativeResultDate)}` : ""} · ${name(r.testedBy)}`
+                      : "—"
+                  }
+                />
+              )}
               <Field
-                label="Testing"
-                value={
-                  r.testedAt
-                    ? `${r.testingCompletedDate ? dmy(r.testingCompletedDate) : formatDate(r.testedAt)}${r.internalRef ? ` · ${r.internalRef}` : ""}${r.tentativeResultDate ? ` · result by ${dmy(r.tentativeResultDate)}` : ""} · ${name(r.testedBy)}`
-                    : "—"
-                }
-              />
-              <Field
-                label="Result"
+                label="Result received"
                 value={r.resultedAt ? `${r.resultComment ?? ""} · ${name(r.resultedBy)}` : "—"}
                 className="col-span-1 sm:col-span-2"
               />

@@ -24,7 +24,7 @@ export default function TestingQueue() {
     <RequestQueue
       stepKey="testing"
       title="Testing"
-      description="Samples received or confirmed, ready to be tested."
+      description="Legacy inward samples received before the lab gate existed, ready to be tested."
       actionLabel="Record testing"
       StageModal={TestingModal}
       capturedColumn={capturedColumn}

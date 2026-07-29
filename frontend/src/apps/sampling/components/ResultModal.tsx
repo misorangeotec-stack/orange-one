@@ -36,9 +36,13 @@ function ResultDocLink({ path, name }: { path: string; name: string | null }) {
 }
 
 /**
- * Record (or correct) the RESULT — a comment (required), the result owner, and an
- * optional lab-report attachment. Recording moves the request to result handover.
- * The result stays editable until the handover is recorded; the server re-checks.
+ * Record (or correct) the OUTWARD result — "Result Received": the result the party
+ * came back with, as a comment (required), the result owner, and an optional report
+ * attachment. Recording moves the request to result handover. The result stays
+ * editable until the handover is recorded; the server re-checks.
+ *
+ * Not to be confused with ResultReceivedModal, which is the LAB branch's own
+ * (differently keyed) result-received step.
  */
 export default function ResultModal({
   open,
@@ -111,7 +115,7 @@ export default function ResultModal({
       onClose={onClose}
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
-      title={`${editing && !readOnly ? "Edit result" : readOnly ? "Result" : "Record result"} — ${request?.reqNo ?? ""}`}
+      title={`${editing && !readOnly ? "Edit result received" : readOnly ? "Result received" : "Record result received"} — ${request?.reqNo ?? ""}`}
       subtitle={request ? requestSubject(request) : undefined}
       footer={
         <>
@@ -122,7 +126,7 @@ export default function ResultModal({
     >
       <div className="space-y-3.5">
         <FieldLabel label="Result comment" required>
-          <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The outcome of the testing" />
+          <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The result the party came back with" />
         </FieldLabel>
         <FieldLabel label="Result owner">
           <TextInput value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Who signed off the result" />

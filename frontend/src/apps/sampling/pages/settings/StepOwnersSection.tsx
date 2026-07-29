@@ -6,7 +6,7 @@ import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelec
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useSamplingStore } from "../../store";
-import { STEPS, type StepKey } from "../../lib/steps";
+import { STEPS, branchLabelsOf, type StepKey } from "../../lib/steps";
 
 /**
  * Step Owners (admin). `request` is never owned — every granted user may raise one,
@@ -93,7 +93,14 @@ export default function StepOwnersSection() {
                       </button>
                     </td>
                     <td className="px-4 py-3 text-grey-2">{st.index}</td>
-                    <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{st.title}</td>
+                    <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">
+                      {st.title}
+                      {/* Which branch — this is a flat list, and two steps share the
+                          title "Result Received" (lab's result_received, outward's result). */}
+                      {branchLabelsOf(st) && (
+                        <span className="ml-2 text-[11.5px] font-normal text-grey-2">{branchLabelsOf(st)}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       {names.length ? <span className="text-navy">{names.join(", ")}</span> : <span className="text-grey-2">Unassigned</span>}
                     </td>
@@ -108,7 +115,7 @@ export default function StepOwnersSection() {
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title={`Owners — ${editingStep?.title ?? ""}`}
+        title={`Owners — ${editingStep?.title ?? ""}${editingStep && branchLabelsOf(editingStep) ? ` (${branchLabelsOf(editingStep)})` : ""}`}
         subtitle="Pick a department, then every employee who owns this step. All of them can action it and are notified."
         footer={
           <>

@@ -23,7 +23,7 @@ export default function ConfirmQueue() {
       actionLabel="Confirm receipt"
       StageModal={ConfirmModal}
       capturedColumn={capturedColumn}
-      completedBlurb="Confirmations you record will appear here, and stay revisable until testing is recorded."
+      completedBlurb="Confirmations you record will appear here, and stay revisable until the result is recorded."
     />
   );
 }

@@ -3,7 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useSamplingStore } from "../../store";
-import { STEPS, stepByKey, type StepKey } from "../../lib/steps";
+import { STEPS, branchLabelsOf, stepByKey, type StepKey } from "../../lib/steps";
 import type { StepSlaMap } from "../../lib/sla";
 
 /**
@@ -51,7 +51,14 @@ export default function StepDueDatesSection() {
         {queueSteps.map((st) => (
           <div key={st.key} className="flex items-center justify-between gap-4">
             <div>
-              <div className="text-[13.5px] font-medium text-navy">{st.title}</div>
+              <div className="text-[13.5px] font-medium text-navy">
+                {st.title}
+                {/* Which branch — this is a flat list, and two steps share the title
+                    "Result Received" (lab's result_received, outward's result). */}
+                {branchLabelsOf(st) && (
+                  <span className="ml-2 text-[11.5px] font-normal text-grey-2">{branchLabelsOf(st)}</span>
+                )}
+              </div>
               <div className="text-[11px] text-grey-2">
                 After {stepByKey(s.stepSla[st.key]?.anchor ?? "request")?.short ?? "Request"}
               </div>

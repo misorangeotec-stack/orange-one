@@ -180,11 +180,16 @@ export function sendLockReason(r: SamplingRequest): string | null {
   return null;
 }
 
-/** Editable while outward + confirmed + still awaiting testing. */
+/**
+ * Editable while outward + confirmed + still awaiting the RESULT. Outward dropped
+ * testing, so confirming now hands straight to `awaiting_result`; keying this on
+ * `awaiting_testing` (as it did) made every outward confirmation un-editable the
+ * instant it was saved. Mirrors fms_sampling_confirm_editable.
+ */
 export function confirmLockReason(r: SamplingRequest): string | null {
   const t = heldOrTerminal(r, "receipt confirmation");
   if (t) return t;
-  if (r.status !== "awaiting_testing") return "Testing has already been recorded — the receipt confirmation can no longer be changed.";
+  if (r.status !== "awaiting_result") return "The result has already been recorded — the receipt confirmation can no longer be changed.";
   return null;
 }
 

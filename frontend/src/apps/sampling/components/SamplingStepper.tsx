@@ -24,7 +24,7 @@ const INWARD_LEGACY_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
   { key: "receive_sample", label: "Sample Received" },
   { key: "testing", label: "Testing" },
-  { key: "result", label: "Result" },
+  { key: "result", label: "Result Received" },
   { key: "result_handover", label: "Result Handover" },
   { key: "closed", label: "Closed" },
 ];
@@ -49,7 +49,7 @@ const OUTWARD_FLOW: FlowNode[] = [
   { key: "send_sample", label: "Sample Sent" },
   { key: "confirm_receipt", label: "Receipt Confirmed" },
   // No Testing node: outward goes from receipt confirmation straight to the result.
-  { key: "result", label: "Result" },
+  { key: "result", label: "Result Received" },
   { key: "result_handover", label: "Result Handover" },
   { key: "closed", label: "Closed" },
 ];

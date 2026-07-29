@@ -114,15 +114,17 @@ export function buildSamplingNav(opts: {
   if (opts.canSampleToLab) lab("Sample Received & Sent to Lab", `${B}/queues/to-lab`, ic.inbound);
   if (opts.canLabProcess) lab("Lab Process", `${B}/queues/lab`, ic.testing);
   if (opts.canResultReceived) lab("Result Received", `${B}/queues/result-received`, ic.confirm);
-  // Legacy: only shown while pre-lab-gate rows are still sitting in it.
+  // The two LEGACY steps, filed here because a pre-lab-gate row is an inward one.
+  // Each is shown only while rows are still sitting in it, so both retire themselves.
   if (opts.canReceive) lab("Sample Received at Lab", `${B}/queues/receive`, ic.inbound);
+  if (opts.canTest) lab("Testing", `${B}/queues/testing`, ic.testing);
 
   const outward = block(BRANCH_LABEL.outward);
   if (opts.hasRequests) outward("Outward Requests", `${B}/outward-requests`, ic.list);
   if (opts.canSend) outward("Sample Sent", `${B}/queues/send`, ic.outbound);
   if (opts.canConfirm) outward("Receipt Confirmed", `${B}/queues/confirm`, ic.confirm);
-  if (opts.canTest) outward("Testing", `${B}/queues/testing`, ic.testing);
-  if (opts.canResult) outward("Result", `${B}/queues/result`, ic.result);
+  // No Testing: outward goes from receipt confirmation straight to the result.
+  if (opts.canResult) outward("Result Received", `${B}/queues/result`, ic.result);
   if (opts.canHandover) outward("Result Handover", `${B}/queues/handover`, ic.confirm);
 
   let adminUsed = false;

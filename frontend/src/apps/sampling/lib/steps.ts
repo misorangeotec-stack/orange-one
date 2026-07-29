@@ -9,7 +9,7 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * `lab_testing_required`):
  *   inward + NO lab testing:  request → sample_collect → sample_received (close)
  *   inward + lab testing:     request → sample_collect → sample_to_lab → lab_process → result_received (close)
- *   outward:                  request → send_sample → confirm_receipt → result → result_handover
+ *   outward:                  request → send_sample → confirm_receipt → result (Result Received) → result_handover
  *
  * BOTH inward branches start at `sample_collect` — who collects and whom they hand
  * to is the same question either way. They diverge at the handover receipt: the
@@ -86,11 +86,26 @@ export const STEPS: StepDef[] = [
   { key: "send_sample", index: 8, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
   { key: "confirm_receipt", index: 9, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
   { key: "testing", index: 10, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
-  { key: "result", index: 11, title: "Result", short: "Result", scope: "request", branches: ["outward"] },
+  // "Result Received" is also the LAB branch's step 6 title. Two different keys,
+  // deliberately the same name: on both branches this is the point the result
+  // comes back to us. Everywhere they could appear together they are separated by
+  // branch — the sidebar blocks, the STAGES below, and the branch shown beside the
+  // title in Setup (StepOwnersSection / StepDueDatesSection).
+  { key: "result", index: 11, title: "Result Received", short: "Result Recd", scope: "request", branches: ["outward"] },
   { key: "result_handover", index: 12, title: "Result Handover", short: "Handover", scope: "request", branches: ["outward"] },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
+
+/**
+ * The branches a step serves, in words — for the two Setup screens that render
+ * STEPS as ONE FLAT LIST and so cannot lean on a branch heading to tell rows
+ * apart. That matters: `result_received` (lab) and `result` (outward) are both
+ * titled "Result Received", and an admin assigning owners has to know which is
+ * which. Empty for `request`, which serves every branch.
+ */
+export const branchLabelsOf = (s: StepDef): string =>
+  (s.branches ?? []).map((b) => BRANCH_LABEL[b]).join(" · ");
 
 /** The steps one branch runs through, in workflow order. */
 export const stepsInBranch = (branch: StepBranch): StepDef[] =>
@@ -115,5 +130,5 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Lab — Process", keys: ["lab_process", "testing"] },
   { label: "Lab — Result Received", keys: ["result_received"] },
   { label: "Outward — Movement", keys: ["send_sample", "confirm_receipt"] },
-  { label: "Outward — Result", keys: ["result", "result_handover"] },
+  { label: "Outward — Result Received", keys: ["result", "result_handover"] },
 ];

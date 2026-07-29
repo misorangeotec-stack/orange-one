@@ -16,9 +16,9 @@ export default function ResultQueue() {
   return (
     <RequestQueue
       stepKey="result"
-      title="Result"
-      description="Tested samples awaiting the result to be recorded, which sends it for handover."
-      actionLabel="Record result"
+      title="Result Received"
+      description="Outward samples the party has confirmed receiving, awaiting the result they came back with."
+      actionLabel="Record result received"
       StageModal={ResultModal}
       capturedColumn={capturedColumn}
       completedBlurb="Results you record will appear here. A result stays correctable until its handover is recorded."

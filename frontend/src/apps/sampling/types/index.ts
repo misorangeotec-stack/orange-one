@@ -2,10 +2,15 @@
  * Domain types for the Sampling FMS (ink / raw-material sampling).
  *
  * A lab-sampling tracker with ONE entity per request (no header/line split,
- * like fms_supplies_requests). Two paths through the same row, chosen by
- * `direction`:
- *   inward  : request → receive_sample → testing → result → closed
- *   outward : request → send_sample → confirm_receipt → testing → result → closed
+ * like fms_supplies_requests). Three paths through the same row, chosen by
+ * `direction` and (for inward) `lab_testing_required` — see lib/steps.ts, which
+ * is the authority:
+ *   inward, no lab : request → sample_collect → sample_received → closed
+ *   inward, lab    : request → sample_collect → sample_to_lab → lab_process → result_received → closed
+ *   outward        : request → send_sample → confirm_receipt → result → result_handover → closed
+ *
+ * `receive_sample` and `testing` are LEGACY inward steps (pre-lab-gate rows only);
+ * outward has run no testing step since 20260731140000.
  *
  * Every DB row is mapped snake_case → camelCase in data/samplingFetch.ts.
  */

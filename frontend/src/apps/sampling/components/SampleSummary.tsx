@@ -1,17 +1,18 @@
-import { receiveViaLabel } from "../lib/format";
+import { receiveViaLabel, totalSampleQty } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
  * A compact read-only recap of what the sample is — shown at the top of every
  * step modal that acts ON the sample (collect / received / to-lab / dispatch) so
- * the actor sees what they are handling without leaving the modal: party, product
- * and the colour/quantity list.
+ * the actor sees what they are handling without leaving the modal: party, product,
+ * the colour/quantity list and what those lines add up to.
  *
  * Labels follow `direction`, mirroring RequestDetail: an outward actor is sending
  * TO a party, an inward one is collecting FROM one.
  */
 export default function SampleSummary({ request: r }: { request: SamplingRequest }) {
   const isOutward = r.direction === "outward";
+  const total = totalSampleQty(r);
   return (
     <div className="rounded-xl bg-page px-4 py-3 space-y-2.5">
       <div>
@@ -42,6 +43,24 @@ export default function SampleSummary({ request: r }: { request: SamplingRequest
           <div className="text-[13.5px] text-navy">{r.colourQty || "—"}</div>
         )}
       </div>
+      {/* Only when something could actually be added — a total of "—" says nothing
+          the list above hasn't already said. */}
+      {total.text && (
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Total quantity</div>
+          <div className="text-[13.5px] font-semibold text-navy">
+            {total.text}
+            {total.skipped.length > 0 && (
+              <span
+                className="ml-1.5 text-[11.5px] font-normal text-grey-2"
+                title={total.skipped.join(", ")}
+              >
+                · {total.skipped.length} line{total.skipped.length > 1 ? "s" : ""} without a number not counted
+              </span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

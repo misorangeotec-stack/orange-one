@@ -12,7 +12,7 @@ import type { AttentionRow } from "@/shared/lib/fmsDashboard";
 import { appName } from "@/apps/appInfo";
 import { useSamplingStore } from "../store";
 import { requestBranch } from "../lib/queues";
-import { STEPS, STAGES, stepByKey } from "../lib/steps";
+import { STEPS, STAGES, stepByKey, type StepBranch } from "../lib/steps";
 import { STATUS_LABEL, STATUS_TONE, requestSubject } from "../lib/format";
 import type { RequestStatus } from "../types";
 
@@ -22,7 +22,7 @@ const MONITORING = "/sampling/monitoring";
 /**
  * Sampling home — a per-FMS dashboard scoped to this FMS, seen by everyone with
  * the app (the store is already row-scoped). No money side (sampling is movement,
- * testing and result). The coordinator Control Center at `/sampling/monitoring`
+ * lab work and result). The coordinator Control Center at `/sampling/monitoring`
  * is unchanged. Every section degrades to a meaningful zero-state — never blank.
  */
 export default function Dashboard() {
@@ -79,18 +79,21 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.queueEntries, todayIso]);
 
-  // Open work, split the way the sidebar is: the two branches are run by
-  // different people, so one merged "open" number told neither of them anything.
+  // Open work, split the way the sidebar is: the THREE branches are run by
+  // different people, so one merged "open" number told none of them anything.
+  // Each branch is counted from `requestBranch` — deriving one as "the rest" put
+  // every outward request in the no-lab tile, whose link then didn't list them.
   const openRequests = s.requests.filter((r) => s.isOpenRequest(r));
-  const openLab = openRequests.filter((r) => requestBranch(r) === "lab").length;
-  const openNoLab = openRequests.length - openLab;
-  const inTesting = s.requests.filter((r) => r.status === "awaiting_testing").length;
+  const openBy = (b: StepBranch) => openRequests.filter((r) => requestBranch(r) === b).length;
+  const openLab = openBy("lab");
+  const openNoLab = openBy("no_lab");
+  const openOutward = openBy("outward");
 
   const kpiTiles: KpiTile[] = [
     { key: "pending", label: "Pending today", value: counts.delayed + counts.today, hint: "delayed + due today", size: "hero", tone: counts.delayed + counts.today > 0 ? "red" : undefined },
     { key: "openLab", label: "Open — lab testing", value: openLab, hint: "not yet closed", href: "/sampling/lab-requests" },
     { key: "openNoLab", label: "Open — no lab testing", value: openNoLab, hint: "not yet closed", href: "/sampling/no-lab-requests" },
-    { key: "testing", label: "In testing", value: inTesting, hint: "awaiting a result" },
+    { key: "openOutward", label: "Open — outward", value: openOutward, hint: "not yet closed", href: "/sampling/outward-requests" },
     { key: "delayed", label: "Delayed", value: counts.delayed, hint: "past due", tone: counts.delayed > 0 ? "red" : undefined },
     { key: "done", label: "Completed (30d)", value: completed30, hint: "closed on any path" },
   ];
@@ -101,7 +104,7 @@ export default function Dashboard() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">{appName("sampling")}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            Where ink / raw-material sampling stands today — movement, testing, result and handover.
+            Where ink / raw-material sampling stands today — movement, lab work, result and handover.
           </p>
         </div>
         <Link to="/sampling/requests/new">

@@ -6,9 +6,9 @@
  *
  * The anchors below are for the DUE-DATE DISPLAY (Setup → Due Dates) and the
  * default clock. The actual "from" timestamp per step is resolved in
- * lib/queues.ts `samplingDueIso`, which disambiguates `testing` on `direction`
- * (its predecessor is receive_sample for inward, confirm_receipt for outward) —
- * so a step that doesn't apply to a request is never born overdue.
+ * lib/queues.ts `samplingDueIso`, which falls back to the request's submission
+ * when an anchor never ran — so a step that doesn't apply to a request is never
+ * born overdue. `testing` is legacy-inward only; its predecessor is receive_sample.
  */
 import {
   createStepSlaModel,
@@ -32,7 +32,9 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   send_sample: { anchor: "request", days: 1 },
   confirm_receipt: { anchor: "send_sample", days: 1 },
   testing: { anchor: "request", days: 1 },
-  result: { anchor: "testing", days: 1 },
+  // Outward dropped testing, so the result's clock starts at the receipt
+  // confirmation — matching what samplingDueIso actually resolves.
+  result: { anchor: "confirm_receipt", days: 1 },
 };
 
 const model = createStepSlaModel<StepKey>(STEPS, OVERRIDES);
