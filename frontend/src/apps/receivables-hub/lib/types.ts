@@ -91,6 +91,15 @@ export interface Customer {
   journalAdjustments: number;
   openingBalanceAdjustment: number;
   checkReturns: number;
+  /**
+   * Money PAID OUT to the customer on a Payment voucher that is NOT named `CHQ.R` — refunds and
+   * unnamed cheque bounces. Live (Tally) only; the pipeline has no equivalent, so it stays 0 there.
+   *
+   * Split out rather than folded into `checkReturns` so that figure keeps its old, narrower meaning
+   * and a genuine refund is never reported as a bounced cheque. Before this existed the whole
+   * ₹18.04 Cr landed in no figure at all.
+   */
+  paymentsOut?: number;
   outstanding: number;
   overdue: number;
   maxOverdueDays: number;
@@ -353,27 +362,39 @@ export interface KPIs {
   totalAdvanceBySource: AdvanceBreakdown;
   totalOutstanding: number;
   /**
-   * Overdue NET of on-account money the customer has already paid us. This is the pipeline's
-   * figure and the one the Dashboard has always shown. It is NOT the same as the bill-based
-   * reports (Aging / Overdue-120 / Category), which show `totalOverdueOnBills` — see below.
+   * Overdue NET of on-account money the customer has already paid us — the same basis the
+   * Risk Register, Customer Detail and Salesperson Collection Report show, so the four tie.
+   *
+   * How it gets there depends on the source, and the difference is not cosmetic:
+   *   • Live (Tally) — `c.overdue` arrives GROSS (verified 30-07-2026: it equals the plain sum
+   *     of past-due bills on 698 of 698 ledgers), so `useAppData` deducts On Account itself via
+   *     the shared `onAccountAgainstOverdue` helper.
+   *   • Legacy pipeline — already net upstream; nothing is deducted again.
+   *   • Under a sale-type filter — GROSS on both sources. `c.outstanding` carries no per-type
+   *     split, so the deduction is unsafe there and is switched off. `KPIs` alone cannot tell
+   *     you which case you are in — read `netOnAccount` off `useAppData`.
+   *
+   * Always reconciles: totalOverdue = totalOverdueOnBills − totalOverdueCreditsApplied.
    */
   totalOverdue: number;
   /**
-   * Σ pending of the open bills that are past due — the figure the BILL-BASED reports show.
+   * Overdue BEFORE On Account is taken off — what the bill-based reports (Aging / Overdue-120 /
+   * Category) show, and the top line of the Dashboard's bridge.
    *
-   * The two reconcile exactly, per ledger and in total:
-   *     totalOverdue  =  totalOverdueOnBills − totalOverdueCreditsApplied
-   * Verified against the live book (13-Jul-2026): ₹38.00 cr − ₹2.75 cr = ₹35.26 cr, residual ₹0.
-   * The Dashboard renders that bridge so the two views stop reading as a contradiction.
+   * On Live this is `Σ c.overdue`, which is already the bill-wise figure. On the legacy pipeline
+   * `c.overdue` is net, so it is rebuilt as Σ pending of past-due bills — the original
+   * ₹38.00 cr vs ₹35.26 cr bridge (13-Jul-2026, residual ₹0).
    */
   totalOverdueOnBills: number;
   /**
-   * The on-account credits actually CONSUMED against those overdue bills.
+   * The on-account credit actually CONSUMED against those overdue bills — the middle line of
+   * the bridge. 0 whenever the deduction is gated off.
    *
-   * Capped per ledger (`min(overdue, credits)`) — a customer's surplus credit cannot push their
-   * own overdue below zero. That cap matters enormously: on-bill credits across the book total
-   * ₹16.16 cr, but only ₹2.75 cr of it is consumed. Summing the credits instead of capping them
-   * would over-deduct by ~6×.
+   * 🔴 Capped per ledger (`min(overdue, credits)`) — a customer's surplus credit cannot push
+   * their own overdue below zero. The cap matters enormously: measured 30-07-2026 on Live,
+   * credits total ₹17.92 cr but only ₹11.59 cr is consumable. Summing instead of capping
+   * over-deducts by ~6×. Because the cap is per ledger, the total is the same however the rows
+   * are grouped — which is what lets Customer mode and Group mode agree.
    */
   totalOverdueCreditsApplied: number;
   totalCustomers: number;

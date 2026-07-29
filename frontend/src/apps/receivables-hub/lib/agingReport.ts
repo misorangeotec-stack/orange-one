@@ -368,6 +368,31 @@ export function ledgerAdjBill(
   };
 }
 
+/**
+ * A DEBIT bill carrying no bill date AND no due date — an "Agst Ref" allocation pointing at a
+ * bill reference that was never opened as a "New Ref", so Tally materialises it with nothing to
+ * age it by. It is not a real receivable and it is emphatically NOT credit.
+ *
+ * ⚠ It has to be excluded from `creditsOfLedger`'s Σpending or it is MISREAD AS CREDIT. That sum
+ * is compared against the ledger balance, and anything by which the bills run ahead of the ledger
+ * is taken to be a receipt nobody tagged — but an orphan debit makes the bills run ahead for the
+ * opposite reason, and the deduction then removes money the customer really does owe.
+ *
+ * Worked example — ARTISAN VENTURES PRIVATE LIMITED (O-tec · Surat), found by inspection
+ * 29-07-2026. A ₹10 L BANK RECEIPT on 05-03-2026 was keyed with no bill reference; the ₹10 L
+ * BANK PAYMENT refunding it on 03-07-2026 WAS keyed, "Agst Ref" against a ref named
+ * "Receipt 05.03.26" that no voucher ever opened. The two cancel in the ledger (outstanding
+ * ₹53 L = ₹2.18 Cr invoice − ₹1.65 Cr advance), but the bill list keeps the payment side alone,
+ * so Σpending reads ₹63 L. Without this guard the ₹10 L gap was deducted as "on account" and
+ * Overdue printed ₹43 L against an Outstanding of ₹53 L — understating a real debt.
+ *
+ * Measured book-wide the same day: 20 such bills on 20 ledgers, ₹0.90 Cr; 6 ledgers were being
+ * over-deducted by ₹34.18 L in total (book on-account ₹11.93 Cr → ₹11.59 Cr).
+ */
+function isOrphanDebitBill(inv: Invoice): boolean {
+  return inv.pending > 0 && !inv.date && !inv.dueDate;
+}
+
 /** A customer's credit balance, split by how Tally happened to file it. */
 export interface LedgerCredits {
   /** Credit sitting on a NAMED bill ref — machine advances, credit notes. Positive magnitude. */
@@ -419,11 +444,41 @@ export function creditsOfLedger(c: Customer, detail: CustomerDetail | undefined)
   let sumPending = 0;
   let onBills = 0;
   for (const inv of detail?.invoices ?? []) {
+    if (isOrphanDebitBill(inv)) continue;   // see the note above — not credit, and not ours to deduct
     sumPending += inv.pending;
     if (inv.pending < 0) onBills -= inv.pending;
   }
   const untagged = Math.max(0, sumPending - c.outstanding);
   return { onBills, untagged, total: onBills + untagged };
+}
+
+/**
+ * On Account applied against a set of ledgers' OVERDUE — the figure the Risk Register and the
+ * Customer Detail page deduct. Returns a positive magnitude.
+ *
+ * 🔴 The cap is PER LEDGER and is load-bearing. A customer holding more credit than they owe has
+ * that surplus in their Outstanding, not in someone else's overdue; cap globally instead and the
+ * deduction over-shoots by ~6× book-wide (the same measurement that governs `overdueBridge` in
+ * useAppData). Capping at `max(0, overdue)` also means a ledger with no overdue deducts nothing,
+ * which is what makes a ledger carrying credit but no bill list safe without a special case.
+ *
+ * ⚠ Both sides of `creditsOfLedger`'s subtraction must be measured on the same basis, so:
+ *   • pass WHOLE-LEDGER records — never sale-type-projected ones, and never a consolidated
+ *     customer (a group's id has no `detail` entry at all);
+ *   • pass the UNFILTERED detail map. `useAppData` returns `customerDetail` already narrowed by
+ *     the saleType filter argument, which is why every caller must also gate on "no sale type
+ *     selected" rather than relying on the map alone.
+ */
+export function onAccountAgainstOverdue(
+  ledgers: Customer[],
+  detail: Record<string, CustomerDetail>,
+): number {
+  let total = 0;
+  for (const l of ledgers) {
+    const credits = creditsOfLedger(l, detail[l.id]);
+    total += Math.min(credits.total, Math.max(0, l.overdue));
+  }
+  return total;
 }
 
 /* ── Drill-down matchers ───────────────────────────────────────────────────── */

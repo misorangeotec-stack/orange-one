@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   Customer, ConsolidatedCustomer, DashboardData, CustomerDetail, KPIs,
@@ -11,6 +11,7 @@ import { useFY } from "./fyContext";
 import { useReceivablesScope } from "./scope";
 import { useReceivablesSource } from "./sourceContext";
 import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } from "./receivables";
+import { onAccountAgainstOverdue } from "./agingReport";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
       journalAdjustments:      numSum("journalAdjustments"),
       openingBalanceAdjustment: numSum("openingBalanceAdjustment"),
       checkReturns:            numSum("checkReturns"),
+      paymentsOut:             numSum("paymentsOut"),
       outstanding,
       overdue:                 numSum("overdue"),
       openingBalance:          numSum("openingBalance"),
@@ -248,6 +250,7 @@ export function consolidateByGroup(
       journalAdjustments:       numSum("journalAdjustments"),
       openingBalanceAdjustment: numSum("openingBalanceAdjustment"),
       checkReturns:             numSum("checkReturns"),
+      paymentsOut:              numSum("paymentsOut"),
       outstanding,
       overdue:                  numSum("overdue"),
       openingBalance:           numSum("openingBalance"),
@@ -368,6 +371,17 @@ interface AppData {
   lowCollectionCustomers: LowCollectionCustomer[];
   /** Distinct salesperson names across the (filtered) consolidated customers */
   salesPersonOptions: string[];
+  /**
+   * Whether Overdue is being shown NET of On Account (Live source, no sale-type filter).
+   * A page that renders a netted figure must say so when this is false, or the number
+   * silently jumps back to gross the moment someone picks a sale type.
+   */
+  netOnAccount: boolean;
+  /**
+   * On Account applied against a set of LEDGER ids, capped per ledger. Returns 0 when
+   * `netOnAccount` is false. ⚠ Expand `constituentIds` first — see the definition.
+   */
+  onAccountOfIds: (ids: string[]) => number;
 }
 
 interface RawAppData {
@@ -725,28 +739,99 @@ export function useAppData(filters: Filters = {}): AppData {
   }, [customerDetail, saleTypeList]);
 
   /**
+   * ── Is the Dashboard's Overdue shown NET of On Account? ──────────────────────
+   *
+   * The SAME two gates the Risk Register, Customer Detail and Salesperson Collection Report
+   * apply, for the same two reasons:
+   *
+   *   Live only — the legacy Python pipeline nets on-account upstream, so deducting again
+   *   would understate what is actually owed. On Live nothing nets it: measured 30-07-2026,
+   *   `collection_customer_snapshot.overdue` equals the plain sum of past-due bills on
+   *   698 of 698 ledgers, i.e. it is fully GROSS. (The old comment on this memo claimed the
+   *   opposite for both sources; it was only ever true of the pipeline.)
+   *
+   *   Never under a sale-type filter — `c.outstanding` carries no per-type split, so the two
+   *   sides of creditsOfLedger's subtraction would sit on different bases. It also makes
+   *   `filteredCustomerDetail` identity-equal to `customerDetail` (see :717), which is what
+   *   makes passing the filtered map below safe.
+   */
+  const netOnAccount = source === "connectwave" && saleTypeList.length === 0;
+
+  /** Raw whole-ledger records by id. Deliberately `allCustomers`, NOT `projectedCustomers`:
+   *  the latter is narrowed by company / location / risk and by the sale-type projection, so a
+   *  constituent missing from it would contribute a silent zero and UNDER-deduct. Same lookup
+   *  the Risk Register builds for the same reason (CustomerRiskRegister.tsx:925). */
+  const ledgerById = useMemo(() => {
+    const m = new Map<string, Customer>();
+    for (const c of allCustomers) m.set(c.id, c);
+    return m;
+  }, [allCustomers]);
+
+  /**
+   * On Account applied against a set of LEDGER ids, capped per ledger.
+   *
+   * ⚠ Pass LEDGER ids — expand `constituentIds` first. A consolidated row's `.id` is only its
+   *   FIRST constituent's ledger id while its `.overdue` is the sum of them all, and a group's
+   *   id (`G:<name>`) belongs to no ledger and has no detail entry at all.
+   *
+   * ⚠ Walks every bill of every ledger passed (~1,780 book-wide). Call it from a memo, never
+   *   from a cell renderer.
+   *
+   * Returns 0 whenever the deduction is gated off, so callers need no branch of their own.
+   */
+  const onAccountOfIds = useCallback((ids: string[]): number => {
+    if (!netOnAccount) return 0;
+    return onAccountAgainstOverdue(
+      ids.map((id) => ledgerById.get(id)).filter((c): c is Customer => !!c),
+      filteredCustomerDetail,
+    );
+  }, [netOnAccount, ledgerById, filteredCustomerDetail]);
+
+  /**
    * ── The Overdue bridge ───────────────────────────────────────────────────────
    *
-   * The Dashboard's Total Overdue (`customers.overdue`, summed) has always disagreed with the
-   * bill-based reports (Aging / Overdue-120 / Category) — ₹35.26 cr vs ₹38.00 cr. Neither is
-   * wrong. The pipeline reports overdue NET of on-account money the customer has already paid
-   * us but that isn't matched to any bill yet. Measured against the live book, this holds for
-   * 1,776 of 1,780 ledgers (the 4 misses total ₹0.01 cr — rounding):
+   * Gross overdue, the On Account taken off it, and the per-customer split behind that — all
+   * from ONE walk of the bill list, and all over the SAME customer universe the KPI totals use
+   * (`segmentedConsolidatedCustomers`), so they tie by construction under every filter instead
+   * of agreeing today and drifting the first time someone filters by salesperson.
    *
-   *     customers.overdue  ==  max(0, Σ overdue bills  +  Σ on-account credits)   // per ledger
+   * The two branches are NOT alternatives that could be merged:
    *
-   * So the difference is not a defect to fix, it is a fact to SHOW. This computes both sides of
-   * the bridge here — not in the page — so it is derived from the SAME customer universe as
-   * `totalOverdue` (`segmentedConsolidatedCustomers` → `allowedIds`, exactly like the aging memo
-   * below) and therefore ties by construction under every filter, instead of agreeing today and
-   * drifting the first time someone filters by salesperson.
+   *   Live — `c.overdue` is gross, so gross = Σ c.overdue and the deduction comes from the
+   *   shared `onAccountAgainstOverdue` helper. Using the same function as the other three
+   *   pages is precisely why the Dashboard now ties to the Risk Register to the rupee.
    *
-   * 🔴 The cap is load-bearing. `applied` takes min(overdue, credits) PER LEDGER, because a
-   * customer's surplus credit cannot drive their own overdue below zero. Across the book,
-   * on-bill credits total ₹16.16 cr but only ₹2.75 cr is actually consumed — sum them globally
-   * instead of capping and the bridge over-deducts by ~6× and confidently shows a wrong number.
+   *   Legacy pipeline — `c.overdue` already arrives net, so there is nothing to deduct here.
+   *   Gross has to be rebuilt from the bills (Σ pending of past-due bills), which is the
+   *   figure the bill-based reports show; the applied side is the on-BILL credit only. This
+   *   is the original ₹38.00 cr vs ₹35.26 cr bridge, kept exactly as it was.
+   *
+   * 🔴 The cap is load-bearing on BOTH branches: min(overdue, credits) PER LEDGER, because a
+   * customer's surplus credit cannot drive their own overdue below zero. Cap globally instead
+   * and the deduction over-shoots by ~6× and confidently shows a wrong number.
+   *
+   * ✔ Because the cap is per ledger, the total is the same however it is grouped — summing per
+   *   customer, per group or per ledger all give one number. That is what lets Group mode and
+   *   Customer mode agree without a second code path.
    */
   const overdueBridge = useMemo(() => {
+    const onAccountByCustomer = new Map<string, number>();
+
+    if (netOnAccount) {
+      let applied = 0;
+      for (const c of segmentedConsolidatedCustomers) {
+        const a = onAccountOfIds(c.constituentIds ?? [c.id]);
+        onAccountByCustomer.set(c.id, a);
+        applied += a;
+      }
+      return {
+        totalOverdueOnBills: segmentedConsolidatedCustomers.reduce((s, c) => s + c.overdue, 0),
+        totalOverdueCreditsApplied: applied,
+        onAccountByCustomer,
+      };
+    }
+
+    // Legacy pipeline (or gated off): rebuild gross from the bills; c.overdue is already net.
     const allowedIds = new Set(segmentedConsolidatedCustomers.flatMap((c) => c.constituentIds));
 
     // ledgerId → { ovd: past-due bills, cred: on-account credits (positive magnitude) }
@@ -766,14 +851,18 @@ export function useAppData(filters: Filters = {}): AppData {
       onBills += ovd;
       applied += Math.min(ovd, cred);   // ← the per-ledger cap. See above.
     }
-    return { totalOverdueOnBills: onBills, totalOverdueCreditsApplied: applied };
-  }, [filteredCustomerDetail, segmentedConsolidatedCustomers]);
+    return { totalOverdueOnBills: onBills, totalOverdueCreditsApplied: applied, onAccountByCustomer };
+  }, [netOnAccount, onAccountOfIds, filteredCustomerDetail, segmentedConsolidatedCustomers]);
 
   // ── KPIs recomputed from filtered customers ──────────────────────────────────
   const kpis = useMemo<KPIs | null>(() => {
     if (!projectedCustomers.length && !allCustomers.length) return null;
+    // Only the two scalars belong on KPIs — `onAccountByCustomer` is a lookup for the top-risky
+    // list, not a headline figure, and spreading it here would not type-check.
+    const { totalOverdueOnBills, totalOverdueCreditsApplied, onAccountByCustomer } = overdueBridge;
     return {
-      ...overdueBridge,
+      totalOverdueOnBills,
+      totalOverdueCreditsApplied,
       totalSales:                   segmentedConsolidatedCustomers.reduce((s, c) => s + c.sales, 0),
       totalReceipts:                segmentedConsolidatedCustomers.reduce((s, c) => s + c.receipts, 0),
       totalOtherPayments:           segmentedConsolidatedCustomers.reduce((s, c) => s + (c.otherPayments ?? 0), 0),
@@ -793,7 +882,11 @@ export function useAppData(filters: Filters = {}): AppData {
         otherPayment:  segmentedConsolidatedCustomers.reduce((s, c) => s + (c.advanceBreakdown?.otherPayment  ?? 0), 0),
       } as AdvanceBreakdown,
       totalOutstanding:             sumOutstanding(segmentedConsolidatedCustomers),
-      totalOverdue:                 segmentedConsolidatedCustomers.reduce((s, c) => s + c.overdue, 0),
+      // NET of On Account on Live; already net upstream on the legacy pipeline; gross under a
+      // sale-type filter (onAccountByCustomer is empty in both of those cases). Cannot go
+      // negative: every ledger was capped at its own overdue before being summed.
+      totalOverdue:                 segmentedConsolidatedCustomers.reduce(
+                                      (s, c) => s + c.overdue - (onAccountByCustomer.get(c.id) ?? 0), 0),
       totalCustomers:               segmentedConsolidatedCustomers.length,
       criticalCustomers:            segmentedConsolidatedCustomers.filter((c) => c.risk === "critical").length,
       overCreditLimit:              segmentedConsolidatedCustomers.filter((c) => c.utilization > 100).length,
@@ -935,21 +1028,27 @@ export function useAppData(filters: Filters = {}): AppData {
   const topRiskyCustomers = useMemo<TopRiskyCustomer[]>(() => {
     // Same in-view set as the KPIs / register (consolidated by name), so the
     // "top risky" list never shows a customer the register has merged away.
+    //
+    // ⚠ Net BEFORE filtering and sorting, not after. A customer who has already paid us more
+    //   than they owe would otherwise still be ranked — on money that is sitting in our bank.
+    //   Book-wide 30-07-2026 that is 38 customers whose overdue clears completely.
+    const { onAccountByCustomer } = overdueBridge;
     return [...segmentedConsolidatedCustomers]
-      .filter((c) => c.overdue > 0)
+      .map((c) => ({ c, overdue: c.overdue - (onAccountByCustomer.get(c.id) ?? 0) }))
+      .filter(({ overdue }) => overdue > 0)
       .sort((a, b) => b.overdue - a.overdue)
       .slice(0, 10)
-      .map((c) => ({
+      .map(({ c, overdue }) => ({
         id:          c.id,
         name:        c.name,
         company:     c.company,
         location:    c.location,
         outstanding: c.outstanding,
-        overdue:     c.overdue,
+        overdue,
         maxODDays:   c.maxOverdueDays,
         risk:        c.risk,
       }));
-  }, [segmentedConsolidatedCustomers]);
+  }, [segmentedConsolidatedCustomers, overdueBridge]);
 
   // ── Low collection rate customers (3M collection < 30% of overdue) ────────────
   // "Collection" = Tally receipts (receipts3M) + manual Other Payments in the same
@@ -1409,5 +1508,7 @@ export function useAppData(filters: Filters = {}): AppData {
     lowCollectionCount,
     lowCollectionCustomers,
     salesPersonOptions,
+    netOnAccount,
+    onAccountOfIds,
   };
 }

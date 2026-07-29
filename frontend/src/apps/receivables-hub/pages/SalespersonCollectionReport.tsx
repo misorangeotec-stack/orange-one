@@ -454,8 +454,8 @@ export default function SalespersonCollectionReport() {
 
   // Per-customer → per-month split of "Received" into ON ACCOUNT (advance / unallocated)
   // vs AGAINST a specific invoice, built from the receipt + manual other-payment
-  // transactions (both carry an allocation type + ref invoice). Cheque-return rows
-  // (type "check_return", negative) are excluded — they sit on the Due side, not Received.
+  // transactions (both carry an allocation type + ref invoice). Money-out rows
+  // ("check_return" and "payment_out") are excluded — they sit on the Due side, not Received.
   // Used only to derive the on-account SHARE of each month's receipts; the displayed total
   // stays anchored to trend.receipts (+ other payments) so the two columns sum exactly to it.
   // Receipt evidence and other-payment evidence are kept in SEPARATE maps, and each is only
@@ -482,7 +482,10 @@ export default function SalespersonCollectionReport() {
       const det = customerDetail[c.id];
       if (!det) continue;
       for (const r of det.receiptTransactions ?? []) {
-        if ((r.type ?? "").toLowerCase() === "check_return") continue;
+        // "payment_out" (a refund / unnamed bounce) rides in the same list and is money going OUT —
+        // it belongs on the Due side exactly like "check_return", never in the Received split.
+        const rt = (r.type ?? "").toLowerCase();
+        if (rt === "check_return" || rt === "payment_out") continue;
         if (!r.date) continue;
         add(receipts, c.id, isoToMonthLabel(r.date), Math.abs(r.amount), isAgainstInvoice(r.type, r.refInvoice));
       }

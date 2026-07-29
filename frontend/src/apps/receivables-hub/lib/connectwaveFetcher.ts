@@ -166,7 +166,8 @@ interface CustSnap {
   // full-dashboard enrichment (2026-07-07)
   max_overdue_days: number | null; aging_buckets: any; remaining_opening_balance: number | null;
   credit_notes: number | null; debit_notes: number | null; journal_dr: number | null; journal_cr: number | null;
-  check_returns: number | null; receipts_3m: number | null; receipts_6m: number | null;
+  check_returns: number | null; payments_out: number | null;
+  receipts_3m: number | null; receipts_6m: number | null;
   last_receipt_date: string | null;
   proposed_3m: number | null; proposed_3m_delta: number | null;
   proposed_ai: number | null; proposed_ai_delta: number | null; proposed_reason: any;
@@ -232,6 +233,9 @@ function toCustomer(r: CustSnap, identity: CompanyIdentity): Customer {
     journalAdjustments: journalDr - journalCr,
     openingBalanceAdjustment: 0,
     checkReturns: Number(r.check_returns) || 0,
+    // Payment vouchers NOT named CHQ.R — refunds and unnamed bounces. Counted in no figure at all
+    // until collection_refresh() started classifying by Tally's voucher class instead of by name.
+    paymentsOut: Number(r.payments_out) || 0,
     outstanding,
     overdue: Number(r.overdue) || 0,
     maxOverdueDays,
@@ -775,22 +779,36 @@ export async function fetchConnectwaveLedgerTxns(
       }
       for (const a of allocs) {
         const ref = normBillRef(a.bill_ref);
-        // 'New Ref' = the voucher that RAISED this bill, so its date is the bill's date. Taken from
+        // Bill types that OPEN a reference, i.e. whose voucher date IS the bill's date. Taken from
         // EVERY book (that is the whole point — a bill raised in last year's book must still date a
         // receipt in this year's), earliest wins. Idempotent, so the overlap above is harmless here.
-        if (ref && a.bill_type === "New Ref") {
+        //
+        // ⚠ 'Advance' opens a reference just as 'New Ref' does — Tally uses it when a receipt
+        // arrives before the invoice (machine advances, `M/C ADV`). Measured 29-07-2026: 1,339
+        // distinct refs are opened this way. Omitting them left those refs with NO raise date, and
+        // Customer Detail's classifyApplied treats "no raise date in any book" as proof the bill
+        // predates the mirror — so a receipt against an advance raised THIS YEAR was badged
+        // "Opening Balance". Seen on ARTISAN VENTURES: `M/C ADV` was raised 11-05-2026 and the
+        // 21-07-2026 receipt against it read as opening balance.
+        const opensTheBill = a.bill_type === "New Ref" || a.bill_type === "Advance";
+        if (ref && opensTheBill) {
           const iso = ymdToIso(a.vch_date);
           if (iso && (!billMeta[ref] || iso < billMeta[ref])) billMeta[ref] = iso;
           // Same rows rebuild the bill itself, so a fully-settled invoice still appears in the
           // sales list. Keyed by ref, earliest wins, so the overlapping books can't duplicate it.
-          const prev = rebuiltBills.get(ref);
-          if (!prev || (iso && iso < prev.date)) {
-            rebuiltBills.set(ref, {
-              ref,
-              date: iso,
-              amount: Math.abs(Number(a.amount) || 0),
-              voucherType: a.voucher_type ?? "",
-            });
+          //
+          // 'New Ref' ONLY: an advance is money received, not a bill raised. Rebuilding one here
+          // would invent a sales row for it and double it against the receipt that created it.
+          if (a.bill_type === "New Ref") {
+            const prev = rebuiltBills.get(ref);
+            if (!prev || (iso && iso < prev.date)) {
+              rebuiltBills.set(ref, {
+                ref,
+                date: iso,
+                amount: Math.abs(Number(a.amount) || 0),
+                voucherType: a.voucher_type ?? "",
+              });
+            }
           }
         }
         if (!a.guid || !claimedHere.has(a.guid)) continue;
@@ -908,10 +926,17 @@ export async function fetchConnectwaveLedgerTxns(
             lists.receiptTransactions.push({ date, amount: p.amount, type: rawType, refInvoice: p.ref, saleType: null });
             break;
           case "Payment":
-            // A Payment booked against a customer is a bounced cheque (this mirrors the pipeline's
-            // own convention — a genuine refund is indistinguishable in Tally). The page detects it
-            // by type === "check_return" and flips the sign itself, so only the type string matters.
-            lists.receiptTransactions.push({ date, amount: p.amount, type: "check_return", refInvoice: p.ref, saleType: null });
+            // Money paid OUT to a customer. Only a voucher type literally named CHQ.R is a bounced
+            // cheque; the rest are refunds and unnamed bounces (₹18.04 Cr), and labelling those
+            // "Chq Return" contradicted the Chq Returns card, which counts CHQ.R only. Both kinds
+            // sit on the DUE side and the page flips the sign for either, so this is purely a label.
+            lists.receiptTransactions.push({
+              date,
+              amount: p.amount,
+              type: vt.includes("CHQ.R") ? "check_return" : "payment_out",
+              refInvoice: p.ref,
+              saleType: null,
+            });
             break;
           case "Credit Note":
             lists.creditNoteTransactions.push({ date: date ?? "", voucherNo, amount: p.amount, refInvoice: p.ref, narration, saleType: null });

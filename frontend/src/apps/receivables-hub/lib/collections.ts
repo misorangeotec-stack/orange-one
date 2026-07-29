@@ -114,10 +114,14 @@ const emptyMonth = (): MonthFacts => ({
 const movementOf = (f: MonthFacts): number =>
   f.sales + f.debitNotes + f.journals - (f.receipts - f.chequeReturns) - f.creditNotes;
 
-/** Cheque-return rows ride in receiptTransactions with this type; they belong on the
- *  Due side, not the Received side (same convention as SalespersonCollectionReport). */
-const isChequeReturn = (type: string | null | undefined): boolean =>
-  (type ?? "").toLowerCase() === "check_return";
+/** Money that rides in receiptTransactions but is NOT a collection: a bounced cheque
+ *  ("check_return", a voucher type named CHQ.R) or a payment made out to the customer
+ *  ("payment_out", a refund or an unnamed bounce). Both belong on the Due side, not the
+ *  Received side (same convention as SalespersonCollectionReport). */
+const isChequeReturn = (type: string | null | undefined): boolean => {
+  const t = (type ?? "").toLowerCase();
+  return t === "check_return" || t === "payment_out";
+};
 
 /**
  * ledgerId → (month label → MonthFacts), in RUPEES.

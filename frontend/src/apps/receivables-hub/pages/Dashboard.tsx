@@ -92,7 +92,7 @@ export default function Dashboard() {
 
   const { loading, error, kpis, trend, aging, riskSegmentation,
           topRiskyCustomers, alerts, dashboard, riskTrend, riskCountTrend,
-          groupedCustomers,
+          groupedCustomers, netOnAccount, onAccountOfIds,
           salesPersonOptions } = useAppData({
     risk: riskLevels.length === 0 ? "all" : riskLevels.join(","),
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
@@ -145,13 +145,19 @@ export default function Dashboard() {
     });
   }, [groupedCustomers]);
 
-  // Top risky groups — top 10 by overdue.
+  // Top risky groups — top 10 by overdue, NET of On Account exactly like the customer list
+  // (which useAppData nets for us). Netted BEFORE the filter and the sort, so a group that has
+  // already paid us more than it owes drops off instead of being ranked on money in our bank.
+  // A group's constituentIds are real ledger ids (consolidateByGroup flattens its children's),
+  // and the deduction is capped per ledger, so this total matches the customer-mode one.
   const topRiskyGroups = useMemo(() => {
     return [...groupedCustomers]
-      .filter((g) => g.overdue > 0)
+      .map((g) => ({ g, overdue: g.overdue - onAccountOfIds(g.constituentIds ?? [g.id]) }))
+      .filter(({ overdue }) => overdue > 0)
       .sort((a, b) => b.overdue - a.overdue)
-      .slice(0, 10);
-  }, [groupedCustomers]);
+      .slice(0, 10)
+      .map(({ g, overdue }) => ({ ...g, overdue }));
+  }, [groupedCustomers, onAccountOfIds]);
 
   const displayRiskSegmentation = isGroupMode ? groupRiskSegmentation : riskSegmentation;
   const displayTopRisky = isGroupMode
@@ -265,16 +271,27 @@ export default function Dashboard() {
   const criticalLabel     = isGroupMode ? "Critical Groups"    : "Critical Customers";
   const blockedLabel      = isGroupMode ? "Red Mark Groups" : "Red Mark Customers";
 
+  /** On Account taken off Total Overdue, and whether there is anything to say about it. Both
+   *  come from useAppData so the card can never disagree with the aging footer below. */
+  const overdueOnAccount = kpis?.totalOverdueCreditsApplied ?? 0;
+  const showOverdueBridge = netOnAccount && overdueOnAccount > 0;
+
   const kpiCards: {
     label: string; value: string; icon: typeof Users; warn: boolean;
-    link: string | null; panel: PanelKey | null;
+    link: string | null; panel: PanelKey | null; sub?: string;
   }[] = kpis ? [
     { label: totalCountLabel,      value: totalCountValue,                icon: Users,         warn: false, link: buildRRUrl(riskLevels.length > 0 ? `/outstanding-dashboard/risk-register?risk=${riskLevels.join(",")}` : "/outstanding-dashboard/risk-register"), panel: null },
     { label: "Total Sales",        value: fmt(kpis.totalSales),           icon: DollarSign,    warn: false, link: null,                                                                   panel: null },
     { label: "Total Receipts",     value: fmt(kpis.totalReceipts),        icon: Receipt,       warn: false, link: null,                                                                   panel: null },
     { label: "Total Other Payments", value: fmt(kpis.totalOtherPayments ?? 0), icon: Wallet,      warn: false, link: "/outstanding-dashboard/reports/other-payments",                       panel: null },
     { label: "Total Outstanding",  value: fmt(kpis.totalOutstanding),     icon: TrendingDown,  warn: true,  link: null,                                                                   panel: "buildup" },
-    { label: "Total Overdue",      value: fmt(kpis.totalOverdue),         icon: Clock,         warn: true,  link: null,                                                                   panel: null },
+    // NET of On Account — the same basis the Risk Register, Customer Detail and Salesperson
+    // Collection Report show, so the four pages tie. The sub-line carries the bridge, because a
+    // total that silently deducted ₹11 cr with nothing on screen to say so is worse than a
+    // wrong one. Under a sale-type filter, or on the legacy pipeline, the deduction is off and
+    // the sub-line disappears rather than printing a misleading zero.
+    { label: "Total Overdue",      value: fmt(kpis.totalOverdue),         icon: Clock,         warn: true,  link: null,                                                                   panel: null,
+      sub: showOverdueBridge ? `${fmt(kpis.totalOverdueOnBills)} less ${fmt(overdueOnAccount)} on account` : undefined },
     // Money customers have ALREADY PAID us that isn't matched to a bill yet. Deliberately not
     // `warn` — this is cash in hand, not a risk. Sits next to Total Overdue because it is the
     // number that explains why Overdue reads lower here than on the bill-based reports.
@@ -422,6 +439,9 @@ export default function Dashboard() {
                 <p className={`text-sm font-bold ${kpi.warn ? "text-destructive" : "text-foreground"}`}>
                   {kpi.value}
                 </p>
+                {kpi.sub && (
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{kpi.sub}</p>
+                )}
               </CardContent>
             </Card>
           );
@@ -647,6 +667,13 @@ export default function Dashboard() {
                     they list the invoices you would actually chase. This Dashboard shows{" "}
                     <strong className="text-foreground">{fmt(kpis.totalOverdue)}</strong> because it deducts money
                     the customer has already sent us. Both are right — they answer different questions.
+                    {netOnAccount && (
+                      <>
+                        {" "}The Risk Register and Customer Detail deduct it the same way, so they show this
+                        same figure. The Salesperson Collection Report’s “Due Pending” is deliberately higher:
+                        it also counts bills falling due later this month.
+                      </>
+                    )}
                     {elsewhere > 0 && (
                       <>
                         {" "}The other <strong className="text-foreground">{fmt(elsewhere)}</strong> of advance sits
@@ -806,9 +833,20 @@ export default function Dashboard() {
                 <Line type="monotone" dataKey="sales"       stroke="hsl(28,80%,52%)"   strokeWidth={2} name="Sales" />
                 <Line type="monotone" dataKey="receipts"    stroke="hsl(220,45%,20%)"  strokeWidth={2} name="Receipts" />
                 <Line type="monotone" dataKey="outstanding" stroke="hsl(0,84%,60%)"    strokeWidth={2} strokeDasharray="5 5" name="Outstanding" />
-                <Line type="monotone" dataKey="overdue"     stroke="hsl(0,72%,40%)"    strokeWidth={2} strokeDasharray="2 3" dot={false} name="Overdue" />
+                {/* GROSS on every point, deliberately. Only the current month has a bill list to
+                    net On Account against; past months carry monthly totals with nothing to net.
+                    Netting just the last point would drop it ~a quarter and read as "overdue
+                    collapsed this month" — a cliff that isn't real. So the series stays on one
+                    basis end to end, and says which. */}
+                <Line type="monotone" dataKey="overdue"     stroke="hsl(0,72%,40%)"    strokeWidth={2} strokeDasharray="2 3" dot={false} name={netOnAccount ? "Overdue (gross)" : "Overdue"} />
               </LineChart>
             </ResponsiveContainer>
+            {netOnAccount && (
+              <p className="text-[10px] text-muted-foreground mt-1 leading-snug">
+                The Overdue line is gross on every month — past months have no bill-level detail to
+                deduct On Account from. The Total Overdue card is net.
+              </p>
+            )}
           </CardContent>
         </Card>
 
@@ -839,9 +877,17 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
 
-            {/* Bucket-wise totals + grand total */}
+            {/* Bucket-wise totals, then the bridge down to the Total Overdue KPI.
+                ⚠ The BUCKETS STAY GROSS, deliberately. On Account carries no invoice reference,
+                so it cannot honestly be attributed to one age bracket — and each bar drills
+                through to a bill list, which a netted bar would no longer add up to. The
+                deduction is shown as its own line instead. */}
             {(() => {
-              const grandTotal = aging.reduce((s, b) => s + b.amount, 0);
+              // Buckets are in lakhs; the KPI figures are in rupees. Take gross and net from the
+              // KPIs rather than from the bucket sum, so the three lines are exact against each
+              // other AND the last one is byte-identical to the Total Overdue card above.
+              const grossL = showOverdueBridge ? (kpis?.totalOverdueOnBills ?? 0) / 100_000
+                                               : aging.reduce((s, b) => s + b.amount, 0);
               return (
                 <div className="mt-3 pt-3 border-t border-border">
                   <div className="flex flex-wrap items-stretch gap-1.5">
@@ -851,11 +897,42 @@ export default function Dashboard() {
                         <span className="text-xs font-semibold text-foreground mt-0.5">{fmtL(b.amount)}</span>
                       </div>
                     ))}
-                    <div className="flex flex-col items-center bg-destructive/10 border border-destructive/20 rounded px-2.5 py-1.5 min-w-[88px] flex-1">
-                      <span className="text-[10px] text-destructive font-semibold uppercase tracking-wide">Total Overdue</span>
-                      <span className="text-xs font-bold text-destructive mt-0.5">{fmtL(grandTotal)}</span>
-                    </div>
+                    {showOverdueBridge ? (
+                      <>
+                        <div className="flex flex-col items-center bg-muted/40 rounded px-2.5 py-1.5 min-w-[104px] flex-1">
+                          <span className="text-[10px] text-muted-foreground font-semibold uppercase tracking-wide">Gross on Bills</span>
+                          <span className="text-xs font-semibold text-foreground mt-0.5">{fmtL(grossL)}</span>
+                        </div>
+                        <div className="flex flex-col items-center bg-emerald-500/10 border border-emerald-500/20 rounded px-2.5 py-1.5 min-w-[104px] flex-1">
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-semibold uppercase tracking-wide">Less On Account</span>
+                          <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 mt-0.5">−{fmtL(overdueOnAccount / 100_000)}</span>
+                        </div>
+                        <div className="flex flex-col items-center bg-destructive/10 border border-destructive/20 rounded px-2.5 py-1.5 min-w-[104px] flex-1">
+                          <span className="text-[10px] text-destructive font-semibold uppercase tracking-wide">Total Overdue</span>
+                          <span className="text-xs font-bold text-destructive mt-0.5">{fmtL((kpis?.totalOverdue ?? 0) / 100_000)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center bg-destructive/10 border border-destructive/20 rounded px-2.5 py-1.5 min-w-[88px] flex-1">
+                        <span className="text-[10px] text-destructive font-semibold uppercase tracking-wide">Total Overdue</span>
+                        <span className="text-xs font-bold text-destructive mt-0.5">{fmtL(grossL)}</span>
+                      </div>
+                    )}
                   </div>
+                  {showOverdueBridge && (
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      Buckets are the bills themselves, before On Account. Money paid to us but not
+                      matched to any invoice can't be placed in an age band, so it is deducted once,
+                      here — the Total matches the Total Overdue card and the Risk Register.
+                    </p>
+                  )}
+                  {!netOnAccount && (
+                    <p className="text-[10px] text-muted-foreground mt-2 leading-snug">
+                      {saleTypes.length > 0
+                        ? "Overdue is shown GROSS under a sale-type filter — outstanding carries no per-type split, so On Account can't be deducted on the same basis. Clear the sale-type filter to see it net."
+                        : "Overdue is shown net of On Account by the data pipeline itself on this source."}
+                    </p>
+                  )}
                 </div>
               );
             })()}

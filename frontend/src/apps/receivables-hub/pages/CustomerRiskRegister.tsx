@@ -102,12 +102,17 @@ interface CustomerRow {
   /** Which follow-up entity this row logs against. Undefined on roll-up headers that aren't
    *  a customer or a customer group (e.g. a Salesperson subtotal) — those can't be chased. */
   followupEntity?: { type: FollowupEntityType; name: string };
+  /** On Account already deducted from `overdue` on a ROLL-UP header (summed from its
+   *  children, which were each capped at their own overdue). Leaves derive it on the fly;
+   *  headers cannot, because their id belongs to no ledger. Tooltip only. */
+  onAccountApplied?: number;
 }
 
 type ViewMode = "customer" | "group";
 
 import { fmtINRMoney, fmtINRDrCr, formatDateDMY } from "@hub/lib/utils";
 import { sumOutstanding } from "@hub/lib/receivables";
+import { onAccountAgainstOverdue } from "@hub/lib/agingReport";
 import { matchesSearch } from "@/shared/lib/search";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFollowups } from "@hub/lib/useFollowups";
@@ -897,6 +902,71 @@ export default function CustomerRiskRegister() {
     return ledgers.length > 1 ? ledgers : [child];
   };
 
+  // ── On Account ──────────────────────────────────────────────────────────────
+  // Money the customer has already paid us that is settling no open invoice: untagged
+  // receipts PLUS credit filed against a NAMED bill (machine advances, credit notes). Both
+  // reduced their ledger balance but left every old bill reading unpaid, so the bill-based
+  // Overdue column chases money already banked. Same deduction the Salesperson Collection
+  // Report applies — see creditsOfLedger for the derivation and the measured book-wide impact.
+  //
+  //   Live only: the default pipeline already nets this upstream (see the overdue bridge in
+  //   useAppData), so deducting again would understate what is actually owed.
+  //   Never under a sale-type filter: c.outstanding carries no per-type split, so the two
+  //   sides of the subtraction would sit on different bases — and useAppData hands back a
+  //   customerDetail whose invoices are already narrowed by that same filter.
+  const saleTypeActive = saleTypes.length > 0;
+  const netOnAccount = source === "connectwave" && !saleTypeActive;
+  /** The third gate, and its own decision: a receipt carrying no invoice reference cannot be
+   *  attributed to one age bracket, so under an aging-bucket filter the Overdue column stays
+   *  GROSS rather than guessing which slice the money was meant to pay. The note under the
+   *  table names whichever gate is active, so a missing deduction is never a mystery. */
+  const showOnAccount = netOnAccount && agingFilters.length === 0;
+
+  // Ledger lookup for resolving a consolidated row's constituents. Built from allCustomers —
+  // the RAW, salesperson-scoped ledger set — and deliberately NOT from projectedById above,
+  // which is narrowed by the company/location/risk filters: a constituent missing from that
+  // map would contribute a silent zero and understate the deduction.
+  const ledgerById = useMemo(() => {
+    const m = new Map<string, Customer>();
+    for (const c of allCustomers) m.set(c.id, c);
+    return m;
+  }, [allCustomers]);
+
+  const onAccountOfIds = (ids: string[]): number =>
+    onAccountAgainstOverdue(
+      ids.map((id) => ledgerById.get(id)).filter((c): c is Customer => !!c),
+      customerDetail,
+    );
+
+  // Precomputed per consolidated row: this walks every bill of every ledger (~1,780 ledgers
+  // book-wide), so it must never run from a cell renderer.
+  const onAccountByRow = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!showOnAccount) return m;
+    for (const r of allData) m.set(r.id, onAccountOfIds(r.constituentIds ?? [r.id]));
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allData, showOnAccount, ledgerById, customerDetail]);
+
+  /** Roll-up headers are synthesised by SUMMING overdueForRow() over their children, so the
+   *  deduction is already inside their `overdue` — netting them again would double-count.
+   *  They carry the applied figure on `onAccountApplied` instead, for their own tooltip. */
+  const isRollupRow = (r: CustomerRow) => r.id.startsWith("__grp__");
+
+  const onAccountOf = (r: CustomerRow): number => {
+    if (!showOnAccount) return 0;
+    if (isRollupRow(r)) return 0;
+    const cached = onAccountByRow.get(r.id);
+    if (cached != null) return cached;
+    // Per-ledger child rows under an expanded group aren't in allData (one ledger each).
+    return onAccountOfIds(r.constituentIds ?? [r.id]);
+  };
+
+  /** What was actually deducted from this row's Overdue — works for leaves and roll-ups alike,
+   *  so one accessor drives every tooltip. */
+  const onAccountApplied = (r: CustomerRow): number =>
+    isRollupRow(r) ? (r.onAccountApplied ?? 0) : onAccountOf(r);
+
   // Persist the legacy ?view=group flag (one-level Customer-Group roll-up) and reset
   // expansion whenever the roll-up shape changes.
   useEffect(() => {
@@ -1055,11 +1125,14 @@ export default function CustomerRiskRegister() {
     }
     if (sortKey && sortDir) {
       // For the Overdue column, sort by the value actually shown: the selected
-      // aging bucket's amount when a bucket filter is active, else total overdue.
+      // aging bucket's amount when a bucket filter is active, else total overdue
+      // NET of On Account (the same figure overdueForRow renders).
       const valueFor = (r: CustomerRow) =>
-        sortKey === "overdue" && bucketKeys.length > 0
+        sortKey !== "overdue"
+          ? r[sortKey]
+          : bucketKeys.length > 0
           ? bucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0)
-          : r[sortKey];
+          : r.overdue - onAccountOf(r);
       d.sort((a, b) => {
         const av = valueFor(a);
         const bv = valueFor(b);
@@ -1068,7 +1141,9 @@ export default function CustomerRiskRegister() {
       });
     }
     return d;
-  }, [allData, search, riskLevels, agingFilters, specialFilter, blockedFilter, categories, sortKey, sortDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allData, search, riskLevels, agingFilters, specialFilter, blockedFilter, categories, sortKey, sortDir,
+      onAccountByRow, netOnAccount, ledgerById, customerDetail]);
 
   // When an aging bucket filter is active, sum only that specific bucket's overdue
   // rather than the customer's total overdue — otherwise customers with e.g. 180+ day
@@ -1086,13 +1161,14 @@ export default function CustomerRiskRegister() {
   }, [agingFilters]);
 
   // Overdue shown per row: the sum of the selected buckets' amounts when an aging
-  // filter is active, else the customer's total overdue. Keeps the column
-  // consistent with the bucket-aware KPI total and the customer-detail aging
-  // breakdown.
-  const overdueForRow = (r: CustomerRow) =>
-    agingBucketKeys.length > 0
-      ? agingBucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0)
-      : r.overdue;
+  // filter is active, else the customer's total overdue NET of On Account. Keeps the
+  // column consistent with the bucket-aware KPI total and the customer-detail aging
+  // breakdown. (onAccountOf already returns 0 under a bucket filter — see showOnAccount.)
+  const overdueForRow = (r: CustomerRow) => {
+    if (agingBucketKeys.length > 0)
+      return agingBucketKeys.reduce((s, bk) => s + (r.agingBuckets?.[bk] ?? 0), 0);
+    return r.overdue - onAccountOf(r);
+  };
 
   // Collapse a multi-value company/location list to a single display label,
   // matching the group view's convention (single value, else "Multiple").
@@ -1151,9 +1227,12 @@ export default function CustomerRiskRegister() {
     journalAdjustments: rows.reduce((s, r) => s + (r.journalAdjustments ?? 0), 0),
     checkReturns:      rows.reduce((s, r) => s + (r.checkReturns ?? 0), 0),
     outstanding:       sumOutstanding(rows),
-    overdue:           agingBucketKeys.length > 0
-                         ? rows.reduce((s, r) => s + agingBucketKeys.reduce((t, bk) => t + (r.agingBuckets?.[bk] ?? 0), 0), 0)
-                         : rows.reduce((s, r) => s + r.overdue, 0),
+    // Net of On Account, exactly as each row displays it (overdueForRow owns both branches).
+    overdue:           rows.reduce((s, r) => s + overdueForRow(r), 0),
+    // The bridge behind it, for the Grand Total tooltip. Both are 0 unless the deduction
+    // is actually applied, so the tooltip stays away when there is nothing to explain.
+    overdueGross:      rows.reduce((s, r) => s + r.overdue, 0),
+    onAccount:         rows.reduce((s, r) => s + onAccountOf(r), 0),
     creditLimit:       rows.reduce((s, r) => s + (r.creditLimit ?? 0), 0),
     proposedCreditLimit3M: rows.reduce((s, r) => s + (r.proposedCreditLimit3M ?? 0), 0),
     proposedCreditLimitAI: rows.reduce((s, r) => s + (r.proposedCreditLimitAI ?? 0), 0),
@@ -1161,7 +1240,8 @@ export default function CustomerRiskRegister() {
     criticalCustomers: rows.filter((r) => r.risk === "critical").length,
     overCreditLimit:   rows.filter((r) => r.utilization > 100).length,
     overdue180Plus:    rows.filter((r) => r.maxOverdueDays > 180).length,
-  }), [rows, agingBucketKeys]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [rows, agingBucketKeys, onAccountByRow, netOnAccount, ledgerById, customerDetail]);
 
   const aggregatedTrend = useMemo(() => {
     if (rows.length === 0 || rows.length >= 10) return [];
@@ -1258,6 +1338,9 @@ export default function CustomerRiskRegister() {
         checkReturns: sum("checkReturns"),
         outstanding: sumOutstanding(rs),
         overdue: rs.reduce((s, r) => s + overdueForRow(r), 0),
+        // Already inside `overdue` above — carried only so the header's own tooltip can show
+        // the same bridge its rows do. Each child was capped at its own overdue first.
+        onAccountApplied: rs.reduce((s, r) => s + onAccountApplied(r), 0),
         maxOverdueDays: rs.reduce((m, r) => Math.max(m, r.maxOverdueDays), 0),
         creditPeriod: 0,
         creditLimit: sum("creditLimit"),
@@ -1311,7 +1394,9 @@ export default function CustomerRiskRegister() {
       return nodes;
     };
     return build(rows, groupBy, 0, "");
-  }, [rows, groupBy, customerGroupMap, realGroupNames, sortKey, sortDir, agingBucketKeys, latestByEntity, followupsEnabled]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, groupBy, customerGroupMap, realGroupNames, sortKey, sortDir, agingBucketKeys, latestByEntity, followupsEnabled,
+      onAccountByRow, netOnAccount, ledgerById, customerDetail]);
 
   // Reset to page 1 whenever filters, sort, page size, or grouping changes.
   useEffect(() => {
@@ -1392,9 +1477,18 @@ export default function CustomerRiskRegister() {
             {fmt(Math.abs(r.outstanding))}{r.outstanding < 0 && <span className="text-[10px] font-normal ml-0.5">(Cr)</span>}
           </TableCell>
         )}
-        {visibleCols.has("overdue") && (
-          <TableCell className={`text-sm text-right font-mono ${overdueForRow(r) > 0 ? "text-destructive font-semibold" : ""}`}>{fmt(overdueForRow(r))}</TableCell>
-        )}
+        {visibleCols.has("overdue") && (() => {
+          const net = overdueForRow(r);
+          const oa = onAccountApplied(r);
+          return (
+            <TableCell
+              className={`text-sm text-right font-mono ${net > 0 ? "text-destructive font-semibold" : ""}`}
+              // The bridge behind the figure. Tooltip rather than a sub-line: this table is
+              // already 20+ columns wide and the page explains everything else the same way.
+              title={oa > 0 ? `Bills overdue ${fmt(r.overdue)}  −  On Account ${fmt(oa)}  =  ${fmt(net)}\nOn Account = received from this customer but matched to no invoice.` : undefined}
+            >{fmt(net)}</TableCell>
+          );
+        })()}
         {visibleCols.has("maxOverdueDays") && (
           <TableCell className={`text-sm text-right font-mono ${r.maxOverdueDays > 180 ? "text-destructive font-semibold" : r.maxOverdueDays > 90 ? "text-primary font-semibold" : ""}`}>{r.maxOverdueDays}</TableCell>
         )}
@@ -1594,10 +1688,23 @@ export default function CustomerRiskRegister() {
     const suppressed = new Set<SortKey>(["name", ...groupBy.map((d) => DIM_COL[d]).filter(Boolean) as SortKey[]]);
     const dataCols = columns.filter((c) => visibleCols.has(c.key) && !suppressed.has(c.key));
 
+    // The exported Overdue follows the screen, i.e. NET of On Account — but a spreadsheet has
+    // no hover, so the bridge the on-screen tooltip carries has to become real columns or the
+    // figure cannot be reconciled outside the app. They appear ONLY where the deduction is
+    // actually applied; otherwise they would be two columns of zeros.
+    const oaCols = showOnAccount && dataCols.some((c) => c.key === "overdue");
+    /** One column → one or three, so header / cells / number formats / widths cannot drift. */
+    const expand = <T,>(c: (typeof dataCols)[number], one: () => T, three: () => T[]): T[] =>
+      c.key === "overdue" && oaCols ? three() : [one()];
+
     const header = [
       ...dimCols.map((d) => d.label),
-      ...dataCols.map((c) =>
-        c.key === "overdue" && agingBucketKeys.length > 0 ? `Overdue (${agingFilters.join(", ")})` : c.label),
+      ...dataCols.flatMap((c) => expand(c,
+        () => (c.key === "overdue" && agingBucketKeys.length > 0
+          ? `Overdue (${agingFilters.join(", ")})`
+          : c.label),
+        () => ["Overdue (Gross)", "On Account", c.label],
+      )),
     ];
     const width = header.length;
     const aoa: (string | number)[][] = [header];
@@ -1614,7 +1721,10 @@ export default function CustomerRiskRegister() {
         if (n.children.length > 0) subtotalRows.push(aoa.length);
         aoa.push([
           ...dimCols.map((_, i) => path[i] ?? ""),
-          ...dataCols.map((c) => exportCell(n.header, c.key, isHeader)),
+          ...dataCols.flatMap((c) => expand(c,
+            () => exportCell(n.header, c.key, isHeader),
+            () => [n.header.overdue, onAccountApplied(n.header), overdueForRow(n.header)],
+          )),
         ]);
         if (n.children.length) walk(n.children, path);
       }
@@ -1625,7 +1735,7 @@ export default function CustomerRiskRegister() {
     const grandTotal: (string | number)[] = [
       "GRAND TOTAL",
       ...dimCols.slice(1).map(() => ""),
-      ...dataCols.map((c) => {
+      ...dataCols.flatMap((c) => expand<string | number>(c, () => {
         switch (c.key) {
           case "openingBalance":        return totals.openingBalance;
           case "sales":                 return totals.sales;
@@ -1640,17 +1750,25 @@ export default function CustomerRiskRegister() {
           case "proposedCreditLimitAI": return totals.proposedCreditLimitAI;
           default:                      return "";
         }
-      }),
+      }, () => [totals.overdueGross, totals.onAccount, totals.overdue])),
     ];
     aoa.push(grandTotal);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-    // Apply number formats to the numeric data columns (offset past the dimensions).
-    for (let di = 0; di < dataCols.length; di++) {
-      const fmt = numericFmt[dataCols[di].key];
+    // Apply number formats. Built as a flat array PARALLEL TO `header` rather than indexed off
+    // dataCols, because the Overdue column expands to three when the On Account bridge is on —
+    // an index-by-dataCols loop would silently format the wrong columns from there onward.
+    const colFmt: (string | undefined)[] = [
+      ...dimCols.map(() => undefined),
+      ...dataCols.flatMap((c) => expand<string | undefined>(c,
+        () => numericFmt[c.key],
+        () => [INR_FMT, INR_FMT, INR_FMT],
+      )),
+    ];
+    for (let ci = 0; ci < colFmt.length; ci++) {
+      const fmt = colFmt[ci];
       if (!fmt) continue;
-      const ci = dimCols.length + di;
       for (let ri = 1; ri < aoa.length; ri++) {
         const ref = XLSX.utils.encode_cell({ r: ri, c: ci });
         const cell = ws[ref];
@@ -1909,6 +2027,35 @@ export default function CustomerRiskRegister() {
               Receipts and credit notes are attributed to the sale type of the bill they settle; amounts paid against a bill with no readable reference (true on-account / opening-balance collections) are left unallocated, not split. Opening balance and cheque returns carry no sale type, so outstanding/overdue distribute them across types by each customer's sales mix (estimate).
             </p>
           )}
+          {/* Which basis the Overdue column is on, and — when the deduction is off — WHICH gate
+              turned it off, so a missing "less On Account" is never a mystery. Same three-branch
+              wording as the Salesperson Collection Report. */}
+          <p className="text-[11px] text-muted-foreground italic mt-2">
+            <span className="font-medium not-italic">On Account</span>{" "}
+            {showOnAccount ? (
+              <>
+                is deducted from <span className="font-medium not-italic">Overdue</span> — money already received
+                from the customer that is settling no open invoice: untagged receipts, machine advances and credit
+                notes alike. It reduced their ledger balance but left every old bill reading unpaid, so an un-netted
+                Overdue chases money already banked. Capped at each customer's own overdue; hover any Overdue figure
+                for the working. Outstanding, Max OD Days, Utilization and the Risk band are unaffected, and the
+                monthly trend below stays gross.
+              </>
+            ) : source !== "connectwave" ? (
+              <>is not deducted here — on this data source it is already netted upstream.</>
+            ) : saleTypeActive ? (
+              <>
+                is not deducted while a Sale Type filter is active — Outstanding carries no per-sale-type split, so
+                the deduction would compare two different bases.
+              </>
+            ) : (
+              <>
+                is not deducted while an aging-bucket filter is active — a receipt carrying no invoice reference
+                cannot be attributed to one age bracket, so the column stays gross rather than guessing which slice
+                the money was meant to pay. Clear the aging filter to see it netted.
+              </>
+            )}
+          </p>
           <FilterChips chips={filterChips} onClearAll={clearFilters} />
         </CardContent>
       </Card>
@@ -2076,6 +2223,7 @@ export default function CustomerRiskRegister() {
                     }
                     let content: ReactNode = null;
                     let cls = "text-sm text-right font-mono";
+                    let titleAttr: string | undefined;
                     switch (col.key) {
                       case "openingBalance": content = fmt(totals.openingBalance); break;
                       case "sales":          content = fmt(totals.sales); break;
@@ -2101,13 +2249,15 @@ export default function CustomerRiskRegister() {
                       case "overdue":
                         content = fmt(totals.overdue);
                         if (totals.overdue > 0) cls += " text-destructive";
+                        if (totals.onAccount > 0)
+                          titleAttr = `Bills overdue ${fmt(totals.overdueGross)}  −  On Account ${fmt(totals.onAccount)}  =  ${fmt(totals.overdue)}\nOn Account = received from these customers but matched to no invoice.`;
                         break;
                       case "creditLimit":           content = fmt(totals.creditLimit); break;
                       case "proposedCreditLimit3M":  content = fmt(totals.proposedCreditLimit3M); break;
                       case "proposedCreditLimitAI":  content = fmt(totals.proposedCreditLimitAI); break;
                       default: content = null; cls = "";  // salesPerson, companies, locations, maxOverdueDays, creditPeriod, utilization, risk, blocked
                     }
-                    return <TableCell key={col.key} style={f.style} className={`${cls} ${f.className}`}>{content}</TableCell>;
+                    return <TableCell key={col.key} style={f.style} className={`${cls} ${f.className}`} title={titleAttr}>{content}</TableCell>;
                   })}
                   <TableCell className="w-8" />
                 </TableRow>

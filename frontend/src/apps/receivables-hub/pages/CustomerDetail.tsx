@@ -41,6 +41,7 @@ import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { useQuery } from "@tanstack/react-query";
 import { utilizationPct } from "@hub/lib/receivables";
+import { onAccountAgainstOverdue } from "@hub/lib/agingReport";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
 import type { Customer, CustomerGroupMap, InvoiceStatus } from "@hub/lib/types";
@@ -147,6 +148,7 @@ const VOUCHER_TYPE_OPTIONS = [
   { value: "debit_note",   label: "Debit Note" },
   { value: "journal",      label: "Journal (Dr/Cr)" },
   { value: "check_return", label: "Cheque Return" },
+  { value: "payment_out",  label: "Payment Out" },
   { value: "other_payment", label: "Other Payment" },
 ] as const;
 
@@ -161,7 +163,7 @@ const STATUS_OPTIONS = [
 
 type TxnKind =
   | "sales" | "receipt" | "credit_note" | "debit_note"
-  | "journal_dr" | "journal_cr" | "check_return" | "other_payment";
+  | "journal_dr" | "journal_cr" | "check_return" | "payment_out" | "other_payment";
 
 // Classifies what a non-sales row settles: an opening-balance (pre-period) bill,
 // a current-period invoice, or nothing specific (on-account / advance).
@@ -196,7 +198,18 @@ const TXN_TYPE_META: Record<TxnKind, { label: string; cls: string }> = {
   journal_dr:   { label: "Journal Dr",  cls: "bg-destructive/10 text-destructive border-destructive/20" },
   journal_cr:   { label: "Journal Cr",  cls: "bg-emerald-100 text-emerald-700 border-emerald-200" },
   check_return: { label: "Chq Return",  cls: "bg-blue-100 text-blue-700 border-blue-200" },
+  // A Payment voucher NOT named CHQ.R — a refund or an unnamed bounce. Kept distinct from
+  // "Chq Return" so the row agrees with the Chq Returns card, which counts CHQ.R only.
+  payment_out:  { label: "Payment Out", cls: "bg-rose-100 text-rose-700 border-rose-200" },
   other_payment: { label: "Other Pmt",  cls: "bg-indigo-100 text-indigo-700 border-indigo-200" },
+};
+
+/** Column count for a KPI band, so each band fills its row exactly. Written out as whole literal
+ *  class names on purpose — Tailwind scans the source as text, so a built-up `lg:grid-cols-${n}`
+ *  would compile to a class that was never generated and the band would silently render 1-up. */
+const LG_COLS: Record<number, string> = {
+  1: "lg:grid-cols-1", 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4",
+  5: "lg:grid-cols-5", 6: "lg:grid-cols-6", 7: "lg:grid-cols-7", 8: "lg:grid-cols-8",
 };
 
 // Kept local (not imported from connectwaveFetcher) so the page doesn't pull that whole module
@@ -745,6 +758,35 @@ export default function CustomerDetail() {
 
   const isConsolidated = allEntities.length > 1 && activeEntities.length > 1;
 
+  // ── On Account ────────────────────────────────────────────────────────────────
+  // Money this customer has already paid us that is settling no open invoice: untagged
+  // receipts PLUS credit filed against a NAMED bill (machine advances, credit notes). Both
+  // reduced their ledger balance but left every old bill reading unpaid, so the bill-based
+  // Overdue chases money already banked. Same deduction the Salesperson Collection Report and
+  // the Risk Register apply — see creditsOfLedger for the derivation.
+  //
+  //   Live only: the default pipeline already nets this upstream (see the overdue bridge in
+  //   useAppData), so deducting again would understate what is owed. The sale-type gate is
+  //   free here — the filter is already forced off on Live (saleTypeFilterAvailable above) —
+  //   but it is written out because it is load-bearing, not incidental.
+  //
+  // Computed PER LEDGER over activeEntities and capped at each ledger's own overdue, then
+  // summed: `customer` is consolidated, and on the group route its id is `G:<groupName>`,
+  // which belongs to no ledger and has no customerDetail entry at all.
+  //
+  // Fed baseCustomerDetail, NOT the merged `customerDetail` above: the merge folds in bills
+  // rebuilt from Tally's allocations, and the snapshot is what is authoritative for `pending`.
+  // (Rebuilt rows carry pending 0 today, so the figure is identical either way — pinning the
+  // snapshot keeps it that way if the rebuild ever changes.)
+  const netOnAccount = source === "connectwave" && effectiveSaleType === "all";
+  const onAccount = useMemo(
+    () => (netOnAccount ? onAccountAgainstOverdue(activeEntities, baseCustomerDetail) : 0),
+    [netOnAccount, activeEntities, baseCustomerDetail],
+  );
+  // Non-negative by construction: every ledger's credit was capped at that ledger's own
+  // overdue before summing, and customer.overdue is the sum of those same ledgers.
+  const overdueNet = (customer?.overdue ?? 0) - onAccount;
+
   // Columns offered for the Transactions table (Company/Location only when
   // viewing multiple entities) and the subset currently shown.
   const availableTxnColumns = useMemo(
@@ -760,11 +802,18 @@ export default function CustomerDetail() {
   // Agst Ref lines are Tally's internal advance-application bookkeeping entries
   // (always negative amounts). They must be excluded from the display — the
   // corresponding advance receipt row already appears in receiptTransactions.
+  //
+  // `amount > 0` alone used to do that job, and in doing so it also swallowed every bill
+  // carrying a real CREDIT balance — machine advances ("M/C ADV"), "FOR ADJUSTMENT", credit
+  // notes filed against a bill ref. Measured on the live book 29-07-2026: 163 such bills
+  // across 106 ledgers, ₹9.21 Cr of credit, invisible on this page while the Overdue tile
+  // above deducts it. The billType test already excludes Agst Ref on its own, so the balance
+  // test can be widened to let genuine credit through.
   const invoices = useMemo(() =>
     activeEntities
       .flatMap((e) =>
         (customerDetail[e.id]?.invoices ?? [])
-          .filter((inv) => inv.billType !== "Agst Ref" && inv.amount > 0)
+          .filter((inv) => inv.billType !== "Agst Ref" && (inv.amount > 0 || inv.pending < 0))
           .map((inv) => ({
             ...inv,
             _company:  e.company,
@@ -1029,11 +1078,14 @@ export default function CustomerDetail() {
     // months, so those stay as the calculated series). Trend unit is lakhs.
     if (customer && sorted.length) {
       const last = sorted[sorted.length - 1];
-      last.overdue     = customer.overdue / 100_000;
+      // Overdue is pinned NET of On Account, so the latest month, the chart endpoint and the
+      // headline tile all read the same figure. Only this month can be: netting needs the bill
+      // list, and prior months carry monthly totals with no record of what was unmatched then.
+      last.overdue     = overdueNet / 100_000;
       last.outstanding = customer.outstanding / 100_000;
     }
     return sorted;
-  }, [activeEntities, customerDetail, customer, selectedTypes, invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns]);
+  }, [activeEntities, customerDetail, customer, overdueNet, selectedTypes, invoices, receiptTxns, creditNoteTxns, debitNoteTxns, journalTxns]);
 
   const invoiceAgingKey = (overdueDays: number): string | null => {
     if (overdueDays <= 0)   return null;
@@ -1056,15 +1108,23 @@ export default function CustomerDetail() {
 
     // Sales invoices
     for (const inv of invoices) {
+      // A bill carrying a NEGATIVE balance is credit the customer has already paid us, filed
+      // against a bill ref only because whoever keyed the receipt typed one. It is not a sale,
+      // and its `amount` is not a sale value: 31 of the 163 in the book carry amount 0 against
+      // a real balance, and others carry an amount unrelated to it — so `amount − pending`
+      // would invent a receipt of up to ₹1.65 Cr out of nothing and inflate the Received total.
+      // Show it for what it is: no invoice value, nothing received, the credit sitting in
+      // Pending. That is also what lets the Pending TOTAL net without assuming anything.
+      const isCredit = inv.pending < 0;
       rows.push({
         rowKey: `s-${inv.id}-${inv._company}-${inv._location}`,
         date: inv.date,
         kind: "sales",
         voucherNo: inv.number,
         refInvoice: null,
-        amount: inv.amount,
-        signedAmount: inv.amount,
-        received: inv.amount - inv.pending,
+        amount: isCredit ? 0 : inv.amount,
+        signedAmount: isCredit ? inv.pending : inv.amount,
+        received: isCredit ? 0 : inv.amount - inv.pending,
         pending: inv.pending,
         dueDate: inv.dueDate,
         overdueDays: inv.overdueDays,
@@ -1075,19 +1135,22 @@ export default function CustomerDetail() {
       });
     }
 
-    // Receipts (and cheque returns, which come through receiptTransactions
-    // as type === "check_return" with negative `amount`)
+    // Receipts, plus the two money-OUT kinds that ride in the same list: cheque returns
+    // (type "check_return", a voucher named CHQ.R) and payments out (type "payment_out",
+    // a refund or an unnamed bounce). Both increase what the customer owes.
     receiptTxns.forEach((r, i) => {
-      const isChq = (r.type ?? "").toLowerCase() === "check_return";
+      const rt = (r.type ?? "").toLowerCase();
+      const isChq = rt === "check_return";
+      const isOut = rt === "payment_out";
       const gross = Math.abs(r.amount);
       rows.push({
         rowKey: `r-${i}-${r.date}`,
         date: r.date ?? "",
-        kind: isChq ? "check_return" : "receipt",
+        kind: isChq ? "check_return" : isOut ? "payment_out" : "receipt",
         voucherNo: "",
         refInvoice: r.refInvoice,
         amount: gross,
-        signedAmount: isChq ? gross : -gross,
+        signedAmount: isChq || isOut ? gross : -gross,
         subType: r.type,
         saleType: r.saleType ?? undefined,
         appliedTo: classifyApplied(r.refInvoice),
@@ -1280,6 +1343,22 @@ export default function CustomerDetail() {
       - ledgerTrendRow.sales;
   }, [ledgerTrendRow]);
 
+  // Money paid OUT to the customer inside the selected month. The snapshot's `monthly` jsonb carries
+  // sales / receipts / outstanding / overdue only, so this is derived from the transactions the page
+  // already holds rather than rendered as a fabricated ₹0 — the trap LIVE_UNAVAILABLE_MONTHLY exists
+  // to avoid. Returned in LAKHS, the unit the strip below renders.
+  const ledgerPaymentsOut = useMemo(() => {
+    if (!ledgerMonth) return 0;
+    let total = 0;
+    for (const r of receiptTxns) {
+      if (!r.date || (r.type ?? "").toLowerCase() !== "payment_out") continue;
+      const d = new Date(r.date);
+      const label = d.toLocaleString("en-US", { month: "short" }) + "-" + String(d.getFullYear()).slice(2);
+      if (label === ledgerMonth) total += Math.abs(r.amount);
+    }
+    return total / 100_000;
+  }, [ledgerMonth, receiptTxns]);
+
   const ledgerInvoices = useMemo(() => {
     if (!ledgerMonth) return [];
     return invoices.filter((inv) => {
@@ -1371,6 +1450,7 @@ export default function CustomerDetail() {
   const debitNotesAmt   = (customer as any).debitNotes ?? 0;
   const journalAdjAmt   = (customer as any).journalAdjustments ?? 0;
   const checkReturnsAmt = customer.checkReturns ?? 0;
+  const paymentsOutAmt  = (customer as any).paymentsOut ?? 0;
 
   type SummaryItem = {
     label: string;
@@ -1379,6 +1459,9 @@ export default function CustomerDetail() {
     onClick?: () => void;
     active?: boolean;
     drCr?: 'debit' | 'credit';
+    /** Bridge lines shown under the figure, so a netted card explains itself in place rather
+     *  than leaving the reader to wonder why it disagrees with the bills below. */
+    breakdown?: { label: string; value: string }[];
   };
 
   const summaryItems: SummaryItem[] = [
@@ -1391,11 +1474,18 @@ export default function CustomerDetail() {
     },
     {
       label: "Overdue",
-      value: fmt(customer.overdue),
+      // NET of On Account — money already received that is settling no open invoice. The
+      // bills listed further down this page still show their gross amounts, so the bridge
+      // below is what reconciles the two.
+      value: fmt(overdueNet),
       destructive: true,
       drCr: 'debit',
       onClick: () => applyKpiFilter("sales", "overdue"),
       active: isKpiActive("sales", "overdue"),
+      breakdown: onAccount > 0 ? [
+        { label: "Bills overdue", value: fmt(customer.overdue) },
+        { label: "Less received, not matched to a bill", value: `−${fmt(onAccount)}` },
+      ] : undefined,
     },
     { label: "Credit Limit",   value: fmt(customer.creditLimit) },
     { label: "Utilization",    value: customer.creditLimit === 1 ? "—" : `${utilization}%`,  destructive: customer.creditLimit !== 1 && utilization > 100 },
@@ -1457,7 +1547,36 @@ export default function CustomerDetail() {
       onClick: checkReturnsAmt > 0 ? () => applyKpiFilter("check_return", "all") : undefined,
       active: isKpiActive("check_return", "all"),
     },
+    // Live (Tally) only — the pipeline has no equivalent, so the card stays hidden there rather
+    // than showing a permanent ₹0. Money paid OUT on a Payment voucher not named CHQ.R: refunds
+    // and unnamed bounces. It used to be counted in no figure at all.
+    ...(paymentsOutAmt > 0
+      ? [{
+          label: "Payments Out",
+          value: fmtINRMoney(paymentsOutAmt),
+          destructive: true,
+          drCr: 'debit' as const,
+          onClick: () => applyKpiFilter("payment_out", "all"),
+          active: isKpiActive("payment_out", "all"),
+        }]
+      : []),
   ];
+
+  /**
+   * The cards, split into two bands: where the customer STANDS, and what MOVED.
+   *
+   * They used to be one flat run through a fixed 6-column grid. That worked at exactly 12 cards and
+   * broke the moment a 13th appeared — "Payments Out" (Live only) wrapped onto a row of its own and
+   * left a bare white band the full width of the page. Each band now sizes its columns to its own
+   * card count, so a row is always full whether or not that card is there.
+   */
+  const POSITION_LABELS = new Set([
+    "Outstanding", "Overdue", "Credit Limit", "Utilization", "Credit Period", "Opening Balance",
+  ]);
+  const kpiBands = [
+    { title: "Position & terms", items: summaryItems.filter((i) => POSITION_LABELS.has(i.label)) },
+    { title: "Activity",         items: summaryItems.filter((i) => !POSITION_LABELS.has(i.label)) },
+  ].filter((b) => b.items.length > 0);
 
   const handleExport = async () => {
     if (!customer || exporting) return;
@@ -1510,12 +1629,18 @@ export default function CustomerDetail() {
             .map(([k, label]) => ({ bucket: label, amount: Math.round(buckets[k] ?? 0) }))
             .filter((a) => a.amount !== 0)
         : [];
+      // Mirror the on-screen strip: gross buckets, then the deduction, then the net Total —
+      // otherwise the sheet's rows would sum to a different figure than the Overdue KPI above.
+      if (onAccount > 0) {
+        aging.push({ bucket: "Less: On Account", amount: -Math.round(onAccount) });
+        aging.push({ bucket: "Total Overdue (net)", amount: Math.round(overdueNet) });
+      }
 
-      // KPI cards as displayed.
-      const kpis = summaryItems.map((k) => ({
-        label: k.label,
-        value: k.drCr ? `${k.value} (${k.drCr})` : k.value,
-      }));
+      // KPI cards as displayed, with any bridge lines as their own rows beneath their card.
+      const kpis = summaryItems.flatMap((k) => [
+        { label: k.label, value: k.drCr ? `${k.value} (${k.drCr})` : k.value },
+        ...(k.breakdown ?? []).map((b) => ({ label: `    ${b.label}`, value: b.value })),
+      ]);
 
       await exportCustomerPdf([exportTopRef.current, exportMonthlyRef.current], meta);
       exportCustomerXlsx({
@@ -1770,22 +1895,42 @@ export default function CustomerDetail() {
 
       {/* Export region 1: KPI cards → Trends → Aging */}
       <div ref={exportTopRef} className="space-y-6 bg-background">
-      {/* KPI Summary — clickable cards apply a filter to the Transactions ledger */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {summaryItems.map((item) => {
+      {/* KPI Summary — clickable cards apply a filter to the Transactions ledger.
+          Banded rather than one long grid (see kpiBands). The tinted panel behind each band is
+          load-bearing, not decoration: --background and --surface are BOTH pure white, so white
+          cards on a white page were separated only by a 10%-lightness border and read as one
+          undifferentiated sheet. */}
+      <div className="space-y-3">
+      {kpiBands.map((band) => (
+      <section key={band.title} className="rounded-card border border-border/70 bg-surface-alt p-3">
+      <h2 className="mb-2 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {band.title}
+      </h2>
+      <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${LG_COLS[band.items.length] ?? "lg:grid-cols-6"}`}>
+        {band.items.map((item) => {
           const clickable = !!item.onClick;
-          const baseCls = `rounded-lg border bg-card text-card-foreground shadow-sm rounded-card border-border bg-surface transition-all ${
+          const baseCls = `rounded-lg border text-card-foreground shadow-sm rounded-card border-border bg-surface transition-all ${
             item.active ? "ring-2 ring-primary border-primary" : ""
           }`;
           const innerCls = "p-4 space-y-1";
           const labelEl = <p className="text-xs text-muted-foreground">{item.label}</p>;
           const valueEl = (
-            <p className={`text-lg font-bold ${item.destructive ? "text-destructive" : "text-foreground"}`}>
+            <p className={`text-lg font-bold tabular-nums ${item.destructive ? "text-destructive" : "text-foreground"}`}>
               {item.value}
             </p>
           );
           const drCrEl = item.drCr ? (
             <p className="text-[10px] text-muted-foreground leading-none mt-0.5">({item.drCr})</p>
+          ) : null;
+          const breakdownEl = item.breakdown?.length ? (
+            <div className="mt-1.5 pt-1.5 border-t border-border/60 space-y-0.5">
+              {item.breakdown.map((b) => (
+                <div key={b.label} className="flex items-baseline justify-between gap-2">
+                  <span className="text-[10px] text-muted-foreground leading-tight">{b.label}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">{b.value}</span>
+                </div>
+              ))}
+            </div>
           ) : null;
           if (clickable) {
             return (
@@ -1799,6 +1944,7 @@ export default function CustomerDetail() {
                   {labelEl}
                   {valueEl}
                   {drCrEl}
+                  {breakdownEl}
                 </div>
               </button>
             );
@@ -1809,11 +1955,26 @@ export default function CustomerDetail() {
                 {labelEl}
                 {valueEl}
                 {drCrEl}
+                {breakdownEl}
               </div>
             </div>
           );
         })}
       </div>
+      </section>
+      ))}
+      </div>
+
+      {/* Which basis Overdue is on. Stated once here rather than repeated on every block, and
+          only where it changes something — a customer with no unmatched money gets no note. */}
+      {onAccount > 0 && (
+        <p className="text-[11px] text-muted-foreground italic -mt-1">
+          <span className="font-medium not-italic">Overdue is shown after deducting On Account</span> — {fmt(onAccount)} received
+          from this customer that is settling no open invoice (untagged receipts, machine advances and credit notes alike).
+          It reduced their ledger balance but left the old bills reading unpaid. The invoice list, the age bars and every month
+          before the current one below still show the bills themselves, i.e. gross.
+        </p>
+      )}
 
 
       {/* Follow-ups — the case file. Placed directly under the KPI cards because it's what you
@@ -2005,7 +2166,12 @@ export default function CustomerDetail() {
                   }`}
                 >
                   <span className="block text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Overdue</span>
-                  <span className="block text-sm font-bold font-mono mt-0.5 text-destructive">{fmt(customer.overdue)}</span>
+                  <span className="block text-sm font-bold font-mono mt-0.5 text-destructive">{fmt(overdueNet)}</span>
+                  {onAccount > 0 && (
+                    <span className="block text-[10px] text-muted-foreground mt-0.5">
+                      less {fmt(onAccount)} On Account
+                    </span>
+                  )}
                   {(customer as any).remainingOpeningBalance > 0 && (
                     <span className="block text-[10px] text-muted-foreground mt-0.5">
                       incl. {fmt((customer as any).remainingOpeningBalance)} OB
@@ -2063,7 +2229,10 @@ export default function CustomerDetail() {
                   <CardTitle className="text-sm font-semibold flex items-center gap-2">
                     <Clock className="h-4 w-4 text-destructive" />
                     Overdue Aging Breakdown
-                    <span className="text-xs font-normal text-muted-foreground ml-1">— invoice-level only; opening balance excluded</span>
+                    <span className="text-xs font-normal text-muted-foreground ml-1">
+                      — invoice-level only; opening balance excluded
+                      {onAccount > 0 ? "; bars are gross, On Account is deducted from the Total" : ""}
+                    </span>
                   </CardTitle>
                   <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform duration-200 shrink-0 ${agingOpen ? "rotate-180" : ""}`} />
                 </button>
@@ -2128,12 +2297,31 @@ export default function CustomerDetail() {
                       </span>
                     </div>
                   )}
+                  {/* On Account — deducted from the Total on the right, but NOT from the bars
+                      above: a receipt carrying no invoice reference cannot be attributed to one
+                      age bracket, so the buckets stay gross rather than guessing which slice the
+                      money was meant to pay. The strip therefore reads
+                      bars + opening balance − On Account = Total. */}
+                  {onAccount > 0 && (
+                    <div className="flex items-center justify-between gap-3 px-3 py-1.5 rounded-input bg-emerald-50/60 dark:bg-emerald-950/20 border border-dashed border-emerald-600/30">
+                      <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
+                      <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(onAccount)}</span>
+                      <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
+                        {customer.overdue > 0 ? `${((onAccount / customer.overdue) * 100).toFixed(1)}%` : "—"}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {/* Right — total overdue */}
                 <div className="flex items-center justify-center bg-destructive/10 border border-destructive/20 rounded-input px-6 py-3 shrink-0">
                   <div className="text-center">
                     <p className="text-[10px] text-destructive font-medium uppercase tracking-wide">Total Overdue</p>
-                    <p className="text-xl font-bold font-mono text-destructive mt-1">{fmt(customer.overdue)}</p>
+                    <p className="text-xl font-bold font-mono text-destructive mt-1">{fmt(overdueNet)}</p>
+                    {onAccount > 0 && (
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        bills {fmt(customer.overdue)} less On Account
+                      </p>
+                    )}
                     {(customer as any).remainingOpeningBalance > 0 && (
                       <p className="text-[10px] text-muted-foreground mt-1">
                         incl. {fmt((customer as any).remainingOpeningBalance)} OB
@@ -2471,6 +2659,17 @@ export default function CustomerDetail() {
               </Button>
             </div>
           </div>
+          {/* Why the Pending total here can still sit above the Overdue tile: advances filed
+              against a bill ref ARE rows below and net themselves out, but money received with
+              no bill reference at all belongs to no bill and so can have no row. */}
+          {onAccount > 0 && (
+            <p className="text-[11px] text-muted-foreground italic mt-1">
+              Bills carrying a credit balance (machine advances, "FOR ADJUSTMENT", credit notes filed against a
+              ref) are listed below with no invoice value, so the Pending total is already net of them. Money
+              received against no bill reference at all has no bill to sit on — it is deducted in the Overdue tile
+              above, not here.
+            </p>
+          )}
         </CardHeader>
         <CollapsibleContent>
         <ScrollableTable>
@@ -2598,8 +2797,11 @@ export default function CustomerDetail() {
                   { label: "+ Debit Notes",       value: fmtL((ledgerTrendRow as any).debitNotes ?? 0),                  sub: "billed extra", dn: true },
                   { label: "± Journal (Net)",     value: fmtLDrCr((ledgerTrendRow as any).journalAdjustments ?? 0),     sub: "Dr − Cr", jn: true },
                   { label: "+ Chq Returns",       value: fmtL(ledgerTrendRow.checkReturns),                            sub: "bounced cheques", chq: true },
+                  // Refunds and unnamed bounces. Hidden rather than shown as ₹0 when there are none,
+                  // and on the pipeline source (which has no such rows) it never appears at all.
+                  { label: "+ Payments Out",      value: fmtL(ledgerPaymentsOut),                                     sub: "refunds / bounces", chq: true, hide: ledgerPaymentsOut <= 0 },
                   { label: "Closing Outstanding", value: fmtL(Math.abs(ledgerTrendRow.outstanding)),                             sub: "end of month", closing: true },
-                ].map((item) => (
+                ].filter((item) => !(item as any).hide).map((item) => (
                   <div
                     key={item.label}
                     className={`rounded-card border p-3 space-y-0.5 ${
