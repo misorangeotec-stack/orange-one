@@ -34,7 +34,10 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * dropped it (confirm_receipt now advances straight to `result`). Nothing routes
  * into either any more, but rows raised earlier still sit in them, so both stay
  * wired and their queues self-hide once those rows drain. Both are filed under the
- * `lab` branch, which is where a legacy inward row belongs.
+ * `lab` branch, which is where a legacy inward row belongs — and they are ORDERED
+ * with it, `receive_sample` then `testing`, so the two Setup screens (which render
+ * STEPS as one flat list) don't strand `testing` in the middle of the outward
+ * steps it no longer belongs to.
  *
  * Statuses are NOT step keys — closed / on_hold / cancelled live in RequestStatus
  * (types/index.ts), never here.
@@ -83,9 +86,14 @@ export const STEPS: StepDef[] = [
   { key: "lab_process", index: 5, title: "Lab Process", short: "Lab", scope: "request", branches: ["lab"] },
   { key: "result_received", index: 6, title: "Result Received", short: "Result Recd", scope: "request", branches: ["lab"] },
   { key: "receive_sample", index: 7, title: "Sample Received at Lab", short: "Received", scope: "request", branches: ["lab"] },
-  { key: "send_sample", index: 8, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
-  { key: "confirm_receipt", index: 9, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
-  { key: "testing", index: 10, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
+  // ORDER MATTERS HERE. `testing` sits with the lab block because that is the only
+  // branch it still serves — it follows `receive_sample`, the step legacy inward
+  // rows reach it from. Leaving it after confirm_receipt (where it used to live,
+  // when outward still ran it) put "Testing — Lab Testing" between two outward
+  // steps in Setup, which reads like an outward step and is not one.
+  { key: "testing", index: 8, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
+  { key: "send_sample", index: 9, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
+  { key: "confirm_receipt", index: 10, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
   // "Result Received" is also the LAB branch's step 6 title. Two different keys,
   // deliberately the same name: on both branches this is the point the result
   // comes back to us. Everywhere they could appear together they are separated by
@@ -96,6 +104,24 @@ export const STEPS: StepDef[] = [
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
+
+/**
+ * THE steps whose owners split by SOURCE — a Domestic dispatch and an Export one
+ * are handled by different people, so Setup → Step Owners shows two rows for each
+ * of these and the owners live in `fms_sampling_step_source_owners`.
+ *
+ * `result_handover` is deliberately NOT here: its actor is already chosen per
+ * request ("Result handover to"), so a source split would be redundant.
+ *
+ * ⚠ MIRRORS the SQL function `fms_sampling_step_is_source_scoped(text)` and the
+ * CHECK on `fms_sampling_step_source_owners.step_key`. Change one, change all
+ * three in the same commit — the UI would otherwise offer an owner mapping the
+ * server refuses to store, or hide one it still honours.
+ */
+export const SOURCE_SCOPED_STEPS = ["send_sample", "confirm_receipt", "result"] as const;
+
+export const isSourceScoped = (key: string): boolean =>
+  (SOURCE_SCOPED_STEPS as readonly string[]).includes(key);
 
 /**
  * The branches a step serves, in words — for the two Setup screens that render

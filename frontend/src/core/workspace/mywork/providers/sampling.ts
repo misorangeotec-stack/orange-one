@@ -22,10 +22,14 @@ import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import { fetchSamplingData, samplingQueryKey } from "@/apps/sampling/data/samplingFetch";
 import { buildQueueEntries, samplingSnapshotFrom } from "@/apps/sampling/lib/queues";
-import { stepByKey } from "@/apps/sampling/lib/steps";
-import { confirmerSourceOf } from "@/apps/sampling/lib/format";
+import { isSourceScoped, stepByKey } from "@/apps/sampling/lib/steps";
+import { confirmerSourceOf, outwardSourceOf } from "@/apps/sampling/lib/format";
 import { isMineByStepOwners, type StepOwnerRow } from "@/shared/lib/fmsOwners";
-import type { Confirmer as SamplingConfirmer, SamplingRequest } from "@/apps/sampling/types";
+import type {
+  Confirmer as SamplingConfirmer,
+  SamplingRequest,
+  StepSourceOwner,
+} from "@/apps/sampling/types";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
 
 /**
@@ -41,9 +45,25 @@ const isMineBySampling = (
   uid: string,
   r: SamplingRequest | undefined,
   owners: StepOwnerRow[],
+  sourceOwners: StepSourceOwner[],
   confirmers: SamplingConfirmer[],
 ): boolean => {
-  if (isMineByStepOwners(stepKey, uid, owners)) return true;
+  // OWNERSHIP OF THE THREE OUTWARD STEPS IS PER SOURCE, so the shared flat lookup
+  // is wrong for them in both directions: it would find nothing (the server keeps
+  // those rows inert) or, fed the union, show a Domestic owner Export work.
+  // `isMineByStepOwners` stays untouched — it is shared with HR and Office Supplies.
+  if (isSourceScoped(stepKey)) {
+    if (
+      r &&
+      sourceOwners.some(
+        (o) => o.stepKey === stepKey && o.source === outwardSourceOf(r.receiveVia) && o.employeeIds.includes(uid),
+      )
+    ) {
+      return true;
+    }
+  } else if (isMineByStepOwners(stepKey, uid, owners)) {
+    return true;
+  }
   if (!r) return false;
   switch (stepKey) {
     case "receive_sample":
@@ -57,6 +77,9 @@ const isMineBySampling = (
     // Outward: the chosen sender dispatches it (the inward collector's twin).
     case "send_sample":
       return !!r.senderId && r.senderId === uid;
+    // The person the result is handed over TO closes the request.
+    case "result_handover":
+      return !!r.resultHandoverToId && r.resultHandoverToId === uid;
     // Receipt confirmers are mapped PER SOURCE — a Domestic confirmer must not be
     // shown an Export dispatch (the server refuses it either way).
     case "confirm_receipt":
@@ -79,10 +102,11 @@ function useSamplingWork(active: boolean): MyWorkResult {
   const items = useMemo<WorkItem[]>(() => {
     if (!data || !uid) return [];
     const owners = data.stepOwners;
+    const sourceOwners = data.stepSourceOwners;
     const confirmers = data.confirmers;
     const byId = new Map(data.requests.map((r) => [r.id, r]));
     return buildQueueEntries(samplingSnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla }))
-      .filter((e) => isAdmin || isMineBySampling(e.stepKey, uid, byId.get(e.requestId), owners, confirmers))
+      .filter((e) => isAdmin || isMineBySampling(e.stepKey, uid, byId.get(e.requestId), owners, sourceOwners, confirmers))
       .map((e) => ({
         id: `sampling:${e.requestId}:${e.stepKey}`,
         source: "sampling",
@@ -93,7 +117,7 @@ function useSamplingWork(active: boolean): MyWorkResult {
         to: `/sampling/requests/${e.requestId}`,
         // "direct" = named on this request or a step owner; anything an admin sees
         // beyond that is the team's.
-        assignment: isMineBySampling(e.stepKey, uid, byId.get(e.requestId), owners, confirmers)
+        assignment: isMineBySampling(e.stepKey, uid, byId.get(e.requestId), owners, sourceOwners, confirmers)
           ? ("direct" as const)
           : ("team" as const),
         isApproval: false,

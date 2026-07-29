@@ -6,22 +6,42 @@ import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelec
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useSamplingStore } from "../../store";
-import { STEPS, branchLabelsOf, type StepKey } from "../../lib/steps";
+import { STEPS, branchLabelsOf, isSourceScoped, type StepDef, type StepKey } from "../../lib/steps";
+import { SAMPLING_SOURCES, SAMPLING_SOURCE_LABEL, type SamplingSource } from "../../types";
 
 /**
  * Step Owners (admin). `request` is never owned — every granted user may raise one,
  * so it is barred (CHECK constraint) and absent here. Every other step's owners are
  * the notified / authorized actors for that step.
+ *
+ * THE THREE OUTWARD STEPS GET TWO ROWS EACH — Domestic and Export — because a
+ * dispatch abroad and one down the road are different people's work. Those rows
+ * write to a different table (`fms_sampling_step_source_owners`), which for those
+ * steps is the ONLY authority: the server answers empty from the flat table for
+ * them, so nothing an admin cannot see here can ever grant rights.
+ *
+ * `result_handover` is single-rowed on purpose: its actor is already chosen per
+ * request ("Result handover to"), so a source split would be redundant.
  */
+type OwnerRow = { st: StepDef; source: SamplingSource | null };
+
 export default function StepOwnersSection() {
   const s = useSamplingStore();
-  const [editing, setEditing] = useState<StepKey | null>(null);
+  const [editing, setEditing] = useState<{ stepKey: StepKey; source: SamplingSource | null } | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const assignableSteps = useMemo(() => STEPS.filter((st) => st.key !== "request"), []);
+  const ownerRows = useMemo<OwnerRow[]>(
+    () =>
+      STEPS.filter((st) => st.key !== "request").flatMap<OwnerRow>((st) =>
+        isSourceScoped(st.key)
+          ? SAMPLING_SOURCES.map((source) => ({ st, source }))
+          : [{ st, source: null }],
+      ),
+    [],
+  );
 
   const deptOptions: MultiOption[] = useMemo(
     () => s.orgDepartments.map((d) => ({ value: d.id, label: d.name })),
@@ -44,12 +64,15 @@ export default function StepOwnersSection() {
     setEmpIds((prev) => prev.filter((id) => allowed.has(id)));
   };
 
-  const open = (stepKey: StepKey) => {
-    const cur = s.stepOwnerFor(stepKey);
+  const ownerOf = (stepKey: StepKey, source: SamplingSource | null) =>
+    source ? s.stepSourceOwnerFor(stepKey, source) : s.ownersFor(stepKey, null);
+
+  const open = (stepKey: StepKey, source: SamplingSource | null) => {
+    const cur = ownerOf(stepKey, source);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
     setErr(null);
-    setEditing(stepKey);
+    setEditing({ stepKey, source });
   };
 
   const save = async () => {
@@ -57,7 +80,9 @@ export default function StepOwnersSection() {
     setBusy(true);
     setErr(null);
     try {
-      await s.setStepOwner(editing, { departmentIds: deptIds, designationId: null, employeeIds: empIds });
+      const input = { departmentIds: deptIds, designationId: null, employeeIds: empIds };
+      if (editing.source) await s.setStepSourceOwner(editing.stepKey, editing.source, input);
+      else await s.setStepOwner(editing.stepKey, input);
       setEditing(null);
     } catch (e) {
       setErr((e as Error).message);
@@ -66,7 +91,10 @@ export default function StepOwnersSection() {
     }
   };
 
-  const editingStep = STEPS.find((st) => st.key === editing);
+  const editingStep = STEPS.find((st) => st.key === editing?.stepKey);
+  const editingScope = [editingStep ? branchLabelsOf(editingStep) : "", editing?.source ? SAMPLING_SOURCE_LABEL[editing.source] : ""]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="space-y-3">
@@ -82,16 +110,17 @@ export default function StepOwnersSection() {
               </tr>
             </thead>
             <tbody>
-              {assignableSteps.map((st) => {
-                const owner = s.stepOwnerFor(st.key);
+              {ownerRows.map(({ st, source }) => {
+                const owner = ownerOf(st.key, source);
                 const names = (owner?.employeeIds ?? []).map((id) => s.profileById(id)?.name ?? "Unknown");
                 return (
-                  <tr key={st.key} className="border-b border-line/70 last:border-0 hover:bg-page/60">
+                  <tr key={`${st.key}:${source ?? ""}`} className="border-b border-line/70 last:border-0 hover:bg-page/60">
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <button onClick={() => open(st.key)} className="text-[12.5px] font-semibold text-orange hover:underline">
+                      <button onClick={() => open(st.key, source)} className="text-[12.5px] font-semibold text-orange hover:underline">
                         Edit
                       </button>
                     </td>
+                    {/* The number belongs to the STEP, so both of a split step's rows carry it. */}
                     <td className="px-4 py-3 text-grey-2">{st.index}</td>
                     <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">
                       {st.title}
@@ -99,6 +128,11 @@ export default function StepOwnersSection() {
                           title "Result Received" (lab's result_received, outward's result). */}
                       {branchLabelsOf(st) && (
                         <span className="ml-2 text-[11.5px] font-normal text-grey-2">{branchLabelsOf(st)}</span>
+                      )}
+                      {source && (
+                        <span className="ml-1.5 text-[11.5px] font-semibold text-orange">
+                          · {SAMPLING_SOURCE_LABEL[source]}
+                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -112,10 +146,17 @@ export default function StepOwnersSection() {
         </ScrollableTable>
       </Card>
 
+      <p className="text-[12.5px] text-grey-2">
+        Sample Sent, Receipt Confirmed and Result Received are owned <strong className="font-semibold text-navy">separately
+        for Domestic and Export</strong> dispatches — an Export owner never sees a Domestic request, and the other way
+        round. Receipt confirmers in Masters can confirm on top of these owners. A legacy inward request sitting at
+        Result Received counts as Domestic.
+      </p>
+
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title={`Owners — ${editingStep?.title ?? ""}${editingStep && branchLabelsOf(editingStep) ? ` (${branchLabelsOf(editingStep)})` : ""}`}
+        title={`Owners — ${editingStep?.title ?? ""}${editingScope ? ` (${editingScope})` : ""}`}
         subtitle="Pick a department, then every employee who owns this step. All of them can action it and are notified."
         footer={
           <>

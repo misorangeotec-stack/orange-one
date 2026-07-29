@@ -20,7 +20,8 @@ export default function Setup() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Who owns each step, the per-step deadlines, the process coordinators, who owns the company master, and email alerts.
+          Who owns each step (the outward steps separately for Domestic and Export), the per-step deadlines, the
+          process coordinators, who owns each master, and email alerts.
         </p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />

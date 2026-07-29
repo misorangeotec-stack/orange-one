@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_sampling_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { ConfirmerSource, Direction, ReceiveVia, RequirementType, SampleItem, SamplingEntityType, SamplingMasterType, TransportBorne } from "../types";
+import type { ConfirmerSource, Direction, ReceiveVia, RequirementType, SampleItem, SamplingEntityType, SamplingMasterType, SamplingSource, TransportBorne } from "../types";
 
 /**
  * Sampling FMS write layer. The company master + config are written directly under
@@ -232,12 +232,28 @@ export interface SendInput {
   sentDate: string | null;
   gateEntryNo: string | null;
   sentQty: string | null;
+  /** Pass a key (even null) to REPLACE the gate pass; omit both keys to keep it. */
+  docPath?: string | null;
+  docName?: string | null;
 }
-const sendPayload = (input: SendInput) => ({
-  sent_date: input.sentDate ?? "",
-  gate_entry_no: input.gateEntryNo ?? "",
-  sent_qty: input.sentQty ?? "",
-});
+const sendPayload = (input: SendInput) => {
+  const p: Record<string, unknown> = {
+    sent_date: input.sentDate ?? "",
+    gate_entry_no: input.gateEntryNo ?? "",
+    sent_qty: input.sentQty ?? "",
+    // DEPLOY-WINDOW MARKER. The RPC switches the "gate entry no. + gate pass are
+    // required" rules on only when it sees this, so the previously deployed
+    // frontend — which cannot upload a gate pass — keeps dispatching through the
+    // gap between the migration and this build going live. It cannot key off the
+    // doc keys themselves: on an edit those are deliberately ABSENT unless the
+    // file is being replaced.
+    client_v: 2,
+  };
+  // The RPC keys off `p ? 'send_doc_path'`: send the key only when replacing.
+  if (input.docPath !== undefined) p.send_doc_path = input.docPath ?? "";
+  if (input.docName !== undefined) p.send_doc_name = input.docName ?? "";
+  return p;
+};
 export async function recordSend(requestId: string, input: SendInput): Promise<void> {
   const { error } = await db.rpc("fms_sampling_record_send", { p_req: requestId, p: sendPayload(input) });
   if (error) throw new Error(error.message);
@@ -249,19 +265,19 @@ export async function updateSend(requestId: string, input: SendInput): Promise<v
 
 export interface ConfirmInput {
   partyReceivedDate: string | null;
+  /** Optional forecast — when the party expects to test it. Always sent, so it can be cleared. */
+  partyTestingDate: string | null;
 }
+const confirmPayload = (input: ConfirmInput) => ({
+  party_received_date: input.partyReceivedDate ?? "",
+  party_testing_date: input.partyTestingDate ?? "",
+});
 export async function recordConfirm(requestId: string, input: ConfirmInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_record_confirm", {
-    p_req: requestId,
-    p: { party_received_date: input.partyReceivedDate ?? "" },
-  });
+  const { error } = await db.rpc("fms_sampling_record_confirm", { p_req: requestId, p: confirmPayload(input) });
   if (error) throw new Error(error.message);
 }
 export async function updateConfirm(requestId: string, input: ConfirmInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_update_confirm", {
-    p_req: requestId,
-    p: { party_received_date: input.partyReceivedDate ?? "" },
-  });
+  const { error } = await db.rpc("fms_sampling_update_confirm", { p_req: requestId, p: confirmPayload(input) });
   if (error) throw new Error(error.message);
 }
 
@@ -286,7 +302,13 @@ export async function updateTesting(requestId: string, input: TestingInput): Pro
 
 export interface ResultInput {
   resultComment: string;
-  resultOwner: string | null;
+  /**
+   * Whom the result is handed over to, from the result-recipient master. Replaces
+   * the legacy free-text `resultOwner`, which the RPC no longer writes at all —
+   * old rows keep theirs and the UI falls back to it.
+   */
+  resultHandoverToId: string | null;
+  resultHandoverToName: string | null;
   /** Pass a key (even null) to REPLACE the attachment; omit both keys to keep it. */
   attachmentPath?: string | null;
   attachmentName?: string | null;
@@ -294,7 +316,10 @@ export interface ResultInput {
 const resultPayload = (input: ResultInput) => {
   const p: Record<string, unknown> = {
     result_comment: input.resultComment,
-    result_owner: input.resultOwner ?? "",
+    // ALWAYS sent (even empty): its presence is what tells the RPC this is the new
+    // client, so it can require the pick without breaking the deployed one.
+    result_handover_to_id: input.resultHandoverToId ?? "",
+    result_handover_to_name: input.resultHandoverToName ?? "",
   };
   // The RPC keys off `p ? 'attachment_path'`: send the key only when replacing.
   if (input.attachmentPath !== undefined) p.attachment_path = input.attachmentPath ?? "";
@@ -367,6 +392,11 @@ export async function uploadLabDocument(requestId: string, file: File): Promise<
   return uploadDocument(requestId, "lab", file);
 }
 
+/** Upload the outward gate pass / dispatch document; returns the stored path + name. */
+export async function uploadSendDocument(requestId: string, file: File): Promise<{ path: string; name: string }> {
+  return uploadDocument(requestId, "send", file);
+}
+
 /** Create a short-lived signed URL to view/download a stored result document. */
 export async function resultDocumentUrl(path: string): Promise<string> {
   const { data, error } = await supabase.storage.from(DOCS_BUCKET).createSignedUrl(path, 60 * 10);
@@ -391,6 +421,32 @@ export async function setStepOwner(stepKey: string, input: StepOwnerInput): Prom
       employee_ids: input.employeeIds,
     },
     { onConflict: "step_key" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Owners of a SOURCE-SCOPED step (send_sample / confirm_receipt / result), where
+ * a Domestic dispatch and an Export one are different people's work.
+ *
+ * A SIBLING of setStepOwner, not an overload of it: two tables, two conflict
+ * targets. Keeping them apart is what leaves `onConflict: "step_key"` above
+ * demonstrably correct.
+ */
+export async function setStepSourceOwner(
+  stepKey: string,
+  source: SamplingSource,
+  input: StepOwnerInput,
+): Promise<void> {
+  const { error } = await db.from("fms_sampling_step_source_owners").upsert(
+    {
+      step_key: stepKey,
+      source,
+      department_ids: input.departmentIds,
+      designation_id: input.designationId,
+      employee_ids: input.employeeIds,
+    },
+    { onConflict: "step_key,source" },
   );
   if (error) throw new Error(error.message);
 }
@@ -423,7 +479,7 @@ export async function updateCompany(id: string, input: CompanyInput): Promise<vo
   if (error) throw new Error(error.message);
 }
 
-/** Collector, hand-over recipient + sender masters: a display name mapped to an app user. */
+/** Collector, hand-over recipient, sender + result-handover-to masters: a display name mapped to an app user. */
 export interface PersonMasterInput {
   name: string;
   userId: string;
@@ -476,6 +532,15 @@ export async function insertSender(input: PersonMasterInput): Promise<void> {
 }
 export async function updateSender(id: string, input: PersonMasterInput): Promise<void> {
   const { error } = await db.from("fms_sampling_senders").update(personRow(input)).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+export async function insertResultRecipient(input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_result_recipients").insert(personRow(input));
+  if (error) throw new Error(error.message);
+}
+export async function updateResultRecipient(id: string, input: PersonMasterInput): Promise<void> {
+  const { error } = await db.from("fms_sampling_result_recipients").update(personRow(input)).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

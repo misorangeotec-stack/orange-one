@@ -14,6 +14,7 @@ import {
   insertCompany as insertCompanyWrite,
   insertRecipient as insertRecipientWrite,
   insertConfirmer as insertConfirmerWrite,
+  insertResultRecipient as insertResultRecipientWrite,
   insertSender as insertSenderWrite,
   markNotificationsRead as markNotificationsReadWrite,
   recordCollect as recordCollectWrite,
@@ -32,6 +33,7 @@ import {
   setConfig as setConfigWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
+  setStepSourceOwner as setStepSourceOwnerWrite,
   submitRequest as submitRequestWrite,
   updateCollect as updateCollectWrite,
   updateCollector as updateCollectorWrite,
@@ -48,6 +50,7 @@ import {
   updateSampleToLab as updateSampleToLabWrite,
   updateSend as updateSendWrite,
   updateConfirmer as updateConfirmerWrite,
+  updateResultRecipient as updateResultRecipientWrite,
   updateSender as updateSenderWrite,
   updateTesting as updateTestingWrite,
   type CollectInput,
@@ -88,23 +91,26 @@ import {
   type SamplingSnapshot,
   type StageEntry,
 } from "./lib/queues";
-import { confirmerSourceOf } from "./lib/format";
+import { confirmerSourceOf, outwardSourceOf } from "./lib/format";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
-import type { StepKey } from "./lib/steps";
+import { isSourceScoped, type StepKey } from "./lib/steps";
 import type {
   Collector,
   Company,
   Confirmer,
   Designation,
   HandoverRecipient,
+  ResultRecipient,
   SamplingActivity,
   SamplingEntityType,
   SamplingMasterManager,
   SamplingMasterType,
   SamplingNotification,
   SamplingRequest,
+  SamplingSource,
   Sender,
   StepOwner,
+  StepSourceOwner,
 } from "./types";
 
 const QK = SAMPLING_QK;
@@ -133,16 +139,28 @@ interface SamplingStoreValue {
   activeSenders: Sender[];
   confirmers: Confirmer[];
   activeConfirmers: Confirmer[];
+  resultRecipients: ResultRecipient[];
+  activeResultRecipients: ResultRecipient[];
 
   // config
   stepOwners: StepOwner[];
-  stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
+  stepSourceOwners: StepSourceOwner[];
+  /**
+   * The owners of a step FOR ONE REQUEST — source-scoped steps resolve through the
+   * request's Domestic/Export bucket, everything else through the flat table.
+   * Deliberately request-shaped: a bare `stepOwnerFor(stepKey)` would silently
+   * report the legacy (inert) owners for the three outward steps.
+   */
+  ownersFor: (stepKey: StepKey, r: SamplingRequest | null) => StepOwner | StepSourceOwner | undefined;
+  /** The Setup screen's own lookup: one exact row, by step AND source. */
+  stepSourceOwnerFor: (stepKey: StepKey, source: SamplingSource) => StepSourceOwner | undefined;
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
 
   // capabilities
   isAdmin: boolean;
   isProcessCoordinator: boolean;
+  /** ANY source. NAV VISIBILITY ONLY — never authorization; use canActOn for that. */
   isStepOwner: (stepKey: StepKey) => boolean;
   canActOn: (stepKey: StepKey, r: SamplingRequest) => boolean;
 
@@ -211,6 +229,7 @@ interface SamplingStoreValue {
 
   // config writes
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
+  setStepSourceOwner: (stepKey: StepKey, source: SamplingSource, input: StepOwnerInput) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
 
@@ -225,6 +244,8 @@ interface SamplingStoreValue {
   updateSender: (id: string, input: PersonMasterInput) => Promise<void>;
   insertConfirmer: (input: ConfirmerInput) => Promise<void>;
   updateConfirmer: (id: string, input: ConfirmerInput) => Promise<void>;
+  insertResultRecipient: (input: PersonMasterInput) => Promise<void>;
+  updateResultRecipient: (id: string, input: PersonMasterInput) => Promise<void>;
 }
 
 const Ctx = createContext<SamplingStoreValue | null>(null);
@@ -247,12 +268,14 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const stepOwners = data?.stepOwners ?? [];
+  const stepSourceOwners = data?.stepSourceOwners ?? [];
   const designations = data?.designations ?? [];
   const companies = data?.companies ?? [];
   const collectors = data?.collectors ?? [];
   const recipients = data?.recipients ?? [];
   const senders = data?.senders ?? [];
   const confirmers = data?.confirmers ?? [];
+  const resultRecipients = data?.resultRecipients ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const requests = data?.requests ?? [];
   const activity = data?.activity ?? [];
@@ -264,21 +287,49 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const uid = userId ?? "";
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
 
-    const stepOwnerFor = (stepKey: StepKey) => stepOwners.find((o) => o.stepKey === stepKey);
-    const ownerIdsOf = (stepKey: StepKey): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
+    const stepSourceOwnerFor = (stepKey: StepKey, source: SamplingSource) =>
+      stepSourceOwners.find((o) => o.stepKey === stepKey && o.source === source);
 
+    /**
+     * The owners of `stepKey` FOR THIS REQUEST. The three outward steps resolve
+     * through the request's source bucket; everything else through the flat table.
+     * `null` request → the flat table only, which is correct for the non-scoped
+     * steps and deliberately empty-ish for the scoped ones (the server answers
+     * empty for them too, so nothing hidden can be reported).
+     */
+    const ownersFor = (stepKey: StepKey, r: SamplingRequest | null) =>
+      isSourceScoped(stepKey) && r
+        ? stepSourceOwnerFor(stepKey, outwardSourceOf(r.receiveVia))
+        : isSourceScoped(stepKey)
+          ? undefined
+          : stepOwners.find((o) => o.stepKey === stepKey);
+
+    /** Am I an owner of this step FOR THIS REQUEST? The only owner check authorization may use. */
+    const isStepOwnerForRequest = (stepKey: StepKey, r: SamplingRequest): boolean =>
+      isAdmin || (ownersFor(stepKey, r)?.employeeIds.includes(uid) ?? false);
+
+    // ANY source. NAV VISIBILITY ONLY — the sidebar has no request to test against,
+    // and hiding a queue from a Domestic-only owner just because it is momentarily
+    // empty would be worse than showing it. NEVER use this to authorize an action.
     const isStepOwner = (stepKey: StepKey): boolean =>
-      isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid));
+      isAdmin ||
+      (isSourceScoped(stepKey)
+        ? stepSourceOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid))
+        : stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid)));
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
     // Mirrors fms_sampling_can_act(step, req, uid): admin / coordinator / the
-    // step's owner — PLUS the per-request assignees. Sampling steps are otherwise
-    // owned globally (no per-request HOD). Keep this list and the SQL in step.
+    // step's owner FOR THIS REQUEST — PLUS the per-request assignees. Keep this
+    // list and the SQL in step.
+    //
+    // ⚠ isStepOwnerForRequest, NOT isStepOwner. The bare version compiles and
+    // looks right, and would authorize a Domestic owner on an Export row here
+    // while the server refuses it — the button enables and the save throws.
     const canActOn = (stepKey: StepKey, r: SamplingRequest): boolean =>
       isAdmin ||
       isProcessCoordinator ||
-      isStepOwner(stepKey) ||
+      isStepOwnerForRequest(stepKey, r) ||
       (stepKey === "receive_sample" && !!r.collectorId && r.collectorId === uid) ||
       (stepKey === "sample_collect" && !!r.collectorId && r.collectorId === uid) ||
       (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
@@ -287,8 +338,12 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       (stepKey === "result_received" && !!r.labResultToId && r.labResultToId === uid) ||
       // Outward: the chosen sender dispatches it (the inward collector's twin).
       (stepKey === "send_sample" && !!r.senderId && r.senderId === uid) ||
+      // The person the result is being handed over TO owns the handover step —
+      // which is also why result_handover is NOT source-scoped.
+      (stepKey === "result_handover" && !!r.resultHandoverToId && r.resultHandoverToId === uid) ||
       // Receipt confirmers are mapped PER SOURCE — a Domestic confirmer must not
-      // be offered an Export dispatch (the server refuses it either way).
+      // be offered an Export dispatch (the server refuses it either way). ADDITIVE
+      // to the confirm_receipt source owners, never a replacement.
       (stepKey === "confirm_receipt" &&
         confirmers.some((c) => c.active && c.userId === uid && c.source === confirmerSourceOf(r.receiveVia)));
 
@@ -365,7 +420,10 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         return r ? canActOn(stepKey, r) : false;
       });
 
-    const queueOwnerIds = (e: QueueEntry): string[] => ownerIdsOf(e.stepKey);
+    // Resolves through the request, so a source-scoped step reports the owners
+    // who actually cover that dispatch rather than the (inert) legacy row.
+    const queueOwnerIds = (e: QueueEntry): string[] =>
+      ownersFor(e.stepKey, requestMap.get(e.requestId) ?? null)?.employeeIds ?? [];
 
     const byOrder = <T extends { active: boolean; sortOrder: number; name: string }>(rows: T[]): T[] =>
       rows.filter((r) => r.active).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
@@ -394,9 +452,13 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       activeSenders: byPersonOrder(senders),
       confirmers,
       activeConfirmers: byPersonOrder(confirmers),
+      resultRecipients,
+      activeResultRecipients: byPersonOrder(resultRecipients),
 
       stepOwners,
-      stepOwnerFor,
+      stepSourceOwners,
+      ownersFor,
+      stepSourceOwnerFor,
       processCoordinatorIds,
       stepSla,
 
@@ -565,6 +627,10 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await setStepOwnerWrite(stepKey, input);
         await invalidate();
       },
+      setStepSourceOwner: async (stepKey, source, input) => {
+        await setStepSourceOwnerWrite(stepKey, source, input);
+        await invalidate();
+      },
       setStepSla: async (map) => {
         await setConfigWrite("step_sla", map as unknown as Record<string, unknown>);
         await invalidate();
@@ -614,12 +680,22 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         await updateConfirmerWrite(id, input);
         await invalidate();
       },
+      insertResultRecipient: async (input) => {
+        await insertResultRecipientWrite(input);
+        await invalidate();
+      },
+      updateResultRecipient: async (id, input) => {
+        await updateResultRecipientWrite(id, input);
+        await invalidate();
+      },
     };
   }, [
     // EVERY master array belongs here — leave one out and its dropdown keeps
-    // rendering the pre-edit list until something else re-memoises.
-    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, senders, confirmers, masterManagers, requests, activity,
-    notifications, stepOwners, processCoordinatorIds, stepSla, queryClient,
+    // rendering the pre-edit list until something else re-memoises. The same goes
+    // for stepSourceOwners: canActOn reads it, so leaving it out means a Setup
+    // owner edit doesn't take effect until an unrelated re-memo.
+    isLoading, error, dir, userId, isAdmin, designations, companies, collectors, recipients, senders, confirmers, resultRecipients, masterManagers, requests, activity,
+    notifications, stepOwners, stepSourceOwners, processCoordinatorIds, stepSla, queryClient,
     // personName closes over orgPeople; without this the names stay "Unknown user".
     orgPeople,
   ]);

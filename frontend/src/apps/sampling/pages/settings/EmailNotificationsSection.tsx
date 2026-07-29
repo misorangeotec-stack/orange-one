@@ -44,9 +44,9 @@ export default function EmailNotificationsSection() {
           <h3 className="text-[15px] font-bold text-navy">Email notifications</h3>
           <p className="text-[12.5px] text-grey-2 mt-1 leading-relaxed">
             When on, each Sampling step also emails the next responsible person(s) — the same people who get the
-            in-app alert (a raised request → the chosen collector or sender, receipt confirmed → result owners,
-            result → handover owners, and so on). Emails are sent from support@orangeotec.com. In-app alerts are
-            unaffected.
+            in-app alert (a raised request → the chosen collector or sender, receipt confirmed → the Result Received
+            owners for that dispatch's source, a result → the handover owners plus whoever it is being handed over
+            to, and so on). Emails are sent from support@orangeotec.com. In-app alerts are unaffected.
           </p>
         </div>
 

@@ -16,8 +16,11 @@ import type {
   SamplingMasterType,
   SamplingNotification,
   SamplingRequest,
+  SamplingSource,
   Sender,
+  ResultRecipient,
   StepOwner,
+  StepSourceOwner,
 } from "../types";
 
 /**
@@ -31,6 +34,8 @@ const PAGE = 1000;
 
 type Tbl =
   | "fms_sampling_step_owners"
+  | "fms_sampling_step_source_owners"
+  | "fms_sampling_result_recipients"
   | "fms_sampling_config"
   | "fms_sampling_companies"
   | "fms_sampling_collectors"
@@ -70,6 +75,8 @@ export const samplingQueryKey = (userId: string | null) => [...SAMPLING_QK, user
 
 export interface SamplingData {
   stepOwners: StepOwner[];
+  /** Owners of the source-scoped outward steps. See SOURCE_SCOPED_STEPS. */
+  stepSourceOwners: StepSourceOwner[];
   designations: Designation[];
   config: SamplingConfig;
   companies: Company[];
@@ -77,6 +84,7 @@ export interface SamplingData {
   recipients: HandoverRecipient[];
   senders: Sender[];
   confirmers: Confirmer[];
+  resultRecipients: ResultRecipient[];
   masterManagers: SamplingMasterManager[];
   requests: SamplingRequest[];
   activity: SamplingActivity[];
@@ -107,6 +115,14 @@ const mapRecipient = (r: any): HandoverRecipient => ({
 });
 
 const mapSender = (r: any): Sender => ({
+  id: r.id,
+  name: r.name,
+  userId: r.user_id,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+});
+
+const mapResultRecipient = (r: any): ResultRecipient => ({
   id: r.id,
   name: r.name,
   userId: r.user_id,
@@ -165,9 +181,12 @@ const mapRequest = (r: any): SamplingRequest => ({
   sentDate: r.sent_date ?? null,
   gateEntryNo: r.gate_entry_no ?? null,
   sentQty: r.sent_qty ?? null,
+  sendDocPath: r.send_doc_path ?? null,
+  sendDocName: r.send_doc_name ?? null,
   sentAt: r.sent_at ?? null,
   sentBy: r.sent_by ?? null,
   partyReceivedDate: r.party_received_date ?? null,
+  partyTestingDate: r.party_testing_date ?? null,
   confirmedAt: r.confirmed_at ?? null,
   confirmedBy: r.confirmed_by ?? null,
   testingCompletedDate: r.testing_completed_date ?? null,
@@ -177,6 +196,8 @@ const mapRequest = (r: any): SamplingRequest => ({
   testedBy: r.tested_by ?? null,
   resultComment: r.result_comment ?? null,
   resultOwner: r.result_owner ?? null,
+  resultHandoverToId: r.result_handover_to_id ?? null,
+  resultHandoverToName: r.result_handover_to_name ?? null,
   attachmentPath: r.attachment_path ?? null,
   attachmentName: r.attachment_name ?? null,
   resultedAt: r.resulted_at ?? null,
@@ -230,6 +251,15 @@ const mapStepOwner = (r: any): StepOwner => ({
   employeeIds: (r.employee_ids ?? []) as string[],
 });
 
+const mapStepSourceOwner = (r: any): StepSourceOwner => ({
+  id: r.id,
+  stepKey: r.step_key,
+  source: r.source as SamplingSource,
+  departmentIds: (r.department_ids ?? []) as string[],
+  designationId: r.designation_id ?? null,
+  employeeIds: (r.employee_ids ?? []) as string[],
+});
+
 const mapDesignation = (r: any): Designation => ({ id: r.id, name: r.name, active: r.active });
 
 const mapActivity = (r: any): SamplingActivity => ({
@@ -256,21 +286,41 @@ const mapNotification = (r: any): SamplingNotification => ({
 });
 
 export async function fetchSamplingData(): Promise<SamplingData> {
-  const [stepOwners, configRows, designations, companies, collectors, recipients, senders, confirmers, masterManagers, requests, activity, notifications] =
-    await Promise.all([
-      fetchAll("fms_sampling_step_owners"),
-      fetchAll("fms_sampling_config", "key"),
-      fetchAll("designations"),
-      fetchAll("fms_sampling_companies"),
-      fetchAll("fms_sampling_collectors"),
-      fetchAll("fms_sampling_handover_recipients"),
-      fetchAll("fms_sampling_senders"),
-      fetchAll("fms_sampling_confirmers"),
-      fetchAll("fms_sampling_master_managers"),
-      fetchAll("fms_sampling_requests", "submitted_at"),
-      fetchAll("fms_sampling_activity"),
-      fetchAll("fms_sampling_notifications"),
-    ]);
+  // ⚠ THIS PAIRING IS POSITIONAL AND UNTYPED — both sides are any[], so slipping a
+  // new fetch into the middle of one list silently hands you another table's rows
+  // with NO compile error. One name per line, in the same order as the calls
+  // below, and ALWAYS append at the end of both.
+  const [
+    stepOwners,
+    stepSourceOwners,
+    configRows,
+    designations,
+    companies,
+    collectors,
+    recipients,
+    senders,
+    confirmers,
+    resultRecipients,
+    masterManagers,
+    requests,
+    activity,
+    notifications,
+  ] = await Promise.all([
+    fetchAll("fms_sampling_step_owners"),
+    fetchAll("fms_sampling_step_source_owners"),
+    fetchAll("fms_sampling_config", "key"),
+    fetchAll("designations"),
+    fetchAll("fms_sampling_companies"),
+    fetchAll("fms_sampling_collectors"),
+    fetchAll("fms_sampling_handover_recipients"),
+    fetchAll("fms_sampling_senders"),
+    fetchAll("fms_sampling_confirmers"),
+    fetchAll("fms_sampling_result_recipients"),
+    fetchAll("fms_sampling_master_managers"),
+    fetchAll("fms_sampling_requests", "submitted_at"),
+    fetchAll("fms_sampling_activity"),
+    fetchAll("fms_sampling_notifications"),
+  ]);
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: SamplingConfig = {
@@ -280,6 +330,7 @@ export async function fetchSamplingData(): Promise<SamplingData> {
 
   return {
     stepOwners: stepOwners.map(mapStepOwner),
+    stepSourceOwners: stepSourceOwners.map(mapStepSourceOwner),
     designations: designations.map(mapDesignation),
     config,
     companies: companies.map(mapCompany),
@@ -287,6 +338,7 @@ export async function fetchSamplingData(): Promise<SamplingData> {
     recipients: recipients.map(mapRecipient),
     senders: senders.map(mapSender),
     confirmers: confirmers.map(mapConfirmer),
+    resultRecipients: resultRecipients.map(mapResultRecipient),
     masterManagers: masterManagers.map(mapMasterManager),
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),

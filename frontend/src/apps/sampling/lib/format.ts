@@ -6,6 +6,7 @@ import type {
   RequestStatus,
   RequirementType,
   SamplingRequest,
+  SamplingSource,
 } from "../types";
 
 export const directionLabel = (d: Direction): string => (d === "inward" ? "Inward" : "Outward");
@@ -24,14 +25,20 @@ const RECEIVE_VIA_LABEL: Record<ReceiveVia, string> = {
 export const receiveViaLabel = (v: ReceiveVia): string => RECEIVE_VIA_LABEL[v] ?? "—";
 
 /**
- * Which confirmer bucket a request falls in. MIRRORS the SQL function
- * `fms_sampling_confirmer_source(text)` — export → export, ANYTHING ELSE →
+ * Which SOURCE BUCKET a request falls in. MIRRORS the SQL function
+ * `fms_sampling_outward_source(text)` — export → export, ANYTHING ELSE →
  * domestic. That default is deliberate: outward rows raised before Export
  * existed carry 'import' and are domestic dispatches in practice. Change this
  * and you must change the SQL in the same commit, or the UI will offer an
  * action the server then refuses.
+ *
+ * TWO things read it: the receipt-confirmer master, and the per-source step
+ * owners for send_sample / confirm_receipt / result.
  */
-export const confirmerSourceOf = (v: ReceiveVia): ConfirmerSource => (v === "export" ? "export" : "domestic");
+export const outwardSourceOf = (v: ReceiveVia): SamplingSource => (v === "export" ? "export" : "domestic");
+
+/** The confirmer master's own name for the same rule (SQL twin: `fms_sampling_confirmer_source`). */
+export const confirmerSourceOf: (v: ReceiveVia) => ConfirmerSource = outwardSourceOf;
 
 export const requirementTypeLabel = (t: RequirementType | null): string =>
   t === "competitor" ? "Competitor Sample Testing" : t === "new_product" ? "New Supplier / Product Testing" : "—";
@@ -85,8 +92,11 @@ export const labTestingLabel = (v: boolean | null): string =>
  * puts `todayIso()` in the input's `max`, and re-checks with `futureDateError`
  * before saving (a typed date bypasses `max` in several browsers).
  *
- * The one date deliberately NOT capped is testing's `tentativeResultDate`, which
- * is a forecast and is supposed to be in the future.
+ * THE FORECAST DATES ARE THE EXCEPTION and are deliberately NOT capped, because
+ * they are supposed to be in the future: legacy testing's `tentativeResultDate`,
+ * lab_process's `labTentativeDate`, and confirm_receipt's `partyTestingDate`
+ * (when the party expects to test what we sent). None of them goes through
+ * `futureDateError`, and none of their inputs carries a `max`.
  */
 export const todayIso = todayLocalIso;
 

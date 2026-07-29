@@ -9,16 +9,18 @@ import {
   type Confirmer,
   type ConfirmerSource,
   type HandoverRecipient,
+  type ResultRecipient,
   type Sender,
 } from "../../types";
 
-type Tab = "company" | "collector" | "recipient" | "sender" | "confirmer";
+type Tab = "company" | "collector" | "recipient" | "sender" | "confirmer" | "result_recipient";
 const TABS: { key: Tab; label: string }[] = [
   { key: "company", label: "Companies" },
   { key: "collector", label: "Collectors" },
   { key: "recipient", label: "Hand-over recipients" },
   { key: "sender", label: "Senders" },
   { key: "confirmer", label: "Receipt confirmers" },
+  { key: "result_recipient", label: "Result handover to" },
 ];
 
 const SOURCE_OPTIONS: ComboOption[] = [
@@ -27,17 +29,22 @@ const SOURCE_OPTIONS: ComboOption[] = [
 ];
 
 /**
- * Sampling Masters — five masters, tabbed:
- *   Company (structural), and four people-masters — Collector, Hand-over
- *   recipient, Sender and Receipt confirmer — each mapping to an app user so the
- *   chosen person can action their step and see it in their queue (collect /
- *   receive inward; send / confirm receipt outward). Editable by admins and the
- *   relevant master's owner (Setup → Master Owners).
+ * Sampling Masters — six masters, tabbed:
+ *   Company (structural), and five people-masters — Collector, Hand-over
+ *   recipient, Sender, Receipt confirmer and Result handover to — each mapping to
+ *   an app user so the chosen person can action their step and see it in their
+ *   queue (collect / receive inward; send / confirm receipt / take the result
+ *   outward). Editable by admins and the relevant master's owner (Setup → Master
+ *   Owners).
  *
  * Receipt confirmer is the one master with a SOURCE: who may confirm receipt is
  * mapped separately for Domestic and Export dispatches, so the two can be
  * different people. Everyone listed for a source can action confirm_receipt on
- * that source's requests, ON TOP of the step's global owners in Setup.
+ * that source's requests, ON TOP of the step's owners in Setup.
+ *
+ * "Result handover to" feeds the dropdown at the outward Result step and replaced
+ * a free-text box: the person picked is notified and can action the handover, and
+ * a typed name could do neither.
  */
 export default function Masters() {
   const s = useSamplingStore();
@@ -56,8 +63,10 @@ export default function Masters() {
     { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0" },
   ];
 
-  // Shared shape for the three people-masters (Collector / Hand-over recipient / Sender).
-  const personColumns = (): MasterColumn<Collector | HandoverRecipient | Sender>[] => [
+  // Shared shape for the four plain people-masters (Collector / Hand-over
+  // recipient / Sender / Result handover to). Receipt confirmer has its own,
+  // because it carries a source.
+  const personColumns = (): MasterColumn<Collector | HandoverRecipient | Sender | ResultRecipient>[] => [
     { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
     { header: "Portal user", render: (r) => <span className="text-grey-2">{s.personName(r.userId)}</span> },
     { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-24" },
@@ -79,9 +88,9 @@ export default function Masters() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Masters</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Companies, collectors, hand-over recipients, senders and receipt confirmers. Each people-master maps to a
-          portal user so the chosen person can action their step; receipt confirmers are mapped separately for
-          Domestic and Export. Editable by admins and each master's owner (Setup → Master Owners).
+          Companies, collectors, hand-over recipients, senders, receipt confirmers and result-handover recipients.
+          Each people-master maps to a portal user so the chosen person can action their step; receipt confirmers are
+          mapped separately for Domestic and Export. Editable by admins and each master's owner (Setup → Master Owners).
         </p>
       </div>
 
@@ -225,6 +234,38 @@ export default function Masters() {
               active,
               sortOrder: row.sortOrder,
             })
+          }
+        />
+      )}
+
+      {tab === "result_recipient" && (
+        <MasterCrud<ResultRecipient>
+          singular="Result handover recipient"
+          rows={s.resultRecipients}
+          columns={personColumns()}
+          fields={[
+            { key: "name", label: "Display name", type: "text", required: true, placeholder: "e.g. Marketing head" },
+            {
+              key: "userId",
+              label: "Portal user",
+              type: "select",
+              required: true,
+              options: userOptions,
+              hint: "notified when a result lands, and able to action the handover",
+            },
+            { key: "sortOrder", label: "Sort order", type: "text", placeholder: "0" },
+          ]}
+          searchText={(r) => `${r.name} ${s.personName(r.userId)}`}
+          canManage={s.canManage("result_recipient")}
+          emptyValues={{ name: "", userId: "", sortOrder: "0" }}
+          toValues={(r) => ({ name: r.name, userId: r.userId, sortOrder: String(r.sortOrder) })}
+          onSubmit={async (id, v, active) => {
+            const input = personInput(v, active);
+            if (id) await s.updateResultRecipient(id, input);
+            else await s.insertResultRecipient(input);
+          }}
+          onToggleActive={async (row, active) =>
+            s.updateResultRecipient(row.id, { name: row.name, userId: row.userId, active, sortOrder: row.sortOrder })
           }
         />
       )}

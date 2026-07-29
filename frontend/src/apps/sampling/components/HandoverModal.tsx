@@ -4,7 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import SampleSummary from "./SampleSummary";
 import { useSamplingStore } from "../store";
-import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
+import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -13,8 +13,9 @@ import type { SamplingRequest } from "../types";
  * step, so it stays editable after close (until held / cancelled); the server
  * re-checks that lock and refuses otherwise.
  *
- * Opens with the SampleSummary recap so the last person on the chain can see what
- * the request was actually about — party, source, product, colour/quantity.
+ * Opens with the FULL recap: this is the last person on the chain and the one most
+ * likely to be seeing the request for the first time, so they get everything —
+ * our company, the whole receiving-company block, and what was actually sent.
  */
 export default function HandoverModal({
   open,
@@ -70,8 +71,9 @@ export default function HandoverModal({
       open={open}
       onClose={onClose}
       readOnly={readOnly}
+      size="xl"
       title={`${editing && !readOnly ? "Edit result handover" : readOnly ? "Result handover" : "Record result handover"} — ${request?.reqNo ?? ""}`}
-      subtitle={request ? requestSubject(request) : undefined}
+      // No subtitle: the recap below already shows the product / description.
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -80,7 +82,7 @@ export default function HandoverModal({
       }
     >
       <div className="space-y-3.5">
-        {request && <SampleSummary request={request} />}
+        {request && <SampleSummary request={request} variant="full" />}
         <FieldLabel label="Date handed over" hint="today by default — you can backdate, not post-date">
           <TextInput type="date" max={todayIso()} value={handoverDate} onChange={(e) => setHandoverDate(e.target.value)} />
         </FieldLabel>

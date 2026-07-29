@@ -19,6 +19,7 @@ import TestingModal from "../../components/TestingModal";
 import ResultModal from "../../components/ResultModal";
 import HandoverModal from "../../components/HandoverModal";
 import SamplingStepper from "../../components/SamplingStepper";
+import DocLink from "../../components/DocLink";
 import StatusPill from "../../components/StatusPill";
 import { directionLabel, dmy, labTestingLabel, receiveViaLabel, requestSubject, requirementTypeLabel, totalSampleQty } from "../../lib/format";
 import { openStep } from "../../lib/queues";
@@ -29,31 +30,6 @@ import type { SamplingRequest } from "../../types";
 type OpenModal =
   | "receive" | "collect" | "sampleReceived" | "sampleToLab" | "labProcess" | "resultReceived"
   | "send" | "confirm" | "testing" | "result" | "handover" | null;
-
-/** Opens a stored lab report via a fresh short-lived signed URL. */
-function LabReportLink({ path, name }: { path: string; name: string | null }) {
-  const s = useSamplingStore();
-  const [busy, setBusy] = useState(false);
-  return (
-    <button
-      disabled={busy}
-      onClick={async () => {
-        if (busy) return;
-        setBusy(true);
-        try {
-          window.open(await s.resultDocumentUrl(path), "_blank", "noopener,noreferrer");
-        } catch {
-          /* surfaced elsewhere */
-        } finally {
-          setBusy(false);
-        }
-      }}
-      className="text-[13px] font-semibold text-orange hover:underline disabled:opacity-60"
-    >
-      {busy ? "Opening…" : name || "View lab report"}
-    </button>
-  );
-}
 
 export default function RequestDetail() {
   const { id } = useParams();
@@ -314,7 +290,7 @@ export default function RequestDetail() {
                 <div className="col-span-1 sm:col-span-2">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lab report</div>
                   <div className="mt-1">
-                    <LabReportLink path={r.labDocPath} name={r.labDocName} />
+                    <DocLink path={r.labDocPath} name={r.labDocName} fallback="View lab report" />
                   </div>
                 </div>
               )}
@@ -355,6 +331,11 @@ export default function RequestDetail() {
                   {(r.gateEntryNo || r.sentQty) && (
                     <Field label="Gate entry / quantity" value={[r.gateEntryNo, r.sentQty].filter(Boolean).join(" · ") || "—"} />
                   )}
+                  {r.sendDocPath && (
+                    <Field label="Gate pass">
+                      <DocLink path={r.sendDocPath} name={r.sendDocName} fallback="View gate pass" />
+                    </Field>
+                  )}
                   <Field
                     label="Receipt confirmed"
                     value={
@@ -363,6 +344,9 @@ export default function RequestDetail() {
                         : "—"
                     }
                   />
+                  {r.partyTestingDate && (
+                    <Field label="Tentative testing" value={dmy(r.partyTestingDate)} />
+                  )}
                 </>
               )}
               {/* Outward has no testing step. Still shown on a legacy outward row
@@ -381,6 +365,17 @@ export default function RequestDetail() {
                 label="Result received"
                 value={r.resultedAt ? `${r.resultComment ?? ""} · ${name(r.resultedBy)}` : "—"}
                 className="col-span-1 sm:col-span-2"
+              />
+              {/* Falls back to the LEGACY free-text `resultOwner` for rows recorded
+                  before the master existed — the RPC stopped writing that column
+                  rather than clearing it, precisely so this still reads. */}
+              <Field
+                label="Result handover to"
+                value={
+                  r.resultHandoverToId
+                    ? name(r.resultHandoverToId)
+                    : r.resultHandoverToName ?? r.resultOwner
+                }
               />
               <Field
                 label="Result handover"

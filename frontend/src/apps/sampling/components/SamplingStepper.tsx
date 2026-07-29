@@ -80,11 +80,15 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
         if (n.key === "request" || n.key === "closed") {
           return { key: n.key, label: n.label, departments: [], people: [], hasStep: false };
         }
-        const owner = s.stepOwnerFor(n.key);
+        // Resolved THROUGH THE REQUEST: the three outward steps are owned per
+        // source, so a flat step lookup would caption an Export dispatch's rail
+        // with the Domestic owners.
+        const owner = s.ownersFor(n.key, request);
         // Several steps are owned, for THIS request, by a person chosen on the
-        // request rather than by the step's global owners: the collector collects,
-        // the hand-over recipient receives (and sends to the lab), and whoever the
-        // lab handed the result to confirms it.
+        // request rather than by the step's owners: the collector collects, the
+        // hand-over recipient receives (and sends to the lab), whoever the lab
+        // handed the result to confirms it, and whoever the result is handed over
+        // to closes it.
         const perRequestName =
           (n.key === "receive_sample" || n.key === "sample_collect") && request.collectorId
             ? s.personName(request.collectorId)
@@ -96,7 +100,11 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
                 ? request.labResultToId
                   ? s.personName(request.labResultToId)
                   : request.labResultToName
-                : null;
+                : n.key === "result_handover"
+                  ? request.resultHandoverToId
+                    ? s.personName(request.resultHandoverToId)
+                    : request.resultHandoverToName
+                  : null;
         const people = perRequestName
           ? [perRequestName]
           : (owner?.employeeIds ?? []).map((id) => s.personName(id)).filter((nm) => nm !== "—");
@@ -110,8 +118,12 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
           hasStep: true,
         };
       }),
-    [flow, s, request.collectorId, request.handoverRecipientId, request.handoverRecipientName,
-     request.labResultToId, request.labResultToName],
+    // `receiveVia` is load-bearing: ownersFor resolves the three outward steps
+    // through the request's source bucket, so without it the rail keeps whichever
+    // source's owners it first rendered.
+    [flow, s, request, request.receiveVia, request.collectorId, request.handoverRecipientId,
+     request.handoverRecipientName, request.labResultToId, request.labResultToName,
+     request.resultHandoverToId, request.resultHandoverToName],
   );
 
   const finished = request.status === "closed";

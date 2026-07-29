@@ -1,48 +1,33 @@
-import { useEffect, useRef, useState } from "react";
-import { FileText } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
-import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import Combobox from "@/shared/components/ui/Combobox";
+import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import SampleSummary from "./SampleSummary";
+import DocLink from "./DocLink";
 import { useSamplingStore } from "../store";
 import { uploadResultDocument } from "../data/samplingWrites";
-import { requestSubject } from "../lib/format";
 import type { SamplingRequest } from "../types";
-
-/** Opens the stored result document via a fresh short-lived signed URL. */
-function ResultDocLink({ path, name }: { path: string; name: string | null }) {
-  const s = useSamplingStore();
-  const [busy, setBusy] = useState(false);
-  const open = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      window.open(await s.resultDocumentUrl(path), "_blank", "noopener,noreferrer");
-    } catch {
-      /* surfaced elsewhere; keep the host quiet */
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button
-      onClick={open}
-      disabled={busy}
-      className="inline-flex max-w-[240px] items-center gap-1.5 text-[12.5px] font-semibold text-orange hover:underline disabled:opacity-60"
-    >
-      <FileText className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">{busy ? "Opening…" : name || "View attachment"}</span>
-    </button>
-  );
-}
 
 /**
  * Record (or correct) the OUTWARD result — "Result Received": the result the party
- * came back with, as a comment (required), the result owner, and an optional report
- * attachment. Recording moves the request to result handover. The result stays
- * editable until the handover is recorded; the server re-checks.
+ * came back with, as a comment (required), WHOM IT IS HANDED OVER TO (required),
+ * and an optional report attachment. Recording moves the request to result
+ * handover. The result stays editable until the handover is recorded; the server
+ * re-checks.
  *
  * Not to be confused with ResultReceivedModal, which is the LAB branch's own
  * (differently keyed) result-received step.
+ *
+ * "RESULT HANDOVER TO" REPLACED THE FREE-TEXT "RESULT OWNER". It is a master-backed
+ * pick, not a typed name, because the person chosen is ROUTED to: they are notified
+ * the moment the result lands and the request appears in their Result Handover
+ * queue — the outward twin of the lab branch's "result goes to". A typed name
+ * could not be notified and could not act, which is what made the old field inert.
+ * There is deliberately no free-text escape hatch for the same reason.
+ *
+ * Rows recorded before the master existed keep their `resultOwner` text — the RPC
+ * simply stopped writing that column — and the detail page still shows it.
  */
 export default function ResultModal({
   open,
@@ -59,16 +44,23 @@ export default function ResultModal({
 }) {
   const s = useSamplingStore();
   const [comment, setComment] = useState("");
-  const [owner, setOwner] = useState("");
+  const [handoverTo, setHandoverTo] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Keyed on the USER id, not the master row id: that is what the request stores
+  // and what authorization and notification both resolve against.
+  const recipientOptions = useMemo(
+    () => s.activeResultRecipients.map((r) => ({ value: r.userId, label: r.name })),
+    [s.activeResultRecipients],
+  );
+
   useEffect(() => {
     if (open && request) {
       setComment(request.resultComment ?? "");
-      setOwner(request.resultOwner ?? "");
+      setHandoverTo(request.resultHandoverToId ?? "");
       setFile(null);
       if (fileRef.current) fileRef.current.value = "";
       setErr(null);
@@ -82,6 +74,10 @@ export default function ResultModal({
       setErr("A result comment is required.");
       return;
     }
+    if (!handoverTo) {
+      setErr("Please choose whom the result is handed over to.");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -92,7 +88,12 @@ export default function ResultModal({
       }
       // On create, always pass the attachment keys (a fresh row has none). On edit,
       // pass them only when a new file replaces — an absent key keeps the current one.
-      const base = { resultComment: comment.trim(), resultOwner: owner.trim() || null };
+      const base = {
+        resultComment: comment.trim(),
+        resultHandoverToId: handoverTo,
+        // Denormalised so the request still reads right if the user is later removed.
+        resultHandoverToName: recipientOptions.find((o) => o.value === handoverTo)?.label ?? null,
+      };
       if (editing) {
         await s.updateResult(request, { ...base, ...attach });
       } else {
@@ -106,8 +107,9 @@ export default function ResultModal({
     }
   };
 
-  const existing =
-    request?.attachmentPath ? <ResultDocLink path={request.attachmentPath} name={request.attachmentName} /> : null;
+  const existing = request?.attachmentPath ? (
+    <DocLink path={request.attachmentPath} name={request.attachmentName} />
+  ) : null;
 
   return (
     <Modal
@@ -115,8 +117,9 @@ export default function ResultModal({
       onClose={onClose}
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
+      size="xl"
       title={`${editing && !readOnly ? "Edit result received" : readOnly ? "Result received" : "Record result received"} — ${request?.reqNo ?? ""}`}
-      subtitle={request ? requestSubject(request) : undefined}
+      // No subtitle: the recap below already shows the product / description.
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -125,20 +128,29 @@ export default function ResultModal({
       }
     >
       <div className="space-y-3.5">
+        {request && <SampleSummary request={request} variant="full" />}
         <FieldLabel label="Result comment" required>
           <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The result the party came back with" />
         </FieldLabel>
-        <FieldLabel label="Result owner">
-          <TextInput value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="Who signed off the result" />
-        </FieldLabel>
-        <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional lab report"}>
-          <input
-            ref={fileRef}
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-          />
-        </FieldLabel>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+          <FieldLabel label="Result handover to" required hint="they are notified and can action the handover">
+            <Combobox
+              value={handoverTo}
+              onChange={setHandoverTo}
+              options={recipientOptions}
+              placeholder={recipientOptions.length ? "Select a person" : "No recipients in the master yet"}
+              searchable={recipientOptions.length > 6}
+            />
+          </FieldLabel>
+          <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional lab report"}>
+            <input
+              ref={fileRef}
+              type="file"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+            />
+          </FieldLabel>
+        </div>
         {editing && existing && (
           <div className="text-[12px] text-grey-2">
             Current file: {existing}

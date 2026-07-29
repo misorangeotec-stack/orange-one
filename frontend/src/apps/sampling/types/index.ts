@@ -101,15 +101,20 @@ export interface SamplingRequest {
   senderId: string | null;
   senderName: string | null;
 
-  // send_sample (outward)
+  // send_sample (outward) — gate entry no. + gate pass are REQUIRED on a new
+  // dispatch; rows sent before the attachment existed carry null docs.
   sentDate: string | null;
   gateEntryNo: string | null;
   sentQty: string | null;
+  sendDocPath: string | null;
+  sendDocName: string | null;
   sentAt: string | null;
   sentBy: string | null;
 
   // confirm_receipt (outward)
   partyReceivedDate: string | null;
+  /** When the party expects to TEST it. A forecast — optional, and NOT capped at today. */
+  partyTestingDate: string | null;
   confirmedAt: string | null;
   confirmedBy: string | null;
 
@@ -122,7 +127,15 @@ export interface SamplingRequest {
 
   // result (both) — moves the request to awaiting_handover
   resultComment: string | null;
+  /**
+   * LEGACY free text ("Result owner"), from before the Result-handover-to master.
+   * NEVER written again — the RPCs no longer name the column. Still displayed as
+   * the fallback when resultHandoverToId/Name are null, so old rows read right.
+   */
   resultOwner: string | null;
+  /** Whom the result is handed over to. Authorized on result_handover and notified by record_result. */
+  resultHandoverToId: string | null;
+  resultHandoverToName: string | null;
   attachmentPath: string | null;
   attachmentName: string | null;
   resultedAt: string | null;
@@ -221,16 +234,26 @@ export interface Sender {
 }
 
 /**
- * Which outward dispatches a receipt-confirmer covers. NOT the same union as
- * ReceiveVia: a request maps onto it via `confirmerSourceOf` — export → export,
- * anything else (including legacy 'import' outward rows) → domestic.
+ * The OUTWARD SOURCE BUCKET — the split that decides who is responsible for a
+ * dispatch. NOT the same union as ReceiveVia: a request maps onto it via
+ * `outwardSourceOf` — export → export, anything else (including legacy 'import'
+ * outward rows) → domestic.
+ *
+ * Two things key off it: the receipt-confirmer master, and the per-source step
+ * owners for send_sample / confirm_receipt / result.
  */
-export type ConfirmerSource = "domestic" | "export";
+export type SamplingSource = "domestic" | "export";
 
-export const CONFIRMER_SOURCE_LABEL: Record<ConfirmerSource, string> = {
+export const SAMPLING_SOURCE_LABEL: Record<SamplingSource, string> = {
   domestic: "Domestic",
   export: "Export",
 };
+
+export const SAMPLING_SOURCES: SamplingSource[] = ["domestic", "export"];
+
+/** The confirmer master's own name for the same union — kept so its call sites read in its own terms. */
+export type ConfirmerSource = SamplingSource;
+export const CONFIRMER_SOURCE_LABEL = SAMPLING_SOURCE_LABEL;
 
 /**
  * A curated receipt confirmer — who may confirm receipt of an outward sample,
@@ -246,10 +269,32 @@ export interface Confirmer {
   sortOrder: number;
 }
 
+/**
+ * A curated "Result handover to" recipient — whom the outward result goes to.
+ * Maps to an app user, so the person picked at the `result` step is authorized
+ * on result_handover and notified. Replaces the free-text `resultOwner`.
+ *
+ * NOT the same as HandoverRecipient, which is "whom to hand the SAMPLE to" on
+ * the inward path.
+ */
+export interface ResultRecipient {
+  id: string;
+  name: string;
+  userId: string;
+  active: boolean;
+  sortOrder: number;
+}
+
 /* ------------------------------ master governance ------------------------- */
 
 /** The ownable master types. All are ownable but never "requestable". */
-export type SamplingMasterType = "company" | "collector" | "recipient" | "sender" | "confirmer";
+export type SamplingMasterType =
+  | "company"
+  | "collector"
+  | "recipient"
+  | "sender"
+  | "confirmer"
+  | "result_recipient";
 
 export const SAMPLING_MASTER_TYPES: { value: SamplingMasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
@@ -257,6 +302,7 @@ export const SAMPLING_MASTER_TYPES: { value: SamplingMasterType; label: string; 
   { value: "recipient", label: "Hand-over recipient", plural: "Hand-over recipients" },
   { value: "sender", label: "Sender", plural: "Senders" },
   { value: "confirmer", label: "Receipt confirmer", plural: "Receipt confirmers" },
+  { value: "result_recipient", label: "Result handover to", plural: "Result handover recipients" },
 ];
 
 export interface SamplingMasterManager {
@@ -270,6 +316,21 @@ export interface SamplingMasterManager {
 export interface StepOwner {
   id: string;
   stepKey: string;
+  departmentIds: string[];
+  designationId: string | null;
+  employeeIds: string[];
+}
+
+/**
+ * Step owners for the three outward steps whose responsibility SPLITS BY SOURCE
+ * (see SOURCE_SCOPED_STEPS in lib/steps.ts). For those steps this is the ONLY
+ * authority — the SQL is hard-wired to answer empty from `fms_sampling_step_owners`
+ * for them, so a row left behind there can never grant rights Setup doesn't show.
+ */
+export interface StepSourceOwner {
+  id: string;
+  stepKey: string;
+  source: SamplingSource;
   departmentIds: string[];
   designationId: string | null;
   employeeIds: string[];
