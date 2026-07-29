@@ -3001,10 +3001,11 @@ export type Database = {
       fms_import_items: {
         Row: {
           active: boolean
+          category_id: string
           created_at: string
           created_by: string | null
           id: string
-          item_group_id: string
+          item_group_id: string | null
           name: string
           sort_order: number
           unit: string
@@ -3012,10 +3013,11 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          category_id: string
           created_at?: string
           created_by?: string | null
           id?: string
-          item_group_id: string
+          item_group_id?: string | null
           name: string
           sort_order?: number
           unit?: string
@@ -3023,16 +3025,24 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          category_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
-          item_group_id?: string
+          item_group_id?: string | null
           name?: string
           sort_order?: number
           unit?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fms_import_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_import_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fms_import_items_item_group_id_fkey"
             columns: ["item_group_id"]
@@ -4366,10 +4376,11 @@ export type Database = {
       fms_purchase_items: {
         Row: {
           active: boolean
+          category_id: string
           created_at: string
           created_by: string | null
           id: string
-          item_group_id: string
+          item_group_id: string | null
           name: string
           sort_order: number
           unit: string
@@ -4377,10 +4388,11 @@ export type Database = {
         }
         Insert: {
           active?: boolean
+          category_id: string
           created_at?: string
           created_by?: string | null
           id?: string
-          item_group_id: string
+          item_group_id?: string | null
           name: string
           sort_order?: number
           unit?: string
@@ -4388,16 +4400,24 @@ export type Database = {
         }
         Update: {
           active?: boolean
+          category_id?: string
           created_at?: string
           created_by?: string | null
           id?: string
-          item_group_id?: string
+          item_group_id?: string | null
           name?: string
           sort_order?: number
           unit?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fms_purchase_items_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "fms_purchase_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "fms_purchase_items_item_group_id_fkey"
             columns: ["item_group_id"]

@@ -102,7 +102,7 @@ export async function updateItemGroup(id: string, input: ItemGroupInput): Promis
 
 /* --------------------------------- items ---------------------------------- */
 export interface ItemInput {
-  itemGroupId: string;
+  categoryId: string;
   name: string;
   unit: string;
   active: boolean;
@@ -113,7 +113,7 @@ export async function insertItem(input: ItemInput & { createdBy: string }): Prom
   const { data, error } = await supabase
     .from("fms_purchase_items")
     .insert({
-      item_group_id: input.itemGroupId,
+      category_id: input.categoryId,
       name: input.name,
       unit: input.unit,
       active: input.active,
@@ -130,7 +130,7 @@ export async function updateItem(id: string, input: ItemInput): Promise<void> {
   const { error } = await supabase
     .from("fms_purchase_items")
     .update({
-      item_group_id: input.itemGroupId,
+      category_id: input.categoryId,
       name: input.name,
       unit: input.unit,
       active: input.active,

@@ -108,13 +108,11 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
   };
 
   const raiseItem = (line: RequestLine) => (name: string) => {
-    // No group step in the form — request the item under the category's first group.
-    const grp = line.categoryId ? s.itemGroupsByCategory(line.categoryId).filter((g) => g.active)[0] : undefined;
-    if (!grp) {
-      setErr("Pick a category with at least one item group first.");
+    if (!line.categoryId) {
+      setErr("Pick a category first.");
       return;
     }
-    setRaise({ mt: "item", prefill: { name, item_group_id: grp.id } });
+    setRaise({ mt: "item", prefill: { name, category_id: line.categoryId } });
   };
 
   const filled = lines.filter((l) => !isLineBlank(l));

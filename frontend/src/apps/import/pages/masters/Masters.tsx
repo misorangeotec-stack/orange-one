@@ -5,26 +5,28 @@ import MasterCrud, { type MasterColumn } from "@/shared/components/ui/MasterCrud
 import { emptyValuesFor, masterFields } from "../../lib/masterFields";
 import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
 import { useImportStore } from "../../store";
-import type { Company, Category, ItemGroup, Item, Vendor, VendorItemPrice } from "../../types";
+import type { Company, Category, Item, Vendor, VendorItemPrice } from "../../types";
 
 /**
- * Masters admin — Companies, Categories, Item Groups, Items, Vendors. Each tab
- * is a MasterCrud surface driven by the shared `masterFields` descriptor (the
- * same one the request + approve modals use), with the relational tabs (Item
- * Groups → Category, Items → Item Group) sourcing their options from the store.
+ * Masters admin — Companies, Categories, Items, Vendors, Vendor-Item Prices. Each
+ * tab is a MasterCrud surface driven by the shared `masterFields` descriptor (the
+ * same one the request + approve modals use), with the relational tabs (Items →
+ * Category, Prices → Vendor + Item) sourcing their options from the store.
  * Who owns each master is configured in Setup → Master Owners.
+ *
+ * No Item Groups tab: an item hangs off a category directly (20260808120100).
+ * The table and its rows still exist for legacy master requests — see the
+ * comment on MASTER_TYPES in ../../types.
  */
 export default function Masters() {
   const s = useImportStore();
   const [tab, setTab] = useState("company");
 
   const ctx = useMasterFieldCtx();
-  const { categoryOptions, itemGroupOptions } = ctx;
 
   const tabs = [
     { key: "company", label: "Companies", count: s.companies.length },
     { key: "category", label: "Categories", count: s.categories.length },
-    { key: "item_group", label: "Item Groups", count: s.itemGroups.length },
     { key: "item", label: "Items", count: s.items.length },
     { key: "vendor", label: "Vendors", count: s.vendors.length },
     { key: "vendor_item_price", label: "Vendor-Item Prices", count: s.vendorItemPrices.length },
@@ -73,7 +75,7 @@ export default function Masters() {
           searchText={(r) => r.name}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Item Groups", render: (r) => s.itemGroupsByCategory(r.id).length },
+            { header: "Items", render: (r) => s.itemsByCategory(r.id).length },
             {
               // Drives the QC Inspection step: a goods receipt carrying any
               // QC-required category must be inspected before the PO can close.
@@ -104,62 +106,27 @@ export default function Masters() {
         />
       )}
 
-      {tab === "item_group" && (
-        <MasterCrud<ItemGroup>
-          singular="Item Group"
-          rows={s.itemGroups}
-          canManage={s.canManage("item_group")}
-          searchText={(r) => `${r.name} ${s.categoryById(r.categoryId)?.name ?? ""}`}
-          columns={[
-            { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Category", render: (r) => s.categoryById(r.categoryId)?.name ?? <span className="text-grey-2">—</span> },
-            { header: "Items", render: (r) => s.itemsByGroup(r.id).length },
-          ] as MasterColumn<ItemGroup>[]}
-          fields={masterFields("item_group", ctx)}
-          emptyValues={emptyValuesFor("item_group")}
-          toValues={(r) => ({ category_id: r.categoryId, name: r.name })}
-          onSubmit={async (id, v, active) => {
-            const input = { categoryId: v.category_id, name: v.name.trim(), active, sortOrder: s.itemGroupById(id)?.sortOrder ?? 0 };
-            if (id) await s.editItemGroup(id, input);
-            else await s.createItemGroup(input);
-          }}
-          onToggleActive={async (r, active) =>
-            s.editItemGroup(r.id, { categoryId: r.categoryId, name: r.name, active, sortOrder: r.sortOrder })
-          }
-        />
-      )}
-
       {tab === "item" && (
         <MasterCrud<Item>
           singular="Item"
           rows={s.items}
           canManage={s.canManage("item")}
-          searchText={(r) => {
-            const g = s.itemGroupById(r.itemGroupId);
-            return `${r.name} ${g?.name ?? ""} ${g ? s.categoryById(g.categoryId)?.name ?? "" : ""}`;
-          }}
+          searchText={(r) => `${r.name} ${s.categoryById(r.categoryId)?.name ?? ""}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Item Group", render: (r) => s.itemGroupById(r.itemGroupId)?.name ?? <span className="text-grey-2">—</span> },
-            {
-              header: "Category",
-              render: (r) => {
-                const g = s.itemGroupById(r.itemGroupId);
-                return (g && s.categoryById(g.categoryId)?.name) || <span className="text-grey-2">—</span>;
-              },
-            },
+            { header: "Category", render: (r) => s.categoryById(r.categoryId)?.name ?? <span className="text-grey-2">—</span> },
             { header: "Unit", render: (r) => r.unit || <span className="text-grey-2">—</span> },
           ] as MasterColumn<Item>[]}
           fields={masterFields("item", ctx)}
           emptyValues={emptyValuesFor("item")}
-          toValues={(r) => ({ item_group_id: r.itemGroupId, name: r.name, unit: r.unit })}
+          toValues={(r) => ({ category_id: r.categoryId, name: r.name, unit: r.unit })}
           onSubmit={async (id, v, active) => {
-            const input = { itemGroupId: v.item_group_id, name: v.name.trim(), unit: v.unit.trim(), active, sortOrder: s.itemById(id)?.sortOrder ?? 0 };
+            const input = { categoryId: v.category_id, name: v.name.trim(), unit: v.unit.trim(), active, sortOrder: s.itemById(id)?.sortOrder ?? 0 };
             if (id) await s.editItem(id, input);
             else await s.createItem(input);
           }}
           onToggleActive={async (r, active) =>
-            s.editItem(r.id, { itemGroupId: r.itemGroupId, name: r.name, unit: r.unit, active, sortOrder: r.sortOrder })
+            s.editItem(r.id, { categoryId: r.categoryId, name: r.name, unit: r.unit, active, sortOrder: r.sortOrder })
           }
         />
       )}

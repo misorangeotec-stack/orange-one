@@ -2,10 +2,15 @@
 
 export type MasterType = "company" | "category" | "item_group" | "item" | "vendor" | "vendor_item_price";
 
+// `item_group` is retained in the union above (legacy master_requests /
+// master_managers rows may still reference it) but is intentionally omitted from
+// this registry so it no longer surfaces on any UI — the Masters tabs, Master
+// Owners, the Master Requests banner and the request-new-master type picker are
+// all driven by this array. An item hangs off a CATEGORY now; the group level
+// never appeared anywhere in the request → PO → Inward → Tally flow.
 export const MASTER_TYPES: { value: MasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
   { value: "category", label: "Category", plural: "Categories" },
-  { value: "item_group", label: "Item Group", plural: "Item Groups" },
   { value: "item", label: "Item", plural: "Items" },
   { value: "vendor", label: "Vendor", plural: "Vendors" },
   { value: "vendor_item_price", label: "Vendor-Item Price", plural: "Vendor-Item Prices" },
@@ -45,7 +50,7 @@ export interface ItemGroup {
 
 export interface Item {
   id: string;
-  itemGroupId: string;
+  categoryId: string;
   name: string;
   unit: string;
   active: boolean;

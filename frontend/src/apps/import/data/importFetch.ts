@@ -181,7 +181,7 @@ const mapItemGroup = (r: any): ItemGroup => ({
 
 const mapItem = (r: any): Item => ({
   id: r.id,
-  itemGroupId: r.item_group_id,
+  categoryId: r.category_id,
   name: r.name,
   unit: r.unit ?? "",
   active: r.active,

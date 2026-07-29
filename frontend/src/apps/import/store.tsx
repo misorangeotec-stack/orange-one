@@ -183,7 +183,7 @@ interface ImportStoreValue {
   activeCompanies: Company[];
   activeCategories: Category[];
   itemGroupsByCategory: (categoryId: string) => ItemGroup[];
-  itemsByGroup: (itemGroupId: string) => Item[];
+  itemsByCategory: (categoryId: string) => Item[];
   categoryById: (id: string | null) => Category | undefined;
   itemGroupById: (id: string | null) => ItemGroup | undefined;
   itemById: (id: string | null) => Item | undefined;
@@ -766,7 +766,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       activeCategories: categories.filter((c) => c.active).sort(byName),
       itemGroupsByCategory: (categoryId) =>
         itemGroups.filter((g) => g.categoryId === categoryId).sort(byName),
-      itemsByGroup: (itemGroupId) => items.filter((i) => i.itemGroupId === itemGroupId).sort(byName),
+      itemsByCategory: (categoryId) => items.filter((i) => i.categoryId === categoryId).sort(byName),
       categoryById: (id) => (id ? categories.find((c) => c.id === id) : undefined),
       itemGroupById: (id) => (id ? itemGroups.find((g) => g.id === id) : undefined),
       itemById: (id) => (id ? items.find((i) => i.id === id) : undefined),
@@ -793,8 +793,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       },
       itemsForCategory: (categoryId) => {
         if (!categoryId) return [];
-        const groupIds = new Set(itemGroups.filter((g) => g.categoryId === categoryId && g.active).map((g) => g.id));
-        return items.filter((i) => i.active && groupIds.has(i.itemGroupId)).sort(byName);
+        return items.filter((i) => i.active && i.categoryId === categoryId).sort(byName);
       },
 
       masterManagers,

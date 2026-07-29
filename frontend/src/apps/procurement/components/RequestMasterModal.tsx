@@ -111,7 +111,8 @@ export default function RequestMasterModal({
     //   (master_type, coalesce(category_id, item_group_id, vendor_id, ''),
     //                 coalesce(item_id, lower(name)))
     // If this drifts from the index, the client and the database disagree about
-    // what a duplicate is.
+    // what a duplicate is. An `item` payload keys on category_id now (20260808120100)
+    // — that is the FIRST arm of the coalesce, so the index needed no rebuild.
     const leafOf = (p: Record<string, unknown>) =>
       String(p.item_id ?? "") || String(p.name ?? "").trim().toLowerCase();
     const dup = s.masterRequests.find((r) => {

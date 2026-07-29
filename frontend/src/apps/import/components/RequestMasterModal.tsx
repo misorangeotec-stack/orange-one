@@ -96,6 +96,10 @@ export default function RequestMasterModal({
     }
 
     const payload = payloadFromValues(mt, values);
+    // Mirrors the DB dup-guard index fms_import_master_requests_pending_uniq:
+    //   (master_type, coalesce(category_id, item_group_id, ''), lower(name))
+    // An `item` payload keys on category_id now (20260808120100) — that is the
+    // FIRST arm of the coalesce, so the index needed no rebuild.
     const dup = s.masterRequests.find((r) => {
       if (r.status !== "pending" || r.masterType !== mt) return false;
       const p = r.proposedPayload as Record<string, unknown>;

@@ -4,10 +4,14 @@ import { MASTER_TYPES, type Category, type Company, type Item, type ItemGroup, t
 
 export type MasterValues = Record<string, string>;
 
-/** Relational dropdown options the item_group / item / price descriptors need. */
+/**
+ * Relational dropdown options the item_group / item / price descriptors need.
+ *
+ * No `itemGroupOptions`: an item hangs off a CATEGORY now, and the item_group
+ * descriptor itself has always picked a category. Nothing here selects a group.
+ */
 export interface MasterFieldCtx {
   categoryOptions: ComboOption[];
-  itemGroupOptions: ComboOption[];
   vendorOptions?: ComboOption[];
   itemOptions?: ComboOption[];
 }
@@ -28,8 +32,9 @@ export interface MasterLists {
  * ⚠ WIRE CONTRACT: each `key` below is a jsonb key of
  * `fms_import_master_requests.proposed_payload`, read verbatim by the
  * SECURITY DEFINER RPC `fms_import_resolve_master_request` (migration
- * 20260630120000). Add a field here WITHOUT adding it to that RPC's insert
- * chain and it is silently dropped when the request is approved.
+ * 20260630120000, extended by 20260808120100 to re-parent `item` onto a
+ * category). Add a field here WITHOUT adding it to that RPC's insert chain and
+ * it is silently dropped when the request is approved.
  */
 export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDef[] {
   switch (mt) {
@@ -53,13 +58,15 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         },
       ];
     case "item_group":
+      // Retired from the UI (see MASTER_TYPES) — kept so legacy pending requests
+      // still render and still approve.
       return [
         { key: "category_id", label: "Category", type: "select", required: true, options: ctx.categoryOptions, placeholder: "Select category" },
         { key: "name", label: "Item group name", type: "text", required: true, placeholder: "e.g. Solvents" },
       ];
     case "item":
       return [
-        { key: "item_group_id", label: "Item Group", type: "select", required: true, options: ctx.itemGroupOptions, placeholder: "Select item group" },
+        { key: "category_id", label: "Category", type: "select", required: true, options: ctx.categoryOptions, placeholder: "Select category" },
         { key: "name", label: "Item name", type: "text", required: true, placeholder: "e.g. Isopropyl Alcohol" },
         { key: "unit", label: "Unit", type: "text", placeholder: "e.g. KGS, PCS, LTR" },
       ];
@@ -86,7 +93,7 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
 /** Every key of `mt`, blank — feeds MasterCrud's `emptyValues` and the request modal. */
 export function emptyValuesFor(mt: MasterType): MasterValues {
   const empty: MasterValues = {};
-  for (const f of masterFields(mt, { categoryOptions: [], itemGroupOptions: [] })) empty[f.key] = "";
+  for (const f of masterFields(mt, { categoryOptions: [] })) empty[f.key] = "";
   return empty;
 }
 
@@ -101,7 +108,7 @@ export function missingRequired(mt: MasterType, v: MasterValues, ctx: MasterFiel
 /** Trim everything, drop empty optionals → the jsonb payload we post. */
 export function payloadFromValues(mt: MasterType, v: MasterValues): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
-  for (const f of masterFields(mt, { categoryOptions: [], itemGroupOptions: [] })) {
+  for (const f of masterFields(mt, { categoryOptions: [] })) {
     const val = (v[f.key] ?? "").trim();
     if (val || f.required) payload[f.key] = val;
   }
@@ -127,9 +134,9 @@ export function describePayload(
       return cat ? `${name} (${cat})` : name;
     }
     case "item": {
-      const grp = lookup.itemGroupName(s("item_group_id"));
+      const cat = lookup.categoryName(s("category_id"));
       const unit = s("unit");
-      return `${name}${grp ? ` (${grp})` : ""}${unit ? ` · ${unit}` : ""}`;
+      return `${name}${cat ? ` (${cat})` : ""}${unit ? ` · ${unit}` : ""}`;
     }
     case "vendor":
       return name;
@@ -169,12 +176,18 @@ export function findExistingMaster(
     case "item_group":
       return lists.itemGroups.find((g) => g.categoryId === v.category_id && eq(g.name, name));
     case "item":
-      return lists.items.find((i) => i.itemGroupId === v.item_group_id && eq(i.name, name));
+      return lists.items.find((i) => i.categoryId === v.category_id && eq(i.name, name));
     case "vendor":
       return lists.vendors.find((x) => eq(x.name, name));
   }
 }
 
-/** The parent id a request hangs off, matching the DB dup-guard index. */
+/**
+ * The parent id a request hangs off, matching the DB dup-guard index.
+ *
+ * `category_id` is read FIRST, which is why re-parenting `item` onto a category
+ * needed no index rebuild: an item payload simply resolves on the first arm now
+ * instead of the second.
+ */
 export const parentIdOf = (payload: Record<string, unknown>): string =>
   String(payload.category_id ?? payload.item_group_id ?? payload.vendor_id ?? "");
