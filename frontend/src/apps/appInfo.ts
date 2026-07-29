@@ -90,6 +90,15 @@ export const APPS: Record<string, AppInfo> = {
     category: "fms",
     subGroup: "Dispatch",
   },
+  // The only FMS whose entity is permanent: assets and their dated tracks live
+  // for years, and the thing that runs the workflow is a service JOB raised off
+  // a track when it falls due.
+  "asset-maintenance": {
+    name: "Asset Maintenance",
+    basePath: "/asset-maintenance",
+    category: "fms",
+    subGroup: "Assets",
+  },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",

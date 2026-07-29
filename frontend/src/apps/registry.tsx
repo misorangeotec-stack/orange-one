@@ -10,6 +10,7 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
+import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
 import { isUniversalApp } from "./universal";
@@ -51,6 +52,11 @@ export const apps: AppManifest[] = [
   // per user to the sales, stores, accounts and plant teams. Sales order through
   // credit, stock, LOT, sales bill and gate-out to the delivery confirmation.
   orderToDispatchApp,
+  // Asset Maintenance FMS — own fms_asset_* tables, granted per user. The only
+  // module whose entity is PERMANENT: assets and their dated tracks live for
+  // years, and a service JOB is raised off a track when it falls due, then closed
+  // to roll the track forward. Nightly pg_cron opens the jobs and pushes reminders.
+  assetMaintenanceApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];

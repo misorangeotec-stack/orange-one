@@ -376,15 +376,20 @@ async function compose(row: Row): Promise<Composed | null> {
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     const isSupplies = row.kind.startsWith("office-supplies_");
     const isProduction = row.kind.startsWith("production-entry_");
     const isDispatch = row.kind.startsWith("order-to-dispatch_");
-    const appLabel = isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    // Asset Maintenance is the only sender here whose alerts originate from
+    // pg_cron rather than from a person, so `actor_id` is often NULL — the shell
+    // already renders no actor row in that case, which is the correct reading:
+    // the reminder is from the system, not from a colleague.
+    const isAsset = row.kind.startsWith("asset-maintenance_");
+    const appLabel = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
