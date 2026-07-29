@@ -442,6 +442,8 @@ export async function submitRequest(input: {
   /** Header category. Pass null to let the server take the FIRST line's — the
    *  header column is NOT NULL and exists only so pre-existing reads keep working. */
   categoryId: string | null;
+  /** air | sea | lcl. The form requires it; the RPC accepts null for legacy callers. */
+  shipmentType: string | null;
   currency: string;
   note: string | null;
   items: NewRequestLine[];
@@ -453,6 +455,7 @@ export async function submitRequest(input: {
     p_note: input.note ?? "",
     p_currency: input.currency,
     p_fx_rate: 1, // ignored by the RPC; kept to satisfy the frozen signature
+    p_shipment_type: input.shipmentType ?? undefined,
     p_items: input.items.map((l) => ({
       item_id: l.itemId,
       category_id: l.categoryId,
@@ -483,12 +486,15 @@ export interface EditRequestLine extends NewRequestLine {
 export async function updateRequest(input: {
   requestId: string;
   note: string | null;
+  /** Omitted / null leaves the stored value — the RPC never blanks it. */
+  shipmentType: string | null;
   items: EditRequestLine[];
 }): Promise<void> {
   const { error } = await db.rpc("fms_import_update_request", {
     p_request_id: input.requestId,
     p_note: input.note ?? "",
     p_fx_rate: 1, // ignored (quantity requisition); kept for the frozen signature
+    p_shipment_type: input.shipmentType ?? undefined,
     p_items: input.items.map((l) => ({
       id: l.id,
       item_id: l.itemId,
@@ -684,29 +690,52 @@ export async function sharePo(
   if (error) throw new Error(error.message);
 }
 
-export interface PiItemInput {
-  poItemId: string;
-  qty: number;
-}
-
-export async function addPi(input: {
+/**
+ * Step 5 — record the vendor's PI against a shared PO. Three fields: the PI
+ * number, the document (both required) and a remark.
+ *
+ * `fms_import_collect_pi`, NOT the old `fms_import_add_pi`: that one is built
+ * around per-line coverage quantities and a PI value, neither of which this step
+ * captures, and it raises on call since 20260727120000.
+ */
+export async function collectPi(input: {
   poId: string;
   vendorPiNo: string;
-  piValue: number;
-  items: PiItemInput[];
-  documentPath?: string | null;
+  documentPath: string;
   documentName?: string | null;
+  remarks?: string | null;
 }): Promise<string> {
-  const { data, error } = await db.rpc("fms_import_add_pi", {
+  const { data, error } = await db.rpc("fms_import_collect_pi", {
     p_po_id: input.poId,
     p_vendor_pi_no: input.vendorPiNo,
-    p_pi_value: input.piValue,
-    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, qty: i.qty })) as unknown as Json,
-    p_document_path: input.documentPath ?? undefined,
+    p_document_path: input.documentPath,
     p_document_name: input.documentName ?? undefined,
+    p_remarks: input.remarks ?? undefined,
   });
   if (error) throw new Error(error.message);
   return data as string;
+}
+
+/**
+ * Correct a recorded PI. `documentPath` null ⇒ the server keeps the stored file
+ * (uploads are immutable timestamped keys, so the superseded one is retained).
+ * Refused server-side once a follow-up or a goods receipt exists on the PO.
+ */
+export async function updateCollectPi(input: {
+  piId: string;
+  vendorPiNo: string;
+  documentPath?: string | null;
+  documentName?: string | null;
+  remarks?: string | null;
+}): Promise<void> {
+  const { error } = await db.rpc("fms_import_update_collect_pi", {
+    p_pi_id: input.piId,
+    p_vendor_pi_no: input.vendorPiNo,
+    p_document_path: input.documentPath ?? undefined,
+    p_document_name: input.documentName ?? undefined,
+    p_remarks: input.remarks ?? undefined,
+  });
+  if (error) throw new Error(error.message);
 }
 
 const PI_DOCS_BUCKET = "fms-import-docs";
@@ -1170,29 +1199,6 @@ export async function updateSharePo(input: {
     p_payment_terms: input.paymentTerms,
     p_dispatch_date: input.dispatchDate,
     p_remarks: input.remarks ?? undefined,
-  });
-  if (error) throw new Error(error.message);
-}
-
-export async function updatePi(input: {
-  piId: string;
-  vendorPiNo: string;
-  items: PiItemInput[];
-  piValue: number;
-  paymentTerms?: string | null;
-  dispatchDate?: string | null;
-  documentPath?: string | null;
-  documentName?: string | null;
-}): Promise<void> {
-  const { error } = await db.rpc("fms_import_update_pi", {
-    p_pi_id: input.piId,
-    p_vendor_pi_no: input.vendorPiNo,
-    p_items: input.items.map((i) => ({ po_item_id: i.poItemId, qty: i.qty })) as unknown as Json,
-    p_payment_terms: input.paymentTerms ?? undefined,
-    p_pi_value: input.piValue,
-    p_dispatch_date: input.dispatchDate ?? undefined,
-    p_document_path: input.documentPath ?? undefined,
-    p_document_name: input.documentName ?? undefined,
   });
   if (error) throw new Error(error.message);
 }

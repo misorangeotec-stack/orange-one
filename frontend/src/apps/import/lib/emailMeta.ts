@@ -11,12 +11,13 @@
 // rows for everything already persisted (approval, share, PI, payment, GRN, …).
 
 import { inr, fxMoney, qtyText } from "./format";
+import { SHIPMENT_TYPE_LABEL, type ShipmentType } from "../types";
 import { formatDate } from "@/shared/lib/time";
 
 // Structural shapes (a subset of the real domain types - the store's typed arrays
 // satisfy these, so we avoid coupling to exact type names).
 interface Named { id: string; name: string }
-interface RequestLike { id: string; requestNo?: string | null; vendorId?: string | null; companyId?: string | null; currency?: string | null; requesterId?: string | null }
+interface RequestLike { id: string; requestNo?: string | null; vendorId?: string | null; companyId?: string | null; currency?: string | null; requesterId?: string | null; shipmentType?: string | null }
 interface LineLike {
   id: string; requestId: string; itemId: string;
   quantity?: number | null; unit?: string | null;
@@ -27,7 +28,7 @@ interface PoLike {
   id: string; poNo?: string | null; vendorId?: string | null; companyId?: string | null;
   currency?: string | null; totalValue?: number | null; totalValueFx?: number | null;
   dispatchDate?: string | null; paymentTerms?: string | null; documentName?: string | null;
-  tallyPoNo?: string | null;
+  tallyPoNo?: string | null; shipmentType?: string | null;
 }
 interface PoItemLike { id: string; poId: string; requestItemId: string; qty?: number | null; rate?: number | null; lineValue?: number | null }
 
@@ -97,10 +98,18 @@ export function makeImportEmail(deps: ImportEmailDeps) {
   const reasonNote = (label: string, reason?: string | null) =>
     reason && reason.trim() ? { label, text: reason.trim() } : undefined;
 
+  /**
+   * The "How it ships" row, spread into a `rows` array. Returns an EMPTY array
+   * when the order predates the field, so an old requisition shows nothing here
+   * rather than a row reading "—".
+   */
+  const shipmentRow = (t?: string | null) =>
+    t ? [{ label: "Shipment", value: SHIPMENT_TYPE_LABEL[t as ShipmentType] ?? t }] : [];
+
   return {
     // 1. Requisition raised → approver. Import is a pure quantity requisition:
     // no rate, no value — the email lists items and quantities only.
-    submitted(input: { vendorId: string; companyId: string; currency: string; items: Array<{ itemId: string; quantity: number; unit: string }> }): ImportEmailMeta {
+    submitted(input: { vendorId: string; companyId: string; shipmentType?: string | null; currency: string; items: Array<{ itemId: string; quantity: number; unit: string }> }): ImportEmailMeta {
       const lines = input.items;
       const itemsRow = {
         label: "Items",
@@ -110,7 +119,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
         subject: `New import requisition - ${vName(input.vendorId)}`,
         eyebrow: "New requisition", headline: "A purchase requisition needs your approval",
         action: "raised an import requisition",
-        rows: [{ label: "Vendor", value: vName(input.vendorId) }, { label: "Company", value: cName(input.companyId) }, itemsRow],
+        rows: [{ label: "Vendor", value: vName(input.vendorId) }, { label: "Company", value: cName(input.companyId) }, ...shipmentRow(input.shipmentType), itemsRow],
         items: lines.map((l) => ({ name: iName(l.itemId), meta: qtyText([{ qty: l.quantity, unit: l.unit }]) })),
         ctaLabel: "Open Approvals", ctaPath: `${B}/queues/approvals`,
       };
@@ -126,7 +135,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
         eyebrow: "Approved", headline: "An approved requisition is ready for PO generation",
         action: "approved a requisition",
         docLabel: req?.requestNo ? `Requisition #${req.requestNo}` : undefined,
-        rows: [{ label: "Vendor", value: vName(req?.vendorId) }, t.row, t.itemsRow],
+        rows: [{ label: "Vendor", value: vName(req?.vendorId) }, ...shipmentRow(req?.shipmentType), t.row, t.itemsRow],
         items: lines.map(lineItem),
         note: reasonNote("Vendor overridden", overrideReason),
         ctaLabel: "Open PO desk", ctaPath: `${B}/po/workbench`,
@@ -160,6 +169,9 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     poGenerated(input: { poId: string; vendorId: string; companyId: string; requestItemIds: string[]; poNo?: string | null; tallyPoNo?: string | null; documentName?: string | null }): ImportEmailMeta {
       const lines = input.requestItemIds.map(lineOf).filter(Boolean) as LineLike[];
       const t = totalsOf(lines);
+      // Off the SOURCE requisition, not the PO: this is built the instant the PO
+      // is created, before the store has refetched the row generate_po stamped.
+      const ship = reqOf(lines[0]?.requestId ?? "")?.shipmentType;
       return {
         subject: `PO ready to share${input.poNo ? ` - PO #${input.poNo}` : ""} (${vName(input.vendorId)})`,
         eyebrow: "PO generated", headline: "A new PO is ready to share with the vendor",
@@ -168,6 +180,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
         rows: [
           { label: "Vendor", value: vName(input.vendorId) },
           { label: "Company", value: cName(input.companyId) },
+          ...shipmentRow(ship),
           ...(input.tallyPoNo ? [{ label: "Tally PO No.", value: input.tallyPoNo }] : []),
           ...(input.documentName ? [{ label: "PO document", value: input.documentName }] : []),
           t.row, t.itemsRow,
@@ -177,7 +190,7 @@ export function makeImportEmail(deps: ImportEmailDeps) {
       };
     },
 
-    // 4. PO shared → Follow-up owner (no PI/payment step in a quantity requisition)
+    // 4. PO shared → Collect PI owner (the stage share_po actually parks it on)
     //
     // The Tally PO number and the document name are read off the STORE row, not
     // passed in: they belong to the PO stage and were set when the PO was
@@ -185,37 +198,54 @@ export function makeImportEmail(deps: ImportEmailDeps) {
     poShared(poId: string, input?: { dispatchDate?: string | null; paymentTerms?: string | null; remarks?: string | null }): ImportEmailMeta {
       const po = poOf(poId);
       return {
-        subject: `PO shared - follow up on dispatch${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "PO shared", headline: "PO shared with the vendor - follow up on dispatch",
+        subject: `PO shared - collect the vendor's PI${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "PO shared", headline: "PO shared with the vendor - collect their PI",
         action: "shared the PO with the vendor",
         docLabel: po?.poNo ? `PO #${po.poNo}` : undefined,
         rows: [
           { label: "Vendor", value: vName(po?.vendorId) },
+          { label: "Company", value: cName(po?.companyId) },
+          ...shipmentRow(po?.shipmentType),
           ...(po?.tallyPoNo ? [{ label: "Tally PO No.", value: po.tallyPoNo }] : []),
           ...(input?.dispatchDate ? [{ label: "Expected dispatch", value: formatDate(input.dispatchDate) }] : []),
           ...(po?.documentName ? [{ label: "PO document", value: po.documentName }] : []),
         ],
         note: reasonNote("Remarks", input?.remarks),
-        ctaLabel: "Open Follow-up queue", ctaPath: `${B}/queues/follow-up`,
+        ctaLabel: "Open Collect PI queue", ctaPath: `${B}/queues/collect-pi`,
       };
     },
 
-    // 5. PI added → Payment owner
-    piAdded(input: { poId: string; vendorPiNo: string; piValue: number; items: Array<{ poItemId: string; qty: number }>; documentName?: string | null }): ImportEmailMeta {
+    // 5. PI collected → Follow-up owner.
+    //
+    // No PI value and no covered lines: the Collect PI step captures the number,
+    // the document and a remark, nothing else (see fms_import_collect_pi). The
+    // PO's own items are listed instead, so the follow-up owner sees what the
+    // vendor is now expected to ship.
+    piCollected(input: { poId: string; vendorPiNo: string; documentName?: string | null; remarks?: string | null }): ImportEmailMeta {
       const po = poOf(input.poId);
+      const lines = poItems
+        .filter((pi) => pi.poId === input.poId)
+        .map((pi) => ({ pi, line: requestItems.find((l) => l.id === pi.requestItemId) }));
       return {
-        subject: `PI collected - advance may be due${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
-        eyebrow: "PI collected", headline: "A PI was added - advance payment may be due",
-        action: "recorded a PI",
+        subject: `PI collected - follow up on dispatch${po?.poNo ? ` (PO #${po.poNo})` : ""}`,
+        eyebrow: "PI collected", headline: "The vendor's PI was collected - follow up on dispatch",
+        action: "collected the vendor's PI",
         docLabel: `PI #${input.vendorPiNo}`,
         rows: [
           ...(po?.poNo ? [{ label: "PO", value: `#${po.poNo}` }] : []),
           { label: "Vendor", value: vName(po?.vendorId) },
-          { label: "PI value", value: fxMoney(input.piValue, po?.currency ?? "") },
+          { label: "Company", value: cName(po?.companyId) },
+          ...shipmentRow(po?.shipmentType),
+          ...(po?.tallyPoNo ? [{ label: "Tally PO No.", value: po.tallyPoNo }] : []),
+          ...(po?.dispatchDate ? [{ label: "Expected dispatch", value: formatDate(po.dispatchDate) }] : []),
           ...(input.documentName ? [{ label: "PI document", value: input.documentName }] : []),
         ],
-        items: input.items.map((it) => ({ name: nameForPoItem(it.poItemId), meta: `${it.qty}` })),
-        ctaLabel: "Open Payment queue", ctaPath: `${B}/queues/advance`,
+        items: lines.map(({ pi, line }) => ({
+          name: line ? iName(line.itemId) : nameForPoItem(pi.id),
+          meta: qtyText([{ qty: pi.qty ?? 0, unit: line?.unit ?? "" }]),
+        })),
+        note: reasonNote("Remarks", input.remarks),
+        ctaLabel: "Open Follow-up queue", ctaPath: `${B}/queues/follow-up`,
       };
     },
 

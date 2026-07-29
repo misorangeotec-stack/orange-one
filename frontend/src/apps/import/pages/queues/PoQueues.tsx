@@ -8,6 +8,7 @@ import StageTabs, { type StageMode, type StageScope } from "@/shared/components/
 import { useImportStore } from "../../store";
 import {
   allReceived,
+  poInCollectPi,
   poInFollowUp,
   poInInward,
   poInSharePo,
@@ -26,8 +27,10 @@ import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
-import { SharePoModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal } from "../../components/PoModals";
-import type { PurchaseOrder, Followup, Grn, QcInspection, TallyBooking } from "../../types";
+import { SharePoModal, CollectPiModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal } from "../../components/PoModals";
+import { PiDocLink } from "../../components/DocLinks";
+import { shipmentLabel } from "../../types";
+import type { PurchaseOrder, Followup, Grn, Pi, QcInspection, TallyBooking } from "../../types";
 
 const PILL = "inline-flex items-center text-[11px] font-semibold uppercase tracking-wide rounded-full px-2 py-0.5";
 
@@ -68,10 +71,10 @@ function StepQueuePage<E>({
   /**
    * The "what was done here" tab. Omit for a pending-only stage.
    *
-   * Entries, not POs — deliberately. Collect PI / Inward / Tally are state-derived,
-   * so one PO is legitimately pending AND has completed work at the same time (two
-   * of three lines PI-covered, say). Listing rows keeps that honest; listing POs
-   * would show the same PO in both tabs and read as a bug.
+   * Entries, not POs — deliberately. Inward / Tally are state-derived, so one PO
+   * is legitimately pending AND has completed work at the same time (100 of 500
+   * received and booked, 400 still owed). Listing rows keeps that honest; listing
+   * POs would show the same PO in both tabs and read as a bug.
    */
   completed?: {
     entries: StageEntry<E>[];
@@ -295,7 +298,7 @@ function editAction<T>(
   );
 }
 
-/* ----------------------------- Step 5: Share PO --------------------------- */
+/* ----------------------------- Step 4: Share PO --------------------------- */
 export function SharePoQueue() {
   const s = useImportStore();
   const [sharePo, setSharePo] = useState<PurchaseOrder | null>(null);
@@ -333,7 +336,78 @@ export function SharePoQueue() {
   );
 }
 
-/* --------------------------- Step 5: Follow-up ----------------------------- */
+/* --------------------------- Step 5: Collect PI ---------------------------- */
+export function CollectPiQueue() {
+  const s = useImportStore();
+  const [collectPo, setCollectPo] = useState<PurchaseOrder | null>(null);
+  const editPi = useEntryModal<Pi>();
+
+  const vendorOf = (e: StageEntry<Pi>) => s.vendorById(s.poById(e.poId)?.vendorId ?? null)?.name ?? "—";
+  const piColumns: QueueColumn<StageEntry<Pi>>[] = [
+    ...poRefColumns<Pi>(s, vendorOf),
+    { key: "piNo", header: "Vendor PI No.", cell: (e) => <span className="font-semibold text-navy">{e.row.vendorPiNo}</span>, sortValue: (e) => e.row.vendorPiNo, filter: { kind: "text", get: (e) => e.row.vendorPiNo }, tdClassName: "whitespace-nowrap" },
+    { key: "doc", header: "PI Document", cell: (e) => <PiDocLink pi={e.row} />, tdClassName: "whitespace-nowrap" },
+    { key: "remarks", header: "Remarks", cell: (e) => e.row.remarks ?? "—", sortValue: (e) => e.row.remarks ?? "", filter: { kind: "text", get: (e) => e.row.remarks ?? "" } },
+    ...entryMetaColumns<Pi>(s, "Collected On"),
+  ];
+
+  // The dispatch date the vendor committed to at Share PO — the reason this step
+  // has any urgency, and the same value the Follow-up queue then chases.
+  const dispatchDate = (p: PurchaseOrder): string | null => p.dispatchDate;
+
+  return (
+    <>
+      <StepQueuePage<Pi>
+        title="Collect PI Stage"
+        subtitle="Shared POs awaiting the vendor's proforma invoice. Record its number and attach the document."
+        filter={(p) => poInCollectPi(s.importIndex, p)}
+        completed={{
+          entries: s.completedPiEntries,
+          columns: piColumns,
+          subtitle: "PIs already collected. Each stays editable until a follow-up is logged or goods arrive.",
+          emptyMessage: "PIs you record will appear here, and stay editable until the PO moves on.",
+          renderAction: (e) => editAction(e, s.canCollectPi, () => editPi.openEdit(e.row), () => editPi.openView(e.row)),
+        }}
+        extraColumns={[
+          {
+            key: "tallyPo",
+            header: "Tally PO No.",
+            after: "po",
+            cell: (p) => p.tallyPoNo ?? "—",
+            sortValue: (p) => p.tallyPoNo ?? "",
+            filter: { kind: "text", get: (p) => p.tallyPoNo ?? "" },
+            tdClassName: "whitespace-nowrap",
+          },
+          {
+            key: "shipment",
+            header: "Shipment",
+            after: "vendor",
+            cell: (p) => shipmentLabel(p.shipmentType),
+            sortValue: (p) => shipmentLabel(p.shipmentType),
+            filter: { kind: "select", get: (p) => shipmentLabel(p.shipmentType) },
+            tdClassName: "whitespace-nowrap",
+          },
+          {
+            key: "expectedDispatch",
+            header: "Expected Dispatch",
+            after: "shipment",
+            cell: (p) => (dispatchDate(p) ? formatDate(dispatchDate(p)) : <span className="text-grey-2">—</span>),
+            sortValue: (p) => dispatchDate(p) ?? "9999-99-99",
+            filter: { kind: "date", get: (p) => dispatchDate(p) ?? "" },
+            tdClassName: "whitespace-nowrap",
+          },
+        ]}
+        renderAction={(p) => <ActionButton label="Collect PI" onClick={() => setCollectPo(p)} />}
+      />
+      {collectPo && <CollectPiModal po={collectPo} open onClose={() => setCollectPo(null)} />}
+      {editPi.row && (
+        <CollectPiModal po={s.poById(editPi.row.poId)!} open editing={editPi.row} readOnly={editPi.isView} onClose={editPi.close} />
+      )}
+    </>
+  );
+}
+
+/* --------------------------- Step 6: Follow-up ----------------------------- */
 export function FollowUpQueue() {
   const s = useImportStore();
   const [followPo, setFollowPo] = useState<PurchaseOrder | null>(null);
@@ -453,7 +527,7 @@ export function FollowUpQueue() {
   );
 }
 
-/* ---------------------------- Step 8: Inward ------------------------------- */
+/* ---------------------------- Step 7: Inward ------------------------------- */
 export function InwardQueue() {
   const s = useImportStore();
   const [grnPo, setGrnPo] = useState<PurchaseOrder | null>(null);
@@ -523,7 +597,7 @@ export function InwardQueue() {
   );
 }
 
-/* ----------------------------- Step 9: Tally ------------------------------- */
+/* ----------------------------- Step 8: Tally ------------------------------- */
 export function TallyQueue() {
   const s = useImportStore();
   const [tallyPo, setTallyPo] = useState<PurchaseOrder | null>(null);

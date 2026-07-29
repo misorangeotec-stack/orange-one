@@ -6,6 +6,7 @@ import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
 import { lineBadge, LINE_STATUS_LABEL } from "../../lib/format";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
+import { shipmentLabel } from "../../types";
 import type { LineStatus, PurchaseRequest, RequestItem } from "../../types";
 
 /**
@@ -76,6 +77,7 @@ export default function RequestsList() {
     // find a request where SPARES is only the second category.
     { key: "category", header: "Category", cell: (r) => <span title={categoryNames(r).join(", ")}>{categoryName(r)}</span>, sortValue: (r) => categoryName(r), filter: { kind: "text", get: (r) => categoryNames(r).join(", ") }, tdClassName: "whitespace-nowrap" },
     { key: "items", header: "Items", cell: (r) => s.itemsForRequest(r.id).length, sortValue: (r) => s.itemsForRequest(r.id).length, filter: { kind: "number", get: (r) => s.itemsForRequest(r.id).length } },
+    { key: "shipment", header: "Shipment", cell: (r) => shipmentLabel(r.shipmentType), sortValue: (r) => shipmentLabel(r.shipmentType), filter: { kind: "select", get: (r) => shipmentLabel(r.shipmentType) }, tdClassName: "whitespace-nowrap" },
     { key: "requester", header: "Requester", cell: (r) => requesterName(r), sortValue: (r) => requesterName(r), filter: { kind: "select", get: (r) => requesterName(r) }, tdClassName: "whitespace-nowrap" },
     { key: "created", header: "Created", cell: (r) => formatDate(r.createdAt), sortValue: (r) => r.createdAt, filter: { kind: "date", get: (r) => r.createdAt.slice(0, 10) }, tdClassName: "whitespace-nowrap" },
     {

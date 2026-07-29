@@ -15,6 +15,7 @@ import ApprovalModal from "../../components/ApprovalModal";
 import RequestStepper from "../../components/RequestStepper";
 import QtyTotal from "../../components/QtyTotal";
 import ActivityTimeline from "../../components/ActivityTimeline";
+import { shipmentLabel } from "../../types";
 import type { RequestItem } from "../../types";
 
 /** Request Detail — header + per-line pipeline view with stage actions. */
@@ -97,7 +98,9 @@ export default function RequestDetail() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">{request.requestNo}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {categoryLabel} ·
+            {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {categoryLabel} ·{" "}
+            {s.vendorLabel(request.vendorId)}
+            {request.shipmentType && <> · <span className="font-medium text-navy">{shipmentLabel(request.shipmentType)}</span></>} ·
             raised by {s.profileById(request.requesterId)?.name ?? "—"} on {formatDate(request.createdAt)}
             {request.editedAt && <> · edited {formatDate(request.editedAt)}</>}
           </p>

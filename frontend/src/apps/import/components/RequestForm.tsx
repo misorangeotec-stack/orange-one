@@ -18,11 +18,16 @@ import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine }
  * There is no rate, no exchange rate, and no line value anywhere. In `edit` mode
  * Company / Vendor render as read-only readouts — items are vendor-scoped, so
  * changing the vendor would be a different request, not a correction.
+ *
+ * Shipment Type is the exception to that lock: it stays editable, because it is a
+ * logistics decision about the same order rather than a different order, and a
+ * requisition raised before the field existed has none to show.
  */
 export default function RequestForm({ form, children }: { form: RequestFormApi; children?: ReactNode }) {
   const {
     mode, companyId, setCompanyId, vendorId, note, setNote, err, requested, setRequested,
     raise, setRaise, companyOptions, vendorOptions, categoryOptions,
+    shipmentType, setShipmentType, shipmentOptions,
     lines, setLines, itemOptionsFor, onPickVendor, onPickItem, raiseItem, filled,
   } = form;
 
@@ -144,6 +149,21 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
               />
             </FieldLabel>
           )}
+        </div>
+
+        {/* How the goods travel. Its own row rather than a third cell in the grid
+            above: the pair of two is the "who" of the order, and this is the
+            "how" — and it is a short field that would leave a ragged half-row. */}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <FieldLabel label="Shipment Type" required>
+            <Combobox
+              value={shipmentType}
+              onChange={setShipmentType}
+              options={shipmentOptions}
+              placeholder="How is it shipping?"
+              autoAdvance
+            />
+          </FieldLabel>
         </div>
 
         {vendorId && (

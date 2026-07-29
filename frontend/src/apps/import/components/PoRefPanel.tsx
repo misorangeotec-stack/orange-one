@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { Field, FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
 import { PiDocLink, TallyDocLink } from "./DocLinks";
+import { shipmentLabel } from "../types";
 import type { Grn, Pi, PurchaseOrder, PurchaseRequest } from "../types";
 
 /**
@@ -47,6 +48,9 @@ export function RequestRefPanel({
       <Field label="Company" value={s.companyLabel(request.companyId)} />
       <Field label="Requisition No." value={request.requestNo} />
       {vendorId !== undefined && <Field label={vendorFieldLabel} value={s.vendorLabel(vendorId)} />}
+      {/* Only for requisitions that carry one — an older request has none, and a
+          cell reading "—" is noise the approver has to parse past. */}
+      {request.shipmentType && <Field label="Shipment" value={shipmentLabel(request.shipmentType)} />}
       {children}
     </RefPanel>
   );
@@ -110,6 +114,10 @@ export default function PoRefPanel({
     <RefPanel>
       <Field label="Company" value={s.companyLabel(po.companyId)} />
       <Field label="Vendor" value={s.vendorLabel(po.vendorId)} />
+      {/* Not opt-in: how a consignment travels changes what every PO-side step
+          expects — lead time, paperwork, who to chase — so it belongs in the
+          context block of all of them. Hidden only when the order predates it. */}
+      {po.shipmentType && <Field label="Shipment" value={shipmentLabel(po.shipmentType)} />}
 
       {showPoNo && (
         <Field label="PO No.">

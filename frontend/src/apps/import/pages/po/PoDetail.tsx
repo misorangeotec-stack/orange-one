@@ -10,9 +10,10 @@ import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../../store";
 import { qtyText, poStageBadge, PO_STAGE_LABEL } from "../../lib/format";
 import PoStepper from "../../components/PoStepper";
-import { SharePoModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
+import { SharePoModal, CollectPiModal, FollowupModal, GrnModal, TallyModal, QcModal, PurchaseReturnModal, GateOutwardModal, RequestCancelModal, CancelPoModal, DeclineCancelModal } from "../../components/PoModals";
 import ActivityTimeline from "../../components/ActivityTimeline";
-import { GrnPhotoLink, TallyDocLink, PoDocLink } from "../../components/DocLinks";
+import { GrnPhotoLink, TallyDocLink, PoDocLink, PiDocLink } from "../../components/DocLinks";
+import { shipmentLabel } from "../../types";
 
 /**
  * PO Detail — header + lifecycle stepper + action bar + Items / GRNs tabs.
@@ -24,7 +25,7 @@ export default function PoDetail() {
   const { id } = useParams();
   const s = useImportStore();
   const [tab, setTab] = useState("items");
-  const [modal, setModal] = useState<"share" | "followup" | "grn" | "tally" | "qc" | "return" | "gateout" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
+  const [modal, setModal] = useState<"share" | "pi" | "followup" | "grn" | "tally" | "qc" | "return" | "gateout" | "reqcancel" | "cancel" | "declinecancel" | null>(null);
 
   const po = s.poById(id ?? null);
   if (!po) {
@@ -32,6 +33,7 @@ export default function PoDetail() {
   }
   const co = s.companyById(po.companyId);
   const items = s.poItemsForPo(po.id);
+  const pis = s.pisForPo(po.id);
   const grns = s.grnsForPo(po.id);
   const tally = s.tallyForPo(po.id);
   const open = po.currentStage !== "closed" && po.currentStage !== "cancelled";
@@ -76,6 +78,7 @@ export default function PoDetail() {
           <h1 className="text-[22px] font-bold text-navy">{po.poNo}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
             {s.vendorById(po.vendorId)?.name ?? "—"} · {co ? (co.location ? `${co.name} — ${co.location}` : co.name) : "—"} · {formatDate(po.createdAt)}
+            {po.shipmentType ? <> · <span className="font-medium text-navy">{shipmentLabel(po.shipmentType)}</span></> : null}
             {po.tallyPoNo ? <> · Tally PO: <span className="font-medium text-navy">{po.tallyPoNo}</span></> : null}
             {po.dispatchDate ? <> · Dispatch: <span className="font-medium text-navy">{formatDate(po.dispatchDate)}</span></> : null}
           </p>
@@ -143,6 +146,7 @@ export default function PoDetail() {
           {/* Forward-progress buttons show ONLY at the PO's current stage; the
               cancellation actions below stay available at every stage. */}
           {s.canSharePo && po.currentStage === "share_po" && <Button size="sm" variant="ghost" onClick={() => setModal("share")}>Share PO</Button>}
+          {s.canCollectPi && po.currentStage === "collect_pi" && <Button size="sm" variant="ghost" onClick={() => setModal("pi")}>Collect PI</Button>}
           {s.canFollowup && po.currentStage === "follow_up" && <Button size="sm" variant="ghost" onClick={() => setModal("followup")}>Follow-up</Button>}
           {s.canInward && po.currentStage === "inward" && !allReceived && <Button size="sm" variant="ghost" onClick={() => setModal("grn")}>Record GRN</Button>}
           {s.canTally && po.currentStage === "tally" && !tallyBooked && <Button size="sm" variant="ghost" onClick={() => setModal("tally")}>Book in Tally</Button>}
@@ -216,6 +220,23 @@ export default function PoDetail() {
         {tab === "activity" && <div className="px-4 py-4"><ActivityTimeline rows={activity} /></div>}
       </Card>
 
+      {/* The vendor's PI — the Collect PI step's output. Same shape as the Tally
+          card below, so the two references read alike. */}
+      {pis.length > 0 && (
+        <Card className="px-4 py-3 text-[13px] text-grey space-y-1.5">
+          {pis.map((p) => (
+            <div key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span>
+                <span className="text-grey">Vendor PI:</span>{" "}
+                <span className="font-semibold text-navy">{p.vendorPiNo}</span>
+              </span>
+              {p.remarks && <span className="text-grey-2">· {p.remarks}</span>}
+              {p.documentPath && <PiDocLink pi={p} />}
+            </div>
+          ))}
+        </Card>
+      )}
+
       {tally.length > 0 && (
         <Card className="px-4 py-3 text-[13px] text-grey space-y-1.5">
           {tally.map((t) => {
@@ -242,6 +263,7 @@ export default function PoDetail() {
       )}
 
       <SharePoModal po={po} open={modal === "share"} onClose={() => setModal(null)} />
+      <CollectPiModal po={po} open={modal === "pi"} onClose={() => setModal(null)} />
       <GrnModal po={po} open={modal === "grn"} onClose={() => setModal(null)} />
       <TallyModal po={po} open={modal === "tally"} onClose={() => setModal(null)} />
       <QcModal po={po} open={modal === "qc"} onClose={() => setModal(null)} />

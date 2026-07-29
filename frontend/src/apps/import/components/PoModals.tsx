@@ -12,7 +12,7 @@ import { todayIso, formatDate } from "@/shared/lib/time";
 // entered early in the morning. todayLocalIso() is the genuinely local one.
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useImportStore } from "../store";
-import { inr, fxMoney } from "../lib/format";
+import { inr } from "../lib/format";
 import PoItemsTable from "./PoItemsTable";
 import PoRefPanel, { PoRefDocs } from "./PoRefPanel";
 import { PiDocLink, GrnPhotoLink, TallyDocLink, PoDocLink, QcDocLink, ReturnDocLink, GateDocLink } from "./DocLinks";
@@ -48,68 +48,73 @@ function Hint({ children }: { children: ReactNode }) {
   return <span className="mt-1 block text-[11px] leading-snug text-grey-2">{children}</span>;
 }
 
-/* ----------------------------- Add PI ------------------------------------ */
-export function AddPiModal({ po, open, onClose, editing, readOnly = false, stacked = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi; readOnly?: boolean; /** Opened on top of another step modal — see Modal's `stacked`. */ stacked?: boolean }) {
+/* --------------------------- Step 5: Collect PI --------------------------- */
+/**
+ * The vendor's proforma invoice against a shared PO. THREE fields: the PI
+ * number, the document — both required — and a remark.
+ *
+ * Deliberately not the old Add-PI dialog. That one made you cover each PO line
+ * with a quantity and auto-priced the PI in two currencies, because a PI used to
+ * be the base a 100%-advance payment was made against. Import is a quantity
+ * requisition now: nothing downstream reads a PI quantity or a PI value, so
+ * asking for them was work with no reader. What the desk actually needs from
+ * this step is the number and the paperwork.
+ *
+ * The PO's lines are still shown, read-only, so the collector can check the PI
+ * they were sent is for this order.
+ */
+export function CollectPiModal({ po, open, onClose, editing, readOnly = false, stacked = false }: { po: PurchaseOrder; open: boolean; onClose: () => void; editing?: Pi; readOnly?: boolean; /** Opened on top of another step modal — see Modal's `stacked`. */ stacked?: boolean }) {
   const s = useImportStore();
-  const items = s.poItemsForPo(po.id);
   const [vendorPiNo, setVendorPiNo] = useState("");
-  const [qty, setQty] = useState<Record<string, string>>({});
+  const [remarks, setRemarks] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Per-line coverage: how much of each PO line is already on an existing PI, how
-  // much is still to collect, and its per-unit value.
-  //
-  // When EDITING, this PI's own lines are excluded from `covered` — they are what
-  // we are replacing, so counting them would show a line as fully covered and
-  // leave nothing editable. The server's cap excludes the same rows.
-  const coverage = items.map((pi) => {
-    const covered = s.piItems
-      .filter((x) => x.poItemId === pi.id && (!editing || x.piId !== editing.id))
-      .reduce((a, x) => a + x.qty, 0);
-    return { pi, covered, remaining: Math.max(0, pi.qty - covered), unit: pi.qty > 0 ? pi.lineValue / pi.qty : 0 };
-  });
-  const unitById = new Map(coverage.map((c) => [c.pi.id, c.unit]));
-  // PI value auto-matches the lines this PI covers (Σ coverQty × per-unit). The
-  // INR figure uses the per-unit INR value; the foreign figure uses the PO line's
-  // vendor-currency rate — both shown so the PI reads in both currencies.
-  const piValue = Math.round(items.reduce((sum, pi) => sum + (Number(qty[pi.id]) || 0) * (unitById.get(pi.id) ?? 0), 0) * 100) / 100;
-  const piValueFx = Math.round(items.reduce((sum, pi) => sum + (Number(qty[pi.id]) || 0) * pi.rate, 0) * 100) / 100;
-
   useEffect(() => {
     if (!open) return;
     setVendorPiNo(editing?.vendorPiNo ?? "");
+    setRemarks(editing?.remarks ?? "");
     setFile(null);
-    const init: Record<string, string> = {};
-    for (const pi of items) {
-      if (editing) {
-        // Editing seeds THIS PI's own recorded qty — not the remaining, which is
-        // what a new PI would be seeded with.
-        init[pi.id] = String(s.piItemsForPi(editing.id).find((x) => x.poItemId === pi.id)?.qty ?? 0);
-      } else {
-        const covered = s.piItems.filter((x) => x.poItemId === pi.id).reduce((a, x) => a + x.qty, 0);
-        init[pi.id] = String(Math.max(0, pi.qty - covered));
-      }
-    }
-    setQty(init);
     setErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, po.id, editing?.id]);
 
+  const hasExistingDoc = !!editing?.documentPath;
+  /**
+   * The attachment is mandatory. On an EDIT it is satisfied by the stored file —
+   * a typo fix in the PI number must not demand the PDF in hand again — and by a
+   * fresh upload either way. `editing` without a stored document is possible only
+   * on a row that predates this step's rule.
+   */
+  const docSatisfied = !!file || hasExistingDoc;
+  const ready = !!vendorPiNo.trim() && docSatisfied;
+
   const save = async () => {
     setErr(null);
-    if (!vendorPiNo.trim()) return setErr("Vendor PI number is required.");
-    const lines = items.filter((pi) => Number(qty[pi.id]) > 0).map((pi) => ({ poItemId: pi.id, qty: Number(qty[pi.id]) }));
-    if (lines.length === 0) return setErr("Cover at least one item with a quantity.");
+    if (!vendorPiNo.trim()) return setErr("The vendor's PI number is required.");
+    if (!docSatisfied) return setErr("Attach the vendor's PI document.");
     setBusy(true);
     try {
       let doc: { path: string; name: string } | null = null;
       if (file) doc = await s.uploadPiDocument(po.id, file);
       if (editing) {
-        await s.updatePi({ piId: editing.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+        await s.updateCollectPi({
+          piId: editing.id,
+          vendorPiNo: vendorPiNo.trim(),
+          documentPath: doc?.path ?? null, // null ⇒ the server keeps the stored file
+          documentName: doc?.name ?? null,
+          remarks: remarks.trim() || null,
+        });
       } else {
-        await s.addPi({ poId: po.id, vendorPiNo: vendorPiNo.trim(), piValue, items: lines, documentPath: doc?.path ?? null, documentName: doc?.name ?? null });
+        await s.collectPi({
+          poId: po.id,
+          vendorPiNo: vendorPiNo.trim(),
+          // Non-null by the `docSatisfied` guard above: a new PI always uploads.
+          documentPath: doc!.path,
+          documentName: doc!.name,
+          remarks: remarks.trim() || null,
+        });
       }
       onClose();
     } catch (e) {
@@ -120,87 +125,61 @@ export function AddPiModal({ po, open, onClose, editing, readOnly = false, stack
   };
 
   return (
-    <Modal open={open} onClose={onClose} readOnly={readOnly} stacked={stacked} readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined} size="2xl" title={editing ? (readOnly ? "PI" : "Edit PI") : "Add PI"}
+    <Modal open={open} onClose={onClose} readOnly={readOnly} stacked={stacked}
+      readOnlyHeader={editing ? <PiDocLink pi={editing} /> : undefined}
+      size="2xl" title={editing ? (readOnly ? "Vendor PI" : "Edit Vendor PI") : "Collect PI"}
       subtitle={editing
-        ? `${po.poNo} · correct what was recorded. Editable until a payment lands against it or goods arrive.`
-        : "Proforma invoice — the items it covers. Payment terms and dispatch date are set on the PO."}
-      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : editing ? "Save Changes" : "Add PI"}</Button></>}>
-      <div className="space-y-3.5">
+        ? `${po.poNo} · correct what was recorded. Editable until a follow-up is logged or goods arrive.`
+        : `${po.poNo} · record the proforma invoice the vendor sent against this order.`}
+      footer={<><Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button><Button size="sm" onClick={save} disabled={busy || !ready}>{busy ? "Saving…" : editing ? "Save Changes" : "Save PI"}</Button></>}>
+      <div className="space-y-4">
+        {/* Who this order is for and from, and the references the vendor quoted
+            the PI against — the same opening block every PO step form uses. */}
         <PoRefPanel po={po} readOnly={readOnly} showPoNo showTallyPoNo />
-        <div className="grid grid-cols-2 gap-3">
-          <FieldLabel label="Vendor PI No." required><TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} /></FieldLabel>
-          <FieldLabel label="PI Value" hint={<span className="inline-flex items-center gap-1 rounded-full bg-page px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey-2">Auto</span>}>
-            {/* Read-only, shown in BOTH currencies with their symbols — INR (the
-                accounting basis) as the headline, the vendor-currency value below. */}
-            <div
-              className="rounded-xl border border-line bg-page/70 px-3 py-2 leading-tight"
-              title={readOnly ? "The PI value as it was recorded" : "Auto-calculated from the covered lines (Cover Qty × rate)"}
-            >
-              <div className="text-[14px] font-bold text-navy">{inr(readOnly && editing ? editing.piValue : piValue)}</div>
-              <div className="text-[11.5px] text-grey-2">{fxMoney(piValueFx, po.currency)}</div>
-            </div>
-          </FieldLabel>
-        </div>
-        {!readOnly && (
-          <FieldLabel label="Vendor PI Document" hint="PDF or any file · optional">
-          <div className="flex items-center gap-2.5">
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
-              <Upload className="h-4 w-4" />
-              {file ? "Change file" : "Choose file"}
-              <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-            </label>
-            {file ? (
-              <span className="flex items-center gap-1.5 text-[12.5px] text-grey-2">
-                <span className="max-w-[220px] truncate text-navy">{file.name}</span>
-                <button type="button" onClick={() => setFile(null)} className="text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
-              </span>
-            ) : (
-              <span className="text-[12.5px] text-grey-2">No file selected</span>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="space-y-3.5">
+            <FieldLabel label="Vendor PI No." required>
+              <TextInput value={vendorPiNo} onChange={(e) => setVendorPiNo(e.target.value)} placeholder="As printed on the vendor's proforma" />
+            </FieldLabel>
+
+            {!readOnly && (
+              <FieldLabel label="Vendor PI Document" required
+                hint={editing ? (hasExistingDoc ? "leave as-is to keep the attached file" : "PDF or any file · required") : "PDF or any file · required"}>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange">
+                    <Upload className="h-4 w-4" />
+                    {file ? "Change file" : hasExistingDoc ? "Replace file" : "Choose file"}
+                    <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*,application/pdf"
+                      onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  </label>
+                  {file ? (
+                    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                      <span className="max-w-[220px] truncate text-navy">{file.name}</span>
+                      <button type="button" onClick={() => setFile(null)} className="shrink-0 text-grey-2 hover:text-ryg-red" aria-label="Remove file"><X className="h-3.5 w-3.5" /></button>
+                    </span>
+                  ) : hasExistingDoc ? (
+                    <span className="flex min-w-0 items-center gap-1.5 text-[12.5px] text-grey-2">
+                      Current: <span className="max-w-[220px] truncate text-navy">{editing?.documentName ?? "attached file"}</span>
+                    </span>
+                  ) : (
+                    <span className="text-[12.5px] text-ryg-red">No file selected — the PI cannot be saved without one.</span>
+                  )}
+                </div>
+              </FieldLabel>
             )}
+
+            <FieldLabel label="Remarks" hint="Optional">
+              <TextArea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="e.g. PI covers a partial shipment; balance to follow." />
+            </FieldLabel>
+            <Err msg={err} />
           </div>
-        </FieldLabel>
-        )}
-        <div className="rounded-xl border border-line overflow-hidden">
-          <table className="w-full text-[13px]">
-            <thead><tr className="text-left text-grey-2 border-b border-line bg-page/60"><th className="px-3 py-2 font-medium">Item</th><th className="px-3 py-2 font-medium">Ordered</th><th className="px-3 py-2 font-medium w-32">Cover Qty</th></tr></thead>
-            <tbody>
-              {coverage.map(({ pi, covered, remaining }) => {
-                const line = s.lineById(pi.requestItemId);
-                const locked = remaining === 0;
-                return (
-                  <tr key={pi.id} className="border-b border-line/70 last:border-0">
-                    <td className="px-3 py-2 font-medium text-navy">{line ? s.itemLabel(line.itemId) : "—"}</td>
-                    <td className="px-3 py-2">{pi.qty}</td>
-                    <td className="px-3 py-2">
-                      <TextInput
-                        type="number"
-                        className={`w-28 min-w-[6.5rem] text-right tabular-nums ${locked ? "bg-page/70 text-grey-2 cursor-not-allowed" : ""}`}
-                        value={qty[pi.id] ?? ""}
-                        min={0}
-                        max={remaining}
-                        disabled={locked}
-                        title={locked ? "Already fully collected on an earlier PI" : undefined}
-                        onChange={(e) =>
-                          setQty((p) => ({
-                            ...p,
-                            [pi.id]: e.target.value === "" ? "" : String(Math.max(0, Math.min(remaining, Number(e.target.value)))),
-                          }))
-                        }
-                      />
-                      {covered > 0 && (
-                        <div className="mt-1 text-[11px] text-grey-2">
-                          {locked ? "Fully collected" : `${covered} already collected · ${remaining} left`}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+
+          <div className="space-y-1.5">
+            <div className={SECTION_HEADING_CLASS}>What this PO covers</div>
+            <PoItemsTable po={po} compact />
+          </div>
         </div>
-        <Err msg={err} />
       </div>
     </Modal>
   );
@@ -693,7 +672,7 @@ export function FollowupModal({ po, open, onClose, editing, readOnly = false }: 
         Sibling, not child: a modal rendered inside the parent's body would land
         inside its read-only fieldset and come up disabled. `stacked` keeps it
         above the parent and stops Escape closing both at once. */}
-    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    {viewPi && <CollectPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
     </>
   );
 }
@@ -858,7 +837,7 @@ export function GrnModal({ po, open, onClose, editing, readOnly = false }: { po:
         Sibling, not child: a modal rendered inside the parent's body would land
         inside its read-only fieldset and come up disabled. `stacked` keeps it
         above the parent and stops Escape closing both at once. */}
-    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    {viewPi && <CollectPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
     </>
   );
 }
@@ -1010,7 +989,7 @@ export function TallyModal({ po, open, onClose, editing, readOnly = false }: { p
     </Modal>
     {/* Sibling, not child: a modal rendered inside the parent's body would land
         inside its read-only fieldset and come up disabled. */}
-    {viewPi && <AddPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
+    {viewPi && <CollectPiModal po={po} open stacked editing={viewPi} readOnly onClose={() => setViewPi(null)} />}
     </>
   );
 }

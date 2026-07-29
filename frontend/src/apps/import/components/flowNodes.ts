@@ -19,7 +19,7 @@ type Store = ReturnType<typeof useImportStore>;
  *
  * `purchase_return` and `gate_outward` are marked `branch`: they only exist for a
  * PO whose QC inspection REJECTED something. `buildFlowNodes` drops them for
- * everyone else, so the ordinary rail stays 8 nodes + Closed — which matters
+ * everyone else, so the ordinary rail stays 9 nodes + Closed — which matters
  * because PoStageRail prints `i + 1` in each pending circle, making the node
  * order a user-visible step numbering that has to line up with STEPS[].index.
  */
@@ -28,6 +28,7 @@ export const FLOW_STAGES = [
   { key: "approval", label: "Approval" },
   { key: "generated", label: "Generate PO" },
   { key: "share_po", label: "Share PO" },
+  { key: "collect_pi", label: "Collect PI" },
   { key: "follow_up", label: "Follow-up" },
   { key: "inward", label: "Inward" },
   { key: "tally", label: "Tally" },
@@ -100,8 +101,8 @@ export function poFlowIndex(
   if (currentStage === "closed" && qcPending) return at("qc_inspection");
   if (currentStage === "closed" || currentStage === "cancelled") return closedIndex;
   const i = at(currentStage);
-  // The lower clamp catches a legacy PO parked on the retired collect_pi /
-  // advance_payment stages, and any stage missing from the visible list.
+  // The lower clamp catches a legacy PO parked on the retired advance_payment
+  // stage, and any stage missing from the visible list.
   const sharePoIndex = at("share_po");
   return i < sharePoIndex ? sharePoIndex : i;
 }

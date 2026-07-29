@@ -7,9 +7,9 @@ import { useRequestForm } from "./useRequestForm";
 
 /**
  * Stage 1 — raise an Import Purchase Request. Import has FIXED vendors, so there
- * is no sourcing: pick Company → Vendor, then fill the grid. Each row picks its
- * own Category and Item, so one request may span categories. It is a pure
- * quantity requisition — there is no rate, exchange rate, or value on a line.
+ * is no sourcing: pick Company → Vendor → Shipment Type, then fill the grid. Each
+ * row picks its own Category and Item, so one request may span categories. It is
+ * a pure quantity requisition — no rate, exchange rate, or value on a line.
  *
  * The form itself lives in useRequestForm + RequestForm, shared with EditRequest.
  */
@@ -32,6 +32,7 @@ export default function NewRequest() {
         vendorId: form.vendorId,
         // The server takes the first line's category for the (NOT NULL) header.
         categoryId: null,
+        shipmentType: form.shipmentType,
         currency: form.currency.trim().toUpperCase(),
         note: form.note.trim() || null,
         items: form.filled.map((l) => ({
@@ -54,8 +55,8 @@ export default function NewRequest() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">New Import Request</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Pick the company and vendor, then fill the grid — each row has its own category. Press Tab or Enter at the end
-          of a row to start the next one.
+          Pick the company, the vendor and how the shipment travels, then fill the grid — each row has its own category.
+          Press Tab or Enter at the end of a row to start the next one.
         </p>
       </div>
 

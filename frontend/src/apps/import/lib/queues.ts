@@ -14,10 +14,10 @@
  * drift apart.
  *
  * A "queue entry" is a **(step, entity) work-item**, not an entity. The same PO
- * can legitimately sit in two queues at once — e.g. a PO at `advance_payment`
- * that still has no PI is in both the Advance and the Collect-PI queue — so the
- * sum of the per-step counts can exceed the number of open POs. That is the
- * number a process coordinator wants: units of step-work due.
+ * can legitimately sit in two queues at once — e.g. a partially-received PO owes
+ * Tally an invoice for what landed AND still owes Inward the rest — so the sum
+ * of the per-step counts can exceed the number of open POs. That is the number a
+ * process coordinator wants: units of step-work due.
  */
 import type { ImportData } from "../data/importFetch";
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
@@ -231,10 +231,15 @@ export function isDispatched(idx: ImportIndex, p: PurchaseOrder): boolean {
   );
 }
 
+/** Has the Collect PI step produced anything for this PO? */
+export const hasPi = (idx: ImportIndex, p: PurchaseOrder): boolean => (idx.pisByPo.get(p.id) ?? []).length > 0;
+
 /**
- * How much of a PO's lines are covered by collected PI(s). A PO line is
- * "covered" once the PI-item qty booked against it reaches the ordered qty.
- * Keeps a PO in the Collect-PI queue until EVERY line has a PI.
+ * LEGACY — how much of a PO's lines were covered by collected PI(s), under the
+ * money-driven flow where a PI booked quantities against PO lines. The current
+ * Collect PI step captures a number, a document and a remark and books no
+ * quantities at all, so nothing routes on this any more; kept because old rows
+ * still carry `fms_import_pi_items` and PoDetail-era reads may want the shape.
  */
 export function piCoverage(idx: ImportIndex, p: PurchaseOrder): { total: number; full: number; hasPi: boolean } {
   const items = idx.poItemsByPo.get(p.id) ?? [];
@@ -247,6 +252,7 @@ export function piCoverage(idx: ImportIndex, p: PurchaseOrder): { total: number;
   return { total: items.length, full, hasPi: pis.length > 0 };
 }
 
+/** LEGACY, pairs with {@link piCoverage}. Nothing routes on it — see `poInCollectPi`. */
 export function needsPi(idx: ImportIndex, p: PurchaseOrder): boolean {
   const c = piCoverage(idx, p);
   return c.total > 0 && c.full < c.total;
@@ -373,7 +379,8 @@ export function poStepCompletedIso(idx: ImportIndex, po: PurchaseOrder, step: St
     case "share_po":
       return po.sharedAt;
     case "collect_pi":
-      return needsPi(idx, po) ? null : maxIso((idx.pisByPo.get(po.id) ?? []).map((p) => p.createdAt));
+      // One PI per PO: the step is done the moment one exists.
+      return maxIso((idx.pisByPo.get(po.id) ?? []).map((p) => p.createdAt));
     case "advance_payment":
       return (idx.paymentsByPo.get(po.id) ?? [])
         .slice()
@@ -473,9 +480,15 @@ export const lineInSourcing = (l: RequestItem) => l.status === "sourcing";
 export const lineInApproval = (l: RequestItem) => l.status === "approval" || l.status === "on_hold";
 export const lineInPoDesk = (l: RequestItem) => l.status === "approved_pending_po";
 
-/** The six PO queues. Each takes the index so it stays O(1). */
+/** The PO queues. Each takes the index so it stays O(1). */
 export const poInSharePo = (_idx: ImportIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage === "share_po";
-export const poInCollectPi = (idx: ImportIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage !== "share_po" && needsPi(idx, p);
+/**
+ * Stage equality, not PI coverage: one PI per PO now, so a PO owes this step
+ * exactly while it sits on it. (The old rule — "any line not covered by a PI" —
+ * belonged to the retired per-line flow and would put a PO in this queue and the
+ * follow-up queue at once.)
+ */
+export const poInCollectPi = (_idx: ImportIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage === "collect_pi";
 export const poInAdvance = (_idx: ImportIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage === "advance_payment";
 export const poInFollowUp = (_idx: ImportIndex, p: PurchaseOrder) => isOpenPo(p) && p.currentStage === "follow_up";
 /**
@@ -508,12 +521,13 @@ export const poInPurchaseReturn = (idx: ImportIndex, p: PurchaseOrder) =>
 export const poInGateOutward = (idx: ImportIndex, p: PurchaseOrder) =>
   p.currentStage !== "cancelled" && gateOutPendingForPo(idx, p.id).length > 0;
 
-// Collect-PI and Advance-Payment are retired (Import is a pure quantity
-// requisition): they are absent from this list, so no queue entry or Control
-// Center count is ever produced for them. The predicates + completed-entry
-// builders below are kept for any legacy PO but nothing routes into them.
+// Advance-Payment is retired (Import is a pure quantity requisition): it is
+// absent from this list, so no queue entry or Control Center count is ever
+// produced for it. Its predicate + completed-entry builder are kept for any
+// legacy PO but nothing routes into it. Collect PI is NOT retired — it is step 5.
 const PO_STEPS: { stepKey: StepKey; match: (idx: ImportIndex, p: PurchaseOrder) => boolean }[] = [
   { stepKey: "share_po", match: poInSharePo },
+  { stepKey: "collect_pi", match: poInCollectPi },
   { stepKey: "follow_up", match: poInFollowUp },
   { stepKey: "inward", match: poInInward },
   { stepKey: "tally", match: poInTally },
@@ -624,9 +638,9 @@ export interface StageEntry<T> {
  * are deliberately written to the same shape so a drift is easy to spot.
  *
  * "The next step" is not merely `collect_pi`: the flow can legitimately skip
- * ahead (an advance paid, or goods landing, before any PI), and each of those is
- * downstream work that a changed PO document would invalidate. So the rule is
- * "no downstream artifact of any kind exists yet".
+ * ahead (goods landing before any PI), and each of those is downstream work that
+ * a changed PO document would invalidate. So the rule is "no downstream artifact
+ * of any kind exists yet".
  */
 export function poShareLockReason(idx: ImportIndex, p: PurchaseOrder): string | null {
   if (p.currentStage === "closed" || p.currentStage === "cancelled") {
@@ -688,11 +702,12 @@ const terminalReason = (p: PurchaseOrder | undefined, what: string): string | nu
 
 const poOf = (data: ImportSnapshot, poId: string) => data.pos.find((p) => p.id === poId);
 
+/** Mirrors `fms_import_pi_editable()` — the follow-up (or a receipt) freezes it. */
 export function piLockReason(data: ImportSnapshot, idx: ImportIndex, pi: Pi): string | null {
   const t = terminalReason(poOf(data, pi.poId), "PI");
   if (t) return t;
+  if ((idx.followupsByPo.get(pi.poId) ?? []).length > 0) return "A follow-up has already been recorded against this PO.";
   if ((idx.grnsByPo.get(pi.poId) ?? []).length > 0) return "Goods have already been received against this PO.";
-  if ((idx.paymentsByPo.get(pi.poId) ?? []).some((x) => x.piId === pi.id)) return "A payment has already been recorded against this PI.";
   return null;
 }
 

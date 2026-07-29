@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import type { MasterValues } from "../../lib/masterFields";
-import type { MasterType, RequestItem } from "../../types";
+import { SHIPMENT_TYPES, type MasterType, type RequestItem } from "../../types";
 import { useImportStore } from "../../store";
 
 /**
@@ -78,6 +78,8 @@ export interface RequestFormInit {
   requestId: string;
   companyId: string;
   vendorId: string;
+  /** "" for a requisition raised before the field existed — the form then asks for it. */
+  shipmentType: string;
   currency: string;
   note: string;
   lines: RequestLine[];
@@ -89,6 +91,8 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
 
   const [companyId, setCompanyId] = useState("");
   const [vendorId, setVendorId] = useState("");
+  /** air | sea | lcl — how the consignment travels. Required to submit. */
+  const [shipmentType, setShipmentType] = useState("");
   const [lines, setLines] = useState<RequestLine[]>([makeEmptyLine()]);
   const [note, setNote] = useState("");
   // Currency stays as a quiet vendor attribute recorded on the request — the
@@ -109,6 +113,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     hydrated.current = init.requestId;
     setCompanyId(init.companyId);
     setVendorId(init.vendorId);
+    setShipmentType(init.shipmentType);
     setCurrency(init.currency);
     setNote(init.note);
     setLines(init.lines.length > 0 ? init.lines : [makeEmptyLine()]);
@@ -126,6 +131,8 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
     [s.activeCategories]
   );
+  /** Fixed, code-defined — a shipment mode is not master data anyone maintains. */
+  const shipmentOptions: ComboOption[] = SHIPMENT_TYPES;
 
   /** Items under a row's category; already-added ones drop out. */
   const itemOptionsFor = (line: RequestLine): ComboOption[] => {
@@ -172,6 +179,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
   const validate = (): string | null => {
     if (!companyId) return "Select a company.";
     if (!vendorId) return "Select a vendor.";
+    if (!shipmentType) return "Select how the shipment travels.";
     if (filled.length === 0) return "Add at least one item line.";
     if (filled.some((l) => !l.categoryId)) return "Every line needs a category.";
     if (filled.some((l) => !l.itemId)) return "Every line needs an item.";
@@ -184,6 +192,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     // state
     companyId, setCompanyId,
     vendorId, setVendorId,
+    shipmentType, setShipmentType,
     lines, setLines,
     note, setNote,
     currency, setCurrency,
@@ -191,7 +200,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     requested, setRequested,
     raise, setRaise,
     // options
-    companyOptions, vendorOptions, categoryOptions,
+    companyOptions, vendorOptions, categoryOptions, shipmentOptions,
     // behaviour
     itemOptionsFor, onPickVendor, onPickItem, raiseItem,
     filled, validate,

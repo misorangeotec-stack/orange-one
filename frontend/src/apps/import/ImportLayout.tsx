@@ -34,6 +34,7 @@ export default function ImportLayout() {
     isApprover,
     canGeneratePo,
     canSharePo,
+    canCollectPi,
     canFollowup,
     canInward,
     canTally,
@@ -56,6 +57,7 @@ export default function ImportLayout() {
         isApprover,
         canGeneratePo,
         canSharePo,
+        canCollectPi,
         canFollowup,
         canInward,
         canTally,
@@ -68,7 +70,7 @@ export default function ImportLayout() {
         // count for item requests they can't resolve.
         pendingReviews: resolvableRequests.length,
       }),
-    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canFollowup, canInward, canTally, canQc, canPurchaseReturn, canGateOutward, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
+    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canFollowup, canInward, canTally, canQc, canPurchaseReturn, canGateOutward, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
   );
 
   // Resolve the deep-link for a notification's entity.

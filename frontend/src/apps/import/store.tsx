@@ -116,7 +116,8 @@ import {
   cancelPo as cancelPoWrite,
   declinePoCancel as declinePoCancelWrite,
   sharePo as sharePoWrite,
-  addPi as addPiWrite,
+  collectPi as collectPiWrite,
+  updateCollectPi as updateCollectPiWrite,
   uploadPiDocument as uploadPiDocumentWrite,
   piDocumentUrl as piDocumentUrlWrite,
   uploadPoDocument as uploadPoDocumentWrite,
@@ -147,7 +148,6 @@ import {
   reassignLine as reassignLineWrite,
   markNotificationsRead as markNotificationsReadWrite,
   updateSharePo as updateSharePoWrite,
-  updatePi as updatePiWrite,
   updatePayment as updatePaymentWrite,
   updateFollowup as updateFollowupWrite,
   updateGrn as updateGrnWrite,
@@ -167,7 +167,6 @@ import {
   type EditRequestLine,
   type QuotationInput,
   type ApprovalDecision,
-  type PiItemInput,
   type GrnItemInput,
 } from "./data/importWrites";
 
@@ -410,9 +409,9 @@ interface ImportStoreValue {
   canCancelPo: (po: PurchaseOrder) => boolean;
 
   // workflow mutations
-  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; currency: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
+  submitRequest: (input: { companyId: string; vendorId: string; categoryId: string | null; shipmentType: string | null; currency: string; note: string | null; items: NewRequestLine[] }) => Promise<string>;
   /** Correct an already-submitted request. Pre-approval only — the RPC re-checks. */
-  updateRequest: (input: { requestId: string; note: string | null; items: EditRequestLine[] }) => Promise<void>;
+  updateRequest: (input: { requestId: string; note: string | null; shipmentType: string | null; items: EditRequestLine[] }) => Promise<void>;
   /** Cancel a whole request (kept, marked cancelled). Pre-approval only. */
   cancelRequest: (requestId: string, reason: string) => Promise<void>;
   saveSourcing: (input: {
@@ -437,7 +436,8 @@ interface ImportStoreValue {
 
   // PO lifecycle mutations
   sharePo: (poId: string, input?: { remarks: string | null; paymentTerms: string | null; dispatchDate: string | null }) => Promise<void>;
-  addPi: (input: { poId: string; vendorPiNo: string; piValue: number; items: PiItemInput[]; documentPath?: string | null; documentName?: string | null }) => Promise<string>;
+  /** Step 5 — record the vendor's PI (number + document required, remarks optional). */
+  collectPi: (input: { poId: string; vendorPiNo: string; documentPath: string; documentName?: string | null; remarks?: string | null }) => Promise<string>;
   uploadPiDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
   piDocumentUrl: (path: string) => Promise<string>;
   uploadPoDocument: (poId: string, file: File) => Promise<{ path: string; name: string }>;
@@ -471,7 +471,8 @@ interface ImportStoreValue {
   // re-checks its lock server-side and logs in-transaction, so none of these
   // needs a separate announce.
   updateSharePo: (input: { poId: string; paymentTerms: string; dispatchDate: string; remarks?: string | null }) => Promise<void>;
-  updatePi: (input: { piId: string; vendorPiNo: string; items: PiItemInput[]; piValue: number; paymentTerms?: string | null; dispatchDate?: string | null; documentPath?: string | null; documentName?: string | null }) => Promise<void>;
+  /** Correct a recorded PI. `documentPath` null ⇒ the server keeps the stored file. */
+  updateCollectPi: (input: { piId: string; vendorPiNo: string; documentPath?: string | null; documentName?: string | null; remarks?: string | null }) => Promise<void>;
   updatePayment: (input: { paymentId: string; amount: number; amountFx?: number | null; currency?: string | null; fxRate?: number | null; paidOn?: string | null; utrRef?: string | null; piRemarks?: string | null; details?: string | null; advicePath?: string | null; adviceName?: string | null }) => Promise<void>;
   updateFollowup: (input: { followupId: string; dispatchStatus: string; actualDispatchDate?: string | null; lrNo?: string | null; transportDetails?: string | null; revisedDispatchDate?: string | null; remarks?: string | null; piRemarks?: string | null }) => Promise<void>;
   updateGrn: (input: { grnId: string; items: GrnItemInput[]; poRef: string; piRef?: string | null; gateRegisterNo?: string | null; condition?: string | null; note?: string | null; photoPath?: string | null; photoName?: string | null }) => Promise<void>;
@@ -1136,15 +1137,12 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           entityType: "po",
           entityId: poId,
           type: "po_shared",
-          // `follow_up`, NOT `collect_pi`. This line was copied from RM Domestic,
-          // where sharing routes to the Collect-PI step. Import is a pure quantity
-          // requisition with no PI and no advance (20260727120000), so share_po
-          // advances straight to `follow_up` — but the notification kept going to
-          // whoever still owns the retired `collect_pi` key, while the people who
-          // actually inherit the PO were told nothing. The email body and CTA have
-          // always said "follow up on dispatch"; only the recipients disagreed.
-          text: "PO shared with the vendor — follow up on dispatch",
-          recipients: ownerIdsOf("follow_up"),
+          // Collect PI is step 5 again, so a shared PO hands over to ITS owners —
+          // matching where `fms_import_share_po` actually parks the PO. (For the
+          // stretch when Import had no PI step this pointed at `follow_up`; the
+          // rule is and was "notify whoever owns the stage the PO lands on".)
+          text: "PO shared with the vendor — collect the vendor's PI",
+          recipients: ownerIdsOf("collect_pi"),
           // The Tally PO number and the document name are no longer passed in —
           // they belong to the PO stage. poShared() reads them off the store row,
           // which is safe: this runs BEFORE invalidate(), on a pre-share snapshot
@@ -1153,15 +1151,15 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
-      addPi: async (input) => {
-        const id = await addPiWrite(input);
+      collectPi: async (input) => {
+        const id = await collectPiWrite(input);
         await safeAnnounce({
           entityType: "po",
           entityId: input.poId,
-          type: "pi_added",
-          text: "A PI was added — advance payment may be due",
-          recipients: ownerIdsOf("advance_payment"),
-          meta: email.piAdded(input),
+          type: "pi_collected",
+          text: "The vendor's PI was collected — follow up on dispatch",
+          recipients: ownerIdsOf("follow_up"),
+          meta: email.piCollected(input),
         });
         await invalidate();
         return id;
@@ -1304,7 +1302,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       // row inside the same transaction. safeAnnounce is best-effort and swallows
       // failures, which is not good enough to answer "who changed this, and when".
       updateSharePo: async (input) => { await updateSharePoWrite(input); await invalidate(); },
-      updatePi: async (input) => { await updatePiWrite(input); await invalidate(); },
+      updateCollectPi: async (input) => { await updateCollectPiWrite(input); await invalidate(); },
       updatePayment: async (input) => { await updatePaymentWrite(input); await invalidate(); },
       updateFollowup: async (input) => { await updateFollowupWrite(input); await invalidate(); },
       updateGrn: async (input) => { await updateGrnWrite(input); await invalidate(); },

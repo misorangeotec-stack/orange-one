@@ -32,6 +32,7 @@ export default function EditRequest() {
           requestId: request.id,
           companyId: request.companyId,
           vendorId: request.vendorId ?? "",
+          shipmentType: request.shipmentType ?? "",
           currency: request.currency ?? "",
           note: request.note ?? "",
           lines: lines.map(hydrateLine),
@@ -77,6 +78,7 @@ export default function EditRequest() {
       await s.updateRequest({
         requestId: request.id,
         note: form.note.trim() || null,
+        shipmentType: form.shipmentType || null,
         items: form.filled.map((l) => ({
           // null id ⇒ a row added during this edit; the RPC inserts it.
           id: l.dbId,
@@ -100,8 +102,8 @@ export default function EditRequest() {
         <Link to={`/import/requests/${request.id}`} className="text-[12.5px] text-grey hover:text-navy">← {request.requestNo}</Link>
         <h1 className="text-[22px] font-bold text-navy mt-1">Edit {request.requestNo}</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Change quantities or items while the request is still awaiting approval. The company and vendor are fixed —
-          raise a new request if those need to change.
+          Change quantities, items or the shipment type while the request is still awaiting approval. The company and
+          vendor are fixed — raise a new request if those need to change.
         </p>
       </div>
 

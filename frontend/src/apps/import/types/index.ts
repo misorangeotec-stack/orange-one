@@ -114,6 +114,33 @@ export interface ApprovalBand {
 
 export type RequestStatus = "open" | "closed" | "cancelled";
 
+/**
+ * How an import consignment travels. Chosen on the requisition, right after the
+ * company and the vendor, and copied onto every PO the requisition produces.
+ *
+ * `lcl` (Less than Container Load) is a sea shipment too, but the desk treats it
+ * as its own mode — it books, costs and lands differently from a full container
+ * — so it is a sibling of `sea` rather than a flag on it.
+ */
+export type ShipmentType = "air" | "sea" | "lcl";
+
+export const SHIPMENT_TYPE_LABEL: Record<ShipmentType, string> = {
+  air: "By Air",
+  sea: "By Sea",
+  lcl: "LCL",
+};
+
+/** The options, in the order the desk thinks about them. */
+export const SHIPMENT_TYPES: { value: ShipmentType; label: string }[] = [
+  { value: "air", label: SHIPMENT_TYPE_LABEL.air },
+  { value: "sea", label: SHIPMENT_TYPE_LABEL.sea },
+  { value: "lcl", label: SHIPMENT_TYPE_LABEL.lcl },
+];
+
+/** `SHIPMENT_TYPE_LABEL` with an em dash for "not recorded" — the one display rule. */
+export const shipmentLabel = (t: string | null | undefined): string =>
+  t ? SHIPMENT_TYPE_LABEL[t as ShipmentType] ?? t : "—";
+
 export interface PurchaseRequest {
   id: string;
   requestNo: string;
@@ -121,6 +148,11 @@ export interface PurchaseRequest {
   categoryId: string;
   /** The fixed vendor chosen on the request header (import has no sourcing). */
   vendorId: string | null;
+  /**
+   * How the goods travel. Null only on requisitions raised before the field
+   * existed — never guessed, and rendered as "—".
+   */
+  shipmentType: ShipmentType | null;
   /** The request's single foreign currency (= the vendor's default). */
   currency: string | null;
   requesterId: string | null;
@@ -204,6 +236,9 @@ export interface PurchaseOrder {
   poNo: string;
   vendorId: string;
   companyId: string;
+  /** Copied from the source requisition at generate time, so every PO-side step
+   *  form can name the shipment mode without walking back to the request. */
+  shipmentType: ShipmentType | null;
   currentStage: string;
   /** PO value in INR (Σ line INR values) — the approval / cap basis. */
   totalValue: number;
@@ -257,11 +292,24 @@ export type PaymentTerms = "full_advance" | "partial_advance" | "credit" | "on_d
 export type PiStatus = "open" | "partially_received" | "received";
 export type DispatchStatus = "pending" | "dispatched" | "delayed";
 
+/**
+ * The vendor's proforma invoice, captured at the `collect_pi` step.
+ *
+ * Only four fields are live: `vendorPiNo`, `documentPath`/`documentName` and
+ * `remarks`. Everything else — `paymentTerms`, `piValue`, `dispatchDate`, the
+ * dispatch/status axis and {@link PiItem} — belongs to the money-driven flow
+ * Import shed in 20260727120000. The columns are kept (additive-only rule) and
+ * are never written by the current step, so read them as legacy.
+ */
 export interface Pi {
   id: string;
   poId: string;
   vendorPiNo: string;
+  /** Free-text note from the Collect PI step. */
+  remarks: string | null;
+  /** @deprecated legacy money-flow column; never written by `collect_pi`. */
   paymentTerms: PaymentTerms;
+  /** @deprecated legacy money-flow column; never written by `collect_pi`. */
   piValue: number;
   dispatchDate: string | null;
   status: PiStatus;
