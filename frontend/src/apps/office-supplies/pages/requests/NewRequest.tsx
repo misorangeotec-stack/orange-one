@@ -4,6 +4,7 @@ import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { useSuppliesStore } from "../../store";
 import SupplyRequestFields from "../../components/SupplyRequestFields";
+import { requestHref } from "../../lib/routes";
 import { useSupplyRequestForm } from "./useSupplyRequestForm";
 
 /**
@@ -25,7 +26,7 @@ export default function NewRequest() {
     setBusy(true);
     try {
       const id = await s.submitRequest(built.input);
-      navigate(`/office-supplies/requests/${id}`);
+      navigate(requestHref(id));
     } catch (e) {
       form.setErr((e as Error).message);
       setBusy(false);
@@ -35,7 +36,7 @@ export default function NewRequest() {
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       <div>
-        <h1 className="text-[22px] font-bold text-navy">Raise a supply request</h1>
+        <h1 className="text-[22px] font-bold text-navy">Raise a purchase request</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Tell us what you need. Computer &amp; tech accessories go through two approvals; stationery, maintenance and
           services go straight to the handover team.

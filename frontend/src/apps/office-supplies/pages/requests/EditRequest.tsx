@@ -5,10 +5,11 @@ import Button from "@/shared/components/ui/Button";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { useSuppliesStore } from "../../store";
 import SupplyRequestFields from "../../components/SupplyRequestFields";
+import { requestHref, myRequestsHref } from "../../lib/routes";
 import { useSupplyRequestForm, type SupplyFormInit } from "./useSupplyRequestForm";
 
 /**
- * Correct a submitted supply request — allowed only while nobody has acted
+ * Correct a submitted purchase request — allowed only while nobody has acted
  * (awaiting first approval, or a no-approval request still awaiting handover).
  * The gate is re-checked server-side; this page's guard is a courtesy.
  *
@@ -71,7 +72,7 @@ export default function EditRequest() {
 
   if (!request) {
     return (
-      <EmptyState title="Request not found" message="It may have been removed." actionLabel="Back to My Requests" actionTo="/office-supplies/my-requests" />
+      <EmptyState title="Request not found" message="It may have been removed." actionLabel="Back to My Requests" actionTo={myRequestsHref()} />
     );
   }
   if (!editable) {
@@ -84,7 +85,7 @@ export default function EditRequest() {
             : "It has already been acted on. Only a request nobody has acted on yet can be changed."
         }
         actionLabel="Back to the request"
-        actionTo={`/office-supplies/requests/${request.id}`}
+        actionTo={requestHref(request.id)}
       />
     );
   }
@@ -97,7 +98,7 @@ export default function EditRequest() {
     setBusy(true);
     try {
       await s.updateRequest(request.id, built.input);
-      navigate(`/office-supplies/requests/${request.id}`);
+      navigate(requestHref(request.id));
     } catch (e) {
       form.setErr((e as Error).message);
       setBusy(false);
@@ -107,7 +108,7 @@ export default function EditRequest() {
   return (
     <div className="max-w-2xl mx-auto space-y-5">
       <div>
-        <Link to={`/office-supplies/requests/${request.id}`} className="text-[12.5px] text-grey hover:text-navy">← {request.reqNo}</Link>
+        <Link to={requestHref(request.id)} className="text-[12.5px] text-grey hover:text-navy">← {request.reqNo}</Link>
         <h1 className="text-[22px] font-bold text-navy mt-1">Edit {request.reqNo}</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
           Fix what you asked for while the request is still awaiting action. Changing the category may change whether it
@@ -118,7 +119,7 @@ export default function EditRequest() {
       <Card className="p-5 space-y-4">
         <SupplyRequestFields form={form} />
         <div className="flex justify-end gap-3 pt-1">
-          <Button variant="ghost" size="sm" onClick={() => navigate(`/office-supplies/requests/${request.id}`)} disabled={busy}>Cancel</Button>
+          <Button variant="ghost" size="sm" onClick={() => navigate(requestHref(request.id))} disabled={busy}>Cancel</Button>
           <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
         </div>
       </Card>

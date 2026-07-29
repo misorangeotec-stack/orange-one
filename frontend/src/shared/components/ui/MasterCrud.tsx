@@ -76,7 +76,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   canManage: boolean;
   /**
    * Whether NEW rows may be added. Defaults to `canManage` — pass false for a master
-   * whose rows mirror another system (Office Supplies departments mirror the portal
+   * whose rows mirror another system (General Purchase departments mirror the portal
    * department list), where a hand-added row could never be matched to anything.
    */
   canCreate?: boolean;

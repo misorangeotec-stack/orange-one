@@ -1,7 +1,7 @@
 import { supabase } from "@/core/platform/supabase";
 
 /**
- * Per-module email on/off switch for Office Supplies (module id "office-supplies"),
+ * Per-module email on/off switch for General Purchase (module id "office-supplies"),
  * backed by public.email_module_settings via the admin-checked
  * set_email_module_enabled RPC. The server-side fms_supplies_announce enqueue only
  * fires when this is on.

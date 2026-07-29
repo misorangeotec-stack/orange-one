@@ -8,7 +8,7 @@ import { fetchEmailModuleEnabled, setEmailModuleEnabled, OFFICE_SUPPLIES_MODULE_
 const QK = ["emailModuleSetting", OFFICE_SUPPLIES_MODULE_ID];
 
 /**
- * Admin: the per-module email ON/OFF switch for Office Supplies. Email only flows
+ * Admin: the per-module email ON/OFF switch for General Purchase. Email only flows
  * when this is on; the in-app bell is never affected. Backed by the shared
  * email_module_settings table + set_email_module_enabled RPC.
  */
@@ -43,7 +43,7 @@ export default function EmailNotificationsSection() {
         <div>
           <h3 className="text-[15px] font-bold text-navy">Email notifications</h3>
           <p className="text-[12.5px] text-grey-2 mt-1 leading-relaxed">
-            When on, each Office Supplies step also emails the next responsible person(s) — the same people who get the
+            When on, each General Purchase step also emails the next responsible person(s) — the same people who get the
             in-app alert (a raised request → the approver or handover team, first approval → management, second approval →
             handover, delivered → the requester, and so on). Emails are sent from support@orangeotec.com. In-app alerts
             are unaffected.
@@ -62,7 +62,7 @@ export default function EmailNotificationsSection() {
             className="mt-0.5 w-4 h-4 accent-orange"
           />
           <span>
-            <span className="block text-[13.5px] font-medium text-navy">Send email notifications for Office Supplies</span>
+            <span className="block text-[13.5px] font-medium text-navy">Send email notifications for General Purchase</span>
             <span className="block text-[11.5px] leading-snug text-grey-2 mt-0.5">
               {isLoading ? "Loading…" : enabled ? "Currently ON." : "Currently OFF."}
             </span>

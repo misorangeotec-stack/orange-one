@@ -16,7 +16,7 @@ export interface MasterLists {
 }
 
 /**
- * THE field schema for a requestable Office Supplies master — consumed by the
+ * THE field schema for a requestable General Purchase master — consumed by the
  * Request-new-master modal and the Master Requests approve modal.
  *
  * ⚠⚠ WIRE CONTRACT. Each `key` below is a jsonb key of
@@ -42,7 +42,7 @@ export function masterFields(mt: SupplyMasterType, ctx?: MasterFieldContext): Ma
           type: "select",
           required: true,
           options,
-          hint: "Which office-supply category this item belongs under.",
+          hint: "Which purchase category this item belongs under.",
         },
         { key: "name", label: "Item", type: "text", required: true, placeholder: "e.g. Wireless presenter" },
       ];

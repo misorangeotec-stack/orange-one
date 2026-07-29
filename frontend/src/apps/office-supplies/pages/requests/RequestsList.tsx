@@ -3,6 +3,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
 import { requestTypeLabel } from "../../lib/format";
+import { requestHref } from "../../lib/routes";
 import { useSuppliesStore } from "../../store";
 import type { SupplyRequest } from "../../types";
 
@@ -18,7 +19,7 @@ export default function RequestsList() {
       key: "reqNo",
       header: "Request",
       cell: (r) => (
-        <Link to={`/office-supplies/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+        <Link to={requestHref(r.id)} className="font-semibold text-navy hover:text-orange">
           {r.reqNo}
         </Link>
       ),
@@ -68,7 +69,7 @@ export default function RequestsList() {
     <div className="space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">All Requests</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">Every supply request you're allowed to see, newest first.</p>
+        <p className="text-[13.5px] text-grey-2 mt-1">Every purchase request you're allowed to see, newest first.</p>
       </div>
       <QueueTable<SupplyRequest>
         rows={s.requests}

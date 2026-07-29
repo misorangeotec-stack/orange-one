@@ -51,7 +51,7 @@ const isMineBySampling = (
   // OWNERSHIP OF THE THREE OUTWARD STEPS IS PER SOURCE, so the shared flat lookup
   // is wrong for them in both directions: it would find nothing (the server keeps
   // those rows inert) or, fed the union, show a Domestic owner Export work.
-  // `isMineByStepOwners` stays untouched — it is shared with HR and Office Supplies.
+  // `isMineByStepOwners` stays untouched — it is shared with HR and General Purchase.
   if (isSourceScoped(stepKey)) {
     if (
       r &&

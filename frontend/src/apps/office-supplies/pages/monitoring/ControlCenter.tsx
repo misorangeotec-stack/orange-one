@@ -27,7 +27,7 @@ export default function ControlCenter() {
     <div className="space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">{appName("office-supplies")} Control Center</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">Open work across the whole supply process, by how close it is to its due date.</p>
+        <p className="text-[13.5px] text-grey-2 mt-1">Open work across the whole purchase process, by how close it is to its due date.</p>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">

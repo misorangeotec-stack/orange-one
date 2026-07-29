@@ -1,7 +1,7 @@
 import type { StepDefBase } from "@/shared/lib/fmsQueue";
 
 /**
- * The four canonical Office Supplies FMS steps (code-defined, 1-based display index).
+ * The four canonical General Purchase FMS steps (code-defined, 1-based display index).
  * `key` is the stable identifier used by fms_supplies_step_owners, the SLA config and
  * the queue logic.
  *

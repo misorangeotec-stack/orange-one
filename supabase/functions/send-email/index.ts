@@ -379,6 +379,9 @@ async function compose(row: Row): Promise<Composed | null> {
   if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
+    // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
+    //   module is shown as General Purchase since 29-07-2026; the kind lives in
+    //   live email_outbox rows, so it never moves.
     const isSupplies = row.kind.startsWith("office-supplies_");
     const isProduction = row.kind.startsWith("production-entry_");
     const isDispatch = row.kind.startsWith("order-to-dispatch_");
@@ -387,9 +390,9 @@ async function compose(row: Row): Promise<Composed | null> {
     // already renders no actor row in that case, which is the correct reading:
     // the reminder is from the system, not from a colleague.
     const isAsset = row.kind.startsWith("asset-maintenance_");
-    const appLabel = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/office-supplies" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "Office Supplies" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    const appLabel = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);

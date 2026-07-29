@@ -40,7 +40,7 @@ export default function CoordinatorsSection() {
   return (
     <Card className="p-5 space-y-4 max-w-xl">
       <p className="text-[12.5px] text-grey">
-        Coordinators oversee the whole supply process — they can act on any step, hold a request, and open the Control
+        Coordinators oversee the whole purchase process — they can act on any step, hold a request, and open the Control
         Center.
       </p>
       <MultiSelect values={picked} onChange={(v) => { setPicked(v); setSaved(false); }} options={peopleOptions} placeholder="Select coordinators" />

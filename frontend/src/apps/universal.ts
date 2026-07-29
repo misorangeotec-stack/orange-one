@@ -6,8 +6,8 @@
  * (core/admin/UserForm.tsx). A "universal" app opts OUT of that — it is granted
  * implicitly to everyone, like admin access.
  *
- * NOTHING is universal today. HR Exit and Office Supplies were universal (so any
- * employee could raise their own resignation / supply request), but that let
+ * NOTHING is universal today. HR Exit and General Purchase were universal (so any
+ * employee could raise their own resignation / purchase request), but that let
  * every employee see and open them regardless of their Module access grant, which
  * admins did not want. Both were moved back to the normal opt-in model: they now
  * appear only for admins and users explicitly ticked in Module access. The list

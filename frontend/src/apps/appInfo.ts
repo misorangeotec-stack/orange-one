@@ -64,9 +64,18 @@ export const APPS: Record<string, AppInfo> = {
     category: "fms",
     subGroup: "Purchase",
   },
+  /**
+   * Renamed from "Purchase Office Supplies" and moved off /office-supplies on
+   * 29-07-2026: the module had outgrown its name and is used for company
+   * purchases generally. DISPLAY AND ROUTE ONLY — the key below is the frozen
+   * app id, and the folder (apps/office-supplies/), the fms_supplies_* schema,
+   * the 'office-supplies_' email_outbox prefix and the SUPPLY- document prefix
+   * all keep the old word deliberately. App.tsx redirects the old base so the
+   * links already in circulation still land.
+   */
   "office-supplies": {
-    name: "Purchase Office Supplies",
-    basePath: "/office-supplies",
+    name: "General Purchase",
+    basePath: "/general-purchase",
     category: "fms",
     subGroup: "Purchase",
   },

@@ -137,7 +137,7 @@ export default function MasterRequests() {
           <h1 className="text-[22px] font-bold text-navy">Master Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
             {canReview
-              ? "New-item and new-service requests raised from the supply forms. Approve to add them to the master — adjusting first if needed — or reject with a reason."
+              ? "New-item and new-service requests raised from the purchase forms. Approve to add them to the master — adjusting first if needed — or reject with a reason."
               : "Entries you've asked to add. Once the master's owner approves one, it's selectable on the forms."}
           </p>
         </div>

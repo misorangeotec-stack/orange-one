@@ -280,7 +280,7 @@ export default function Masters() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">Masters</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            The controlled lists behind the supply forms. A category's <span className="font-semibold text-navy">route</span> and a
+            The controlled lists behind the purchase forms. A category's <span className="font-semibold text-navy">route</span> and a
             department's <span className="font-semibold text-navy">HOD</span> are edited here. Each list is editable by the admins and
             its assigned owner (Setup → Master Owners).
           </p>

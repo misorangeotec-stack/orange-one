@@ -1,5 +1,5 @@
 /**
- * Office Supplies FMS instance of the shared step-SLA model.
+ * General Purchase FMS instance of the shared step-SLA model.
  *
  * All three queue steps default to 1 working day (the sheet's "Day 1"). The live map
  * is stored in fms_supplies_config under `step_sla` and merged over the defaults.

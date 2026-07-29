@@ -21,7 +21,7 @@ export default function MasterControlCenter() {
   // Only score the FMS this viewer is actually granted (admins keep all, since
   // hasModule returns true for them). Without this a coordinator with the
   // fms-control-center grant would see rows — names and counts — for FMS apps
-  // they were never given, e.g. Employee Exit / Office Supplies.
+  // they were never given, e.g. Employee Exit / General Purchase.
   const rows = fmsAdapters.filter((a) => hasModule(a.appId));
 
   return (

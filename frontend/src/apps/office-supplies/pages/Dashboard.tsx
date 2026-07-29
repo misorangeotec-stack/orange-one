@@ -13,19 +13,19 @@ import { appName } from "@/apps/appInfo";
 import { useSuppliesStore } from "../store";
 import { STEPS, STAGES, stepByKey } from "../lib/steps";
 import { STATUS_LABEL, STATUS_TONE } from "../lib/format";
+import { monitoringHref, requestsHref, requestHref, newRequestHref, queueHref } from "../lib/routes";
 import type { RequestStatus } from "../types";
 
 const PIPELINE_STEPS = STEPS.filter((s) => !s.noQueue);
-const MONITORING = "/office-supplies/monitoring";
-const REQUESTS = "/office-supplies/requests";
-const FIRST_APPROVAL = "/office-supplies/queues/first-approval";
-const requestHref = (id: string) => `${REQUESTS}/${id}`;
+const MONITORING = monitoringHref();
+const REQUESTS = requestsHref();
+const FIRST_APPROVAL = queueHref("first-approval");
 
 /**
- * Office Supplies home — a per-FMS dashboard scoped to this FMS, seen by everyone
- * with the app (the store is already row-scoped). No money side (supply requests
+ * General Purchase home — a per-FMS dashboard scoped to this FMS, seen by everyone
+ * with the app (the store is already row-scoped). No money side (purchase requests
  * carry a quantity, not a value). The coordinator Control Center at
- * `/office-supplies/monitoring` is unchanged. Every section degrades to a
+ * `${B}/monitoring` is unchanged. Every section degrades to a
  * meaningful zero-state — never blank.
  */
 export default function Dashboard() {
@@ -80,13 +80,13 @@ export default function Dashboard() {
 
   // The Control Center is RequireMonitor-gated, so only a coordinator gets a link —
   // everyone else keeps the tile, just not clickable.
-  const queueHref = s.isProcessCoordinator ? MONITORING : undefined;
+  const coordinatorHref = s.isProcessCoordinator ? MONITORING : undefined;
 
   const kpiTiles: KpiTile[] = [
-    { key: "pending", label: "Pending today", value: counts.delayed + counts.today, hint: "delayed + due today", size: "hero", tone: counts.delayed + counts.today > 0 ? "red" : undefined, href: queueHref },
+    { key: "pending", label: "Pending today", value: counts.delayed + counts.today, hint: "delayed + due today", size: "hero", tone: counts.delayed + counts.today > 0 ? "red" : undefined, href: coordinatorHref },
     { key: "open", label: "Open requests", value: openRequests, hint: "not yet closed", href: REQUESTS },
     { key: "approval", label: "In approval", value: inApproval, hint: "awaiting a sign-off", href: FIRST_APPROVAL },
-    { key: "delayed", label: "Delayed", value: counts.delayed, hint: "past due", tone: counts.delayed > 0 ? "red" : undefined, href: queueHref },
+    { key: "delayed", label: "Delayed", value: counts.delayed, hint: "past due", tone: counts.delayed > 0 ? "red" : undefined, href: coordinatorHref },
     { key: "delivered", label: "Delivered (30d)", value: delivered30, hint: "handed over", href: REQUESTS },
   ];
 
@@ -96,10 +96,10 @@ export default function Dashboard() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">{appName("office-supplies")}</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            Where office-supply requests stand today — stationery, computer &amp; tech accessories, maintenance and services.
+            Where general purchase requests stand today — stationery, computer &amp; tech accessories, maintenance and services.
           </p>
         </div>
-        <Link to="/office-supplies/requests/new">
+        <Link to={newRequestHref()}>
           <Button size="sm">Raise a request</Button>
         </Link>
       </div>

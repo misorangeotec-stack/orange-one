@@ -1,7 +1,6 @@
 import type { NavItem } from "@/shared/components/layout/types";
 import { appName } from "@/apps/appInfo";
-
-const B = "/office-supplies";
+import { B } from "./lib/routes";
 
 const ic = {
   dashboard: (
@@ -40,7 +39,7 @@ const ic = {
 };
 
 /**
- * Builds the Office Supplies sidebar. Capability-driven, except for the two items every
+ * Builds the General Purchase sidebar. Capability-driven, except for the two items every
  * employee always gets ("Raise a Request", "My Requests"). Every item here is routed in
  * SuppliesApp.tsx.
  */

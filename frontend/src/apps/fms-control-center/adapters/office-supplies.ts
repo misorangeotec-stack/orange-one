@@ -5,11 +5,12 @@ import { appName } from "@/apps/appInfo";
 import { fetchSuppliesData, suppliesQueryKey } from "@/apps/office-supplies/data/suppliesFetch";
 import { buildQueueEntries, supplySnapshotFrom } from "@/apps/office-supplies/lib/queues";
 import { STAGES, STEPS } from "@/apps/office-supplies/lib/steps";
+import { monitoringHref } from "@/apps/office-supplies/lib/routes";
 import { snapshotFrom } from "../lib/buckets";
 import type { FmsAdapter } from "./types";
 
 /**
- * Office Supplies FMS adapter — a row on the scoreboard.
+ * General Purchase FMS adapter — a row on the scoreboard.
  *
  * The counts come from `buildQueueEntries(supplySnapshotFrom(data))` — LITERALLY the
  * same two calls office-supplies/store.tsx makes, on the same react-query cache entry
@@ -23,7 +24,7 @@ export const officeSuppliesAdapter: FmsAdapter = {
   key: "office-supplies",
   appId: "office-supplies",
   name: appName("office-supplies"),
-  controlCenterPath: "/office-supplies/monitoring",
+  controlCenterPath: monitoringHref(),
   status: "live",
   useSnapshot() {
     const session = useSession();

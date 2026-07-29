@@ -18,7 +18,7 @@ import type {
 } from "../types";
 
 /**
- * Office Supplies FMS read layer. One paginated pass over the module's tables, mapped
+ * General Purchase FMS read layer. One paginated pass over the module's tables, mapped
  * snake_case → camelCase. The whole module loads in one snapshot so the pure queue
  * rules (lib/queues.ts) get plain data, and the Control Center adapter can reuse this
  * exact react-query cache entry.

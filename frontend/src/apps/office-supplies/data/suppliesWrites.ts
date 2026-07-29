@@ -3,7 +3,7 @@ import type { Json } from "@/core/platform/database.types";
 import type { RequestType, SupplyEntityType, SupplyMasterType } from "../types";
 
 /**
- * Office Supplies FMS write layer. Masters + config are written directly under RLS
+ * General Purchase FMS write layer. Masters + config are written directly under RLS
  * (admin / the master's owner). Every WORKFLOW mutation goes through a SECURITY
  * DEFINER RPC that re-checks authorization, validates the transition and stamps the
  * step's timestamp. The wrappers are thin: the DATABASE is the gate.

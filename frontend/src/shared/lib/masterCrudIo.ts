@@ -5,7 +5,7 @@ import { readBool } from "@/shared/lib/importXlsx";
 /**
  * Generic per-master Excel export/import, shared by every FMS Masters tab.
  *
- * Every FMS master (Purchase, Import, Sampling, Production, Office Supplies, HR Exit,
+ * Every FMS master (Purchase, Import, Sampling, Production, General Purchase, HR Exit,
  * HR Recruitment) renders through one component — `MasterCrud` — which already carries
  * everything a round-trip needs: the value-bag schema (`emptyValues` / `toValues`), the
  * field descriptors (labels + select options), and `onSubmit(id, values, active)` where

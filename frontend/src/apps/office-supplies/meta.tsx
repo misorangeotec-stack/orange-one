@@ -3,10 +3,16 @@ import { appName, appBasePath, appCategory, appSubGroup } from "../appInfo";
 import SuppliesApp from "./SuppliesApp";
 
 /**
- * Manifest for the Office Supplies Purchase FMS — the fourth FMS module, built on the
+ * Manifest for the General Purchase FMS — the fourth FMS module, built on the
  * same engine pattern as Purchase FMS, HR Recruitment and HR Exit (step owners,
  * planned-vs-actual due dates, per-owner queues, notifications, master governance) with
  * its own `fms_supplies_*` schema.
+ *
+ * Shown as "Office Supplies" at /office-supplies until 29-07-2026, when it was renamed
+ * for what it had grown into. THE FOLDER, THE ID BELOW, THE SCHEMA AND THE `SUPPLY-`
+ * DOCUMENT PREFIX ALL KEEP THE OLD WORD ON PURPOSE — they are persisted identifiers,
+ * and only the display name and the route moved. (Same split as apps/receivables-hub/
+ * ↔ the id "outstanding-dashboard".)
  *
  * Raise a request → (conditionally) first approval by the department HOD → second
  * approval by Management → final confirmation / handover. Computer & Tech Accessories
@@ -22,7 +28,7 @@ export const officeSuppliesApp: AppManifest = {
   id: "office-supplies",
   name: appName("office-supplies"),
   description:
-    "Office-supply requisitions end to end: raise a request, first and second approval for computer & tech accessories, straight-to-handover for stationery, maintenance and services, and delivery tracking.",
+    "General purchase requisitions end to end: raise a request, first and second approval for computer & tech accessories, straight-to-handover for stationery, maintenance and services, and delivery tracking.",
   basePath: appBasePath("office-supplies"),
   status: "live",
   category: appCategory("office-supplies"),

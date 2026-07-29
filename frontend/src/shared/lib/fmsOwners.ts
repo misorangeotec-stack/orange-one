@@ -1,7 +1,7 @@
 /**
  * Step ownership for the FMS apps that route work by step alone.
  *
- * HR Recruitment, HR Exit and Office Supplies all answer "who owns this step?"
+ * HR Recruitment, HR Exit and General Purchase all answer "who owns this step?"
  * the same way — look up `fms_<domain>_step_owners` by `step_key` and read
  * `employee_ids`. That one rule lives here so the home screen's My Work list can
  * apply it without importing from any single app.

@@ -6,9 +6,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildSuppliesNav } from "./nav";
 import { useSuppliesStore } from "./store";
 import type { SupplyNotification } from "./types";
-
-
-const B = "/office-supplies";
+import { B } from "./lib/routes";
 
 const linkFor = (n: SupplyNotification): string => {
   switch (n.entityType) {
@@ -22,7 +20,7 @@ const linkFor = (n: SupplyNotification): string => {
 };
 
 /**
- * Wires the portal session + supplies store into the shared AppShell. The nav is
+ * Wires the portal session + purchase store into the shared AppShell. The nav is
  * capability-driven, except for the two items every employee gets (see nav.tsx). The
  * bell renders `n.text` RAW, so every notification we write is a whole sentence.
  */

@@ -27,9 +27,9 @@ const WIDTH_KEY = "orangeone.nav.width";
 const RAIL_KEY = "orangeone.nav.rail";
 
 /**
- * 280, not the old 248: two levels of nesting plus names like "Purchase Office
- * Supplies" truncated to "Purchase Office S…" at the old width, which made two
- * sibling entries visually identical. Users can still drag it narrower.
+ * 280, not the old 248: two levels of nesting plus names like "Purchase RM
+ * Domestic" truncated to "Purchase RM D…" at the old width, which made it and
+ * "Purchase RM Import" visually identical. Users can still drag it narrower.
  */
 export const SIDEBAR_DEFAULT_WIDTH = 280;
 const MIN_WIDTH = 200;

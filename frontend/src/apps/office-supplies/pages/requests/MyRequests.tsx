@@ -4,6 +4,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import { formatDate } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
 import { requestTypeLabel } from "../../lib/format";
+import { requestHref, editRequestHref, newRequestHref } from "../../lib/routes";
 import { useSuppliesStore } from "../../store";
 import type { SupplyRequest } from "../../types";
 
@@ -24,7 +25,7 @@ export default function MyRequests() {
       key: "reqNo",
       header: "Request",
       cell: (r) => (
-        <Link to={`/office-supplies/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+        <Link to={requestHref(r.id)} className="font-semibold text-navy hover:text-orange">
           {r.reqNo}
         </Link>
       ),
@@ -72,7 +73,7 @@ export default function MyRequests() {
           <h1 className="text-[22px] font-bold text-navy">My Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">Requests you raised, or that were raised for you.</p>
         </div>
-        <Link to="/office-supplies/requests/new">
+        <Link to={newRequestHref()}>
           <Button size="sm">Raise a request</Button>
         </Link>
       </div>
@@ -90,14 +91,14 @@ export default function MyRequests() {
         }}
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="requests"
-        exportName="My_Supply_Requests"
+        exportName="My_Purchase_Requests"
         emptyTitle="No requests yet"
-        emptyMessage="You haven't raised any supply requests."
+        emptyMessage="You haven't raised any purchase requests."
         actions={(r) => (
           <>
-            <Link to={`/office-supplies/requests/${r.id}`} className="text-[12.5px] font-semibold text-orange hover:underline">Open</Link>
+            <Link to={requestHref(r.id)} className="text-[12.5px] font-semibold text-orange hover:underline">Open</Link>
             {s.requestEditable(r) && (
-              <Link to={`/office-supplies/requests/${r.id}/edit`} className="text-[12.5px] font-semibold text-grey hover:text-navy ml-3">Edit</Link>
+              <Link to={editRequestHref(r.id)} className="text-[12.5px] font-semibold text-grey hover:text-navy ml-3">Edit</Link>
             )}
           </>
         )}

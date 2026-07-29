@@ -12,6 +12,7 @@ import { formatDateTime } from "@/shared/lib/time";
 import ApprovalModal from "./ApprovalModal";
 import HandoverModal from "./HandoverModal";
 import { dmy, requestTypeLabel } from "../lib/format";
+import { requestHref } from "../lib/routes";
 import type { StageEntry } from "../lib/queues";
 import type { StepKey } from "../lib/steps";
 import { useSuppliesStore } from "../store";
@@ -72,7 +73,7 @@ export default function RequestQueue({
       key: "reqNo",
       header: "Request",
       cell: ({ request: r }) => (
-        <Link to={`/office-supplies/requests/${r.id}`} className="font-semibold text-navy hover:text-orange">
+        <Link to={requestHref(r.id)} className="font-semibold text-navy hover:text-orange">
           {r.reqNo}
         </Link>
       ),
@@ -121,7 +122,7 @@ export default function RequestQueue({
       key: "reqNo",
       header: "Request",
       cell: (e) => (
-        <Link to={`/office-supplies/requests/${e.requestId}`} className="font-semibold text-navy hover:text-orange">
+        <Link to={requestHref(e.requestId)} className="font-semibold text-navy hover:text-orange">
           {e.ref}
         </Link>
       ),

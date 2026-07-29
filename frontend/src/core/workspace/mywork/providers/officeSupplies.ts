@@ -1,8 +1,8 @@
 /**
- * Office Supplies FMS → My Work.
+ * General Purchase FMS → My Work.
  *
  * Uses `buildQueueEntries(supplySnapshotFrom(...))` — the same two calls the
- * supplies store and the FMS Control Center make, on the same cache entry.
+ * purchase store and the FMS Control Center make, on the same cache entry.
  *
  * This is the simplest of the five: a request sits at exactly one open step,
  * derived from its `status` column, so a request can never appear twice here.
@@ -14,6 +14,7 @@ import { appName } from "@/apps/appInfo";
 import { fetchSuppliesData, suppliesQueryKey } from "@/apps/office-supplies/data/suppliesFetch";
 import { buildQueueEntries, supplySnapshotFrom } from "@/apps/office-supplies/lib/queues";
 import { stepByKey } from "@/apps/office-supplies/lib/steps";
+import { requestHref } from "@/apps/office-supplies/lib/routes";
 import { isMineByStepOwners } from "@/shared/lib/fmsOwners";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
 
@@ -41,7 +42,7 @@ function useOfficeSuppliesWork(active: boolean): MyWorkResult {
         ref: e.ref,
         stage: stepByKey(e.stepKey)?.short,
         dueIso: e.dueIso,
-        to: `/office-supplies/requests/${e.requestId}`,
+        to: requestHref(e.requestId),
         assignment: isMineByStepOwners(e.stepKey, uid, owners) ? ("direct" as const) : ("team" as const),
         isApproval: APPROVAL_STEPS.has(e.stepKey),
       }));

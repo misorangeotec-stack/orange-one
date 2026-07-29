@@ -1,5 +1,5 @@
 /**
- * Domain types for the Office Supplies Purchase FMS.
+ * Domain types for the General Purchase FMS.
  *
  * A lightweight requisition workflow (single item per request, conditional
  * approvals, then handover) modelled on the fms_exit_* case shape. Every DB row is

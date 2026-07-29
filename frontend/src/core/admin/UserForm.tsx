@@ -22,7 +22,7 @@ const RECEIVABLES_APP_ID = "outstanding-dashboard";
  */
 function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string | null; rows: T[] }[] {
   // Merge by label GLOBALLY, not just consecutively: apps in the same sub-group
-  // (e.g. FMS → Purchase) need not be adjacent in registry order — Office Supplies
+  // (e.g. FMS → Purchase) need not be adjacent in registry order — General Purchase
   // sorts after the HR apps — and a consecutive-only merge would render a second
   // "Purchase" heading. Keep each sub-group in first-appearance order, matching the
   // sidebar's buildNodes (shared/components/layout/Sidebar.tsx).

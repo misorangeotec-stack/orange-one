@@ -1,5 +1,5 @@
 /**
- * The single source of truth for Office Supplies FMS queue membership and due dates.
+ * The single source of truth for General Purchase FMS queue membership and due dates.
  *
  * Pure: takes a snapshot, returns plain data, knows nothing about the signed-in user.
  * Both the per-step queue pages and the cross-FMS Control Center consume these, so

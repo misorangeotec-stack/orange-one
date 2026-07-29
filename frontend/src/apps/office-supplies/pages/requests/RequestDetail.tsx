@@ -10,6 +10,7 @@ import ApprovalModal from "../../components/ApprovalModal";
 import HandoverModal from "../../components/HandoverModal";
 import StatusPill from "../../components/StatusPill";
 import { dmy, requestTypeLabel } from "../../lib/format";
+import { requestsHref, editRequestHref } from "../../lib/routes";
 import { useSuppliesStore } from "../../store";
 import type { SupplyRequest } from "../../types";
 
@@ -87,7 +88,7 @@ export default function RequestDetail() {
       <Card className="max-w-lg mx-auto mt-10 p-8 text-center">
         <h1 className="text-[18px] font-bold text-navy">Request not found</h1>
         <p className="text-[13.5px] text-grey-2 mt-2">It may not exist, or you may not have access to it.</p>
-        <Link to="/office-supplies/requests" className="mt-4 inline-block text-[13px] font-semibold text-orange hover:underline">
+        <Link to={requestsHref()} className="mt-4 inline-block text-[13px] font-semibold text-orange hover:underline">
           Back to all requests
         </Link>
       </Card>
@@ -148,7 +149,7 @@ export default function RequestDetail() {
             </Button>
           )}
           {s.requestEditable(r) && (
-            <Link to={`/office-supplies/requests/${r.id}/edit`}>
+            <Link to={editRequestHref(r.id)}>
               <Button size="sm" variant="outline">Edit</Button>
             </Link>
           )}

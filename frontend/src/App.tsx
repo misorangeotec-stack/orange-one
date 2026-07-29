@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import type { ReactNode } from "react";
 import Landing from "@/core/landing/Landing";
 import Login from "@/core/auth/Login";
@@ -10,12 +10,41 @@ import RequireRole from "@/core/platform/RequireRole";
 import { RequireAuth } from "@/core/platform/auth";
 import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
+import { appBasePath } from "@/apps/appInfo";
 
 /** Gate a live app behind the current user's module access (admins bypass). */
 function RequireModule({ appId, children }: { appId: string; children: ReactNode }) {
   const { hasModule } = useSession();
   if (!hasModule(appId)) return <Navigate to="/home" replace />;
   return <>{children}</>;
+}
+
+/** Where General Purchase lived until 29-07-2026. Kept only for the redirect below. */
+const LEGACY_SUPPLIES_BASE = "/office-supplies";
+
+/**
+ * /office-supplies/* → the module's new home, path + query + hash intact.
+ *
+ * ⚠ THE REDIRECT IS LOAD-BEARING, NOT A COURTESY. A queued email_outbox row
+ *   carries the `ctaPath` it was authored with — that path is frozen at enqueue
+ *   time, not built at render — so every approval mail written under the old
+ *   base still points there. A 404 on an approval link is how an approval
+ *   quietly does not happen. Same reasoning as the Customer Onboarding
+ *   redirect in ReceivablesHubApp.tsx, which moved a module the same week.
+ *
+ * ⚠ NOT wrapped in RequireAuth, deliberately: rewriting FIRST means the new
+ *   route's own guard records the NEW path as `state.from`, so a signed-out
+ *   reader following an old link lands on the request itself after signing in.
+ *   Someone without the module grant still gets sent to /home by RequireModule.
+ *
+ * `slice`, not `split` on the prefix: the bare "/office-supplies" has to
+ * redirect too, and split() yields undefined for it. The target is read from
+ * appInfo, so if the base ever moves again only that one line changes.
+ */
+function OfficeSuppliesLegacyRedirect() {
+  const { pathname, search, hash } = useLocation();
+  const rest = pathname.slice(LEGACY_SUPPLIES_BASE.length);
+  return <Navigate to={`${appBasePath("office-supplies")}${rest}${search}${hash}`} replace />;
 }
 
 export default function App() {
@@ -44,6 +73,10 @@ export default function App() {
           />
         );
       })}
+
+      {/* ---- Moved on 29-07-2026: General Purchase left /office-supplies ---- */}
+      <Route path={LEGACY_SUPPLIES_BASE} element={<OfficeSuppliesLegacyRedirect />} />
+      <Route path={`${LEGACY_SUPPLIES_BASE}/*`} element={<OfficeSuppliesLegacyRedirect />} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

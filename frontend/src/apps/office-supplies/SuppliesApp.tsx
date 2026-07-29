@@ -18,6 +18,7 @@ import ControlCenter from "./pages/monitoring/ControlCenter";
 import Setup from "./pages/settings/Setup";
 import AccessDenied from "./pages/system/AccessDenied";
 import NotFound from "./pages/system/NotFound";
+import { B } from "./lib/routes";
 
 /** Gate to admins only (Setup). */
 function RequireAdmin({ children }: { children: ReactNode }) {
@@ -41,7 +42,7 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
- * Root of the Office Supplies FMS. App.tsx already wraps this whole app in
+ * Root of the General Purchase FMS. App.tsx already wraps this whole app in
  * <RequireModule appId="office-supplies">, so only admins and users granted the module
  * in Module access reach it — this file adds no further gate of its own. What each
  * person then sees inside is decided by the nav, the store's capability flags and —
@@ -71,7 +72,7 @@ export default function SuppliesApp() {
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
         </Route>
-        <Route path="*" element={<Navigate to="/office-supplies" replace />} />
+        <Route path="*" element={<Navigate to={B} replace />} />
       </Routes>
     </SuppliesStoreProvider>
   );
