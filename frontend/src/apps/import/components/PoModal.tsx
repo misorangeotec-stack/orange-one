@@ -7,6 +7,7 @@ import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { useImportStore } from "../store";
 import QtyTotal from "./QtyTotal";
+import { RequestRefPanel } from "./PoRefPanel";
 import type { PurchaseRequest, RequestItem } from "../types";
 
 interface VendorGroup {
@@ -101,9 +102,13 @@ export default function PoModal({
 
   if (!request) return null;
 
-  const company = s.companyById(request.companyId);
-  const companyLabel = company ? (company.location ? `${company.name} — ${company.location}` : company.name) : "—";
   const poCount = groups.filter((g) => g.vendorId).length;
+  /**
+   * Named at the top only when the whole requisition goes to ONE vendor — the
+   * normal case since sourcing became whole-requisition. A legacy split yields a
+   * section per vendor, and each section already carries its name as a heading.
+   */
+  const soleVendorId = poCount === 1 ? groups.find((g) => g.vendorId)?.vendorId ?? undefined : undefined;
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -194,9 +199,14 @@ export default function PoModal({
       size="2xl"
       readOnly={readOnly}
       title={`${readOnly ? "PO pool" : "Generate PO"} — ${request.requestNo}`}
-      subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${poCount} PO${poCount === 1 ? "" : "s"} · ${companyLabel}`}
+      subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${poCount} PO${poCount === 1 ? "" : "s"}`}
     >
       <div className="space-y-4">
+        {/* Who this PO is being raised FOR and against whom — the same block every
+            other stage form opens with. The company used to be a fragment of the
+            subtitle, which is not where anyone looks before raising an order. */}
+        <RequestRefPanel request={request} vendorId={soleVendorId} />
+
         {groups.map((g) => {
           const picked = g.lines.filter((l) => selected.has(l.id));
           const actionable = !readOnly && !!g.vendorId;

@@ -9,7 +9,6 @@ import StageRowAction from "@/shared/components/ui/StageRowAction";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import { useEntryModal } from "@/shared/lib/useEntryModal";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import { Field } from "@/shared/components/ui/Readout";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
 import StageTabs from "@/shared/components/ui/StageTabs";
@@ -19,6 +18,7 @@ import { sumQty } from "../../lib/format";
 import QtyTotal from "../../components/QtyTotal";
 import PoModal from "../../components/PoModal";
 import PoItemsTable from "../../components/PoItemsTable";
+import PoRefPanel from "../../components/PoRefPanel";
 import { PoDocLink } from "../../components/DocLinks";
 import type { StageEntry } from "../../lib/queues";
 import type { PurchaseRequest, RequestItem, PurchaseOrder } from "../../types";
@@ -220,7 +220,7 @@ export default function PoWorkbench() {
         onClose={editPo.close}
         size="2xl"
         title={`${editPo.isView ? "PO Details" : "Edit PO Details"} — ${editPo.row?.poNo ?? ""}`}
-        subtitle={editPo.row ? `${s.vendorById(editPo.row.vendorId)?.name ?? "—"} · ${companyName(editPo.row.companyId)}${editPo.isView ? "" : " · editable until the PO is shared with the vendor"}` : undefined}
+        subtitle={editPo.isView ? undefined : "Editable until the PO is shared with the vendor."}
         footer={
           editPo.isView ? (
             <Button variant="ghost" size="sm" onClick={editPo.close}>Close</Button>
@@ -251,10 +251,15 @@ export default function PoWorkbench() {
         }
       >
         <div className="space-y-4">
+          {/* The company and the vendor, in the same block every other stage form
+              opens with — they used to be a fragment of the subtitle. Editing
+              leaves the numbers out of the card: they are the fields right below.
+              Viewing has no such fields, so the Tally number joins the card
+              instead of hanging under the items table on its own. */}
+          {editPo.row && <PoRefPanel po={editPo.row} readOnly={editPo.isView} showTallyPoNo={editPo.isView} />}
+
           {editPo.row && <PoItemsTable po={editPo.row} />}
-          {editPo.isView ? (
-            <Field label="Tally PO No.">{editPo.row?.tallyPoNo ?? undefined}</Field>
-          ) : (
+          {editPo.isView ? null : (
             <>
               <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
                 <FieldLabel label="PO Number" required>

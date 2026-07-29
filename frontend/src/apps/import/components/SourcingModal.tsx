@@ -3,8 +3,9 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import { Field, SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import RequestMasterModal from "./RequestMasterModal";
+import { RequestRefPanel } from "./PoRefPanel";
 import { useImportStore } from "../store";
 import { inr, fxMoney } from "../lib/format";
 import type { RequestItem } from "../types";
@@ -80,6 +81,9 @@ export default function SourcingModal({
 
   if (!line) return null;
 
+  /** A line carries no company of its own — the context comes from its requisition. */
+  const parentRequest = s.requestById(line.requestId);
+
   const setRow = (i: number, patch: Partial<QRow>) =>
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
   const addRow = () => setRows((prev) => (prev.length >= 3 ? prev : [...prev, emptyRow()]));
@@ -154,12 +158,7 @@ export default function SourcingModal({
         {/* Which company this line is being sourced FOR. This modal is scoped to a
             single request line, so the company comes from its parent requisition —
             a line carries no company of its own. */}
-        <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <Field label="Company" value={s.companyLabel(s.requestById(line.requestId)?.companyId ?? null)} />
-            <Field label="Requisition No." value={s.requestById(line.requestId)?.requestNo} />
-          </div>
-        </div>
+        {parentRequest && <RequestRefPanel request={parentRequest} />}
 
         <div className="space-y-2">
           {rows.map((r, i) => (

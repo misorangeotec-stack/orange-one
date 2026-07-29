@@ -3,7 +3,54 @@ import { Link } from "react-router-dom";
 import { Field, FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { useProcurementStore } from "../store";
 import { PiDocLink, TallyDocLink } from "./DocLinks";
-import type { Grn, Pi, PurchaseOrder } from "../types";
+import type { Grn, Pi, PurchaseOrder, PurchaseRequest } from "../types";
+
+/**
+ * The tinted card every stage form opens with — one shell, so Sourcing, Approve,
+ * Generate PO, PO Details and every PO step name the company and the vendor in
+ * exactly the same block. Four copies of this markup had already drifted apart
+ * before it was pulled out here; new context cells go through {@link RefPanel},
+ * {@link RequestRefPanel} or {@link PoRefPanel}, never a fresh div.
+ */
+export function RefPanel({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * The same card for the stages that run BEFORE a PO exists — sourcing, approval
+ * and PO generation, which are scoped to a requisition rather than an order.
+ *
+ * The vendor cell is opt-in because these stages are exactly where the vendor is
+ * still being decided: Sourcing has none yet, Approve has a recommendation, and
+ * Generate PO has one only when every line was sourced to the same vendor.
+ */
+export function RequestRefPanel({
+  request,
+  vendorId,
+  vendorFieldLabel = "Vendor",
+  children,
+}: {
+  request: PurchaseRequest;
+  /** Omitted → no vendor cell. `null` renders the placeholder, i.e. "none yet". */
+  vendorId?: string | null;
+  vendorFieldLabel?: string;
+  /** Extra `<Field>`s appended to the grid. */
+  children?: ReactNode;
+}) {
+  const s = useProcurementStore();
+  return (
+    <RefPanel>
+      <Field label="Company" value={s.companyLabel(request.companyId)} />
+      <Field label="Requisition No." value={request.requestNo} />
+      {vendorId !== undefined && <Field label={vendorFieldLabel} value={s.vendorLabel(vendorId)} />}
+      {children}
+    </RefPanel>
+  );
+}
 
 /**
  * The context block every PO-stage modal opens with: who we are buying FOR, who
@@ -58,79 +105,77 @@ export default function PoRefPanel({
       : s.tallyForPo(po.id);
 
   return (
-    <div className="rounded-xl border border-line bg-page/50 px-4 py-3.5">
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Field label="Company" value={s.companyLabel(po.companyId)} />
-        <Field label="Vendor" value={s.vendorLabel(po.vendorId)} />
+    <RefPanel>
+      <Field label="Company" value={s.companyLabel(po.companyId)} />
+      <Field label="Vendor" value={s.vendorLabel(po.vendorId)} />
 
-        {showPoNo && (
-          <Field label="PO No.">
+      {showPoNo && (
+        <Field label="PO No.">
+          <Link
+            to={`/procurement/pos/${po.id}`}
+            target="_blank"
+            className="font-semibold text-navy hover:text-orange hover:underline"
+          >
+            {po.poNo}
+          </Link>
+        </Field>
+      )}
+      {showTallyPoNo && (
+        <Field label="Tally PO No.">
+          {po.tallyPoNo ? (
             <Link
               to={`/procurement/pos/${po.id}`}
               target="_blank"
               className="font-semibold text-navy hover:text-orange hover:underline"
             >
-              {po.poNo}
+              {po.tallyPoNo}
             </Link>
-          </Field>
-        )}
-        {showTallyPoNo && (
-          <Field label="Tally PO No.">
-            {po.tallyPoNo ? (
-              <Link
-                to={`/procurement/pos/${po.id}`}
-                target="_blank"
-                className="font-semibold text-navy hover:text-orange hover:underline"
-              >
-                {po.tallyPoNo}
-              </Link>
-            ) : undefined}
-          </Field>
-        )}
+          ) : undefined}
+        </Field>
+      )}
 
-        {showPi && (
-          <Field label="Vendor PI No.">
-            {pis.length > 0 ? (
-              <span className="flex flex-col gap-0.5">
-                {pis.map((pi) => (
-                  <span key={pi.id} className="flex min-w-0 items-center gap-2">
-                    {onViewPi && !readOnly ? (
-                      <button
-                        type="button"
-                        onClick={() => onViewPi(pi)}
-                        className="font-semibold text-navy hover:text-orange hover:underline"
-                      >
-                        {pi.vendorPiNo}
-                      </button>
-                    ) : (
-                      <span>{pi.vendorPiNo}</span>
-                    )}
-                    {!readOnly && pi.documentPath && <PiDocLink pi={pi} />}
-                  </span>
-                ))}
-              </span>
-            ) : undefined}
-          </Field>
-        )}
+      {showPi && (
+        <Field label="Vendor PI No.">
+          {pis.length > 0 ? (
+            <span className="flex flex-col gap-0.5">
+              {pis.map((pi) => (
+                <span key={pi.id} className="flex min-w-0 items-center gap-2">
+                  {onViewPi && !readOnly ? (
+                    <button
+                      type="button"
+                      onClick={() => onViewPi(pi)}
+                      className="font-semibold text-navy hover:text-orange hover:underline"
+                    >
+                      {pi.vendorPiNo}
+                    </button>
+                  ) : (
+                    <span>{pi.vendorPiNo}</span>
+                  )}
+                  {!readOnly && pi.documentPath && <PiDocLink pi={pi} />}
+                </span>
+              ))}
+            </span>
+          ) : undefined}
+        </Field>
+      )}
 
-        {showTallyInvoice && (
-          <Field label={bookings.length > 1 ? "Tally Invoices" : "Tally Invoice"}>
-            {bookings.length > 0 ? (
-              <span className="flex flex-col gap-0.5">
-                {bookings.map((b) => (
-                  <span key={b.id} className="flex min-w-0 items-center gap-2">
-                    <span>{b.tallyPiNo}</span>
-                    {!readOnly && b.documentPath && <TallyDocLink booking={b} />}
-                  </span>
-                ))}
-              </span>
-            ) : undefined}
-          </Field>
-        )}
+      {showTallyInvoice && (
+        <Field label={bookings.length > 1 ? "Tally Invoices" : "Tally Invoice"}>
+          {bookings.length > 0 ? (
+            <span className="flex flex-col gap-0.5">
+              {bookings.map((b) => (
+                <span key={b.id} className="flex min-w-0 items-center gap-2">
+                  <span>{b.tallyPiNo}</span>
+                  {!readOnly && b.documentPath && <TallyDocLink booking={b} />}
+                </span>
+              ))}
+            </span>
+          ) : undefined}
+        </Field>
+      )}
 
-        {children}
-      </div>
-    </div>
+      {children}
+    </RefPanel>
   );
 }
 

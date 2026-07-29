@@ -17,6 +17,7 @@ import { useProcurementStore } from "../../store";
 import { inr } from "../../lib/format";
 import PoModal from "../../components/PoModal";
 import PoItemsReadout from "../../components/PoItemsReadout";
+import PoRefPanel from "../../components/PoRefPanel";
 import { PoDocLink } from "../../components/DocLinks";
 import type { StageEntry } from "../../lib/queues";
 import type { PurchaseRequest, RequestItem, PurchaseOrder } from "../../types";
@@ -269,6 +270,11 @@ export default function PoWorkbench() {
         }
       >
         <div className="space-y-3.5">
+          {/* The company and the vendor, in the same block every other stage form
+              opens with. The PO number and the Tally PO number are left out of it
+              on purpose — they are the fields being edited right below. */}
+          {editPo.row && <PoRefPanel po={editPo.row} readOnly={editPo.isView} />}
+
           <div className="grid grid-cols-1 gap-x-4 gap-y-3.5 sm:grid-cols-2">
             <FieldLabel label="PO Number" required>
               <TextInput value={poNo} onChange={(e) => setPoNo(e.target.value)} />
