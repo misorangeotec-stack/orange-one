@@ -11,7 +11,7 @@
  *
  * Layout: 2 state + 10 PAN + 1 entity + 1 'Z' + 1 check = 15 characters.
  */
-import type { GstState } from "./types";
+import type { CustomerType, GstState } from "./types";
 
 const GSTIN_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
@@ -250,6 +250,38 @@ export interface GstinSnapshot extends GstinLookup {
 
 export function toSnapshot(gstin: string, d: GstinLookup): GstinSnapshot {
   return { ...d, gstin: normaliseGstin(gstin), lookedUpAt: new Date().toISOString() };
+}
+
+/**
+ * Customer type from the portal's nature-of-business list — WHEN IT IS CERTAIN.
+ *
+ * ⚠ ONLY TWO OF THE SIX TYPES ARE GST FACTS. "Factory / Manufacturing" means
+ *   manufacturer and "Export" means exporter. The other four — dealer,
+ *   distributor, trader, end user — are COMMERCIAL RELATIONSHIPS that GST does
+ *   not model at all: the portal knows only "Wholesale Business" and "Retail
+ *   Business", and cannot possibly know whether a wholesaler is our distributor
+ *   or a dealer. Guessing between them would silently prefill a required field
+ *   that feeds the credit decision. Deliberately unmapped — the rep decides,
+ *   with the portal's wording shown next to the box as a hint.
+ *
+ * ⚠ AMBIGUITY YIELDS NULL, NOT A PREFERENCE. A manufacturer who also exports
+ *   matches both rules, and there is no principled winner — so nothing is
+ *   selected and the rep picks. Same rule as factoryAddressFrom.
+ */
+export function customerTypeFrom(nba: string[] | undefined | null): CustomerType | null {
+  if (!nba?.length) return null;
+  const hits = new Set<CustomerType>();
+  for (const n of nba) {
+    if (/factory|manufactur/i.test(n)) hits.add("manufacturer");
+    if (/export/i.test(n)) hits.add("exporter");
+  }
+  return hits.size === 1 ? [...hits][0] : null;
+}
+
+/** The portal's own wording, for showing beside a field we would not auto-fill. */
+export function natureOfBusinessHint(c: GstCompliance | null | undefined): string | null {
+  const nba = c?.natureOfBusiness;
+  return nba?.length ? nba.join(", ") : null;
 }
 
 /** True when the portal reports anything other than an active registration. */

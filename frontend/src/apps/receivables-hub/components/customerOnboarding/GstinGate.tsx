@@ -34,7 +34,7 @@ import GstComplianceCard from "./GstComplianceCard";
 import { useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { detailHref } from "@hub/lib/customerOnboarding/routes";
 import {
-  factoryAddressFrom, lookupGstin, normaliseGstin, parseGstin, toSnapshot,
+  customerTypeFrom, factoryAddressFrom, lookupGstin, normaliseGstin, parseGstin, toSnapshot,
   type GstinSnapshot,
 } from "@hub/lib/customerOnboarding/gstin";
 import {
@@ -116,6 +116,10 @@ export default function GstinGate({ onReady }: { onReady: (seed: CustomerFormVal
       // Only when the portal LABELS a premises as manufacturing — see
       // factoryAddressFrom. A warehouse in the factory box is worse than a blank.
       v.factory_address = factoryAddressFrom(snapshot.additionalPlaces) ?? "";
+      // Manufacturer / exporter only, and only when the portal is unambiguous —
+      // the other four types are commercial, not GST facts. See customerTypeFrom.
+      const ct = customerTypeFrom(snapshot.compliance?.natureOfBusiness);
+      if (ct) v.customer_type = ct;
       v.gstin_snapshot = snapshot;
     }
     onReady(v);

@@ -6,6 +6,7 @@
  * pure function of the RHF form — no data fetching, no validation logic (that
  * lives in lib/customerOnboarding/schema.ts), no navigation.
  */
+import { useEffect, useState } from "react";
 import type { UseFormReturn } from "react-hook-form";
 import { Input } from "@hub/components/ui/input";
 import { Textarea } from "@hub/components/ui/textarea";
@@ -19,7 +20,9 @@ import { FieldShell, FormGrid } from "../FormField";
 import GstinField from "../GstinField";
 import Documents from "../Documents";
 import { normaliseMobile, type CustomerFormValues } from "@hub/lib/customerOnboarding/schema";
-import { factoryAddressFrom, toSnapshot } from "@hub/lib/customerOnboarding/gstin";
+import {
+  customerTypeFrom, factoryAddressFrom, natureOfBusinessHint, toSnapshot,
+} from "@hub/lib/customerOnboarding/gstin";
 import {
   CONSUMPTION_BAND_OPTIONS, CUSTOMER_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS,
   PRINTING_APPLICATION_OPTIONS, SECURITY_OFFERED_OPTIONS,
@@ -77,6 +80,10 @@ function tidyRegister(form: UseFormReturn<CustomerFormValues>, field: TidyField)
 
 export function Step1CustomerInfo({ form, disabled }: StepProps) {
   const { register, watch, setValue } = form;
+  // The portal's own words, shown when we would NOT auto-pick a type. Wholesale
+  // vs retail is all GST knows; dealer/distributor/trader is the rep's call, and
+  // one glance at this beats guessing or opening the certificate.
+  const nbaHint = natureOfBusinessHint(watch("gstin_snapshot")?.compliance ?? null);
   return (
     <FormGrid>
       <FieldShell id="legal_name" label="Legal Company Name" required error={err(form, "legal_name")}
@@ -90,7 +97,13 @@ export function Step1CustomerInfo({ form, disabled }: StepProps) {
         <Input id="trade_name" disabled={disabled} placeholder="Orange Textiles" {...register("trade_name")} />
       </FieldShell>
 
-      <FieldShell id="customer_type" label="Customer Type" required error={err(form, "customer_type")}>
+      <FieldShell
+        id="customer_type"
+        label="Customer Type"
+        required
+        error={err(form, "customer_type")}
+        hint={nbaHint ? `GST portal says: ${nbaHint}` : undefined}
+      >
         <Select
           value={watch("customer_type") ?? ""}
           disabled={disabled}
@@ -117,6 +130,38 @@ export function Step1CustomerInfo({ form, disabled }: StepProps) {
 export function Step2Kyc({ form, states, disabled, requestId, request, onNeedSave }: StepProps) {
   const { register, watch, setValue } = form;
   const sameBilling = watch("billing_same_as_registered");
+  const registered = watch("registered_address") ?? "";
+
+  /**
+   * "Factory address is the same as the registered address" — for the very many
+   * small manufacturers whose only premises IS the registered one.
+   *
+   * ⚠ DELIBERATELY UNLIKE THE BILLING FLAG NEXT TO IT, in two ways.
+   *
+   *   1. It is LOCAL STATE, not a column. The tick is a claim that two strings
+   *      are equal, so equality IS the stored fact — nothing is lost by deriving
+   *      it. That means no migration, and it works on requests raised before
+   *      this existed.
+   *   2. It COPIES the address rather than storing null-and-resolving-later.
+   *      Billing can be null because every reader resolves it. Factory cannot:
+   *      the submit RPC requires it non-null (step 2 validation), and the Excel
+   *      export, the request detail and the Tally ledger all read the column
+   *      directly. Copying keeps every one of those correct with no changes.
+   */
+  const [sameFactory, setSameFactory] = useState(() => {
+    const f = (form.getValues("factory_address") ?? "").trim();
+    const r = (form.getValues("registered_address") ?? "").trim();
+    return f.length > 0 && f === r;
+  });
+
+  // Keep the copy true while the box is ticked — including when the registered
+  // address is edited afterwards, which is exactly when a stale copy would
+  // otherwise ship a wrong factory address to Tally.
+  useEffect(() => {
+    if (!sameFactory) return;
+    if ((form.getValues("factory_address") ?? "") === registered) return;
+    setValue("factory_address", registered, { shouldDirty: true, shouldValidate: true });
+  }, [sameFactory, registered, form, setValue]);
 
   return (
     <div className="space-y-6">
@@ -173,6 +218,13 @@ export function Step2Kyc({ form, states, disabled, requestId, request, onNeedSav
               // Only a premises the portal LABELS as manufacturing — anything
               // else (warehouse, branch, godown) stays the rep's to type.
               fillIfBlank("factory_address", factoryAddressFrom(d.additionalPlaces));
+              // Only manufacturer/exporter, and only when unambiguous — see
+              // customerTypeFrom. Step 1's field carries the portal's wording as
+              // a hint for every case this declines to decide.
+              const ct = customerTypeFrom(d.compliance?.natureOfBusiness);
+              if (ct && !form.getValues("customer_type")) {
+                setValue("customer_type", ct as never, { shouldDirty: true, shouldValidate: true });
+              }
               // Freeze the evidence. This is what Accounts and the Director read
               // days later, and it is NOT a soft-fill: a fresh lookup for THIS
               // GSTIN always replaces an older one, because the newer answer is
@@ -207,10 +259,32 @@ export function Step2Kyc({ form, states, disabled, requestId, request, onNeedSav
           <div />
         </FormGrid>
         <FormGrid cols={1}>
-          <FieldShell id="factory_address" label="Factory Address" required
-                      error={err(form, "factory_address")}>
-            <Textarea id="factory_address" rows={2} disabled={disabled}
-                      placeholder="Where the printing actually happens" {...register("factory_address")} />
+          <div className="flex items-center gap-2 pb-2">
+            <Checkbox
+              id="factory_same"
+              disabled={disabled}
+              checked={sameFactory}
+              onCheckedChange={(c) => setSameFactory(c === true)}
+            />
+            <Label htmlFor="factory_same" className="text-sm font-normal cursor-pointer">
+              Factory address is the same as the registered address
+            </Label>
+          </div>
+
+          <FieldShell
+            id="factory_address"
+            label="Factory Address"
+            required
+            error={sameFactory ? undefined : err(form, "factory_address")}
+            hint={sameFactory ? "Copied from the registered address above" : undefined}
+          >
+            <Textarea
+              id="factory_address" rows={2}
+              disabled={disabled || sameFactory}
+              className={sameFactory ? "bg-muted/50" : undefined}
+              placeholder="Where the printing actually happens"
+              {...register("factory_address")}
+            />
           </FieldShell>
 
           <div className="flex items-center gap-2 pb-3">
