@@ -20,6 +20,7 @@ import { useToast } from "@hub/hooks/use-toast";
 import {
   CorrectionBar, DecisionBar, PanelField, StepActionPanel, type PanelDecision,
 } from "./StepActionPanel";
+import GstComplianceCard from "./GstComplianceCard";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { inr, requestSubject } from "@hub/lib/customerOnboarding/format";
 import { localDateIso } from "@/shared/lib/workingDays";
@@ -136,6 +137,11 @@ export default function AccountsPanel({
       }
     >
       <div className="space-y-3">
+        {/* The evidence for the checkbox immediately below it, frozen when Sales
+            raised the request. Renders nothing for requests raised before the
+            GSTIN gate shipped, which is most of the backlog. */}
+        <GstComplianceCard snapshot={r.gstinSnapshot} compact />
+
         <label className="flex items-start gap-2.5 cursor-pointer">
           <Checkbox
             checked={gstOk}

@@ -15,6 +15,7 @@ import { useToast } from "@hub/hooks/use-toast";
 import {
   CorrectionBar, DecisionBar, PanelField, StepActionPanel, type PanelDecision,
 } from "./StepActionPanel";
+import GstComplianceCard from "./GstComplianceCard";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { customerTypeLabel, inr, paymentTermsLabel, requestSubject, securityLabel } from "@hub/lib/customerOnboarding/format";
 import { localDateIso } from "@/shared/lib/workingDays";
@@ -147,6 +148,13 @@ export default function DirectorPanel({
           </div>
         )}
       </div>
+
+      {/* The one piece of OUTSIDE evidence on this screen. Everything above is
+          our own people's opinion of the customer; this is the GST portal's
+          record of how they actually behave. It sits directly under the numbers
+          it should inform, and it is the snapshot frozen at raise time — not a
+          fresh lookup, so the approval rests on what was actually reviewed. */}
+      <GstComplianceCard snapshot={r.gstinSnapshot} compact />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <PanelField id="dir-date" label="Decided on">

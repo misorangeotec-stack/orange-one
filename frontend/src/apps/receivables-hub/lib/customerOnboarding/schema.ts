@@ -18,7 +18,7 @@
  *   so keep them in step.
  */
 import { z } from "zod";
-import { gstinChecksumOk, isGstinFormatValid, normaliseGstin } from "./gstin";
+import { gstinChecksumOk, isGstinFormatValid, normaliseGstin, type GstinSnapshot } from "./gstin";
 
 /** Bare 10 digits. `+91 90333 01207`, `09033301207` and `9033301207` are one person. */
 export function normaliseMobile(raw: string): string {
@@ -90,6 +90,13 @@ export const step2Schema = z.object({
   // Derived, never typed — present so the value round-trips through the form.
   state_code: optionalText,
   state_name: optionalText,
+  /**
+   * What the GST portal said, frozen at the gate. Carried through the form only
+   * so autosave persists it; it is never rendered as an input and can never fail
+   * validation, which is why — like state_code above — it is absent from
+   * STEP_FIELDS.
+   */
+  gstin_snapshot: z.custom<GstinSnapshot | null>(() => true).nullable().default(null),
   factory_address: z.string().trim().min(5, "Enter the factory address"),
   billing_same_as_registered: z.boolean().default(true),
   billing_address: optionalText,
@@ -208,7 +215,7 @@ export function emptyFormValues(): CustomerFormValues {
   return {
     legal_name: "", trade_name: "", customer_type: undefined as never, website: "",
     gst_number: "", pan_number: "", msme_udyam_no: "", registered_address: "",
-    city: "", state_code: "", state_name: "", factory_address: "",
+    city: "", state_code: "", state_name: "", gstin_snapshot: null, factory_address: "",
     billing_same_as_registered: true, billing_address: "",
     contact_name: "", contact_designation: "", contact_mobile: "", contact_email: "",
     printing_applications: [], printing_application_other: "",
@@ -226,6 +233,7 @@ export function toFormValues(r: {
   legalName: string | null; tradeName: string | null; customerType: string | null; website: string | null;
   gstNumber: string | null; panNumber: string | null; msmeUdyamNo: string | null;
   registeredAddress: string | null; city: string | null; stateCode: string | null; stateName: string | null;
+  gstinSnapshot: GstinSnapshot | null;
   factoryAddress: string | null; billingSameAsRegistered: boolean; billingAddress: string | null;
   contactName: string | null; contactDesignation: string | null; contactMobile: string | null; contactEmail: string | null;
   printingApplications: string[]; printingApplicationOther: string | null;
@@ -244,6 +252,7 @@ export function toFormValues(r: {
     gst_number: s(r.gstNumber), pan_number: s(r.panNumber), msme_udyam_no: s(r.msmeUdyamNo),
     registered_address: s(r.registeredAddress), city: s(r.city),
     state_code: s(r.stateCode), state_name: s(r.stateName),
+    gstin_snapshot: r.gstinSnapshot ?? null,
     factory_address: s(r.factoryAddress),
     billing_same_as_registered: r.billingSameAsRegistered,
     billing_address: s(r.billingAddress),
@@ -286,6 +295,10 @@ export function toRpcPayload(v: Partial<CustomerFormValues>): Record<string, unk
     msme_udyam_no: v.msme_udyam_no ?? "",
     registered_address: v.registered_address ?? "",
     city: v.city ?? "",
+    // ⚠ Sent as null when absent, NOT omitted and NOT "". write_form only
+    //   overwrites on a jsonb object, so null preserves whatever is stored —
+    //   which is what a routine autosave must do. See the migration.
+    gstin_snapshot: v.gstin_snapshot ?? null,
     factory_address: v.factory_address ?? "",
     billing_same_as_registered: v.billing_same_as_registered ?? true,
     billing_address: v.billing_address ?? "",

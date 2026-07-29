@@ -78,6 +78,9 @@ function mapRequest(r: any): CustomerRequest {
     city: str(r.city),
     stateCode: str(r.state_code),
     stateName: str(r.state_name),
+    // jsonb arrives already parsed. Null for every request raised before the
+    // GSTIN gate shipped, and whenever no provider answered.
+    gstinSnapshot: r.gstin_snapshot ?? null,
     factoryAddress: str(r.factory_address),
     billingSameAsRegistered: r.billing_same_as_registered !== false,
     billingAddress: str(r.billing_address),

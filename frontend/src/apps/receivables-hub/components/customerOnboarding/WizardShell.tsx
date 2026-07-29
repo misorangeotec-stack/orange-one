@@ -73,7 +73,17 @@ export default function WizardShell({
   const idRef = useRef<string | null>(requestId);
   const [savedId, setSavedId] = useState<string | null>(requestId);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const crashKey = `hub:custonb:${requestId ?? "new"}`;
+  /**
+   * ⚠ THE GSTIN IS PART OF THE KEY FOR A NEW CUSTOMER, NOT DECORATION.
+   *   The restore below is `{...initialValues, ...saved}` — the crash pad wins
+   *   every field. Once the gate started seeding real values, a single shared
+   *   "new" key meant a pad abandoned inside the 2.5s debounce for GSTIN X would
+   *   silently restore X's name, address and frozen snapshot over a fresh gate
+   *   for GSTIN Y. Keying by GSTIN makes the pad belong to one taxpayer, which is
+   *   the same invariant the SQL enforces when it nulls a snapshot that stops
+   *   matching gst_number.
+   */
+  const crashKey = `hub:custonb:${requestId ?? `new:${initialValues.gst_number || "nogst"}`}`;
 
   const form = useForm<CustomerFormValues>({
     resolver: zodResolver(fullSchema),

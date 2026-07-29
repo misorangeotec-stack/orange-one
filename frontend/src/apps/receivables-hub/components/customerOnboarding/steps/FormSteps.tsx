@@ -19,6 +19,7 @@ import { FieldShell, FormGrid } from "../FormField";
 import GstinField from "../GstinField";
 import Documents from "../Documents";
 import { normaliseMobile, type CustomerFormValues } from "@hub/lib/customerOnboarding/schema";
+import { factoryAddressFrom, toSnapshot } from "@hub/lib/customerOnboarding/gstin";
 import {
   CONSUMPTION_BAND_OPTIONS, CUSTOMER_TYPE_OPTIONS, PAYMENT_TERMS_OPTIONS,
   PRINTING_APPLICATION_OPTIONS, SECURITY_OFFERED_OPTIONS,
@@ -134,6 +135,9 @@ export function Step2Kyc({ form, states, disabled, requestId, request, onNeedSav
             onPanChange={(v) => setValue("pan_number", v, { shouldDirty: true, shouldValidate: true })}
             panError={err(form, "pan_number")}
             stateName={watch("state_name") ?? ""}
+            // Already looked up at the gate (or on a previous visit to a draft).
+            // Passing it prevents this pane re-buying the same paid answer.
+            snapshot={watch("gstin_snapshot") ?? null}
             onDerived={({ pan, stateCode, stateName }) => {
               // Only fill the PAN when it is empty — never clobber a deliberate
               // manual override (the field offers its own "reset to derived").
@@ -147,7 +151,7 @@ export function Step2Kyc({ form, states, disabled, requestId, request, onNeedSav
               //   silently overwriting something a rep typed on purpose is how
               //   people learn to fight a form instead of using it.
               const fillIfBlank = (
-                field: "legal_name" | "trade_name" | "registered_address" | "city",
+                field: "legal_name" | "trade_name" | "registered_address" | "city" | "factory_address",
                 v: string | null,
               ) => {
                 if (!v) return;
@@ -166,6 +170,16 @@ export function Step2Kyc({ form, states, disabled, requestId, request, onNeedSav
                   ? [d.registeredAddress, d.pincode].filter(Boolean).join(" - ")
                   : null,
               );
+              // Only a premises the portal LABELS as manufacturing — anything
+              // else (warehouse, branch, godown) stays the rep's to type.
+              fillIfBlank("factory_address", factoryAddressFrom(d.additionalPlaces));
+              // Freeze the evidence. This is what Accounts and the Director read
+              // days later, and it is NOT a soft-fill: a fresh lookup for THIS
+              // GSTIN always replaces an older one, because the newer answer is
+              // strictly better and the old one was never edited by hand.
+              setValue("gstin_snapshot", toSnapshot(form.getValues("gst_number") ?? "", d), {
+                shouldDirty: true,
+              });
             }}
           />
           <FieldShell id="msme_udyam_no" label="MSME / Udyam Registration" error={err(form, "msme_udyam_no")}>

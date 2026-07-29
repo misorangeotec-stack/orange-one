@@ -4,14 +4,22 @@
  *
  * The wizard itself knows nothing about which of the three it is in beyond
  * `mode` — everything else is just initial values.
+ *
+ * ⚠ A BRAND-NEW CUSTOMER MEETS THE GSTIN GATE FIRST. It is not a wizard step: it
+ *   runs before any row exists, so abandoning it mints no draft, and its whole
+ *   output is the wizard's initial values. Resuming a draft and editing a rework
+ *   both SKIP it — the GSTIN is already answered, and re-asking would either
+ *   spend another paid lookup or overwrite what the rep has since corrected.
  */
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, UserPlus } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
 import WizardShell from "@hub/components/customerOnboarding/WizardShell";
+import GstinGate from "@hub/components/customerOnboarding/GstinGate";
 import { useCustomerStore } from "@hub/lib/customerOnboarding/store";
-import { emptyFormValues, toFormValues } from "@hub/lib/customerOnboarding/schema";
+import { toFormValues, type CustomerFormValues } from "@hub/lib/customerOnboarding/schema";
 import { formLockReason } from "@hub/lib/customerOnboarding/queues";
 import { homeHref, detailHref } from "@hub/lib/customerOnboarding/routes";
 import { stageLabel } from "@hub/lib/customerOnboarding/format";
@@ -19,6 +27,9 @@ import { stageLabel } from "@hub/lib/customerOnboarding/format";
 export default function NewCustomer() {
   const { id } = useParams();
   const s = useCustomerStore();
+  // null = the gate has not been passed yet. Only ever set for a brand-new
+  // customer; the two resume paths below fill it from the existing row.
+  const [seed, setSeed] = useState<CustomerFormValues | null>(null);
 
   if (s.loading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
 
@@ -64,6 +75,10 @@ export default function NewCustomer() {
   }
 
   const isDraft = !existing || existing.status === "draft";
+  // Resuming or reworking: the GSTIN question is already answered, so the gate is
+  // bypassed and the wizard opens straight on the saved values.
+  const initialValues = existing ? toFormValues(existing) : seed;
+  const onGate = initialValues === null;
 
   return (
     <div className="p-6 space-y-5 max-w-[1100px] mx-auto">
@@ -80,7 +95,9 @@ export default function NewCustomer() {
             : `Update ${existing.reqNo ?? "request"}`}
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Seven short steps. Everything is saved as you go, so you can stop and come back.
+          {onGate
+            ? "Their GST number first — it fills in most of what follows."
+            : "Seven short steps. Everything is saved as you go, so you can stop and come back."}
         </p>
       </div>
 
@@ -100,11 +117,15 @@ export default function NewCustomer() {
         </div>
       )}
 
-      <WizardShell
-        requestId={existing?.id ?? null}
-        mode={isDraft ? "draft" : "edit"}
-        initialValues={existing ? toFormValues(existing) : emptyFormValues()}
-      />
+      {onGate ? (
+        <GstinGate onReady={setSeed} />
+      ) : (
+        <WizardShell
+          requestId={existing?.id ?? null}
+          mode={isDraft ? "draft" : "edit"}
+          initialValues={initialValues}
+        />
+      )}
     </div>
   );
 }

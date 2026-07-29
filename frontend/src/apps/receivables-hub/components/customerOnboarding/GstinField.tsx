@@ -25,15 +25,19 @@
  * ConnectWave client — or, better, have the pipeline expose it.
  */
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Loader2, RotateCcw, Sparkles } from "lucide-react";
+import { CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 import { Input } from "@hub/components/ui/input";
 import { FieldShell } from "./FormField";
-import { parseGstin, lookupGstin, panFromGstin, type GstinLookup } from "@hub/lib/customerOnboarding/gstin";
+import GstComplianceCard from "./GstComplianceCard";
+import {
+  parseGstin, lookupGstin, panFromGstin, toSnapshot,
+  type GstinLookup, type GstinSnapshot,
+} from "@hub/lib/customerOnboarding/gstin";
 import type { GstState } from "@hub/lib/customerOnboarding/types";
 
 export default function GstinField({
   value, onChange, onDerived, onLookup, states, error, panValue, onPanChange, panError,
-  stateName, disabled,
+  stateName, disabled, snapshot,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -48,11 +52,19 @@ export default function GstinField({
   panError?: string;
   stateName: string;
   disabled?: boolean;
+  /**
+   * ⚠ THE ANTI-DOUBLE-BILLING SEAM. The gate has almost always already looked
+   *   this GSTIN up, and Appyflow charges per call. Passing that snapshot in
+   *   pre-arms `lastLookedUp`, so arriving on this pane does NOT buy the same
+   *   answer a second time. Without it every rep costs two lookups instead of
+   *   one, and a resumed draft costs one more on every visit.
+   */
+  snapshot: GstinSnapshot | null;
 }) {
   const [looking, setLooking] = useState(false);
-  const [found, setFound] = useState<GstinLookup | null>(null);
+  const [found, setFound] = useState<GstinSnapshot | null>(snapshot);
   const [missed, setMissed] = useState(false);
-  const lastLookedUp = useRef<string>("");
+  const lastLookedUp = useRef<string>(snapshot?.gstin ?? "");
 
   const parsed = parseGstin(value, states);
 
@@ -78,7 +90,7 @@ export default function GstinField({
       if (!alive) return;
       setLooking(false);
       if (data) {
-        setFound(data);
+        setFound(toSnapshot(parsed.gstin, data));
         onLookup(data);
       } else {
         setMissed(true);
@@ -90,7 +102,6 @@ export default function GstinField({
 
   const derivedPan = parsed.ok ? panFromGstin(parsed.gstin) : "";
   const panOverridden = Boolean(derivedPan) && panValue.toUpperCase() !== derivedPan;
-  const inactive = found?.status && !/^active$/i.test(found.status);
 
   return (
     <>
@@ -173,45 +184,17 @@ export default function GstinField({
         <Input id="state_name" value={stateName} readOnly disabled className="bg-muted/50" placeholder="—" />
       </FieldShell>
 
-      {/* What the portal said. Shown so the rep can sanity-check the auto-fill
-          against the certificate in front of them, rather than trusting it blind. */}
+      {/* What the portal said — the same card the approvers will read later, so
+          the rep sanity-checks the auto-fill against the certificate in front of
+          them rather than trusting it blind. It carries its own cancelled /
+          Composition warnings, hence none here. */}
       {found && (
-        <div className="sm:col-span-2 -mt-1 mb-3">
-          <div className="rounded-md border bg-muted/40 p-3">
-            <div className="flex gap-2">
-              <Sparkles className="h-4 w-4 shrink-0 mt-0.5 text-primary" />
-              <div className="text-sm min-w-0">
-                <p className="font-medium">Filled in from the GST portal</p>
-                <dl className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2 text-xs text-muted-foreground">
-                  {found.legalName && <div><dt className="inline font-medium">Legal name: </dt><dd className="inline">{found.legalName}</dd></div>}
-                  {found.tradeName && <div><dt className="inline font-medium">Trade name: </dt><dd className="inline">{found.tradeName}</dd></div>}
-                  {found.constitution && <div><dt className="inline font-medium">Constitution: </dt><dd className="inline">{found.constitution}</dd></div>}
-                  {found.registrationDate && <div><dt className="inline font-medium">Registered: </dt><dd className="inline">{found.registrationDate}</dd></div>}
-                  {found.status && <div><dt className="inline font-medium">Status: </dt><dd className="inline">{found.status}</dd></div>}
-                </dl>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">
-                  Only blank fields were filled — anything you had already typed was left alone.
-                  Everything stays editable.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* A cancelled or suspended registration is the single most useful thing a
-          lookup can tell you about a prospective CREDIT customer. */}
-      {inactive && (
-        <div className="sm:col-span-2 -mt-1 mb-3">
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/40">
-            <div className="flex gap-2">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-              <p className="text-sm text-amber-900 dark:text-amber-200">
-                The GST portal reports this registration as <strong>{found?.status}</strong>, not Active.
-                Worth confirming before offering credit terms.
-              </p>
-            </div>
-          </div>
+        <div className="sm:col-span-2 -mt-1 mb-3 space-y-2">
+          <GstComplianceCard snapshot={found} />
+          <p className="text-[11px] text-muted-foreground">
+            Only blank fields were filled — anything you had already typed was left alone.
+            Everything stays editable.
+          </p>
         </div>
       )}
 

@@ -17,6 +17,10 @@
  *   like a bug in the form. Change both, in the same commit.
  */
 
+// `import type`, deliberately: gstin.ts imports GstState from this file, so a
+// value import here would close a real runtime cycle. Types are erased.
+import type { GstinSnapshot } from "./gstin";
+
 /* ── Step 1 — customer information ─────────────────────────────────────── */
 
 export type CustomerType =
@@ -158,6 +162,12 @@ export interface CustomerRequest {
   city: string | null;
   stateCode: string | null;
   stateName: string | null;
+  /**
+   * What the GST portal said when the request was raised, frozen. Null for every
+   * request created before the gate shipped, and for any where no provider
+   * answered — so every consumer must render without it.
+   */
+  gstinSnapshot: GstinSnapshot | null;
   factoryAddress: string | null;
   billingSameAsRegistered: boolean;
   billingAddress: string | null;

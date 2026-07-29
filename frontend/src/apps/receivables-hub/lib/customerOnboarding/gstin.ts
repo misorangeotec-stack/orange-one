@@ -141,6 +141,57 @@ export function parseGstin(raw: string, states: GstState[]): GstinParse {
 
 /* ── The API-lookup seam ───────────────────────────────────────────────── */
 
+/** One filed GST return. `period` is the tax period covered, not the filing date. */
+export interface FiledReturn {
+  type: string;
+  fy: string;
+  period: string;
+  filedOn: string | null;
+}
+
+/**
+ * The credit-relevant half of a lookup, from jamku.
+ *
+ * ⚠ NULLABLE, AND IT WILL BE NULL IN PRODUCTION SOMETIMES. It comes from the
+ *   free tier (1000/day, 20/min); a 429 or a missing key yields null and the
+ *   identity half still arrives. Every consumer must render without it.
+ *
+ * ⚠ CACHED. `syncedOn` is the date the provider last refreshed this record, and
+ *   it can be months old. Never show a filing claim without showing that date —
+ *   an approver who reads "filed to September" and acts on it deserves to know
+ *   whether that was checked yesterday or last year.
+ */
+export interface GstCompliance {
+  category: string | null;
+  aggregateTurnover: string | null;
+  aggregateTurnoverFy: string | null;
+  filingFrequency: Record<string, string> | null;
+  latestGstr1: string | null;
+  latestGstr3b: string | null;
+  eInvoiceMandated: string | null;
+  /** Enabled to issue e-invoices — distinct from being mandated to. */
+  eInvoiceEnabled: string | null;
+  hsn: string[];
+  natureOfBusiness: string[];
+  centreJurisdiction: string | null;
+  stateJurisdiction: string | null;
+  returns: FiledReturn[];
+  syncedOn: string | null;
+  returnsSyncedOn: string | null;
+}
+
+/**
+ * An additional place of business declared on the GSTIN.
+ *
+ * `nature` is the portal's own label for the premises — "Factory / Manufacturing",
+ * "Warehouse / Depot", "Retail Business" — and it is what makes this usable:
+ * see factoryAddressFrom() below.
+ */
+export interface AdditionalPlace {
+  address: string;
+  nature: string | null;
+}
+
 export interface GstinLookup {
   legalName: string | null;
   tradeName: string | null;
@@ -151,7 +202,65 @@ export interface GstinLookup {
   /** 'Active' / 'Cancelled' / … as the portal reports it. */
   status: string | null;
   registrationDate: string | null;
+  cancellationDate: string | null;
   constitution: string | null;
+  /** Regular | Composition | … — a Composition dealer cannot pass on ITC. */
+  taxpayerType: string | null;
+  /** Appyflow only. Empty when it did not answer, or the GSTIN declares none. */
+  additionalPlaces: AdditionalPlace[];
+  compliance: GstCompliance | null;
+  /** Which providers answered: ["appyflow", "jamku"]. */
+  sources: string[];
+}
+
+/**
+ * Which additional place is the FACTORY, for pre-filling `factory_address`.
+ *
+ * ⚠ ONLY EVER RETURNS A LABELLED MATCH — never "the first one". A customer can
+ *   declare a warehouse, a branch office and a godown; filling the factory field
+ *   with a warehouse produces a confidently wrong address, which is worse than
+ *   the blank box a rep would have filled correctly. When nothing is labelled as
+ *   manufacturing, this returns null and the rep types it, exactly as before.
+ *
+ *   The portal's wording varies ("Factory / Manufacturing", "Manufacturing",
+ *   "Factory"), so match on either word rather than an exact string.
+ */
+export function factoryAddressFrom(places: AdditionalPlace[] | undefined | null): string | null {
+  if (!places?.length) return null;
+  const hit = places.find((p) => /factory|manufactur/i.test(p.nature ?? ""));
+  return hit?.address || null;
+}
+
+/**
+ * A lookup frozen onto the request, so approvers days later read the same
+ * evidence Sales saw — without spending another paid call per visit.
+ *
+ * ⚠ `gstin` IS LOAD-BEARING, not decoration: fms_customer_write_form nulls the
+ *   whole snapshot when it stops matching the request's gst_number. A snapshot
+ *   describing a different taxpayer is worse than none, because it still renders
+ *   as fact.
+ */
+export interface GstinSnapshot extends GstinLookup {
+  gstin: string;
+  /** ISO instant the lookup ran — distinct from compliance.syncedOn, which is
+   *  when the PROVIDER last refreshed its cache. Both matter, for different
+   *  reasons, so both are kept. */
+  lookedUpAt: string;
+}
+
+export function toSnapshot(gstin: string, d: GstinLookup): GstinSnapshot {
+  return { ...d, gstin: normaliseGstin(gstin), lookedUpAt: new Date().toISOString() };
+}
+
+/** True when the portal reports anything other than an active registration. */
+export function isInactiveStatus(status: string | null | undefined): boolean {
+  return Boolean(status) && !/^active$/i.test(String(status).trim());
+}
+
+/** The most recent return of a given type, or null. Returns arrive newest-first. */
+export function latestReturn(c: GstCompliance | null, type: string): FiledReturn | null {
+  if (!c) return null;
+  return c.returns.find((r) => r.type.toUpperCase() === type.toUpperCase()) ?? null;
 }
 
 /**
