@@ -8,11 +8,16 @@
  * drift. "Mine vs All" is applied by the PAGE, never here — the Control Center
  * must count everyone's work.
  *
- * Membership is STATUS-DRIVEN (the RPCs set `status`), and the chain is strictly
- * linear, so an order sits at exactly one open step at a time.
+ * PENDING membership is STATUS-DRIVEN and an order sits at exactly one open step
+ * at a time — that stays true with rounds, because an order has exactly one round
+ * in progress.
+ *
+ * COMPLETED entries are ROUND-SCOPED. An order that has looped three times has
+ * three sales bills, and each is its own row. See `completedFor`.
  */
 import type { QueueEntryBase } from "@/shared/lib/fmsQueue";
 import { dueIsoFrom, type StepSlaMap } from "./sla";
+import { allRoundViews, currentRoundView, type RoundView } from "./rounds";
 import type { StepKey } from "./steps";
 import type { DispatchOrder, DispatchStatus } from "../types";
 
@@ -38,48 +43,70 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
 /*  Per-step accessors — the one place a step maps to its columns.            */
 /* -------------------------------------------------------------------------- */
 
-/** The step's own completion timestamp (`*At`). */
+/** The step's own completion timestamp on the LIVE order (the round in progress). */
 const AT: Record<QueueStep, (o: DispatchOrder) => string | null> = {
   credit_check: (o) => o.ccAt,
   material_status: (o) => o.msAt,
-  lot_confirm: (o) => o.lcAt,
   sales_bill: (o) => o.sbAt,
   gate_out: (o) => o.goAt,
   dispatch_confirm: (o) => o.dcAt,
 };
 
-/** Who completed the step (`*By`). */
+/** The same four steps read off ANY round — live or archived. */
+const ROUND_AT: Record<Exclude<QueueStep, "credit_check">, (v: RoundView) => string | null> = {
+  material_status: (v) => v.msAt,
+  sales_bill: (v) => v.sbAt,
+  gate_out: (v) => v.goAt,
+  dispatch_confirm: (v) => v.dcAt,
+};
+
+const ROUND_BY: Record<Exclude<QueueStep, "credit_check">, (v: RoundView) => string | null> = {
+  material_status: (v) => v.msBy,
+  sales_bill: (v) => v.sbBy,
+  gate_out: (v) => v.goBy,
+  dispatch_confirm: (v) => v.dcBy,
+};
+
+/** Who completed the step, on the live order. */
 const BY: Record<QueueStep, (o: DispatchOrder) => string | null> = {
   credit_check: (o) => o.ccBy,
   material_status: (o) => o.msBy,
-  lot_confirm: (o) => o.lcBy,
   sales_bill: (o) => o.sbBy,
   gate_out: (o) => o.goBy,
   dispatch_confirm: (o) => o.dcBy,
 };
 
 /**
- * The anchor whose completion starts a step's SLA clock.
+ * The anchor whose completion starts a step's SLA clock, for a GIVEN ROUND.
  *
- * `material_status` deliberately anchors on the ORDER RECEIPT, not on the credit
- * confirmation before it: the sheet's rule is "order received before 12PM →
- * same-day dispatch", so the clock starts when the order arrived. lib/sla.ts
- * declares the matching `same_day_cutoff` unit; the two must stay in step.
+ * ⚠ Two of these are round-scoped for a reason, and getting either wrong is the
+ *   most damaging bug available in this module:
+ *
+ *   material_status anchors on the ROUND START, not on the order receipt. On
+ *   round 2 the order was received weeks ago; anchoring there would make every
+ *   looped order permanently overdue from the moment it loops — red in the
+ *   queue, in My Work and on the scoreboard, for ever.
+ *
+ *   The rest anchor on the previous step OF THE SAME ROUND, so a historic round
+ *   reports its own planned dates rather than the current round's. Without that
+ *   every old row in the register reads "0 days late".
+ *
+ * The 12PM same-day cut-off now applies to the moment the order (re)entered the
+ * store's queue, which for round 1 is still the order receipt. lib/sla.ts says
+ * the same thing; the two must stay in step.
  */
-const ANCHOR_AT: Record<QueueStep, (o: DispatchOrder) => string | null> = {
-  credit_check: (o) => o.submittedAt,
-  material_status: (o) => o.submittedAt,
-  lot_confirm: (o) => o.msAt,
-  sales_bill: (o) => o.lcAt,
-  gate_out: (o) => o.sbAt,
-  dispatch_confirm: (o) => o.goAt,
+const ANCHOR_AT: Record<QueueStep, (o: DispatchOrder, v: RoundView | null) => string | null> = {
+  credit_check: (o) => o.ccDecidedAt ?? o.submittedAt,
+  material_status: (o, v) => v?.roundStartedAt ?? o.roundStartedAt,
+  sales_bill: (_o, v) => v?.msAt ?? null,
+  gate_out: (_o, v) => v?.sbAt ?? null,
+  dispatch_confirm: (_o, v) => v?.goAt ?? null,
 };
 
 /** status → the single step an order currently owes. */
 const STATUS_STEP: Partial<Record<DispatchStatus, QueueStep>> = {
   awaiting_credit_check: "credit_check",
   awaiting_material_status: "material_status",
-  awaiting_lot_confirm: "lot_confirm",
   awaiting_sales_bill: "sales_bill",
   awaiting_gate_out: "gate_out",
   awaiting_dispatch_confirm: "dispatch_confirm",
@@ -88,14 +115,13 @@ const STATUS_STEP: Partial<Record<DispatchStatus, QueueStep>> = {
 /** Edit-lock rules per step — mirror the `fms_dispatch_<pfx>_editable()` predicates. */
 const LOCK: Record<QueueStep, { open: DispatchStatus; what: string; nextWhat: string }> = {
   credit_check:     { open: "awaiting_material_status",  what: "credit confirmation",   nextWhat: "the material-status check" },
-  material_status:  { open: "awaiting_lot_confirm",      what: "material status",       nextWhat: "LOT confirmation" },
-  lot_confirm:      { open: "awaiting_sales_bill",       what: "LOT confirmation",      nextWhat: "the sales bill" },
-  sales_bill:       { open: "awaiting_gate_out",         what: "sales bill",            nextWhat: "the gate-out entry" },
-  gate_out:         { open: "awaiting_dispatch_confirm", what: "gate-out entry",        nextWhat: "the delivery confirmation" },
+  material_status:  { open: "awaiting_sales_bill",       what: "material status",       nextWhat: "the sales bill" },
+  sales_bill:       { open: "awaiting_gate_out",         what: "sales bill",            nextWhat: "the gate outward entry" },
+  gate_out:         { open: "awaiting_dispatch_confirm", what: "gate outward entry",    nextWhat: "the delivery confirmation" },
   dispatch_confirm: { open: "closed",                    what: "delivery confirmation", nextWhat: "" },
 };
 
-/** The step's own completion timestamp / actor — for the detail progress panel. */
+/** The step's own completion timestamp / actor on the round in progress. */
 export const stepDoneAt = (step: QueueStep, o: DispatchOrder): string | null => AT[step](o);
 export const stepDoneBy = (step: QueueStep, o: DispatchOrder): string | null => BY[step](o);
 
@@ -108,29 +134,17 @@ export function openStep(o: DispatchOrder): QueueStep | null {
 }
 
 /** An order's due date for one step = its anchor's completion + the step's rule. */
-export function dispatchDueIso(snap: DispatchSnapshot, o: DispatchOrder, step: QueueStep): string | null {
+export function dispatchDueIso(
+  snap: DispatchSnapshot,
+  o: DispatchOrder,
+  step: QueueStep,
+  view?: RoundView | null,
+): string | null {
   const sla = snap.stepSla[step];
   if (!sla) return null;
-  const from = ANCHOR_AT[step](o) ?? o.submittedAt;
+  const v = view === undefined ? currentRoundView(o) : view;
+  const from = ANCHOR_AT[step](o, v) ?? v?.roundStartedAt ?? o.roundStartedAt;
   return dueIsoFrom(from, sla);
-}
-
-/**
- * The date the customer was PROMISED, which is not an internal SLA and is not
- * derived from one. Present only when Sales committed to a date.
- */
-export const promisedIso = (o: DispatchOrder): string | null => o.promisedDate;
-
-/**
- * Is the promise to the customer already broken? True once the promised date has
- * passed with the consignment still inside the plant (no gate-out recorded).
- * Cancelled orders can't breach anything.
- */
-export function isTatBreached(o: DispatchOrder, todayIso: string): boolean {
-  if (!o.promisedDate) return false;
-  if (o.status === "cancelled") return false;
-  if (o.goAt) return false;
-  return o.promisedDate < todayIso;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -138,10 +152,18 @@ export function isTatBreached(o: DispatchOrder, todayIso: string): boolean {
 /* -------------------------------------------------------------------------- */
 
 export interface StageEntry<T> {
+  /**
+   * ⚠ ROUND-UNIQUE. This is `QueueTable`'s React key; an order that has looped
+   *   contributes one row per round to the same tab, so keying on the order id
+   *   alone would collide the moment anything ships in two goes.
+   */
   id: string;
   stepKey: StepKey;
   orderId: string;
   ref: string;
+  roundNo: number;
+  /** The round this row describes — what the modal must open, not the header. */
+  view: RoundView;
   actorId: string | null;
   atIso: string;
   editedAtIso: string | null;
@@ -159,34 +181,91 @@ export function lockReasonFor(step: QueueStep, o: DispatchOrder): string | null 
   const { open, what, nextWhat } = LOCK[step];
   if (o.status === "on_hold") return `This order is on hold — take it off hold before editing its ${what}.`;
   if (o.status === "cancelled") return `This order was cancelled — its ${what} can no longer be changed.`;
-  // Delivery confirmation is the last step; nothing downstream can lock it, so it
-  // stays correctable after the order closes.
-  if (step === "dispatch_confirm") return null;
+  if (step === "credit_check" && o.status === "awaiting_credit_check") {
+    return "This credit decision is still open — record it from the Pending tab instead.";
+  }
+  // Delivery confirmation is the last step of a round; nothing downstream locks
+  // it while the round is still live.
+  if (step === "dispatch_confirm") {
+    return o.status === "closed" ? null : null;
+  }
   if (o.status !== open) {
     return `${nextWhat[0].toUpperCase()}${nextWhat.slice(1)} has already been recorded — the ${what} can no longer be changed.`;
   }
   return null;
 }
 
-/** Every completed entry for one step — what the stage view's Completed tab renders. */
+/** What an archived round says when someone tries to edit it in place. */
+const ARCHIVED_LOCK = (roundNo: number) =>
+  `Round ${roundNo} is finished — open the order and use "Correct this round" to change what was delivered.`;
+
+/**
+ * Every completed entry for one step — what the stage view's Completed tab renders.
+ *
+ * ⚠ Credit is decided ONCE PER ORDER, so it yields at most one row however many
+ *   rounds an order has. The other four are per round, and MUST read the archive
+ *   as well as the live header: the moment an order loops, its header is wiped,
+ *   and a header-only read would make every earlier round's work vanish from the
+ *   screen, from the throughput card and from the register.
+ */
 export function completedFor(snap: DispatchSnapshot, step: QueueStep): StageEntry<DispatchOrder>[] {
-  const at = AT[step];
-  const by = BY[step];
-  return snap.orders
-    .filter((o) => !!at(o))
-    .map((o) => ({
-      id: o.id,
-      stepKey: step,
-      orderId: o.id,
-      ref: o.orderNo,
-      actorId: by(o),
-      atIso: at(o)!,
-      editedAtIso: o.editedAt,
-      editedById: o.editedBy,
-      lockReason: lockReasonFor(step, o),
-      row: o,
-    }));
+  const out: StageEntry<DispatchOrder>[] = [];
+
+  for (const o of snap.orders) {
+    if (step === "credit_check") {
+      if (!o.ccAt) continue;
+      out.push({
+        id: `${o.id}:0:credit_check`,
+        stepKey: step,
+        orderId: o.id,
+        ref: o.orderNo,
+        roundNo: 0,
+        view: currentRoundView(o) ?? { ...EMPTY_VIEW, roundNo: o.roundNo },
+        actorId: o.ccBy,
+        atIso: o.ccAt,
+        editedAtIso: o.ccEditedAt,
+        editedById: o.ccEditedBy,
+        lockReason: lockReasonFor(step, o),
+        row: o,
+      });
+      continue;
+    }
+
+    const at = ROUND_AT[step];
+    const by = ROUND_BY[step];
+    for (const v of allRoundViews(o)) {
+      const done = at(v);
+      if (!done) continue;
+      out.push({
+        id: `${o.id}:${v.roundNo}:${step}`,
+        stepKey: step,
+        orderId: o.id,
+        ref: o.orderNo,
+        roundNo: v.roundNo,
+        view: v,
+        actorId: by(v),
+        atIso: done,
+        editedAtIso: v.editedAt,
+        editedById: v.editedBy,
+        lockReason: v.isArchived ? ARCHIVED_LOCK(v.roundNo) : lockReasonFor(step, o),
+        row: o,
+      });
+    }
+  }
+  return out;
 }
+
+/** Placeholder for the impossible case of a credit row on an order with no live round. */
+const EMPTY_VIEW: RoundView = {
+  roundNo: 1, isArchived: true, roundId: null, roundStartedAt: null, companyId: null,
+  msActualDate: null, msRemarks: null, msAt: null, msBy: null,
+  sbActualDate: null, sbInvoiceNo: null, sbAttachmentPath: null, sbAttachmentName: null,
+  sbRemarks: null, sbAt: null, sbBy: null,
+  goActualDate: null, goOutwardNo: null, goRemarks: null, goAt: null, goBy: null,
+  dcActualDate: null, dcStatus: null, dcAttachmentPath: null, dcAttachmentName: null,
+  dcRemarks: null, dcAt: null, dcBy: null,
+  editedAt: null, editedBy: null, amendedAt: null, amendReason: null, items: [],
+};
 
 /** Every open work-item, one per (current step, order). */
 export function buildQueueEntries(snap: DispatchSnapshot): QueueEntry[] {

@@ -9,7 +9,6 @@ import type {
   DispatchOrder,
   DispatchStatus,
   DispatchType,
-  MaterialStatus,
 } from "../types";
 
 export type Tone = "grey" | "blue" | "orange" | "green" | "red" | "yellow";
@@ -17,7 +16,6 @@ export type Tone = "grey" | "blue" | "orange" | "green" | "red" | "yellow";
 export const STATUS_LABEL: Record<DispatchStatus, string> = {
   awaiting_credit_check: "Awaiting credit",
   awaiting_material_status: "Awaiting stock check",
-  awaiting_lot_confirm: "Awaiting LOT & qty",
   awaiting_sales_bill: "Awaiting sales bill",
   awaiting_gate_out: "Awaiting gate out",
   awaiting_dispatch_confirm: "Awaiting delivery",
@@ -29,7 +27,6 @@ export const STATUS_LABEL: Record<DispatchStatus, string> = {
 export const STATUS_TONE: Record<DispatchStatus, Tone> = {
   awaiting_credit_check: "blue",
   awaiting_material_status: "blue",
-  awaiting_lot_confirm: "blue",
   awaiting_sales_bill: "orange",
   awaiting_gate_out: "orange",
   awaiting_dispatch_confirm: "orange",
@@ -44,24 +41,26 @@ export const DISPATCH_TYPE_LABEL: Record<DispatchType, string> = {
 };
 
 export const CREDIT_STATUS_LABEL: Record<CreditStatus, string> = {
-  credit_available: "Credit Available",
-  payment_required: "Payment Required",
-};
-
-export const MATERIAL_STATUS_LABEL: Record<MaterialStatus, string> = {
-  available_for_dispatch: "Available for Dispatch",
-  production_required: "Production Required",
+  approved: "Approved",
+  credit_hold: "On hold",
 };
 
 export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
   delivered: "Delivered",
-  partially_delivered: "Partially Delivered",
   returned: "Returned",
 };
 
-/** The two outcomes that deserve a red chip wherever they appear. */
+/**
+ * Is credit holding this order? True only while the hold is LIVE — approving
+ * later leaves `ccStatus` at 'approved', and `ccAt` is what says the step is
+ * actually done.
+ */
+export const isCreditHeld = (o: DispatchOrder): boolean =>
+  o.ccStatus === "credit_hold" && !o.ccAt;
+
+/** The outcomes that deserve a red chip wherever they appear. */
 export const isExceptionOutcome = (o: DispatchOrder): boolean =>
-  o.msStatus === "production_required" || o.dcStatus === "returned";
+  isCreditHeld(o) || o.rounds.some((r) => r.dcStatus === "returned") || o.dcStatus === "returned";
 
 /** dd-mm-yyyy, the app-wide date format. Empty input renders an em dash. */
 export const dmy = (iso: string | null | undefined): string => {
@@ -94,15 +93,26 @@ export const inr = (n: number | null | undefined): string =>
 export const orderSubject = (o: DispatchOrder, customerName: string): string =>
   `${o.orderNo} · ${customerName}`;
 
-/** Total ordered / total confirmed for dispatch, across an order's lines. */
-export function qtyTotals(o: DispatchOrder): { ordered: number; final: number } {
-  let ordered = 0;
-  let final = 0;
+/**
+ * The four quantities that describe an order at a glance.
+ *   ordered   — what the customer asked for (never changes)
+ *   dispatched— delivered so far, across every round
+ *   shipping  — selected for the round in progress, not yet delivered
+ *   pending   — still owed. `ordered - dispatched`, floored at zero per line.
+ */
+export function qtyTotals(o: DispatchOrder): {
+  ordered: number; dispatched: number; shipping: number; pending: number;
+} {
+  let ordered = 0, dispatched = 0, shipping = 0, pending = 0;
   for (const l of o.lines) {
-    ordered += Number(l.quantity) || 0;
-    final += Number(l.finalQty) || 0;
+    const q = Number(l.quantity) || 0;
+    const d = Number(l.dispatchedQty) || 0;
+    ordered += q;
+    dispatched += d;
+    shipping += Number(l.shipQty) || 0;
+    pending += Math.max(q - d, 0);
   }
-  return { ordered, final };
+  return { ordered, dispatched, shipping, pending };
 }
 
 /**

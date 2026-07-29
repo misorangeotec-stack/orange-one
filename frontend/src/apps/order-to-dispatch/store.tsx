@@ -8,10 +8,13 @@ import type { Department as OrgDepartment, Profile } from "@/core/platform/types
 import { DISPATCH_QK, fetchDispatchData, dispatchQueryKey } from "./data/dispatchFetch";
 import {
   announce as announceWrite,
+  amendRound as amendRoundWrite,
   cancelOrder as cancelOrderWrite,
+  closeOrder as closeOrderWrite,
   holdOrder as holdOrderWrite,
   insertMaster as insertMasterWrite,
   markNotificationsRead as markNotificationsReadWrite,
+  materialNothingAvailable as materialNothingAvailableWrite,
   recordStep as recordStepWrite,
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
@@ -24,6 +27,7 @@ import {
   updateOrder as updateOrderWrite,
   updateStep as updateStepWrite,
   uploadStepDocument as uploadStepDocumentWrite,
+  type AmendRoundLine,
   type MasterInput,
   type OrderInput,
   type StepOwnerInput,
@@ -44,10 +48,8 @@ import { masterTypeLabel } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
-  Company, CompanyScopedMaster, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  DispatchMasterType, DispatchNotification, DispatchOrder, Driver, Item, Lot, MailTemplate,
-  MasterManager, NamedMaster, PaymentTerm, ShipTo, StepOwner, Transporter, Vehicle,
-} from "./types";
+  Company, Customer, Designation, DispatchActivity, DispatchMasterRequest,
+  DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
 
@@ -76,23 +78,10 @@ interface DispatchStoreValue {
 
   // masters
   companies: Company[];
-  transporters: Transporter[];
+  customers: Customer[];
+  items: Item[];
   units: NamedMaster[];
   categories: NamedMaster[];
-  orderSources: NamedMaster[];
-  paymentTerms: PaymentTerm[];
-  shortfallReasons: NamedMaster[];
-  packingTypes: NamedMaster[];
-  mailTemplates: MailTemplate[];
-  drivers: Driver[];
-  customers: Customer[];
-  shipTos: ShipTo[];
-  items: Item[];
-  lots: Lot[];
-  godowns: CompanyScopedMaster[];
-  gates: CompanyScopedMaster[];
-  invoiceSeries: CompanyScopedMaster[];
-  vehicles: Vehicle[];
   /** Active + sorted, for dropdowns. The full lists above back display lookups. */
   activeOf: <T extends NamedMaster>(rows: T[]) => T[];
   masterList: (mt: DispatchMasterType) => NamedMaster[];
@@ -101,7 +90,6 @@ interface DispatchStoreValue {
   customerName: (id: string | null) => string;
   itemName: (id: string | null) => string;
   unitName: (id: string | null) => string;
-  lotName: (id: string | null) => string;
   masterName: (mt: DispatchMasterType, id: string | null) => string;
 
   // orders
@@ -133,7 +121,6 @@ interface DispatchStoreValue {
   activityFor: (entityType: string, entityId: string) => DispatchActivity[];
   notifications: DispatchNotification[];
   processCoordinatorIds: string[];
-  customerMail: { enabled: boolean; templateCode: string };
 
   // actions
   submitOrder: (input: OrderInput) => Promise<string>;
@@ -142,7 +129,10 @@ interface DispatchStoreValue {
   updateStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   holdOrder: (orderId: string, hold: boolean, reason: string) => Promise<void>;
   cancelOrder: (orderId: string, reason: string) => Promise<void>;
-  uploadStepDocument: (orderId: string, folder: string, file: File) => Promise<{ path: string; name: string }>;
+  closeOrder: (orderId: string, reason: string) => Promise<void>;
+  materialNothingAvailable: (orderId: string, remarks: string) => Promise<void>;
+  amendRound: (roundId: string, input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[] }) => Promise<void>;
+  uploadStepDocument: (orderId: string, folder: string, file: File, roundNo?: number) => Promise<{ path: string; name: string }>;
   stepDocumentUrl: (path: string) => Promise<string>;
   setStepOwner: (stepKey: string, input: StepOwnerInput) => Promise<void>;
   setConfig: (key: string, value: Record<string, unknown>) => Promise<void>;
@@ -183,23 +173,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
   const companies = data?.companies ?? [];
-  const transporters = data?.transporters ?? [];
   const units = data?.units ?? [];
   const categories = data?.categories ?? [];
-  const orderSources = data?.orderSources ?? [];
-  const paymentTerms = data?.paymentTerms ?? [];
-  const shortfallReasons = data?.shortfallReasons ?? [];
-  const packingTypes = data?.packingTypes ?? [];
-  const mailTemplates = data?.mailTemplates ?? [];
-  const drivers = data?.drivers ?? [];
   const customers = data?.customers ?? [];
-  const shipTos = data?.shipTos ?? [];
   const items = data?.items ?? [];
-  const lots = data?.lots ?? [];
-  const godowns = data?.godowns ?? [];
-  const gates = data?.gates ?? [];
-  const invoiceSeries = data?.invoiceSeries ?? [];
-  const vehicles = data?.vehicles ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
@@ -207,7 +184,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
-  const customerMail = data?.config.customerMail ?? { enabled: false, templateCode: "dispatch_plan" };
   const orderNoPreview = data?.orderNoPreview ?? "";
 
   const value = useMemo<DispatchStoreValue>(() => {
@@ -228,16 +204,14 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     /**
      * Mirrors fms_dispatch_can_act(step, order, uid): admin / coordinator / step
-     * owner — PLUS, for the last step only, the portal user linked to the order's
-     * driver. Without that arm the person who actually delivered cannot close it.
+     * owner.
+     *
+     * ⚠ The old driver arm is gone with the Drivers master — delivery
+     *   confirmation now REQUIRES a configured step owner. Seed one before
+     *   go-live or the last step falls back to admins only.
      */
-    const canActOn = (stepKey: QueueStep, o: DispatchOrder): boolean => {
-      if (isAdmin || isProcessCoordinator || isStepOwner(stepKey)) return true;
-      if (stepKey !== "dispatch_confirm") return false;
-      const driverId = o.dcDriverId ?? o.goDriverId;
-      if (!driverId) return false;
-      return drivers.some((d) => d.id === driverId && d.userId === uid);
-    };
+    const canActOn = (stepKey: QueueStep, _o: DispatchOrder): boolean =>
+      isAdmin || isProcessCoordinator || isStepOwner(stepKey);
 
     /**
      * Who may raise an order: open to every granted user unless `sales_order` has
@@ -266,23 +240,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
-      transporter: transporters,
+      customer: customers,
+      item: items,
       unit: units,
       category: categories,
-      order_source: orderSources,
-      payment_term: paymentTerms,
-      shortfall_reason: shortfallReasons,
-      packing_type: packingTypes,
-      mail_template: mailTemplates,
-      driver: drivers,
-      customer: customers,
-      ship_to: shipTos,
-      item: items,
-      lot: lots,
-      godown: godowns,
-      gate: gates,
-      invoice_series: invoiceSeries,
-      vehicle: vehicles,
     };
 
     // Display lookups read the FULL list, never the active-only one — a
@@ -359,16 +320,13 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       designations,
       dispatchUsers: dir.profiles,
 
-      companies, transporters, units, categories, orderSources, paymentTerms,
-      shortfallReasons, packingTypes, mailTemplates, drivers, customers, shipTos,
-      items, lots, godowns, gates, invoiceSeries, vehicles,
+      companies, customers, items, units, categories,
       activeOf,
       masterList: (mt) => MASTER_LIST[mt],
 
       customerName: (id) => nameFrom(customers, id),
       itemName: (id) => nameFrom(items, id),
       unitName: (id) => nameFrom(units, id),
-      lotName: (id) => nameFrom(lots, id),
       masterName: (mt, id) => nameFrom(MASTER_LIST[mt], id),
 
       orders,
@@ -403,7 +361,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       activityFor: (entityType, entityId) => activityByEntity.get(`${entityType}:${entityId}`) ?? [],
       notifications: mineNotifications,
       processCoordinatorIds,
-      customerMail,
 
       submitOrder: async (input) => {
         const id = await submitOrderWrite(input);
@@ -428,6 +385,18 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       cancelOrder: async (orderId, reason) => {
         await cancelOrderWrite(orderId, reason);
+        await invalidate();
+      },
+      closeOrder: async (orderId, reason) => {
+        await closeOrderWrite(orderId, reason);
+        await invalidate();
+      },
+      materialNothingAvailable: async (orderId, remarks) => {
+        await materialNothingAvailableWrite(orderId, remarks);
+        await invalidate();
+      },
+      amendRound: async (roundId, input) => {
+        await amendRoundWrite(roundId, input);
         await invalidate();
       },
       uploadStepDocument: uploadStepDocumentWrite,
@@ -488,11 +457,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [
     userId, isAdmin, isLoading, error, queryClient, dir, orgPeople,
-    stepOwners, designations, companies, transporters, units, categories, orderSources,
-    paymentTerms, shortfallReasons, packingTypes, mailTemplates, drivers, customers, shipTos,
-    items, lots, godowns, gates, invoiceSeries, vehicles,
+    stepOwners, designations, companies, customers, items, units, categories,
     masterManagers, masterRequests, orders, activity, notifications,
-    processCoordinatorIds, stepSla, customerMail, orderNoPreview,
+    processCoordinatorIds, stepSla, orderNoPreview,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

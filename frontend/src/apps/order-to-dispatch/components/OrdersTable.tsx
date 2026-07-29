@@ -3,7 +3,7 @@ import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable"
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useDispatchStore } from "../store";
-import { openStep, isTatBreached } from "../lib/queues";
+import { openStep } from "../lib/queues";
 import { stepByKey } from "../lib/steps";
 import { DISPATCH_TYPE_LABEL, dmy, qtyTotals } from "../lib/format";
 import StatusPill from "./StatusPill";
@@ -74,7 +74,11 @@ export default function OrdersTable({
       align: "right",
       cell: (o) => {
         const t = qtyTotals(o);
-        return <span className="text-grey whitespace-nowrap">{o.lines.length} · {t.final || t.ordered}</span>;
+        return (
+          <span className="text-grey whitespace-nowrap">
+            {o.lines.length} · {t.pending || t.ordered}
+          </span>
+        );
       },
       sortValue: (o) => o.lines.length,
       exportValue: (o) => o.lines.length,
@@ -95,21 +99,32 @@ export default function OrdersTable({
       exportValue: (o) => dmy(o.orderDate),
     },
     {
-      key: "promised",
-      header: "Promised",
+      // Replaces the old Promised / TAT column. A promised date is no longer
+      // captured; what matters on a partial order is how much is still owed.
+      key: "round",
+      header: "Round",
       cell: (o) => (
-        <span className={`whitespace-nowrap ${isTatBreached(o, today) ? "text-ryg-red font-semibold" : "text-grey"}`}>
-          {dmy(o.promisedDate)}
-          {isTatBreached(o, today) && (
-            <span className="ml-1.5 inline-block text-[10px] font-semibold uppercase tracking-wide bg-[#FDECEC] text-ryg-red rounded-full px-1.5 py-0.5 align-middle">
-              TAT
-            </span>
-          )}
+        <span className="text-grey whitespace-nowrap">
+          {o.rounds.length > 0 || o.roundNo > 1 ? `R${o.roundNo}` : "—"}
         </span>
       ),
-      sortValue: (o) => o.promisedDate ?? "",
-      filter: { kind: "date", get: (o) => o.promisedDate ?? "" },
-      exportValue: (o) => (o.promisedDate ? dmy(o.promisedDate) : ""),
+      sortValue: (o) => o.roundNo,
+      exportValue: (o) => o.roundNo,
+    },
+    {
+      key: "pendingQty",
+      header: "Pending",
+      align: "right",
+      cell: (o) => {
+        const t = qtyTotals(o);
+        return (
+          <span className={t.pending > 0 ? "text-navy font-semibold tabular-nums" : "text-grey-2"}>
+            {t.pending > 0 ? t.pending : "—"}
+          </span>
+        );
+      },
+      sortValue: (o) => qtyTotals(o).pending,
+      exportValue: (o) => qtyTotals(o).pending,
     },
     {
       key: "due",

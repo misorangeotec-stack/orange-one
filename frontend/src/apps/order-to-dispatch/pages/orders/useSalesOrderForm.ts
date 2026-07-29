@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { addWorkingDays, localDateIso } from "@/shared/lib/workingDays";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useDispatchStore } from "../../store";
 import { isLineBlank, makeEmptyLine, type OrderLineRow } from "../../components/OrderLinesGrid";
@@ -9,47 +8,28 @@ import type { DispatchOrder, DispatchType } from "../../types";
 /**
  * Shared form state for New Order and Edit Order.
  *
- * The two TAT fields are kept in sync in one direction at a time: typing a TAT
- * derives the promised date (working days from the order date), typing a promised
- * date derives the TAT. Whichever the user last touched wins, so neither silently
- * overwrites the other while they type.
+ * Four fields, after the 2026-08 reshape. Company is NOT among them: it is
+ * resolved server-side from the customer's master mapping, so there is nothing
+ * to hold here and nothing that can drift out of step with the master.
  */
 export interface SalesOrderFormState {
   dispatchType: DispatchType;
-  companyId: string;
   customerId: string;
-  shipToId: string;
-  orderSourceId: string;
   orderDate: string;
-  promisedDate: string;
-  tatDays: string;
-  customerRef: string;
   orderRemarks: string;
 }
 
 const emptyState = (): SalesOrderFormState => ({
   dispatchType: "local",
-  companyId: "",
   customerId: "",
-  shipToId: "",
-  orderSourceId: "",
   orderDate: todayLocalIso(),
-  promisedDate: "",
-  tatDays: "",
-  customerRef: "",
   orderRemarks: "",
 });
 
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
   dispatchType: o.dispatchType,
-  companyId: o.companyId ?? "",
   customerId: o.customerId,
-  shipToId: o.shipToId ?? "",
-  orderSourceId: o.orderSourceId ?? "",
   orderDate: o.orderDate?.slice(0, 10) ?? todayLocalIso(),
-  promisedDate: o.promisedDate?.slice(0, 10) ?? "",
-  tatDays: o.tatDays !== null && o.tatDays !== undefined ? String(o.tatDays) : "",
-  customerRef: o.customerRef ?? "",
   orderRemarks: o.orderRemarks ?? "",
 });
 
@@ -61,9 +41,6 @@ const linesFromOrder = (o: DispatchOrder): OrderLineRow[] =>
     unitId: l.unitId ?? "",
     lineRemark: l.lineRemark ?? "",
   }));
-
-const dayDiff = (aIso: string, bIso: string): number =>
-  Math.round((new Date(`${aIso}T00:00:00`).getTime() - new Date(`${bIso}T00:00:00`).getTime()) / 86_400_000);
 
 export function useSalesOrderForm(existing?: DispatchOrder) {
   const s = useDispatchStore();
@@ -78,43 +55,24 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
 
   const patch = (next: Partial<SalesOrderFormState>) => setForm((f) => ({ ...f, ...next }));
 
-  /** Typing a TAT derives the promised date. */
-  const setTatDays = (v: string) => {
-    const n = Number(v);
-    const promised =
-      v.trim() && Number.isFinite(n) && n >= 0 && form.orderDate
-        ? localDateIso(addWorkingDays(new Date(`${form.orderDate}T00:00:00`), Math.round(n)))
-        : form.promisedDate;
-    patch({ tatDays: v, promisedDate: promised });
-  };
-
-  /** Typing a promised date derives the TAT. */
-  const setPromisedDate = (v: string) => {
-    const tat = v && form.orderDate ? String(Math.max(0, dayDiff(v, form.orderDate))) : form.tatDays;
-    patch({ promisedDate: v, tatDays: tat });
-  };
-
-  /** Picking a customer pre-fills their default dispatch type and clears the ship-to. */
-  const setCustomer = (id: string) => {
-    const c = s.customers.find((x) => x.id === id);
-    patch({
-      customerId: id,
-      shipToId: "",
-      dispatchType: c?.defaultType ?? form.dispatchType,
-    });
-  };
-
-  /** Ship-to addresses belong to the chosen customer only. */
-  const shipToOptions = useMemo(
-    () => s.activeOf(s.shipTos).filter((a) => a.customerId === form.customerId),
-    [s, form.customerId],
-  );
+  /**
+   * Picking a customer. The default-dispatch-type prefill went with the customer
+   * master's trimming, so dispatch type is now always typed and simply defaults
+   * to Local.
+   */
+  const setCustomer = (id: string) => patch({ customerId: id });
 
   /** The lines that will actually be submitted — the trailing blank is dropped. */
   const filledLines = useMemo(() => lines.filter((l) => !isLineBlank(l)), [lines]);
 
   const validate = (): string | null => {
     if (!form.customerId) return "Choose a customer.";
+    // Caught here rather than by the RPC, so the person is told before they save
+    // and is told WHERE to fix it.
+    const cust = s.customers.find((c) => c.id === form.customerId);
+    if (cust && !cust.companyId) {
+      return `${cust.name} has no company mapped. Set it in Masters -> Customers first.`;
+    }
     if (!form.orderDate) return "The order date is required.";
     if (filledLines.length === 0) return "Add at least one item line.";
     for (const l of filledLines) {
@@ -127,14 +85,8 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
 
   const toInput = (requesterName: string): OrderInput => ({
     dispatchType: form.dispatchType,
-    companyId: form.companyId || null,
     customerId: form.customerId,
-    shipToId: form.shipToId || null,
-    orderSourceId: form.orderSourceId || null,
     orderDate: form.orderDate,
-    promisedDate: form.promisedDate || null,
-    tatDays: form.tatDays || null,
-    customerRef: form.customerRef.trim() || null,
     orderRemarks: form.orderRemarks.trim() || null,
     requesterName,
     lines: filledLines.map((l) => ({
@@ -148,8 +100,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   return {
     form, patch, setForm,
     lines, setLines, filledLines,
-    setTatDays, setPromisedDate, setCustomer,
-    shipToOptions,
+    setCustomer,
     error, setError,
     busy, setBusy,
     validate, toInput,

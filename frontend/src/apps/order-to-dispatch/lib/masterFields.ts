@@ -12,18 +12,13 @@ export type MasterValues = Record<string, string>;
  * built their own lists independently and one drifted into empty pickers.
  */
 export interface MasterFieldCtx {
-  customerOptions: ComboOption[];
+  companyOptions: ComboOption[];
   categoryOptions: ComboOption[];
   unitOptions: ComboOption[];
-  itemOptions: ComboOption[];
-  companyOptions: ComboOption[];
-  transporterOptions: ComboOption[];
-  userOptions: ComboOption[];
 }
 
 export const EMPTY_MASTER_CTX: MasterFieldCtx = {
-  customerOptions: [], categoryOptions: [], unitOptions: [], itemOptions: [],
-  companyOptions: [], transporterOptions: [], userOptions: [],
+  companyOptions: [], categoryOptions: [], unitOptions: [],
 };
 
 /**
@@ -45,88 +40,30 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
     case "customer":
       return [
         { key: "name", label: "Customer name", type: "text", required: true },
+        {
+          // THE COMPANY↔CUSTOMER MAPPING. Required, and the reason the sales
+          // order no longer asks which company is selling — every order reads it
+          // from here. `fms_dispatch_submit_order` refuses to raise without it,
+          // so leaving it optional would only move the failure later.
+          key: "company_id", label: "Company", type: "select", required: true,
+          options: ctx.companyOptions,
+          hint: "which of our companies bills this customer",
+        },
         { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
-        { key: "gstin", label: "GSTIN", type: "text" },
         { key: "contact_name", label: "Contact person", type: "text" },
         { key: "phone", label: "Phone", type: "text" },
-        {
-          key: "email", label: "Email", type: "text",
-          hint: "where the planned-dispatch mail goes; leave blank to never mail this customer",
-        },
-        { key: "billing_address", label: "Billing address", type: "textarea" },
-        { key: "credit_limit", label: "Credit limit", type: "text", placeholder: "0" },
-        { key: "credit_days", label: "Credit days", type: "text", placeholder: "0" },
-        {
-          key: "default_type", label: "Default dispatch type", type: "select",
-          options: [{ value: "local", label: "Local" }, { value: "transport", label: "Transport" }],
-        },
-        { key: "default_transporter_id", label: "Default transporter", type: "select", options: ctx.transporterOptions },
-        sortField,
-      ];
-
-    case "ship_to":
-      return [
-        { key: "customer_id", label: "Customer", type: "select", required: true, options: ctx.customerOptions },
-        { key: "name", label: "Address label", type: "text", required: true, placeholder: "e.g. Factory, Head office" },
-        { key: "address", label: "Address", type: "textarea" },
-        { key: "city", label: "City", type: "text" },
-        { key: "state", label: "State", type: "text" },
-        { key: "contact_name", label: "Contact person", type: "text" },
-        { key: "phone", label: "Phone", type: "text" },
+        { key: "email", label: "Email", type: "text", hint: "contact detail only — no mail is sent from here" },
+        { key: "gstin", label: "GST TIN", type: "text" },
         sortField,
       ];
 
     case "item":
       return [
         { key: "name", label: "Item name", type: "text", required: true },
-        { key: "code", label: "Code", type: "text" },
+        { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
         { key: "category_id", label: "Category", type: "select", options: ctx.categoryOptions },
-        { key: "unit_id", label: "Default unit", type: "select", options: ctx.unitOptions,
-          hint: "auto-fills the order line's unit when this item is picked" },
-        { key: "hsn_code", label: "HSN code", type: "text" },
-        sortField,
-      ];
-
-    case "lot":
-      return [
-        { key: "name", label: "LOT no.", type: "text", required: true },
-        { key: "item_id", label: "Item", type: "select", options: ctx.itemOptions,
-          hint: "the LOT picker at step 4 is filtered to the line's item" },
-        { key: "mfg_date", label: "Mfg date", type: "text", placeholder: "yyyy-mm-dd" },
-        { key: "expiry_date", label: "Expiry date", type: "text", placeholder: "yyyy-mm-dd" },
-        { key: "available_qty", label: "Available qty", type: "text", placeholder: "0" },
         { key: "unit_id", label: "Unit", type: "select", options: ctx.unitOptions },
-        sortField,
-      ];
-
-    case "vehicle":
-      return [
-        { key: "name", label: "Vehicle no.", type: "text", required: true, placeholder: "e.g. GJ-05-AB-1234" },
-        { key: "vehicle_type", label: "Type", type: "text", placeholder: "e.g. Tempo, Truck" },
-        { key: "transporter_id", label: "Transporter", type: "select", options: ctx.transporterOptions,
-          hint: "leave blank for an own vehicle" },
-        { key: "capacity", label: "Capacity", type: "text" },
-        sortField,
-      ];
-
-    case "driver":
-      return [
-        { key: "name", label: "Driver name", type: "text", required: true },
-        { key: "phone", label: "Phone", type: "text" },
-        { key: "licence_no", label: "Licence no.", type: "text" },
-        { key: "user_id", label: "Portal user", type: "select", options: ctx.userOptions,
-          hint: "link a driver who signs in, so they can confirm their own delivery" },
-        sortField,
-      ];
-
-    case "transporter":
-      return [
-        { key: "name", label: "Transporter name", type: "text", required: true },
-        { key: "gstin", label: "GSTIN", type: "text" },
-        { key: "contact_name", label: "Contact person", type: "text" },
-        { key: "phone", label: "Phone", type: "text" },
-        { key: "email", label: "Email", type: "text" },
-        { key: "address", label: "Address", type: "textarea" },
+        { key: "hsn_code", label: "HSN code", type: "text" },
         sortField,
       ];
 
@@ -138,44 +75,8 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
         sortField,
       ];
 
-    case "godown":
-    case "gate":
-      return [
-        { key: "name", label: mt === "godown" ? "Godown name" : "Gate name", type: "text", required: true },
-        { key: "company_id", label: "Company", type: "select", options: ctx.companyOptions },
-        { key: "location", label: "Location", type: "text" },
-        sortField,
-      ];
-
-    case "invoice_series":
-      return [
-        { key: "name", label: "Series name", type: "text", required: true, placeholder: "e.g. GST SALES" },
-        { key: "company_id", label: "Company", type: "select", options: ctx.companyOptions },
-        sortField,
-      ];
-
-    case "payment_term":
-      return [
-        { key: "name", label: "Term name", type: "text", required: true, placeholder: "e.g. 30 days credit" },
-        { key: "days", label: "Days", type: "text", placeholder: "0" },
-        { key: "description", label: "Description", type: "textarea" },
-        sortField,
-      ];
-
-    case "mail_template":
-      return [
-        { key: "name", label: "Template name", type: "text", required: true },
-        { key: "code", label: "Code", type: "text", required: true, hint: "the stable key the RPC looks it up by" },
-        { key: "subject", label: "Subject", type: "text" },
-        {
-          key: "body", label: "Body", type: "textarea",
-          hint: "tokens: {{customer}} {{order_no}} {{order_date}} {{planned_dispatch_date}} {{items}} {{type}}",
-        },
-        sortField,
-      ];
-
+    // unit, category — name only.
     default:
-      // unit · category · order_source · shortfall_reason · packing_type
       return [
         { key: "name", label: `${labelFor(mt)} name`, type: "text", required: true, placeholder: placeholderFor(mt) },
         sortField,
@@ -187,45 +88,26 @@ const labelFor = (mt: DispatchMasterType) => DISPATCH_MASTER_TYPES.find((m) => m
 const placeholderFor = (mt: DispatchMasterType): string =>
   mt === "unit" ? "e.g. KGS, LTR, PCS"
   : mt === "category" ? "e.g. Ink"
-  : mt === "order_source" ? "e.g. Email, WhatsApp, Phone"
-  : mt === "shortfall_reason" ? "e.g. Stock short, Under production"
-  : mt === "packing_type" ? "e.g. Drum, Carton, Bag"
   : "";
 
 /**
  * The value bag for a master type. Its KEYS are the Excel export/import schema
  * (MasterCrud derives the round trip from `Object.keys(emptyValues)`), so every
  * persisted attribute must appear here even when it has no visible form field.
+ *
+ * ⚠ AND its keys are what Masters.tsx writes on save — a key here whose column
+ *   was dropped makes EVERY save of that master fail with "column does not
+ *   exist". This list and the table must move together.
  */
 export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
   const base: MasterValues = { name: "", sortOrder: "0" };
   switch (mt) {
     case "customer":
-      return { ...base, code: "", gstin: "", contact_name: "", phone: "", email: "",
-               billing_address: "", credit_limit: "", credit_days: "", default_type: "", default_transporter_id: "" };
-    case "ship_to":
-      return { ...base, customer_id: "", address: "", city: "", state: "", contact_name: "", phone: "" };
+      return { ...base, company_id: "", code: "", contact_name: "", phone: "", email: "", gstin: "" };
     case "item":
       return { ...base, code: "", category_id: "", unit_id: "", hsn_code: "" };
-    case "lot":
-      return { ...base, item_id: "", mfg_date: "", expiry_date: "", available_qty: "", unit_id: "" };
-    case "vehicle":
-      return { ...base, vehicle_type: "", transporter_id: "", capacity: "" };
-    case "driver":
-      return { ...base, phone: "", licence_no: "", user_id: "" };
-    case "transporter":
-      return { ...base, gstin: "", contact_name: "", phone: "", email: "", address: "" };
     case "company":
       return { ...base, gstin: "", address: "" };
-    case "godown":
-    case "gate":
-      return { ...base, company_id: "", location: "" };
-    case "invoice_series":
-      return { ...base, company_id: "" };
-    case "payment_term":
-      return { ...base, days: "", description: "" };
-    case "mail_template":
-      return { ...base, code: "", subject: "", body: "" };
     default:
       return base;
   }
@@ -257,11 +139,7 @@ export const masterTypePlural = (mt: DispatchMasterType) =>
 /** A one-line human summary of a proposed payload — the name plus its parent. */
 export function describePayload(mt: DispatchMasterType, payload: Record<string, unknown>): string {
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
-  const extra =
-    mt === "lot" && payload.available_qty ? ` · ${payload.available_qty} available`
-    : mt === "vehicle" && payload.vehicle_type ? ` · ${payload.vehicle_type}`
-    : mt === "payment_term" && payload.days ? ` · ${payload.days} days`
-    : "";
+  const extra = mt === "item" && payload.code ? ` · ${payload.code}` : "";
   return (name || "—") + extra;
 }
 

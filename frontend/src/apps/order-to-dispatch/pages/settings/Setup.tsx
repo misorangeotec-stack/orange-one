@@ -4,7 +4,6 @@ import StepOwnersSection from "./StepOwnersSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import MasterOwnersSection from "./MasterOwnersSection";
-import CustomerMailSection from "./CustomerMailSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
 
 export default function Setup() {
@@ -14,7 +13,6 @@ export default function Setup() {
     { key: "due", label: "Due Dates" },
     { key: "coordinators", label: "Coordinators" },
     { key: "masters", label: "Master Owners" },
-    { key: "customerMail", label: "Customer Mail" },
     { key: "notifications", label: "Notifications" },
   ];
   return (
@@ -31,7 +29,6 @@ export default function Setup() {
       {tab === "due" && <StepDueDatesSection />}
       {tab === "coordinators" && <CoordinatorsSection />}
       {tab === "masters" && <MasterOwnersSection />}
-      {tab === "customerMail" && <CustomerMailSection />}
       {tab === "notifications" && <EmailNotificationsSection />}
     </div>
   );

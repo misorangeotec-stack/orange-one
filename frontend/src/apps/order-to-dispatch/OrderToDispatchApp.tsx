@@ -11,7 +11,6 @@ import OrdersList from "./pages/orders/OrdersList";
 import OrderDetail from "./pages/orders/OrderDetail";
 import CreditCheckQueue from "./pages/queues/CreditCheckQueue";
 import MaterialStatusQueue from "./pages/queues/MaterialStatusQueue";
-import LotConfirmQueue from "./pages/queues/LotConfirmQueue";
 import SalesBillQueue from "./pages/queues/SalesBillQueue";
 import GateOutQueue from "./pages/queues/GateOutQueue";
 import DispatchConfirmQueue from "./pages/queues/DispatchConfirmQueue";
@@ -62,7 +61,6 @@ export default function OrderToDispatchApp() {
           <Route path="orders/:id" element={<OrderDetail />} />
           <Route path="queues/credit-check" element={<CreditCheckQueue />} />
           <Route path="queues/material-status" element={<MaterialStatusQueue />} />
-          <Route path="queues/lot-confirm" element={<LotConfirmQueue />} />
           <Route path="queues/sales-bill" element={<SalesBillQueue />} />
           <Route path="queues/gate-out" element={<GateOutQueue />} />
           <Route path="queues/dispatch-confirm" element={<DispatchConfirmQueue />} />

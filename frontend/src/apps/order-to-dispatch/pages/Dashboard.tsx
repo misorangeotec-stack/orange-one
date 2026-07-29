@@ -7,8 +7,9 @@ import ThroughputCard from "@/shared/components/dashboard/ThroughputCard";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { distribution, queueRollup, type AttentionRow } from "@/shared/lib/fmsDashboard";
 import { useDispatchStore } from "../store";
+import { allRoundViews } from "../lib/rounds";
 import { STEPS, STAGES, stepByKey, type StepKey } from "../lib/steps";
-import { isTatBreached, openStep, type QueueStep } from "../lib/queues";
+import { openStep, type QueueStep } from "../lib/queues";
 import {
   DISPATCH_TYPE_LABEL, STATUS_LABEL, dmy, qtyTotals,
 } from "../lib/format";
@@ -17,7 +18,7 @@ import type { DispatchOrder, DispatchStatus } from "../types";
 const B = "/order-to-dispatch";
 
 const STATUS_ORDER: DispatchStatus[] = [
-  "awaiting_credit_check", "awaiting_material_status", "awaiting_lot_confirm",
+  "awaiting_credit_check", "awaiting_material_status",
   "awaiting_sales_bill", "awaiting_gate_out", "awaiting_dispatch_confirm",
   "on_hold", "closed", "cancelled",
 ];
@@ -25,7 +26,6 @@ const STATUS_ORDER: DispatchStatus[] = [
 const STATUS_BADGE: Record<DispatchStatus, string> = {
   awaiting_credit_check: "bg-[#EAF1FE] text-blue",
   awaiting_material_status: "bg-[#EAF1FE] text-blue",
-  awaiting_lot_confirm: "bg-[#EAF1FE] text-blue",
   awaiting_sales_bill: "bg-[#FFF1E8] text-orange",
   awaiting_gate_out: "bg-[#FFF1E8] text-orange",
   awaiting_dispatch_confirm: "bg-[#FFF1E8] text-orange",
@@ -48,11 +48,25 @@ export default function Dashboard() {
   const awaitingDispatch = open.filter(
     (o) => o.status === "awaiting_gate_out" || o.status === "awaiting_dispatch_confirm",
   );
-  const tatBreached = s.orders.filter((o) => isTatBreached(o, today));
+  /**
+   * Replaces the old "Partially dispatched" tile, which needed a promised date the order
+   * no longer captures. What matters on a partial order is that it went out
+   * incomplete and is still owed.
+   */
+  const partiallyDispatched = open.filter((o) => o.rounds.length > 0);
 
+  /**
+   * Deliveries in the last 30 days, counted across ROUNDS.
+   *
+   * Reading `o.dcAt` alone would undercount badly: the moment an order loops its
+   * header is wiped, so every delivery except the final one would vanish from
+   * this tile while still having physically happened.
+   */
   const dispatched30 = useMemo(() => {
     const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
-    return s.orders.filter((o) => o.dcAt && o.dcAt >= since);
+    return s.orders.flatMap((o) =>
+      allRoundViews(o).filter((v) => v.dcStatus === "delivered" && v.dcAt && v.dcAt >= since),
+    );
   }, [s.orders]);
 
   const tiles: KpiTile[] = [
@@ -69,10 +83,10 @@ export default function Dashboard() {
     { key: "awaiting", label: "Awaiting dispatch", value: awaitingDispatch.length, href: `${B}/queues/gate-out` },
     {
       key: "tat",
-      label: "TAT breached",
-      value: tatBreached.length,
+      label: "Partially dispatched",
+      value: partiallyDispatched.length,
       hint: "promised date passed, not yet out of the gate",
-      tone: tatBreached.length > 0 ? "red" : undefined,
+      tone: partiallyDispatched.length > 0 ? "red" : undefined,
       href: `${B}/orders`,
     },
     { key: "done30", label: "Delivered (30d)", value: dispatched30.length },
@@ -102,7 +116,7 @@ export default function Dashboard() {
       .slice(0, 12)
       .map((e) => {
         const o = s.orderById(e.entityId);
-        const totals = o ? qtyTotals(o) : { ordered: 0, final: 0 };
+        const totals = o ? qtyTotals(o) : { ordered: 0, dispatched: 0, shipping: 0, pending: 0 };
         return {
           key: `${e.stepKey}:${e.entityId}`,
           ref: e.ref,
@@ -110,8 +124,8 @@ export default function Dashboard() {
           stageShort: stepByKey(e.stepKey)?.short ?? "—",
           detail: o
             ? `${s.customerName(o.customerId)} · ${o.lines.length} line${o.lines.length === 1 ? "" : "s"} · ${
-                totals.final || totals.ordered
-              }${o.promisedDate ? ` · promised ${dmy(o.promisedDate)}` : ""}`
+                totals.pending || totals.ordered
+              } pending${o.roundNo > 1 ? ` · round ${o.roundNo}` : ""}`
             : "",
           dueIso: e.dueIso,
           value: null,

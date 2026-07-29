@@ -23,7 +23,6 @@ const ic = {
 export const QUEUE_PATH: Record<QueueStep, string> = {
   credit_check: "credit-check",
   material_status: "material-status",
-  lot_confirm: "lot-confirm",
   sales_bill: "sales-bill",
   gate_out: "gate-out",
   dispatch_confirm: "dispatch-confirm",

@@ -10,7 +10,8 @@ import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../store";
 import { STEP_CONFIG } from "../lib/stepConfig";
-import { DISPATCH_TYPE_LABEL, dmy, isoFromDmy, qtyTotals } from "../lib/format";
+import { DISPATCH_TYPE_LABEL, dmy, isCreditHeld, isoFromDmy, qtyTotals } from "../lib/format";
+import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
 import StatusPill from "./StatusPill";
@@ -19,14 +20,23 @@ import type { DispatchOrder } from "../types";
 /**
  * A per-step STAGE view. Two tabs over the same step: the work still owed —
  * `store.myQueue(step)`, the same entries both Control Centers count — and the
- * work already done here, which stays editable until the next step is recorded.
+ * work already done here.
  *
- * Every stage screen renders through this one component; it reads the step's
- * config (title, captured column, action label) from lib/stepConfig.
+ * ⚠ THE COMPLETED TAB IS ROUND-SCOPED. An order that has looped three times
+ *   contributes three sales bills, three gate entries and three deliveries — each
+ *   its own row. So the modal must be handed the ROUND the row describes, not
+ *   just the order: `useEntryModal` carries both, because opening round 1 while
+ *   the order is on round 3 would otherwise show round 3's invoice.
  */
 interface PendingRow {
   order: DispatchOrder;
   dueIso: string | null;
+}
+
+/** What the modal needs to open: the order AND which consignment. */
+interface ActingRow {
+  order: DispatchOrder;
+  view: RoundView | null;
 }
 
 export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
@@ -36,7 +46,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   const pending = s.myQueue(stepKey);
   const completedAll = s.completedFor(stepKey);
   const stage = useStageMode<StageEntry<DispatchOrder>>(completedAll, s.userId);
-  const acting = useEntryModal<DispatchOrder>();
+  const acting = useEntryModal<ActingRow>();
 
   const B = "/order-to-dispatch";
 
@@ -55,9 +65,16 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       key: "orderNo",
       header: "Order",
       cell: (r) => (
-        <Link to={`${B}/orders/${r.order.id}`} className="font-semibold text-navy hover:text-orange">
-          {r.order.orderNo}
-        </Link>
+        <span className="inline-flex items-center gap-2">
+          <Link to={`${B}/orders/${r.order.id}`} className="font-semibold text-navy hover:text-orange">
+            {r.order.orderNo}
+          </Link>
+          {r.order.roundNo > 1 && (
+            <span className="rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
+              R{r.order.roundNo}
+            </span>
+          )}
+        </span>
       ),
       sortValue: (r) => r.order.orderNo,
       filter: { kind: "text", get: (r) => r.order.orderNo },
@@ -85,19 +102,30 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         const t = qtyTotals(r.order);
         return (
           <span className="text-grey whitespace-nowrap">
-            {r.order.lines.length} · {t.final || t.ordered}
+            {r.order.lines.length} · {t.pending || t.ordered} pending
           </span>
         );
       },
-      sortValue: (r) => r.order.lines.length,
+      sortValue: (r) => qtyTotals(r.order).pending,
     },
-    {
-      key: "promised",
-      header: "Promised",
-      cell: (r) => <span className="text-grey whitespace-nowrap">{dmy(r.order.promisedDate)}</span>,
-      sortValue: (r) => r.order.promisedDate ?? "",
-      filter: { kind: "date", get: (r) => r.order.promisedDate ?? "" },
-    },
+    // The credit hold has to be visible where the decision is made, or the remark
+    // the user made compulsory is written into a void.
+    ...(stepKey === "credit_check"
+      ? [{
+          key: "hold",
+          header: "On hold",
+          cell: (r: PendingRow) =>
+            isCreditHeld(r.order) ? (
+              <span className="text-[12.5px] font-semibold text-yellow">
+                {r.order.ccRemarks ?? "On hold"}
+              </span>
+            ) : (
+              <span className="text-grey-2">—</span>
+            ),
+          sortValue: (r: PendingRow) => (isCreditHeld(r.order) ? 0 : 1),
+          filter: { kind: "select" as const, get: (r: PendingRow) => (isCreditHeld(r.order) ? "On hold" : "—") },
+        }]
+      : []),
     {
       key: "due",
       header: "Due",
@@ -113,11 +141,18 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       key: "orderNo",
       header: "Order",
       cell: (e) => (
-        <Link to={`${B}/orders/${e.orderId}`} className="font-semibold text-navy hover:text-orange">
-          {e.ref}
-        </Link>
+        <span className="inline-flex items-center gap-2">
+          <Link to={`${B}/orders/${e.orderId}`} className="font-semibold text-navy hover:text-orange">
+            {e.ref}
+          </Link>
+          {e.roundNo > 0 && (e.row.rounds.length > 0 || e.row.roundNo > 1) && (
+            <span className="rounded bg-[#F1F4F9] px-1.5 py-0.5 text-[11px] font-semibold text-grey">
+              R{e.roundNo}
+            </span>
+          )}
+        </span>
       ),
-      sortValue: (e) => e.ref,
+      sortValue: (e) => `${e.ref}-${String(e.roundNo).padStart(3, "0")}`,
       filter: { kind: "text", get: (e) => e.ref },
     },
     {
@@ -130,10 +165,11 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     {
       key: cfg.captured.key,
       header: cfg.captured.header,
-      cell: (e) => <span className="text-grey">{cfg.captured.get(e.row)}</span>,
+      cell: (e) => <span className="text-grey">{cfg.captured.get(e.row, e.view)}</span>,
       // A dd-mm-yyyy display value must still sort chronologically.
-      sortValue: (e) => (cfg.captured.isDate ? isoFromDmy(cfg.captured.get(e.row)) : cfg.captured.get(e.row)),
-      filter: { kind: "text", get: (e) => cfg.captured.get(e.row) },
+      sortValue: (e) =>
+        cfg.captured.isDate ? isoFromDmy(cfg.captured.get(e.row, e.view)) : cfg.captured.get(e.row, e.view),
+      filter: { kind: "text", get: (e) => cfg.captured.get(e.row, e.view) },
     },
     {
       key: "status",
@@ -208,8 +244,8 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
               lockReason={e.lockReason}
               canEdit={s.canActOn(stepKey, e.row)}
               permissionReason="Only an owner of this step can edit the entry."
-              onEdit={() => acting.openEdit(e.row)}
-              onView={() => acting.openView(e.row)}
+              onEdit={() => acting.openEdit({ order: e.row, view: e.view })}
+              onView={() => acting.openView({ order: e.row, view: e.view })}
             />
           )}
           rowsLabel="entries"
@@ -225,7 +261,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           groupBy={groupBy}
           actions={(r) =>
             s.canActOn(stepKey, r.order) ? (
-              <Button size="sm" onClick={() => acting.openEdit(r.order)}>
+              <Button size="sm" onClick={() => acting.openEdit({ order: r.order, view: currentRoundView(r.order) })}>
                 {cfg.actionLabel}
               </Button>
             ) : (
@@ -250,7 +286,8 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         stepKey={stepKey}
         open={!!acting.row}
         onClose={acting.close}
-        order={acting.row}
+        order={acting.row?.order ?? null}
+        round={acting.row?.view ?? null}
         // A row opened from the Completed tab is an EDIT; from Pending it is a record.
         editing={!!acting.row && stage.showingCompleted && !acting.isView}
         readOnly={acting.isView}

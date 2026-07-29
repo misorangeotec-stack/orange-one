@@ -10,11 +10,20 @@
  *
  *   "Order received before 12PM - same Day Dispatch /// After 12PM - Next day Dispatch"
  *
- * So `material_status` is anchored on `sales_order` (order RECEIPT — not on the
- * credit confirmation, which is the step immediately before it) and uses the
- * shared `same_day_cutoff` unit with `days: 0`. `anchorOptions("material_status")`
- * returns ["sales_order", "credit_check"], so the stored-anchor guard in
- * resolveStepSla accepts it if an admin ever re-saves the map.
+ * So `material_status` uses the shared `same_day_cutoff` unit with `days: 0`.
+ *
+ * ⚠ WHAT IT MEASURES CHANGED WITH ROUNDS. The clock runs from the moment the
+ *   order entered the STORE'S queue for the round in progress — `roundStartedAt`,
+ *   not the original order receipt. For round 1 those are the same instant, so
+ *   single-consignment behaviour is unchanged and the sheet's rule reads exactly
+ *   as written. For round 2 onward the cut-off applies to when the balance came
+ *   back to the store, which is the only reading under which "same day / next
+ *   day" means anything: anchoring a third round on an order received six weeks
+ *   ago would just mark it permanently late.
+ *
+ *   `lib/queues.ts` ANCHOR_AT is where that actually happens — it is a second,
+ *   independent statement of the same fact, and the two must stay in step. The
+ *   `anchor` recorded here is what Setup → Due Dates displays.
  *
  * The cut-off hour is admin-editable in Setup → Due Dates; `resolveStepSla` only
  * merges `cutoffHour` for a step whose DEFAULT unit is already `same_day_cutoff`,

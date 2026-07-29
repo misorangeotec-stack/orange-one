@@ -1,17 +1,20 @@
 /**
  * The Order Register — the .xlsx that replaces the source spreadsheet.
  *
- * One row per order with all seven step column groups (Planned / Actual / Status /
- * Remarks), laid out in the same order the sheet used, so anyone handed this file
- * recognises it immediately.
+ * WARNING: ONE ROW PER ROUND, not per order. An order that shipped in three goes
+ * raised three invoices, made three gate entries and had three delivery
+ * outcomes. Collapsing that into one row would have to pick one of each and
+ * silently drop the rest — and "one row per order" stopped being meaningful the
+ * moment partial dispatch existed.
  *
- * It is built from `lib/orderVm.ts` — the SAME row model
- * `components/PlannedVsActualTable.tsx` renders on screen — so the export and the
- * order page can never disagree about whether a step ran late.
+ * Built from `lib/orderVm.ts`, the same round-scoped row model the Control
+ * Centre's variance card reads, so the export and the screens cannot disagree
+ * about whether a step ran late.
  */
 import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 import { STEPS } from "./steps";
 import { orderStepRows, type OrderVmDeps } from "./orderVm";
+import { allRoundViews, type RoundView } from "./rounds";
 import { DISPATCH_TYPE_LABEL, STATUS_LABEL, dmy } from "./format";
 import type { DispatchOrder } from "../types";
 
@@ -19,19 +22,20 @@ export interface RegisterDeps extends OrderVmDeps {
   customerName: (id: string | null) => string;
   itemName: (id: string | null) => string;
   unitName: (id: string | null) => string;
-  vehicleName: (id: string | null) => string;
-  transporterName: (id: string | null) => string;
+  companyName: (id: string | null) => string;
 }
 
-/** A flat row: the order's header fields plus four cells per step. */
-type Row = { order: DispatchOrder; steps: ReturnType<typeof orderStepRows> };
+/** A flat row: one round of one order, plus that round's step cells. */
+type Row = { order: DispatchOrder; view: RoundView; steps: ReturnType<typeof orderStepRows> };
 
 export function exportOrderRegister(
   orders: DispatchOrder[],
   deps: RegisterDeps,
   filters: string[] = [],
 ): void {
-  const rows: Row[] = orders.map((o) => ({ order: o, steps: orderStepRows(o, deps) }));
+  const rows: Row[] = orders.flatMap((o) =>
+    allRoundViews(o).map((v) => ({ order: o, view: v, steps: orderStepRows(o, deps, v) })),
+  );
 
   const stepCell = (idx: number, pick: (r: Row["steps"][number]) => string) => (row: Row) => {
     const st = row.steps[idx];
@@ -39,24 +43,39 @@ export function exportOrderRegister(
   };
 
   const columns: ExportColumn<Row>[] = [
-    { header: "SR No.", width: 10, value: (r) => r.order.orderNo },
+    { header: "SR No.", width: 16, value: (r) => `${r.order.orderNo} - R${r.view.roundNo}` },
+    { header: "Order No.", width: 14, value: (r) => r.order.orderNo },
+    { header: "Round", width: 8, value: (r) => r.view.roundNo },
     { header: "Type", width: 12, value: (r) => DISPATCH_TYPE_LABEL[r.order.dispatchType] },
     { header: "Order Date", width: 13, value: (r) => dmy(r.order.orderDate) },
     { header: "Customer Name", width: 26, value: (r) => deps.customerName(r.order.customerId) },
+    { header: "Company", width: 24, value: (r) => deps.companyName(r.view.companyId ?? r.order.companyId) },
     {
       header: "Item",
       width: 30,
       value: (r) => r.order.lines.map((l) => deps.itemName(l.itemId)).join(", "),
     },
     {
-      header: "Quantity",
+      header: "Ordered Qty",
       width: 18,
       value: (r) =>
         r.order.lines.map((l) => `${l.quantity} ${deps.unitName(l.unitId)}`.trim()).join(", "),
     },
-    { header: "TAT for Material Dispatch", width: 14, value: (r) => r.order.tatDays ?? "" },
-    { header: "Promised Dispatch", width: 15, value: (r) => dmy(r.order.promisedDate) },
-    { header: "Customer Ref.", width: 16, value: (r) => r.order.customerRef ?? "" },
+    {
+      header: "Dispatched This Round",
+      width: 24,
+      value: (r) => r.view.items.map((i) => `${i.itemName} ${i.shipQty}`).join(", "),
+    },
+    {
+      header: "LOT No.",
+      width: 18,
+      value: (r) => r.view.items.map((i) => i.lotNo ?? "").filter(Boolean).join(", "),
+    },
+    {
+      header: "Pending On Order",
+      width: 16,
+      value: (r) => r.order.lines.reduce((a, l) => a + Math.max(l.quantity - l.dispatchedQty, 0), 0),
+    },
   ];
 
   // One Planned / Actual / Status / Remarks block per step, exactly as the sheet.
@@ -73,15 +92,13 @@ export function exportOrderRegister(
 
   // The documents each step produced, and the closing state.
   columns.push(
-    { header: "Sales Invoice No.", width: 18, value: (r) => r.order.sbInvoiceNo ?? "" },
-    { header: "Sales Invoice Attached", width: 14, value: (r) => (r.order.sbAttachmentPath ? "Yes" : "No") },
-    { header: "Gate Pass No.", width: 16, value: (r) => r.order.goGatePassNo ?? "" },
-    { header: "Vehicle", width: 16, value: (r) => (r.order.goVehicleId ? deps.vehicleName(r.order.goVehicleId) : "") },
-    { header: "Transporter", width: 20, value: (r) => (r.order.dcTransporterId ? deps.transporterName(r.order.dcTransporterId) : "") },
-    { header: "LR No.", width: 14, value: (r) => r.order.dcLrNo ?? "" },
-    { header: "Received By", width: 20, value: (r) => r.order.dcReceiverName ?? "" },
-    { header: "Receiver Copy Attached", width: 14, value: (r) => (r.order.dcAttachmentPath ? "Yes" : "No") },
+    { header: "Tally Invoice No.", width: 18, value: (r) => r.view.sbInvoiceNo ?? "" },
+    { header: "Sales Invoice Attached", width: 14, value: (r) => (r.view.sbAttachmentPath ? "Yes" : "No") },
+    { header: "Gate Outward No.", width: 18, value: (r) => r.view.goOutwardNo ?? "" },
+    { header: "Receiver Copy Attached", width: 14, value: (r) => (r.view.dcAttachmentPath ? "Yes" : "No") },
+    { header: "Round Corrected", width: 26, value: (r) => r.view.amendReason ?? "" },
     { header: "Order Status", width: 20, value: (r) => STATUS_LABEL[r.order.status] },
+    { header: "Closed Early", width: 26, value: (r) => r.order.closedReason ?? "" },
     { header: "Raised By", width: 20, value: (r) => r.order.requesterName },
   );
 
@@ -93,10 +110,10 @@ export function exportOrderRegister(
     rows,
     filters,
     notes: [
-      "One row per sales order, with the Planned / Actual / Status / Remarks block for each of the six workflow steps.",
+      "ONE ROW PER DISPATCH ROUND. An order shipped in two goes appears twice - R1 and R2 - each with its own invoice, gate outward number and delivery outcome.",
       "Planned dates come from the configured per-step SLA (Setup → Due Dates). The material-status check uses an hour-of-day cut-off, not a day count.",
       "Days late = actual date minus planned date, floored at zero. Blank means the step has not been recorded yet.",
-      "Promised Dispatch is what the customer was told; it is deliberately separate from the internal step deadlines.",
+      "Pending On Order is the balance still owed once every delivered round is counted. A returned round counts for nothing - the goods came back.",
     ],
   });
 }

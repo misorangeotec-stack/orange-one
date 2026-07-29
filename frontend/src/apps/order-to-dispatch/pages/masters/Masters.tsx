@@ -8,17 +8,15 @@ import {
 } from "../../lib/masterFields";
 import { DISPATCH_MASTER_TYPES, type DispatchMasterType, type NamedMaster } from "../../types";
 
-type Group = "sales" | "stores" | "logistics" | "accounts";
-const GROUPS: { key: Group; label: string }[] = [
-  { key: "sales", label: "Sales" },
-  { key: "stores", label: "Stores" },
-  { key: "logistics", label: "Logistics" },
-  { key: "accounts", label: "Accounts" },
-];
 
 /**
- * All eighteen masters, grouped into four tab sets so it reads as four short
- * lists rather than one wall.
+ * The five masters the dispatch flow actually reads.
+ *
+ * The old four-group tab layer (Sales / Stores / Logistics / Accounts) is gone
+ * with the thirteen masters the reshape deleted: with five left, two of those
+ * groups would have been empty, and the group switcher indexed
+ * `DISPATCH_MASTER_TYPES.find(...)!` — a non-null assertion that throws the
+ * moment an empty group is clicked.
  *
  * Every tab renders through the shared MasterCrud, which is where search,
  * activate/deactivate and the Excel export/import round trip come from — none of
@@ -28,11 +26,8 @@ const GROUPS: { key: Group; label: string }[] = [
 export default function Masters() {
   const s = useDispatchStore();
   const ctx = useMasterFieldCtx();
-  const [group, setGroup] = useState<Group>("sales");
   const [tab, setTab] = useState<DispatchMasterType>("customer");
-
-  const typesInGroup = DISPATCH_MASTER_TYPES.filter((m) => m.group === group);
-  const active = typesInGroup.some((t) => t.value === tab) ? tab : typesInGroup[0].value;
+  const active = DISPATCH_MASTER_TYPES.some((t) => t.value === tab) ? tab : "customer";
 
   const rows = s.masterList(active);
   const fields = masterFields(active, ctx);
@@ -72,30 +67,13 @@ export default function Masters() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Masters</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Everything the seven steps pick from. Editable by admins and each master's owner
+          Everything the dispatch flow picks from. Editable by admins and each master's owner
           (Setup → Master Owners). Use Export / Import on any tab to bulk-load from Excel.
         </p>
       </div>
 
-      <div className="flex gap-1 border-b border-line">
-        {GROUPS.map((g) => (
-          <button
-            key={g.key}
-            onClick={() => {
-              setGroup(g.key);
-              setTab(DISPATCH_MASTER_TYPES.find((m) => m.group === g.key)!.value);
-            }}
-            className={`px-3.5 py-2 text-[13px] font-semibold -mb-px border-b-2 ${
-              group === g.key ? "border-orange text-navy" : "border-transparent text-grey-2 hover:text-navy"
-            }`}
-          >
-            {g.label}
-          </button>
-        ))}
-      </div>
-
       <Tabs
-        tabs={typesInGroup.map((t) => ({ key: t.value, label: t.plural, count: s.masterList(t.value).length }))}
+        tabs={DISPATCH_MASTER_TYPES.map((t) => ({ key: t.value, label: t.plural, count: s.masterList(t.value).length }))}
         active={active}
         onChange={(k) => setTab(k as DispatchMasterType)}
       />
@@ -134,8 +112,15 @@ export default function Masters() {
   );
 }
 
-/** Value-bag keys that must be written as numbers, not strings. */
-const NUMERIC_KEYS = new Set(["credit_limit", "credit_days", "days", "available_qty"]);
+/**
+ * Value-bag keys that must be written as numbers, not strings.
+ *
+ * Empty since the reshape — every numeric master field (credit limit, credit
+ * days, payment-term days, LOT available qty) belonged to a column that no
+ * longer exists. Kept as the hook for the next one, because a plain string
+ * written into a numeric column fails at the database, not at the compiler.
+ */
+const NUMERIC_KEYS = new Set<string>([]);
 
 /** camelCase the snake_case bag key so it can be read off the mapped row. */
 const camel = (k: string) => k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
@@ -161,45 +146,25 @@ function extraColumns(
 
   switch (mt) {
     case "customer":
-      return [text("Code", (r) => r.code), text("Email", (r) => r.email), text("Credit days", (r) => r.creditDays)];
-    case "ship_to":
       return [
-        { header: "Customer", render: (r) => <span className="text-grey-2">{s.customerName((r as unknown as { customerId: string }).customerId)}</span> },
-        text("City", (r) => r.city),
+        text("Code", (r) => r.code),
+        {
+          header: "Company",
+          render: (r) => (
+            <span className="text-grey-2">
+              {s.masterName("company", (r as unknown as { companyId: string | null }).companyId)}
+            </span>
+          ),
+        },
+        text("Phone", (r) => r.phone),
       ];
     case "item":
       return [
         { header: "Category", render: (r) => <span className="text-grey-2">{s.masterName("category", (r as unknown as { categoryId: string | null }).categoryId)}</span> },
         { header: "Unit", render: (r) => <span className="text-grey-2">{s.unitName((r as unknown as { unitId: string | null }).unitId)}</span> },
       ];
-    case "lot":
-      return [
-        { header: "Item", render: (r) => <span className="text-grey-2">{s.itemName((r as unknown as { itemId: string | null }).itemId)}</span> },
-        text("Available", (r) => r.availableQty),
-        text("Expiry", (r) => r.expiryDate),
-      ];
-    case "vehicle":
-      return [
-        text("Type", (r) => r.vehicleType),
-        { header: "Transporter", render: (r) => <span className="text-grey-2">{s.masterName("transporter", (r as unknown as { transporterId: string | null }).transporterId)}</span> },
-      ];
-    case "driver":
-      return [
-        text("Phone", (r) => r.phone),
-        { header: "Portal user", render: (r) => <span className="text-grey-2">{s.personName((r as unknown as { userId: string | null }).userId)}</span> },
-      ];
-    case "transporter":
-      return [text("Contact", (r) => r.contactName), text("Phone", (r) => r.phone)];
-    case "payment_term":
-      return [text("Days", (r) => r.days)];
-    case "mail_template":
-      return [text("Code", (r) => r.code), text("Subject", (r) => r.subject)];
-    case "godown":
-    case "gate":
-    case "invoice_series":
-      return [
-        { header: "Company", render: (r) => <span className="text-grey-2">{s.masterName("company", (r as unknown as { companyId: string | null }).companyId)}</span> },
-      ];
+    case "company":
+      return [text("GSTIN", (r) => r.gstin)];
     default:
       return [];
   }

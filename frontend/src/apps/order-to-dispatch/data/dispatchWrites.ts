@@ -21,16 +21,15 @@ export interface OrderLineInput {
   lineRemark: string | null;
 }
 
+/**
+ * ⚠ No `companyId`. The order no longer asks which of our companies is selling —
+ *   `fms_dispatch_submit_order` resolves it from the customer's master mapping,
+ *   and refuses to raise the order if that mapping is missing.
+ */
 export interface OrderInput {
   dispatchType: DispatchType;
-  companyId: string | null;
   customerId: string;
-  shipToId: string | null;
-  orderSourceId: string | null;
   orderDate: string;
-  promisedDate: string | null;
-  tatDays: string | null;
-  customerRef: string | null;
   orderRemarks: string | null;
   requesterName: string;
   lines: OrderLineInput[];
@@ -38,14 +37,8 @@ export interface OrderInput {
 
 const orderPayload = (input: OrderInput) => ({
   dispatch_type: input.dispatchType,
-  company_id: input.companyId ?? "",
   customer_id: input.customerId,
-  ship_to_id: input.shipToId ?? "",
-  order_source_id: input.orderSourceId ?? "",
   order_date: input.orderDate ?? "",
-  promised_date: input.promisedDate ?? "",
-  tat_days: input.tatDays ?? "",
-  customer_ref: input.customerRef ?? "",
   order_remarks: input.orderRemarks ?? "",
   requester_name: input.requesterName,
   lines: input.lines.map((l) => ({
@@ -89,7 +82,6 @@ export type StepPayload = Record<string, unknown>;
 const RECORD_RPC: Record<QueueStep, string> = {
   credit_check: "fms_dispatch_record_credit_check",
   material_status: "fms_dispatch_record_material_status",
-  lot_confirm: "fms_dispatch_record_lot_confirm",
   sales_bill: "fms_dispatch_record_sales_bill",
   gate_out: "fms_dispatch_record_gate_out",
   dispatch_confirm: "fms_dispatch_record_dispatch_confirm",
@@ -98,7 +90,6 @@ const RECORD_RPC: Record<QueueStep, string> = {
 const UPDATE_RPC: Record<QueueStep, string> = {
   credit_check: "fms_dispatch_update_credit_check",
   material_status: "fms_dispatch_update_material_status",
-  lot_confirm: "fms_dispatch_update_lot_confirm",
   sales_bill: "fms_dispatch_update_sales_bill",
   gate_out: "fms_dispatch_update_gate_out",
   dispatch_confirm: "fms_dispatch_update_dispatch_confirm",
@@ -114,6 +105,45 @@ export async function updateStep(step: QueueStep, orderId: string, payload: Step
   if (error) throw new Error(error.message);
 }
 
+/**
+ * "Nothing available yet" — the store checked and found no stock. Records the
+ * check and restarts the round's clock WITHOUT moving the order on, so waiting
+ * on production reads as waiting rather than as lateness.
+ */
+export async function materialNothingAvailable(orderId: string, remarks: string): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_material_nothing_available", {
+    p_order: orderId, p_remarks: remarks,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export interface AmendRoundLine {
+  id: string;
+  shipQty: string;
+  lotNo?: string | null;
+}
+
+/**
+ * Correct a FINISHED round — coordinators only. This is how a part return is
+ * recorded (mark the round Returned, then set what the customer actually kept)
+ * and the only way back from a mis-tapped outcome. The RPC recalculates the
+ * delivered totals and re-opens the order if the correction leaves a balance.
+ */
+export async function amendRound(
+  roundId: string,
+  input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[] },
+): Promise<void> {
+  const payload: Record<string, unknown> = { amend_reason: input.reason };
+  if (input.dcStatus) payload.dc_status = input.dcStatus;
+  if (input.lines?.length) {
+    payload.lines = input.lines.map((l) => ({
+      id: l.id, ship_qty: l.shipQty, lot_no: l.lotNo ?? "",
+    }));
+  }
+  const { error } = await db.rpc("fms_dispatch_amend_round", { p_round: roundId, p: payload });
+  if (error) throw new Error(error.message);
+}
+
 export async function holdOrder(orderId: string, hold: boolean, reason: string): Promise<void> {
   const { error } = await db.rpc("fms_dispatch_hold_order", { p_order: orderId, p_hold: hold, p_reason: reason });
   if (error) throw new Error(error.message);
@@ -124,18 +154,35 @@ export async function cancelOrder(orderId: string, reason: string): Promise<void
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Close an order that will never be completed. Server-gated to the gap BETWEEN
+ * rounds — mid-round the goods may already be through the gate, and closing then
+ * would leave a consignment that left the plant with no delivery record.
+ */
+export async function closeOrder(orderId: string, reason: string): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_close_order", { p_order: orderId, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
 /* ------------------------------- documents -------------------------------- */
 
 const DOCS_BUCKET = "fms-dispatch-docs";
 
-/** Upload a step attachment into a per-step folder; returns the stored path + name. */
+/**
+ * Upload a step attachment; returns the stored path + name.
+ *
+ * The round number is in the path purely so the bucket stays legible once an
+ * order has several invoices — uniqueness already came from the timestamp. Files
+ * from earlier rounds are never deleted: the archive still points at them.
+ */
 export async function uploadStepDocument(
   orderId: string,
   folder: string,
   file: File,
+  roundNo = 1,
 ): Promise<{ path: string; name: string }> {
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const path = `${orderId}/${folder}/${Date.now()}-${safeName}`;
+  const path = `${orderId}/r${roundNo}/${folder}/${Date.now()}-${safeName}`;
   const { error } = await supabase.storage
     .from(DOCS_BUCKET)
     .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });
@@ -182,23 +229,10 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 
 const MASTER_TABLE: Record<DispatchMasterType, string> = {
   company: "fms_dispatch_companies",
-  transporter: "fms_dispatch_transporters",
+  customer: "fms_dispatch_customers",
+  item: "fms_dispatch_items",
   unit: "fms_dispatch_units",
   category: "fms_dispatch_categories",
-  order_source: "fms_dispatch_order_sources",
-  payment_term: "fms_dispatch_payment_terms",
-  shortfall_reason: "fms_dispatch_shortfall_reasons",
-  packing_type: "fms_dispatch_packing_types",
-  mail_template: "fms_dispatch_mail_templates",
-  driver: "fms_dispatch_drivers",
-  customer: "fms_dispatch_customers",
-  ship_to: "fms_dispatch_ship_to",
-  item: "fms_dispatch_items",
-  lot: "fms_dispatch_lots",
-  godown: "fms_dispatch_godowns",
-  gate: "fms_dispatch_gates",
-  invoice_series: "fms_dispatch_invoice_series",
-  vehicle: "fms_dispatch_vehicles",
 };
 
 /**

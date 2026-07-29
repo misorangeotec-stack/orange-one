@@ -1,68 +1,66 @@
 /**
  * Per-step field descriptors that drive the ONE generic step modal + stage queue.
  *
- * Each queue step captures its own set of fields (dates, statuses, master picks,
- * quantities, remarks). Rather than six near-identical modal files, every step is
- * described here — its editable fields, the value each pre-fills from, and the one
- * "captured" column its Completed tab shows.
+ * Rather than five near-identical modal files, every step is described here — its
+ * editable fields, the value each pre-fills from, the read-only context panel it
+ * opens with, and the one "captured" column its Completed tab shows.
  *
  * ⚠ WIRE CONTRACT: the `key` of every field is the jsonb payload key read VERBATIM
  *   by the matching `fms_dispatch_record_*` / `fms_dispatch_update_*` RPC. Rename
  *   one here without renaming it in the migration and the value is silently dropped.
  *
- * This module stays PURE — no React, no store import. Master-backed dropdowns name
- * the list they want via `optionsFrom`; StepModal resolves it from the store. That
- * is what lets the same descriptor drive both the record and the edit path.
+ * ⚠ EVERY GETTER TAKES THE ROUND, NOT JUST THE ORDER. After a loop-back the order
+ *   row holds round N while a Completed tab may be showing round 1; reading the
+ *   header would show the wrong invoice under the right heading. `o` is for
+ *   order-scoped facts (credit), `v` for everything round-scoped.
+ *
+ * This module stays PURE — no React, no store import.
  */
 import type { DispatchOrder } from "../types";
+import type { RoundView } from "./rounds";
 import type { QueueStep } from "./queues";
-import {
-  CREDIT_STATUS_LABEL,
-  DELIVERY_STATUS_LABEL,
-  MATERIAL_STATUS_LABEL,
-  dmy,
-  numOrDash,
-} from "./format";
+import { CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dmy, numOrDash } from "./format";
 
-/**
- * `select` is new relative to the Production Entry template this is modelled on:
- * this FMS picks LOTs, transporters, vehicles, drivers, godowns, gates, invoice
- * series and payment terms from masters, and the house rule is that a master pick
- * is never free text.
- */
-export type StepFieldKind = "date" | "datetime" | "text" | "number" | "textarea" | "select";
-
-/** Which master list a `select` field draws from. Resolved by StepModal. */
-export type OptionSource =
-  | "payment_term" | "godown" | "company" | "invoice_series"
-  | "gate" | "vehicle" | "driver" | "transporter";
+export type StepFieldKind = "date" | "text" | "number" | "textarea" | "select";
 
 export interface StepField {
   key: string;
   label: string;
   kind: StepFieldKind;
   /** Current value, for edit/prefill. Always a string — the modal is string-keyed. */
-  get: (o: DispatchOrder) => string;
-  /** `select` backed by a master list. */
-  optionsFrom?: OptionSource;
-  /** `select` backed by a fixed code enum (a branch condition, never a master). */
+  get: (o: DispatchOrder, v: RoundView) => string;
+  /** `select` backed by a fixed code enum. No step picks from a master any more. */
   choices?: { value: string; label: string }[];
   placeholder?: string;
   hint?: string;
   /** Save stays disabled until this is filled. */
   required?: boolean;
   /**
-   * Conditional fields. `values` is the live form state; `order` is the row being
-   * acted on (null only in the impossible no-row case).
+   * Required only in some states — the credit remark, which is compulsory the
+   * moment "On hold" is picked and optional otherwise. Without this the person
+   * finds out by round-tripping to Postgres and reading a raised exception.
    */
+  requiredWhen?: (values: Record<string, string>, order: DispatchOrder | null) => boolean;
   showWhen?: (values: Record<string, string>, order: DispatchOrder | null) => boolean;
 }
 
 export interface CapturedColumn {
   key: string;
   header: string;
-  get: (o: DispatchOrder) => string;
+  get: (o: DispatchOrder, v: RoundView) => string;
   isDate?: boolean;
+}
+
+/** Which cells the read-only context card above the form shows. */
+export interface StepContext {
+  /** Credit outcome + its remark. */
+  showCredit?: boolean;
+  /** The full item list: ordered · dispatched · pending · going out now · LOT. */
+  showLines?: boolean;
+  /** Tally invoice no. + a button that opens the invoice. */
+  showInvoice?: boolean;
+  /** Gate outward no. */
+  showOutward?: boolean;
 }
 
 export interface StepConfig {
@@ -73,87 +71,59 @@ export interface StepConfig {
   description: string;
   /** Blurb above the Completed tab. */
   completedBlurb: string;
+  /** The read-only recap the step opens with. */
+  context?: StepContext;
   fields: StepField[];
-  /** Renders the file picker and routes the upload into this bucket folder. */
-  attachment?: { label: string; folder: string; pathKey: string; nameKey: string; required?: boolean };
-  /** Renders the per-line grid for this step. */
-  lines?: "material_status" | "lot_confirm";
+  attachment?: {
+    label: string;
+    folder: string;
+    pathKey: string;
+    nameKey: string;
+    required?: boolean;
+    /** Read off the ROUND, so a Completed row shows its own file. */
+    getPath: (v: RoundView) => string | null;
+    getName: (v: RoundView) => string | null;
+  };
+  /** Renders the per-line ship-quantity grid. */
+  lines?: "ship";
   /** The one column the Completed tab shows. */
   captured: CapturedColumn;
 }
 
-/** The generic per-step "Status of …" pick-list, matching the source sheet. */
-export const STEP_STATUS_OPTIONS = [
-  { value: "Completed", label: "Completed" },
-  { value: "Pending", label: "Pending" },
-  { value: "Not Applicable", label: "Not Applicable" },
-];
-
-/** Sheet dropdown: Status - Credit Confirmation. */
+/** Sheet dropdown: the credit decision. */
 export const CREDIT_STATUS_OPTIONS = [
-  { value: "credit_available", label: CREDIT_STATUS_LABEL.credit_available },
-  { value: "payment_required", label: CREDIT_STATUS_LABEL.payment_required },
+  { value: "approved", label: CREDIT_STATUS_LABEL.approved },
+  { value: "credit_hold", label: CREDIT_STATUS_LABEL.credit_hold },
 ];
 
-/** Sheet dropdown: Status - Confirmation (material availability). */
-export const MATERIAL_STATUS_OPTIONS = [
-  { value: "available_for_dispatch", label: MATERIAL_STATUS_LABEL.available_for_dispatch },
-  { value: "production_required", label: MATERIAL_STATUS_LABEL.production_required },
-];
-
-/** Delivery outcome. `returned` is a branch the RPC and the dashboard treat apart. */
+/** Delivery outcome. Two values — a part-return is corrected afterwards. */
 export const DELIVERY_STATUS_OPTIONS = [
   { value: "delivered", label: DELIVERY_STATUS_LABEL.delivered },
-  { value: "partially_delivered", label: DELIVERY_STATUS_LABEL.partially_delivered },
   { value: "returned", label: DELIVERY_STATUS_LABEL.returned },
 ];
 
 const s = (v: string | null | undefined): string => v ?? "";
-const n = (v: number | null | undefined): string => (v !== null && v !== undefined ? String(v) : "");
-/** A timestamptz → the `datetime-local` input's yyyy-MM-ddTHH:mm. */
-const dt = (v: string | null | undefined): string => {
-  if (!v) return "";
-  const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return "";
-  const p = (x: number) => String(x).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-};
 const day = (v: string | null | undefined): string => (v ? v.slice(0, 10) : "");
-
-const isTransport = (_v: Record<string, string>, o: DispatchOrder | null) => o?.dispatchType === "transport";
-const isLocal = (_v: Record<string, string>, o: DispatchOrder | null) => o?.dispatchType === "local";
 
 export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
   credit_check: {
     stepKey: "credit_check",
     title: "Confirm Credit Limit",
-    actionLabel: "Record credit confirmation",
-    description: "Orders waiting on the collection team to confirm the customer's credit before the sales bill is processed.",
-    completedBlurb: "Confirmations you record appear here, and stay revisable until the material-status check is recorded.",
+    actionLabel: "Record credit decision",
+    description:
+      "Orders waiting on the collection team to approve the customer's credit, or hold the order until payment lands.",
+    completedBlurb: "Approvals you record appear here, and stay revisable until the stock check is recorded.",
     fields: [
-      { key: "cc_actual_date", label: "Actual date", kind: "date", get: (o) => day(o.ccActualDate) },
       {
         key: "cc_status", label: "Credit outcome", kind: "select", required: true,
         choices: CREDIT_STATUS_OPTIONS, get: (o) => s(o.ccStatus),
-        hint: "Payment Required opens the payment fields below",
-      },
-      { key: "cc_credit_limit", label: "Credit limit", kind: "number", get: (o) => n(o.ccCreditLimit),
-        hint: "snapshotted, so the decision stays readable after the master changes" },
-      { key: "cc_outstanding_amount", label: "Outstanding", kind: "number", get: (o) => n(o.ccOutstandingAmount) },
-      {
-        key: "cc_payment_term_id", label: "Payment term", kind: "select", optionsFrom: "payment_term",
-        get: (o) => s(o.ccPaymentTermId),
+        hint: "On hold keeps the order in this queue until you come back and approve it",
       },
       {
-        key: "cc_payment_ref", label: "Payment reference", kind: "text", get: (o) => s(o.ccPaymentRef),
-        placeholder: "NEFT / cheque / UPI reference",
-        showWhen: (v) => v.cc_status === "payment_required",
+        key: "cc_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.ccRemarks),
+        requiredWhen: (v) => v.cc_status === "credit_hold",
+        placeholder: "why the order is being held",
       },
-      {
-        key: "cc_payment_amount", label: "Amount received", kind: "number", get: (o) => n(o.ccPaymentAmount),
-        showWhen: (v) => v.cc_status === "payment_required",
-      },
-      { key: "cc_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.ccRemarks) },
     ],
     captured: {
       key: "ccStatus", header: "Credit outcome",
@@ -164,50 +134,21 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
   material_status: {
     stepKey: "material_status",
     title: "Check Material Status",
-    actionLabel: "Record material status",
+    actionLabel: "Record what is going out",
     description:
-      "Orders waiting on the store keeper's physical stock check. Due the same working day when the order arrived before the cut-off, the next working day after it.",
-    completedBlurb: "Checks you record appear here, and stay revisable until LOT confirmation is recorded.",
+      "Orders waiting on the store keeper's physical stock check. Send whatever is available — anything short stays pending and comes back here.",
+    completedBlurb: "Each round you send appears here, and stays revisable until its sales bill is raised.",
+    context: { showCredit: true },
     fields: [
-      { key: "ms_actual_date", label: "Actual date", kind: "date", get: (o) => day(o.msActualDate) },
-      {
-        key: "ms_status", label: "Material status", kind: "select", required: true,
-        choices: MATERIAL_STATUS_OPTIONS, get: (o) => s(o.msStatus),
-        hint: "Production Required is recorded and the order continues - the shortfall is set per line at LOT confirmation",
-      },
-      { key: "ms_godown_id", label: "Godown checked", kind: "select", optionsFrom: "godown", get: (o) => s(o.msGodownId) },
-      {
-        key: "ms_planned_dispatch_date", label: "Planned dispatch date", kind: "date",
-        get: (o) => day(o.msPlannedDispatchDate),
-        hint: "this is the date the customer is told, if the auto-mail is on",
-      },
-      { key: "ms_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.msRemarks) },
+      { key: "ms_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.msRemarks) },
     ],
-    lines: "material_status",
+    lines: "ship",
     captured: {
-      key: "msStatus", header: "Material status",
-      get: (o) => (o.msStatus ? MATERIAL_STATUS_LABEL[o.msStatus] : "—"),
-    },
-  },
-
-  lot_confirm: {
-    stepKey: "lot_confirm",
-    title: "Confirm LOT No. & Final Qty",
-    actionLabel: "Confirm LOT and quantity",
-    description: "Orders waiting on the store keeper to pick the LOT and confirm the quantity actually going out, line by line.",
-    completedBlurb: "Confirmations you record appear here, and stay revisable until the sales bill is raised.",
-    fields: [
-      { key: "lc_actual_date", label: "Actual date", kind: "date", get: (o) => day(o.lcActualDate) },
-      { key: "lc_status", label: "Status", kind: "select", choices: STEP_STATUS_OPTIONS, get: (o) => s(o.lcStatus) },
-      { key: "lc_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.lcRemarks) },
-    ],
-    lines: "lot_confirm",
-    captured: {
-      key: "finalQty", header: "Final qty",
-      get: (o) => {
-        const total = o.lines.reduce((a, l) => a + (Number(l.finalQty) || 0), 0);
-        const lots = o.lines.filter((l) => !!l.lotNoSnapshot).length;
-        return total ? `${total} · ${lots} lot${lots === 1 ? "" : "s"}` : "—";
+      key: "shipQty", header: "Going out",
+      get: (_o, v) => {
+        const total = v.items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
+        const lines = v.items.length;
+        return total ? `${total} · ${lines} line${lines === 1 ? "" : "s"}` : "—";
       },
     },
   },
@@ -216,44 +157,39 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     stepKey: "sales_bill",
     title: "Generate Sales Bill",
     actionLabel: "Record sales bill",
-    description: "Orders whose LOT and final quantity are confirmed and are waiting for the invoice to be raised in the system.",
-    completedBlurb: "Bills you record appear here, and stay revisable until the gate-out entry is recorded.",
+    description: "Consignments picked and waiting for the invoice to be raised in Tally.",
+    completedBlurb: "Bills you record appear here, and stay revisable until the gate outward entry is recorded.",
+    context: { showCredit: true, showLines: true },
     fields: [
-      { key: "sb_actual_date", label: "Actual date", kind: "date", get: (o) => day(o.sbActualDate) },
-      { key: "sb_company_id", label: "Company", kind: "select", optionsFrom: "company", get: (o) => s(o.sbCompanyId) },
-      { key: "sb_invoice_series_id", label: "Invoice series", kind: "select", optionsFrom: "invoice_series", get: (o) => s(o.sbInvoiceSeriesId) },
-      { key: "sb_invoice_no", label: "Invoice no.", kind: "text", required: true, get: (o) => s(o.sbInvoiceNo), placeholder: "as generated in Tally" },
-      { key: "sb_invoice_date", label: "Invoice date", kind: "date", get: (o) => day(o.sbInvoiceDate) },
-      { key: "sb_invoice_value", label: "Invoice value", kind: "number", get: (o) => n(o.sbInvoiceValue) },
-      { key: "sb_status", label: "Status", kind: "select", choices: STEP_STATUS_OPTIONS, get: (o) => s(o.sbStatus) },
-      { key: "sb_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.sbRemarks) },
+      {
+        key: "sb_invoice_no", label: "Tally invoice no.", kind: "text", required: true,
+        get: (_o, v) => s(v.sbInvoiceNo), placeholder: "as generated in Tally",
+      },
+      { key: "sb_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.sbRemarks) },
     ],
     attachment: {
       label: "Sales invoice", folder: "invoice",
-      pathKey: "sb_attachment_path", nameKey: "sb_attachment_name",
+      pathKey: "sb_attachment_path", nameKey: "sb_attachment_name", required: true,
+      getPath: (v) => v.sbAttachmentPath, getName: (v) => v.sbAttachmentName,
     },
-    captured: { key: "sbInvoiceNo", header: "Invoice no.", get: (o) => s(o.sbInvoiceNo) || "—" },
+    captured: { key: "sbInvoiceNo", header: "Invoice no.", get: (_o, v) => s(v.sbInvoiceNo) || "—" },
   },
 
   gate_out: {
     stepKey: "gate_out",
-    title: "Gate Out Entry",
-    actionLabel: "Record gate out",
-    description: "Billed orders waiting for the plant in-charge to record the gate register entry as the material leaves.",
+    title: "Gate Outward Entry",
+    actionLabel: "Record gate outward",
+    description: "Billed consignments waiting for the plant in-charge to write the gate register entry as the material leaves.",
     completedBlurb: "Gate entries you record appear here, and stay revisable until the delivery is confirmed.",
+    context: { showCredit: true, showLines: true, showInvoice: true },
     fields: [
-      { key: "go_actual_date", label: "Actual date", kind: "date", get: (o) => day(o.goActualDate) },
-      { key: "go_gate_id", label: "Gate", kind: "select", optionsFrom: "gate", get: (o) => s(o.goGateId) },
-      { key: "go_godown_id", label: "Dispatched from", kind: "select", optionsFrom: "godown", get: (o) => s(o.goGodownId),
-        hint: "defaults to the godown the stock was checked in" },
-      { key: "go_vehicle_id", label: "Vehicle", kind: "select", optionsFrom: "vehicle", get: (o) => s(o.goVehicleId) },
-      { key: "go_driver_id", label: "Driver", kind: "select", optionsFrom: "driver", get: (o) => s(o.goDriverId),
-        hint: "a driver linked to a portal user can confirm their own delivery" },
-      { key: "go_out_at", label: "Out at", kind: "datetime", get: (o) => dt(o.goOutAt) },
-      { key: "go_status", label: "Status", kind: "select", choices: STEP_STATUS_OPTIONS, get: (o) => s(o.goStatus) },
-      { key: "go_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.goRemarks) },
+      {
+        key: "go_outward_no", label: "Gate outward no.", kind: "text", required: true,
+        get: (_o, v) => s(v.goOutwardNo), placeholder: "as written in the gate register",
+      },
+      { key: "go_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.goRemarks) },
     ],
-    captured: { key: "goGatePassNo", header: "Gate pass", get: (o) => s(o.goGatePassNo) || "—" },
+    captured: { key: "goOutwardNo", header: "Gate outward no.", get: (_o, v) => s(v.goOutwardNo) || "—" },
   },
 
   dispatch_confirm: {
@@ -261,35 +197,26 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     title: "Confirmation on Dispatch",
     actionLabel: "Confirm delivery",
     description:
-      "Consignments out of the gate, waiting for the driver to confirm delivery - the customer's signature for a Local dispatch, the LR details for a Transport one.",
-    completedBlurb: "Confirmations you record appear here. This is the last step, so it stays correctable after the order closes.",
+      "Consignments out of the gate, waiting for confirmation that they reached the customer.",
+    completedBlurb:
+      "Confirmations appear here. Once a round is finished, correcting what was delivered is done from the order page.",
+    context: { showLines: true, showInvoice: true, showOutward: true },
     fields: [
-      { key: "dc_actual_date", label: "Actual date", kind: "date", get: (o) => day(o.dcActualDate) },
-      { key: "dc_status", label: "Delivery outcome", kind: "select", required: true, choices: DELIVERY_STATUS_OPTIONS, get: (o) => s(o.dcStatus) },
-      { key: "dc_driver_id", label: "Driver", kind: "select", optionsFrom: "driver", get: (o) => s(o.dcDriverId),
-        hint: "defaults to the driver on the gate-out entry" },
-
-      // --- Local branch ---
-      { key: "dc_receiver_name", label: "Received by", kind: "text", required: true, get: (o) => s(o.dcReceiverName),
-        placeholder: "who signed at the customer's dock", showWhen: isLocal },
-      { key: "dc_received_at", label: "Received at", kind: "datetime", get: (o) => dt(o.dcReceivedAt), showWhen: isLocal },
-
-      // --- Transport branch ---
-      { key: "dc_transporter_id", label: "Transporter", kind: "select", required: true, optionsFrom: "transporter",
-        get: (o) => s(o.dcTransporterId), showWhen: isTransport },
-      { key: "dc_lr_no", label: "LR no.", kind: "text", required: true, get: (o) => s(o.dcLrNo), showWhen: isTransport },
-      { key: "dc_lr_date", label: "LR date", kind: "date", get: (o) => day(o.dcLrDate), showWhen: isTransport },
-      { key: "dc_freight_amount", label: "Freight", kind: "number", get: (o) => n(o.dcFreightAmount), showWhen: isTransport },
-
-      { key: "dc_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.dcRemarks) },
+      {
+        key: "dc_status", label: "Delivery outcome", kind: "select", required: true,
+        choices: DELIVERY_STATUS_OPTIONS, get: (_o, v) => s(v.dcStatus),
+        hint: "Returned puts the whole consignment back into pending — a part return is corrected from the order page afterwards",
+      },
+      { key: "dc_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.dcRemarks) },
     ],
     attachment: {
       label: "Receiver copy / LR", folder: "receiver",
-      pathKey: "dc_attachment_path", nameKey: "dc_attachment_name",
+      pathKey: "dc_attachment_path", nameKey: "dc_attachment_name", required: true,
+      getPath: (v) => v.dcAttachmentPath, getName: (v) => v.dcAttachmentName,
     },
     captured: {
       key: "dcStatus", header: "Outcome",
-      get: (o) => (o.dcStatus ? DELIVERY_STATUS_LABEL[o.dcStatus] : "—"),
+      get: (_o, v) => (v.dcStatus ? DELIVERY_STATUS_LABEL[v.dcStatus] : "—"),
     },
   },
 };
@@ -301,6 +228,13 @@ export const visibleFields = (
   order: DispatchOrder | null,
 ): StepField[] => cfg.fields.filter((f) => !f.showWhen || f.showWhen(values, order));
 
+/** Is this field required right now? Static flag OR the conditional rule. */
+export const isRequiredNow = (
+  f: StepField,
+  values: Record<string, string>,
+  order: DispatchOrder | null,
+): boolean => !!f.required || !!f.requiredWhen?.(values, order);
+
 /** Which required field (if any) is still blank. Courtesy only — the RPC is the gate. */
 export function missingRequired(
   cfg: StepConfig,
@@ -308,20 +242,26 @@ export function missingRequired(
   order: DispatchOrder | null,
 ): string | null {
   for (const f of visibleFields(cfg, values, order)) {
-    if (f.required && !String(values[f.key] ?? "").trim()) return `${f.label} is required.`;
+    if (isRequiredNow(f, values, order) && !String(values[f.key] ?? "").trim()) {
+      return `${f.label} is required.`;
+    }
   }
   return null;
 }
 
-/** Used by the order-detail progress panel for the "Planned/Actual" pair. */
-export const stepActualDate = (step: QueueStep, o: DispatchOrder): string => {
+/** Used by the order register for the "Actual" column of each step. */
+export const stepActualDate = (step: QueueStep, o: DispatchOrder, v: RoundView): string => {
+  if (step === "credit_check") {
+    // cc_actual_date was dropped with the rest of the credit capture; the
+    // completion stamp is a TIMESTAMP, so slice it before it reaches a
+    // date-only formatter — feeding it whole yields "NaN" in the export.
+    return dmy(o.ccAt ? o.ccAt.slice(0, 10) : null);
+  }
   const raw =
-    step === "credit_check" ? o.ccActualDate
-    : step === "material_status" ? o.msActualDate
-    : step === "lot_confirm" ? o.lcActualDate
-    : step === "sales_bill" ? o.sbActualDate
-    : step === "gate_out" ? o.goActualDate
-    : o.dcActualDate;
+    step === "material_status" ? v.msActualDate
+    : step === "sales_bill" ? v.sbActualDate
+    : step === "gate_out" ? v.goActualDate
+    : v.dcActualDate;
   return dmy(raw);
 };
 

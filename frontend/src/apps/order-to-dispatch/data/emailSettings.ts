@@ -6,7 +6,7 @@ import { supabase } from "@/core/platform/supabase";
  * admin-checked set_email_module_enabled RPC. The server-side
  * fms_dispatch_announce enqueue only fires when this is on.
  *
- * NOTE this gates INTERNAL step alerts only. The customer auto-mail has a SECOND
+ * NOTE this gates INTERNAL step alerts only. (The customer auto-mail it used to
  * switch (`fms_dispatch_config.customer_mail`, edited in Setup → Customer Mail),
  * because it sends outside the company and must be arm-able independently.
  */

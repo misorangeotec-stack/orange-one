@@ -12,9 +12,9 @@ const REQUESTABLE = new Set(REQUESTABLE_DISPATCH_MASTER_TYPES.map((m) => m.value
 /**
  * Master Owners (admin).
  *
- * ⭐ ALL EIGHTEEN MASTERS ARE OWNABLE — an owner may CRUD that master and resolve
- *    its new-entry requests. Only THIRTEEN are REQUESTABLE: the five excluded ones
- *    (companies, godowns, gates, invoice series, mail templates) are one-time
+ * ⭐ ALL FIVE MASTERS ARE OWNABLE — an owner may CRUD that master and resolve
+ *    its new-entry requests. Only FOUR are REQUESTABLE: the one excluded
+ *    (companies) are one-time
  *    configuration nobody would raise mid-task, so they never appear in the
  *    "request a new entry" picker.
  *

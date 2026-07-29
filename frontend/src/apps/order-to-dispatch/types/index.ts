@@ -1,10 +1,16 @@
 /**
  * Order to Dispatch FMS domain types — the camelCase shape the store hands out,
  * mapped from the snake_case `fms_dispatch_*` tables in data/dispatchFetch.ts.
+ *
+ * ⚠ THE ONE RULE OF THIS MODULE (see supabase/migrations/20260810120000):
+ *   The order row holds THE ROUND CURRENTLY IN PROGRESS. Every finished round
+ *   lives in `DispatchOrder.rounds`. A closed order therefore has NULL in every
+ *   ms/sb/go/dc field and all of its history in that array — read history from
+ *   `lib/rounds.ts`, never off the order.
  */
 
 /* -------------------------------------------------------------------------- */
-/*  Masters                                                                    */
+/*  Masters — five of them, after the 2026-08 reshape                          */
 /* -------------------------------------------------------------------------- */
 
 /** Every master satisfies MasterCrud's contract: id / name / active. */
@@ -20,35 +26,19 @@ export interface Company extends NamedMaster {
   address: string | null;
 }
 
-export interface Transporter extends NamedMaster {
-  gstin: string | null;
-  contactName: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-}
-
 export interface Customer extends NamedMaster {
+  /**
+   * THE COMPANY↔CUSTOMER MAPPING. Which of our companies bills this customer.
+   * Required, because the sales order no longer asks — `fms_dispatch_submit_order`
+   * reads it and refuses to raise an order without it.
+   */
+  companyId: string | null;
   code: string | null;
   gstin: string | null;
   contactName: string | null;
   phone: string | null;
-  /** Where the material-status auto-mail goes. Blank ⇒ the mail is skipped. */
+  /** Contact detail only — this module sends no mail to customers. */
   email: string | null;
-  billingAddress: string | null;
-  creditLimit: number | null;
-  creditDays: number | null;
-  defaultType: DispatchType | null;
-  defaultTransporterId: string | null;
-}
-
-export interface ShipTo extends NamedMaster {
-  customerId: string;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  contactName: string | null;
-  phone: string | null;
 }
 
 export interface Item extends NamedMaster {
@@ -58,102 +48,45 @@ export interface Item extends NamedMaster {
   hsnCode: string | null;
 }
 
-/** `name` IS the lot number. */
-export interface Lot extends NamedMaster {
-  itemId: string | null;
-  mfgDate: string | null;
-  expiryDate: string | null;
-  availableQty: number | null;
-  unitId: string | null;
-}
-
-export interface PaymentTerm extends NamedMaster {
-  days: number | null;
-  description: string | null;
-}
-
-export interface MailTemplate extends NamedMaster {
-  code: string;
-  subject: string;
-  body: string;
-}
-
-export interface Driver extends NamedMaster {
-  phone: string | null;
-  licenceNo: string | null;
-  /** Set ⇒ this driver can confirm their own delivery from their queue. */
-  userId: string | null;
-}
-
-/** `name` IS the vehicle number. */
-export interface Vehicle extends NamedMaster {
-  vehicleType: string | null;
-  /** Null ⇒ own vehicle. */
-  transporterId: string | null;
-  capacity: string | null;
-}
-
-/** Godowns, gates and invoice series are all "a name under a company". */
-export interface CompanyScopedMaster extends NamedMaster {
-  companyId: string | null;
-  location?: string | null;
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Master governance                                                          */
 /* -------------------------------------------------------------------------- */
 
-export type DispatchMasterType =
-  | "company" | "transporter" | "unit" | "category" | "order_source" | "payment_term"
-  | "shortfall_reason" | "packing_type" | "mail_template" | "driver" | "customer"
-  | "ship_to" | "item" | "lot" | "godown" | "gate" | "invoice_series" | "vehicle";
+export type DispatchMasterType = "company" | "customer" | "item" | "unit" | "category";
 
 export interface MasterTypeDef {
   value: DispatchMasterType;
   label: string;
   plural: string;
-  /** Which Masters tab group it belongs to. */
-  group: "sales" | "stores" | "logistics" | "accounts";
 }
 
 /**
- * Every master type, in Masters-tab order. All 18 are OWNABLE (they take an owner
- * list and are editable on the Masters page).
+ * Every master type, in Masters-tab order. All five are OWNABLE (they take an
+ * owner list and are editable on the Masters page).
+ *
+ * The reshape cut this from eighteen: delivery address, order source, payment
+ * term, godown, gate, invoice series, vehicle, driver, transporter, shortfall
+ * reason, packing type, LOT and mail template each fed exactly one field that no
+ * longer exists. Their tables are dropped — do not re-add a type here without
+ * the matching table and an arm in `fms_dispatch_resolve_master_request`.
  */
 export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
-  { value: "customer",         label: "Customer",          plural: "Customers",           group: "sales" },
-  { value: "ship_to",          label: "Delivery address",  plural: "Delivery addresses",  group: "sales" },
-  { value: "item",             label: "Item",              plural: "Items",               group: "sales" },
-  { value: "category",         label: "Item category",     plural: "Item categories",     group: "sales" },
-  { value: "unit",             label: "Unit",              plural: "Units",               group: "sales" },
-  { value: "order_source",     label: "Order source",      plural: "Order sources",       group: "sales" },
-  { value: "lot",              label: "LOT",               plural: "LOTs",                group: "stores" },
-  { value: "godown",           label: "Godown",            plural: "Godowns",             group: "stores" },
-  { value: "packing_type",     label: "Packing type",      plural: "Packing types",       group: "stores" },
-  { value: "shortfall_reason", label: "Shortfall reason",  plural: "Shortfall reasons",   group: "stores" },
-  { value: "gate",             label: "Gate",              plural: "Gates",               group: "logistics" },
-  { value: "vehicle",          label: "Vehicle",           plural: "Vehicles",            group: "logistics" },
-  { value: "driver",           label: "Driver",            plural: "Drivers",             group: "logistics" },
-  { value: "transporter",      label: "Transporter",       plural: "Transporters",        group: "logistics" },
-  { value: "company",          label: "Company",           plural: "Companies",           group: "accounts" },
-  { value: "invoice_series",   label: "Invoice series",    plural: "Invoice series",      group: "accounts" },
-  { value: "payment_term",     label: "Payment term",      plural: "Payment terms",       group: "accounts" },
-  { value: "mail_template",    label: "Customer mail template", plural: "Customer mail templates", group: "accounts" },
+  { value: "customer", label: "Customer",      plural: "Customers" },
+  { value: "item",     label: "Item",          plural: "Items" },
+  { value: "category", label: "Item category", plural: "Item categories" },
+  { value: "unit",     label: "Unit",          plural: "Units" },
+  { value: "company",  label: "Company",       plural: "Companies" },
 ];
 
 /**
  * The subset offered in the "Request a new entry" picker.
  *
  * A master is REQUESTABLE when it feeds a dropdown a non-owner has to pick from
- * and could plausibly find missing mid-task — the store keeper who finds an
- * unlisted LOT is the motivating case. The excluded five are one-time
- * configuration a coordinator sets up (companies, godowns, gates, invoice series)
- * or, in the mail template's case, something nobody would ever "request".
- * Mirrors HR Exit's REQUESTABLE_EXIT_MASTER_TYPES split.
+ * and could plausibly find missing mid-task. Company is excluded: it is one-time
+ * configuration a coordinator sets up, and it is now the customer↔company
+ * mapping, so inventing one mid-order is exactly what should not happen.
  */
-const NOT_REQUESTABLE: DispatchMasterType[] = [
-  "company", "godown", "gate", "invoice_series", "mail_template",
-];
+const NOT_REQUESTABLE: DispatchMasterType[] = ["company"];
 export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] =
   DISPATCH_MASTER_TYPES.filter((m) => !NOT_REQUESTABLE.includes(m.value));
 
@@ -225,23 +158,19 @@ export interface DispatchNotification {
 /* -------------------------------------------------------------------------- */
 
 /**
- * How the consignment travels. A CODE ENUM, never a master: it is the branch
- * condition for the dispatch-confirmation step, so a third value would produce
- * orders whose final step has no validation rule and no RPC branch.
+ * How the consignment travels. A CODE ENUM, never a master.
+ *
+ * Since the reshape this is a LABEL: the delivery-confirmation step no longer
+ * branches on it (it collects one outcome and a receiver copy either way). It is
+ * kept because it is how the sales team describes the order, and it is still
+ * NOT NULL on the table.
  */
 export type DispatchType = "local" | "transport";
 
-/**
- * STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled live only here.
- *
- * Note what is absent: there is no `awaiting_production`. When stock is short the
- * agreed behaviour is record-and-continue, so "Production required" is an
- * `msStatus` VALUE on a completed step, not a state. Do not add one later.
- */
+/** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled live only here. */
 export type DispatchStatus =
   | "awaiting_credit_check"
   | "awaiting_material_status"
-  | "awaiting_lot_confirm"
   | "awaiting_sales_bill"
   | "awaiting_gate_out"
   | "awaiting_dispatch_confirm"
@@ -249,33 +178,110 @@ export type DispatchStatus =
   | "on_hold"
   | "cancelled";
 
-export type CreditStatus = "credit_available" | "payment_required";
-export type MaterialStatus = "available_for_dispatch" | "production_required";
-export type DeliveryStatus = "delivered" | "partially_delivered" | "returned";
+/**
+ * `credit_hold`, not `on_hold`: the ORDER-level status already owns that word,
+ * and a credit hold is a different thing — the order stays in the credit queue
+ * and its own owner releases it. Two holds sharing one token is how the wrong
+ * one gets read.
+ */
+export type CreditStatus = "approved" | "credit_hold";
+
+export type DeliveryStatus = "delivered" | "returned";
 
 export interface OrderLine {
   id: string;
   orderId: string;
   lineNo: number;
   itemId: string;
+  /** Ordered. Intake only — never changes once a dispatch has gone out. */
   quantity: number;
   unitId: string | null;
   lineRemark: string | null;
 
-  // step 3, per line
-  msLineStatus: MaterialStatus | null;
-  msAvailableQty: number | null;
-  msShortfallReasonId: string | null;
+  /**
+   * Delivered so far, across every round. RECALCULATED server-side from the
+   * round archive — never incremented — so it cannot drift from the history it
+   * summarises.
+   */
+  dispatchedQty: number;
+  /** This round's selection. Null ⇒ this line is not going out this time. */
+  shipQty: number | null;
+  /** Typed by the store keeper. Free text — there is no LOT master. */
+  lotNo: string | null;
+}
 
-  // step 4, per line
-  lotId: string | null;
-  /** The lot label at confirmation time — survives a later master rename. */
-  lotNoSnapshot: string | null;
-  finalQty: number | null;
-  finalUnitId: string | null;
-  packingTypeId: string | null;
-  packs: number | null;
-  lcShortfallReasonId: string | null;
+/* -------------------------------------------------------------------------- */
+/*  Rounds                                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type RoundArchivedReason = "looped" | "closed" | "cancelled";
+
+/** One line of one round's consignment, with the master labels frozen in. */
+export interface RoundItem {
+  id: string;
+  roundId: string;
+  orderItemId: string | null;
+  lineNo: number;
+  itemId: string | null;
+  itemName: string;
+  unitId: string | null;
+  unitName: string | null;
+  orderedQty: number;
+  shipQty: number;
+  lotNo: string | null;
+}
+
+/**
+ * A completed round, straight off `fms_dispatch_rounds`.
+ *
+ * `lib/rounds.ts` projects BOTH this and the live order header into one
+ * `RoundView`, so every screen reads one shape and never has to know which of
+ * the two it is looking at.
+ */
+export interface DispatchRound {
+  id: string;
+  orderId: string;
+  roundNo: number;
+  roundStartedAt: string | null;
+  companyId: string | null;
+
+  msActualDate: string | null;
+  msRemarks: string | null;
+  msAt: string | null;
+  msBy: string | null;
+
+  sbActualDate: string | null;
+  sbInvoiceNo: string | null;
+  sbAttachmentPath: string | null;
+  sbAttachmentName: string | null;
+  sbRemarks: string | null;
+  sbAt: string | null;
+  sbBy: string | null;
+
+  goActualDate: string | null;
+  goOutwardNo: string | null;
+  goRemarks: string | null;
+  goAt: string | null;
+  goBy: string | null;
+
+  dcActualDate: string | null;
+  dcStatus: DeliveryStatus | null;
+  dcAttachmentPath: string | null;
+  dcAttachmentName: string | null;
+  dcRemarks: string | null;
+  dcAt: string | null;
+  dcBy: string | null;
+
+  editedAt: string | null;
+  editedBy: string | null;
+  amendedAt: string | null;
+  amendedBy: string | null;
+  amendReason: string | null;
+  archivedReason: RoundArchivedReason;
+  archivedAt: string;
+
+  /** Attached by the fetch layer — only the lines that actually went out. */
+  items: RoundItem[];
 }
 
 export interface DispatchOrder {
@@ -284,16 +290,11 @@ export interface DispatchOrder {
 
   // ---- intake ----
   dispatchType: DispatchType;
+  /** Resolved server-side from the customer's master mapping. Never asked for. */
   companyId: string | null;
   customerId: string;
-  shipToId: string | null;
-  orderSourceId: string | null;
-  /** When the customer's order arrived — the anchor for steps 2 and 3. */
+  /** When the customer's order arrived. */
   orderDate: string;
-  /** The dispatch date promised to the CUSTOMER. Not an internal SLA. */
-  promisedDate: string | null;
-  tatDays: number | null;
-  customerRef: string | null;
   orderRemarks: string | null;
 
   raisedBy: string | null;
@@ -302,83 +303,60 @@ export interface DispatchOrder {
   currentStep: string;
   submittedAt: string;
 
-  // ---- step 2: credit_check ----
-  ccActualDate: string | null;
+  /** Which round is in progress. 1 for an ordinary single-consignment order. */
+  roundNo: number;
+  /**
+   * When THIS round's clock started. The SLA anchor for the material check —
+   * anchoring on `submittedAt` instead would make every looped order
+   * permanently overdue from the moment it loops.
+   */
+  roundStartedAt: string;
+
+  // ---- step 2: credit_check (decided ONCE PER ORDER, survives every round) ----
   ccStatus: CreditStatus | null;
-  ccPaymentTermId: string | null;
-  ccCreditLimit: number | null;
-  ccOutstandingAmount: number | null;
-  ccPaymentRef: string | null;
-  ccPaymentAmount: number | null;
   ccRemarks: string | null;
+  /** When the outcome was last set — Approve OR On hold. The credit SLA anchor. */
+  ccDecidedAt: string | null;
+  ccDecidedBy: string | null;
+  /** STEP COMPLETION. Stamped on Approve only; null while the order is held. */
   ccAt: string | null;
   ccBy: string | null;
+  ccEditedAt: string | null;
+  ccEditedBy: string | null;
 
-  // ---- step 3: material_status ----
+  // ---- the round in progress ----
   msActualDate: string | null;
-  msStatus: MaterialStatus | null;
-  msGodownId: string | null;
-  msPlannedDispatchDate: string | null;
   msRemarks: string | null;
-  msMailTemplateId: string | null;
-  msMailTo: string | null;
-  msMailSubject: string | null;
-  msMailQueuedAt: string | null;
-  msMailOutboxId: string | null;
-  msMailSkippedReason: string | null;
   msAt: string | null;
   msBy: string | null;
 
-  // ---- step 4: lot_confirm ----
-  lcActualDate: string | null;
-  lcStatus: string | null;
-  lcRemarks: string | null;
-  lcAt: string | null;
-  lcBy: string | null;
-
-  // ---- step 5: sales_bill ----
   sbActualDate: string | null;
-  sbStatus: string | null;
-  sbCompanyId: string | null;
-  sbInvoiceSeriesId: string | null;
   sbInvoiceNo: string | null;
-  sbInvoiceDate: string | null;
-  sbInvoiceValue: number | null;
   sbAttachmentPath: string | null;
   sbAttachmentName: string | null;
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
 
-  // ---- step 6: gate_out ----
   goActualDate: string | null;
-  goStatus: string | null;
-  goGatePassNo: string | null;
-  goGateId: string | null;
-  goGodownId: string | null;
-  goVehicleId: string | null;
-  goDriverId: string | null;
-  goOutAt: string | null;
+  /** Typed from the plant's paper register. Not generated, not unique. */
+  goOutwardNo: string | null;
   goRemarks: string | null;
   goAt: string | null;
   goBy: string | null;
 
-  // ---- step 7: dispatch_confirm ----
   dcActualDate: string | null;
   dcStatus: DeliveryStatus | null;
-  dcReceiverName: string | null;
-  dcReceivedAt: string | null;
-  dcDriverId: string | null;
-  dcTransporterId: string | null;
-  dcLrNo: string | null;
-  dcLrDate: string | null;
-  dcFreightAmount: number | null;
   dcAttachmentPath: string | null;
   dcAttachmentName: string | null;
   dcRemarks: string | null;
   dcAt: string | null;
   dcBy: string | null;
+
   closedAt: string | null;
+  /** Set ⇒ a coordinator closed this order with a balance still outstanding. */
+  closedReason: string | null;
+  closedBy: string | null;
 
   editedAt: string | null;
   editedBy: string | null;
@@ -391,4 +369,6 @@ export interface DispatchOrder {
 
   /** Attached by the fetch layer — the order's lines, in line_no order. */
   lines: OrderLine[];
+  /** Attached by the fetch layer — every FINISHED round, in round order. */
+  rounds: DispatchRound[];
 }

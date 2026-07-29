@@ -6,9 +6,9 @@ const db = supabase as any;
 
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
-  Company, CompanyScopedMaster, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  DispatchMasterType, DispatchNotification, DispatchOrder, Driver, Item, Lot, MailTemplate,
-  MasterManager, NamedMaster, OrderLine, PaymentTerm, ShipTo, StepOwner, Transporter, Vehicle,
+  Company, Customer, Designation, DispatchActivity, DispatchMasterRequest,
+  DispatchMasterType, DispatchNotification, DispatchOrder, DispatchRound, Item,
+  MasterManager, NamedMaster, OrderLine, RoundItem, StepOwner,
 } from "../types";
 
 /**
@@ -17,9 +17,14 @@ import type {
  * pure queue rules (lib/queues.ts) get plain data, and the Control Center adapter
  * + My Work provider can reuse this exact react-query cache entry.
  *
- * ⚠ Order lines are fetched as their OWN paginated pass and grouped in memory, not
- *   as a nested PostgREST select (`orders(*, items(*))`) — a nested select silently
- *   truncates at the API row limit once the order count grows.
+ * ⚠ Order lines and ROUNDS are fetched as their OWN paginated passes and grouped
+ *   in memory, not as nested PostgREST selects (`orders(*, items(*))`) — a nested
+ *   select silently truncates at the API row limit once the order count grows.
+ *
+ * ⚠ The Promise.all below destructures BY POSITION. Adding or removing a call
+ *   without moving its name shifts every binding after it, and because every row
+ *   is `any` the compiler cannot see it — you get silently wrong data everywhere.
+ *   Change one line at a time and re-count both lists.
  */
 
 const PAGE = 1000;
@@ -28,27 +33,16 @@ type Tbl =
   | "fms_dispatch_step_owners"
   | "fms_dispatch_config"
   | "fms_dispatch_companies"
-  | "fms_dispatch_transporters"
   | "fms_dispatch_units"
   | "fms_dispatch_categories"
-  | "fms_dispatch_order_sources"
-  | "fms_dispatch_payment_terms"
-  | "fms_dispatch_shortfall_reasons"
-  | "fms_dispatch_packing_types"
-  | "fms_dispatch_mail_templates"
-  | "fms_dispatch_drivers"
   | "fms_dispatch_customers"
-  | "fms_dispatch_ship_to"
   | "fms_dispatch_items"
-  | "fms_dispatch_lots"
-  | "fms_dispatch_godowns"
-  | "fms_dispatch_gates"
-  | "fms_dispatch_invoice_series"
-  | "fms_dispatch_vehicles"
   | "fms_dispatch_master_managers"
   | "fms_dispatch_master_requests"
   | "fms_dispatch_orders"
   | "fms_dispatch_order_items"
+  | "fms_dispatch_rounds"
+  | "fms_dispatch_round_items"
   | "fms_dispatch_activity"
   | "fms_dispatch_notifications"
   | "designations";
@@ -69,11 +63,37 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
   return out;
 }
 
+/**
+ * The activity trail, capped to a recent window.
+ *
+ * It used to be an unbounded pass over the whole table on every page load, and
+ * rounds multiply it — each loop writes another set of step entries against the
+ * same order. Only the order detail page reads it, and only ever shows the tail,
+ * so a window is both cheaper and no less useful.
+ */
+const ACTIVITY_DAYS = 120;
+
+async function fetchRecentActivity(): Promise<any[]> {
+  const since = new Date(Date.now() - ACTIVITY_DAYS * 86_400_000).toISOString();
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await db
+      .from("fms_dispatch_activity")
+      .select("*")
+      .gte("created_at", since)
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
 export interface DispatchConfig {
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
-  /** The customer auto-mail switch, on top of the per-module email gate. */
-  customerMail: { enabled: boolean; templateCode: string };
 }
 
 /** The react-query key. Keyed on the REAL session user id, shared with the adapter. */
@@ -86,23 +106,10 @@ export interface DispatchData {
   config: DispatchConfig;
 
   companies: Company[];
-  transporters: Transporter[];
   units: NamedMaster[];
   categories: NamedMaster[];
-  orderSources: NamedMaster[];
-  paymentTerms: PaymentTerm[];
-  shortfallReasons: NamedMaster[];
-  packingTypes: NamedMaster[];
-  mailTemplates: MailTemplate[];
-  drivers: Driver[];
   customers: Customer[];
-  shipTos: ShipTo[];
   items: Item[];
-  lots: Lot[];
-  godowns: CompanyScopedMaster[];
-  gates: CompanyScopedMaster[];
-  invoiceSeries: CompanyScopedMaster[];
-  vehicles: Vehicle[];
 
   masterManagers: MasterManager[];
   masterRequests: DispatchMasterRequest[];
@@ -120,16 +127,11 @@ const mapMaster = (r: any): NamedMaster => ({
   id: r.id, name: r.name, active: r.active, sortOrder: r.sort_order ?? 0,
 });
 
-const mapCompanyScoped = (r: any): CompanyScopedMaster => ({
-  ...mapMaster(r), companyId: r.company_id ?? null, location: r.location ?? null,
-});
-
 const mapCustomer = (r: any): Customer => ({
   ...mapMaster(r),
-  code: str(r.code), gstin: str(r.gstin), contactName: str(r.contact_name), phone: str(r.phone),
-  email: str(r.email), billingAddress: str(r.billing_address),
-  creditLimit: num(r.credit_limit), creditDays: num(r.credit_days),
-  defaultType: r.default_type ?? null, defaultTransporterId: r.default_transporter_id ?? null,
+  companyId: r.company_id ?? null,
+  code: str(r.code), gstin: str(r.gstin), contactName: str(r.contact_name),
+  phone: str(r.phone), email: str(r.email),
 });
 
 const mapMasterManager = (r: any): MasterManager => ({
@@ -156,16 +158,68 @@ const mapLine = (r: any): OrderLine => ({
   quantity: Number(r.quantity ?? 0),
   unitId: r.unit_id ?? null,
   lineRemark: str(r.line_remark),
-  msLineStatus: r.ms_line_status ?? null,
-  msAvailableQty: num(r.ms_available_qty),
-  msShortfallReasonId: r.ms_shortfall_reason_id ?? null,
-  lotId: r.lot_id ?? null,
-  lotNoSnapshot: str(r.lot_no_snapshot),
-  finalQty: num(r.final_qty),
-  finalUnitId: r.final_unit_id ?? null,
-  packingTypeId: r.packing_type_id ?? null,
-  packs: num(r.packs),
-  lcShortfallReasonId: r.lc_shortfall_reason_id ?? null,
+  dispatchedQty: Number(r.dispatched_qty ?? 0),
+  shipQty: num(r.ship_qty),
+  lotNo: str(r.lot_no),
+});
+
+const mapRoundItem = (r: any): RoundItem => ({
+  id: r.id,
+  roundId: r.round_id,
+  orderItemId: r.order_item_id ?? null,
+  lineNo: r.line_no,
+  itemId: r.item_id ?? null,
+  itemName: r.item_name ?? "Item",
+  unitId: r.unit_id ?? null,
+  unitName: str(r.unit_name),
+  orderedQty: Number(r.ordered_qty ?? 0),
+  shipQty: Number(r.ship_qty ?? 0),
+  lotNo: str(r.lot_no),
+});
+
+const mapRound = (r: any): DispatchRound => ({
+  id: r.id,
+  orderId: r.order_id,
+  roundNo: r.round_no,
+  roundStartedAt: r.round_started_at ?? null,
+  companyId: r.company_id ?? null,
+
+  msActualDate: r.ms_actual_date ?? null,
+  msRemarks: str(r.ms_remarks),
+  msAt: r.ms_at ?? null,
+  msBy: r.ms_by ?? null,
+
+  sbActualDate: r.sb_actual_date ?? null,
+  sbInvoiceNo: str(r.sb_invoice_no),
+  sbAttachmentPath: str(r.sb_attachment_path),
+  sbAttachmentName: str(r.sb_attachment_name),
+  sbRemarks: str(r.sb_remarks),
+  sbAt: r.sb_at ?? null,
+  sbBy: r.sb_by ?? null,
+
+  goActualDate: r.go_actual_date ?? null,
+  goOutwardNo: str(r.go_outward_no),
+  goRemarks: str(r.go_remarks),
+  goAt: r.go_at ?? null,
+  goBy: r.go_by ?? null,
+
+  dcActualDate: r.dc_actual_date ?? null,
+  dcStatus: r.dc_status ?? null,
+  dcAttachmentPath: str(r.dc_attachment_path),
+  dcAttachmentName: str(r.dc_attachment_name),
+  dcRemarks: str(r.dc_remarks),
+  dcAt: r.dc_at ?? null,
+  dcBy: r.dc_by ?? null,
+
+  editedAt: r.edited_at ?? null,
+  editedBy: r.edited_by ?? null,
+  amendedAt: r.amended_at ?? null,
+  amendedBy: r.amended_by ?? null,
+  amendReason: str(r.amend_reason),
+  archivedReason: r.archived_reason ?? "looped",
+  archivedAt: r.archived_at,
+
+  items: [],
 });
 
 const mapOrder = (r: any): DispatchOrder => ({
@@ -175,12 +229,7 @@ const mapOrder = (r: any): DispatchOrder => ({
   dispatchType: r.dispatch_type,
   companyId: r.company_id ?? null,
   customerId: r.customer_id,
-  shipToId: r.ship_to_id ?? null,
-  orderSourceId: r.order_source_id ?? null,
   orderDate: r.order_date,
-  promisedDate: r.promised_date ?? null,
-  tatDays: num(r.tat_days),
-  customerRef: str(r.customer_ref),
   orderRemarks: str(r.order_remarks),
 
   raisedBy: r.raised_by ?? null,
@@ -189,44 +238,25 @@ const mapOrder = (r: any): DispatchOrder => ({
   currentStep: r.current_step,
   submittedAt: r.submitted_at,
 
-  ccActualDate: r.cc_actual_date ?? null,
+  roundNo: Number(r.round_no ?? 1),
+  roundStartedAt: r.round_started_at ?? r.submitted_at,
+
   ccStatus: r.cc_status ?? null,
-  ccPaymentTermId: r.cc_payment_term_id ?? null,
-  ccCreditLimit: num(r.cc_credit_limit),
-  ccOutstandingAmount: num(r.cc_outstanding_amount),
-  ccPaymentRef: str(r.cc_payment_ref),
-  ccPaymentAmount: num(r.cc_payment_amount),
   ccRemarks: str(r.cc_remarks),
+  ccDecidedAt: r.cc_decided_at ?? null,
+  ccDecidedBy: r.cc_decided_by ?? null,
   ccAt: r.cc_at ?? null,
   ccBy: r.cc_by ?? null,
+  ccEditedAt: r.cc_edited_at ?? null,
+  ccEditedBy: r.cc_edited_by ?? null,
 
   msActualDate: r.ms_actual_date ?? null,
-  msStatus: r.ms_status ?? null,
-  msGodownId: r.ms_godown_id ?? null,
-  msPlannedDispatchDate: r.ms_planned_dispatch_date ?? null,
   msRemarks: str(r.ms_remarks),
-  msMailTemplateId: r.ms_mail_template_id ?? null,
-  msMailTo: str(r.ms_mail_to),
-  msMailSubject: str(r.ms_mail_subject),
-  msMailQueuedAt: r.ms_mail_queued_at ?? null,
-  msMailOutboxId: r.ms_mail_outbox_id ?? null,
-  msMailSkippedReason: str(r.ms_mail_skipped_reason),
   msAt: r.ms_at ?? null,
   msBy: r.ms_by ?? null,
 
-  lcActualDate: r.lc_actual_date ?? null,
-  lcStatus: str(r.lc_status),
-  lcRemarks: str(r.lc_remarks),
-  lcAt: r.lc_at ?? null,
-  lcBy: r.lc_by ?? null,
-
   sbActualDate: r.sb_actual_date ?? null,
-  sbStatus: str(r.sb_status),
-  sbCompanyId: r.sb_company_id ?? null,
-  sbInvoiceSeriesId: r.sb_invoice_series_id ?? null,
   sbInvoiceNo: str(r.sb_invoice_no),
-  sbInvoiceDate: r.sb_invoice_date ?? null,
-  sbInvoiceValue: num(r.sb_invoice_value),
   sbAttachmentPath: str(r.sb_attachment_path),
   sbAttachmentName: str(r.sb_attachment_name),
   sbRemarks: str(r.sb_remarks),
@@ -234,32 +264,22 @@ const mapOrder = (r: any): DispatchOrder => ({
   sbBy: r.sb_by ?? null,
 
   goActualDate: r.go_actual_date ?? null,
-  goStatus: str(r.go_status),
-  goGatePassNo: str(r.go_gate_pass_no),
-  goGateId: r.go_gate_id ?? null,
-  goGodownId: r.go_godown_id ?? null,
-  goVehicleId: r.go_vehicle_id ?? null,
-  goDriverId: r.go_driver_id ?? null,
-  goOutAt: r.go_out_at ?? null,
+  goOutwardNo: str(r.go_outward_no),
   goRemarks: str(r.go_remarks),
   goAt: r.go_at ?? null,
   goBy: r.go_by ?? null,
 
   dcActualDate: r.dc_actual_date ?? null,
   dcStatus: r.dc_status ?? null,
-  dcReceiverName: str(r.dc_receiver_name),
-  dcReceivedAt: r.dc_received_at ?? null,
-  dcDriverId: r.dc_driver_id ?? null,
-  dcTransporterId: r.dc_transporter_id ?? null,
-  dcLrNo: str(r.dc_lr_no),
-  dcLrDate: r.dc_lr_date ?? null,
-  dcFreightAmount: num(r.dc_freight_amount),
   dcAttachmentPath: str(r.dc_attachment_path),
   dcAttachmentName: str(r.dc_attachment_name),
   dcRemarks: str(r.dc_remarks),
   dcAt: r.dc_at ?? null,
   dcBy: r.dc_by ?? null,
+
   closedAt: r.closed_at ?? null,
+  closedReason: str(r.closed_reason),
+  closedBy: r.closed_by ?? null,
 
   editedAt: r.edited_at ?? null,
   editedBy: r.edited_by ?? null,
@@ -267,9 +287,10 @@ const mapOrder = (r: any): DispatchOrder => ({
   holdReason: str(r.hold_reason),
   cancelledAt: r.cancelled_at ?? null,
   cancelReason: str(r.cancel_reason),
-  createdAt: r.created_at,
 
+  createdAt: r.created_at,
   lines: [],
+  rounds: [],
 });
 
 const mapStepOwner = (r: any): StepOwner => ({
@@ -306,39 +327,29 @@ const mapNotification = (r: any): DispatchNotification => ({
 });
 
 export async function fetchDispatchData(): Promise<DispatchData> {
+  // 16 names, 16 calls. Keep them in step.
   const [
     stepOwners, configRows, designations,
-    companies, transporters, units, categories, orderSources, paymentTerms,
-    shortfallReasons, packingTypes, mailTemplates, drivers, customers, shipTos,
-    items, lots, godowns, gates, invoiceSeries, vehicles,
-    masterManagers, masterRequests, orders, orderItems, activity, notifications,
+    companies, units, categories, customers, items,
+    masterManagers, masterRequests,
+    orders, orderItems, rounds, roundItems,
+    activity, notifications,
   ] = await Promise.all([
     fetchAll("fms_dispatch_step_owners"),
     fetchAll("fms_dispatch_config", "key"),
     fetchAll("designations"),
     fetchAll("fms_dispatch_companies"),
-    fetchAll("fms_dispatch_transporters"),
     fetchAll("fms_dispatch_units"),
     fetchAll("fms_dispatch_categories"),
-    fetchAll("fms_dispatch_order_sources"),
-    fetchAll("fms_dispatch_payment_terms"),
-    fetchAll("fms_dispatch_shortfall_reasons"),
-    fetchAll("fms_dispatch_packing_types"),
-    fetchAll("fms_dispatch_mail_templates"),
-    fetchAll("fms_dispatch_drivers"),
     fetchAll("fms_dispatch_customers"),
-    fetchAll("fms_dispatch_ship_to"),
     fetchAll("fms_dispatch_items"),
-    fetchAll("fms_dispatch_lots"),
-    fetchAll("fms_dispatch_godowns"),
-    fetchAll("fms_dispatch_gates"),
-    fetchAll("fms_dispatch_invoice_series"),
-    fetchAll("fms_dispatch_vehicles"),
     fetchAll("fms_dispatch_master_managers"),
     fetchAll("fms_dispatch_master_requests"),
     fetchAll("fms_dispatch_orders", "submitted_at"),
     fetchAll("fms_dispatch_order_items"),
-    fetchAll("fms_dispatch_activity"),
+    fetchAll("fms_dispatch_rounds", "archived_at"),
+    fetchAll("fms_dispatch_round_items"),
+    fetchRecentActivity(),
     fetchAll("fms_dispatch_notifications"),
   ]);
 
@@ -346,10 +357,6 @@ export async function fetchDispatchData(): Promise<DispatchData> {
   const config: DispatchConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
-    customerMail: {
-      enabled: Boolean(byKey.get("customer_mail")?.enabled),
-      templateCode: String(byKey.get("customer_mail")?.template_code ?? "dispatch_plan"),
-    },
   };
 
   // Group the lines onto their orders in memory (see the header note).
@@ -362,9 +369,30 @@ export async function fetchDispatchData(): Promise<DispatchData> {
   }
   for (const arr of linesByOrder.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
 
+  // Same for the round archive: round items onto rounds, rounds onto orders.
+  const itemsByRound = new Map<string, RoundItem[]>();
+  for (const raw of roundItems) {
+    const ri = mapRoundItem(raw);
+    const arr = itemsByRound.get(ri.roundId);
+    if (arr) arr.push(ri);
+    else itemsByRound.set(ri.roundId, [ri]);
+  }
+  for (const arr of itemsByRound.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  const roundsByOrder = new Map<string, DispatchRound[]>();
+  for (const raw of rounds) {
+    const r = mapRound(raw);
+    r.items = itemsByRound.get(r.id) ?? [];
+    const arr = roundsByOrder.get(r.orderId);
+    if (arr) arr.push(r);
+    else roundsByOrder.set(r.orderId, [r]);
+  }
+  for (const arr of roundsByOrder.values()) arr.sort((a, b) => a.roundNo - b.roundNo);
+
   const mappedOrders = orders.map((r) => {
     const o = mapOrder(r);
     o.lines = linesByOrder.get(o.id) ?? [];
+    o.rounds = roundsByOrder.get(o.id) ?? [];
     return o;
   });
 
@@ -376,44 +404,13 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     designations: designations.map(mapDesignation),
     config,
 
-    companies: companies.map((r) => ({ ...mapMaster(r), gstin: str(r.gstin), address: str(r.address) })),
-    transporters: transporters.map((r): Transporter => ({
-      ...mapMaster(r), gstin: str(r.gstin), contactName: str(r.contact_name),
-      phone: str(r.phone), email: str(r.email), address: str(r.address),
-    })),
+    companies: companies.map((r): Company => ({ ...mapMaster(r), gstin: str(r.gstin), address: str(r.address) })),
     units: units.map(mapMaster),
     categories: categories.map(mapMaster),
-    orderSources: orderSources.map(mapMaster),
-    paymentTerms: paymentTerms.map((r): PaymentTerm => ({
-      ...mapMaster(r), days: num(r.days), description: str(r.description),
-    })),
-    shortfallReasons: shortfallReasons.map(mapMaster),
-    packingTypes: packingTypes.map(mapMaster),
-    mailTemplates: mailTemplates.map((r): MailTemplate => ({
-      ...mapMaster(r), code: r.code, subject: r.subject ?? "", body: r.body ?? "",
-    })),
-    drivers: drivers.map((r): Driver => ({
-      ...mapMaster(r), phone: str(r.phone), licenceNo: str(r.licence_no), userId: r.user_id ?? null,
-    })),
     customers: customers.map(mapCustomer),
-    shipTos: shipTos.map((r): ShipTo => ({
-      ...mapMaster(r), customerId: r.customer_id, address: str(r.address), city: str(r.city),
-      state: str(r.state), contactName: str(r.contact_name), phone: str(r.phone),
-    })),
     items: items.map((r): Item => ({
       ...mapMaster(r), code: str(r.code), categoryId: r.category_id ?? null,
       unitId: r.unit_id ?? null, hsnCode: str(r.hsn_code),
-    })),
-    lots: lots.map((r): Lot => ({
-      ...mapMaster(r), itemId: r.item_id ?? null, mfgDate: r.mfg_date ?? null,
-      expiryDate: r.expiry_date ?? null, availableQty: num(r.available_qty), unitId: r.unit_id ?? null,
-    })),
-    godowns: godowns.map(mapCompanyScoped),
-    gates: gates.map(mapCompanyScoped),
-    invoiceSeries: invoiceSeries.map(mapCompanyScoped),
-    vehicles: vehicles.map((r): Vehicle => ({
-      ...mapMaster(r), vehicleType: str(r.vehicle_type),
-      transporterId: r.transporter_id ?? null, capacity: str(r.capacity),
     })),
 
     masterManagers: masterManagers.map(mapMasterManager),

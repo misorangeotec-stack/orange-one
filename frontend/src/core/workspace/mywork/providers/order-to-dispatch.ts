@@ -36,18 +36,14 @@ function useDispatchWork(active: boolean): MyWorkResult {
     if (!data || !uid) return [];
     const owners = data.stepOwners;
     const orderById = new Map(data.orders.map((o) => [o.id, o]));
-    const driverUserIds = new Map(data.drivers.map((d) => [d.id, d.userId]));
-
-    /** The delivery step's extra arm: the driver named on the order. */
-    const isMyDelivery = (stepKey: string, orderId: string): boolean => {
-      if (stepKey !== "dispatch_confirm") return false;
-      const o = orderById.get(orderId);
-      const driverId = o?.dcDriverId ?? o?.goDriverId ?? null;
-      return !!driverId && driverUserIds.get(driverId) === uid;
-    };
+    /*
+     * The delivery step used to have an extra arm for the driver named on the
+     * order. It is gone with the Drivers master — delivery confirmation now
+     * needs a configured step owner like every other step.
+     */
 
     return buildQueueEntries(dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla }))
-      .filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners) || isMyDelivery(e.stepKey, e.orderId))
+      .filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners))
       .map((e) => {
         const o = orderById.get(e.orderId);
         return {
@@ -55,14 +51,13 @@ function useDispatchWork(active: boolean): MyWorkResult {
           source: "order-to-dispatch",
           sourceLabel: appName("order-to-dispatch"),
           ref: e.ref,
-          detail: o ? `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}` : undefined,
+          detail: o
+            ? `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}${o.roundNo > 1 ? ` · round ${o.roundNo}` : ""}`
+            : undefined,
           stage: stepByKey(e.stepKey)?.short,
           dueIso: e.dueIso,
           to: `/order-to-dispatch/orders/${e.orderId}`,
-          assignment:
-            isMineByStepOwners(e.stepKey, uid, owners) || isMyDelivery(e.stepKey, e.orderId)
-              ? ("direct" as const)
-              : ("team" as const),
+          assignment: isMineByStepOwners(e.stepKey, uid, owners) ? ("direct" as const) : ("team" as const),
           isApproval: false,
         };
       });

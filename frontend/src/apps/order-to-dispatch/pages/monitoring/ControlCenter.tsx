@@ -127,10 +127,13 @@ export default function ControlCenter() {
       },
     },
     {
-      key: "promised",
-      header: "Promised",
-      cell: (e) => <span className="text-grey whitespace-nowrap">{dmy(s.orderById(e.entityId)?.promisedDate)}</span>,
-      sortValue: (e) => s.orderById(e.entityId)?.promisedDate ?? "",
+      key: "round",
+      header: "Round",
+      cell: (e) => {
+        const o = s.orderById(e.entityId);
+        return <span className="text-grey whitespace-nowrap">{o && o.roundNo > 1 ? `R${o.roundNo}` : "—"}</span>;
+      },
+      sortValue: (e) => s.orderById(e.entityId)?.roundNo ?? 0,
     },
     {
       key: "due",

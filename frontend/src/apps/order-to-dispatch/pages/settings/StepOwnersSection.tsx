@@ -136,8 +136,8 @@ export default function StepOwnersSection() {
           )}
           {editing === "dispatch_confirm" && (
             <p className="text-[12.5px] text-grey-2">
-              A driver mapped to a portal user (Masters → Drivers) can also confirm their own delivery without being
-              listed here.
+              Name someone here. Delivery confirmation has no other route into it — the old
+              driver-confirms-their-own-delivery path went with the Drivers master.
             </p>
           )}
           <FieldLabel label="Departments" hint="filter only">

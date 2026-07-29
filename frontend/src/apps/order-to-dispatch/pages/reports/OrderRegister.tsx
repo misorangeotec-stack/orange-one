@@ -13,8 +13,7 @@ import OrdersTable from "../../components/OrdersTable";
 import type { DispatchStatus, DispatchType } from "../../types";
 
 const STATUSES: DispatchStatus[] = [
-  "awaiting_credit_check", "awaiting_material_status", "awaiting_lot_confirm",
-  "awaiting_sales_bill", "awaiting_gate_out", "awaiting_dispatch_confirm",
+  "awaiting_credit_check", "awaiting_material_status",   "awaiting_sales_bill", "awaiting_gate_out", "awaiting_dispatch_confirm",
   "closed", "on_hold", "cancelled",
 ];
 
@@ -61,8 +60,7 @@ export default function OrderRegister() {
         customerName: s.customerName,
         itemName: s.itemName,
         unitName: s.unitName,
-        vehicleName: (id) => s.masterName("vehicle", id),
-        transporterName: (id) => s.masterName("transporter", id),
+        companyName: (id) => s.masterName("company", id),
       },
       filters,
     );
@@ -74,7 +72,7 @@ export default function OrderRegister() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">Order Register</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            Every order with its planned-vs-actual dates for all seven steps — the spreadsheet, generated.
+            Every order with its planned-vs-actual dates for all five workflow steps — the spreadsheet, generated.
           </p>
         </div>
         <Button onClick={download} disabled={rows.length === 0}>Download register (.xlsx)</Button>

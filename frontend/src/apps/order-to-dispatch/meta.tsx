@@ -9,10 +9,16 @@ import OrderToDispatchApp from "./OrderToDispatchApp";
  * `fms_dispatch_*` schema.
  *
  * The sales-side journey: a customer order is raised → the collection team
- * confirms the credit limit → the store keeper checks material → LOT no. and
- * final quantity are confirmed per line → the sales bill is raised → the gate
- * register records it going out → the driver confirms delivery. NO approval,
+ * approves the credit limit (or holds the order) → the store keeper records what
+ * is actually going out, line by line, with its LOT → the sales bill is raised →
+ * the gate register records it leaving → delivery is confirmed. NO approval,
  * NO PO, NO quotations.
+ *
+ * IT REPEATS. If only part of the order could be sent, the balance stays pending
+ * and the order returns to the stock check as the next ROUND — its own invoice,
+ * its own gate outward number, its own delivery confirmation. The order closes
+ * when nothing is owed. See supabase/migrations/20260810120000 for the two rules
+ * that keep that honest.
  *
  * It picks up where Production Entry ends: that module closes at "FG Transfer to
  * Godown", and this one takes the goods from the godown to the customer.
@@ -24,7 +30,7 @@ export const orderToDispatchApp: AppManifest = {
   id: "order-to-dispatch",
   name: appName("order-to-dispatch"),
   description:
-    "Customer order to delivery end to end: confirm credit, check material, fix the LOT and final quantity, raise the sales bill, record the gate-out entry and confirm the dispatch.",
+    "Customer order to delivery end to end: approve credit, record what is going out with its LOT, raise the sales bill, write the gate outward entry and confirm the delivery. Ships partially and comes back for the balance.",
   basePath: appBasePath("order-to-dispatch"),
   status: "live",
   category: appCategory("order-to-dispatch"),

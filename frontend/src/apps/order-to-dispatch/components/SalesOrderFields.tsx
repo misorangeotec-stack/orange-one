@@ -10,10 +10,11 @@ import type { DispatchType } from "../types";
  * The sales-order intake header. Shared by New Order and Edit Order so the two
  * screens cannot drift — the only difference between them is what they do on save.
  *
- * The three dates are deliberately distinct and labelled as such:
- *   Order date    — when the order arrived. Drives the internal SLA clocks.
- *   TAT / Promised — what the CUSTOMER was told. Drives the TAT-breached tile.
- * Conflating them would let one late internal step rewrite the customer promise.
+ * Four fields, after the 2026-08 reshape. The order date is the only one that
+ * matters mechanically: it starts the internal SLA clocks.
+ *
+ * Company is deliberately absent — it is read from the customer's master record
+ * and shown back read-only, so the two can never disagree.
  */
 export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesOrderForm> }) {
   const s = useDispatchStore();
@@ -38,7 +39,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
             />
           </FieldLabel>
           <p className="mt-1 text-[11.5px] text-grey-2">
-            Transport asks for the LR details at delivery; Local asks who signed for it.
+            How the consignment travels. Recorded on the order for reference.
           </p>
         </div>
 
@@ -52,46 +53,6 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
           />
         </FieldLabel>
 
-        <FieldLabel
-          label="Delivery address"
-          hint={f.form.customerId ? undefined : "pick a customer first"}
-        >
-          <Combobox
-            value={f.form.shipToId}
-            onChange={(v) => f.patch({ shipToId: v })}
-            options={opts(f.shipToOptions)}
-            placeholder={f.shipToOptions.length ? "Select address…" : "none on file"}
-            disabled={!f.form.customerId || f.shipToOptions.length === 0}
-            searchable
-          />
-        </FieldLabel>
-
-        <FieldLabel label="Company">
-          <Combobox
-            value={f.form.companyId}
-            onChange={(v) => f.patch({ companyId: v })}
-            options={opts(s.activeOf(s.companies))}
-            placeholder="Select company…"
-          />
-        </FieldLabel>
-
-        <FieldLabel label="Order source">
-          <Combobox
-            value={f.form.orderSourceId}
-            onChange={(v) => f.patch({ orderSourceId: v })}
-            options={opts(s.activeOf(s.orderSources))}
-            placeholder="How did it arrive?"
-          />
-        </FieldLabel>
-
-        <FieldLabel label="Customer's PO / reference">
-          <TextInput
-            value={f.form.customerRef}
-            onChange={(e) => f.patch({ customerRef: e.target.value })}
-            placeholder="their own order number"
-          />
-        </FieldLabel>
-
         <FieldLabel label="Order date" required hint="starts the internal clocks">
           <TextInput
             type="date"
@@ -99,32 +60,23 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
             onChange={(e) => f.patch({ orderDate: e.target.value })}
           />
         </FieldLabel>
-
-        <FieldLabel label="TAT for dispatch (working days)">
-          <TextInput
-            value={f.form.tatDays}
-            inputMode="decimal"
-            onChange={(e) => f.setTatDays(e.target.value)}
-            placeholder="e.g. 3"
-          />
-        </FieldLabel>
-
-        <FieldLabel label="Promised dispatch date" hint="what the customer was told">
-          <TextInput
-            type="date"
-            value={f.form.promisedDate}
-            onChange={(e) => f.setPromisedDate(e.target.value)}
-          />
-        </FieldLabel>
       </div>
 
-      {customer && (customer.creditLimit !== null || customer.creditDays !== null) && (
+      {/*
+        Company is no longer asked for — it is read from the customer's master
+        record. Showing which one, read-only, means nobody has to open Masters to
+        find out who is billing, and an unmapped customer is caught HERE rather
+        than by a server error on save.
+      */}
+      {customer && (
         <p className="text-[12.5px] text-grey-2">
-          On file for {customer.name}:{" "}
-          {customer.creditLimit !== null && <>credit limit ₹{customer.creditLimit.toLocaleString("en-IN")}</>}
-          {customer.creditLimit !== null && customer.creditDays !== null && " · "}
-          {customer.creditDays !== null && <>{customer.creditDays} days</>}
-          {!customer.email && " · no email on file, so the planned-dispatch mail will be skipped"}
+          {customer.companyId ? (
+            <>Billed by <span className="font-semibold text-navy">{s.masterName("company", customer.companyId)}</span>, from the customer master.</>
+          ) : (
+            <span className="font-medium text-ryg-red">
+              {customer.name} has no company mapped. Set it in Masters → Customers before raising this order.
+            </span>
+          )}
         </p>
       )}
 

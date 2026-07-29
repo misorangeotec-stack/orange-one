@@ -19,7 +19,6 @@ const STAGES: { key: string; label: string; step: StepKey | null }[] = [
   { key: "received", label: "Received", step: null },
   { key: "credit_check", label: "Credit", step: "credit_check" },
   { key: "material_status", label: "Stock", step: "material_status" },
-  { key: "lot_confirm", label: "LOT & Qty", step: "lot_confirm" },
   { key: "sales_bill", label: "Sales Bill", step: "sales_bill" },
   { key: "gate_out", label: "Gate Out", step: "gate_out" },
   { key: "dispatch_confirm", label: "Delivered", step: "dispatch_confirm" },
@@ -75,5 +74,30 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
     });
   }, [s, order.requesterName]);
 
-  return <PoStageRail nodes={nodes} activeIndex={activeIndex(order)} finished={order.status === "closed"} fit={fit} />;
+  const rounds = order.rounds.length + (order.status === "closed" || order.status === "cancelled" ? 0 : 1);
+  const multi = order.rounds.length > 0 || order.roundNo > 1;
+
+  return (
+    <div className="space-y-3">
+      {/*
+        On a loop-back the rail walks BACKWARDS — from Delivered to Stock — which
+        is correct but reads as a bug without saying why. The chip is rendered
+        beside the rail rather than inside PoStageRail: that component is shared
+        with five other FMS apps, and none of them has rounds.
+      */}
+      {multi && (
+        <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+          <span className="rounded-full bg-orange/10 px-2.5 py-0.5 font-semibold text-orange">
+            Round {order.roundNo}
+          </span>
+          <span className="text-grey-2">
+            {order.status === "closed"
+              ? `delivered over ${rounds} consignment${rounds === 1 ? "" : "s"}`
+              : `this order has already gone out ${order.rounds.length} time${order.rounds.length === 1 ? "" : "s"} — the rail restarts for the balance`}
+          </span>
+        </div>
+      )}
+      <PoStageRail nodes={nodes} activeIndex={activeIndex(order)} finished={order.status === "closed"} fit={fit} />
+    </div>
+  );
 }
