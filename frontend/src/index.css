@@ -89,6 +89,13 @@
     --border: 217 33% 18%;
     --input: 217 33% 18%;
     --ring: 28 80% 52%;
+    /* ⚠ These two were MISSING from .dark, so every `bg-surface` / `bg-surface-alt` in the
+       receivables hub fell back to its :root value — pure white and near-white — and lit up
+       like a lightbox on a dark page. `--surface` matches --card (the raised plane) and
+       --surface-alt sits one step BELOW --background (the recessed page), which is the same
+       relationship they have in light mode, just inverted in lightness. */
+    --surface: 220 40% 12%;
+    --surface-alt: 220 45% 6%;
   }
 
   html {

@@ -153,6 +153,9 @@ interface CustSnap {
   salesperson: string | null; category: string | null; group_name: string | null;
   credit_limit: number; credit_period: number; opening_balance: number;
   outstanding: number; overdue: number;
+  // Added 30-07-2026 with the DB-side overdue cap. Nullable for one refresh cycle after the
+  // migration, hence the coalesce in toCustomer.
+  overdue_gross: number | null; on_account: number | null;
   month_label: string; month_sales: number; month_receipts: number;
   fy_sales: number; fy_receipts: number;
   outstanding_by_type: any; overdue_by_type: any; sales_by_type: any;
@@ -237,7 +240,12 @@ function toCustomer(r: CustSnap, identity: CompanyIdentity): Customer {
     // until collection_refresh() started classifying by Tally's voucher class instead of by name.
     paymentsOut: Number(r.payments_out) || 0,
     outstanding,
+    // Already NET of On Account — collection_refresh() caps it per ledger. Never net it again.
     overdue: Number(r.overdue) || 0,
+    // The bridge behind it. `?? overdue` covers the window between the migration landing and the
+    // first refresh that populates the columns, so the page shows gross == net rather than ₹0.
+    overdueGross: r.overdue_gross == null ? (Number(r.overdue) || 0) : Number(r.overdue_gross),
+    onAccount: Number(r.on_account) || 0,
     maxOverdueDays,
     utilization,
     risk: categorizeRisk(maxOverdueDays, utilization),

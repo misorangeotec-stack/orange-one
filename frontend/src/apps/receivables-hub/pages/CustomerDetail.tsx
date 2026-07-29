@@ -4,7 +4,7 @@ import { useParams, useNavigate, useSearchParams, useLocation } from "react-rout
 import {
   ArrowLeft, Download, ShieldAlert, Clock, AlertTriangle,
   CreditCard, TrendingUp, RefreshCw, BookOpen, Building2, ChevronDown, X, Search,
-  ArrowUpDown, ArrowUp, ArrowDown, Columns3, Loader2, Plus,
+  ArrowUpDown, ArrowUp, ArrowDown, Columns3, Loader2, Plus, Info,
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -41,7 +41,6 @@ import { useHubBase, useReceivablesSource } from "@hub/lib/sourceContext";
 import { useFY } from "@hub/lib/fyContext";
 import { useQuery } from "@tanstack/react-query";
 import { utilizationPct } from "@hub/lib/receivables";
-import { onAccountAgainstOverdue } from "@hub/lib/agingReport";
 import { matchesSearch } from "@/shared/lib/search";
 import { exportCustomerPdf, exportCustomerXlsx, exportTransactionsXlsx } from "@hub/lib/exportCustomer";
 import type { Customer, CustomerGroupMap, InvoiceStatus } from "@hub/lib/types";
@@ -779,13 +778,21 @@ export default function CustomerDetail() {
   // (Rebuilt rows carry pending 0 today, so the figure is identical either way — pinning the
   // snapshot keeps it that way if the rebuild ever changes.)
   const netOnAccount = source === "connectwave" && effectiveSaleType === "all";
+  /** What the DATABASE already deducted from these ledgers' overdue — a lookup, not a
+   *  computation. Summed over `activeEntities` (raw ledgers) because the cap is per ledger, and
+   *  because `customer` is consolidated: on the group route its id is `G:<groupName>`, which
+   *  belongs to no ledger at all. */
   const onAccount = useMemo(
-    () => (netOnAccount ? onAccountAgainstOverdue(activeEntities, baseCustomerDetail) : 0),
-    [netOnAccount, activeEntities, baseCustomerDetail],
+    () => (netOnAccount ? activeEntities.reduce((t, c) => t + (c.onAccount ?? 0), 0) : 0),
+    [netOnAccount, activeEntities],
   );
-  // Non-negative by construction: every ledger's credit was capped at that ledger's own
-  // overdue before summing, and customer.overdue is the sum of those same ledgers.
-  const overdueNet = (customer?.overdue ?? 0) - onAccount;
+  // ⚠ Already NET — `collection_refresh()` caps it per ledger in the database (30-07-2026).
+  // This used to be `customer.overdue - onAccount`; leaving that in after the DB started netting
+  // was a double deduction worth ~₹11.6 cr book-wide. `onAccount` above is now for DISPLAY only
+  // — the bridge sub-line and the aging strip's "Less: On Acct." row.
+  const overdueNet = customer?.overdue ?? 0;
+  const overdueGross = (customer as { overdueGross?: number } | undefined)?.overdueGross
+                       ?? (overdueNet + onAccount);
 
   // Columns offered for the Transactions table (Company/Location only when
   // viewing multiple entities) and the subset currently shown.
@@ -1483,7 +1490,8 @@ export default function CustomerDetail() {
       onClick: () => applyKpiFilter("sales", "overdue"),
       active: isKpiActive("sales", "overdue"),
       breakdown: onAccount > 0 ? [
-        { label: "Bills overdue", value: fmt(customer.overdue) },
+        // GROSS on this line, or the bridge reads "X − Y = X". `customer.overdue` is the net side.
+        { label: "Bills overdue", value: fmt(overdueGross) },
         { label: "Less received, not matched to a bill", value: `−${fmt(onAccount)}` },
       ] : undefined,
     },
@@ -1894,40 +1902,52 @@ export default function CustomerDetail() {
       </div>
 
       {/* Export region 1: KPI cards → Trends → Aging */}
-      <div ref={exportTopRef} className="space-y-6 bg-background">
+      <div ref={exportTopRef} className="space-y-6 bg-surface-alt">
       {/* KPI Summary — clickable cards apply a filter to the Transactions ledger.
-          Banded rather than one long grid (see kpiBands). The tinted panel behind each band is
-          load-bearing, not decoration: --background and --surface are BOTH pure white, so white
-          cards on a white page were separated only by a 10%-lightness border and read as one
-          undifferentiated sheet. */}
-      <div className="space-y-3">
+          Banded rather than one long grid (see kpiBands).
+
+          ⚠ The card/page contrast is inverted from what you'd expect, on purpose. `--background`,
+          `--card` and `--surface` are ALL pure white (index.css), so white cards on a white page
+          were separated only by a 10%-lightness border and read as one undifferentiated sheet.
+          The fix is to TINT THE PAGE (bg-surface-alt on the export wrapper) and keep the cards
+          pure white, rather than tinting a panel behind each band — that nested three near-identical
+          greys inside each other and looked muddier than the problem it solved.
+
+          ⚠ Cards must TOP-align their content. A <button> gets `align-items: center` from the UA
+          stylesheet, so in a stretched grid row the clickable cards centred their label while the
+          plain <div> ones top-aligned theirs — that is what made the labels sit at different
+          heights. `flex flex-col items-stretch justify-start` on both variants pins them. */}
+      <div className="space-y-4">
       {kpiBands.map((band) => (
-      <section key={band.title} className="rounded-card border border-border/70 bg-surface-alt p-3">
-      <h2 className="mb-2 px-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <section key={band.title}>
+      <h2 className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
         {band.title}
+        <span className="h-px flex-1 bg-border/70" />
       </h2>
       <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${LG_COLS[band.items.length] ?? "lg:grid-cols-6"}`}>
         {band.items.map((item) => {
           const clickable = !!item.onClick;
-          const baseCls = `rounded-lg border text-card-foreground shadow-sm rounded-card border-border bg-surface transition-all ${
-            item.active ? "ring-2 ring-primary border-primary" : ""
+          const baseCls = `flex flex-col items-stretch justify-start rounded-card border bg-card text-card-foreground shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all ${
+            item.active ? "ring-2 ring-primary border-primary" : "border-border/60"
           }`;
-          const innerCls = "p-4 space-y-1";
-          const labelEl = <p className="text-xs text-muted-foreground">{item.label}</p>;
+          const innerCls = "p-3.5";
+          const labelEl = (
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{item.label}</p>
+          );
           const valueEl = (
-            <p className={`text-lg font-bold tabular-nums ${item.destructive ? "text-destructive" : "text-foreground"}`}>
+            <p className={`mt-1 text-lg font-bold leading-tight tabular-nums ${item.destructive ? "text-destructive" : "text-foreground"}`}>
               {item.value}
             </p>
           );
           const drCrEl = item.drCr ? (
-            <p className="text-[10px] text-muted-foreground leading-none mt-0.5">({item.drCr})</p>
+            <p className="mt-0.5 text-[10px] leading-none text-muted-foreground/70">({item.drCr})</p>
           ) : null;
           const breakdownEl = item.breakdown?.length ? (
-            <div className="mt-1.5 pt-1.5 border-t border-border/60 space-y-0.5">
+            <div className="mt-2 space-y-0.5 border-t border-dashed border-border/70 pt-1.5">
               {item.breakdown.map((b) => (
                 <div key={b.label} className="flex items-baseline justify-between gap-2">
-                  <span className="text-[10px] text-muted-foreground leading-tight">{b.label}</span>
-                  <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">{b.value}</span>
+                  <span className="text-[10px] leading-tight text-muted-foreground/80">{b.label}</span>
+                  <span className="whitespace-nowrap font-mono text-[10px] tabular-nums text-muted-foreground">{b.value}</span>
                 </div>
               ))}
             </div>
@@ -1938,7 +1958,7 @@ export default function CustomerDetail() {
                 key={item.label}
                 type="button"
                 onClick={item.onClick}
-                className={`${baseCls} text-left cursor-pointer hover:border-primary/50 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
+                className={`${baseCls} text-left cursor-pointer hover:border-primary/40 hover:shadow-[0_2px_8px_rgba(16,24,40,0.08)] focus:outline-none focus-visible:ring-2 focus-visible:ring-primary`}
               >
                 <div className={innerCls}>
                   {labelEl}
@@ -1966,14 +1986,19 @@ export default function CustomerDetail() {
       </div>
 
       {/* Which basis Overdue is on. Stated once here rather than repeated on every block, and
-          only where it changes something — a customer with no unmatched money gets no note. */}
+          only where it changes something — a customer with no unmatched money gets no note.
+          Rendered as a proper callout: as loose italic text on the page background it read as an
+          unfinished caption rather than part of the page. */}
       {onAccount > 0 && (
-        <p className="text-[11px] text-muted-foreground italic -mt-1">
-          <span className="font-medium not-italic">Overdue is shown after deducting On Account</span> — {fmt(onAccount)} received
-          from this customer that is settling no open invoice (untagged receipts, machine advances and credit notes alike).
-          It reduced their ledger balance but left the old bills reading unpaid. The invoice list, the age bars and every month
-          before the current one below still show the bills themselves, i.e. gross.
-        </p>
+        <div className="flex gap-2.5 rounded-card border border-border/60 bg-card px-3.5 py-2.5">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            <span className="font-semibold text-foreground">Overdue is shown after deducting On Account</span> — {fmt(onAccount)} received
+            from this customer that is settling no open invoice (untagged receipts, machine advances and credit notes alike).
+            It reduced their ledger balance but left the old bills reading unpaid. The invoice list, the age bars and every month
+            before the current one below still show the bills themselves, i.e. gross.
+          </p>
+        </div>
       )}
 
 
@@ -2293,7 +2318,7 @@ export default function CustomerDetail() {
                       <span className="text-xs text-muted-foreground w-24 shrink-0 italic">Opening Bal.</span>
                       <span className="text-xs font-bold font-mono text-muted-foreground">{fmt((customer as any).remainingOpeningBalance)}</span>
                       <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
-                        {customer.overdue > 0 ? `${(((customer as any).remainingOpeningBalance / customer.overdue) * 100).toFixed(1)}%` : "—"}
+                        {overdueGross > 0 ? `${(((customer as any).remainingOpeningBalance / overdueGross) * 100).toFixed(1)}%` : "—"}
                       </span>
                     </div>
                   )}
@@ -2307,7 +2332,8 @@ export default function CustomerDetail() {
                       <span className="text-xs text-emerald-700 dark:text-emerald-500 w-24 shrink-0 italic">Less: On Acct.</span>
                       <span className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-500">−{fmt(onAccount)}</span>
                       <span className="text-[10px] text-muted-foreground w-10 text-right shrink-0">
-                        {customer.overdue > 0 ? `${((onAccount / customer.overdue) * 100).toFixed(1)}%` : "—"}
+                        {/* against GROSS, so this share can never print above 100% */}
+                        {overdueGross > 0 ? `${((onAccount / overdueGross) * 100).toFixed(1)}%` : "—"}
                       </span>
                     </div>
                   )}
@@ -2319,7 +2345,7 @@ export default function CustomerDetail() {
                     <p className="text-xl font-bold font-mono text-destructive mt-1">{fmt(overdueNet)}</p>
                     {onAccount > 0 && (
                       <p className="text-[10px] text-muted-foreground mt-1">
-                        bills {fmt(customer.overdue)} less On Account
+                        bills {fmt(overdueGross)} less On Account
                       </p>
                     )}
                     {(customer as any).remainingOpeningBalance > 0 && (

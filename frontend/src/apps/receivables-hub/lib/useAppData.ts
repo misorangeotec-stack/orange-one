@@ -11,7 +11,6 @@ import { useFY } from "./fyContext";
 import { useReceivablesScope } from "./scope";
 import { useReceivablesSource } from "./sourceContext";
 import { outstandingContribution, sumOutstanding, countByRisk, utilizationPct } from "./receivables";
-import { onAccountAgainstOverdue } from "./agingReport";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -95,6 +94,11 @@ export function consolidateByName(customers: Customer[]): ConsolidatedCustomer[]
       openingBalanceAdjustment: numSum("openingBalanceAdjustment"),
       checkReturns:            numSum("checkReturns"),
       paymentsOut:             numSum("paymentsOut"),
+      // Both sides of the Overdue bridge roll up by plain addition, because the DB capped
+      // On Account PER LEDGER before we ever saw it. That is what makes customer-level,
+      // group-level and ledger-level totals agree without a second code path.
+      overdueGross:            numSum("overdueGross"),
+      onAccount:               numSum("onAccount"),
       outstanding,
       overdue:                 numSum("overdue"),
       openingBalance:          numSum("openingBalance"),
@@ -251,6 +255,9 @@ export function consolidateByGroup(
       openingBalanceAdjustment: numSum("openingBalanceAdjustment"),
       checkReturns:             numSum("checkReturns"),
       paymentsOut:              numSum("paymentsOut"),
+      // See consolidateByName: safe to add up because the cap was applied per ledger.
+      overdueGross:             numSum("overdueGross"),
+      onAccount:                numSum("onAccount"),
       outstanding,
       overdue:                  numSum("overdue"),
       openingBalance:           numSum("openingBalance"),
@@ -378,8 +385,9 @@ interface AppData {
    */
   netOnAccount: boolean;
   /**
-   * On Account applied against a set of LEDGER ids, capped per ledger. Returns 0 when
-   * `netOnAccount` is false. ⚠ Expand `constituentIds` first — see the definition.
+   * On Account already deducted from a set of LEDGER ids' overdue — for rendering the bridge, not
+   * for deducting anything (the DB did that). ⚠ Expand `constituentIds` first: a consolidated
+   * row's `.id` is only its first constituent's, and a group's `G:<name>` id is no ledger at all.
    */
   onAccountOfIds: (ids: string[]) => number;
 }
@@ -739,120 +747,67 @@ export function useAppData(filters: Filters = {}): AppData {
   }, [customerDetail, saleTypeList]);
 
   /**
-   * ── Is the Dashboard's Overdue shown NET of On Account? ──────────────────────
+   * ── Is Overdue shown NET of On Account? ──────────────────────────────────────
    *
-   * The SAME two gates the Risk Register, Customer Detail and Salesperson Collection Report
-   * apply, for the same two reasons:
+   * On Live: ALWAYS, because `collection_refresh()` caps it in the DATABASE (30-07-2026) rather
+   * than every page redoing the arithmetic. On the legacy pipeline: also always, netted upstream
+   * by process_data.py. So this flag no longer gates a calculation — pages only use it to decide
+   * whether they can SHOW the gross/on-account bridge, which needs the two extra columns.
    *
-   *   Live only — the legacy Python pipeline nets on-account upstream, so deducting again
-   *   would understate what is actually owed. On Live nothing nets it: measured 30-07-2026,
-   *   `collection_customer_snapshot.overdue` equals the plain sum of past-due bills on
-   *   698 of 698 ledgers, i.e. it is fully GROSS. (The old comment on this memo claimed the
-   *   opposite for both sources; it was only ever true of the pipeline.)
-   *
-   *   Never under a sale-type filter — `c.outstanding` carries no per-type split, so the two
-   *   sides of creditsOfLedger's subtraction would sit on different bases. It also makes
-   *   `filteredCustomerDetail` identity-equal to `customerDetail` (see :717), which is what
-   *   makes passing the filtered map below safe.
+   * ⚠ HISTORY, so nobody re-adds it: until 30-07-2026 four pages each computed this deduction in
+   *   the browser from the bill list. The DB now owns it. Subtracting On Account from `c.overdue`
+   *   anywhere is a DOUBLE DEDUCTION worth ~₹11.6 cr book-wide. `creditsOfLedger` /
+   *   `onAccountAgainstOverdue` survive in agingReport.ts for the Collection Report, which needs
+   *   a different (larger) cap — see the note at its call site.
    */
-  const netOnAccount = source === "connectwave" && saleTypeList.length === 0;
+  const netOnAccount = source === "connectwave";
 
-  /** Raw whole-ledger records by id. Deliberately `allCustomers`, NOT `projectedCustomers`:
-   *  the latter is narrowed by company / location / risk and by the sale-type projection, so a
-   *  constituent missing from it would contribute a silent zero and UNDER-deduct. Same lookup
-   *  the Risk Register builds for the same reason (CustomerRiskRegister.tsx:925). */
+  /** Raw whole-ledger records by id. Deliberately `allCustomers`, NOT `projectedCustomers`: the
+   *  latter is narrowed by company / location / risk and by the sale-type projection, so a
+   *  constituent missing from it would contribute a silent zero. */
   const ledgerById = useMemo(() => {
     const m = new Map<string, Customer>();
     for (const c of allCustomers) m.set(c.id, c);
     return m;
   }, [allCustomers]);
 
-  /**
-   * On Account applied against a set of LEDGER ids, capped per ledger.
-   *
-   * ⚠ Pass LEDGER ids — expand `constituentIds` first. A consolidated row's `.id` is only its
-   *   FIRST constituent's ledger id while its `.overdue` is the sum of them all, and a group's
-   *   id (`G:<name>`) belongs to no ledger and has no detail entry at all.
-   *
-   * ⚠ Walks every bill of every ledger passed (~1,780 book-wide). Call it from a memo, never
-   *   from a cell renderer.
-   *
-   * Returns 0 whenever the deduction is gated off, so callers need no branch of their own.
-   */
+  /** On Account already deducted from these LEDGERS' overdue. A lookup, not a computation —
+   *  the DB capped it per ledger, so adding the per-ledger figures up is exact. */
   const onAccountOfIds = useCallback((ids: string[]): number => {
-    if (!netOnAccount) return 0;
-    return onAccountAgainstOverdue(
-      ids.map((id) => ledgerById.get(id)).filter((c): c is Customer => !!c),
-      filteredCustomerDetail,
-    );
-  }, [netOnAccount, ledgerById, filteredCustomerDetail]);
+    let t = 0;
+    for (const id of ids) t += ledgerById.get(id)?.onAccount ?? 0;
+    return t;
+  }, [ledgerById]);
 
   /**
    * ── The Overdue bridge ───────────────────────────────────────────────────────
    *
-   * Gross overdue, the On Account taken off it, and the per-customer split behind that — all
-   * from ONE walk of the bill list, and all over the SAME customer universe the KPI totals use
-   * (`segmentedConsolidatedCustomers`), so they tie by construction under every filter instead
-   * of agreeing today and drifting the first time someone filters by salesperson.
+   * gross − on account = net, read straight off the snapshot columns instead of re-derived from
+   * the bill list. Two things this buys us:
    *
-   * The two branches are NOT alternatives that could be merged:
+   *   • It cannot disagree with the Risk Register / Customer Detail / any future consumer,
+   *     because there is now exactly one place the number is computed — the database.
+   *   • It stops walking every bill of ~1,780 ledgers on every filter change.
    *
-   *   Live — `c.overdue` is gross, so gross = Σ c.overdue and the deduction comes from the
-   *   shared `onAccountAgainstOverdue` helper. Using the same function as the other three
-   *   pages is precisely why the Dashboard now ties to the Risk Register to the rupee.
+   * ✔ Plain addition is correct here: the DB capped On Account PER LEDGER, so summing over any
+   *   grouping (customer, group, salesperson) gives the same total. That is what lets Customer
+   *   mode and Group mode agree with no second code path.
    *
-   *   Legacy pipeline — `c.overdue` already arrives net, so there is nothing to deduct here.
-   *   Gross has to be rebuilt from the bills (Σ pending of past-due bills), which is the
-   *   figure the bill-based reports show; the applied side is the on-BILL credit only. This
-   *   is the original ₹38.00 cr vs ₹35.26 cr bridge, kept exactly as it was.
-   *
-   * 🔴 The cap is load-bearing on BOTH branches: min(overdue, credits) PER LEDGER, because a
-   * customer's surplus credit cannot drive their own overdue below zero. Cap globally instead
-   * and the deduction over-shoots by ~6× and confidently shows a wrong number.
-   *
-   * ✔ Because the cap is per ledger, the total is the same however it is grouped — summing per
-   *   customer, per group or per ledger all give one number. That is what lets Group mode and
-   *   Customer mode agree without a second code path.
+   * Both sides come from the SAME universe the KPI totals use (`segmentedConsolidatedCustomers`),
+   * so they tie under every filter rather than agreeing today and drifting the first time someone
+   * filters by salesperson.
    */
   const overdueBridge = useMemo(() => {
-    const onAccountByCustomer = new Map<string, number>();
-
-    if (netOnAccount) {
-      let applied = 0;
-      for (const c of segmentedConsolidatedCustomers) {
-        const a = onAccountOfIds(c.constituentIds ?? [c.id]);
-        onAccountByCustomer.set(c.id, a);
-        applied += a;
-      }
-      return {
-        totalOverdueOnBills: segmentedConsolidatedCustomers.reduce((s, c) => s + c.overdue, 0),
-        totalOverdueCreditsApplied: applied,
-        onAccountByCustomer,
-      };
-    }
-
-    // Legacy pipeline (or gated off): rebuild gross from the bills; c.overdue is already net.
-    const allowedIds = new Set(segmentedConsolidatedCustomers.flatMap((c) => c.constituentIds));
-
-    // ledgerId → { ovd: past-due bills, cred: on-account credits (positive magnitude) }
-    const perLedger = new Map<string, { ovd: number; cred: number }>();
-    for (const [custId, detail] of Object.entries(filteredCustomerDetail)) {
-      if (!allowedIds.has(custId)) continue;
-      let e = perLedger.get(custId);
-      if (!e) { e = { ovd: 0, cred: 0 }; perLedger.set(custId, e); }
-      for (const inv of detail.invoices) {
-        if (inv.pending > 0 && inv.overdueDays > 0) e.ovd += inv.pending;
-        else if (inv.pending < 0) e.cred += -inv.pending;
-      }
-    }
-
     let onBills = 0, applied = 0;
-    for (const { ovd, cred } of perLedger.values()) {
-      onBills += ovd;
-      applied += Math.min(ovd, cred);   // ← the per-ledger cap. See above.
+    const onAccountByCustomer = new Map<string, number>();
+    for (const c of segmentedConsolidatedCustomers) {
+      const oa = c.onAccount ?? 0;
+      onBills  += c.overdueGross ?? c.overdue;   // legacy feed has no gross column: gross == net
+      applied  += oa;
+      onAccountByCustomer.set(c.id, oa);
     }
     return { totalOverdueOnBills: onBills, totalOverdueCreditsApplied: applied, onAccountByCustomer };
-  }, [netOnAccount, onAccountOfIds, filteredCustomerDetail, segmentedConsolidatedCustomers]);
+  }, [segmentedConsolidatedCustomers]);
 
   // ── KPIs recomputed from filtered customers ──────────────────────────────────
   const kpis = useMemo<KPIs | null>(() => {
@@ -882,11 +837,11 @@ export function useAppData(filters: Filters = {}): AppData {
         otherPayment:  segmentedConsolidatedCustomers.reduce((s, c) => s + (c.advanceBreakdown?.otherPayment  ?? 0), 0),
       } as AdvanceBreakdown,
       totalOutstanding:             sumOutstanding(segmentedConsolidatedCustomers),
-      // NET of On Account on Live; already net upstream on the legacy pipeline; gross under a
-      // sale-type filter (onAccountByCustomer is empty in both of those cases). Cannot go
-      // negative: every ledger was capped at its own overdue before being summed.
-      totalOverdue:                 segmentedConsolidatedCustomers.reduce(
-                                      (s, c) => s + c.overdue - (onAccountByCustomer.get(c.id) ?? 0), 0),
+      // ⚠ A PLAIN SUM, deliberately. `c.overdue` already arrives NET — the database caps it on
+      // Live, process_data.py nets it on the legacy feed. Subtracting `onAccountByCustomer` here
+      // as well was the double deduction (~₹11.6 cr) this change removed. Cannot go negative:
+      // every ledger was capped at its own gross overdue before being summed.
+      totalOverdue:                 segmentedConsolidatedCustomers.reduce((s, c) => s + c.overdue, 0),
       totalCustomers:               segmentedConsolidatedCustomers.length,
       criticalCustomers:            segmentedConsolidatedCustomers.filter((c) => c.risk === "critical").length,
       overCreditLimit:              segmentedConsolidatedCustomers.filter((c) => c.utilization > 100).length,
@@ -1029,26 +984,24 @@ export function useAppData(filters: Filters = {}): AppData {
     // Same in-view set as the KPIs / register (consolidated by name), so the
     // "top risky" list never shows a customer the register has merged away.
     //
-    // ⚠ Net BEFORE filtering and sorting, not after. A customer who has already paid us more
-    //   than they owe would otherwise still be ranked — on money that is sitting in our bank.
-    //   Book-wide 30-07-2026 that is 38 customers whose overdue clears completely.
-    const { onAccountByCustomer } = overdueBridge;
+    // ⚠ `c.overdue` is already NET of On Account (capped in the DB), so filtering on it here is
+    //   what keeps a customer who has already paid us more than they owe OFF this list — 38 such
+    //   customers book-wide, 30-07-2026. Do NOT subtract On Account again.
     return [...segmentedConsolidatedCustomers]
-      .map((c) => ({ c, overdue: c.overdue - (onAccountByCustomer.get(c.id) ?? 0) }))
-      .filter(({ overdue }) => overdue > 0)
+      .filter((c) => c.overdue > 0)
       .sort((a, b) => b.overdue - a.overdue)
       .slice(0, 10)
-      .map(({ c, overdue }) => ({
+      .map((c) => ({
         id:          c.id,
         name:        c.name,
         company:     c.company,
         location:    c.location,
         outstanding: c.outstanding,
-        overdue,
+        overdue:     c.overdue,
         maxODDays:   c.maxOverdueDays,
         risk:        c.risk,
       }));
-  }, [segmentedConsolidatedCustomers, overdueBridge]);
+  }, [segmentedConsolidatedCustomers]);
 
   // ── Low collection rate customers (3M collection < 30% of overdue) ────────────
   // "Collection" = Tally receipts (receipts3M) + manual Other Payments in the same

@@ -568,7 +568,12 @@ export default function SalespersonCollectionReport() {
           if (dd > asOf && dd <= monthEnd) dueSoon += inv.pending;
         }
       }
-      const grossOverdue = projectAmt(c.overdue, c.overdueByType, share);
+      // ⚠ GROSS, not `c.overdue` — that is now NET (the database caps On Account per ledger since
+      // 30-07-2026). This page is the one place that must start from gross, because its cap is
+      // LARGER than the DB's: it allows on-account money to settle bills coming due later this
+      // month as well as bills already past due (see `pendingGross` below). Feeding it the netted
+      // figure would deduct the same money twice and understate Due Pending.
+      const grossOverdue = projectAmt(c.overdueGross ?? c.overdue, c.overdueByType, share);
       pendingGross = grossOverdue + dueSoon;
       // ON ACCOUNT — money this customer has already paid us that is settling no open invoice:
       // untagged receipts PLUS credit sitting on a named bill (machine advances, credit notes).
