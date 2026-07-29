@@ -10,6 +10,7 @@ import { officeSuppliesApp } from "./office-supplies/meta";
 import { samplingApp } from "./sampling/meta";
 import { productionEntryApp } from "./production-entry/meta";
 import { orderToDispatchApp } from "./order-to-dispatch/meta";
+import { customerOnboardingApp } from "./customer-onboarding/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
@@ -57,6 +58,11 @@ export const apps: AppManifest[] = [
   // years, and a service JOB is raised off a track when it falls due, then closed
   // to roll the track forward. Nightly pg_cron opens the jobs and pushes reminders.
   assetMaintenanceApp,
+  // New Customer Onboarding — promoted out of the Outstanding Dashboard to the
+  // main menu (29-07-2026). Its pages still live under apps/receivables-hub/
+  // because they are hub-native components; this manifest mounts that subtree
+  // under its own basePath and chrome. See customer-onboarding/meta.tsx.
+  customerOnboardingApp,
   leadsDashboardApp,
   fmsControlCenterApp,
 ];

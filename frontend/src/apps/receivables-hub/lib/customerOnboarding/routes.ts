@@ -6,10 +6,18 @@
  * retyped — that literal used to appear in four places across the hub, which is
  * exactly the drift the shared list exists to prevent.
  */
-import { BASE } from "@hub/lib/menus";
+import { appBasePath } from "@/apps/appInfo";
 import type { StepKey } from "./steps";
 
-export const CUST_BASE = `${BASE}/customer-onboarding`;
+/**
+ * ⚠ THIS ONE CONSTANT IS THE WHOLE MOVE.
+ *   Until 29-07-2026 this was `${BASE}/customer-onboarding`, i.e. a subtree of
+ *   the Outstanding Dashboard. The module is now its own top-level app, and
+ *   because every URL in it is built from here, repointing this line moved all
+ *   of them at once. The hub redirects the old paths to the new ones, so links
+ *   and bookmarks already in circulation still land.
+ */
+export const CUST_BASE = appBasePath("customer-onboarding");
 
 export const homeHref  = () => CUST_BASE;
 export const newHref   = () => `${CUST_BASE}/new`;

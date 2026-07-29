@@ -90,6 +90,22 @@ export const APPS: Record<string, AppInfo> = {
     category: "fms",
     subGroup: "Dispatch",
   },
+  /**
+   * Promoted OUT of the Outstanding Dashboard to the main menu (29-07-2026).
+   *
+   * ⚠ ITS CODE STILL LIVES UNDER apps/receivables-hub/, and deliberately so. The
+   *   module is built entirely from hub-native (shadcn) components, because
+   *   shared/ui hard-codes the portal's tokens and `.hub-root` will not remap
+   *   them. Moving the files would mean rewriting every one of them. So this app
+   *   is a thin shell — its own basePath, nav and AppShell chrome — that mounts
+   *   the existing subtree inside a `.hub-root` wrapper.
+   */
+  "customer-onboarding": {
+    name: "New Customer Onboarding",
+    basePath: "/customer-onboarding",
+    category: "fms",
+    subGroup: "Sales",
+  },
   // The only FMS whose entity is permanent: assets and their dated tracks live
   // for years, and the thing that runs the workflow is a service JOB raised off
   // a track when it falls due.

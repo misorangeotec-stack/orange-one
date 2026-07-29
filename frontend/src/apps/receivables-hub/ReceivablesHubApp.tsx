@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@hub/components/ui/sonner";
 import { Toaster } from "@hub/components/ui/toaster";
 import { TooltipProvider } from "@hub/components/ui/tooltip";
@@ -49,17 +49,25 @@ import SalesRegister from "@hub/pages/SalesRegister";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
-// Customer Creation FMS. Its provider is mounted by CustomerOnboardingLayout so
-// the module's snapshot loads on these routes only — the hub's other pages must
-// not pay for a query they never read.
-import CustomerOnboardingLayout from "@hub/pages/customerOnboarding/CustomerOnboardingLayout";
-import CustomerOnboardingHome from "@hub/pages/customerOnboarding/Home";
-import CustomerAllRequests from "@hub/pages/customerOnboarding/AllRequests";
-import CustomerMyRequests from "@hub/pages/customerOnboarding/MyRequests";
-import CustomerNew from "@hub/pages/customerOnboarding/NewCustomer";
-import CustomerRequestDetail from "@hub/pages/customerOnboarding/RequestDetail";
-import CustomerPendingQueue from "@hub/pages/customerOnboarding/PendingQueue";
-import CustomerSettings from "@hub/pages/customerOnboarding/settings/CustomerSettings";
+
+/**
+ * Old /outstanding-dashboard/customer-onboarding/* → the module's new home,
+ * path and query string intact.
+ *
+ * ⚠ THE QUERY STRING MATTERS AS MUCH AS THE PATH. The four back-office queues
+ *   are one page keyed by `?step=`, and every "please approve this" link ever
+ *   sent carries it. Dropping the search would land the reader on somebody
+ *   else's queue.
+ */
+function CustomerOnboardingRedirect() {
+  const { pathname, search } = useLocation();
+  const rest = pathname.split("/customer-onboarding/")[1] ?? "";
+  return <Navigate to={`/customer-onboarding/${rest}${search}`} replace />;
+}
+
+// Customer Creation FMS moved to its own app on 29-07-2026; the hub keeps only
+// the redirects above. Its pages are still FILED under this folder — they are
+// hub-native components — but apps/customer-onboarding/ is what mounts them now.
 
 /**
  * Root of the Receivables Hub app inside Orange One.
@@ -228,19 +236,15 @@ function HubRoutes() {
               customer comes from the module's step owners and is enforced by
               RLS + the RPCs; a role gate on the route would be both too coarse
               and, on its own, false comfort. */}
-          <Route path="customer-onboarding" element={<CustomerOnboardingLayout />}>
-            <Route index element={<CustomerOnboardingHome />} />
-            <Route path="new" element={<CustomerNew />} />
-            <Route path="mine" element={<CustomerMyRequests />} />
-            <Route path="all" element={<CustomerAllRequests />} />
-            {/* ONE queue page for all four back-office steps, keyed by ?step=.
-                Four routes would be four copies of the same table drifting
-                apart on what a column means. */}
-            <Route path="queue" element={<CustomerPendingQueue />} />
-            <Route path="settings" element={<CustomerSettings />} />
-            <Route path="requests/:id" element={<CustomerRequestDetail />} />
-            <Route path="requests/:id/edit" element={<CustomerNew />} />
-          </Route>
+          {/* MOVED OUT on 29-07-2026 to its own top-level app at
+              /customer-onboarding (apps/customer-onboarding/). These redirects
+              are all that remain: months of links live in emails, bell
+              notifications and browser bookmarks, and a 404 on an approval link
+              is how an approval quietly does not happen. `*` carries the rest of
+              the path through, so a deep link to a specific request still lands
+              on that request. */}
+          <Route path="customer-onboarding" element={<Navigate to="/customer-onboarding" replace />} />
+          <Route path="customer-onboarding/*" element={<CustomerOnboardingRedirect />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<Settings />} />

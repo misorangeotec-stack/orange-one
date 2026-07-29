@@ -5,7 +5,6 @@ import {
   PackageOpen,
   PhoneCall,
   UserCheck,
-  UserPlus,
   HandCoins,
   Settings as SettingsIcon,
   type LucideIcon,
@@ -68,29 +67,10 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "dashboard", title: "Dashboard", url: BASE, icon: BarChart3 },
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
   { key: "followups", title: "Follow-ups", url: `${BASE}/followups`, icon: PhoneCall },
-  // Customer Creation FMS. The four back-office queues are ONE page keyed by
-  // ?step=, exactly like the Reports sub-nav's ?cat= children — CollapsibleMenu
-  // already computes active state for query-string URLs (NavLink ignores them).
-  //
-  // ⚠ Hiding this menu does NOT guard the routes. Who may verify, approve or
-  //   create is decided by the module's step owners and by RLS, never here.
-  {
-    key: "customer-onboarding",
-    title: "Customer Onboarding",
-    url: `${BASE}/customer-onboarding`,
-    icon: UserPlus,
-    children: [
-      { key: "customer-onboarding:new",      title: "New customer",       url: `${BASE}/customer-onboarding/new` },
-      { key: "customer-onboarding:mine",     title: "My requests",        url: `${BASE}/customer-onboarding/mine` },
-      { key: "customer-onboarding:accounts", title: "Accounts queue",     url: `${BASE}/customer-onboarding/queue?step=accounts_verification` },
-      { key: "customer-onboarding:approval", title: "Sales head approval", url: `${BASE}/customer-onboarding/queue?step=sales_head_approval` },
-      { key: "customer-onboarding:director", title: "Director approval",  url: `${BASE}/customer-onboarding/queue?step=director_approval` },
-      { key: "customer-onboarding:tally",    title: "Tally creation",     url: `${BASE}/customer-onboarding/queue?step=tally_creation` },
-      { key: "customer-onboarding:all",      title: "All requests",       url: `${BASE}/customer-onboarding/all` },
-      // Admin-only: step owners, the Director threshold, due dates, coordinators.
-      { key: "customer-onboarding:settings", title: "Onboarding settings", url: `${BASE}/customer-onboarding/settings`, adminOnly: true },
-    ],
-  },
+  // Customer Onboarding used to hang here as a sub-menu. It became its own
+  // top-level app on 29-07-2026 (apps/customer-onboarding/) and now carries its
+  // own sidebar, so listing it here too would put one module in two menus with
+  // two different grants behind them. The hub still redirects its old URLs.
   // Admin-only: parked in the "Hidden" section of the sidebar. Not in use for regular users, but
   // kept reachable for admins rather than deleted.
   { key: "salesperson-analysis", title: "Salesperson Analysis", url: `${BASE}/salesperson-analysis`, icon: UserCheck, adminOnly: true },
