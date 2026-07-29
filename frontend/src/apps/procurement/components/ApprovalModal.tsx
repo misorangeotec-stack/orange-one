@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import DraftBar from "@/shared/components/ui/DraftBar";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
+import { useStepDraft } from "@/shared/lib/useStepDraft";
+import { usePoStepDraftKey } from "../lib/draftKeys";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
 import QtyTotal from "./QtyTotal";
@@ -125,6 +128,50 @@ export default function ApprovalModal({
     setErr(null);
   }, [open, requestId]);
 
+  /**
+   * Autosave.
+   *
+   * `mode` is normally transient UI, but here it is part of the payload: `ovr` is
+   * only ever READ when `mode === "override"` (see `effOf`), so restoring one
+   * without the other shows every line as ₹0 and a silently wrong total. They
+   * travel together or not at all.
+   *
+   * `comparable` exists because `openOverride()` seeds `ovr` from each line's
+   * stored qty/rate/GST — so merely CLICKING Override would otherwise look like
+   * typing and write a draft. Judge only the cells that actually differ from what
+   * is already on the line, and ignore `mode` entirely.
+   */
+  const draftKeyStr = usePoStepDraftKey(
+    "approval",
+    open && !readOnly,
+    requestId && `${editing ? "edit" : "new"}:${requestId}`,
+  );
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: { mode, overrideVendor, reason, ovr },
+    comparable: (v) => ({
+      overrideVendor: v.overrideVendor,
+      reason: v.reason.trim(),
+      ovr: Object.fromEntries(
+        Object.entries(v.ovr).filter(([id, c]) => {
+          const l = lines.find((x) => x.id === id);
+          if (!l) return true;
+          return (
+            c.qty !== String(l.finalQty ?? l.quantity ?? "") ||
+            c.rate !== (l.finalRate === null ? "" : String(l.finalRate)) ||
+            c.gst !== (l.gstPct === null ? "" : String(l.gstPct))
+          );
+        }),
+      ),
+    }),
+    apply: (v) => {
+      setMode(v.mode);
+      setOverrideVendor(v.overrideVendor);
+      setReason(v.reason);
+      setOvr(v.ovr);
+    },
+  });
+
   if (!request) return null;
 
   const recommendedId = shortlist.find((v) => v.isRecommended)?.vendorId ?? lines[0]?.finalVendorId ?? null;
@@ -207,6 +254,7 @@ export default function ApprovalModal({
       setOverrideVendor("");
       setReason("");
       setOvr({});
+      draft.clear();
       onSaved?.();
       onClose();
     } catch (e) {
@@ -226,6 +274,8 @@ export default function ApprovalModal({
       subtitle={`${lines.length} item${lines.length === 1 ? "" : "s"} · ${s.vendorById(recommendedId)?.name ?? "—"}`}
     >
       <div className="space-y-4">
+        <DraftBar draft={draft} />
+
         {/* Who this spend is being approved FOR, and against whom. The vendor is
             in the subtitle too, but an approver reading a money decision should
             not have to find it there. */}

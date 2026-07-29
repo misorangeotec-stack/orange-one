@@ -80,6 +80,8 @@ export default function EditRequest() {
           lineRemark: l.remark.trim() || null,
         })),
       });
+      // The correction is saved — its draft is now stale, not unsaved work.
+      form.draft.clear();
       navigate(`/procurement/requests/${request.id}`);
     } catch (e) {
       form.setErr((e as Error).message);
@@ -101,7 +103,18 @@ export default function EditRequest() {
       <RequestForm form={form}>
         <div className="flex items-center gap-3">
           <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
-          <Button variant="ghost" onClick={() => navigate(`/procurement/requests/${request.id}`)} disabled={busy}>Cancel</Button>
+          {/* Cancel means throw this away — so it drops the draft too, rather
+              than offering the abandoned edits back on the next visit. */}
+          <Button
+            variant="ghost"
+            onClick={() => {
+              form.draft.clear();
+              navigate(`/procurement/requests/${request.id}`);
+            }}
+            disabled={busy}
+          >
+            Cancel
+          </Button>
           <span className="text-[12.5px] text-grey-2">{form.filled.length} item{form.filled.length === 1 ? "" : "s"}</span>
         </div>
       </RequestForm>

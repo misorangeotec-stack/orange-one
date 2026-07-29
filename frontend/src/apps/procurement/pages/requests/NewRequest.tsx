@@ -37,6 +37,10 @@ export default function NewRequest() {
           lineRemark: l.remark.trim() || null,
         })),
       });
+      // Before navigating: the entry exists now, so its draft must not come
+      // back the next time someone opens New Request. clear() also blocks the
+      // unmount flush, which would otherwise rewrite what we just removed.
+      form.draft.clear();
       navigate(`/procurement/requests/${id}`);
     } catch (e) {
       form.setErr((e as Error).message);

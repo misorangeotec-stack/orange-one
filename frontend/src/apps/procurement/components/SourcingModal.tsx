@@ -2,8 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import DraftBar from "@/shared/components/ui/DraftBar";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { useStepDraft } from "@/shared/lib/useStepDraft";
+import { usePoStepDraftKey } from "../lib/draftKeys";
 import RequestMasterModal from "./RequestMasterModal";
 import { useProcurementStore } from "../store";
 import { inr } from "../lib/format";
@@ -152,6 +155,37 @@ export default function SourcingModal({
     setRequested(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, requestId]);
+
+  /**
+   * Autosave. Sets are stored as arrays; `fromMaster` is deliberately NOT drafted
+   * — it is a tint derived from (vendor pick × `touched` × the rate card), so a
+   * stale one would paint cells the user typed by hand. `touched` IS drafted:
+   * it is what stops the rate card overwriting a typed number.
+   */
+  const draftKeyStr = usePoStepDraftKey("sourcing", open && !readOnly, requestId);
+  const draft = useStepDraft({
+    key: draftKeyStr,
+    values: {
+      vendors,
+      recommended,
+      rows,
+      reason,
+      selected: [...selected],
+      touched: [...touched],
+    },
+    apply: (v) => {
+      setVendors(v.vendors.length ? v.vendors : [emptyVendor()]);
+      setRecommended(v.recommended);
+      setRows(v.rows);
+      setReason(v.reason);
+      // Lines decided since the draft was written no longer exist — keep only
+      // ids still on the grid, or the save would silently drop unknown ones.
+      const live = new Set(v.rows.map((r) => r.lineId));
+      setSelected(new Set(v.selected.filter((id) => live.has(id))));
+      setTouched(new Set(v.touched));
+      setFromMaster(new Set());
+    },
+  });
 
   if (!request) return null;
 
@@ -307,6 +341,7 @@ export default function SourcingModal({
         })),
         sourcingReason: reason.trim() || null,
       });
+      draft.clear();
       onSaved?.();
       onClose();
     } catch (e) {
@@ -342,6 +377,8 @@ export default function SourcingModal({
       }
     >
       <div className="space-y-4">
+        <DraftBar draft={draft} />
+
         {/* Which company this requisition is being sourced FOR. A requisition
             header carries no vendor — that is what this step decides — so the
             company is the whole of the context here. */}
