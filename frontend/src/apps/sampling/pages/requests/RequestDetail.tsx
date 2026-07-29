@@ -7,7 +7,6 @@ import Modal from "@/shared/components/ui/Modal";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDate, formatDateTime } from "@/shared/lib/time";
-import ReceiveModal from "../../components/ReceiveModal";
 import CollectModal from "../../components/CollectModal";
 import SampleReceivedModal from "../../components/SampleReceivedModal";
 import SampleToLabModal from "../../components/SampleToLabModal";
@@ -28,7 +27,7 @@ import { useSamplingStore } from "../../store";
 import type { SamplingRequest } from "../../types";
 
 type OpenModal =
-  | "receive" | "collect" | "sampleReceived" | "sampleToLab" | "labProcess" | "resultReceived"
+  | "collect" | "sampleReceived" | "sampleToLab" | "labProcess" | "resultReceived"
   | "send" | "confirm" | "testing" | "result" | "handover" | null;
 
 export default function RequestDetail() {
@@ -59,7 +58,8 @@ export default function RequestDetail() {
   const name = (uid: string | null) => (uid ? s.personName(uid) : "—");
   // Raised before the lab gate existed: it entered at receive_sample and still runs
   // the old testing → result → handover tail, so it reads on the legacy arm below.
-  const isLegacyInward = r.status === "awaiting_receipt" || !!r.receivedAt;
+  // receive_sample was retired 08-08-2026, so `receivedAt` is the only marker left.
+  const isLegacyInward = !!r.receivedAt;
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
   const totalQty = totalSampleQty(r);
   const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
@@ -70,7 +70,6 @@ export default function RequestDetail() {
   const canActNow = cur ? s.canActOn(cur as StepKey, r) : false;
   const action: { label: string; modal: OpenModal } | null =
     !canActNow ? null
-    : r.status === "awaiting_receipt" ? { label: "Record receipt", modal: "receive" }
     : r.status === "awaiting_collect" ? { label: "Record collection", modal: "collect" }
     : r.status === "awaiting_sample_received" ? { label: "Confirm received", modal: "sampleReceived" }
     : r.status === "awaiting_sample_to_lab" ? { label: "Confirm & send to lab", modal: "sampleToLab" }
@@ -179,7 +178,7 @@ export default function RequestDetail() {
               ) : (
                 <div className="mt-1 text-[13.5px] text-navy">{r.colourQty ?? "—"}</div>
               )}
-              {/* The same total the dispatcher is shown in SampleSummary, from the
+              {/* The same total the dispatcher is shown in StepRecap, from the
                   same helper — so the figure can never be spelled two ways. */}
               {totalQty.text && (
                 <div className="mt-1.5 text-[13.5px] font-semibold text-navy">
@@ -234,7 +233,7 @@ export default function RequestDetail() {
                 label="Sample collect & handover"
                 value={
                   r.collectedAt
-                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"} · ${name(r.collectedBy)}`
+                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"}${r.collectNote ? ` · ${r.collectNote}` : ""} · ${name(r.collectedBy)}`
                     : "—"
                 }
                 className="col-span-1 sm:col-span-2"
@@ -255,7 +254,7 @@ export default function RequestDetail() {
                 label="Sample collect & handover"
                 value={
                   r.collectedAt
-                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"} · ${name(r.collectedBy)}`
+                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"}${r.collectNote ? ` · ${r.collectNote}` : ""} · ${name(r.collectedBy)}`
                     : "—"
                 }
                 className="col-span-1 sm:col-span-2"
@@ -264,7 +263,8 @@ export default function RequestDetail() {
                 label="Received & sent to lab"
                 value={
                   r.labSentAt
-                    ? `${r.labSentDate ? dmy(r.labSentDate) : formatDate(r.labSentAt)} · ref ${r.internalRef ?? "—"} · ${name(r.labSentBy)}`
+                    ? // Rows written before 08-08-2026 have no received date of their own.
+                      `${r.labReceivedDate ? `received ${dmy(r.labReceivedDate)} · sent ` : ""}${r.labSentDate ? dmy(r.labSentDate) : formatDate(r.labSentAt)} · ref ${r.internalRef ?? "—"} · ${name(r.labSentBy)}`
                     : "—"
                 }
                 className="col-span-1 sm:col-span-2"
@@ -285,6 +285,8 @@ export default function RequestDetail() {
                     : "—"
                 }
               />
+              {/* The step's own remark — deliberately separate from the verdict below. */}
+              {r.labNote && <Field label="Lab remarks" value={r.labNote} className="col-span-1 sm:col-span-2" />}
               <Field label="Lab result" value={r.labComment} className="col-span-1 sm:col-span-2" />
               {r.labDocPath && (
                 <div className="col-span-1 sm:col-span-2">
@@ -414,7 +416,6 @@ export default function RequestDetail() {
         </Card>
       )}
 
-      <ReceiveModal open={modal === "receive"} onClose={() => setModal(null)} request={r} />
       <CollectModal open={modal === "collect"} onClose={() => setModal(null)} request={r} />
       <SampleReceivedModal open={modal === "sampleReceived"} onClose={() => setModal(null)} request={r} />
       <SampleToLabModal open={modal === "sampleToLab"} onClose={() => setModal(null)} request={r} />

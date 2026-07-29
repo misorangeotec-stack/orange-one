@@ -22,7 +22,6 @@ import {
   recordHandover as recordHandoverWrite,
   recordLabComplete as recordLabCompleteWrite,
   recordLabStart as recordLabStartWrite,
-  recordReceipt as recordReceiptWrite,
   recordResult as recordResultWrite,
   recordResultReceived as recordResultReceivedWrite,
   recordSampleReceived as recordSampleReceivedWrite,
@@ -42,7 +41,6 @@ import {
   updateHandover as updateHandoverWrite,
   updateLabComplete as updateLabCompleteWrite,
   updateLabStart as updateLabStartWrite,
-  updateReceipt as updateReceiptWrite,
   updateRecipient as updateRecipientWrite,
   updateResult as updateResultWrite,
   updateResultReceived as updateResultReceivedWrite,
@@ -61,7 +59,6 @@ import {
   type LabCompleteInput,
   type LabStartInput,
   type PersonMasterInput,
-  type ReceiptInput,
   type RequestInput,
   type ResultInput,
   type ResultReceivedInput,
@@ -77,7 +74,6 @@ import {
   completedConfirmEntries,
   completedHandoverEntries,
   completedLabProcessEntries,
-  completedReceiveEntries,
   completedResultEntries,
   completedResultReceivedEntries,
   completedSampleReceivedEntries,
@@ -197,8 +193,6 @@ interface SamplingStoreValue {
 
   // workflow writes
   submitRequest: (input: RequestInput) => Promise<string>;
-  recordReceipt: (r: SamplingRequest, input: ReceiptInput) => Promise<void>;
-  updateReceipt: (r: SamplingRequest, input: ReceiptInput) => Promise<void>;
   recordSend: (r: SamplingRequest, input: SendInput) => Promise<void>;
   updateSend: (r: SamplingRequest, input: SendInput) => Promise<void>;
   recordConfirm: (r: SamplingRequest, input: ConfirmInput) => Promise<void>;
@@ -330,7 +324,6 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       isAdmin ||
       isProcessCoordinator ||
       isStepOwnerForRequest(stepKey, r) ||
-      (stepKey === "receive_sample" && !!r.collectorId && r.collectorId === uid) ||
       (stepKey === "sample_collect" && !!r.collectorId && r.collectorId === uid) ||
       (stepKey === "sample_received" && !!r.handoverRecipientId && r.handoverRecipientId === uid) ||
       // Whoever received the sample is the one who sends it on to the lab.
@@ -387,7 +380,6 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const snapshot: SamplingSnapshot = samplingSnapshotFrom({ requests, stepSla });
     const queueEntries = buildQueueEntries(snapshot);
 
-    const receiveEntries = completedReceiveEntries(snapshot);
     const collectEntries = completedCollectEntries(snapshot);
     const sampleReceivedEntries = completedSampleReceivedEntries(snapshot);
     const sampleToLabEntries = completedSampleToLabEntries(snapshot);
@@ -399,9 +391,11 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
     const resultEntries = completedResultEntries(snapshot);
     const handoverEntries = completedHandoverEntries(snapshot);
 
+    // ⚠ A ternary CHAIN ending in `: []`. The head arm carries no leading `:`, so
+    // dropping one means promoting the next — a missed arm degrades to a
+    // permanently empty Completed tab with no type error.
     const completedFor = (stepKey: StepKey): StageEntry<SamplingRequest>[] =>
-      stepKey === "receive_sample" ? receiveEntries
-      : stepKey === "sample_collect" ? collectEntries
+      stepKey === "sample_collect" ? collectEntries
       : stepKey === "sample_received" ? sampleReceivedEntries
       : stepKey === "sample_to_lab" ? sampleToLabEntries
       : stepKey === "lab_process" ? labProcessEntries
@@ -505,14 +499,6 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         // The RPC already fanned out from its SECURITY DEFINER context.
         await invalidate();
         return id;
-      },
-      recordReceipt: async (r, input) => {
-        await recordReceiptWrite(r.id, input);
-        await invalidate();
-      },
-      updateReceipt: async (r, input) => {
-        await updateReceiptWrite(r.id, input);
-        await invalidate();
       },
       recordSend: async (r, input) => {
         await recordSendWrite(r.id, input);

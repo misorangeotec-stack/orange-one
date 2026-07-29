@@ -28,23 +28,24 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * A step that doesn't apply to a request is simply never its current_step, so its
  * queue never shows it — the queue reads `status`.
  *
- * `receive_sample` and `testing` are both LEGACY. `receive_sample` is how inward
- * requests started before the lab gate existed; `testing` is the step those same
- * legacy rows run next, and it USED to sit on the outward path too until outward
- * dropped it (confirm_receipt now advances straight to `result`). Nothing routes
- * into either any more, but rows raised earlier still sit in them, so both stay
- * wired and their queues self-hide once those rows drain. Both are filed under the
- * `lab` branch, which is where a legacy inward row belongs — and they are ORDERED
- * with it, `receive_sample` then `testing`, so the two Setup screens (which render
- * STEPS as one flat list) don't strand `testing` in the middle of the outward
- * steps it no longer belongs to.
+ * `receive_sample` ("Sample Received at Lab") was RETIRED on 08-08-2026 — see
+ * `20260808120200_fms_sampling_retire_receive_sample.sql`, which moved the last
+ * three rows out of it. It is gone from this union, so tsc refuses any reference.
+ *
+ * `testing` is LEGACY: it is the step those same pre-lab-gate rows ran next, and
+ * it USED to sit on the outward path too until outward dropped it (confirm_receipt
+ * now advances straight to `result`). Nothing routes into it any more, but a held
+ * or closed legacy row can still resume there, so it stays wired and its queue
+ * self-hides while empty. It is filed under the `lab` branch, which is where a
+ * legacy inward row belongs, and ORDERED with it — leaving it after
+ * confirm_receipt (where it used to live) put "Testing — Lab Testing" between two
+ * outward steps in Setup, which reads like an outward step and is not one.
  *
  * Statuses are NOT step keys — closed / on_hold / cancelled live in RequestStatus
  * (types/index.ts), never here.
  */
 export type StepKey =
   | "request"
-  | "receive_sample"
   | "sample_collect"
   | "sample_received"
   | "sample_to_lab"
@@ -85,22 +86,22 @@ export const STEPS: StepDef[] = [
   { key: "sample_to_lab", index: 4, title: "Sample Received & Sent to Lab", short: "To Lab", scope: "request", branches: ["lab"] },
   { key: "lab_process", index: 5, title: "Lab Process", short: "Lab", scope: "request", branches: ["lab"] },
   { key: "result_received", index: 6, title: "Result Received", short: "Result Recd", scope: "request", branches: ["lab"] },
-  { key: "receive_sample", index: 7, title: "Sample Received at Lab", short: "Received", scope: "request", branches: ["lab"] },
   // ORDER MATTERS HERE. `testing` sits with the lab block because that is the only
-  // branch it still serves — it follows `receive_sample`, the step legacy inward
-  // rows reach it from. Leaving it after confirm_receipt (where it used to live,
-  // when outward still ran it) put "Testing — Lab Testing" between two outward
-  // steps in Setup, which reads like an outward step and is not one.
-  { key: "testing", index: 8, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
-  { key: "send_sample", index: 9, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
-  { key: "confirm_receipt", index: 10, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
+  // branch it still serves. Leaving it after confirm_receipt (where it used to
+  // live, when outward still ran it) put "Testing — Lab Testing" between two
+  // outward steps in Setup, which reads like an outward step and is not one.
+  // ⚠ `index` is CONTIGUOUS by contract — Dashboard's pipeline prints it, so a gap
+  // reads as 1,2,3,4,5,6,8. Renumbered 8→7…12→11 when receive_sample retired.
+  { key: "testing", index: 7, title: "Testing", short: "Testing", scope: "request", branches: ["lab"] },
+  { key: "send_sample", index: 8, title: "Sample Sent", short: "Sent", scope: "request", branches: ["outward"] },
+  { key: "confirm_receipt", index: 9, title: "Receipt Confirmed", short: "Confirmed", scope: "request", branches: ["outward"] },
   // "Result Received" is also the LAB branch's step 6 title. Two different keys,
   // deliberately the same name: on both branches this is the point the result
   // comes back to us. Everywhere they could appear together they are separated by
   // branch — the sidebar blocks, the STAGES below, and the branch shown beside the
   // title in Setup (StepOwnersSection / StepDueDatesSection).
-  { key: "result", index: 11, title: "Result Received", short: "Result Recd", scope: "request", branches: ["outward"] },
-  { key: "result_handover", index: 12, title: "Result Handover", short: "Handover", scope: "request", branches: ["outward"] },
+  { key: "result", index: 10, title: "Result Received", short: "Result Recd", scope: "request", branches: ["outward"] },
+  { key: "result_handover", index: 11, title: "Result Handover", short: "Handover", scope: "request", branches: ["outward"] },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -150,7 +151,7 @@ export const stepsInBranch = (branch: StepBranch): StepDef[] =>
 export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Collection", keys: ["sample_collect"] },
   { label: "No Lab — Received", keys: ["sample_received"] },
-  { label: "Lab — To Lab", keys: ["sample_to_lab", "receive_sample"] },
+  { label: "Lab — To Lab", keys: ["sample_to_lab"] },
   // `testing` rides with the lab process: it is the legacy inward equivalent, and
   // is no longer on the outward path at all.
   { label: "Lab — Process", keys: ["lab_process", "testing"] },

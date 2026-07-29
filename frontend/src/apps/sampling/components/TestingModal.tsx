@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { SectionHeading } from "@/shared/components/ui/Readout";
+import StepRecap from "./StepRecap";
 import { useSamplingStore } from "../store";
-import { futureDateError, requestSubject, stepDateDefault, todayIso } from "../lib/format";
+import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -73,8 +75,9 @@ export default function TestingModal({
       open={open}
       onClose={onClose}
       readOnly={readOnly}
+      size="xl"
       title={`${editing && !readOnly ? "Edit testing" : "Record testing"} — ${request?.reqNo ?? ""}`}
-      subtitle={request ? requestSubject(request) : undefined}
+      // No subtitle: the recap below already shows the product / description.
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
@@ -82,16 +85,25 @@ export default function TestingModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        <FieldLabel label="Testing completed on" hint="today by default — you can backdate, not post-date">
-          <TextInput type="date" max={todayIso()} value={testingCompletedDate} onChange={(e) => setTestingCompletedDate(e.target.value)} />
-        </FieldLabel>
-        <FieldLabel label="Internal reference">
-          <TextInput value={internalRef} onChange={(e) => setInternalRef(e.target.value)} placeholder="e.g. lab batch / job no." />
-        </FieldLabel>
-        <FieldLabel label="Tentative result date">
-          <TextInput type="date" value={tentativeResultDate} onChange={(e) => setTentativeResultDate(e.target.value)} />
-        </FieldLabel>
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Testing</SectionHeading>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+            <FieldLabel label="Testing completed on" hint="today by default — you can backdate, not post-date">
+              <TextInput type="date" max={todayIso()} value={testingCompletedDate} onChange={(e) => setTestingCompletedDate(e.target.value)} />
+            </FieldLabel>
+            <FieldLabel label="Internal reference">
+              <TextInput value={internalRef} onChange={(e) => setInternalRef(e.target.value)} placeholder="e.g. lab batch / job no." />
+            </FieldLabel>
+            {/* Deliberately NOT capped at today: this is a forecast. */}
+            <FieldLabel label="Tentative result date">
+              <TextInput type="date" value={tentativeResultDate} onChange={(e) => setTentativeResultDate(e.target.value)} />
+            </FieldLabel>
+          </div>
+        </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

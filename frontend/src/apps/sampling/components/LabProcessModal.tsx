@@ -4,11 +4,12 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { FieldRow, SectionHeading } from "@/shared/components/ui/Readout";
 import { useSession } from "@/core/platform/session";
 import { useSamplingStore } from "../store";
 import { uploadLabDocument } from "../data/samplingWrites";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
-import SampleSummary from "./SampleSummary";
+import StepRecap from "./StepRecap";
 import type { SamplingRequest } from "../types";
 
 /** Opens the stored lab report via a fresh short-lived signed URL. */
@@ -72,6 +73,7 @@ export default function LabProcessModal({
   const selfId = session.user?.id ?? "";
 
   const [tentative, setTentative] = useState("");
+  const [note, setNote] = useState("");           // one remark, shared by both passes
   const [done, setDone] = useState(false);
   const [completedDate, setCompletedDate] = useState("");
   const [comment, setComment] = useState("");
@@ -88,6 +90,7 @@ export default function LabProcessModal({
   useEffect(() => {
     if (open && request) {
       setTentative(request.labTentativeDate ?? "");
+      setNote(request.labNote ?? "");
       setDone(!!request.labCompletedAt);
       setCompletedDate(stepDateDefault(request.labCompletedDate));
       setComment(request.labComment ?? "");
@@ -125,7 +128,7 @@ export default function LabProcessModal({
       }
       setBusy(true);
       try {
-        const input = { labTentativeDate: tentative };
+        const input = { labTentativeDate: tentative, labNote: note.trim() || null };
         if (started) await s.updateLabStart(request, input);
         else await s.recordLabStart(request, input);
         onClose();
@@ -177,6 +180,7 @@ export default function LabProcessModal({
       const base = {
         labCompletedDate: completedDate || null,
         labComment: comment.trim(),
+        labNote: note.trim() || null,
         labResultToId: toId,
         labResultToName: toName,
       };
@@ -208,7 +212,7 @@ export default function LabProcessModal({
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
       size="xl"
-      // No subtitle: SampleSummary below already shows the product / description.
+      // No subtitle: the recap below already shows the product / description.
       title={`${heading} — ${request?.reqNo ?? ""}`}
       footer={
         <>
@@ -217,24 +221,39 @@ export default function LabProcessModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} />}
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
 
+        {/* The reference the lab works from — recorded upstream, so it belongs with
+            the briefing rather than among this step's inputs. */}
         {request?.internalRef && (
-          <div className="rounded-xl bg-page px-4 py-2.5">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Internal reference</span>
-            <div className="text-[13.5px] text-navy">{request.internalRef}</div>
+          <div className="rounded-xl bg-page px-4 py-3">
+            <FieldRow label="Internal reference" value={request.internalRef} />
           </div>
         )}
 
-        <FieldLabel
-          label="Tentative result date from lab"
-          required
-          hint={started ? "the date the lab committed to" : "recording this confirms the lab has the sample"}
-        >
-          {/* Deliberately NOT capped at today: this is a forecast. */}
-          <TextInput type="date" value={tentative} onChange={(e) => setTentative(e.target.value)} />
-        </FieldLabel>
+        <div>
+          <SectionHeading>At the lab</SectionHeading>
+          <div className="mt-3 space-y-3.5">
+            <FieldLabel
+              label="Tentative result date from lab"
+              required
+              hint={started ? "the date the lab committed to" : "recording this confirms the lab has the sample"}
+            >
+              {/* Deliberately NOT capped at today: this is a forecast. */}
+              <TextInput type="date" value={tentative} onChange={(e) => setTentative(e.target.value)} />
+            </FieldLabel>
+            {/* ONE remark for the whole step, so it sits OUTSIDE the pass-2 block:
+                jot it when the sample reaches the lab, correct it when testing ends.
+                Both save branches send it. */}
+            <FieldLabel
+              label="Remarks"
+              hint={done ? "optional — separate from the test comments below" : "optional"}
+            >
+              <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the sample or the lab" />
+            </FieldLabel>
+          </div>
+        </div>
 
         {started && (
           <>
@@ -250,42 +269,47 @@ export default function LabProcessModal({
             </label>
 
             {done && (
-              <>
-                <FieldLabel label="Testing completed on" hint="today by default — you can backdate, not post-date">
-                  <TextInput type="date" max={todayIso()} value={completedDate} onChange={(e) => setCompletedDate(e.target.value)} />
-                </FieldLabel>
-                <FieldLabel label="Test comments" required>
-                  <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The outcome of the lab testing" />
-                </FieldLabel>
-                <FieldLabel
-                  label="Lab testing attachment"
-                  required
-                  hint={request?.labDocPath ? "choose a file to replace it" : "the lab report"}
-                >
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                    className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-                  />
-                </FieldLabel>
-                {existing && <div className="text-[12px] text-grey-2">Current file: {existing}</div>}
-                <FieldLabel label="Result handed over to" required hint="pick a person, or type a name not in the list">
-                  <Combobox
-                    value={pick}
-                    onChange={setPick}
-                    options={options}
-                    placeholder="Select or type a name"
-                    searchable
-                    onCreate={(name) => {
-                      const v = `free:${name}`;
-                      setPick(v);
-                      return v;
-                    }}
-                    createLabel={(q) => `Hand to “${q}”`}
-                  />
-                </FieldLabel>
-              </>
+              <div>
+                <SectionHeading>Testing result</SectionHeading>
+                <div className="mt-3 space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+                    <FieldLabel label="Testing completed on" hint="today by default — you can backdate, not post-date">
+                      <TextInput type="date" max={todayIso()} value={completedDate} onChange={(e) => setCompletedDate(e.target.value)} />
+                    </FieldLabel>
+                    <FieldLabel label="Result handed over to" required hint="pick a person, or type a name not in the list">
+                      <Combobox
+                        value={pick}
+                        onChange={setPick}
+                        options={options}
+                        placeholder="Select or type a name"
+                        searchable
+                        onCreate={(name) => {
+                          const v = `free:${name}`;
+                          setPick(v);
+                          return v;
+                        }}
+                        createLabel={(q) => `Hand to “${q}”`}
+                      />
+                    </FieldLabel>
+                  </div>
+                  <FieldLabel label="Test comments" required>
+                    <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The outcome of the lab testing" />
+                  </FieldLabel>
+                  <FieldLabel
+                    label="Lab testing attachment"
+                    required
+                    hint={request?.labDocPath ? "choose a file to replace it" : "the lab report"}
+                  >
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                      className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+                    />
+                  </FieldLabel>
+                  {existing && <div className="text-[12px] text-grey-2">Current file: {existing}</div>}
+                </div>
+              </div>
             )}
           </>
         )}

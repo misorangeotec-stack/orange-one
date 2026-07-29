@@ -68,7 +68,6 @@ const ic = {
 export function buildSamplingNav(opts: {
   isAdmin: boolean;
   canManageMasters: boolean;
-  canReceive: boolean;
   canCollect: boolean;
   canSampleReceived: boolean;
   canSampleToLab: boolean;
@@ -116,7 +115,6 @@ export function buildSamplingNav(opts: {
   if (opts.canResultReceived) lab("Result Received", `${B}/queues/result-received`, ic.confirm);
   // The two LEGACY steps, filed here because a pre-lab-gate row is an inward one.
   // Each is shown only while rows are still sitting in it, so both retire themselves.
-  if (opts.canReceive) lab("Sample Received at Lab", `${B}/queues/receive`, ic.inbound);
   if (opts.canTest) lab("Testing", `${B}/queues/testing`, ic.testing);
 
   const outward = block(BRANCH_LABEL.outward);

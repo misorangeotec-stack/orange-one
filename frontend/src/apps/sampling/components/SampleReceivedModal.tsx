@@ -3,10 +3,11 @@ import { FileText } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { SectionHeading } from "@/shared/components/ui/Readout";
 import { useSamplingStore } from "../store";
 import { uploadReceivedDocument } from "../data/samplingWrites";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
-import SampleSummary from "./SampleSummary";
+import StepRecap from "./StepRecap";
 import type { SamplingRequest } from "../types";
 
 /** Opens the stored received-sample document via a fresh short-lived signed URL. */
@@ -112,7 +113,7 @@ export default function SampleReceivedModal({
       readOnly={readOnly}
       readOnlyHeader={existing ?? undefined}
       size="xl"
-      // No subtitle: SampleSummary below already shows the product / description.
+      // No subtitle: the recap below already shows the product / description.
       title={`${editing && !readOnly ? "Edit sample receipt" : readOnly ? "Sample received" : "Confirm sample received"} — ${request?.reqNo ?? ""}`}
       footer={
         <>
@@ -121,23 +122,32 @@ export default function SampleReceivedModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} />}
-        <FieldLabel label="Date received" hint="today by default — you can backdate, not post-date">
-          <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
-        </FieldLabel>
-        <FieldLabel label="Remarks" hint="optional">
-          <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the received sample" />
-        </FieldLabel>
-        <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional"}>
-          <input
-            ref={fileRef}
-            type="file"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-          />
-        </FieldLabel>
-        {editing && existing && <div className="text-[12px] text-grey-2">Current file: {existing}</div>}
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Receipt</SectionHeading>
+          <div className="mt-3 space-y-3.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+              <FieldLabel label="Date received" hint="today by default — you can backdate, not post-date">
+                <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
+              </FieldLabel>
+              <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional"}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+                />
+              </FieldLabel>
+            </div>
+            {editing && existing && <div className="text-[12px] text-grey-2">Current file: {existing}</div>}
+            <FieldLabel label="Remarks" hint="optional">
+              <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the received sample" />
+            </FieldLabel>
+          </div>
+        </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

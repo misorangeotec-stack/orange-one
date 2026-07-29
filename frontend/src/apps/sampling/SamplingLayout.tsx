@@ -30,12 +30,13 @@ export default function SamplingLayout() {
   const iAmRecipient = !!uid && s.requests.some((r) => r.handoverRecipientId === uid);
   const iAmResultRecipient = !!uid && s.requests.some((r) => r.labResultToId === uid);
 
-  // `receive_sample` and `testing` are both LEGACY — nothing routes into either any
-  // more (outward dropped testing; inward now runs lab_process). Shown ONLY while
-  // pre-lab-gate rows are actually sitting in them, so the entries retire themselves.
-  // Coordinators and admins are not special-cased here: `myQueue` runs `canActOn`,
-  // which is already true for them, so they keep seeing the entry while work exists.
-  const canReceive = s.myQueue("receive_sample").length > 0;
+  // `testing` is LEGACY — nothing routes into it any more (outward dropped it;
+  // inward now runs lab_process). Shown ONLY while pre-lab-gate rows are actually
+  // sitting in it, so the entry retires itself. Coordinators and admins are not
+  // special-cased here: `myQueue` runs `canActOn`, which is already true for them,
+  // so they keep seeing the entry while work exists.
+  // `receive_sample` had the same treatment until it was retired outright on
+  // 08-08-2026 (migration 20260808120200).
   const canTest = s.myQueue("testing").length > 0;
   const canCollect = s.isProcessCoordinator || s.isStepOwner("sample_collect") || s.myQueue("sample_collect").length > 0 || iAmCollector;
   const canSampleReceived = s.isProcessCoordinator || s.isStepOwner("sample_received") || s.myQueue("sample_received").length > 0 || iAmRecipient;
@@ -48,7 +49,7 @@ export default function SamplingLayout() {
   const canHandover = s.isProcessCoordinator || s.isStepOwner("result_handover") || s.myQueue("result_handover").length > 0;
   const canMonitor = s.isProcessCoordinator;
   const hasRequests =
-    s.requests.length > 0 || s.isProcessCoordinator || canReceive || canCollect || canSampleReceived ||
+    s.requests.length > 0 || s.isProcessCoordinator || canCollect || canSampleReceived ||
     canSampleToLab || canLabProcess || canResultReceived || canSend || canConfirm || canTest || canResult || canHandover;
 
   const nav = useMemo(
@@ -56,7 +57,6 @@ export default function SamplingLayout() {
       buildSamplingNav({
         isAdmin,
         canManageMasters: s.isAnyMasterManager,
-        canReceive,
         canCollect,
         canSampleReceived,
         canSampleToLab,
@@ -70,7 +70,7 @@ export default function SamplingLayout() {
         canMonitor,
         hasRequests,
       }),
-    [isAdmin, s.isAnyMasterManager, canReceive, canCollect, canSampleReceived, canSampleToLab, canLabProcess,
+    [isAdmin, s.isAnyMasterManager, canCollect, canSampleReceived, canSampleToLab, canLabProcess,
      canResultReceived, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, hasRequests],
   );
 

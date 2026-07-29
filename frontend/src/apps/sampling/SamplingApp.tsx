@@ -8,7 +8,6 @@ import NewRequest from "./pages/requests/NewRequest";
 import MyRequests from "./pages/requests/MyRequests";
 import RequestsList from "./pages/requests/RequestsList";
 import RequestDetail from "./pages/requests/RequestDetail";
-import ReceiveQueue from "./pages/queues/ReceiveQueue";
 import CollectQueue from "./pages/queues/CollectQueue";
 import SampleReceivedQueue from "./pages/queues/SampleReceivedQueue";
 import SampleToLabQueue from "./pages/queues/SampleToLabQueue";
@@ -67,7 +66,9 @@ export default function SamplingApp() {
           <Route path="outward-requests" element={<RequestsList branch="outward" />} />
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
-          <Route path="queues/receive" element={<ReceiveQueue />} />
+          {/* "Sample Received at Lab" retired 08-08-2026 — its rows moved to collect.
+              Kept as a redirect so an old bookmark or email link still lands somewhere. */}
+          <Route path="queues/receive" element={<Navigate to="/sampling/queues/collect" replace />} />
           <Route path="queues/collect" element={<CollectQueue />} />
           <Route path="queues/received" element={<SampleReceivedQueue />} />
           <Route path="queues/to-lab" element={<SampleToLabQueue />} />

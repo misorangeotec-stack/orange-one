@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import SampleSummary from "./SampleSummary";
+import { SectionHeading } from "@/shared/components/ui/Readout";
+import StepRecap from "./StepRecap";
 import { useSamplingStore } from "../store";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
@@ -81,14 +82,21 @@ export default function HandoverModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} variant="full" />}
-        <FieldLabel label="Date handed over" hint="today by default — you can backdate, not post-date">
-          <TextInput type="date" max={todayIso()} value={handoverDate} onChange={(e) => setHandoverDate(e.target.value)} />
-        </FieldLabel>
-        <FieldLabel label="Note" hint="optional — who received it, how">
-          <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Report emailed to the requester" />
-        </FieldLabel>
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Handover</SectionHeading>
+          <div className="mt-3 space-y-3.5">
+            <FieldLabel label="Date handed over" hint="today by default — you can backdate, not post-date">
+              <TextInput type="date" max={todayIso()} value={handoverDate} onChange={(e) => setHandoverDate(e.target.value)} />
+            </FieldLabel>
+            <FieldLabel label="Note" hint="optional — who received it, how">
+              <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Report emailed to the requester" />
+            </FieldLabel>
+          </div>
+        </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

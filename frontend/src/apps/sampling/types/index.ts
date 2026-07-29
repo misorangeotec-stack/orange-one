@@ -9,8 +9,9 @@
  *   inward, lab    : request → sample_collect → sample_to_lab → lab_process → result_received → closed
  *   outward        : request → send_sample → confirm_receipt → result → result_handover → closed
  *
- * `receive_sample` and `testing` are LEGACY inward steps (pre-lab-gate rows only);
- * outward has run no testing step since 20260731140000.
+ * `testing` is a LEGACY inward step (pre-lab-gate rows only); outward has run no
+ * testing step since 20260731140000. `receive_sample` was the other one and was
+ * RETIRED on 08-08-2026 — it is gone from StepKey, though its STATUS below stays.
  *
  * Every DB row is mapped snake_case → camelCase in data/samplingFetch.ts.
  */
@@ -33,7 +34,11 @@ export interface SampleItem {
 
 /** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled leave every queue. */
 export type RequestStatus =
-  | "awaiting_receipt"          // LEGACY inward (pre lab-gate rows only)
+  // RETIRED 08-08-2026 with the receive_sample step. No row holds it and
+  // resume_status can no longer produce it, but the DB CHECK still allows the
+  // value (dropping a CHECK is not additive) so the union — and the two
+  // Record<RequestStatus, …> label maps in lib/format.ts — keep it.
+  | "awaiting_receipt"
   | "awaiting_send"
   | "awaiting_confirm"
   | "awaiting_testing"
@@ -147,8 +152,10 @@ export interface SamplingRequest {
   handedOverAt: string | null;
   handedOverBy: string | null;
 
-  // sample_collect (inward, lab testing NOT required) — collector hands over
+  // sample_collect (inward, both branches) — collector hands over
   collectedDate: string | null;
+  /** Optional remarks about the collection / hand-over. */
+  collectNote: string | null;
   collectedAt: string | null;
   collectedBy: string | null;
 
@@ -162,12 +169,17 @@ export interface SamplingRequest {
 
   // sample_to_lab (inward, lab testing required) — recipient confirms + sends on.
   // The internal reference number lives in `internalRef`, shared with outward testing.
+  /** When the sample reached the person sending it on. Null on rows written before 08-08-2026. */
+  labReceivedDate: string | null;
+  /** When it went to the lab. Rows before 08-08-2026 hold the received date here — see the column comment. */
   labSentDate: string | null;
   labSentAt: string | null;
   labSentBy: string | null;
 
   // lab_process pass 1 — the lab acknowledges the sample by dating the result.
   labTentativeDate: string | null;
+  /** Free remarks on the lab process — written on either pass. NOT `labComment`, which is the verdict. */
+  labNote: string | null;
   labStartedAt: string | null;
   labStartedBy: string | null;
 

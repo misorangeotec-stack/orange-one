@@ -65,8 +65,10 @@ const isMineBySampling = (
     return true;
   }
   if (!r) return false;
+  // ⚠ `stepKey` is a plain `string` here, NOT StepKey — narrowing that union does
+  // not break this switch, so retired keys have to be pulled out by hand.
+  // `receive_sample` was removed with the step on 08-08-2026.
   switch (stepKey) {
-    case "receive_sample":
     case "sample_collect":
       return r.collectorId === uid;
     case "sample_received":

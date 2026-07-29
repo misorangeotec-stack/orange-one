@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
-import SampleSummary from "./SampleSummary";
+import { SectionHeading } from "@/shared/components/ui/Readout";
+import StepRecap from "./StepRecap";
 import { useSamplingStore } from "../store";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
 import type { SamplingRequest } from "../types";
@@ -93,17 +94,22 @@ export default function ConfirmModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} variant="full" />}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
-          <FieldLabel label="Date the party received the sample" hint="today by default — you can backdate, not post-date">
-            <TextInput type="date" max={todayIso()} value={partyReceivedDate} onChange={(e) => setPartyReceivedDate(e.target.value)} />
-          </FieldLabel>
-          {/* Deliberately NO `max` and no futureDateError: this is a forecast. */}
-          <FieldLabel label="Tentative testing date" hint="when the party expects to test it — a forecast, so it can be in the future">
-            <TextInput type="date" value={partyTestingDate} onChange={(e) => setPartyTestingDate(e.target.value)} />
-          </FieldLabel>
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Receipt confirmation</SectionHeading>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+            <FieldLabel label="Date the party received the sample" hint="today by default — you can backdate, not post-date">
+              <TextInput type="date" max={todayIso()} value={partyReceivedDate} onChange={(e) => setPartyReceivedDate(e.target.value)} />
+            </FieldLabel>
+            {/* Deliberately NO `max` and no futureDateError: this is a forecast. */}
+            <FieldLabel label="Tentative testing date" hint="when the party expects to test it — a forecast, so it can be in the future">
+              <TextInput type="date" value={partyTestingDate} onChange={(e) => setPartyTestingDate(e.target.value)} />
+            </FieldLabel>
+          </div>
         </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

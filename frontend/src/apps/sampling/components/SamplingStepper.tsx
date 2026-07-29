@@ -5,8 +5,13 @@ import { openStep } from "../lib/queues";
 import type { StepKey } from "../lib/steps";
 import type { SamplingRequest } from "../types";
 
-/** A rail node's backing step ("request" and "closed" have none). */
-type FlowKey = StepKey | "closed";
+/**
+ * A rail node's backing step. Three keys have none: "request", "closed", and
+ * `receive_sample` — a RETIRED step (08-08-2026) that is no longer in `StepKey`
+ * and is readmitted here purely so the one closed legacy row can still show the
+ * receipt it genuinely recorded.
+ */
+type FlowKey = StepKey | "closed" | "receive_sample";
 interface FlowNode {
   key: FlowKey;
   label: string;
@@ -18,7 +23,8 @@ interface FlowNode {
  *
  * INWARD_LEGACY_FLOW is for rows raised BEFORE the lab gate existed — they started
  * at receive_sample and still run the old testing → result → handover tail. Nothing
- * routes into it any more; it exists so a legacy row still renders sanely.
+ * routes into it any more, and `receive_sample` itself was retired on 08-08-2026;
+ * it exists so the one CLOSED legacy row still renders its real history.
  */
 const INWARD_LEGACY_FLOW: FlowNode[] = [
   { key: "request", label: "Request" },
@@ -64,7 +70,9 @@ const OUTWARD_FLOW: FlowNode[] = [
 export default function SamplingStepper({ request }: { request: SamplingRequest }) {
   const s = useSamplingStore();
   // A legacy row is one that entered at receive_sample; it keeps the old rail.
-  const isLegacyInward = request.status === "awaiting_receipt" || !!request.receivedAt;
+  // Since that step was retired, `receivedAt` is the only marker left — no live
+  // row can sit at the old status any more.
+  const isLegacyInward = !!request.receivedAt;
   const flow =
     request.direction === "outward"
       ? OUTWARD_FLOW
@@ -77,7 +85,9 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
   const nodes: PoStageRailNode[] = useMemo(
     () =>
       flow.map((n) => {
-        if (n.key === "request" || n.key === "closed") {
+        // Excluding the three step-less keys also NARROWS n.key to StepKey below,
+        // which is what lets ownersFor() take it without a cast.
+        if (n.key === "request" || n.key === "closed" || n.key === "receive_sample") {
           return { key: n.key, label: n.label, departments: [], people: [], hasStep: false };
         }
         // Resolved THROUGH THE REQUEST: the three outward steps are owned per
@@ -90,7 +100,7 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
         // handed the result to confirms it, and whoever the result is handed over
         // to closes it.
         const perRequestName =
-          (n.key === "receive_sample" || n.key === "sample_collect") && request.collectorId
+          n.key === "sample_collect" && request.collectorId
             ? s.personName(request.collectorId)
             : n.key === "sample_received" || n.key === "sample_to_lab"
               ? request.handoverRecipientId

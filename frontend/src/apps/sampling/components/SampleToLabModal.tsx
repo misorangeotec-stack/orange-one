@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
+import { SectionHeading } from "@/shared/components/ui/Readout";
 import { useSamplingStore } from "../store";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
-import SampleSummary from "./SampleSummary";
+import StepRecap from "./StepRecap";
 import type { SamplingRequest } from "../types";
 
 /**
@@ -30,13 +31,18 @@ export default function SampleToLabModal({
 }) {
   const s = useSamplingStore();
   const [receivedDate, setReceivedDate] = useState("");
+  const [sentDate, setSentDate] = useState("");
   const [internalRef, setInternalRef] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && request) {
-      setReceivedDate(stepDateDefault(request.labSentDate));
+      // Received is seeded BLANK on an older row, never `today`: these rows only ever
+      // carried the sent date, and today against a past sent date would block a save
+      // that was previously fine.
+      setReceivedDate(request.labReceivedDate ?? "");
+      setSentDate(stepDateDefault(request.labSentDate));
       setInternalRef(request.internalRef ?? "");
       setErr(null);
       setBusy(false);
@@ -49,15 +55,24 @@ export default function SampleToLabModal({
       setErr("An internal reference number is required.");
       return;
     }
-    const bad = futureDateError(receivedDate, "Date received");
+    const bad = futureDateError(receivedDate, "Date received") ?? futureDateError(sentDate, "Date sent to lab");
     if (bad) {
       setErr(bad);
+      return;
+    }
+    // Both are yyyy-mm-dd, so a plain string compare is the date compare.
+    if (receivedDate && sentDate && sentDate < receivedDate) {
+      setErr("The date sent to the lab cannot be earlier than the date received.");
       return;
     }
     setBusy(true);
     setErr(null);
     try {
-      const input = { internalRef: internalRef.trim(), labSentDate: receivedDate || null };
+      const input = {
+        internalRef: internalRef.trim(),
+        labReceivedDate: receivedDate || null,
+        labSentDate: sentDate || null,
+      };
       if (editing) await s.updateSampleToLab(request, input);
       else await s.recordSampleToLab(request, input);
       onClose();
@@ -74,7 +89,7 @@ export default function SampleToLabModal({
       onClose={onClose}
       readOnly={readOnly}
       size="xl"
-      // No subtitle: SampleSummary below already shows the product / description.
+      // No subtitle: the recap below already shows the product / description.
       title={`${editing && !readOnly ? "Edit sample receipt" : readOnly ? "Sample received & sent to lab" : "Confirm received & send to lab"} — ${request?.reqNo ?? ""}`}
       footer={
         <>
@@ -85,14 +100,34 @@ export default function SampleToLabModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} />}
-        <FieldLabel label="Date received" hint="today by default — you can backdate, not post-date">
-          <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
-        </FieldLabel>
-        <FieldLabel label="Internal reference number" required hint="the reference the lab will work from">
-          <TextInput value={internalRef} onChange={(e) => setInternalRef(e.target.value)} placeholder="e.g. LAB/2627/014" />
-        </FieldLabel>
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Received &amp; sent to lab</SectionHeading>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+            <FieldLabel label="Date received" hint="when the sample reached you">
+              <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
+            </FieldLabel>
+            <FieldLabel label="Date sent to lab" hint="today by default — never earlier than received">
+              {/* `min` is the courtesy nudge; save() and the RPC are the real gate. */}
+              <TextInput
+                type="date"
+                min={receivedDate || undefined}
+                max={todayIso()}
+                value={sentDate}
+                onChange={(e) => setSentDate(e.target.value)}
+              />
+            </FieldLabel>
+            {/* FieldLabel takes no className, so the span lives on a wrapper. */}
+            <div className="sm:col-span-2">
+              <FieldLabel label="Internal reference number" required hint="the reference the lab will work from">
+                <TextInput value={internalRef} onChange={(e) => setInternalRef(e.target.value)} placeholder="e.g. LAB/2627/014" />
+              </FieldLabel>
+            </div>
+          </div>
+        </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

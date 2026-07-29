@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { SectionHeading } from "@/shared/components/ui/Readout";
-import SampleSummary from "./SampleSummary";
+import StepRecap from "./StepRecap";
 import DocLink from "./DocLink";
 import { useSamplingStore } from "../store";
 import { uploadSendDocument } from "../data/samplingWrites";
@@ -136,18 +136,22 @@ export default function SendModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} variant="full" />}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
-          <FieldLabel label="Date sent" hint="today by default — you can backdate, not post-date">
-            <TextInput type="date" max={todayIso()} value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
-          </FieldLabel>
-          <FieldLabel label="Quantity sent" hint="totalled from the list above — change it if what went out differs">
-            <TextInput value={sentQty} onChange={(e) => setSentQty(e.target.value)} placeholder="e.g. 500 ml" />
-          </FieldLabel>
-          <FieldLabel label="Gate outward entry no." required>
-            <TextInput value={gateEntryNo} onChange={(e) => setGateEntryNo(e.target.value)} placeholder="e.g. GT/2627/118" />
-          </FieldLabel>
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Dispatch</SectionHeading>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+            <FieldLabel label="Date sent" hint="today by default — you can backdate, not post-date">
+              <TextInput type="date" max={todayIso()} value={sentDate} onChange={(e) => setSentDate(e.target.value)} />
+            </FieldLabel>
+            <FieldLabel label="Quantity sent" hint="totalled from the list above — change it if what went out differs">
+              <TextInput value={sentQty} onChange={(e) => setSentQty(e.target.value)} placeholder="e.g. 500 ml" />
+            </FieldLabel>
+            <FieldLabel label="Gate outward entry no." required>
+              <TextInput value={gateEntryNo} onChange={(e) => setGateEntryNo(e.target.value)} placeholder="e.g. GT/2627/118" />
+            </FieldLabel>
+          </div>
         </div>
 
         <div>

@@ -8,7 +8,8 @@
  * default clock. The actual "from" timestamp per step is resolved in
  * lib/queues.ts `samplingDueIso`, which falls back to the request's submission
  * when an anchor never ran — so a step that doesn't apply to a request is never
- * born overdue. `testing` is legacy-inward only; its predecessor is receive_sample.
+ * born overdue. `testing` is legacy-inward only; the step it used to follow
+ * (receive_sample) was retired, which is exactly why its anchor is PINNED below.
  */
 import {
   createStepSlaModel,
@@ -21,7 +22,6 @@ export type StepSla = StepSlaBase<StepKey>;
 export type StepSlaMap = StepSlaMapBase<StepKey>;
 
 const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
-  receive_sample: { anchor: "request", days: 1 },
   sample_collect: { anchor: "request", days: 1 },
   sample_received: { anchor: "sample_collect", days: 1 },
   sample_to_lab: { anchor: "sample_collect", days: 1 },
@@ -31,6 +31,8 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   result_received: { anchor: "lab_process", days: 1 },
   send_sample: { anchor: "request", days: 1 },
   confirm_receipt: { anchor: "send_sample", days: 1 },
+  // ⚠ PINNED. Without this line the default anchor becomes whatever now precedes
+  // `testing` in STEPS — result_received, a step on a branch it never runs.
   testing: { anchor: "request", days: 1 },
   // Outward dropped testing, so the result's clock starts at the receipt
   // confirmation — matching what samplingDueIso actually resolves.

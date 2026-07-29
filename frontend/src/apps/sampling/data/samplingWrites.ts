@@ -76,33 +76,22 @@ export async function submitRequest(input: RequestInput): Promise<string> {
 
 /* ------------------------------- stage records ---------------------------- */
 
-export interface ReceiptInput {
-  receivedDate: string | null;
-}
-export async function recordReceipt(requestId: string, input: ReceiptInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_record_receipt", {
-    p_req: requestId,
-    p: { received_date: input.receivedDate ?? "" },
-  });
-  if (error) throw new Error(error.message);
-}
-export async function updateReceipt(requestId: string, input: ReceiptInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_update_receipt", {
-    p_req: requestId,
-    p: { received_date: input.receivedDate ?? "" },
-  });
-  if (error) throw new Error(error.message);
-}
+// recordReceipt / updateReceipt went with the `receive_sample` step (retired
+// 08-08-2026). The RPCs still exist server-side — dropping them is not additive —
+// but nothing calls them, and they are commented RETIRED in the database.
 
 export interface CollectInput {
   handoverRecipientId: string | null;
   handoverRecipientName: string | null;
   collectedDate: string | null;
+  /** Optional remarks. ALWAYS sent, even empty, so an edit can clear it. */
+  collectNote: string | null;
 }
 const collectPayload = (input: CollectInput) => ({
   handover_recipient_id: input.handoverRecipientId ?? "",
   handover_recipient_name: input.handoverRecipientName ?? "",
   collected_date: input.collectedDate ?? "",
+  collect_note: input.collectNote ?? "",
 });
 export async function recordCollect(requestId: string, input: CollectInput): Promise<void> {
   const { error } = await db.rpc("fms_sampling_record_collect", { p_req: requestId, p: collectPayload(input) });
@@ -143,10 +132,14 @@ export async function updateSampleReceived(requestId: string, input: SampleRecei
 export interface SampleToLabInput {
   /** The internal reference number. Required — the RPC rejects a blank. */
   internalRef: string;
+  /** When the sample reached us. Optional, and deliberately has NO server default. */
+  labReceivedDate: string | null;
+  /** When it went to the lab. The RPC refuses a value earlier than the received date. */
   labSentDate: string | null;
 }
 const sampleToLabPayload = (input: SampleToLabInput) => ({
   internal_ref: input.internalRef,
+  lab_received_date: input.labReceivedDate ?? "",
   lab_sent_date: input.labSentDate ?? "",
 });
 export async function recordSampleToLab(requestId: string, input: SampleToLabInput): Promise<void> {
@@ -161,19 +154,19 @@ export async function updateSampleToLab(requestId: string, input: SampleToLabInp
 /** lab_process PASS 1 — the tentative result date. Does NOT advance the request. */
 export interface LabStartInput {
   labTentativeDate: string;
+  /** Remarks. One field shared with pass 2, so BOTH passes send it. */
+  labNote: string | null;
 }
+const labStartPayload = (input: LabStartInput) => ({
+  lab_tentative_date: input.labTentativeDate,
+  lab_note: input.labNote ?? "",
+});
 export async function recordLabStart(requestId: string, input: LabStartInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_record_lab_start", {
-    p_req: requestId,
-    p: { lab_tentative_date: input.labTentativeDate },
-  });
+  const { error } = await db.rpc("fms_sampling_record_lab_start", { p_req: requestId, p: labStartPayload(input) });
   if (error) throw new Error(error.message);
 }
 export async function updateLabStart(requestId: string, input: LabStartInput): Promise<void> {
-  const { error } = await db.rpc("fms_sampling_update_lab_start", {
-    p_req: requestId,
-    p: { lab_tentative_date: input.labTentativeDate },
-  });
+  const { error } = await db.rpc("fms_sampling_update_lab_start", { p_req: requestId, p: labStartPayload(input) });
   if (error) throw new Error(error.message);
 }
 
@@ -183,6 +176,8 @@ export interface LabCompleteInput {
   labComment: string;
   labResultToId: string | null;
   labResultToName: string | null;
+  /** Remarks. The same field pass 1 writes — still editable here. */
+  labNote: string | null;
   /** Only on update: also correct the tentative date. */
   labTentativeDate?: string | null;
   /** Pass a key (even null) to REPLACE the attachment; omit both keys to keep it. */
@@ -193,6 +188,7 @@ const labCompletePayload = (input: LabCompleteInput) => {
   const p: Record<string, unknown> = {
     lab_completed_date: input.labCompletedDate ?? "",
     lab_comment: input.labComment,
+    lab_note: input.labNote ?? "",
     lab_result_to_id: input.labResultToId ?? "",
     lab_result_to_name: input.labResultToName ?? "",
   };

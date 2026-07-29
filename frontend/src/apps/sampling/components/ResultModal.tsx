@@ -3,7 +3,8 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
-import SampleSummary from "./SampleSummary";
+import { SectionHeading } from "@/shared/components/ui/Readout";
+import StepRecap from "./StepRecap";
 import DocLink from "./DocLink";
 import { useSamplingStore } from "../store";
 import { uploadResultDocument } from "../data/samplingWrites";
@@ -127,35 +128,38 @@ export default function ResultModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} variant="full" />}
-        <FieldLabel label="Result comment" required>
-          <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The result the party came back with" />
-        </FieldLabel>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
-          <FieldLabel label="Result handover to" required hint="they are notified and can action the handover">
-            <Combobox
-              value={handoverTo}
-              onChange={setHandoverTo}
-              options={recipientOptions}
-              placeholder={recipientOptions.length ? "Select a person" : "No recipients in the master yet"}
-              searchable={recipientOptions.length > 6}
-            />
-          </FieldLabel>
-          <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional lab report"}>
-            <input
-              ref={fileRef}
-              type="file"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-            />
-          </FieldLabel>
-        </div>
-        {editing && existing && (
-          <div className="text-[12px] text-grey-2">
-            Current file: {existing}
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
+
+        <div>
+          <SectionHeading>Result</SectionHeading>
+          <div className="mt-3 space-y-3.5">
+            <FieldLabel label="Result comment" required>
+              <TextArea rows={3} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="The result the party came back with" />
+            </FieldLabel>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3.5">
+              <FieldLabel label="Result handover to" required hint="they are notified and can action the handover">
+                <Combobox
+                  value={handoverTo}
+                  onChange={setHandoverTo}
+                  options={recipientOptions}
+                  placeholder={recipientOptions.length ? "Select a person" : "No recipients in the master yet"}
+                  searchable={recipientOptions.length > 6}
+                />
+              </FieldLabel>
+              <FieldLabel label="Attachment" hint={editing ? "choose a file to replace it" : "optional lab report"}>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
+                />
+              </FieldLabel>
+            </div>
+            {editing && existing && <div className="text-[12px] text-grey-2">Current file: {existing}</div>}
           </div>
-        )}
+        </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

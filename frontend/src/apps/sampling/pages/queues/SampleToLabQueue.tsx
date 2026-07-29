@@ -7,11 +7,14 @@ import type { SamplingRequest } from "../../types";
 
 const capturedColumn: QueueColumn<StageEntry<SamplingRequest>> = {
   key: "internalRef",
-  header: "Internal ref · sent",
+  header: "Internal ref · received · sent",
   cell: (e) => (
     <span className="text-navy">
       {e.row.internalRef ?? "—"}
-      <span className="text-grey-2"> · {dmy(e.row.labSentDate)}</span>
+      {/* Rows written before 08-08-2026 only ever had the one date. */}
+      <span className="text-grey-2">
+        {e.row.labReceivedDate ? ` · ${dmy(e.row.labReceivedDate)}` : ""} · {dmy(e.row.labSentDate)}
+      </span>
     </span>
   ),
   sortValue: (e) => e.row.labSentDate ?? "",

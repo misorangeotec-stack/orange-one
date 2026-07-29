@@ -3,9 +3,10 @@ import { FileText } from "lucide-react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { FieldRow, SectionHeading } from "@/shared/components/ui/Readout";
 import { useSamplingStore } from "../store";
 import { futureDateError, stepDateDefault, todayIso } from "../lib/format";
-import SampleSummary from "./SampleSummary";
+import StepRecap from "./StepRecap";
 import type { SamplingRequest } from "../types";
 
 /** Opens the lab report the result was handed over with. */
@@ -99,7 +100,7 @@ export default function ResultReceivedModal({
       readOnly={readOnly}
       readOnlyHeader={report ?? undefined}
       size="xl"
-      // No subtitle: SampleSummary below already shows the product / description.
+      // No subtitle: the recap below already shows the product / description.
       title={`${editing && !readOnly ? "Edit result receipt" : readOnly ? "Result received" : "Confirm result received"} — ${request?.reqNo ?? ""}`}
       footer={
         <>
@@ -108,23 +109,34 @@ export default function ResultReceivedModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        {request && <SampleSummary request={request} />}
+      <div className="space-y-4">
+        {request && <StepRecap request={request} />}
 
+        {/* What the lab came back with — the thing this step is confirming receipt
+            OF, so it sits with the briefing rather than among the inputs. */}
         {request?.labComment && (
-          <div className="rounded-xl bg-page px-4 py-3 space-y-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">Lab result</span>
-            <div className="text-[13.5px] text-navy whitespace-pre-wrap">{request.labComment}</div>
-            {report && <div>{report}</div>}
+          <div className="rounded-xl bg-page px-4 py-3.5">
+            <FieldRow label="Lab result" value={<span className="whitespace-pre-wrap">{request.labComment}</span>} />
+            {report && (
+              <div className="mt-2">
+                <FieldRow label="Lab report" value={report} />
+              </div>
+            )}
           </div>
         )}
 
-        <FieldLabel label="Date received" hint="today by default — you can backdate, not post-date">
-          <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
-        </FieldLabel>
-        <FieldLabel label="Remarks" hint="optional">
-          <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the result" />
-        </FieldLabel>
+        <div>
+          <SectionHeading>Result receipt</SectionHeading>
+          <div className="mt-3 space-y-3.5">
+            <FieldLabel label="Date received" hint="today by default — you can backdate, not post-date">
+              <TextInput type="date" max={todayIso()} value={receivedDate} onChange={(e) => setReceivedDate(e.target.value)} />
+            </FieldLabel>
+            <FieldLabel label="Remarks" hint="optional">
+              <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything to note about the result" />
+            </FieldLabel>
+          </div>
+        </div>
+
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>

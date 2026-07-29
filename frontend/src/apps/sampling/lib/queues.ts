@@ -44,8 +44,10 @@ export const requestBranch = (r: SamplingRequest): StepBranch =>
 /** The single step a request currently owes, from its status. */
 export function openStep(r: SamplingRequest): StepKey | null {
   switch (r.status) {
-    case "awaiting_receipt":
-      return "receive_sample";
+    // `awaiting_receipt` is gone with the receive_sample step (retired 08-08-2026,
+    // migration 20260808120200). It falls through to `default: null`, which is
+    // safe ONLY because that migration proved no row is left holding it and
+    // resume_status can no longer produce it.
     case "awaiting_send":
       return "send_sample";
     case "awaiting_confirm":
@@ -76,13 +78,12 @@ export function openStep(r: SamplingRequest): StepKey | null {
  * The anchor completion timestamp that starts a step's SLA clock.
  *
  * `testing` is the convergence point of the two paths, so its anchor depends on
- * `direction` — receive_sample (inward) or confirm_receipt (outward). The fallback
- * to `submittedAt` in samplingDueIso keeps a step that never applied from being
- * born overdue.
+ * `direction` — the receipt it used to follow (inward) or confirm_receipt
+ * (outward). The fallback to `submittedAt` in samplingDueIso keeps a step that
+ * never applied from being born overdue.
  */
 function stepAnchorCompletedIso(r: SamplingRequest, step: StepKey): string | null {
   switch (step) {
-    case "receive_sample":
     case "send_sample":
     case "sample_collect":
       return r.submittedAt;
@@ -163,14 +164,6 @@ const heldOrTerminal = (r: SamplingRequest, what: string): string | null => {
   if (r.status === "cancelled") return `This request was cancelled — its ${what} can no longer be changed.`;
   return null;
 };
-
-/** Editable while inward + received + still awaiting testing. */
-export function receiptLockReason(r: SamplingRequest): string | null {
-  const t = heldOrTerminal(r, "sample receipt");
-  if (t) return t;
-  if (r.status !== "awaiting_testing") return "Testing has already been recorded — the sample receipt can no longer be changed.";
-  return null;
-}
 
 /** Editable while outward + sent + still awaiting confirmation. */
 export function sendLockReason(r: SamplingRequest): string | null {
@@ -291,10 +284,9 @@ const entryOf = (
   row: r,
 });
 
-export const completedReceiveEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
-  data.requests
-    .filter((r) => !!r.receivedAt)
-    .map((r) => entryOf("receive_sample", r, r.receivedBy, r.receivedAt!, receiptLockReason(r)));
+// completedReceiveEntries went with the receive_sample step (retired 08-08-2026).
+// The receipt a legacy row DID record is still shown — RequestDetail reads
+// `receivedAt` for its history line — it just no longer has a Completed tab.
 
 export const completedSendEntries = (data: SamplingSnapshot): StageEntry<SamplingRequest>[] =>
   data.requests
