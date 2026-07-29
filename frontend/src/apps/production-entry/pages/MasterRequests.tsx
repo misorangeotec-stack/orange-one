@@ -5,6 +5,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Tabs from "@/shared/components/ui/Tabs";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
+import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
@@ -12,7 +13,17 @@ import { formatDateTime } from "@/shared/lib/time";
 import RequestMasterModal from "../components/RequestMasterModal";
 import { useProductionStore } from "../store";
 import { PRODUCTION_MASTER_TYPES, type ProductionMasterRequest } from "../types";
-import { describePayload, masterTypeLabel, masterTypePlural } from "../lib/masterFields";
+import {
+  describePayload,
+  emptyValuesFor,
+  masterFields,
+  masterTypeLabel,
+  masterTypePlural,
+  missingRequired,
+  payloadFromValues,
+  type MasterValues,
+} from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * Master Requests — one page, two audiences. A master's owner (and any admin) gets
@@ -21,13 +32,14 @@ import { describePayload, masterTypeLabel, masterTypePlural } from "../lib/maste
  */
 export default function MasterRequests() {
   const s = useProductionStore();
+  const ctx = useMasterFieldCtx();
   const canReview = s.isAnyMasterManager;
 
   const [tab, setTab] = useState(canReview ? "review" : "mine");
   const [raising, setRaising] = useState(false);
   const [approving, setApproving] = useState<ProductionMasterRequest | null>(null);
   const [rejecting, setRejecting] = useState<ProductionMasterRequest | null>(null);
-  const [name, setName] = useState("");
+  const [values, setValues] = useState<MasterValues>({});
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -41,16 +53,26 @@ export default function MasterRequests() {
   const unassigned = PRODUCTION_MASTER_TYPES.filter((m) => s.isMasterUnassigned(m.value));
 
   const openApprove = (r: ProductionMasterRequest) => {
-    setName(String(r.proposedPayload.name ?? ""));
+    // Seed every schema field from the proposal, not just the name: the RPC
+    // REPLACES proposed_payload with whatever this modal sends, so a key missing
+    // here is a key dropped from the master row that gets created.
+    const p = r.proposedPayload as Record<string, unknown>;
+    const seeded: MasterValues = { ...emptyValuesFor(r.masterType) };
+    for (const f of masterFields(r.masterType, ctx)) seeded[f.key] = String(p[f.key] ?? "");
+    setValues(seeded);
     setErr(null);
     setApproving(r);
   };
 
   const doApprove = async () => {
     if (!approving) return;
-    if (!name.trim()) { setErr("A name is required."); return; }
+    const missing = missingRequired(approving.masterType, values, ctx);
+    if (missing) { setErr(missing); return; }
     setBusy(true); setErr(null);
-    try { await s.resolveMasterRequest(approving.id, true, { name: name.trim() }, null); setApproving(null); }
+    try {
+      await s.resolveMasterRequest(approving.id, true, payloadFromValues(approving.masterType, values), null);
+      setApproving(null);
+    }
     catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -140,7 +162,7 @@ export default function MasterRequests() {
                           )}
                         </td>
                         <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
-                        <td className="px-4 py-3">{describePayload(r.masterType, r.proposedPayload)}</td>
+                        <td className="px-4 py-3">{describePayload(r.masterType, r.proposedPayload, ctx)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{s.profileById(r.requestedBy ?? "")?.name ?? "—"}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(r.createdAt)}</td>
                         <td className="px-4 py-3">{statusBadge(r.status)}</td>
@@ -179,9 +201,25 @@ export default function MasterRequests() {
         }
       >
         <div className="space-y-3.5">
-          <FieldLabel label="Name" required>
-            <TextInput value={name} onChange={(e) => setName(e.target.value)} />
-          </FieldLabel>
+          {approving && masterFields(approving.masterType, ctx).map((f) => (
+            <FieldLabel key={f.key} label={f.label} required={f.required} hint={f.hint}>
+              {f.type === "select" ? (
+                <Combobox
+                  value={values[f.key] ?? ""}
+                  onChange={(v) => setValues((p) => ({ ...p, [f.key]: v }))}
+                  options={f.options ?? []}
+                  placeholder={f.placeholder ?? "Select…"}
+                  autoAdvance
+                />
+              ) : (
+                <TextInput
+                  value={values[f.key] ?? ""}
+                  placeholder={f.placeholder}
+                  onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                />
+              )}
+            </FieldLabel>
+          ))}
           {approving && <p className="text-[12px] text-grey-2">Requested by {s.profileById(approving.requestedBy ?? "")?.name ?? "—"} on {formatDateTime(approving.createdAt)}.</p>}
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>

@@ -8,12 +8,14 @@ import LineGrid, { newUid, type LineGridColumn } from "@/shared/components/ui/Li
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import ExportButtons from "./ExportButtons";
 import StepDocLink from "./StepDocLink";
+import RequestMasterModal from "./RequestMasterModal";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
 import { dmy, numOrDash, packFinalQty } from "../lib/format";
+import type { MasterValues } from "../lib/masterFields";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import { isAisLoopBlocked, type QueueStep } from "../lib/queues";
-import type { ProductionRequest } from "../types";
+import type { ProductionMasterType, ProductionRequest } from "../types";
 
 /** Today as yyyy-mm-dd in the browser's LOCAL timezone. Deliberately not the
  *  shared (UTC-based) todayIso: on a night shift an IST entry made after
@@ -188,6 +190,10 @@ export default function StepModal({
   const [logFile, setLogFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // A master missing mid-step is raised from the picker that needed it. The modal
+  // it drives is rendered OUTSIDE this dialog (see the return) — a stacked child
+  // inside a read-only Modal's <fieldset disabled> comes up inert.
+  const [raise, setRaise] = useState<{ mt: ProductionMasterType; prefill: MasterValues } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const logFileRef = useRef<HTMLInputElement>(null);
 
@@ -631,6 +637,7 @@ export default function StepModal({
   ];
 
   return (
+    <>
     <Modal
       open={open}
       onClose={onClose}
@@ -871,6 +878,8 @@ export default function StepModal({
                       searchable
                       triggerClassName="px-2.5 py-1.5 text-[13.5px]"
                       onTriggerKeyDown={api.keyHandler}
+                      onCreate={(name) => setRaise({ mt: "packaging_item", prefill: { name } })}
+                      createLabel={(q) => `Request new packaging item “${q}”`}
                     />
                   ),
                 },
@@ -1267,6 +1276,8 @@ export default function StepModal({
                   searchable
                   triggerClassName="px-2.5 py-1.5 text-[13.5px]"
                   onTriggerKeyDown={api.keyHandler}
+                  onCreate={(name) => setRaise({ mt: "raw_material", prefill: { name } })}
+                  createLabel={(q) => `Request new raw material “${q}”`}
                 />
               ),
             },
@@ -1599,5 +1610,17 @@ export default function StepModal({
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>
+
+    {/* Sibling of the dialog, never its child: in read-only mode the body sits
+        inside a <fieldset disabled>, which would render this inert. */}
+    <RequestMasterModal
+      open={raise !== null}
+      onClose={() => setRaise(null)}
+      masterType={raise?.mt ?? null}
+      lockType
+      stacked
+      prefill={raise?.prefill}
+    />
+    </>
   );
 }

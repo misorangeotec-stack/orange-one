@@ -1,9 +1,9 @@
 import { useState } from "react";
 import Tabs from "@/shared/components/ui/Tabs";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
-import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { useProductionStore } from "../../store";
-import { masterFields } from "../../lib/masterFields";
+import { carriesUnit, masterFields } from "../../lib/masterFields";
+import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
 import { PRODUCTION_MASTER_TYPES, type NamedMaster, type ProductionMasterType, type RawMaterial } from "../../types";
 
 /**
@@ -16,28 +16,19 @@ import { PRODUCTION_MASTER_TYPES, type NamedMaster, type ProductionMasterType, t
  */
 export default function Masters() {
   const s = useProductionStore();
+  const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<ProductionMasterType>("raw_material");
 
   const tabs = PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length }));
 
-  // Raw materials, packaging items AND FG items each carry their own unit.
-  const hasUnit = tab === "raw_material" || tab === "packaging_item" || tab === "fg_item";
-  const unitOptions: ComboOption[] = s.activeUnits.map((u) => ({ value: u.id, label: u.name }));
+  // Raw materials, packaging items AND FG items each carry their own unit. The
+  // Unit field itself lives in the shared schema (so the request + approve modals
+  // ask for it too); `hasUnit` still drives the value bag, which also carries
+  // sortOrder — not a schema field.
+  const hasUnit = carriesUnit(tab);
   const unitName = (r: NamedMaster) => s.unitById((r as RawMaterial).unitId)?.name ?? "—";
 
-  const fields: MasterFieldDef[] = hasUnit
-    ? [
-        ...masterFields(tab),
-        {
-          key: "unit_id",
-          label: "Unit",
-          type: "select",
-          options: unitOptions,
-          placeholder: "Select unit",
-          hint: "Shown automatically when this item is picked on a job card.",
-        },
-      ]
-    : masterFields(tab);
+  const fields: MasterFieldDef[] = masterFields(tab, ctx);
 
   const columns: MasterColumn<NamedMaster>[] = [
     { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },

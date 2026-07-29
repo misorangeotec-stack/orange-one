@@ -4,6 +4,8 @@ import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import { useSession } from "@/core/platform/session";
 import { useProductionStore } from "../../store";
 import type { RequestInput } from "../../data/productionWrites";
+import type { ProductionMasterType } from "../../types";
+import type { MasterValues } from "../../lib/masterFields";
 
 /**
  * The issue-slip (step 1) intake form's state for a new job card. One card
@@ -46,6 +48,13 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
   const [issueRemarks, setIssueRemarks] = useState("");
   const [lines, setLines] = useState<RmLine[]>([makeEmptyRmLine()]);
   const [err, setErr] = useState<string | null>(null);
+
+  // A missing master is raised from the picker that needed it: `raise` drives the
+  // RequestMasterModal (type + the name already typed), `requested` is the
+  // confirmation line left behind once it's sent. Nothing is selected on the
+  // form — the entry doesn't exist until its owner approves it.
+  const [raise, setRaise] = useState<{ mt: ProductionMasterType; prefill: MasterValues } | null>(null);
+  const [requested, setRequested] = useState<string | null>(null);
 
   // Hydrate from `init` exactly ONCE per request id — a background refetch rebuilds
   // the store and would otherwise wipe in-progress edits. (Same guard as Import's
@@ -102,6 +111,8 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     issueRemarks, setIssueRemarks,
     lines, setLines,
     err, setErr,
+    raise, setRaise,
+    requested, setRequested,
     rmSum, fgTotal, sumMatches,
     fgItemOptions, rawMaterialOptionsFor, unitForRawMaterial,
     build,

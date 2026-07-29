@@ -38,9 +38,10 @@ export default function ProductionEntryLayout() {
         canMonitor: s.isProcessCoordinator,
         hasRequests,
         canRaise: s.canRaise,
+        pendingReviews: s.resolvableRequests.length,
         queues,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasRequests, s.canRaise, queues],
+    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasRequests, s.canRaise, s.resolvableRequests.length, queues],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

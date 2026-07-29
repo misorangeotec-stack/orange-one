@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { FieldLabel } from "@/shared/components/ui/Form";
@@ -54,10 +54,7 @@ export default function NewRequest() {
     <div className="max-w-4xl mx-auto space-y-5">
       <div>
         <h1 className="text-[22px] font-bold text-navy">Generate Issue Slip</h1>
-        <p className="text-[13.5px] text-grey-2 mt-1">
-          Raise a new production issue slip. Missing an option below? Request it on the{" "}
-          <Link to="/production-entry/master-requests" className="font-semibold text-orange hover:underline">Master Requests</Link> page.
-        </p>
+        <p className="text-[13.5px] text-grey-2 mt-1">Raise a new production issue slip.</p>
       </div>
 
       <IssueSlipFields

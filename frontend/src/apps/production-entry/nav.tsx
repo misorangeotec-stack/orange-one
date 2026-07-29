@@ -39,6 +39,8 @@ export function buildProductionNav(opts: {
   canMonitor: boolean;
   hasRequests: boolean;
   canRaise: boolean;
+  /** Master requests waiting on THIS user (owner or admin) — 0 for everyone else. */
+  pendingReviews: number;
   queues: Record<QueueStep, boolean>;
 }): NavItem[] {
   const nav: NavItem[] = [
@@ -52,7 +54,9 @@ export function buildProductionNav(opts: {
           { label: "My Issue Slips", to: `${B}/my-requests`, icon: ic.mine },
         ]
       : [{ label: "My Issue Slips", to: `${B}/my-requests`, icon: ic.mine, section: "Actions" }]),
-    { label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests },
+    // Raising a master is now a one-click affair from any picker, so the queue
+    // fills up fast — its owners need to see that without opening the page.
+    { label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests, badge: opts.pendingReviews || undefined },
   ];
 
   let queueUsed = false;

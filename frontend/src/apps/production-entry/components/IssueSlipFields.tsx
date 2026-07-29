@@ -3,6 +3,8 @@ import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import RequestMasterModal from "./RequestMasterModal";
+import { masterTypeLabel } from "../lib/masterFields";
 import { useProductionStore } from "../store";
 import { makeEmptyRmLine, isRmLineBlank, type RmLine, type JobCardFormApi } from "../pages/requests/useJobCardForm";
 import { qtyTotals } from "../lib/format";
@@ -44,6 +46,8 @@ export default function IssueSlipFields({
           searchable
           triggerClassName="px-2.5 py-1.5 text-[13.5px]"
           onTriggerKeyDown={api.keyHandler}
+          onCreate={(name) => f.setRaise({ mt: "raw_material", prefill: { name } })}
+          createLabel={(q) => `Request new raw material “${q}”`}
         />
       ),
     },
@@ -84,78 +88,100 @@ export default function IssueSlipFields({
   const { grand: grandTotal, multiUnit } = qtyTotals(totalsByUnit);
 
   return (
-    <Card className="p-5 space-y-4">
-      {batchField}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <FieldLabel label="FG Item Name" required>
-          <Combobox value={f.fgItemId} onChange={f.setFgItemId} options={f.fgItemOptions} placeholder="Select finished-good item" autoAdvance />
-        </FieldLabel>
-        <FieldLabel label="FG Total Quantity" required hint="the raw materials below must add up to this">
-          <TextInput
-            type="number"
-            className="text-right tabular-nums"
-            value={f.fgTotalQty}
-            onChange={(e) => f.setFgTotalQty(e.target.value)}
-            placeholder="e.g. 500"
+    <>
+      <Card className="p-5 space-y-4">
+        {batchField}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <FieldLabel label="FG Item Name" required>
+            <Combobox
+              value={f.fgItemId}
+              onChange={f.setFgItemId}
+              options={f.fgItemOptions}
+              placeholder="Select finished-good item"
+              onCreate={(name) => f.setRaise({ mt: "fg_item", prefill: { name } })}
+              createLabel={(q) => `Request new FG item “${q}”`}
+              autoAdvance
+            />
+          </FieldLabel>
+          <FieldLabel label="FG Total Quantity" required hint="the raw materials below must add up to this">
+            <TextInput
+              type="number"
+              className="text-right tabular-nums"
+              value={f.fgTotalQty}
+              onChange={(e) => f.setFgTotalQty(e.target.value)}
+              placeholder="e.g. 500"
+            />
+          </FieldLabel>
+        </div>
+
+        <div className="space-y-2">
+          <span className="block text-[13px] font-medium text-navy">
+            Raw Materials <span className="text-orange">*</span>
+          </span>
+          <LineGrid
+            rows={f.lines}
+            onRowsChange={f.setLines}
+            columns={columns}
+            makeEmptyRow={makeEmptyRmLine}
+            isRowBlank={isRmLineBlank}
+            footer={
+              filledLines.length > 0 ? (
+                <tfoot>
+                  {unitTotals.map((t, i) => (
+                    <tr key={t.unit} className={`bg-page/50 text-navy ${i === 0 ? "border-t border-line" : ""}`}>
+                      <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">
+                        {i === 0 ? "Total Qty" : ""}
+                      </td>
+                      <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{t.qty}</td>
+                      <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{t.unit}</td>
+                      <td />
+                    </tr>
+                  ))}
+                  {multiUnit && (
+                    <tr className="bg-page/70 text-navy border-t border-line">
+                      <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">Grand Total</td>
+                      <td className="px-2.5 py-2 text-right tabular-nums font-bold text-[13.5px]">{grandTotal}</td>
+                      <td className="px-2.5 py-2 text-[12px] text-grey-2">all units</td>
+                      <td />
+                    </tr>
+                  )}
+                </tfoot>
+              ) : undefined
+            }
           />
+          <p className="text-[12px] text-grey-2">
+            List every raw material that goes into this FG item, each with its own quantity and unit. Press Tab or Enter at
+            the end of a row to start the next one. Missing one? Type its name to request it.
+          </p>
+          {f.requested && (
+            <p className="text-[12px] text-teal">Requested {f.requested} — selectable once the master's owner approves it.</p>
+          )}
+          {filledLines.length > 0 && (
+            <div className={`text-[12.5px] font-medium ${f.sumMatches ? "text-ryg-green" : "text-ryg-red"}`}>
+              Raw-material total: <span className="tabular-nums">{f.rmSum}</span>
+              {f.fgTotal > 0 && <> / FG total <span className="tabular-nums">{f.fgTotal}</span></>}
+              {f.fgTotal > 0 && !f.sumMatches && " — must match to save"}
+            </div>
+          )}
+        </div>
+
+        <FieldLabel label="Remarks">
+          <TextArea rows={2} value={f.issueRemarks} onChange={(e) => f.setIssueRemarks(e.target.value)} placeholder="Anything the team should know" />
         </FieldLabel>
-      </div>
 
-      <div className="space-y-2">
-        <span className="block text-[13px] font-medium text-navy">
-          Raw Materials <span className="text-orange">*</span>
-        </span>
-        <LineGrid
-          rows={f.lines}
-          onRowsChange={f.setLines}
-          columns={columns}
-          makeEmptyRow={makeEmptyRmLine}
-          isRowBlank={isRmLineBlank}
-          footer={
-            filledLines.length > 0 ? (
-              <tfoot>
-                {unitTotals.map((t, i) => (
-                  <tr key={t.unit} className={`bg-page/50 text-navy ${i === 0 ? "border-t border-line" : ""}`}>
-                    <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">
-                      {i === 0 ? "Total Qty" : ""}
-                    </td>
-                    <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{t.qty}</td>
-                    <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{t.unit}</td>
-                    <td />
-                  </tr>
-                ))}
-                {multiUnit && (
-                  <tr className="bg-page/70 text-navy border-t border-line">
-                    <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">Grand Total</td>
-                    <td className="px-2.5 py-2 text-right tabular-nums font-bold text-[13.5px]">{grandTotal}</td>
-                    <td className="px-2.5 py-2 text-[12px] text-grey-2">all units</td>
-                    <td />
-                  </tr>
-                )}
-              </tfoot>
-            ) : undefined
-          }
-        />
-        <p className="text-[12px] text-grey-2">
-          List every raw material that goes into this FG item, each with its own quantity and unit. Press Tab or Enter at
-          the end of a row to start the next one.
-        </p>
-        {filledLines.length > 0 && (
-          <div className={`text-[12.5px] font-medium ${f.sumMatches ? "text-ryg-green" : "text-ryg-red"}`}>
-            Raw-material total: <span className="tabular-nums">{f.rmSum}</span>
-            {f.fgTotal > 0 && <> / FG total <span className="tabular-nums">{f.fgTotal}</span></>}
-            {f.fgTotal > 0 && !f.sumMatches && " — must match to save"}
-          </div>
-        )}
-      </div>
+        {f.err && <p className="text-[12.5px] text-ryg-red">{f.err}</p>}
 
-      <FieldLabel label="Remarks">
-        <TextArea rows={2} value={f.issueRemarks} onChange={(e) => f.setIssueRemarks(e.target.value)} placeholder="Anything the team should know" />
-      </FieldLabel>
+        {children}
+      </Card>
 
-      {f.err && <p className="text-[12.5px] text-ryg-red">{f.err}</p>}
-
-      {children}
-    </Card>
+      <RequestMasterModal
+        open={f.raise !== null}
+        onClose={() => f.setRaise(null)}
+        masterType={f.raise?.mt ?? null}
+        lockType
+        prefill={f.raise?.prefill}
+        onRequested={(_id, mt, name) => f.setRequested(`${masterTypeLabel(mt).toLowerCase()} “${name}”`)}
+      />
+    </>
   );
 }
