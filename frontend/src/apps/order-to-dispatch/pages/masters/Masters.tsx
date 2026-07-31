@@ -6,24 +6,16 @@ import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
 import {
   emptyValuesFor, isNameless, masterFields, masterTypePlural, type MasterValues,
 } from "../../lib/masterFields";
-import {
-  DISPATCH_MASTER_TYPES, DISPATCH_ORDERING_MASTERS,
-  type DispatchMasterType, type NamedMaster,
-} from "../../types";
-
-/** The three tabs, in order. Company is a master but not something anyone picks. */
-const ORDERING_MASTER_TYPES = DISPATCH_MASTER_TYPES.filter((m) =>
-  DISPATCH_ORDERING_MASTERS.includes(m.value),
-);
+import { DISPATCH_MASTER_TYPES, type DispatchMasterType, type NamedMaster } from "../../types";
 
 
 /**
- * The three masters the dispatch flow picks from: WHO buys, WHAT we sell, and
- * WHICH of it each of them may order.
+ * The four masters: WHO buys, WHAT we sell, WHICH of it each of them may order,
+ * and the companies we sell as.
  *
- * Company is not a tab. It is still a master — owners, RLS, and the required
- * customer↔company mapping the sales order reads — but nobody picks one while
- * ordering, so it does not belong in a screen about ordering.
+ * Company is a tab in its own right. It is no longer wired to the customer — an
+ * order does not record a billing entity any more — but the list is still ours to
+ * keep, so it stays editable here.
  *
  * Every tab renders through the shared MasterCrud, which is where search,
  * activate/deactivate and the Excel export/import round trip come from — none of
@@ -34,7 +26,7 @@ export default function Masters() {
   const s = useDispatchStore();
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<DispatchMasterType>("customer");
-  const active = ORDERING_MASTER_TYPES.some((t) => t.value === tab) ? tab : "customer";
+  const active = DISPATCH_MASTER_TYPES.some((t) => t.value === tab) ? tab : "customer";
 
   const rows = s.masterList(active);
   const fields = masterFields(active, ctx);
@@ -89,14 +81,14 @@ export default function Masters() {
       </div>
 
       <Tabs
-        tabs={ORDERING_MASTER_TYPES.map((t) => ({ key: t.value, label: t.plural, count: s.masterList(t.value).length }))}
+        tabs={DISPATCH_MASTER_TYPES.map((t) => ({ key: t.value, label: t.plural, count: s.masterList(t.value).length }))}
         active={active}
         onChange={(k) => setTab(k as DispatchMasterType)}
       />
 
       <MasterCrud<NamedMaster>
         key={active}
-        singular={ORDERING_MASTER_TYPES.find((m) => m.value === active)!.label}
+        singular={DISPATCH_MASTER_TYPES.find((m) => m.value === active)!.label}
         rows={rows}
         columns={columns}
         fields={fields}

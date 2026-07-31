@@ -79,8 +79,8 @@ export interface MasterTypeDef {
 }
 
 /**
- * Every master type. All four are OWNABLE (they take an owner list and are
- * editable by their owner).
+ * Every master type, in Masters-tab order. All four are OWNABLE (they take an
+ * owner list and are editable by their owner) and all four have a tab.
  *
  * The reshape cut this from eighteen, and the mapping change cut two more: UNIT
  * is one word per item and now lives on the item as text, and CATEGORY was read
@@ -94,18 +94,6 @@ export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
   { value: "customer_item", label: "Customer-Item Mapping", plural: "Customer-Item Mappings" },
   { value: "company",       label: "Company",               plural: "Companies" },
 ];
-
-/**
- * The masters that get a tab on the Masters page — customer, item, and what
- * each customer may order.
- *
- * ⚠ COMPANY IS DELIBERATELY ABSENT, and is NOT the same statement as deleting
- *   it. It is still a master (owners, RLS, the required customer↔company
- *   mapping the sales order reads), it is simply not something anyone picks
- *   while ordering — it is one-time configuration. Keep it in
- *   DISPATCH_MASTER_TYPES so owners and requests still resolve.
- */
-export const DISPATCH_ORDERING_MASTERS: DispatchMasterType[] = ["customer", "item", "customer_item"];
 
 /**
  * The subset offered in the "Request a new entry" picker.
