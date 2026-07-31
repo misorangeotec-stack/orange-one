@@ -43,16 +43,34 @@ export interface Customer extends NamedMaster {
 
 export interface Item extends NamedMaster {
   code: string | null;
-  categoryId: string | null;
-  unitId: string | null;
+  /**
+   * How the item is measured — plain text (KGS, LTR, PCS). There is no unit
+   * master: a unit is one word per item, and a separate list only ever let an
+   * order line pick a DIFFERENT unit from the item's own.
+   */
+  unit: string | null;
   hsnCode: string | null;
+}
+
+/**
+ * WHICH ITEMS A CUSTOMER MAY ORDER. A row is what makes an item selectable on
+ * that customer's sales order; no row means it is not offered to them.
+ *
+ * ⚠ It carries no name of its own — it is described by the pair it names. Every
+ *   surface that shows one (Masters list, request modal) synthesises
+ *   "Customer — Item", and the resolve RPC exempts this type from the
+ *   name-is-required check for the same reason.
+ */
+export interface CustomerItem extends NamedMaster {
+  customerId: string;
+  itemId: string;
 }
 
 /* -------------------------------------------------------------------------- */
 /*  Master governance                                                          */
 /* -------------------------------------------------------------------------- */
 
-export type DispatchMasterType = "company" | "customer" | "item" | "unit" | "category";
+export type DispatchMasterType = "company" | "customer" | "item" | "customer_item";
 
 export interface MasterTypeDef {
   value: DispatchMasterType;
@@ -61,22 +79,33 @@ export interface MasterTypeDef {
 }
 
 /**
- * Every master type, in Masters-tab order. All five are OWNABLE (they take an
- * owner list and are editable on the Masters page).
+ * Every master type. All four are OWNABLE (they take an owner list and are
+ * editable by their owner).
  *
- * The reshape cut this from eighteen: delivery address, order source, payment
- * term, godown, gate, invoice series, vehicle, driver, transporter, shortfall
- * reason, packing type, LOT and mail template each fed exactly one field that no
- * longer exists. Their tables are dropped — do not re-add a type here without
- * the matching table and an arm in `fms_dispatch_resolve_master_request`.
+ * The reshape cut this from eighteen, and the mapping change cut two more: UNIT
+ * is one word per item and now lives on the item as text, and CATEGORY was read
+ * by a single display column and nothing in the flow. Their tables are dropped —
+ * do not re-add a type here without the matching table and an arm in
+ * `fms_dispatch_resolve_master_request`.
  */
 export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
-  { value: "customer", label: "Customer",      plural: "Customers" },
-  { value: "item",     label: "Item",          plural: "Items" },
-  { value: "category", label: "Item category", plural: "Item categories" },
-  { value: "unit",     label: "Unit",          plural: "Units" },
-  { value: "company",  label: "Company",       plural: "Companies" },
+  { value: "customer",      label: "Customer",              plural: "Customers" },
+  { value: "item",          label: "Item",                  plural: "Items" },
+  { value: "customer_item", label: "Customer-Item Mapping", plural: "Customer-Item Mappings" },
+  { value: "company",       label: "Company",               plural: "Companies" },
 ];
+
+/**
+ * The masters that get a tab on the Masters page — customer, item, and what
+ * each customer may order.
+ *
+ * ⚠ COMPANY IS DELIBERATELY ABSENT, and is NOT the same statement as deleting
+ *   it. It is still a master (owners, RLS, the required customer↔company
+ *   mapping the sales order reads), it is simply not something anyone picks
+ *   while ordering — it is one-time configuration. Keep it in
+ *   DISPATCH_MASTER_TYPES so owners and requests still resolve.
+ */
+export const DISPATCH_ORDERING_MASTERS: DispatchMasterType[] = ["customer", "item", "customer_item"];
 
 /**
  * The subset offered in the "Request a new entry" picker.
@@ -195,7 +224,9 @@ export interface OrderLine {
   itemId: string;
   /** Ordered. Intake only — never changes once a dispatch has gone out. */
   quantity: number;
-  unitId: string | null;
+  /** The item's unit AS AT the moment the order was raised — a snapshot, so a
+   *  later edit to the item master does not rewrite an old order's line. */
+  unit: string | null;
   lineRemark: string | null;
 
   /**
@@ -224,7 +255,6 @@ export interface RoundItem {
   lineNo: number;
   itemId: string | null;
   itemName: string;
-  unitId: string | null;
   unitName: string | null;
   orderedQty: number;
   shipQty: number;

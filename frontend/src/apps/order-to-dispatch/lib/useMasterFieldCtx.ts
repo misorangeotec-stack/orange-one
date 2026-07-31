@@ -12,9 +12,9 @@ import type { MasterFieldCtx } from "./masterFields";
  * builds its own: they drift, and one screen quietly shows empty pickers. See
  * procurement/lib/useMasterFieldCtx.ts.
  *
- * Three lists, down from seven: the customer / item / transporter / user pickers
- * belonged to masters the 2026-08 reshape deleted. `companyOptions` is the one
- * that gained a job — it now backs the required company↔customer mapping.
+ * Three lists: `companyOptions` backs the required company↔customer mapping, and
+ * customer + item back the two halves of the customer↔item mapping. The category
+ * and unit lists went with their masters.
  *
  * Options are ACTIVE-only (a deactivated parent must not be selectable), while the
  * store's display lookups still read the full list so history renders.
@@ -28,8 +28,8 @@ export function useMasterFieldCtx(): MasterFieldCtx {
 
     return {
       companyOptions: opts(s.activeOf(s.companies)),
-      categoryOptions: opts(s.activeOf(s.categories)),
-      unitOptions: opts(s.activeOf(s.units)),
+      customerOptions: opts(s.activeOf(s.customers)),
+      itemOptions: opts(s.activeOf(s.items)),
     };
   }, [s]);
 }

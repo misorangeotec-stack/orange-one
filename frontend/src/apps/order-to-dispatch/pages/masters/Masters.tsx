@@ -4,19 +4,26 @@ import Tabs from "@/shared/components/ui/Tabs";
 import { useDispatchStore } from "../../store";
 import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
 import {
-  emptyValuesFor, masterFields, masterTypePlural, type MasterValues,
+  emptyValuesFor, isNameless, masterFields, masterTypePlural, type MasterValues,
 } from "../../lib/masterFields";
-import { DISPATCH_MASTER_TYPES, type DispatchMasterType, type NamedMaster } from "../../types";
+import {
+  DISPATCH_MASTER_TYPES, DISPATCH_ORDERING_MASTERS,
+  type DispatchMasterType, type NamedMaster,
+} from "../../types";
+
+/** The three tabs, in order. Company is a master but not something anyone picks. */
+const ORDERING_MASTER_TYPES = DISPATCH_MASTER_TYPES.filter((m) =>
+  DISPATCH_ORDERING_MASTERS.includes(m.value),
+);
 
 
 /**
- * The five masters the dispatch flow actually reads.
+ * The three masters the dispatch flow picks from: WHO buys, WHAT we sell, and
+ * WHICH of it each of them may order.
  *
- * The old four-group tab layer (Sales / Stores / Logistics / Accounts) is gone
- * with the thirteen masters the reshape deleted: with five left, two of those
- * groups would have been empty, and the group switcher indexed
- * `DISPATCH_MASTER_TYPES.find(...)!` — a non-null assertion that throws the
- * moment an empty group is clicked.
+ * Company is not a tab. It is still a master — owners, RLS, and the required
+ * customer↔company mapping the sales order reads — but nobody picks one while
+ * ordering, so it does not belong in a screen about ordering.
  *
  * Every tab renders through the shared MasterCrud, which is where search,
  * activate/deactivate and the Excel export/import round trip come from — none of
@@ -27,17 +34,26 @@ export default function Masters() {
   const s = useDispatchStore();
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<DispatchMasterType>("customer");
-  const active = DISPATCH_MASTER_TYPES.some((t) => t.value === tab) ? tab : "customer";
+  const active = ORDERING_MASTER_TYPES.some((t) => t.value === tab) ? tab : "customer";
 
   const rows = s.masterList(active);
   const fields = masterFields(active, ctx);
 
-  /** Column set: the name, plus whatever that master's own fields are worth showing. */
-  const columns: MasterColumn<NamedMaster>[] = [
-    { header: masterTypePlural(active), render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-    ...extraColumns(active, s),
-    { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-20" },
-  ];
+  /**
+   * Column set: the name, plus whatever that master's own fields are worth showing.
+   *
+   * A NAMELESS master gets neither the name column (its synthetic label just
+   * repeats the two columns beside it) nor Sort order (there is nothing to order
+   * — the mapping is read as a set, and the Excel load writes thousands of rows
+   * that would all sit at 0 anyway).
+   */
+  const columns: MasterColumn<NamedMaster>[] = isNameless(active)
+    ? extraColumns(active, s)
+    : [
+        { header: masterTypePlural(active), render: (r) => <span className="font-medium text-navy">{r.name}</span> },
+        ...extraColumns(active, s),
+        { header: "Order", render: (r) => <span className="text-grey-2">{r.sortOrder}</span>, className: "w-20" },
+      ];
 
   /** The stored row → the string bag MasterCrud edits. Keys match emptyValuesFor. */
   const toValues = (r: NamedMaster): MasterValues => {
@@ -73,14 +89,14 @@ export default function Masters() {
       </div>
 
       <Tabs
-        tabs={DISPATCH_MASTER_TYPES.map((t) => ({ key: t.value, label: t.plural, count: s.masterList(t.value).length }))}
+        tabs={ORDERING_MASTER_TYPES.map((t) => ({ key: t.value, label: t.plural, count: s.masterList(t.value).length }))}
         active={active}
         onChange={(k) => setTab(k as DispatchMasterType)}
       />
 
       <MasterCrud<NamedMaster>
         key={active}
-        singular={DISPATCH_MASTER_TYPES.find((m) => m.value === active)!.label}
+        singular={ORDERING_MASTER_TYPES.find((m) => m.value === active)!.label}
         rows={rows}
         columns={columns}
         fields={fields}
@@ -148,20 +164,30 @@ function extraColumns(
     case "customer":
       return [
         text("Code", (r) => r.code),
-        {
-          header: "Company",
-          render: (r) => (
-            <span className="text-grey-2">
-              {s.masterName("company", (r as unknown as { companyId: string | null }).companyId)}
-            </span>
-          ),
-        },
         text("Phone", (r) => r.phone),
       ];
     case "item":
       return [
-        { header: "Category", render: (r) => <span className="text-grey-2">{s.masterName("category", (r as unknown as { categoryId: string | null }).categoryId)}</span> },
-        { header: "Unit", render: (r) => <span className="text-grey-2">{s.unitName((r as unknown as { unitId: string | null }).unitId)}</span> },
+        text("Code", (r) => r.code),
+        text("Unit", (r) => r.unit),
+      ];
+
+    case "customer_item":
+      // The pair IS the row — the synthetic `name` the store builds is only
+      // there for search and the Excel round trip, so it is never the column.
+      return [
+        {
+          header: "Customer",
+          render: (r) => (
+            <span className="text-navy">{s.customerName((r as unknown as { customerId: string }).customerId)}</span>
+          ),
+        },
+        {
+          header: "Item",
+          render: (r) => (
+            <span className="text-grey-2">{s.itemName((r as unknown as { itemId: string }).itemId)}</span>
+          ),
+        },
       ];
     case "company":
       return [text("GSTIN", (r) => r.gstin)];

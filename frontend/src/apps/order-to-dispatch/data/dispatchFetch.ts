@@ -7,7 +7,7 @@ const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  DispatchMasterType, DispatchNotification, DispatchOrder, DispatchRound, Item,
+  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, DispatchRound, Item,
   MasterManager, NamedMaster, OrderLine, RoundItem, StepOwner,
 } from "../types";
 
@@ -33,8 +33,7 @@ type Tbl =
   | "fms_dispatch_step_owners"
   | "fms_dispatch_config"
   | "fms_dispatch_companies"
-  | "fms_dispatch_units"
-  | "fms_dispatch_categories"
+  | "fms_dispatch_customer_items"
   | "fms_dispatch_customers"
   | "fms_dispatch_items"
   | "fms_dispatch_master_managers"
@@ -106,10 +105,9 @@ export interface DispatchData {
   config: DispatchConfig;
 
   companies: Company[];
-  units: NamedMaster[];
-  categories: NamedMaster[];
   customers: Customer[];
   items: Item[];
+  customerItems: CustomerItem[];
 
   masterManagers: MasterManager[];
   masterRequests: DispatchMasterRequest[];
@@ -156,7 +154,7 @@ const mapLine = (r: any): OrderLine => ({
   lineNo: r.line_no,
   itemId: r.item_id,
   quantity: Number(r.quantity ?? 0),
-  unitId: r.unit_id ?? null,
+  unit: str(r.unit),
   lineRemark: str(r.line_remark),
   dispatchedQty: Number(r.dispatched_qty ?? 0),
   shipQty: num(r.ship_qty),
@@ -170,7 +168,6 @@ const mapRoundItem = (r: any): RoundItem => ({
   lineNo: r.line_no,
   itemId: r.item_id ?? null,
   itemName: r.item_name ?? "Item",
-  unitId: r.unit_id ?? null,
   unitName: str(r.unit_name),
   orderedQty: Number(r.ordered_qty ?? 0),
   shipQty: Number(r.ship_qty ?? 0),
@@ -327,10 +324,10 @@ const mapNotification = (r: any): DispatchNotification => ({
 });
 
 export async function fetchDispatchData(): Promise<DispatchData> {
-  // 16 names, 16 calls. Keep them in step.
+  // 15 names, 15 calls. Keep them in step.
   const [
     stepOwners, configRows, designations,
-    companies, units, categories, customers, items,
+    companies, customerItems, customers, items,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
     activity, notifications,
@@ -339,8 +336,7 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchAll("fms_dispatch_config", "key"),
     fetchAll("designations"),
     fetchAll("fms_dispatch_companies"),
-    fetchAll("fms_dispatch_units"),
-    fetchAll("fms_dispatch_categories"),
+    fetchAll("fms_dispatch_customer_items"),
     fetchAll("fms_dispatch_customers"),
     fetchAll("fms_dispatch_items"),
     fetchAll("fms_dispatch_master_managers"),
@@ -405,12 +401,14 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     config,
 
     companies: companies.map((r): Company => ({ ...mapMaster(r), gstin: str(r.gstin), address: str(r.address) })),
-    units: units.map(mapMaster),
-    categories: categories.map(mapMaster),
     customers: customers.map(mapCustomer),
     items: items.map((r): Item => ({
-      ...mapMaster(r), code: str(r.code), categoryId: r.category_id ?? null,
-      unitId: r.unit_id ?? null, hsnCode: str(r.hsn_code),
+      ...mapMaster(r), code: str(r.code), unit: str(r.unit), hsnCode: str(r.hsn_code),
+    })),
+    // The row has no name of its own; the synthetic "Customer - Item" label is
+    // built where it is displayed, from the live master lists.
+    customerItems: customerItems.map((r): CustomerItem => ({
+      ...mapMaster(r), name: "", customerId: r.customer_id, itemId: r.item_id,
     })),
 
     masterManagers: masterManagers.map(mapMasterManager),

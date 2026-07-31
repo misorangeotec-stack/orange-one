@@ -21,7 +21,6 @@ import type { DispatchOrder } from "../types";
 export interface RegisterDeps extends OrderVmDeps {
   customerName: (id: string | null) => string;
   itemName: (id: string | null) => string;
-  unitName: (id: string | null) => string;
   companyName: (id: string | null) => string;
 }
 
@@ -59,7 +58,7 @@ export function exportOrderRegister(
       header: "Ordered Qty",
       width: 18,
       value: (r) =>
-        r.order.lines.map((l) => `${l.quantity} ${deps.unitName(l.unitId)}`.trim()).join(", "),
+        r.order.lines.map((l) => `${l.quantity} ${l.unit ?? ""}`.trim()).join(", "),
     },
     {
       header: "Dispatched This Round",

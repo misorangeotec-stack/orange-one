@@ -13,13 +13,24 @@ export type MasterValues = Record<string, string>;
  */
 export interface MasterFieldCtx {
   companyOptions: ComboOption[];
-  categoryOptions: ComboOption[];
-  unitOptions: ComboOption[];
+  customerOptions: ComboOption[];
+  itemOptions: ComboOption[];
 }
 
 export const EMPTY_MASTER_CTX: MasterFieldCtx = {
-  companyOptions: [], categoryOptions: [], unitOptions: [],
+  companyOptions: [], customerOptions: [], itemOptions: [],
 };
+
+/**
+ * Masters whose rows have NO name of their own — they are identified by the
+ * parents they join.
+ *
+ * ⚠ The write layer reads this to leave `name` out of the row entirely:
+ *   fms_dispatch_customer_items has no name column, so sending one is a
+ *   "column does not exist" on every save.
+ */
+export const NAMELESS_MASTERS: DispatchMasterType[] = ["customer_item"];
+export const isNameless = (mt: DispatchMasterType) => NAMELESS_MASTERS.includes(mt);
 
 /**
  * THE field schema for every Order to Dispatch master.
@@ -40,14 +51,6 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
     case "customer":
       return [
         { key: "name", label: "Customer name", type: "text", required: true },
-        {
-          // THE COMPANY↔CUSTOMER MAPPING. Required, and the reason the sales
-          // order no longer asks which company is selling — every order reads it
-          // from here. `fms_dispatch_submit_order` refuses to raise without it,
-          // so leaving it optional would only move the failure later.
-          key: "company_id", label: "Company", type: "select", required: true,
-          options: ctx.companyOptions,
-        },
         { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
         { key: "contact_name", label: "Contact person", type: "text" },
         { key: "phone", label: "Phone", type: "text" },
@@ -60,10 +63,20 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
       return [
         { key: "name", label: "Item name", type: "text", required: true },
         { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
-        { key: "category_id", label: "Category", type: "select", options: ctx.categoryOptions },
-        { key: "unit_id", label: "Unit", type: "select", options: ctx.unitOptions },
+        // Free text, not a picker. The unit belongs to the item; a master would
+        // only let an order line contradict it.
+        { key: "unit", label: "Unit", type: "text", placeholder: "e.g. KGS, LTR, PCS" },
         { key: "hsn_code", label: "HSN code", type: "text" },
         sortField,
+      ];
+
+    case "customer_item":
+      // THE CUSTOMER↔ITEM MAPPING. A row is what makes an item selectable on
+      // that customer's sales order — the pair IS the record, so there is no
+      // name field and no sort order worth setting.
+      return [
+        { key: "customer_id", label: "Customer", type: "select", required: true, options: ctx.customerOptions, placeholder: "Select customer" },
+        { key: "item_id", label: "Item", type: "select", required: true, options: ctx.itemOptions, placeholder: "Select item" },
       ];
 
     case "company":
@@ -84,10 +97,9 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
 }
 
 const labelFor = (mt: DispatchMasterType) => DISPATCH_MASTER_TYPES.find((m) => m.value === mt)?.label ?? mt;
-const placeholderFor = (mt: DispatchMasterType): string =>
-  mt === "unit" ? "e.g. KGS, LTR, PCS"
-  : mt === "category" ? "e.g. Ink"
-  : "";
+/* Every remaining master states its own placeholders in `masterFields`; the
+   name-only default arm has none left to offer. */
+const placeholderFor = (_mt: DispatchMasterType): string => "";
 
 /**
  * The value bag for a master type. Its KEYS are the Excel export/import schema
@@ -102,11 +114,15 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
   const base: MasterValues = { name: "", sortOrder: "0" };
   switch (mt) {
     case "customer":
-      return { ...base, company_id: "", code: "", contact_name: "", phone: "", email: "", gstin: "" };
+      return { ...base, code: "", contact_name: "", phone: "", email: "", gstin: "" };
     case "item":
-      return { ...base, code: "", category_id: "", unit_id: "", hsn_code: "" };
+      return { ...base, code: "", unit: "", hsn_code: "" };
     case "company":
       return { ...base, gstin: "", address: "" };
+    // No `name` in the bag — the row has none. Including it would put an empty
+    // Name column in the Excel round trip and send `name: null` on every save.
+    case "customer_item":
+      return { customer_id: "", item_id: "" };
     default:
       return base;
   }
@@ -127,7 +143,9 @@ export function payloadFromValues(mt: DispatchMasterType, v: MasterValues): Reco
     const raw = String(v[key] ?? "").trim();
     if (raw) out[key] = raw;
   }
-  out.name = String(v.name ?? "").trim();
+  // A nameless master must NOT get a name key: the resolve RPC exempts it from
+  // the name-is-required check, and an empty string would fail that check anyway.
+  if (!isNameless(mt)) out.name = String(v.name ?? "").trim();
   return out;
 }
 
@@ -135,8 +153,23 @@ export const masterTypeLabel = (mt: DispatchMasterType) => labelFor(mt);
 export const masterTypePlural = (mt: DispatchMasterType) =>
   DISPATCH_MASTER_TYPES.find((m) => m.value === mt)?.plural ?? mt;
 
-/** A one-line human summary of a proposed payload — the name plus its parent. */
-export function describePayload(mt: DispatchMasterType, payload: Record<string, unknown>): string {
+/**
+ * A one-line human summary of a proposed payload — the name plus its parent.
+ *
+ * `lookup` is only consulted for the nameless mapping, whose payload is two ids
+ * and would otherwise render as a dash on the approve screen.
+ */
+export function describePayload(
+  mt: DispatchMasterType,
+  payload: Record<string, unknown>,
+  lookup?: { customerName: (id: string) => string; itemName: (id: string) => string },
+): string {
+  if (mt === "customer_item") {
+    const c = lookup?.customerName(String(payload.customer_id ?? "")) ?? "";
+    const i = lookup?.itemName(String(payload.item_id ?? "")) ?? "";
+    // Both names or neither — a half-resolved pair reads worse than the label.
+    return c && i ? `${c} — ${i}` : "Customer-item mapping";
+  }
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
   const extra = mt === "item" && payload.code ? ` · ${payload.code}` : "";
   return (name || "—") + extra;

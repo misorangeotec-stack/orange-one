@@ -49,7 +49,7 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
   Company, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepOwner, } from "./types";
+  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
 
@@ -80,8 +80,14 @@ interface DispatchStoreValue {
   companies: Company[];
   customers: Customer[];
   items: Item[];
-  units: NamedMaster[];
-  categories: NamedMaster[];
+  customerItems: CustomerItem[];
+  /**
+   * The items a customer may order — ACTIVE mappings only, sorted by item name.
+   * The sales-order picker is built from this, never from the full catalogue.
+   * An unmapped customer returns [], which is the honest answer: nothing is
+   * offered to them until someone maps it.
+   */
+  itemsForCustomer: (customerId: string | null) => Item[];
   /** Active + sorted, for dropdowns. The full lists above back display lookups. */
   activeOf: <T extends NamedMaster>(rows: T[]) => T[];
   masterList: (mt: DispatchMasterType) => NamedMaster[];
@@ -89,7 +95,6 @@ interface DispatchStoreValue {
   // name lookups — no component resolves a master name itself
   customerName: (id: string | null) => string;
   itemName: (id: string | null) => string;
-  unitName: (id: string | null) => string;
   masterName: (mt: DispatchMasterType, id: string | null) => string;
 
   // orders
@@ -173,10 +178,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
   const companies = data?.companies ?? [];
-  const units = data?.units ?? [];
-  const categories = data?.categories ?? [];
   const customers = data?.customers ?? [];
   const items = data?.items ?? [];
+  const customerItems = data?.customerItems ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
@@ -238,18 +242,28 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const activeOf = <T extends NamedMaster>(rows: T[]): T[] =>
       rows.filter((r) => r.active).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
 
+    // Display lookups read the FULL list, never the active-only one — a
+    // deactivated customer must still render by name on an old order.
+    //
+    // ⚠ Declared BEFORE MASTER_LIST, which calls it while building the mapping's
+    //   synthetic names. A `const` arrow below that point is in its temporal dead
+    //   zone and throws "Cannot access before initialization" on first render.
+    const nameFrom = (rows: NamedMaster[], id: string | null): string =>
+      !id ? "—" : rows.find((r) => r.id === id)?.name ?? "—";
+
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
       customer: customers,
       item: items,
-      unit: units,
-      category: categories,
+      // Rows carry a synthetic "Customer - Item" name so the shared MasterCrud
+      // (which is keyed on `name` for search, sort and the Excel round trip) has
+      // something to work with. Built here, from the live lists, so a renamed
+      // customer or item is reflected without touching the mapping row.
+      customer_item: customerItems.map((m) => ({
+        ...m,
+        name: `${nameFrom(customers, m.customerId)} — ${nameFrom(items, m.itemId)}`,
+      })),
     };
-
-    // Display lookups read the FULL list, never the active-only one — a
-    // deactivated customer must still render by name on an old order.
-    const nameFrom = (rows: NamedMaster[], id: string | null): string =>
-      !id ? "—" : rows.find((r) => r.id === id)?.name ?? "—";
 
     /* --------------------------- master governance --------------------------- */
 
@@ -320,13 +334,19 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       designations,
       dispatchUsers: dir.profiles,
 
-      companies, customers, items, units, categories,
+      companies, customers, items, customerItems,
       activeOf,
       masterList: (mt) => MASTER_LIST[mt],
 
       customerName: (id) => nameFrom(customers, id),
       itemName: (id) => nameFrom(items, id),
-      unitName: (id) => nameFrom(units, id),
+      itemsForCustomer: (customerId) => {
+        if (!customerId) return [];
+        const allowed = new Set(
+          customerItems.filter((m) => m.active && m.customerId === customerId).map((m) => m.itemId),
+        );
+        return activeOf(items).filter((i) => allowed.has(i.id));
+      },
       masterName: (mt, id) => nameFrom(MASTER_LIST[mt], id),
 
       orders,
@@ -457,7 +477,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [
     userId, isAdmin, isLoading, error, queryClient, dir, orgPeople,
-    stepOwners, designations, companies, customers, items, units, categories,
+    stepOwners, designations, companies, customers, items, customerItems,
     masterManagers, masterRequests, orders, activity, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,
   ]);

@@ -6,16 +6,19 @@ import { useDispatchStore } from "../store";
 /**
  * The intake item grid — Item · Qty · Unit · Remark.
  *
+ * ⚠ THE ITEM LIST IS THE CUSTOMER'S, NOT THE CATALOGUE. `customerId` scopes the
+ *   picker to that customer's mapped items; with no customer chosen yet the list
+ *   is empty and says so. The RPC enforces the same rule, so a stale row cannot
+ *   sneak an unmapped item through.
+ *
  * ⚠ LineGrid is APPEND-ONLY and "blank means blank": it appends a trailing row on
  *   every render where the last row isn't blank. So `makeEmptyLine()` must return
- *   a genuinely empty row — the unit is filled in the item-picked handler, NOT
- *   seeded in the empty row, or `isLineBlank` never matches and the grid appends
- *   for ever. These two functions always change together.
+ *   a genuinely empty row, and `isLineBlank` must agree with it, or the grid
+ *   appends for ever. These two functions always change together.
  */
 export interface OrderLineRow extends LineGridRow {
   itemId: string;
   quantity: string;
-  unitId: string;
   lineRemark: string;
 }
 
@@ -23,7 +26,6 @@ export const makeEmptyLine = (): OrderLineRow => ({
   uid: newUid(),
   itemId: "",
   quantity: "",
-  unitId: "",
   lineRemark: "",
 });
 
@@ -33,20 +35,23 @@ export const isLineBlank = (r: OrderLineRow): boolean =>
 export default function OrderLinesGrid({
   rows,
   onRowsChange,
+  customerId,
   disabled,
 }: {
   rows: OrderLineRow[];
   onRowsChange: (rows: OrderLineRow[]) => void;
+  /** Scopes the picker to what this customer may order. */
+  customerId: string;
   disabled?: boolean;
 }) {
   const s = useDispatchStore();
 
-  const itemOptions: ComboOption[] = s.activeOf(s.items).map((i) => ({
+  const allowedItems = s.itemsForCustomer(customerId);
+  const itemOptions: ComboOption[] = allowedItems.map((i) => ({
     value: i.id,
     label: i.name,
     sublabel: i.code ?? undefined,
   }));
-  const unitOptions: ComboOption[] = s.activeOf(s.units).map((u) => ({ value: u.id, label: u.name }));
 
   const columns: LineGridColumn<OrderLineRow>[] = [
     {
@@ -57,15 +62,17 @@ export default function OrderLinesGrid({
         <Combobox
           value={row.itemId}
           onChange={(v) => {
-            // Default the unit HERE, not in makeEmptyLine — see the header note.
-            const item = s.items.find((i) => i.id === v);
-            api.patch({ itemId: v, unitId: row.unitId || item?.unitId || "" });
+            api.patch({ itemId: v });
             api.advance();
           }}
           options={itemOptions}
-          placeholder="Select item…"
+          placeholder={
+            !customerId ? "Pick a customer first"
+            : itemOptions.length === 0 ? "No items mapped to this customer"
+            : "Select item…"
+          }
           searchable
-          disabled={disabled}
+          disabled={disabled || !customerId || itemOptions.length === 0}
           triggerClassName="px-2.5 py-1.5 text-[13.5px]"
           onTriggerKeyDown={api.keyHandler}
         />
@@ -91,20 +98,19 @@ export default function OrderLinesGrid({
       ),
     },
     {
+      // READ-ONLY. The unit is a property of the item, so there is nothing to
+      // choose — and the old picker let an item measured in KGS be ordered in BOX.
       key: "unit",
       header: "Unit",
-      className: "w-[120px] min-w-[120px]",
-      cell: (row, api) => (
-        <Combobox
-          value={row.unitId}
-          onChange={(v) => api.patch({ unitId: v })}
-          options={unitOptions}
-          placeholder="Unit"
-          disabled={disabled}
-          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
-          onTriggerKeyDown={api.keyHandler}
-        />
-      ),
+      className: "w-[110px] min-w-[110px]",
+      cell: (row) => {
+        const unit = allowedItems.find((i) => i.id === row.itemId)?.unit;
+        return (
+          <span className="block px-2.5 py-1.5 text-[13.5px] text-grey-2">
+            {unit || "—"}
+          </span>
+        );
+      },
     },
     {
       key: "remark",

@@ -59,7 +59,6 @@ export default function OrderRegister() {
         ownerNamesFor: s.ownerNamesFor,
         customerName: s.customerName,
         itemName: s.itemName,
-        unitName: s.unitName,
         companyName: (id) => s.masterName("company", id),
       },
       filters,

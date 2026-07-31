@@ -66,10 +66,6 @@ export default function OrderRefPanel({
         <Field label="Order no." value={order.orderNo} />
         <Field label="Round" value={`#${round.roundNo}`} />
         <Field label="Customer" value={s.customerName(order.customerId)} />
-        <Field
-          label="Company"
-          value={order.companyId ? s.masterName("company", order.companyId) : "—"}
-        />
         <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
         <Field label="Order date" value={dmy(order.orderDate)} />
         <Field label="Raised by" value={order.requesterName} />
@@ -125,7 +121,7 @@ function RefLines({ order, round }: { order: DispatchOrder; round: RoundView }) 
         <tbody>
           {order.lines.map((l) => {
             const ship = shipByLine.get(l.id);
-            const unit = s.unitName(l.unitId);
+            const unit = l.unit ?? "";
             return (
               <tr key={l.id} className="border-b border-line/70 last:border-0">
                 <td className="py-1.5 pr-3 text-navy">{s.itemName(l.itemId)}</td>

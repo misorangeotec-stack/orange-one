@@ -13,16 +13,15 @@ import type { DispatchType } from "../types";
  * Four fields, after the 2026-08 reshape. The order date is the only one that
  * matters mechanically: it starts the internal SLA clocks.
  *
- * Company is deliberately absent — it is read from the customer's master record
- * and shown back read-only, so the two can never disagree.
+ * There is no company anywhere in this flow: the order records who is buying and
+ * what is going out, and which of our entities invoices it is not something the
+ * sales order decides.
  */
 export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesOrderForm> }) {
   const s = useDispatchStore();
 
   const opts = (rows: { id: string; name: string }[]): ComboOption[] =>
     rows.map((r) => ({ value: r.id, label: r.name }));
-
-  const customer = s.customers.find((c) => c.id === f.form.customerId);
 
   return (
     <div className="space-y-5">
@@ -61,24 +60,6 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
           />
         </FieldLabel>
       </div>
-
-      {/*
-        Company is no longer asked for — it is read from the customer's master
-        record. Showing which one, read-only, means nobody has to open Masters to
-        find out who is billing, and an unmapped customer is caught HERE rather
-        than by a server error on save.
-      */}
-      {customer && (
-        <p className="text-[12.5px] text-grey-2">
-          {customer.companyId ? (
-            <>Billed by <span className="font-semibold text-navy">{s.masterName("company", customer.companyId)}</span>, from the customer master.</>
-          ) : (
-            <span className="font-medium text-ryg-red">
-              {customer.name} has no company mapped. Set it in Masters → Customers before raising this order.
-            </span>
-          )}
-        </p>
-      )}
 
       <FieldLabel label="Remarks">
         <TextArea

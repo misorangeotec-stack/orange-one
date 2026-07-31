@@ -71,7 +71,7 @@ export default function ShipLinesGrid({
               const v = byId.get(l.id) ?? { id: l.id, ship_qty: "", lot_no: "" };
               const pending = pendingQtyOf(l);
               const done = pending <= 0;
-              const unit = s.unitName(l.unitId);
+              const unit = l.unit ?? "";
               return (
                 <tr key={l.id} className="border-b border-line/70 last:border-0">
                   <td className="py-2 pr-3 text-navy">

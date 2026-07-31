@@ -24,6 +24,9 @@ type Tab = "review" | "mine" | "all";
  */
 export default function MasterRequests() {
   const s = useDispatchStore();
+
+  /** Only the nameless mapping needs this — its payload is two ids. */
+  const nameLookup = { customerName: s.customerName, itemName: s.itemName };
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<Tab>(s.isAnyMasterManager ? "review" : "mine");
   const [raising, setRaising] = useState(false);
@@ -88,9 +91,9 @@ export default function MasterRequests() {
     {
       key: "proposed",
       header: "Proposed",
-      cell: (r) => <span className="text-navy">{describePayload(r.masterType, r.proposedPayload)}</span>,
-      sortValue: (r) => describePayload(r.masterType, r.proposedPayload),
-      filter: { kind: "text", get: (r) => describePayload(r.masterType, r.proposedPayload) },
+      cell: (r) => <span className="text-navy">{describePayload(r.masterType, r.proposedPayload, nameLookup)}</span>,
+      sortValue: (r) => describePayload(r.masterType, r.proposedPayload, nameLookup),
+      filter: { kind: "text", get: (r) => describePayload(r.masterType, r.proposedPayload, nameLookup) },
     },
     {
       key: "by",

@@ -8,9 +8,8 @@ import type { DispatchOrder, DispatchType } from "../../types";
 /**
  * Shared form state for New Order and Edit Order.
  *
- * Four fields, after the 2026-08 reshape. Company is NOT among them: it is
- * resolved server-side from the customer's master mapping, so there is nothing
- * to hold here and nothing that can drift out of step with the master.
+ * Four fields: dispatch type, customer, order date, remarks. There is no company
+ * — the order records who is buying and what is going out, and nothing else.
  */
 export interface SalesOrderFormState {
   dispatchType: DispatchType;
@@ -38,7 +37,6 @@ const linesFromOrder = (o: DispatchOrder): OrderLineRow[] =>
     uid: `l${l.id}`,
     itemId: l.itemId,
     quantity: String(l.quantity ?? ""),
-    unitId: l.unitId ?? "",
     lineRemark: l.lineRemark ?? "",
   }));
 
@@ -56,23 +54,27 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   const patch = (next: Partial<SalesOrderFormState>) => setForm((f) => ({ ...f, ...next }));
 
   /**
-   * Picking a customer. The default-dispatch-type prefill went with the customer
-   * master's trimming, so dispatch type is now always typed and simply defaults
-   * to Local.
+   * Picking a customer.
+   *
+   * ⚠ CHANGING IT CLEARS THE LINES. The item picker is scoped to the customer's
+   *   mapped items, so items chosen for the previous customer are not necessarily
+   *   orderable by this one — and `fms_dispatch_replace_lines` refuses an unmapped
+   *   item, so leaving them would fail at save with a message about a row the
+   *   person can no longer see in the picker. Clearing is the honest reset.
+   *   Re-picking the SAME customer is a no-op, so an accidental re-select of the
+   *   current value cannot wipe a half-typed grid.
    */
-  const setCustomer = (id: string) => patch({ customerId: id });
+  const setCustomer = (id: string) => {
+    if (id === form.customerId) return;
+    patch({ customerId: id });
+    setLines([makeEmptyLine()]);
+  };
 
   /** The lines that will actually be submitted — the trailing blank is dropped. */
   const filledLines = useMemo(() => lines.filter((l) => !isLineBlank(l)), [lines]);
 
   const validate = (): string | null => {
     if (!form.customerId) return "Choose a customer.";
-    // Caught here rather than by the RPC, so the person is told before they save
-    // and is told WHERE to fix it.
-    const cust = s.customers.find((c) => c.id === form.customerId);
-    if (cust && !cust.companyId) {
-      return `${cust.name} has no company mapped. Set it in Masters -> Customers first.`;
-    }
     if (!form.orderDate) return "The order date is required.";
     if (filledLines.length === 0) return "Add at least one item line.";
     for (const l of filledLines) {
@@ -92,7 +94,6 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     lines: filledLines.map((l) => ({
       itemId: l.itemId,
       quantity: l.quantity,
-      unitId: l.unitId || null,
       lineRemark: l.lineRemark.trim() || null,
     })),
   });

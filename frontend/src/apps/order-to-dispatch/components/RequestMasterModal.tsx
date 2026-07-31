@@ -6,7 +6,7 @@ import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
 import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 import {
-  emptyValuesFor, findExistingMaster, masterFields, masterTypeLabel, missingRequired,
+  emptyValuesFor, findExistingMaster, isNameless, masterFields, masterTypeLabel, missingRequired,
   payloadFromValues, type MasterValues,
 } from "../lib/masterFields";
 import { REQUESTABLE_DISPATCH_MASTER_TYPES, type DispatchMasterType } from "../types";
@@ -56,7 +56,17 @@ export default function RequestMasterModal({
 
   const fields = useMemo(() => masterFields(mt, ctx).filter((f) => f.key !== "sortOrder"), [mt, ctx]);
 
-  const existing = findExistingMaster(s.masterList(mt), values.name ?? "");
+  /*
+    ⚠ A nameless master is keyed on its PAIR, not on a name. Matching on
+      `values.name` (always "" here) would compare against the synthetic labels
+      the store builds and either match nothing or match the wrong row — and the
+      unique index would then reject the approval instead of the request.
+  */
+  const existing = isNameless(mt)
+    ? s.customerItems.find(
+        (m) => m.customerId === (values.customer_id ?? "") && m.itemId === (values.item_id ?? ""),
+      )
+    : findExistingMaster(s.masterList(mt), values.name ?? "");
   const pending = s.masterRequests.find(
     (r) =>
       r.status === "pending" &&

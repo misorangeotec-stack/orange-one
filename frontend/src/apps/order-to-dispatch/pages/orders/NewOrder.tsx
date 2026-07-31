@@ -47,7 +47,7 @@ export default function NewOrder() {
 
       <Card className="p-5 space-y-3">
         <SectionHeading>Items</SectionHeading>
-        <OrderLinesGrid rows={f.lines} onRowsChange={f.setLines} />
+        <OrderLinesGrid rows={f.lines} onRowsChange={f.setLines} customerId={f.form.customerId} />
       </Card>
 
       {f.error && <p className="text-[13px] font-medium text-ryg-red">{f.error}</p>}

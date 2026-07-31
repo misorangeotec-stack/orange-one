@@ -3,6 +3,7 @@ import { supabase } from "@/core/platform/supabase";
 // through an untyped alias.
 const db = supabase as any;
 import type { DispatchMasterType, DispatchType } from "../types";
+import { isNameless } from "../lib/masterFields";
 import type { QueueStep } from "../lib/queues";
 
 /**
@@ -17,7 +18,6 @@ import type { QueueStep } from "../lib/queues";
 export interface OrderLineInput {
   itemId: string;
   quantity: string;
-  unitId: string | null;
   lineRemark: string | null;
 }
 
@@ -41,10 +41,11 @@ const orderPayload = (input: OrderInput) => ({
   order_date: input.orderDate ?? "",
   order_remarks: input.orderRemarks ?? "",
   requester_name: input.requesterName,
+  // No unit is sent: fms_dispatch_replace_lines reads it off the item, so it is
+  // a property of what is going out rather than a per-line choice.
   lines: input.lines.map((l) => ({
     item_id: l.itemId ?? "",
     quantity: l.quantity ?? "",
-    unit_id: l.unitId ?? "",
     line_remark: l.lineRemark ?? "",
   })),
 });
@@ -231,8 +232,7 @@ const MASTER_TABLE: Record<DispatchMasterType, string> = {
   company: "fms_dispatch_companies",
   customer: "fms_dispatch_customers",
   item: "fms_dispatch_items",
-  unit: "fms_dispatch_units",
-  category: "fms_dispatch_categories",
+  customer_item: "fms_dispatch_customer_items",
 };
 
 /**
@@ -247,20 +247,25 @@ export interface MasterInput {
   extra?: Record<string, unknown>;
 }
 
-const masterRow = (input: MasterInput) => ({
-  name: input.name,
+/**
+ * ⚠ `name` is OMITTED for a nameless master. fms_dispatch_customer_items has no
+ *   name column, so including it fails every insert and update with "column
+ *   does not exist" — the pair IS the record.
+ */
+const masterRow = (mt: DispatchMasterType, input: MasterInput) => ({
+  ...(isNameless(mt) ? {} : { name: input.name }),
   active: input.active,
   sort_order: input.sortOrder,
   ...(input.extra ?? {}),
 });
 
 export async function insertMaster(mt: DispatchMasterType, input: MasterInput): Promise<void> {
-  const { error } = await db.from(MASTER_TABLE[mt]).insert(masterRow(input));
+  const { error } = await db.from(MASTER_TABLE[mt]).insert(masterRow(mt, input));
   if (error) throw new Error(error.message);
 }
 
 export async function updateMaster(mt: DispatchMasterType, id: string, input: MasterInput): Promise<void> {
-  const { error } = await db.from(MASTER_TABLE[mt]).update(masterRow(input)).eq("id", id);
+  const { error } = await db.from(MASTER_TABLE[mt]).update(masterRow(mt, input)).eq("id", id);
   if (error) throw new Error(error.message);
 }
 

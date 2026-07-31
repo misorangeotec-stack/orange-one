@@ -157,7 +157,7 @@ export default function OrderDetail() {
                     <tr key={l.id} className="border-b border-line/70 last:border-0">
                       <td className="py-2 pr-3 text-navy">{s.itemName(l.itemId)}</td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums whitespace-nowrap">
-                        {l.quantity} {s.unitName(l.unitId)}
+                        {l.quantity} {l.unit ?? ""}
                       </td>
                       <td className="py-2 pr-3 text-grey text-right tabular-nums">{l.dispatchedQty || "—"}</td>
                       <td className="py-2 pr-3 text-right tabular-nums font-semibold">
@@ -182,7 +182,6 @@ export default function OrderDetail() {
           <SectionHeading>Order</SectionHeading>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
             <Field label="Customer" value={s.customerName(order.customerId)} />
-            <Field label="Company" value={order.companyId ? s.masterName("company", order.companyId) : "—"} />
             <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
             <Field label="Order date" value={dmy(order.orderDate)} />
             <Field label="Round" value={`#${order.roundNo}`} />
