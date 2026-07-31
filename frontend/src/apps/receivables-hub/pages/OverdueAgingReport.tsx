@@ -52,7 +52,7 @@ import {
   type OAColumn, type OAColumnKey, type OADim, type OAFocus, type OAMetrics, type OARow,
 } from "@hub/lib/overdueAging";
 import { exportOverdueAgingXlsx } from "@hub/lib/exportOverdueAging";
-import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
+import type { ConsolidatedCustomer, Customer, SaleType } from "@hub/lib/types";
 
 /**
  * Customers Overdue Over N Days — the aged-debt report.
@@ -183,11 +183,23 @@ function OverdueAgingInner() {
   const [saleTypes, setSaleTypes] = useState<string[]>([]);
   const [minAged, setMinAged] = useState<MinAgedKey>("0");
   // "More"
-  // Defaults to ALL, NOT "active" like the Aging Report. A dormant customer sitting on a 400-day-old
-  // unpaid bill is precisely who management is asking about — excluding them would be the whole
-  // point of the report, missed. Consequence: this report's total is >= the Aging Report's "Total
-  // 120+" until both segments are set the same. The basis panel says so.
-  const [segment, setSegment] = useState<Segment>("all");
+  // ⚠ CHANGED 30-07-2026, deliberately, and the original reasoning still stands — read both.
+  //
+  // This defaulted to ALL, not "active", on the grounds that a dormant customer sitting on a
+  // 400-day-old unpaid bill is precisely who management is asking about, so excluding them misses
+  // the whole point of the report. That is correct, and measurement backs it: 748 dormant ledgers
+  // hold ₹3.70 cr past 120 days — 23% of the aged book.
+  //
+  // It is now "active" anyway, because the user's overriding requirement is that all four
+  // bill-based reports agree with the Dashboard out of the box, and the Dashboard is Active-only.
+  // Mismatched defaults meant the totals never tied until someone set both filters by hand, which
+  // is the confusion this whole workstream exists to remove.
+  //
+  // What makes that safe rather than a regression: `hiddenBySegment` measures the excluded aged
+  // debt bill-wise and the page shows an amber banner naming the amount with a one-click
+  // "Include them". Nothing is lost silently. ⚠ If that banner is ever removed, put this default
+  // back to "all" in the same commit.
+  const [segment, setSegment] = useState<Segment>("active");
   const [blockedOnly, setBlockedOnly] = useState(false);
   const [excludeBF, setExcludeBF] = useState(false);
 
@@ -220,35 +232,62 @@ function OverdueAgingInner() {
   // ledger-anchoring identity below hold. Segment is judged on the customer's COMBINED
   // (by-name) activity, so an opening-balance-only ledger of a customer who is active elsewhere
   // stays in "Active".
-  const scopedLedgers = useMemo(() => {
+  /**
+   * Everything EXCEPT the segment and blocked filters. Split out so the segment-exclusion banner
+   * below can measure exactly what switching to "All" would add, using the same `act` map — a
+   * separately-derived figure would drift from the thing it claims to describe.
+   */
+  const preSegmentLedgers = useMemo(() => {
     let d = allCustomers.filter((c) => matchesCategory(c, categories));
     if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => s.has(c.company)); }
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => s.has(c.location)); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => s.has(c.salesPerson)); }
     if (customerNames.length){ const s = new Set(customerNames);d = d.filter((c) => s.has(c.name)); }
     if (groupNamesSel.length){ const s = new Set(groupNamesSel);d = d.filter((c) => s.has(groupNameOf(c, customerGroupMap))); }
-    if (segment !== "all") {
-      const act = new Map<string, number>();
-      for (const c of d) {
-        const a = c.sales + c.receipts + c.creditNotes + (c.otherPayments ?? 0);
-        act.set(c.name, (act.get(c.name) ?? 0) + a);
-      }
-      d = d.filter((c) =>
-        segment === "active" ? (act.get(c.name) ?? 0) > 0 : (act.get(c.name) ?? 0) <= 0,
-      );
-    }
-    if (blockedOnly) d = d.filter((c) => c.blocked === true);
     return d;
   }, [
     allCustomers, categories, companies, locations, salespersons, customerNames, groupNamesSel,
-    segment, blockedOnly, customerGroupMap,
+    customerGroupMap,
   ]);
+
+  /** name → combined activity, judged over the pre-segment scope (see the note at `segment`). */
+  const activityByName = useMemo(() => {
+    const act = new Map<string, number>();
+    for (const c of preSegmentLedgers) {
+      const a = c.sales + c.receipts + c.creditNotes + (c.otherPayments ?? 0);
+      act.set(c.name, (act.get(c.name) ?? 0) + a);
+    }
+    return act;
+  }, [preSegmentLedgers]);
+
+  const passesSegment = useCallback(
+    (c: Customer) =>
+      segment === "all" ? true
+      : segment === "active" ? (activityByName.get(c.name) ?? 0) > 0
+      : (activityByName.get(c.name) ?? 0) <= 0,
+    [segment, activityByName],
+  );
+
+  const scopedLedgers = useMemo(() => {
+    let d = preSegmentLedgers.filter(passesSegment);
+    if (blockedOnly) d = d.filter((c) => c.blocked === true);
+    return d;
+  }, [preSegmentLedgers, passesSegment, blockedOnly]);
+
+  /** The ledgers this report is NOT showing purely because of the segment filter. */
+  const segmentExcludedLedgers = useMemo(() => {
+    if (segment === "all") return [];
+    let d = preSegmentLedgers.filter((c) => !passesSegment(c));
+    if (blockedOnly) d = d.filter((c) => c.blocked === true);
+    return d;
+  }, [preSegmentLedgers, passesSegment, blockedOnly, segment]);
 
   /** The chokepoint that keeps every money figure inside the filter. See the engine header. */
   const inScopeLedgerIds = useMemo(
     () => new Set(scopedLedgers.map((c) => c.id)),
     [scopedLedgers],
   );
+
 
   // ── Bills ─────────────────────────────────────────────────────────────────────────
   const filters = useMemo(
@@ -260,6 +299,36 @@ function OverdueAgingInner() {
     () => enumerateBills(scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap),
     [scopedLedgers, customerDetail, asOfDate, filters, customerGroupMap],
   );
+
+  /**
+   * What the segment filter is hiding, measured the SAME bill-wise way the report measures
+   * everything else — never from `c.agingBuckets`, which this engine deliberately never trusts
+   * (see the header: ~1.5% off, and it carries opening residue with no backing bill).
+   *
+   * Why this earns its keep: "Active" means *traded this financial year*. A customer who owed
+   * ₹5 cr three years ago and has bought nothing since is exactly the case THIS report exists to
+   * surface, and the Active default drops them silently. Measured 30-07-2026: 748 dormant ledgers
+   * holding ₹3.70 cr past 120 days — 23% of the aged book. So the number is stated, with one click
+   * to include it, rather than left for someone to discover.
+   */
+  const hiddenBySegment = useMemo(() => {
+    if (!segmentExcludedLedgers.length) return { customers: 0, aged: 0 };
+    const bills = enumerateBills(
+      segmentExcludedLedgers, customerDetail, asOfDate, filters, customerGroupMap,
+    );
+    const names = new Set<string>();
+    let aged = 0;
+    for (const b of bills) {
+      if (!isAged(b, cutoff)) continue;
+      if (excludeBF && isBroughtForward(b, horizonStart)) continue;
+      aged += b.inv.pending;
+      names.add(b.cust.name);
+    }
+    return { customers: names.size, aged };
+  }, [
+    segmentExcludedLedgers, customerDetail, asOfDate, filters, customerGroupMap,
+    cutoff, excludeBF, horizonStart,
+  ]);
 
   /** A sale-type filter is active only when it is a PROPER subset — selecting all 5 means "no
    *  filter". (Same guard as AgingReport; if the option count ever changes, so must this.) */
@@ -339,6 +408,29 @@ function OverdueAgingInner() {
     [allCustomers, customerDetail, collSource],
   );
 
+  /**
+   * ledgerId → On Account the DATABASE already deducted from that ledger's overdue, capped per
+   * ledger. Read, never recomputed: `collection_refresh()` owns this number since 30-07-2026.
+   *
+   * From `allCustomers` — the RAW ledger set — because the consolidated rows this report builds
+   * from carry no per-ledger figure. Empty values on the legacy pipeline (`?? 0`), where the
+   * deduction is already applied upstream, which is why no source flag is needed here.
+   *
+   * ⚠ Skipped under a sale-type FILTER, for the same reason ledgerAdjBill is: `Customer.onAccount`
+   *   has no per-type split, so anchoring per type would put the two sides of the subtraction on
+   *   different bases. The report then falls back to pure bill-wise / gross, and the basis note
+   *   says so.
+   */
+  const onAccountByLedger = useMemo(() => {
+    const m = new Map<string, number>();
+    if (saleTypeActive) return m;
+    for (const c of allCustomers) {
+      const oa = c.onAccount ?? 0;
+      if (oa >= EPS) m.set(c.id, oa);
+    }
+    return m;
+  }, [allCustomers, saleTypeActive]);
+
   // ── Rows ──────────────────────────────────────────────────────────────────────────
   const eligible = useMemo(() => {
     // Consolidated customers that still have at least one in-scope ledger.
@@ -365,6 +457,7 @@ function OverdueAgingInner() {
         salesByLedgerMonth,
         windowMonths,
         lastReceiptByLedger,
+        onAccountByLedger,
         groupOf,
         cutoff,
         horizonStart,
@@ -373,7 +466,7 @@ function OverdueAgingInner() {
       }),
     [
       eligible, billsByLedger, inScopeLedgerIds, salesByLedgerMonth, windowMonths,
-      lastReceiptByLedger, groupOf, cutoff, horizonStart, asOfDate, excludeBF,
+      lastReceiptByLedger, onAccountByLedger, groupOf, cutoff, horizonStart, asOfDate, excludeBF,
     ],
   );
 
@@ -948,8 +1041,31 @@ function OverdueAgingInner() {
               <p className="text-[11px] text-foreground/80">
                 A <strong>Sale Type</strong> filter is active. The <strong>Aged</strong> figure is
                 unaffected — it is bill-wise, and a bill has one sale type. But the ledger balance is
-                not split by type, so <strong>Outstanding</strong> falls back to bill-wise gross
-                instead of the net ledger, and will not tie to the dashboard.
+                not split by type, so <strong>Outstanding</strong> and <strong>Total Overdue</strong>{" "}
+                fall back to bill-wise gross instead of the net ledger, and will not tie to the
+                dashboard.
+              </p>
+            </div>
+          )}
+
+          {/* The Active default hides dormant customers — and dormant customers with ancient
+              unpaid bills are precisely what this report is for. Never leave that silent. */}
+          {hiddenBySegment.aged > EPS && (
+            <div className="flex items-start gap-2 rounded-input bg-amber-500/10 border border-amber-500/30 px-3 py-2">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-600 mt-0.5 shrink-0" />
+              <p className="text-[11px] text-foreground/80">
+                <strong>{fmtINRMoney(hiddenBySegment.aged)}</strong> past {cutoff} days on{" "}
+                <strong>{hiddenBySegment.customers}</strong>{" "}
+                {hiddenBySegment.customers === 1 ? "customer" : "customers"} is hidden by the{" "}
+                <strong>{segment === "active" ? "Active" : "No Activity"}</strong> segment filter.
+                Dormant customers are the ones most likely to be sitting on old debt.{" "}
+                <button
+                  type="button"
+                  onClick={() => setSegment("all")}
+                  className="underline font-medium text-amber-700 hover:text-amber-800"
+                >
+                  Include them
+                </button>
               </p>
             </div>
           )}

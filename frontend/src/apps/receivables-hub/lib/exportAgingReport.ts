@@ -27,7 +27,7 @@ export function exportAgingReportXlsx(tree: AgingTree, meta: AgingExportMeta): v
   aoa.push(["Aging Report"]);
   aoa.push(["As of", formatDateDMY(meta.asOfDate)]);
   aoa.push(["Grouped by", meta.groupBy.map((d) => DIMENSION_LABELS[d]).join(" → ") || "Sale Type"]);
-  aoa.push(["Basis", "Bill-wise / gross (sum of bill pending)"]);
+  aoa.push(["Basis", "Age buckets bill-wise / gross; Total Outstanding and Total Overdue anchored to the ledger (net of On Account) and tie to the Dashboard"]);
   for (const line of meta.filterSummary) aoa.push([line]);
   aoa.push([]);
 

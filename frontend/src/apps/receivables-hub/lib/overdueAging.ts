@@ -10,6 +10,22 @@
  * ₹50 L of which ₹8 L sits past 120 days shows ₹8 L, and is ranked on it. Total Overdue and
  * Total Outstanding ride along as supporting columns, so the row still ties to the dashboard.
  *
+ * ── `aged` is GROSS; `totalOverdue` is NET (30-07-2026) ────────────────────────────────
+ *
+ * `totalOverdue` now deducts On Account — money the customer has paid that settles no open
+ * invoice — so it ties to the Dashboard / Risk Register / Customer Detail. The figure is READ from
+ * `Customer.onAccount`, capped per ledger by `collection_refresh()`; it is never recomputed here.
+ * The deduction is shown as its own "Less On Account" column so the pair foots on screen.
+ *
+ * ⚠ `aged` and the `of which …` splits stay GROSS, and that is not an oversight. On-account money
+ *   carries no invoice reference, so it cannot be attributed to an age band — the same reason the
+ *   Aging Report's brackets stay gross. Netting it into a past-the-cutoff measure would require
+ *   inventing which bill it paid.
+ *
+ * ⚠ Never rebuild the deduction with agingReport::creditsOfLedger. That is the Salesperson
+ *   Collection Report's deliberately LARGER cap (it lets on-account settle bills coming due later
+ *   this month too) and is a different number — ₹11.59 cr vs a bigger figure book-wide.
+ *
  * ── Why every rupee here is bill-wise, and never `Customer.agingBuckets` ───────────────
  *
  * The one-line shortcut is `c.agingBuckets["121_180"] + c.agingBuckets["180_plus"]`. It is
@@ -206,8 +222,22 @@ export interface OverdueFacts {
   unbilledAdj: number;
   /** billedOutstanding + onAccount + unbilledAdj === the customer's NET ledger balance. */
   totalOutstanding: number;
-  /** Total overdue at ANY age (>0 days), for context beside the aged slice. */
+  /** Total overdue at ANY age (>0 days), GROSS — bill-wise, before On Account. */
   totalOverdue: number;
+  /**
+   * On Account already deducted from this customer's overdue by the database, capped per ledger.
+   * A positive magnitude, so the netted figure is `totalOverdue − overdueOnAccount` — which is what
+   * the Dashboard, Risk Register and Customer Detail all show.
+   *
+   * ⚠ NOT the same number as `onAccount` above. That is every negative-pending bill, uncapped, and
+   *   belongs to the Outstanding lens. This one is capped at each ledger's own gross overdue,
+   *   because credit beyond what a customer is late on cannot make them less than not-late.
+   *   Book-wide 30-07-2026 the two are ₹9.25 cr and ₹11.59 cr.
+   *
+   * ⚠ `aged` deliberately does NOT net this. It is a past-the-cutoff measure and on-account money
+   *   carries no invoice reference, so it cannot be attributed to an age band.
+   */
+  overdueOnAccount: number;
 
   /** An aged bill offset by a bigger advance → the customer is net in credit. Flagged, not hidden:
    *  hiding them would break the tie to the Aging Report, which counts them too. */
@@ -252,6 +282,16 @@ export interface BuildRowsInput {
   windowMonths: string[];
   /** ledgerId → last receipt ISO, from collections.ts::buildLastReceiptDates. */
   lastReceiptByLedger: Map<string, string | null>;
+  /**
+   * ledgerId → On Account already deducted from that ledger's overdue (`Customer.onAccount`,
+   * capped per ledger by the database). Needed because this input carries only CONSOLIDATED
+   * customers, which have no per-ledger figure to read.
+   *
+   * ⚠ Do NOT rebuild this with creditsOfLedger — that is the Salesperson Collection Report's
+   *   deliberately larger cap and a different number. Empty map on the legacy pipeline, where the
+   *   deduction is already applied upstream.
+   */
+  onAccountByLedger: Map<string, number>;
   /** customer name → parent group. */
   groupOf: (c: ConsolidatedCustomer) => string;
   cutoff: number;
@@ -272,7 +312,8 @@ export interface BuildRowsInput {
 export function buildOverdueRows(input: BuildRowsInput): OARow[] {
   const {
     customers, billsByLedger, inScopeLedgerIds, salesByLedgerMonth, windowMonths,
-    lastReceiptByLedger, groupOf, cutoff, horizonStart, asOfDate, excludeBroughtForward,
+    lastReceiptByLedger, onAccountByLedger, groupOf, cutoff, horizonStart, asOfDate,
+    excludeBroughtForward,
   } = input;
 
   const rows: OARow[] = [];
@@ -284,6 +325,7 @@ export function buildOverdueRows(input: BuildRowsInput): OARow[] {
 
     let aged = 0, agedBF = 0, agedOver180 = 0, agedBillCount = 0;
     let billedOutstanding = 0, onAccount = 0, unbilledAdj = 0, totalOverdue = 0;
+    let overdueOnAccount = 0;
     let oldestOverdueDays = 0;
     let oldestBillDate = "";
     let salesInWindow = 0;
@@ -314,6 +356,11 @@ export function buildOverdueRows(input: BuildRowsInput): OARow[] {
         }
       }
 
+      // Per LEDGER, and therefore safe to add up: the database capped each ledger's credit at that
+      // ledger's own gross overdue before we ever saw it, so the sum is the same however the rows
+      // are later grouped. That is what lets this report tie to the Dashboard under any group-by.
+      overdueOnAccount += onAccountByLedger.get(id) ?? 0;
+
       const byMonth = salesByLedgerMonth.get(id);
       if (byMonth) for (const m of windowMonths) salesInWindow += byMonth.get(m) ?? 0;
 
@@ -341,6 +388,7 @@ export function buildOverdueRows(input: BuildRowsInput): OARow[] {
         unbilledAdj,
         totalOutstanding,
         totalOverdue,
+        overdueOnAccount,
         isNetCredit: totalOutstanding <= 0,
         lastReceiptDate,
         daysSinceLastReceipt:
@@ -375,7 +423,11 @@ export interface OAMetrics {
   onAccount: number;
   unbilledAdj: number;
   totalOutstanding: number;
+  /** GROSS, bill-wise. The netted figure is `totalOverdue - overdueOnAccount`. */
   totalOverdue: number;
+  /** On Account deducted from overdue, capped per ledger. Positive magnitude, plain SUM-folded
+   *  (the per-ledger cap is what makes that exact). NOT the same as `onAccount`. */
+  overdueOnAccount: number;
   creditLimit: number;
   salesInWindow: number;
   /** MAX-folded. */
@@ -392,7 +444,7 @@ export interface OAMetrics {
 export const emptyOAMetrics = (): OAMetrics => ({
   customers: 0, aged: 0, agedBroughtForward: 0, agedInPeriod: 0, agedOver180: 0,
   agedBillCount: 0, billedOutstanding: 0, onAccount: 0, unbilledAdj: 0,
-  totalOutstanding: 0, totalOverdue: 0, creditLimit: 0, salesInWindow: 0,
+  totalOutstanding: 0, totalOverdue: 0, overdueOnAccount: 0, creditLimit: 0, salesInWindow: 0,
   oldestOverdueDays: 0, daysSinceLastReceipt: -1,
   neverPaid: 0, stillBuying: 0, netCredit: 0, fullyAged: 0,
 });
@@ -417,6 +469,7 @@ export const oaMetricsOf = (r: OARow): OAMetrics => {
     unbilledAdj: f.unbilledAdj,
     totalOutstanding: f.totalOutstanding,
     totalOverdue: f.totalOverdue,
+    overdueOnAccount: f.overdueOnAccount,
     // All-ledger value off the consolidated row (credit limit is a MAX, not a sum) — the one
     // field we can't derive from bills. Labelled as such in the UI.
     creditLimit: r.customer.creditLimit ?? 0,
@@ -442,6 +495,7 @@ export function addOAMetrics(acc: OAMetrics, m: OAMetrics): void {
   acc.unbilledAdj        += m.unbilledAdj;
   acc.totalOutstanding   += m.totalOutstanding;
   acc.totalOverdue       += m.totalOverdue;
+  acc.overdueOnAccount   += m.overdueOnAccount;
   acc.creditLimit        += m.creditLimit;
   acc.salesInWindow      += m.salesInWindow;
   acc.neverPaid          += m.neverPaid;
@@ -513,7 +567,7 @@ export function applyOAFocus(rows: OARow[], focus: ReadonlySet<OAFocus>): OARow[
  */
 export type OAColumnKey =
   | "customers" | "aged" | "agedBroughtForward" | "agedInPeriod" | "agedOver180"
-  | "agedPct" | "totalOverdue" | "totalOutstanding" | "billedOutstanding" | "onAccount"
+  | "agedPct" | "totalOverdue" | "overdueOnAccount" | "totalOutstanding" | "billedOutstanding" | "onAccount"
   | "unbilledAdj" | "oldestOverdueDays" | "agedBillCount"
   | "creditLimit" | "daysSinceLastReceipt" | "salesInWindow";
 
@@ -550,7 +604,11 @@ export const OA_COLUMNS: OAColumn[] = [
   { key: "agedInPeriod",       label: "of which Billed",  kind: "money", value: (m) => m.agedInPeriod },
   { key: "agedOver180",        label: "of which 180+",    kind: "money", value: (m) => m.agedOver180, alarm: true },
   { key: "agedPct",            label: "% Aged",           kind: "pct",   value: (m) => pctOf(m.aged, m.billedOutstanding) },
-  { key: "totalOverdue",       label: "Total Overdue",    kind: "money", value: (m) => m.totalOverdue, drill: "totalOverdue" },
+  // NET of On Account, so this ties to the Dashboard / Risk Register / Customer Detail. The
+  // deduction is shown as its own column immediately above, so the pair foots on screen.
+  // ⚠ `aged` above stays GROSS on purpose — see OverdueFacts.overdueOnAccount.
+  { key: "overdueOnAccount",   label: "Less On Account",  kind: "money", value: (m) => -m.overdueOnAccount },
+  { key: "totalOverdue",       label: "Total Overdue",    kind: "money", value: (m) => m.totalOverdue - m.overdueOnAccount, drill: "totalOverdue" },
   { key: "totalOutstanding",   label: "Outstanding",      kind: "money", value: (m) => m.totalOutstanding },
   { key: "onAccount",          label: "On Account",       kind: "money", value: (m) => m.onAccount },
   { key: "billedOutstanding",  label: "Billed O/s",       kind: "money", value: (m) => m.billedOutstanding, drill: "billedOutstanding" },
@@ -563,10 +621,12 @@ export const OA_COLUMNS: OAColumn[] = [
 ];
 
 /** The management column set. Everything else lives behind the ColumnPicker.
- *  On Account is a DEFAULT: it is what explains a net-credit row's negative Outstanding. */
+ *  On Account is a DEFAULT: it is what explains a net-credit row's negative Outstanding.
+ *  "Less On Account" is a DEFAULT for the same reason, on the overdue side: without it visible,
+ *  Total Overdue looks like it disagrees with the age buckets for no stated reason. */
 export const DEFAULT_OA_COLUMNS: OAColumnKey[] = [
   "customers", "aged", "agedBroughtForward", "agedOver180", "agedPct",
-  "totalOverdue", "totalOutstanding", "onAccount", "oldestOverdueDays",
+  "overdueOnAccount", "totalOverdue", "totalOutstanding", "onAccount", "oldestOverdueDays",
 ];
 
 /* ── Grouping dimensions + View presets ─────────────────────────────────────────────── */

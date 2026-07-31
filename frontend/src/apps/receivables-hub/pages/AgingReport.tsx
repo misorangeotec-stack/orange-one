@@ -23,7 +23,7 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData } from "@hub/lib/useAppData";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
 import {
-  enumerateBills, ledgerAdjBill, buildAgingTree, billMatchesPath, billMatchesColumn,
+  enumerateBills, ledgerAdjBill, overdueOnAccountBill, buildAgingTree, billMatchesPath, billMatchesColumn,
   AGING_COLUMNS, DIMENSION_LABELS, DIMENSION_ORDER,
   type AgingDimension, type AgingNode, type AgingColumn, type EnrichedBill, type MetricKey,
 } from "@hub/lib/agingReport";
@@ -233,6 +233,15 @@ export default function AgingReport() {
   // stay bill-wise while the grand total ties EXACTLY to Outstanding (Today). Skipped under a
   // sale-type FILTER: c.outstanding isn't split by type, so we can't anchor per-type there and
   // fall back to pure bill-wise (matching the Collection Report, which also estimates by type).
+  // The Overdue lens gets the SAME treatment, for the same reason: Total Overdue is anchored to
+  // c.overdue — already NET of On Account, capped per ledger by the database since 30-07-2026 — by
+  // injecting one "Less On Account" line per customer. The six brackets stay bill-wise and GROSS,
+  // because money received against no invoice cannot be placed in an age band. Before this the
+  // report read ₹47.81 cr where every other screen read ₹36.22 cr.
+  //
+  // ⚠ Both lines MUST be injected here, before buildAgingTree. Every node and the grand total
+  //   re-aggregate from bills and never read their children, so adjusting metrics after the fact
+  //   would move leaf rows and silently leave every subtotal alone.
   const bills = useMemo(() => {
     const stActive = saleTypes.length > 0 && saleTypes.length < 5;
     if (stActive) return baseBills;
@@ -242,6 +251,10 @@ export default function AgingReport() {
     for (const c of scopedCustomers) {
       const adj = c.outstanding - (billNet.get(c.id) ?? 0);
       if (Math.abs(adj) >= 0.5) extra.push(ledgerAdjBill(c, adj, customerGroupMap));
+      // `?? 0` covers the legacy pipeline, which never sets onAccount — there the deduction is
+      // already applied upstream, so injecting nothing is correct.
+      const oa = c.onAccount ?? 0;
+      if (oa >= 0.5) extra.push(overdueOnAccountBill(c, oa, customerGroupMap));
     }
     return extra.length ? [...baseBills, ...extra] : baseBills;
   }, [baseBills, scopedCustomers, customerGroupMap, saleTypes]);
@@ -571,7 +584,7 @@ export default function AgingReport() {
       {/* Basis note */}
       <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
         <Info className="h-3.5 w-3.5 shrink-0" />
-        Total Outstanding = Out&lt;180 + Out&gt;180 + On Account + Unbilled Adj, and is anchored to the NET ledger balance — so it ties exactly to the Dashboard / Salesperson Collection Report's "Outstanding (Today)". The age buckets &amp; On Account are bill-wise; "Unbilled Adj." is the part of the net balance not on any bill (advances w/o a bill, cheque returns, opening residue, sync gaps). Overdue buckets remain bill-wise. Under a Sale Type filter the total falls back to bill-wise (the net balance isn't split by type).
+        Both grand totals are anchored to the ledger, so both tie exactly to the Dashboard. Total Outstanding = Out&lt;180 + Out&gt;180 + On Account + Unbilled Adj — "Unbilled Adj." being the part of the net balance on no bill (advances w/o a bill, cheque returns, opening residue, sync gaps). Total Overdue = the age buckets + "Less On Account", where that line is money received from the customer against no invoice; it carries no invoice reference, so it cannot be placed in an age band and the buckets (and the 0-120 / 120+ subtotals) stay bill-wise and GROSS. Under a Sale Type filter both anchors fall back to bill-wise, because the net balance isn't split by type.
         <span className="inline-flex items-center gap-1">· use the <Pin className="h-3 w-3 inline" /> on the group column to freeze it while scrolling.</span>
       </p>
 

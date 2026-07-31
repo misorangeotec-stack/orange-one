@@ -69,6 +69,18 @@ const SALE_TYPE_LABEL: Record<SaleType, string> = {
  */
 export const LEDGER_ADJ_SALE_TYPE_LABEL = "Unbilled adjustment";
 
+/**
+ * Sale-type-dimension label for the overdue on-account line. Same reasoning as
+ * LEDGER_ADJ_SALE_TYPE_LABEL, and here it is not merely tidier — it is load-bearing.
+ *
+ * ⚠ A receipt nobody tagged to an invoice belongs to no product, AND one ledger's bills routinely
+ *   span several sale types. Tag the deduction with a real type and, when grouping BY sale type,
+ *   the same ledger's credit would be attributed to whichever row it landed in while its bills sat
+ *   across several — so sibling rows would not sum to the parent. Its own row keeps every level
+ *   footing exactly.
+ */
+export const OVERDUE_ON_ACCOUNT_SALE_TYPE_LABEL = "On account (untagged)";
+
 /** Single-value customer-category label for the group-by (blank → Uncategorized). */
 function categoryLabel(category: string): string {
   return category && category.trim() ? category : "Uncategorized";
@@ -100,7 +112,25 @@ export interface AgingMetrics {
   od_0_120: number;
   /** Subtotal of the 120+ day overdue range (121-180 + 180+). */
   od_120_plus: number;
-  /** Total overdue (sum of the six overdue brackets). */
+  /**
+   * On Account taken off the overdue side — money the customer has paid that settles no open
+   * invoice, capped per ledger at that ledger's own gross overdue. A credit, so ≤ 0.
+   *
+   * ⚠ NOT the same number as `onAccount` above. That one is the Outstanding lens: every
+   *   negative-pending bill, uncapped, because a customer's whole credit belongs in their
+   *   balance. This one is the Overdue lens: capped, because credit beyond what a customer
+   *   is late on cannot reduce their lateness below zero. Book-wide 30-07-2026 the two are
+   *   ₹9.25 cr and ₹11.59 cr — close enough to look like a bug if you assume they should match.
+   */
+  odOnAccount: number;
+  /**
+   * Total overdue, NET of On Account — ties to the Dashboard / Risk Register / Customer Detail.
+   *
+   * ⚠ This is NOT the sum of the six brackets any more. The brackets stay GROSS (on-account money
+   *   carries no invoice reference, so it cannot be placed in an age band), so the identity is
+   *   `Σ brackets + odOnAccount = totalOverdue`, with odOnAccount negative. `od_0_120` and
+   *   `od_120_plus` are bracket subtotals and therefore also gross.
+   */
   totalOverdue: number;
   /** Number of open bills rolled into this node. */
   billCount: number;
@@ -120,6 +150,7 @@ export type MetricKey =
   | "od_121_180"
   | "od_180_plus"
   | "od_120_plus"
+  | "odOnAccount"
   | "totalOverdue";
 
 export interface AgingColumn {
@@ -147,6 +178,7 @@ export const AGING_COLUMNS: AgingColumn[] = [
   { key: "od_121_180", label: "121-180", group: "overdue" },
   { key: "od_180_plus", label: "180+", group: "overdue" },
   { key: "od_120_plus", label: "Total 120+", group: "overdue", total: true },
+  { key: "odOnAccount", label: "Less On Account", group: "overdue" },
   { key: "totalOverdue", label: "Total Overdue", group: "overdue", total: true, grand: true },
 ];
 
@@ -165,6 +197,7 @@ function emptyMetrics(): AgingMetrics {
     od_180_plus: 0,
     od_0_120: 0,
     od_120_plus: 0,
+    odOnAccount: 0,
     totalOverdue: 0,
     billCount: 0,
   };
@@ -223,6 +256,10 @@ export interface EnrichedBill {
    *  the customer's NET ledger balance not carried by any real bill. Routed to the
    *  "Unbilled Adj." column, never the age / on-account / overdue buckets. */
   isLedgerAdj?: boolean;
+  /** True for a synthetic OVERDUE on-account line (see overdueOnAccountBill) — the credit the
+   *  database already deducted from this ledger's overdue. Routed to "Less On Account" and into
+   *  `totalOverdue` ONLY; it must never touch the Outstanding lens. See addBill. */
+  isOverdueOnAccount?: boolean;
 }
 
 export interface AgingFilters {
@@ -369,6 +406,64 @@ export function ledgerAdjBill(
 }
 
 /**
+ * Synthesize the OVERDUE ON-ACCOUNT line for a customer — the exact analogue of ledgerAdjBill, but
+ * for the Overdue lens instead of the Outstanding one.
+ *
+ * `amount` is the credit the DATABASE already deducted from this ledger's overdue
+ * (`Customer.onAccount`, capped per ledger at that ledger's own gross overdue). Pass it POSITIVE;
+ * this returns it as negative pending so it reduces the total.
+ *
+ * Why this exists at all: the six overdue brackets are bill-wise and gross, because money received
+ * against no invoice cannot be attributed to an age band. Without this line the report's
+ * "Total Overdue" read ₹47.81 cr while every other screen read ₹36.22 cr (30-07-2026).
+ *
+ * ⚠ It must be injected into the bill array BEFORE buildAgingTree. Every node — and the grand
+ *   total — re-aggregates from bills and never reads its children, so adjusting node.metrics
+ *   afterwards would change leaf rows and silently leave every subtotal and the grand total alone.
+ *
+ * ⚠ Do NOT compute `amount` with creditsOfLedger. That is the Salesperson Collection Report's
+ *   deliberately LARGER cap (it lets on-account settle bills coming due later this month too) and
+ *   is a different number. Read `Customer.onAccount`, which the DB capped.
+ */
+export function overdueOnAccountBill(
+  c: Customer,
+  amount: number,
+  groupMap: CustomerGroupMap = EMPTY_GROUP_MAP,
+): EnrichedBill {
+  const inv: Invoice = {
+    id: `__odonaccount__${c.id}`,
+    number: "Received from this customer, not matched to any invoice",
+    billRefName: "",
+    billType: "",
+    date: "",
+    amount: 0,
+    receiptAdj: 0,
+    creditNoteAdj: 0,
+    debitNoteAdj: 0,
+    journalAdj: 0,
+    otherPaymentAdj: 0,
+    pending: -Math.abs(amount), // always a credit
+    dueDate: "",
+    overdueDays: 0,
+    status: "pending",
+    voucherType: "other",
+    isCarryforward: false,
+  };
+  // Its own row under the sale-type lens — see OVERDUE_ON_ACCOUNT_SALE_TYPE_LABEL for why that is
+  // load-bearing here and not just cosmetic.
+  const dims = dimsForCustomer(c, "other", groupMap);
+  dims.saleType = OVERDUE_ON_ACCOUNT_SALE_TYPE_LABEL;
+  return {
+    inv,
+    cust: c,
+    ageGe180: false,
+    overdueKey: null,
+    isOverdueOnAccount: true,
+    dims,
+  };
+}
+
+/**
  * A DEBIT bill carrying no bill date AND no due date — an "Agst Ref" allocation pointing at a
  * bill reference that was never opened as a "New Ref", so Tally materialises it with nothing to
  * age it by. It is not a real receivable and it is emphatically NOT credit.
@@ -501,13 +596,24 @@ export function billMatchesColumn(b: EnrichedBill, col: MetricKey): boolean {
     case "outGe180":
       return !b.isLedgerAdj && b.inv.pending > 0 && b.ageGe180;
     case "onAccount":
-      return !b.isLedgerAdj && b.inv.pending < 0;
+      // The OUTSTANDING lens. Excludes the overdue on-account line, which is a different (capped)
+      // number and would otherwise be listed twice under two different columns.
+      return !b.isLedgerAdj && !b.isOverdueOnAccount && b.inv.pending < 0;
     case "unbilledAdj":
       return b.isLedgerAdj === true;
+    case "odOnAccount":
+      return b.isOverdueOnAccount === true;
     case "totalOutstanding":
-      return true;
+      return !b.isOverdueOnAccount;
     case "totalOverdue":
-      return b.overdueKey !== null;
+      // Mirrors addBill's gate exactly: the aged bills PLUS the on-account line deducted from them.
+      // Previously `b.overdueKey !== null` alone, which omitted addBill's `pending > 0` /
+      // `!isLedgerAdj` conditions — so the drill-down could list a bill the column never counted,
+      // and would now miss the deduction line entirely.
+      return (
+        (!b.isLedgerAdj && b.inv.pending > 0 && b.overdueKey !== null) ||
+        b.isOverdueOnAccount === true
+      );
     case "od_0_120":
       return (
         b.overdueKey === "od_0_30" ||
@@ -559,6 +665,18 @@ export interface AgingTree {
 
 function addBill(m: AgingMetrics, b: EnrichedBill): void {
   const p = b.inv.pending;
+  // ⚠⚠ FIRST, and it returns. The overdue on-account line belongs to the Overdue lens ONLY.
+  //     Everything below it — the outstanding buckets, `totalOutstanding` (which accumulates
+  //     UNCONDITIONALLY) and `billCount` — must not see it. Let it fall through and three things
+  //     break at once: Total Outstanding shifts by the whole deduction (₹11.59 cr book-wide,
+  //     destroying the exact ledger tie that is this report's whole point), the negative pending
+  //     gets swept into the Outstanding-lens `onAccount` column and double-counts it, and the bill
+  //     count inflates by one per customer.
+  if (b.isOverdueOnAccount) {
+    m.odOnAccount += p;   // p is negative
+    m.totalOverdue += p;  // → net, automatically, at every level and in the grand total
+    return;
+  }
   // Ledger-reconciliation lines go to their own column (not a real bill, no age/overdue).
   // Otherwise positive bills bucket by invoice age, and on-account / advance credits
   // (negative pending) go to the On Account column — so a row nets to its true Total

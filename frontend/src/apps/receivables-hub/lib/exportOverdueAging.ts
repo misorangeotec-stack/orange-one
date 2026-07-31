@@ -160,13 +160,14 @@ function buildCustomerSheet(rows: OARow[], meta: OAExportMeta): XLSX.WorkSheet {
     "Customer", "Group", "Company", "Location", "Salesperson", "Category",
     `Aged (> ${meta.cutoff}d)`, "of which Brought Forward (opening)", "of which Billed In Period", "of which 180+",
     "% Aged", "Aged Bills", "Max Overdue Days", "Oldest Bill Date",
-    "Total Overdue", "Billed Outstanding", "On Account", "Unbilled Adj.", "Outstanding (net ledger)",
+    "Less On Account", "Total Overdue", "Billed Outstanding", "On Account", "Unbilled Adj.", "Outstanding (net ledger)",
     "Net Credit", "Fully Aged",
     "Sales (Last 3M)", "Days Since Receipt", "Last Receipt Date",
     "Credit Limit", "Utilization %", "Risk", "Red Mark",
   ];
-  const MONEY_COLS = [6, 7, 8, 9, 14, 15, 16, 17, 18, 21, 24];
-  const PCT_COLS = [10, 25];
+  // ⚠ Index-based, so they shift whenever a column is inserted. "Less On Account" went in at 14.
+  const MONEY_COLS = [6, 7, 8, 9, 14, 15, 16, 17, 18, 19, 22, 25];
+  const PCT_COLS = [10, 26];
 
   const aoa: Array<Array<string | number>> = [];
   aoa.push([`${meta.title} — ${meta.scopeLabel}`]);
@@ -194,7 +195,10 @@ function buildCustomerSheet(rows: OARow[], meta: OAExportMeta): XLSX.WorkSheet {
       f.agedBillCount,
       f.oldestOverdueDays,
       f.oldestBillDate ? formatDateDMY(f.oldestBillDate) : "—",
-      Math.round(f.totalOverdue),
+      // Screen shows net; so must Excel. This sheet writes facts directly and does NOT go
+      // through OA_COLUMNS' accessors, so the netting has to be repeated here by hand.
+      -Math.round(f.overdueOnAccount),
+      Math.round(f.totalOverdue - f.overdueOnAccount),
       Math.round(f.billedOutstanding),
       Math.round(f.onAccount),
       Math.round(f.unbilledAdj),
@@ -217,7 +221,7 @@ function buildCustomerSheet(rows: OARow[], meta: OAExportMeta): XLSX.WorkSheet {
     { wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 12 },
     { wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 },
     { wch: 10 }, { wch: 11 }, { wch: 17 }, { wch: 16 },
-    { wch: 15 }, { wch: 18 }, { wch: 14 }, { wch: 15 }, { wch: 21 },
+    { wch: 16 }, { wch: 15 }, { wch: 18 }, { wch: 14 }, { wch: 15 }, { wch: 21 },
     { wch: 11 }, { wch: 11 },
     { wch: 16 }, { wch: 18 }, { wch: 17 },
     { wch: 14 }, { wch: 13 }, { wch: 10 }, { wch: 9 },
