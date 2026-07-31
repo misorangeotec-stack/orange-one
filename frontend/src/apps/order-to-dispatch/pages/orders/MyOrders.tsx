@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import { useDispatchStore } from "../../store";
 import OrdersTable from "../../components/OrdersTable";
@@ -16,16 +17,18 @@ export default function MyOrders() {
           <p className="text-[13.5px] text-grey-2 mt-1">Sales orders you raised, wherever they have reached.</p>
         </div>
         {s.canRaise && (
-          <Button onClick={() => nav("/order-to-dispatch/orders/new")}>New sales order</Button>
+          <Button size="sm" onClick={() => nav("/order-to-dispatch/orders/new")}>+ New sales order</Button>
         )}
       </div>
 
-      <OrdersTable
-        orders={s.myOrders}
-        exportName="Order_To_Dispatch_My_Orders"
-        emptyTitle="You haven't raised any orders"
-        emptyMessage="Orders you raise will appear here so you can follow them through."
-      />
+      <Card className="p-4">
+        <OrdersTable
+          orders={s.myOrders}
+          exportName="Order_To_Dispatch_My_Orders"
+          emptyTitle="You haven't raised any orders"
+          emptyMessage="Orders you raise will appear here so you can follow them through."
+        />
+      </Card>
     </div>
   );
 }

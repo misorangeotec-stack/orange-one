@@ -90,6 +90,13 @@ export default function StepModal({
 
   const renderField = (f: StepField) => {
     const v = values[f.key] ?? "";
+    /*
+      A placeholder is a prompt for someone about to type. In VIEW ONLY it reads
+      as the recorded answer instead — an unfilled Remarks box showed the grey
+      "why the order is being held" exactly where the actual remark would sit. A
+      dash says the same thing honestly: nothing was recorded here.
+    */
+    const ph = locked ? "—" : f.placeholder;
     if (f.kind === "select") {
       // Every remaining select is a fixed code enum — no step picks from a master.
       const opts = f.choices ?? [];
@@ -98,14 +105,14 @@ export default function StepModal({
           value={v}
           onChange={(next) => set(f.key, next)}
           options={opts}
-          placeholder={f.placeholder ?? "Select…"}
+          placeholder={locked ? "—" : (f.placeholder ?? "Select…")}
           disabled={locked}
         />
       );
     }
     if (f.kind === "textarea") {
       return (
-        <TextArea value={v} rows={2} disabled={locked} placeholder={f.placeholder}
+        <TextArea value={v} rows={3} disabled={locked} placeholder={ph}
           onChange={(e) => set(f.key, e.target.value)} />
       );
     }
@@ -115,7 +122,7 @@ export default function StepModal({
         inputMode={f.kind === "number" ? "decimal" : undefined}
         value={v}
         disabled={locked}
-        placeholder={f.placeholder}
+        placeholder={ph}
         onChange={(e) => set(f.key, e.target.value)}
       />
     );
@@ -203,7 +210,14 @@ export default function StepModal({
       onClose={onClose}
       title={title}
       subtitle={subtitle}
-      size="lg"
+      /*
+        The steps that carry the item grid — what is going out, and everything
+        downstream that recaps it — are a table inside a dialog, and `lg` (512px)
+        wrapped item names onto two lines. The two that are purely a decision plus
+        a remark stay `lg`; widening those would only strand a lone dropdown in a
+        lot of white.
+      */
+      size={cfg.lines === "ship" || cfg.context?.showLines ? "xl" : "lg"}
       readOnly={locked}
       /*
         ⚠ This slot renders OUTSIDE Modal's disabled <fieldset>, and it is the only
@@ -265,16 +279,20 @@ export default function StepModal({
           </section>
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        {/*
+          Every step is "one or two short answers, then a Remarks box". Pairing a
+          one-line control with a multi-line one across two equal columns left the
+          two ragged against each other and squeezed both; the remark — the field
+          people actually write a sentence into — got the narrower half of a 512px
+          dialog. Short fields pair up, the textarea takes the full width beneath.
+        */}
+        <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
           {shown.map((f) => (
-            <FieldLabel
-              key={f.key}
-              label={f.label}
-              required={isRequiredNow(f, values, order)}
-              hint={f.hint}
-            >
-              {renderField(f)}
-            </FieldLabel>
+            <div key={f.key} className={f.kind === "textarea" ? "sm:col-span-2" : undefined}>
+              <FieldLabel label={f.label} required={isRequiredNow(f, values, order)}>
+                {renderField(f)}
+              </FieldLabel>
+            </div>
           ))}
         </div>
 

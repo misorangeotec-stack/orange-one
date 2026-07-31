@@ -53,7 +53,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
           />
         </FieldLabel>
 
-        <FieldLabel label="Order date" required hint="starts the internal clocks">
+        <FieldLabel label="Order date" required>
           <TextInput
             type="date"
             value={f.form.orderDate}

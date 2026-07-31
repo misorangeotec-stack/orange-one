@@ -1,18 +1,22 @@
 import { Link } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
-import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
-import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useDispatchStore } from "../store";
-import { openStep } from "../lib/queues";
 import { stepByKey } from "../lib/steps";
-import { DISPATCH_TYPE_LABEL, dmy, qtyTotals } from "../lib/format";
+import { dmy, qtyTotals } from "../lib/format";
 import StatusPill from "./StatusPill";
 import type { DispatchOrder } from "../types";
 
 /**
  * The all-orders table, shared by the full list and My Orders so the two cannot
- * drift. Every row's due date comes from the same `lib/queues.ts` the queues and
- * both Control Centers read.
+ * drift.
+ *
+ * Six columns, deliberately — the same shape as the purchase-request lists
+ * (identity · counterparty · items · when · where it is · status). Type, Round,
+ * Pending and Step due were dropped in favour of that: an order register is read
+ * to find an order, and each of the four repeated something already on the row
+ * (Items already carries the pending quantity) or belonged on a screen built to
+ * chase lateness — the step queues and the Control Center, which read the very
+ * same `lib/queues.ts` and are where a due date can actually be acted on.
  */
 export default function OrdersTable({
   orders,
@@ -26,13 +30,7 @@ export default function OrdersTable({
   emptyMessage: string;
 }) {
   const s = useDispatchStore();
-  const today = todayLocalIso();
   const B = "/order-to-dispatch";
-
-  const dueOf = (o: DispatchOrder): string | null => {
-    const step = openStep(o);
-    return step ? s.dueIsoFor(o, step) : null;
-  };
 
   const stepLabel = (o: DispatchOrder): string => {
     if (o.status === "closed") return "Closed";
@@ -53,6 +51,7 @@ export default function OrdersTable({
       sortValue: (o) => o.orderNo,
       filter: { kind: "text", get: (o) => o.orderNo },
       exportValue: (o) => o.orderNo,
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "customer",
@@ -60,18 +59,13 @@ export default function OrdersTable({
       cell: (o) => <span className="text-navy">{s.customerName(o.customerId)}</span>,
       sortValue: (o) => s.customerName(o.customerId),
       filter: { kind: "select", get: (o) => s.customerName(o.customerId) },
+      tdClassName: "whitespace-nowrap",
     },
     {
-      key: "type",
-      header: "Type",
-      cell: (o) => <span className="text-grey">{DISPATCH_TYPE_LABEL[o.dispatchType]}</span>,
-      sortValue: (o) => o.dispatchType,
-      filter: { kind: "select", get: (o) => DISPATCH_TYPE_LABEL[o.dispatchType] },
-    },
-    {
+      // "lines · quantity still owed" — on a fully dispatched order `pending` is
+      // 0, so it falls back to what was ordered rather than reading as empty.
       key: "items",
       header: "Items",
-      align: "right",
       cell: (o) => {
         const t = qtyTotals(o);
         return (
@@ -81,14 +75,8 @@ export default function OrdersTable({
         );
       },
       sortValue: (o) => o.lines.length,
+      filter: { kind: "number", get: (o) => o.lines.length },
       exportValue: (o) => o.lines.length,
-    },
-    {
-      key: "step",
-      header: "Current step",
-      cell: (o) => <span className="text-grey">{stepLabel(o)}</span>,
-      sortValue: (o) => stepLabel(o),
-      filter: { kind: "select", get: (o) => stepLabel(o) },
     },
     {
       key: "orderDate",
@@ -97,41 +85,15 @@ export default function OrdersTable({
       sortValue: (o) => o.orderDate,
       filter: { kind: "date", get: (o) => o.orderDate },
       exportValue: (o) => dmy(o.orderDate),
+      tdClassName: "whitespace-nowrap",
     },
     {
-      // Replaces the old Promised / TAT column. A promised date is no longer
-      // captured; what matters on a partial order is how much is still owed.
-      key: "round",
-      header: "Round",
-      cell: (o) => (
-        <span className="text-grey whitespace-nowrap">
-          {o.rounds.length > 0 || o.roundNo > 1 ? `R${o.roundNo}` : "—"}
-        </span>
-      ),
-      sortValue: (o) => o.roundNo,
-      exportValue: (o) => o.roundNo,
-    },
-    {
-      key: "pendingQty",
-      header: "Pending",
-      align: "right",
-      cell: (o) => {
-        const t = qtyTotals(o);
-        return (
-          <span className={t.pending > 0 ? "text-navy font-semibold tabular-nums" : "text-grey-2"}>
-            {t.pending > 0 ? t.pending : "—"}
-          </span>
-        );
-      },
-      sortValue: (o) => qtyTotals(o).pending,
-      exportValue: (o) => qtyTotals(o).pending,
-    },
-    {
-      key: "due",
-      header: "Step due",
-      cell: (o) => <DueCell dueIso={dueOf(o)} />,
-      sortValue: (o) => dueOf(o) ?? "9999-12-31",
-      exportValue: (o) => { const d = dueOf(o); return d ? dmy(d) : ""; },
+      key: "step",
+      header: "Current step",
+      cell: (o) => <span className="text-grey">{stepLabel(o)}</span>,
+      sortValue: (o) => stepLabel(o),
+      filter: { kind: "select", get: (o) => stepLabel(o) },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "status",
@@ -139,6 +101,7 @@ export default function OrdersTable({
       cell: (o) => <StatusPill status={o.status} />,
       sortValue: (o) => o.status,
       filter: { kind: "select", get: (o) => o.status },
+      tdClassName: "whitespace-nowrap",
     },
   ];
 
@@ -153,12 +116,15 @@ export default function OrdersTable({
         allLabel: "All customers",
         label: "Customer",
       }}
+      // The customer is already a column, so the grey band above each run of rows
+      // only repeated it. Kept as a groupBy so the picker above the table still
+      // filters by customer, and so the Excel export still carries the column.
+      hideGroupHeaders
       actions={(o) => (
         <Link to={`${B}/orders/${o.id}`} className="text-[13px] font-semibold text-orange hover:underline">
           Open
         </Link>
       )}
-      rowClassName={(o) => overdueRowClass(dueOf(o))}
       rowsLabel="orders"
       initialSort={{ key: "orderNo", dir: "desc" }}
       emptyTitle={emptyTitle}

@@ -47,12 +47,11 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
           // so leaving it optional would only move the failure later.
           key: "company_id", label: "Company", type: "select", required: true,
           options: ctx.companyOptions,
-          hint: "which of our companies bills this customer",
         },
         { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
         { key: "contact_name", label: "Contact person", type: "text" },
         { key: "phone", label: "Phone", type: "text" },
-        { key: "email", label: "Email", type: "text", hint: "contact detail only — no mail is sent from here" },
+        { key: "email", label: "Email", type: "text" },
         { key: "gstin", label: "GST TIN", type: "text" },
         sortField,
       ];

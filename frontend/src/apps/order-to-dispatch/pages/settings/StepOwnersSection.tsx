@@ -140,10 +140,10 @@ export default function StepOwnersSection() {
               driver-confirms-their-own-delivery path went with the Drivers master.
             </p>
           )}
-          <FieldLabel label="Departments" hint="filter only">
+          <FieldLabel label="Departments">
             <MultiSelect values={deptIds} onChange={changeDepts} options={deptOptions} placeholder="All departments" />
           </FieldLabel>
-          <FieldLabel label="Employees" hint="select one or more">
+          <FieldLabel label="Employees">
             <MultiSelect values={empIds} onChange={setEmpIds} options={peopleOptions} placeholder="Select owners" />
           </FieldLabel>
           {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}

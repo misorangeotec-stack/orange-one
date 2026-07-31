@@ -32,7 +32,15 @@ export interface StepField {
   /** `select` backed by a fixed code enum. No step picks from a master any more. */
   choices?: { value: string; label: string }[];
   placeholder?: string;
-  hint?: string;
+  /**
+   * ⚠ THERE IS NO `hint` HERE, AND ONE MUST NOT BE ADDED BACK.
+   *
+   * Explanatory copy beside a label renders in the narrow gap next to it, wraps
+   * to four or five lines, and shoves the control it describes down the cell —
+   * on a two-field step it was more of the dialog than the form. What a step
+   * does belongs in the step's own `description`, on the queue page, where there
+   * is room to say it once. The field asks for a value and nothing else.
+   */
   /** Save stays disabled until this is filled. */
   required?: boolean;
   /**
@@ -117,7 +125,6 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       {
         key: "cc_status", label: "Credit outcome", kind: "select", required: true,
         choices: CREDIT_STATUS_OPTIONS, get: (o) => s(o.ccStatus),
-        hint: "On hold keeps the order in this queue until you come back and approve it",
       },
       {
         key: "cc_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.ccRemarks),
@@ -205,7 +212,6 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       {
         key: "dc_status", label: "Delivery outcome", kind: "select", required: true,
         choices: DELIVERY_STATUS_OPTIONS, get: (_o, v) => s(v.dcStatus),
-        hint: "Returned puts the whole consignment back into pending — a part return is corrected from the order page afterwards",
       },
       { key: "dc_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.dcRemarks) },
     ],

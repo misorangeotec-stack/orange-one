@@ -212,6 +212,18 @@ export default function MasterCrud<T extends { id: string; name: string; active:
 
   const open = creating || editing !== null;
 
+  /**
+   * Field-heavy masters get a landscape dialog instead of one tall column.
+   *
+   * The Customer master carries eight fields (name, company, code, contact,
+   * phone, email, GSTIN, sort order); stacked single-file in a `md` dialog they
+   * read as a narrow ribbon that scrolls. Above four fields the dialog widens to
+   * `xl` and pairs them up. Four or fewer — unit, category, location — stay
+   * exactly as they were: a two-column grid holding one field would only leave
+   * half the dialog empty.
+   */
+  const wide = fields.length > 4;
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -322,6 +334,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
       <Modal
         open={open}
         onClose={close}
+        size={wide ? "xl" : "md"}
         title={editing ? `Edit ${singular}` : `Add ${singular}`}
         footer={
           <>
@@ -334,36 +347,48 @@ export default function MasterCrud<T extends { id: string; name: string; active:
           </>
         }
       >
-        <div className="space-y-3.5">
-          {fields.map((f) => (
-            <FieldLabel key={f.key} label={f.label} required={f.required}>
-              {f.type === "custom" ? (
-                f.render?.(values[f.key] ?? "", (next) => setField(f.key, next))
-              ) : f.type === "select" ? (
-                <Combobox
-                  value={values[f.key] ?? ""}
-                  onChange={(v) => setField(f.key, v)}
-                  options={f.options ?? []}
-                  placeholder={f.placeholder ?? "Select…"}
-                  autoAdvance
-                />
-              ) : f.type === "textarea" ? (
-                <TextArea
-                  rows={3}
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => setField(f.key, e.target.value)}
-                  placeholder={f.placeholder}
-                />
-              ) : (
-                <TextInput
-                  value={values[f.key] ?? ""}
-                  onChange={(e) => setField(f.key, e.target.value)}
-                  placeholder={f.placeholder}
-                />
-              )}
-              {f.hint && <span className="mt-1 block text-[11px] leading-snug text-grey">{f.hint}</span>}
-            </FieldLabel>
-          ))}
+        <div className="space-y-4">
+          {/* Two columns only once `wide`; the single-column path is byte-for-byte
+              the old layout, so the small masters cannot shift. */}
+          <div className={wide ? "grid gap-x-5 gap-y-3.5 sm:grid-cols-2" : "space-y-3.5"}>
+            {fields.map((f) => (
+              /* A textarea and a custom control (HR Exit's owner MultiSelect, Asset
+                 Maintenance's track picker) are as wide as they are tall — halving
+                 them wastes the extra room the landscape dialog just bought. */
+              <div
+                key={f.key}
+                className={wide && (f.type === "textarea" || f.type === "custom") ? "sm:col-span-2" : undefined}
+              >
+                <FieldLabel label={f.label} required={f.required}>
+                  {f.type === "custom" ? (
+                    f.render?.(values[f.key] ?? "", (next) => setField(f.key, next))
+                  ) : f.type === "select" ? (
+                    <Combobox
+                      value={values[f.key] ?? ""}
+                      onChange={(v) => setField(f.key, v)}
+                      options={f.options ?? []}
+                      placeholder={f.placeholder ?? "Select…"}
+                      autoAdvance
+                    />
+                  ) : f.type === "textarea" ? (
+                    <TextArea
+                      rows={3}
+                      value={values[f.key] ?? ""}
+                      onChange={(e) => setField(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                    />
+                  ) : (
+                    <TextInput
+                      value={values[f.key] ?? ""}
+                      onChange={(e) => setField(f.key, e.target.value)}
+                      placeholder={f.placeholder}
+                    />
+                  )}
+                  {f.hint && <span className="mt-1 block text-[11px] leading-snug text-grey">{f.hint}</span>}
+                </FieldLabel>
+              </div>
+            ))}
+          </div>
 
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <input

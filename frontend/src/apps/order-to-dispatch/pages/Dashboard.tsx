@@ -85,7 +85,8 @@ export default function Dashboard() {
       key: "tat",
       label: "Partially dispatched",
       value: partiallyDispatched.length,
-      hint: "promised date passed, not yet out of the gate",
+      // The hint here still described a promised dispatch date, which the reshape
+      // removed — it had stopped being true of the tile it sat under.
       tone: partiallyDispatched.length > 0 ? "red" : undefined,
       href: `${B}/orders`,
     },
