@@ -8,10 +8,14 @@ import { useImportStore } from "../store";
  *
  * Three screens used to build this object independently and two of them drifted:
  * they omitted `vendorOptions` / `itemOptions`, which left the Vendor and Item
- * selects on a vendor-item-price form completely empty — the request couldn't be
- * submitted, and on the approve side the approver saw blanks and could silently
- * wipe a valid payload. Every caller now shares this hook so the lists can't
- * fall out of sync again.
+ * selects on a vendor-item-mapping form completely empty — the request couldn't
+ * be submitted, and on the approve side the approver saw blanks and could
+ * silently wipe a valid payload. Every caller now shares this hook so the lists
+ * can't fall out of sync again.
+ *
+ * These lists feed the MASTER surfaces only (Masters CRUD, the request modal,
+ * the approve modal). The New Request form builds its own vendor list, which is
+ * why the currency suffix dropped here still shows there.
  */
 export function useMasterFieldCtx(): MasterFieldCtx {
   const s = useImportStore();
@@ -21,7 +25,7 @@ export function useMasterFieldCtx(): MasterFieldCtx {
     [s.activeCategories]
   );
   const vendorOptions: ComboOption[] = useMemo(
-    () => s.activeVendors.map((v) => ({ value: v.id, label: v.defaultCurrency ? `${v.name} (${v.defaultCurrency})` : v.name })),
+    () => s.activeVendors.map((v) => ({ value: v.id, label: v.name })),
     [s.activeVendors]
   );
   const itemOptions: ComboOption[] = useMemo(

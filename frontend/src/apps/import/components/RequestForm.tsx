@@ -16,8 +16,9 @@ import { isLineBlank, makeInheritedLine, type RequestFormApi, type RequestLine }
  *
  * Import is a PURE QUANTITY REQUISITION: a line is just Category · Item · Qty.
  * There is no rate, no exchange rate, and no line value anywhere. In `edit` mode
- * Company / Vendor render as read-only readouts — items are vendor-scoped, so
- * changing the vendor would be a different request, not a correction.
+ * Company / Vendor render as read-only readouts — items ARE vendor-scoped (the
+ * Vendor-Item Mapping master decides what this vendor supplies), so changing the
+ * vendor would be a different request, not a correction.
  *
  * Shipment Type is the exception to that lock: it stays editable, because it is a
  * logistics decision about the same order rather than a different order, and a
@@ -27,12 +28,14 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
   const {
     mode, companyId, setCompanyId, vendorId, note, setNote, err, requested, setRequested,
     raise, setRaise, companyOptions, vendorOptions, categoryOptions,
-    shipmentType, setShipmentType, shipmentOptions,
+    shipmentType, setShipmentType, shipmentOptions, hasVendorItems,
     lines, setLines, itemOptionsFor, onPickVendor, onPickItem, raiseItem, filled,
   } = form;
 
   const locked = mode === "edit";
   const numCell = "w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums";
+  /** Does the form already carry a real line? Keeps a hydrated request visible. */
+  const hasLines = lines.some((l) => !isLineBlank(l));
 
   const readOnlyField = (label: string, value: string) => (
     <FieldLabel label={label}>
@@ -70,24 +73,35 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
       key: "item",
       header: "Item",
       className: "min-w-[240px]",
-      cell: (row, api) => (
-        <Combobox
-          ref={api.focusRef as (el: ComboboxHandle | null) => void}
-          value={row.itemId}
-          onChange={(v) => {
-            onPickItem(row, v, api.patch);
-            api.advance();
-          }}
-          options={itemOptionsFor(row)}
-          placeholder={row.categoryId ? "Search & select an item…" : "Pick a category first"}
-          disabled={!row.categoryId}
-          searchable
-          triggerClassName="px-2.5 py-1.5 text-[13.5px]"
-          onTriggerKeyDown={api.keyHandler}
-          onCreate={raiseItem(row)}
-          createLabel={(q) => `Request new item “${q}”`}
-        />
-      ),
+      cell: (row, api) => {
+        // Computed once so the placeholder can tell "pick a category" apart from
+        // "this vendor supplies nothing in the category you picked".
+        const opts = itemOptionsFor(row);
+        return (
+          <Combobox
+            ref={api.focusRef as (el: ComboboxHandle | null) => void}
+            value={row.itemId}
+            onChange={(v) => {
+              onPickItem(row, v, api.patch);
+              api.advance();
+            }}
+            options={opts}
+            placeholder={
+              !row.categoryId
+                ? "Pick a category first"
+                : opts.length === 0
+                  ? "No items mapped for this category"
+                  : "Search & select an item…"
+            }
+            disabled={!row.categoryId}
+            searchable
+            triggerClassName="px-2.5 py-1.5 text-[13.5px]"
+            onTriggerKeyDown={api.keyHandler}
+            onCreate={raiseItem(row)}
+            createLabel={(q) => `Request new item “${q}”`}
+          />
+        );
+      },
     },
     {
       key: "qty",
@@ -166,7 +180,23 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
           </FieldLabel>
         </div>
 
-        {vendorId && (
+        {/* A vendor with no mapping can supply nothing, so there is no grid to
+            show — say why rather than render an unusable table.
+
+            `hasLines` is what keeps this honest in `edit` mode: if every mapping
+            for the vendor was deactivated AFTER the request was raised, hiding the
+            grid would hide lines that `filled` still submits. Show them instead. */}
+        {vendorId && !hasVendorItems && !hasLines && (
+          <div className="rounded-xl border border-line bg-page px-4 py-3.5">
+            <p className="text-[13.5px] font-medium text-navy">No items are mapped to this vendor yet.</p>
+            <p className="text-[12.5px] text-grey-2 mt-1">
+              A requisition can only name items this vendor supplies. Add them in Masters → Vendor-Item Mappings,
+              or ask that master's owner to.
+            </p>
+          </div>
+        )}
+
+        {vendorId && (hasVendorItems || hasLines) && (
           <div className="space-y-2">
             <LineGrid
               rows={lines}
@@ -193,11 +223,20 @@ export default function RequestForm({ form, children }: { form: RequestFormApi; 
               }
             />
             <p className="text-[12px] text-grey-2">
-              Each row has its own category. Press Tab or Enter at the end of a row to start the next one. Missing an
-              item or category? Type its name to request it.
+              Only items mapped to this vendor can be ordered, so both lists are already narrowed to what it
+              supplies. Each row has its own category. Press Tab or Enter at the end of a row to start the next
+              one. Missing an item or category? Type its name to request it.
             </p>
-            {requested && <p className="text-[12px] text-teal">Requested {requested} — selectable once the master's owner approves it.</p>}
           </div>
+        )}
+
+        {/* Outside the grid: the Company and Vendor pickers can raise a master too,
+            and this must not disappear with an unmapped vendor. */}
+        {requested && (
+          <p className="text-[12px] text-teal">
+            Requested {requested} — selectable once the master's owner approves it. A new item also needs mapping to
+            this vendor before it can be ordered.
+          </p>
         )}
 
         <FieldLabel label="Note (optional)">

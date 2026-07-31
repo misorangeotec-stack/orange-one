@@ -7,12 +7,14 @@ import { formatDate } from "@/shared/lib/time";
 import { useImportStore } from "../store";
 import { MASTER_TYPES, type MasterType } from "../types";
 import {
+  describePayload,
   emptyValuesFor,
   findExistingMaster,
   masterFields,
   masterTypeLabel,
   masterTypePlural,
   missingRequired,
+  parentIdOf,
   payloadFromValues,
   type MasterValues,
 } from "../lib/masterFields";
@@ -80,7 +82,11 @@ export default function RequestMasterModal({
 
   /** Already in the master, or already sitting in someone's review queue? */
   const clash = useMemo(() => {
-    if (!mt || !values.name?.trim()) return null;
+    if (!mt) return null;
+    // vendor_item_price has no `name` — it is keyed on (vendor, item), so the
+    // name guard would skip its dup check entirely.
+    const keyed = mt === "vendor_item_price" ? !!(values.vendor_id && values.item_id) : !!values.name?.trim();
+    if (!keyed) return null;
 
     const existing = findExistingMaster(mt, values, {
       companies: s.companies,
@@ -88,8 +94,14 @@ export default function RequestMasterModal({
       itemGroups: s.itemGroups,
       items: s.items,
       vendors: s.vendors,
+      vendorItemPrices: s.vendorItemPrices,
     });
     if (existing) {
+      if (mt === "vendor_item_price") {
+        return existing.active
+          ? `This item is already mapped to this vendor — pick it on the request instead of adding a second mapping.`
+          : `This item is mapped to this vendor but the mapping is deactivated. Ask a master manager to reactivate it rather than adding a duplicate.`;
+      }
       return existing.active
         ? `“${existing.name}” is already in ${masterTypePlural(mt)} — pick it from the list.`
         : `“${existing.name}” exists in ${masterTypePlural(mt)} but is deactivated. Ask a master manager to reactivate it rather than adding a duplicate.`;
@@ -97,16 +109,17 @@ export default function RequestMasterModal({
 
     const payload = payloadFromValues(mt, values);
     // Mirrors the DB dup-guard index fms_import_master_requests_pending_uniq:
-    //   (master_type, coalesce(category_id, item_group_id, ''), lower(name))
-    // An `item` payload keys on category_id now (20260808120100) — that is the
-    // FIRST arm of the coalesce, so the index needed no rebuild.
+    //   (master_type, coalesce(category_id, item_group_id, vendor_id, ''),
+    //                 coalesce(item_id, lower(name)))
+    // If this drifts from the index, the client and the database disagree about
+    // what a duplicate is. An `item` payload keys on category_id now (20260808120100)
+    // — that is the FIRST arm of the coalesce, so the index needed no rebuild.
+    const leafOf = (p: Record<string, unknown>) =>
+      String(p.item_id ?? "") || String(p.name ?? "").trim().toLowerCase();
     const dup = s.masterRequests.find((r) => {
       if (r.status !== "pending" || r.masterType !== mt) return false;
       const p = r.proposedPayload as Record<string, unknown>;
-      const sameName = String(p.name ?? "").trim().toLowerCase() === String(payload.name ?? "").trim().toLowerCase();
-      const sameParent =
-        String(p.category_id ?? p.item_group_id ?? "") === String(payload.category_id ?? payload.item_group_id ?? "");
-      return sameName && sameParent;
+      return leafOf(p) === leafOf(payload) && parentIdOf(p) === parentIdOf(payload);
     });
     if (dup) {
       const who = s.profileById(dup.requestedBy)?.name ?? "someone";
@@ -136,7 +149,17 @@ export default function RequestMasterModal({
     try {
       const payload = payloadFromValues(mt, values);
       const id = await s.requestNewMaster(mt, payload);
-      onRequested?.(id, mt, String(payload.name ?? ""));
+      // A vendor-item mapping carries no `name`, so the caller's "Requested …"
+      // toast would render an empty pair of quotes — describe the pair instead.
+      const label =
+        String(payload.name ?? "").trim() ||
+        describePayload(mt, payload, {
+          categoryName: (cid) => s.categoryById(cid)?.name,
+          itemGroupName: (gid) => s.itemGroupById(gid)?.name,
+          vendorName: (vid) => s.vendorById(vid)?.name,
+          itemName: (iid) => s.itemById(iid)?.name,
+        });
+      onRequested?.(id, mt, label);
       onClose();
     } catch (e) {
       const msg = (e as Error).message ?? "";

@@ -8,12 +8,19 @@ export type MasterType = "company" | "category" | "item_group" | "item" | "vendo
 // Owners, the Master Requests banner and the request-new-master type picker are
 // all driven by this array. An item hangs off a CATEGORY now; the group level
 // never appeared anywhere in the request → PO → Inward → Tally flow.
+//
+// ⚠ Only `label` / `plural` are display text. Every `value` is a DB string — the
+// master_type CHECK on fms_import_master_requests + fms_import_master_managers,
+// the RLS predicate fms_import_is_master_manager(<value>, …), and the branch key
+// in fms_import_resolve_master_request. `vendor_item_price` therefore keeps its
+// id even though it no longer records a price: renaming it would orphan every
+// pending request and every assigned-owner row.
 export const MASTER_TYPES: { value: MasterType; label: string; plural: string }[] = [
   { value: "company", label: "Company", plural: "Companies" },
   { value: "category", label: "Category", plural: "Categories" },
   { value: "item", label: "Item", plural: "Items" },
   { value: "vendor", label: "Vendor", plural: "Vendors" },
-  { value: "vendor_item_price", label: "Vendor-Item Price", plural: "Vendor-Item Prices" },
+  { value: "vendor_item_price", label: "Vendor-Item Mapping", plural: "Vendor-Item Mappings" },
 ];
 
 export interface Company {
@@ -71,7 +78,17 @@ export interface Vendor {
   createdAt: string;
 }
 
-/** The fixed agreed price for one (vendor, item) — auto-fills the request line. */
+/**
+ * One (vendor, item) mapping: this vendor supplies this item. That is all it
+ * means — import is a pure quantity requisition, so there is no price here.
+ * A row's presence is what makes an item selectable on a request for that
+ * vendor (see `itemsForVendor` in the store).
+ *
+ * `currency` and `rate` mirror columns that still exist on the row and are no
+ * longer read or written by the app: `currency` fills from the table's 'USD'
+ * default, `rate` is a structural 0 (the column is NOT NULL with no default).
+ * The interface name matches the table, `fms_import_vendor_item_prices`.
+ */
 export interface VendorItemPrice {
   id: string;
   vendorId: string;

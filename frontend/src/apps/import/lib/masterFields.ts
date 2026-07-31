@@ -1,11 +1,12 @@
 import type { MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
-import { MASTER_TYPES, type Category, type Company, type Item, type ItemGroup, type MasterType, type Vendor } from "../types";
+import { MASTER_TYPES, type Category, type Company, type Item, type ItemGroup, type MasterType, type Vendor, type VendorItemPrice } from "../types";
 
 export type MasterValues = Record<string, string>;
 
 /**
- * Relational dropdown options the item_group / item / price descriptors need.
+ * Relational dropdown options the item_group / item / vendor-item-mapping
+ * descriptors need.
  *
  * No `itemGroupOptions`: an item hangs off a CATEGORY now, and the item_group
  * descriptor itself has always picked a category. Nothing here selects a group.
@@ -23,6 +24,7 @@ export interface MasterLists {
   itemGroups: ItemGroup[];
   items: Item[];
   vendors: Vendor[];
+  vendorItemPrices: VendorItemPrice[];
 }
 
 /**
@@ -80,12 +82,13 @@ export function masterFields(mt: MasterType, ctx: MasterFieldCtx): MasterFieldDe
         { key: "address", label: "Address", type: "textarea" },
       ];
     case "vendor_item_price":
-      // Import is a pure quantity requisition — a vendor-item mapping no longer
-      // carries a rate. The row simply records which items a vendor supplies.
+      // Import is a pure quantity requisition — this master carries neither a
+      // rate nor a currency. The row simply records which items a vendor
+      // supplies, and that is what makes an item selectable on a request for
+      // that vendor. (The id stays `vendor_item_price`; see MASTER_TYPES.)
       return [
         { key: "vendor_id", label: "Vendor", type: "select", required: true, options: ctx.vendorOptions ?? [], placeholder: "Select vendor" },
         { key: "item_id", label: "Item", type: "select", required: true, options: ctx.itemOptions ?? [], placeholder: "Select item" },
-        { key: "currency", label: "Currency", type: "text", placeholder: "e.g. USD" },
       ];
   }
 }
@@ -122,7 +125,13 @@ export const masterTypePlural = (mt: MasterType) => MASTER_TYPES.find((m) => m.v
 export function describePayload(
   mt: MasterType,
   payload: Record<string, unknown>,
-  lookup: { categoryName: (id: string) => string | undefined; itemGroupName: (id: string) => string | undefined }
+  lookup: {
+    categoryName: (id: string) => string | undefined;
+    itemGroupName: (id: string) => string | undefined;
+    /** A vendor-item mapping payload carries no `name` — it is described by the pair it names. */
+    vendorName: (id: string) => string | undefined;
+    itemName: (id: string) => string | undefined;
+  }
 ): string {
   const s = (k: string) => (typeof payload[k] === "string" ? (payload[k] as string).trim() : "");
   const name = s("name") || "—";
@@ -143,8 +152,11 @@ export function describePayload(
     case "category":
       return name;
     case "vendor_item_price": {
-      const ccy = s("currency") || "";
-      return ccy ? `Vendor-item (${ccy})` : "Vendor-item";
+      const vendor = lookup.vendorName(s("vendor_id"));
+      const item = lookup.itemName(s("item_id"));
+      // Both names, or nothing worth showing — a half-resolved pair reads worse
+      // than the generic label (a deactivated parent still resolves by id).
+      return vendor && item ? `${vendor} — ${item}` : "Vendor-item mapping";
     }
   }
 }
@@ -166,6 +178,15 @@ export function findExistingMaster(
   v: MasterValues,
   lists: MasterLists
 ): { id: string; name: string; active: boolean } | undefined {
+  // vendor_item_price is keyed on (vendor_id, item_id) and carries NO name, so it
+  // must be handled BEFORE the name guard below — otherwise it would silently
+  // never dup-check and the clash would only surface at approve time, as a raw
+  // unique-violation. (Ported from the domestic app, which already had this arm.)
+  if (mt === "vendor_item_price") {
+    const hit = lists.vendorItemPrices.find((p) => p.vendorId === v.vendor_id && p.itemId === v.item_id);
+    return hit ? { id: hit.id, name: "this vendor-item mapping", active: hit.active } : undefined;
+  }
+
   const name = v.name ?? "";
   if (!name.trim()) return undefined;
   switch (mt) {
@@ -183,7 +204,10 @@ export function findExistingMaster(
 }
 
 /**
- * The parent id a request hangs off, matching the DB dup-guard index.
+ * The parent id a request hangs off. MUST mirror the DB dup-guard index
+ * `fms_import_master_requests_pending_uniq` (rekeyed in 20260716130000 to add the
+ * vendor_id arm) — if the two disagree, the client pre-check and the database
+ * guard disagree about what counts as a duplicate.
  *
  * `category_id` is read FIRST, which is why re-parenting `item` onto a category
  * needed no index rebuild: an item payload simply resolves on the first arm now

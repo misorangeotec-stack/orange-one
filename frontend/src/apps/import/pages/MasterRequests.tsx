@@ -50,6 +50,8 @@ export default function MasterRequests() {
     describePayload(r.masterType, r.proposedPayload as Record<string, unknown>, {
       categoryName: (id) => s.categoryById(id)?.name,
       itemGroupName: (id) => s.itemGroupById(id)?.name,
+      vendorName: (id) => s.vendorById(id)?.name,
+      itemName: (id) => s.itemById(id)?.name,
     });
 
   const rows = useMemo(() => {

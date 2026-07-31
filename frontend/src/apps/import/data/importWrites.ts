@@ -190,12 +190,16 @@ export async function updateVendor(id: string, input: VendorInput): Promise<void
   if (error) throw new Error(error.message);
 }
 
-/* -------------------------- vendor-item prices ---------------------------- */
+/* ------------------------- vendor-item mappings --------------------------- */
+/**
+ * A row records only that a vendor supplies an item — import is a pure quantity
+ * requisition, so neither `currency` nor `rate` is part of the input. Both
+ * columns still exist on `fms_import_vendor_item_prices` (never dropped) and are
+ * simply left to the database: see the insert below.
+ */
 export interface VendorItemPriceInput {
   vendorId: string;
   itemId: string;
-  currency: string;
-  rate: number;
   active: boolean;
   sortOrder: number;
 }
@@ -206,8 +210,11 @@ export async function insertVendorItemPrice(input: VendorItemPriceInput & { crea
     .insert({
       vendor_id: input.vendorId,
       item_id: input.itemId,
-      currency: input.currency,
-      rate: input.rate,
+      // `currency` is omitted on purpose — the column defaults to 'USD'.
+      // `rate` CANNOT be omitted: it is `numeric(16,4) not null` with NO default
+      // (20260716130000), so leaving it out is a 23502. The value is meaningless
+      // now; 0 is what the whole catalogue already carries.
+      rate: 0,
       active: input.active,
       sort_order: input.sortOrder,
       created_by: input.createdBy,
@@ -218,42 +225,13 @@ export async function insertVendorItemPrice(input: VendorItemPriceInput & { crea
   return data.id as string;
 }
 
-/**
- * Save a price straight from the New Request grid ("save to price list").
- * The table is unique (vendor_id, item_id), so a plain insert would 23505 the
- * moment someone re-prices an item — upsert instead. sort_order is deliberately
- * left untouched so an existing row keeps its place in the Masters list.
- * RLS restricts this to admins and vendor_item_price managers.
- */
-export async function upsertVendorItemPrice(input: {
-  vendorId: string;
-  itemId: string;
-  currency: string;
-  rate: number;
-  createdBy: string;
-}): Promise<void> {
-  const { error } = await db.from("fms_import_vendor_item_prices").upsert(
-    {
-      vendor_id: input.vendorId,
-      item_id: input.itemId,
-      currency: input.currency,
-      rate: input.rate,
-      active: true,
-      created_by: input.createdBy,
-    },
-    { onConflict: "vendor_id,item_id" }
-  );
-  if (error) throw new Error(error.message);
-}
-
+/** `currency` / `rate` are left out so a partial update preserves what's stored. */
 export async function updateVendorItemPrice(id: string, input: VendorItemPriceInput): Promise<void> {
   const { error } = await db
     .from("fms_import_vendor_item_prices")
     .update({
       vendor_id: input.vendorId,
       item_id: input.itemId,
-      currency: input.currency,
-      rate: input.rate,
       active: input.active,
       sort_order: input.sortOrder,
     })

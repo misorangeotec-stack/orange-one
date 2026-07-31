@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
 import type { MasterValues } from "../../lib/masterFields";
-import { SHIPMENT_TYPES, type MasterType, type RequestItem } from "../../types";
+import { SHIPMENT_TYPES, type Item, type MasterType, type RequestItem } from "../../types";
 import { useImportStore } from "../../store";
 
 /**
@@ -11,6 +11,10 @@ import { useImportStore } from "../../store";
  * there is no rate, no exchange rate, and no line value — so a line carries only
  * category / item / quantity / remark. The two pages differ only in how they
  * seed this state and what they do on submit.
+ *
+ * The line options are VENDOR-SCOPED: the Vendor-Item Mapping master decides
+ * which items — and therefore which categories — a requisition may name, so
+ * picking a vendor narrows both dropdowns and an unmapped item is unorderable.
  */
 
 export interface RequestLine extends LineGridRow {
@@ -127,20 +131,54 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     () => s.activeVendors.map((v) => ({ value: v.id, label: v.defaultCurrency ? `${v.name} (${v.defaultCurrency})` : v.name })),
     [s.activeVendors]
   );
-  const categoryOptions: ComboOption[] = useMemo(
-    () => s.activeCategories.map((c) => ({ value: c.id, label: c.name })),
-    [s.activeCategories]
-  );
+  /**
+   * Categories the PICKED VENDOR supplies, plus any category a saved line still
+   * points at.
+   *
+   * ⚠ That union is not cosmetic. Combobox renders its PLACEHOLDER when a value
+   * matches no option (see Combobox.tsx), so on Edit a line whose category has
+   * since been unmapped from the vendor would look blank — and saving would then
+   * drop it silently. Same reasoning in `itemOptionsFor` below.
+   */
+  const categoryOptions: ComboOption[] = useMemo(() => {
+    const scoped = s.categoriesForVendor(vendorId);
+    const seen = new Set(scoped.map((c) => c.id));
+    const out: ComboOption[] = scoped.map((c) => ({ value: c.id, label: c.name }));
+    for (const l of lines) {
+      if (!l.categoryId || seen.has(l.categoryId)) continue;
+      seen.add(l.categoryId);
+      const c = s.categoryById(l.categoryId);
+      if (c) out.push({ value: c.id, label: c.name });
+    }
+    return out;
+  }, [vendorId, lines, s]);
   /** Fixed, code-defined — a shipment mode is not master data anyone maintains. */
   const shipmentOptions: ComboOption[] = SHIPMENT_TYPES;
 
-  /** Items under a row's category; already-added ones drop out. */
+  /**
+   * Does the picked vendor supply anything at all? Drives the grid's empty state
+   * — with no mapping there is nothing to order, and an empty grid would look
+   * broken rather than unconfigured.
+   */
+  const hasVendorItems = useMemo(() => s.itemsForVendor(vendorId).length > 0, [vendorId, s]);
+
+  /**
+   * Items the vendor supplies in this row's category; already-added ones drop
+   * out, and the row's own item is kept visible even if its mapping is gone.
+   */
   const itemOptionsFor = (line: RequestLine): ComboOption[] => {
     if (!line.categoryId) return [];
     const taken = new Set(lines.filter((l) => l.uid !== line.uid && l.itemId).map((l) => l.itemId));
-    return s.itemsForCategory(line.categoryId)
-      .filter((it) => !taken.has(it.id))
-      .map((it) => ({ value: it.id, label: it.name, sublabel: it.unit || "—" }));
+    const opt = (it: Item): ComboOption => ({ value: it.id, label: it.name, sublabel: it.unit || "—" });
+    const out = s
+      .itemsForVendor(vendorId)
+      .filter((it) => it.categoryId === line.categoryId && !taken.has(it.id))
+      .map(opt);
+    if (line.itemId && !out.some((o) => o.value === line.itemId)) {
+      const own = s.itemById(line.itemId);
+      if (own) out.push(opt(own));
+    }
+    return out;
   };
 
   /**
@@ -198,7 +236,7 @@ export function useRequestForm(opts: { mode: "new" | "edit"; init?: RequestFormI
     requested, setRequested,
     raise, setRaise,
     // options
-    companyOptions, vendorOptions, categoryOptions, shipmentOptions,
+    companyOptions, vendorOptions, categoryOptions, shipmentOptions, hasVendorItems,
     // behaviour
     itemOptionsFor, onPickVendor, onPickItem, raiseItem,
     filled, validate,

@@ -93,7 +93,6 @@ import {
   updateVendor,
   insertVendorItemPrice,
   updateVendorItemPrice,
-  upsertVendorItemPrice,
   fetchFxRate as fetchFxRateWrite,
   setMasterManagers as setMasterManagersWrite,
   requestNewMaster as requestNewMasterWrite,
@@ -198,14 +197,17 @@ interface ImportStoreValue {
   companyLabel: (id: string | null) => string;
   vendorLabel: (id: string | null) => string;
   activeVendors: Vendor[];
-  /** The fixed price catalogue (all + active) and the (vendor, item) lookup. */
+  /** The vendor→item mapping catalogue: which items each vendor supplies. */
   vendorItemPrices: VendorItemPrice[];
-  priceFor: (vendorId: string | null, itemId: string | null) => VendorItemPrice | undefined;
-  /** Items that have an active price for the given vendor (drives the request item picker). */
-  pricedItemsForVendor: (vendorId: string | null) => Item[];
-  /** Every active item under a category, priced or not — the New Request grid lets
-   *  you order an unpriced item and supply its rate on the spot. */
-  itemsForCategory: (categoryId: string | null) => Item[];
+  /**
+   * The two selectors that scope a requisition to its vendor. An item is
+   * orderable from a vendor only when an ACTIVE mapping row exists for the pair
+   * — no mapping, nothing selectable — and a category only appears when it holds
+   * at least one such item, so picking a category can never dead-end on an empty
+   * item list.
+   */
+  itemsForVendor: (vendorId: string | null) => Item[];
+  categoriesForVendor: (vendorId: string | null) => Category[];
 
   // governance
   masterManagers: MasterManager[];
@@ -522,9 +524,6 @@ interface ImportStoreValue {
   editVendor: (id: string, input: VendorInput) => Promise<void>;
   createVendorItemPrice: (input: VendorItemPriceInput) => Promise<string>;
   editVendorItemPrice: (id: string, input: VendorItemPriceInput) => Promise<void>;
-  /** Insert-or-update a price by (vendor, item) — the New Request grid's
-   *  "save to price list" tick. Admins / vendor_item_price managers only. */
-  saveVendorItemPrice: (input: { vendorId: string; itemId: string; currency: string; rate: number }) => Promise<void>;
 
   // mutations — governance
   setMasterManagers: (masterType: MasterType, userIds: string[]) => Promise<void>;
@@ -784,18 +783,18 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       vendorLabel: (id) => (id ? vendors.find((v) => v.id === id)?.name ?? "—" : "—"),
       activeVendors: vendors.filter((v) => v.active).slice().sort((a, b) => a.name.localeCompare(b.name)),
       vendorItemPrices,
-      priceFor: (vendorId, itemId) =>
-        vendorId && itemId
-          ? vendorItemPrices.find((p) => p.vendorId === vendorId && p.itemId === itemId && p.active)
-          : undefined,
-      pricedItemsForVendor: (vendorId) => {
+      itemsForVendor: (vendorId) => {
         if (!vendorId) return [];
-        const priced = new Set(vendorItemPrices.filter((p) => p.vendorId === vendorId && p.active).map((p) => p.itemId));
-        return items.filter((i) => i.active && priced.has(i.id)).sort(byName);
+        const mapped = new Set(vendorItemPrices.filter((p) => p.vendorId === vendorId && p.active).map((p) => p.itemId));
+        return items.filter((i) => i.active && mapped.has(i.id)).sort(byName);
       },
-      itemsForCategory: (categoryId) => {
-        if (!categoryId) return [];
-        return items.filter((i) => i.active && i.categoryId === categoryId).sort(byName);
+      categoriesForVendor: (vendorId) => {
+        if (!vendorId) return [];
+        const mapped = new Set(vendorItemPrices.filter((p) => p.vendorId === vendorId && p.active).map((p) => p.itemId));
+        // Derived from the items, not stored: a category is offered only while
+        // the vendor still has a live item in it.
+        const catIds = new Set(items.filter((i) => i.active && mapped.has(i.id)).map((i) => i.categoryId));
+        return categories.filter((c) => c.active && catIds.has(c.id)).sort(byName);
       },
 
       masterManagers,
@@ -1419,10 +1418,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       },
       editVendorItemPrice: async (id, input) => {
         await updateVendorItemPrice(id, input);
-        await invalidate();
-      },
-      saveVendorItemPrice: async (input) => {
-        await upsertVendorItemPrice({ ...input, createdBy: user.id });
         await invalidate();
       },
 

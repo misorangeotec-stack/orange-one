@@ -8,11 +8,11 @@ import { useImportStore } from "../../store";
 import type { Company, Category, Item, Vendor, VendorItemPrice } from "../../types";
 
 /**
- * Masters admin — Companies, Categories, Items, Vendors, Vendor-Item Prices. Each
- * tab is a MasterCrud surface driven by the shared `masterFields` descriptor (the
- * same one the request + approve modals use), with the relational tabs (Items →
- * Category, Prices → Vendor + Item) sourcing their options from the store.
- * Who owns each master is configured in Setup → Master Owners.
+ * Masters admin — Companies, Categories, Items, Vendors, Vendor-Item Mappings.
+ * Each tab is a MasterCrud surface driven by the shared `masterFields` descriptor
+ * (the same one the request + approve modals use), with the relational tabs
+ * (Items → Category, Mappings → Vendor + Item) sourcing their options from the
+ * store. Who owns each master is configured in Setup → Master Owners.
  *
  * No Item Groups tab: an item hangs off a category directly (20260808120100).
  * The table and its rows still exist for legacy master requests — see the
@@ -29,7 +29,7 @@ export default function Masters() {
     { key: "category", label: "Categories", count: s.categories.length },
     { key: "item", label: "Items", count: s.items.length },
     { key: "vendor", label: "Vendors", count: s.vendors.length },
-    { key: "vendor_item_price", label: "Vendor-Item Prices", count: s.vendorItemPrices.length },
+    { key: "vendor_item_price", label: "Vendor-Item Mappings", count: s.vendorItemPrices.length },
   ];
 
   return (
@@ -182,33 +182,33 @@ export default function Masters() {
       )}
 
       {tab === "vendor_item_price" && (
+        // A row here is what makes an item selectable on a request for that
+        // vendor — no rate, no currency. `currency` / `rate` still exist on the
+        // table and are deliberately absent from the value bag: sending them
+        // from a form that never asks for them is how `rate` used to get zeroed
+        // on every edit.
         <MasterCrud<VendorItemPrice & { name: string }>
-          singular="Vendor-Item Price"
+          singular="Vendor-Item Mapping"
           rows={s.vendorItemPrices.map((p) => ({
             ...p,
             name: `${s.vendorById(p.vendorId)?.name ?? "?"} — ${s.itemById(p.itemId)?.name ?? "?"}`,
           }))}
           canManage={s.canManage("vendor_item_price")}
-          searchText={(r) => `${s.vendorById(r.vendorId)?.name ?? ""} ${s.itemById(r.itemId)?.name ?? ""} ${r.currency}`}
+          searchText={(r) => `${s.vendorById(r.vendorId)?.name ?? ""} ${s.itemById(r.itemId)?.name ?? ""}`}
           columns={[
             { header: "Vendor", render: (r) => <span className="font-medium text-navy">{s.vendorById(r.vendorId)?.name ?? "—"}</span> },
             { header: "Item", render: (r) => s.itemById(r.itemId)?.name ?? <span className="text-grey-2">—</span> },
-            { header: "Currency", render: (r) => r.currency },
           ] as MasterColumn<VendorItemPrice>[]}
           fields={masterFields("vendor_item_price", ctx)}
           emptyValues={emptyValuesFor("vendor_item_price")}
           toValues={(r) => ({
             vendor_id: r.vendorId,
             item_id: r.itemId,
-            currency: r.currency,
-            rate: String(r.rate),
           })}
           onSubmit={async (id, v, active) => {
             const input = {
               vendorId: v.vendor_id,
               itemId: v.item_id,
-              currency: v.currency.trim().toUpperCase() || "USD",
-              rate: Number(v.rate) || 0,
               active,
               sortOrder: 0,
             };
@@ -219,8 +219,6 @@ export default function Masters() {
             s.editVendorItemPrice(r.id, {
               vendorId: r.vendorId,
               itemId: r.itemId,
-              currency: r.currency,
-              rate: r.rate,
               active,
               sortOrder: r.sortOrder,
             })
