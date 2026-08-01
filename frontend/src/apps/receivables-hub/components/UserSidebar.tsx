@@ -110,9 +110,16 @@ export function UserSidebar() {
   const collapsed = state === "collapsed";
   const { isAdmin, user } = useSession();
   // Admins see every menu; a non-admin sees everything not in their deny-list
-  // (profiles.receivables_hidden_menus, set by an admin in Settings → Menu Permissions).
+  // (profiles.receivables_hidden_menus, set by an admin in Admin → Users or in
+  // Settings → Menu Permissions). The second list is the full-access allow-list:
+  // it keeps the admin-only Reports sub-categories (Dashboards, Insights) for a user
+  // who was granted full Reports.
   // Sub-nav children are gated by their PARENT's key — see ReceivablesMenuChild.
-  const navItems = visibleMenusFor(isAdmin, user.receivablesHiddenMenus ?? []);
+  const navItems = visibleMenusFor(
+    isAdmin,
+    user.receivablesHiddenMenus ?? [],
+    user.receivablesAdminMenus ?? [],
+  );
   // Admin-only menus are parked in their own "Hidden" section at the bottom so they read as
   // out-of-the-way tools rather than part of the everyday nav. `visibleMenusFor` already drops them
   // for non-admins, so `hiddenItems` is simply empty for everyone else and the section never renders.

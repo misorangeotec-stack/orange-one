@@ -28,7 +28,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@hub/components/ui/select";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useToast } from "@hub/hooks/use-toast";
-import { useSession } from "@/core/platform/session";
+import { useHubMenuAccess } from "@hub/lib/menus";
 import {
   fetchTagRows, fetchGroupRows, fetchSnapshot, fetchOtherPaymentRows, fetchRedMarkRows,
   saveTag, saveGroup, saveCompanyMap,
@@ -1442,12 +1442,18 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
 }
 
 /**
- * The Master panel — a self-contained admin section (rendered INSIDE Settings). Reads
+ * The Master panel — a self-contained governance section (rendered INSIDE Settings). Reads
  * the ConnectWave musters + snapshot directly; writes go through the muster-write Edge
- * Function. Renders nothing for non-admins (Settings also gates it).
+ * Function.
+ *
+ * Gated on FULL ACCESS to the Settings menu — admins, plus any user an admin granted it
+ * (profiles.receivables_admin_menus). Renders nothing otherwise; Settings also hides the tab.
+ * The Edge Function re-checks the same grant server-side with the service role, so this is a
+ * render decision, not the access control.
  */
 export function MusterPanel() {
-  const { isAdmin } = useSession();
+  const { hasFullAccess } = useHubMenuAccess();
+  const canManage = hasFullAccess("settings");
   const [tags, setTags] = useState<TagRow[] | null>(null);
   const [groups, setGroups] = useState<GroupRow[] | null>(null);
   const [snap, setSnap] = useState<SnapRow[] | null>(null);
@@ -1477,7 +1483,7 @@ export function MusterPanel() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { if (isAdmin) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [isAdmin]);
+  useEffect(() => { if (canManage) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [canManage]);
 
   const snapByGuid = useMemo(() => {
     const m = new Map<string, SnapRow>();
@@ -1503,7 +1509,7 @@ export function MusterPanel() {
     return m;
   }, [snap]);
 
-  if (!isAdmin) return null;
+  if (!canManage) return null;
 
   return (
     <Card>

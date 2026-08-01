@@ -14,7 +14,7 @@ import { useRefreshJob } from "@hub/lib/useRefreshJob";
 import type { RefreshSourceInfo } from "@hub/lib/types";
 import { MenuPermissions } from "@hub/components/MenuPermissions";
 import { MusterPanel } from "@hub/pages/MusterEditor";
-import { useSession } from "@/core/platform/session";
+import { useHubMenuAccess } from "@hub/lib/menus";
 
 const STALE_DAYS = 3;
 
@@ -46,7 +46,12 @@ export default function Settings() {
   const { dashboard } = useAppData();
   const { toast } = useToast();
   const refresh = useRefreshJob();
-  const { isAdmin } = useSession();
+  const { isAdmin, hasFullAccess } = useHubMenuAccess();
+  // Full access to Settings unlocks the Masters tab. Menu Permissions stays ADMIN-ONLY and
+  // deliberately so: it edits other people's profile rows, which RLS on the identity project
+  // grants to admins alone (profiles_select / profiles_update_own). A non-admin opening it
+  // would see a partial user list and every save would fail — see the note in MenuPermissions.
+  const fullAccess = hasFullAccess("settings");
 
   const meta = dashboard?.refreshMetadata;
   const isRunning = refresh.status === "starting" || refresh.status === "running";
@@ -73,15 +78,21 @@ export default function Settings() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
+        {/* Names only the tabs this user actually has — the old fixed subtitle promised
+            masters and menu access to everyone who could open the page. */}
         <p className="text-sm text-muted-foreground mt-1">
-          Manage data refresh, masters, and menu access
+          {isAdmin
+            ? "Manage data refresh, masters, and menu access"
+            : fullAccess
+              ? "Manage data refresh and masters"
+              : "Manage data refresh"}
         </p>
       </div>
 
       <Tabs defaultValue="refresh">
         <TabsList>
           <TabsTrigger value="refresh">Data Refresh</TabsTrigger>
-          {isAdmin && <TabsTrigger value="masters">Masters</TabsTrigger>}
+          {fullAccess && <TabsTrigger value="masters">Masters</TabsTrigger>}
           {isAdmin && <TabsTrigger value="menu">Menu Permissions</TabsTrigger>}
         </TabsList>
 
@@ -208,8 +219,8 @@ export default function Settings() {
 
         </TabsContent>
 
-        {/* ── Masters (admin only) ──────────────────────────────────────────── */}
-        {isAdmin && (
+        {/* ── Masters (admins + anyone granted full Settings access) ─────────── */}
+        {fullAccess && (
           <TabsContent value="masters" className="mt-4">
             <MusterPanel />
           </TabsContent>

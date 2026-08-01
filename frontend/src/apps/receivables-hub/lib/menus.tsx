@@ -11,18 +11,26 @@ import {
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
 import { REPORT_CATEGORIES, categoryHref } from "@hub/lib/reportCatalog";
+import { useSession } from "@/core/platform/session";
 
 /**
  * Single source of truth for the Receivables Control left-nav menus.
  *
- * `key` is a stable identifier (decoupled from the label/URL) used by the
- * per-user menu-visibility deny-list (`profiles.receivables_hidden_menus`).
- * The sidebar renders these and hides any whose key is in the user's deny-list;
- * the Settings → Menu Permissions matrix lets an admin edit that list. Admins
- * always see every menu (the deny-list is ignored for them).
+ * `key` is a stable identifier (decoupled from the label/URL) used by BOTH per-user
+ * access columns on `profiles`:
  *
- * Adding a menu here automatically: (a) shows it for everyone, and (b) adds a
- * column to the permission matrix. Removing access is then per-user.
+ *   receivables_hidden_menus  DENY-list  — "may this user SEE the menu?"
+ *   receivables_admin_menus   ALLOW-list — "may they use it with ADMIN DEPTH?"
+ *
+ * The two polarities are deliberate and opposite. Visibility defaults to ON so a
+ * newly shipped menu reaches everyone without an admin touching every user;
+ * elevation defaults to OFF so a newly shipped admin panel never does.
+ *
+ * Admins bypass both. An admin edits them in Admin → Users (the user form) or in
+ * Settings → Menu Permissions; the two screens write the same two columns.
+ *
+ * Adding a menu here automatically: (a) shows it for everyone, and (b) adds a row
+ * to both permission screens. Removing access is then per-user.
  */
 
 // Base path of this app inside Orange One. Read from the shared app list rather
@@ -59,6 +67,18 @@ export interface ReceivablesMenu {
   icon: LucideIcon;
   /** Admin-only menu: never shown to non-admins and excluded from the permission matrix. */
   adminOnly?: boolean;
+  /**
+   * This menu has a second, deeper tier behind an explicit per-user grant
+   * (`profiles.receivables_admin_menus`). Seeing the menu is NOT the same as having it:
+   *
+   *   reports  — standard shows the everyday categories; full adds Dashboards + Insights
+   *              and the three reports behind them (C-Level ×2, Customer Profile).
+   *   settings — standard shows Data Refresh; full adds the Masters tab.
+   *
+   * `fullAccessNote` is the one-line "what does full unlock here?" the permission
+   * screens show, so the admin granting it doesn't have to guess.
+   */
+  fullAccessNote?: string;
   /** Sub-nav rendered as a collapsible group. Gated by this menu's own key, not its own. */
   children?: ReceivablesMenuChild[];
 }
@@ -89,6 +109,7 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
     title: "Reports",
     url: `${BASE}/reports`,
     icon: FileText,
+    fullAccessNote: "adds the Dashboards and Insights categories (C-Level Dashboard, Customer Profile)",
     children: REPORT_CATEGORIES.map((c) => ({
       key: `reports:${c.id}`,
       title: c.title,
@@ -97,21 +118,104 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
       adminOnly: c.adminOnly,
     })),
   },
-  { key: "settings", title: "Settings", url: `${BASE}/settings`, icon: SettingsIcon },
+  {
+    key: "settings",
+    title: "Settings",
+    url: `${BASE}/settings`,
+    icon: SettingsIcon,
+    fullAccessNote: "adds the Masters tab (customer, group and company musters)",
+  },
 ];
 
 /**
  * Menus a given user may see. Admins see all; a non-admin sees every non-admin-only menu
- * not in their deny-list. Pure helper so the sidebar and any guard share one rule.
+ * not in their deny-list. Pure helper so the sidebar and the route guard share one rule.
+ *
+ * `adminKeys` is the full-access allow-list: it does NOT make a hidden menu appear (that is
+ * the deny-list's job, and a menu you cannot see is one you cannot use), but it does keep
+ * the admin-only sub-nav children of a menu you were granted — so a user with full Reports
+ * gets Dashboards and Insights in the sidebar the way an admin does.
  */
-export function visibleMenusFor(isAdmin: boolean, hiddenKeys: string[]): ReceivablesMenu[] {
+export function visibleMenusFor(
+  isAdmin: boolean,
+  hiddenKeys: string[],
+  adminKeys: string[] = [],
+): ReceivablesMenu[] {
   if (isAdmin) return RECEIVABLES_MENUS;
   const hidden = new Set(hiddenKeys);
+  const elevated = new Set(adminKeys);
   return RECEIVABLES_MENUS.filter((m) => !m.adminOnly && !hidden.has(m.key)).map((m) =>
-    // Drop admin-only sub-nav children (e.g. the Dashboards category) for non-admins.
-    m.children ? { ...m, children: m.children.filter((c) => !c.adminOnly) } : m,
+    // Drop admin-only sub-nav children (e.g. the Dashboards category) unless this user
+    // holds full access to the parent menu.
+    m.children && !elevated.has(m.key)
+      ? { ...m, children: m.children.filter((c) => !c.adminOnly) }
+      : m,
   );
 }
 
-/** Menus eligible for the per-user permission matrix (admin-only menus are excluded). */
+/** May this user open the menu at all? Admins always can. */
+export function canSeeMenu(isAdmin: boolean, hiddenKeys: string[], key: string): boolean {
+  if (isAdmin) return true;
+  const menu = RECEIVABLES_MENUS.find((m) => m.key === key);
+  if (menu?.adminOnly) return false;
+  return !hiddenKeys.includes(key);
+}
+
+/** May this user use the menu's ADMIN-DEPTH features? Admins always can. */
+export function hasMenuFullAccess(isAdmin: boolean, adminKeys: string[], key: string): boolean {
+  return isAdmin || adminKeys.includes(key);
+}
+
+/** Menus eligible for the per-user permission screens (admin-only menus are excluded). */
 export const PERMISSION_MENUS: ReceivablesMenu[] = RECEIVABLES_MENUS.filter((m) => !m.adminOnly);
+
+/**
+ * The three access levels an admin picks per user, per menu. One vocabulary shared by the
+ * user form and the Menu Permissions matrix so the two screens can't drift apart.
+ *
+ * "full" is only offered for menus carrying `fullAccessNote`; granting it anywhere else is
+ * harmless (the key is simply never consulted) but the UI doesn't offer it.
+ */
+export type MenuAccessLevel = "hidden" | "standard" | "full";
+
+export function menuAccessLevel(menuKey: string, hiddenKeys: string[], adminKeys: string[]): MenuAccessLevel {
+  if (hiddenKeys.includes(menuKey)) return "hidden";
+  return adminKeys.includes(menuKey) ? "full" : "standard";
+}
+
+/**
+ * Apply a level to the two key lists, returning the new pair. Kept here rather than in each
+ * screen because the invariant is easy to get wrong: "hidden" must also drop the full-access
+ * grant, or a menu re-shown later silently comes back elevated.
+ */
+export function setMenuAccessLevel(
+  menuKey: string,
+  level: MenuAccessLevel,
+  hiddenKeys: string[],
+  adminKeys: string[],
+): { hidden: string[]; admin: string[] } {
+  const hidden = hiddenKeys.filter((k) => k !== menuKey);
+  const admin = adminKeys.filter((k) => k !== menuKey);
+  if (level === "hidden") hidden.push(menuKey);
+  if (level === "full") admin.push(menuKey);
+  return { hidden, admin };
+}
+
+/**
+ * The signed-in user's receivables menu access. The one place hub screens ask
+ * "can I show this?" — reads the session profile so no screen re-implements the rule.
+ */
+export function useHubMenuAccess(): {
+  isAdmin: boolean;
+  canSee: (key: string) => boolean;
+  hasFullAccess: (key: string) => boolean;
+} {
+  const { isAdmin, user } = useSession();
+  const hidden = user?.receivablesHiddenMenus ?? [];
+  const admin = user?.receivablesAdminMenus ?? [];
+  return {
+    isAdmin,
+    canSee: (key) => canSeeMenu(isAdmin, hidden, key),
+    hasFullAccess: (key) => hasMenuFullAccess(isAdmin, admin, key),
+  };
+}
