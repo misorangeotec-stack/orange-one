@@ -73,12 +73,23 @@ export interface ReceivablesMenu {
    *
    *   reports  — standard shows the everyday categories; full adds Dashboards + Insights
    *              and the three reports behind them (C-Level ×2, Customer Profile).
-   *   settings — standard shows Data Refresh; full adds the Masters tab.
+   *   settings — full gives the Masters tab, which since 01-08-2026 is the whole page
+   *              (see fullAccessOnly below).
    *
    * `fullAccessNote` is the one-line "what does full unlock here?" the permission
    * screens show, so the admin granting it doesn't have to guess.
    */
   fullAccessNote?: string;
+  /**
+   * This menu has NO standard tier — everything on it sits behind the full-access grant, so
+   * "visible but not granted" would be an empty screen. Such a menu is hidden unless the user
+   * is elevated, its route is guarded with `full`, and the permission screens offer only two
+   * levels (Hidden / Full access) instead of three.
+   *
+   * `settings` became one on 01-08-2026 when the Data Refresh tab was removed, leaving only
+   * Masters (full access) and Menu Permissions (admin).
+   */
+  fullAccessOnly?: boolean;
   /** Sub-nav rendered as a collapsible group. Gated by this menu's own key, not its own. */
   children?: ReceivablesMenuChild[];
 }
@@ -123,7 +134,9 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
     title: "Settings",
     url: `${BASE}/settings`,
     icon: SettingsIcon,
-    fullAccessNote: "adds the Masters tab (customer, group and company musters)",
+    fullAccessOnly: true,
+    fullAccessNote:
+      "gives the Masters tab — salesperson & category tags, customer groups, companies & locations, other payments and red marks",
   },
 ];
 
@@ -144,7 +157,14 @@ export function visibleMenusFor(
   if (isAdmin) return RECEIVABLES_MENUS;
   const hidden = new Set(hiddenKeys);
   const elevated = new Set(adminKeys);
-  return RECEIVABLES_MENUS.filter((m) => !m.adminOnly && !hidden.has(m.key)).map((m) =>
+  return RECEIVABLES_MENUS.filter(
+    (m) =>
+      !m.adminOnly &&
+      !hidden.has(m.key) &&
+      // A full-access-only menu (Settings) has nothing to show without the grant, so it is
+      // not merely thinner for an ungranted user — it is absent.
+      (!m.fullAccessOnly || elevated.has(m.key)),
+  ).map((m) =>
     // Drop admin-only sub-nav children (e.g. the Dashboards category) unless this user
     // holds full access to the parent menu.
     m.children && !elevated.has(m.key)
@@ -169,18 +189,35 @@ export function hasMenuFullAccess(isAdmin: boolean, adminKeys: string[], key: st
 /** Menus eligible for the per-user permission screens (admin-only menus are excluded). */
 export const PERMISSION_MENUS: ReceivablesMenu[] = RECEIVABLES_MENUS.filter((m) => !m.adminOnly);
 
+/** Key → menu, so the level helpers can consult a menu's flags without a linear scan. */
+const MENUS_BY_KEY = new Map(RECEIVABLES_MENUS.map((m) => [m.key, m]));
+
 /**
- * The three access levels an admin picks per user, per menu. One vocabulary shared by the
- * user form and the Menu Permissions matrix so the two screens can't drift apart.
- *
- * "full" is only offered for menus carrying `fullAccessNote`; granting it anywhere else is
- * harmless (the key is simply never consulted) but the UI doesn't offer it.
+ * The levels a given menu actually offers, in display order. Three only where a menu has BOTH
+ * a standard and a deeper tier; two otherwise — and the pair differs by which tier is missing:
+ * a plain menu drops "full", a full-access-only menu drops "standard".
+ */
+export function levelsForMenu(menu: ReceivablesMenu): MenuAccessLevel[] {
+  if (menu.fullAccessOnly) return ["hidden", "full"];
+  return menu.fullAccessNote ? ["hidden", "standard", "full"] : ["hidden", "standard"];
+}
+
+/**
+ * The access levels an admin picks per user, per menu. One vocabulary shared by the user form
+ * and the Menu Permissions matrix so the two screens can't drift apart — which of them a given
+ * menu actually offers comes from `levelsForMenu`, never from either screen's own opinion.
  */
 export type MenuAccessLevel = "hidden" | "standard" | "full";
 
 export function menuAccessLevel(menuKey: string, hiddenKeys: string[], adminKeys: string[]): MenuAccessLevel {
   if (hiddenKeys.includes(menuKey)) return "hidden";
-  return adminKeys.includes(menuKey) ? "full" : "standard";
+  const elevated = adminKeys.includes(menuKey);
+  // On a full-access-only menu there is no middle state to report: not elevated behaves
+  // exactly like hidden (no sidebar entry, route refused), so it must READ as hidden — or the
+  // permission screens would highlight a "Standard" they no longer offer, and the pre-existing
+  // rows that predate the flag would show nothing selected at all.
+  if (MENUS_BY_KEY.get(menuKey)?.fullAccessOnly) return elevated ? "full" : "hidden";
+  return elevated ? "full" : "standard";
 }
 
 /**

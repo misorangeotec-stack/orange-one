@@ -11,7 +11,7 @@ import {
 } from "@hub/components/ui/table";
 import { useToast } from "@hub/hooks/use-toast";
 import {
-  PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, type MenuAccessLevel,
+  PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@hub/lib/menus";
 import { useDirectory } from "@/core/platform/store";
 import type { Profile } from "@/core/platform/types";
@@ -39,11 +39,13 @@ const LEVEL_LABEL: Record<MenuAccessLevel, string> = {
  * for that user (writes the key into profiles.receivables_hidden_menus, a deny-list). Default is
  * everything visible.
  *
- * REPORTS / SETTINGS columns: three levels, because seeing these two is not the same as having
- * them. "Standard" is the everyday screen; "Full access" adds the parts that used to be welded to
- * role = admin (the Dashboards + Insights report categories; the Masters tab) by writing the key
- * into profiles.receivables_admin_menus, an ALLOW-list. Default is Standard — elevation is always
- * an explicit act.
+ * REPORTS / SETTINGS columns: a level picker, because seeing these two is not the same as having
+ * them. "Full access" adds the parts that used to be welded to role = admin by writing the key
+ * into profiles.receivables_admin_menus, an ALLOW-list. Elevation is always an explicit act.
+ *   Reports  — Hidden / Standard / Full access; Full adds the Dashboards + Insights categories.
+ *   Settings — Hidden / Full access ONLY. Since Data Refresh was removed (01-08-2026) every tab
+ *              on that page is behind the grant, so there is no standard tier to offer: an
+ *              ungranted user would land on an empty screen. Default is Hidden.
  *
  * LEGACY PIPELINE column: the hub defaults everyone to the Live (Tally) source. Tick this to
  * let the user switch to the old pipeline source (writes profiles.receivables_allow_pipeline).
@@ -138,12 +140,12 @@ export function MenuPermissions() {
         </CardTitle>
         <CardDescription>
           Choose which left-nav menus each user can see (visible by default — un-tick to hide).
-          <span className="font-medium"> Reports</span> and
-          <span className="font-medium"> Settings</span> take three levels: Hidden, Standard, or
-          Full access — the last one adds the Dashboards and Insights report categories, and the
-          Masters tab in Settings. The <span className="font-medium">Legacy pipeline</span> tick
-          gives a user the source toggle (everyone defaults to Live (Tally)). Admins always see
-          every menu at full access.
+          <span className="font-medium"> Reports</span> takes three levels: Hidden, Standard or
+          Full access, the last adding the Dashboards and Insights categories.
+          <span className="font-medium"> Settings</span> is Hidden or Full access only — its one
+          tab is Masters, so there is nothing in between. The{" "}
+          <span className="font-medium">Legacy pipeline</span> tick gives a user the source toggle
+          (everyone defaults to Live (Tally)). Admins always see every menu at full access.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -178,7 +180,9 @@ export function MenuPermissions() {
                         {u.name}
                       </TableCell>
                       {PERMISSION_MENUS.map((m) => {
-                        // Menus with a deeper tier get the three-level picker; the rest keep the tick.
+                        // Menus with a deeper tier get the level picker; the rest keep the tick.
+                        // Which levels the picker offers comes from levelsForMenu — Settings has
+                        // no standard tier, so listing one here would offer a state it can't hold.
                         if (m.fullAccessNote) {
                           const level = menuAccessLevel(m.key, hidden, admins);
                           return (
@@ -191,9 +195,9 @@ export function MenuPermissions() {
                                   <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="hidden">{LEVEL_LABEL.hidden}</SelectItem>
-                                  <SelectItem value="standard">{LEVEL_LABEL.standard}</SelectItem>
-                                  <SelectItem value="full">{LEVEL_LABEL.full}</SelectItem>
+                                  {levelsForMenu(m).map((l) => (
+                                    <SelectItem key={l} value={l}>{LEVEL_LABEL[l]}</SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                             </TableCell>

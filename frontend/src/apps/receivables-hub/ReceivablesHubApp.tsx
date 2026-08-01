@@ -236,8 +236,11 @@ function HubRoutes() {
           <Route path="customer-onboarding/*" element={<CustomerOnboardingRedirect />} />
           <Route path="saved-views" element={<SavedViews />} />
           <Route path="profile" element={<Profile />} />
-          {/* Settings is per-user in the same way — hiding the menu must hide the page. */}
-          <Route element={<RequireHubMenu menu="settings" />}>
+          {/* Settings is per-user in the same way — hiding the menu must hide the page. `full`
+              because every tab on it (Masters, and Menu Permissions for admins) is behind the
+              grant now that Data Refresh is gone: seeing the menu and being allowed to use it
+              are the same thing here. */}
+          <Route element={<RequireHubMenu menu="settings" full />}>
             <Route path="settings" element={<Settings />} />
           </Route>
           <Route path="*" element={<Navigate to="/outstanding-dashboard" replace />} />

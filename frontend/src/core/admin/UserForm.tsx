@@ -12,7 +12,7 @@ import { groupByCategory } from "@/apps/categories";
 import type { AppRole } from "@/core/platform/types";
 import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
 import {
-  PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, type MenuAccessLevel,
+  PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@/apps/receivables-hub/lib/menus";
 import ShareLoginModal from "./ShareLoginModal";
 
@@ -45,15 +45,15 @@ function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string
 }
 
 /**
- * The access levels offered per receivables menu. "Full access" is only offered for the menus
- * that HAVE a deeper tier (`fullAccessNote`) — Reports and Settings today; everything else is
- * a plain visible/hidden choice, and offering a third level there would be a lie.
+ * Labels for the receivables menu access levels. WHICH of them a given menu offers is decided
+ * by `levelsForMenu` in lib/menus, not here — Settings has no standard tier and most menus have
+ * no full tier, and offering a level a menu doesn't have would be a lie.
  */
-const MENU_LEVELS: { value: MenuAccessLevel; label: string }[] = [
-  { value: "hidden", label: "Hidden" },
-  { value: "standard", label: "Standard" },
-  { value: "full", label: "Full access" },
-];
+const MENU_LEVEL_LABEL: Record<MenuAccessLevel, string> = {
+  hidden: "Hidden",
+  standard: "Standard",
+  full: "Full access",
+};
 
 const ROLES: { value: AppRole; label: string; hint: string }[] = [
   { value: "employee", label: "Employee", hint: "Own tasks only" },
@@ -357,16 +357,16 @@ export default function UserForm() {
               hint="which left-nav menus this user gets, and how much of each"
             >
               <p className="text-[12px] text-grey-2 mb-2.5">
-                Everything is <span className="font-medium text-navy">Standard</span> unless you
-                change it. <span className="font-medium text-navy">Full access</span> is offered
+                Menus start at <span className="font-medium text-navy">Standard</span> unless you
+                change them. <span className="font-medium text-navy">Full access</span> appears
                 only where a menu has an admin-level tier, and gives the user that tier — the same
-                depth an admin sees.
+                depth an admin sees. <span className="font-medium text-navy">Settings</span> has no
+                standard tier: it is Hidden until you grant it.
               </p>
               <div className="rounded-xl border border-line divide-y divide-line">
                 {PERMISSION_MENUS.map((m) => {
                   const level = menuAccessLevel(m.key, receivablesHiddenMenus, receivablesAdminMenus);
-                  // Menus with no deeper tier offer two levels, not three.
-                  const levels = m.fullAccessNote ? MENU_LEVELS : MENU_LEVELS.filter((l) => l.value !== "full");
+                  const levels = levelsForMenu(m);
                   return (
                     <div key={m.key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                       <div className="min-w-0">
@@ -379,12 +379,12 @@ export default function UserForm() {
                       </div>
                       <div className="flex shrink-0 gap-1.5">
                         {levels.map((l) => {
-                          const on = level === l.value;
+                          const on = level === l;
                           return (
                             <button
-                              key={l.value}
+                              key={l}
                               type="button"
-                              onClick={() => setMenuLevel(m.key, l.value)}
+                              onClick={() => setMenuLevel(m.key, l)}
                               className={cn(
                                 "rounded-pill border px-2.5 py-1 text-[12px] transition",
                                 on
@@ -392,7 +392,7 @@ export default function UserForm() {
                                   : "border-line text-grey-2 hover:border-orange/40"
                               )}
                             >
-                              {l.label}
+                              {MENU_LEVEL_LABEL[l]}
                             </button>
                           );
                         })}
