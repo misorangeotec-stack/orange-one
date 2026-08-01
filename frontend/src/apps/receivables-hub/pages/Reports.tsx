@@ -14,7 +14,7 @@ import {
   type ReportCategoryId,
   type ReportEntry,
 } from "@hub/lib/reportCatalog";
-import { useSession } from "@/core/platform/session";
+import { useHubMenuAccess } from "@hub/lib/menus";
 
 /**
  * The report catalogue.
@@ -104,11 +104,12 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 export default function Reports() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  const { isAdmin } = useSession();
+  // Elevated categories/reports (Dashboards, Insights) appear only for a viewer with FULL
+  // access to the Reports menu — an admin, or a user an admin granted it (see lib/menus).
+  const fullAccess = useHubMenuAccess().hasFullAccess("reports");
 
-  // Admin-only categories/reports (e.g. the C-Level Dashboard) never appear for non-admins.
-  const cats = useMemo(() => reportCategoriesFor(isAdmin), [isAdmin]);
-  const visible = useMemo(() => new Set(visibleReports(isAdmin).map((r) => r.id)), [isAdmin]);
+  const cats = useMemo(() => reportCategoriesFor(fullAccess), [fullAccess]);
+  const visible = useMemo(() => new Set(visibleReports(fullAccess).map((r) => r.id)), [fullAccess]);
 
   const requested = categoryById(params.get("cat") ?? "");
   const selected: ReportCategoryId =

@@ -5,9 +5,14 @@
 // tables (ext_ledger_tags / ext_customer_group) live in a DIFFERENT Supabase project
 // and are anon-READ-only there, so edits can't go direct from the browser.
 //
-// The Orange One admin is authenticated against THIS (identity) project, so we verify
-// admin here (exactly like admin-users), then write to ConnectWave with ITS service
-// key. Two secrets carry the ConnectWave connection (set once, see Deploy below).
+// The caller is authenticated against THIS (identity) project, so we verify authority
+// here, then write to ConnectWave with ITS service key. Two secrets carry the
+// ConnectWave connection (set once, see Deploy below).
+//
+// WHO MAY WRITE: an Orange One admin, or a user an admin granted FULL ACCESS to the
+// Outstanding Dashboard's Settings menu (profiles.receivables_admin_menus contains
+// 'settings'). Both are read with the identity service role, never taken from the
+// request — see the authorize step in the handler.
 //
 //   POST body { action: "update_tag",  ledger_id, salesperson, category, checked }  -> { ok: true }
 //   POST body { action: "update_group", ledger_id, group_name, collection_team, checked } -> { ok: true }
@@ -156,12 +161,28 @@ Deno.serve(async (req) => {
   const { data: { user }, error: authErr } = await caller.auth.getUser();
   if (authErr || !user) return json(401, { error: "not authenticated" });
 
-  // 2) Authorize: the caller must be an admin (checked with the identity service role).
+  // 2) Authorize with the identity service role: the caller must be an admin, OR a user an
+  //    admin granted FULL ACCESS to the Settings menu (profiles.receivables_admin_menus
+  //    contains 'settings' — the same grant that renders the Masters tab in the hub).
+  //
+  //    Read with the SERVICE ROLE, never from the request. The browser decides what to draw;
+  //    this decides what may be written. RLS would let a caller read their own profile row,
+  //    but not writing that check here would mean trusting a client-supplied claim.
   const idAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { auth: { persistSession: false } });
   const { data: roleRows, error: roleErr } = await idAdmin.from("user_roles").select("role").eq("user_id", user.id);
   if (roleErr) return json(500, { error: roleErr.message });
-  if (!(roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin")) {
-    return json(403, { error: "admin only" });
+  let authorized = (roleRows ?? []).some((r: { role: AppRole }) => r.role === "admin");
+  if (!authorized) {
+    const { data: prof, error: profErr } = await idAdmin
+      .from("profiles")
+      .select("receivables_admin_menus")
+      .eq("id", user.id)
+      .maybeSingle();
+    if (profErr) return json(500, { error: profErr.message });
+    authorized = (prof?.receivables_admin_menus ?? []).includes("settings");
+  }
+  if (!authorized) {
+    return json(403, { error: "you don't have full access to the Outstanding Dashboard settings" });
   }
 
   let body: Record<string, unknown>;

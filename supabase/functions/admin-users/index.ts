@@ -7,9 +7,12 @@
 //
 //   POST  body { action: "create", name, email, phone, designation?, role,
 //                departmentId?, hodIds?: string[], moduleAccess?: string[],
-//                receivablesSalespersons?: string[] }  -> { id }
+//                receivablesSalespersons?: string[], receivablesHiddenMenus?: string[],
+//                receivablesAdminMenus?: string[] }  -> { id }
 //                  (phone = mobile number; used as the initial login password;
-//                   receivablesSalespersons = Outstanding Dashboard scope tags)
+//                   receivablesSalespersons = Outstanding Dashboard scope tags;
+//                   receivablesHiddenMenus = menus that user may NOT see;
+//                   receivablesAdminMenus  = menus they may use with admin depth)
 //   POST  body { action: "set-password", userId, password }       -> { ok: true }
 //   POST  body { action: "delete", userId }                       -> { ok: true }
 //
@@ -103,6 +106,12 @@ Deno.serve(async (req) => {
     const hodIds = Array.isArray(body.hodIds) ? (body.hodIds as string[]) : [];
     const moduleAccess = Array.isArray(body.moduleAccess) ? (body.moduleAccess as string[]) : [];
     const receivablesSalespersons = Array.isArray(body.receivablesSalespersons) ? (body.receivablesSalespersons as string[]) : [];
+    // Outstanding Dashboard menu access, set on the SAME form as everything above. Both
+    // used to be dropped on create (only the update path wrote them), so a brand-new user
+    // silently landed on the defaults — every menu visible, nothing elevated — and the
+    // admin's choices only took effect when they re-opened and saved the user a second time.
+    const receivablesHiddenMenus = Array.isArray(body.receivablesHiddenMenus) ? (body.receivablesHiddenMenus as string[]) : [];
+    const receivablesAdminMenus = Array.isArray(body.receivablesAdminMenus) ? (body.receivablesAdminMenus as string[]) : [];
 
     // Create the auth user with the mobile number as the initial password (email
     // pre-confirmed). The on_auth_user_created trigger inserts the profile + an
@@ -119,7 +128,15 @@ Deno.serve(async (req) => {
     // Patch the auto-created profile + identity rows.
     const { error: profErr } = await admin
       .from("profiles")
-      .update({ name, designation, department_id: departmentId, phone, receivables_salespersons: receivablesSalespersons })
+      .update({
+        name,
+        designation,
+        department_id: departmentId,
+        phone,
+        receivables_salespersons: receivablesSalespersons,
+        receivables_hidden_menus: receivablesHiddenMenus,
+        receivables_admin_menus: receivablesAdminMenus,
+      })
       .eq("id", id);
     if (profErr) return json(400, { error: profErr.message });
 

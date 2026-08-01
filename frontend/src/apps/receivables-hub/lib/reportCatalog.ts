@@ -648,15 +648,20 @@ export function searchReports(q: string): ReportEntry[] {
 }
 
 /**
- * Admin visibility. Reports/categories flagged `adminOnly` are dropped for non-admins so a
- * board-level dashboard never even appears in the list. The route is guarded separately
- * (see ReceivablesHubApp.tsx) — hiding a row is not an access control on its own.
+ * Elevated visibility. Reports/categories flagged `adminOnly` are dropped unless the viewer
+ * has FULL ACCESS to the Reports menu, so a board-level dashboard never even appears in the
+ * list for an everyday user. The route is guarded separately (see ReceivablesHubApp.tsx) —
+ * hiding a row is not an access control on its own.
+ *
+ * `fullAccess` used to be `isAdmin`. It is now "admin OR granted `reports` in
+ * profiles.receivables_admin_menus" — an admin still passes, so nothing changed for them,
+ * but the gate is no longer welded to the role. Callers get it from useHubMenuAccess().
  */
-export function reportCategoriesFor(isAdmin: boolean): ReportCategory[] {
-  return REPORT_CATEGORIES.filter((c) => isAdmin || !c.adminOnly);
+export function reportCategoriesFor(fullAccess: boolean): ReportCategory[] {
+  return REPORT_CATEGORIES.filter((c) => fullAccess || !c.adminOnly);
 }
-export function visibleReports(isAdmin: boolean): ReportEntry[] {
-  return REPORTS.filter((r) => isAdmin || !r.adminOnly);
+export function visibleReports(fullAccess: boolean): ReportEntry[] {
+  return REPORTS.filter((r) => fullAccess || !r.adminOnly);
 }
 
 /**

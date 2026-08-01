@@ -11,6 +11,9 @@ import { grantableModules } from "@/apps/registry";
 import { groupByCategory } from "@/apps/categories";
 import type { AppRole } from "@/core/platform/types";
 import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
+import {
+  PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, type MenuAccessLevel,
+} from "@/apps/receivables-hub/lib/menus";
 import ShareLoginModal from "./ShareLoginModal";
 
 const RECEIVABLES_APP_ID = "outstanding-dashboard";
@@ -41,6 +44,17 @@ function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string
   return out;
 }
 
+/**
+ * The access levels offered per receivables menu. "Full access" is only offered for the menus
+ * that HAVE a deeper tier (`fullAccessNote`) — Reports and Settings today; everything else is
+ * a plain visible/hidden choice, and offering a third level there would be a lie.
+ */
+const MENU_LEVELS: { value: MenuAccessLevel; label: string }[] = [
+  { value: "hidden", label: "Hidden" },
+  { value: "standard", label: "Standard" },
+  { value: "full", label: "Full access" },
+];
+
 const ROLES: { value: AppRole; label: string; hint: string }[] = [
   { value: "employee", label: "Employee", hint: "Own tasks only" },
   { value: "sub_hod", label: "Sub-HOD", hint: "Team visibility, limited" },
@@ -65,6 +79,10 @@ export default function UserForm() {
   const [hodIds, setHodIds] = useState<string[]>(editing?.hodIds ?? []);
   const [moduleAccess, setModuleAccess] = useState<string[]>(editing?.moduleAccess ?? ["task-management"]);
   const [receivablesSalespersons, setReceivablesSalespersons] = useState<string[]>(editing?.receivablesSalespersons ?? []);
+  // Outstanding Dashboard menu access — the two columns behind lib/menus:
+  // hidden = deny-list ("may not see"), admin = allow-list ("may use at admin depth").
+  const [receivablesHiddenMenus, setReceivablesHiddenMenus] = useState<string[]>(editing?.receivablesHiddenMenus ?? []);
+  const [receivablesAdminMenus, setReceivablesAdminMenus] = useState<string[]>(editing?.receivablesAdminMenus ?? []);
   const [spNames, setSpNames] = useState<string[]>([]);
   const [spLoading, setSpLoading] = useState(false);
   const [spError, setSpError] = useState("");
@@ -83,9 +101,16 @@ export default function UserForm() {
     setModuleAccess((prev) => (on ? [...new Set([...prev, ...ids])] : prev.filter((m) => !ids.includes(m))));
   const toggleSalesperson = (n: string) =>
     setReceivablesSalespersons((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
+  // One helper for both lists: "hidden" must also drop the full-access grant, or a menu
+  // re-shown later would silently come back elevated.
+  const setMenuLevel = (menuKey: string, level: MenuAccessLevel) => {
+    const next = setMenuAccessLevel(menuKey, level, receivablesHiddenMenus, receivablesAdminMenus);
+    setReceivablesHiddenMenus(next.hidden);
+    setReceivablesAdminMenus(next.admin);
+  };
 
-  // The salesperson-scope picker is only relevant to non-admins who can open the
-  // Outstanding Dashboard (admins always see all of it).
+  // The salesperson-scope picker and the menu-access picker are only relevant to non-admins
+  // who can open the Outstanding Dashboard (admins always see all of it, at full depth).
   const showSalespersonScope = role !== "admin" && moduleAccess.includes(RECEIVABLES_APP_ID);
 
   // Lazy-load the live salesperson names (from the receivables data) the first
@@ -120,6 +145,8 @@ export default function UserForm() {
       moduleAccess,
       // Only meaningful for a non-admin with the dashboard module; otherwise clear.
       receivablesSalespersons: showSalespersonScope ? receivablesSalespersons : [],
+      receivablesHiddenMenus: showSalespersonScope ? receivablesHiddenMenus : [],
+      receivablesAdminMenus: showSalespersonScope ? receivablesAdminMenus : [],
     };
     setBusy(true);
     setError("");
@@ -323,6 +350,59 @@ export default function UserForm() {
               </div>
             )}
           </FieldLabel>
+
+          {showSalespersonScope && (
+            <FieldLabel
+              label="Outstanding Dashboard — menu access"
+              hint="which left-nav menus this user gets, and how much of each"
+            >
+              <p className="text-[12px] text-grey-2 mb-2.5">
+                Everything is <span className="font-medium text-navy">Standard</span> unless you
+                change it. <span className="font-medium text-navy">Full access</span> is offered
+                only where a menu has an admin-level tier, and gives the user that tier — the same
+                depth an admin sees.
+              </p>
+              <div className="rounded-xl border border-line divide-y divide-line">
+                {PERMISSION_MENUS.map((m) => {
+                  const level = menuAccessLevel(m.key, receivablesHiddenMenus, receivablesAdminMenus);
+                  // Menus with no deeper tier offer two levels, not three.
+                  const levels = m.fullAccessNote ? MENU_LEVELS : MENU_LEVELS.filter((l) => l.value !== "full");
+                  return (
+                    <div key={m.key} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+                      <div className="min-w-0">
+                        <span className="block text-[13px] font-medium text-navy">{m.title}</span>
+                        {m.fullAccessNote && (
+                          <span className="block text-[11.5px] text-grey-2">
+                            Full access {m.fullAccessNote}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex shrink-0 gap-1.5">
+                        {levels.map((l) => {
+                          const on = level === l.value;
+                          return (
+                            <button
+                              key={l.value}
+                              type="button"
+                              onClick={() => setMenuLevel(m.key, l.value)}
+                              className={cn(
+                                "rounded-pill border px-2.5 py-1 text-[12px] transition",
+                                on
+                                  ? "border-orange bg-orange-soft text-orange font-semibold"
+                                  : "border-line text-grey-2 hover:border-orange/40"
+                              )}
+                            >
+                              {l.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </FieldLabel>
+          )}
 
           {showSalespersonScope && (
             <FieldLabel

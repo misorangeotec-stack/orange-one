@@ -20,6 +20,10 @@ export interface CreateUserInput {
   moduleAccess?: string[];
   /** Outstanding Dashboard scope — salesperson names this user may see. */
   receivablesSalespersons?: string[];
+  /** Outstanding Dashboard menu deny-list — menu keys this user may NOT see. */
+  receivablesHiddenMenus?: string[];
+  /** Outstanding Dashboard full-access allow-list — menus used with admin-level depth. */
+  receivablesAdminMenus?: string[];
 }
 
 /**

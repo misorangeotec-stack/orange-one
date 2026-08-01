@@ -53,6 +53,16 @@ export interface Profile {
    */
   receivablesHiddenMenus: string[];
   /**
+   * Outstanding Dashboard full-access allow-list (profiles.receivables_admin_menus):
+   * the menu keys this user may use with ADMIN-LEVEL DEPTH, not merely see. Only
+   * `reports` (unlocks the Dashboards + Insights categories and their reports) and
+   * `settings` (unlocks the Masters tab) have a deeper tier today.
+   *
+   * The opposite polarity to `receivablesHiddenMenus` on purpose: visibility defaults
+   * to on, elevation defaults to off. Admins ignore this (always full access).
+   */
+  receivablesAdminMenus: string[];
+  /**
    * Receivables Hub legacy-source access (profiles.receivables_allow_pipeline). The hub
    * defaults everyone to the Live (Tally) source; when true, this non-admin also gets the
    * topbar toggle to view the legacy pipeline source. Admins ignore this (always allowed).
