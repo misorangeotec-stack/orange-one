@@ -85,8 +85,22 @@ export default function StepModal({
   }, [open, order?.id, view?.roundNo, view?.isArchived, editing, cfg.stepKey]);
 
   const shown = useMemo(() => visibleFields(cfg, values, order), [cfg, values, order]);
+  // Split by position: a `beforeLines` field frames the item grid and is asked above
+  // it; everything else annotates what was entered and sits below.
+  const topFields = shown.filter((f) => f.beforeLines);
+  const bodyFields = shown.filter((f) => !f.beforeLines);
+  // The attachment slots BETWEEN these two: short answers, then the file that
+  // evidences them, then the free-text remark.
+  const shortFields = bodyFields.filter((f) => f.kind !== "textarea");
+  const longFields = bodyFields.filter((f) => f.kind === "textarea");
 
-  const set = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
+  // Editing clears the last refusal. Without this, filling in the very field the
+  // error named leaves "Delivery outcome is required." sitting under a filled-in
+  // Delivery outcome until the next save attempt.
+  const set = (key: string, v: string) => {
+    setValues((prev) => ({ ...prev, [key]: v }));
+    setError(null);
+  };
 
   const renderField = (f: StepField) => {
     const v = values[f.key] ?? "";
@@ -98,8 +112,11 @@ export default function StepModal({
     */
     const ph = locked ? "—" : f.placeholder;
     if (f.kind === "select") {
-      // Every remaining select is a fixed code enum — no step picks from a master.
-      const opts = f.choices ?? [];
+      // A select is either a fixed code enum (`choices`) or a live master list the
+      // descriptor names — stepConfig is pure, so resolving it is the modal's job.
+      const opts = f.master
+        ? s.activeOf(s.masterList(f.master)).map((m) => ({ value: m.id, label: m.name }))
+        : (f.choices ?? []);
       return (
         <Combobox
           value={v}
@@ -217,7 +234,7 @@ export default function StepModal({
         a remark stay `lg`; widening those would only strand a lone dropdown in a
         lot of white.
       */
-      size={cfg.lines === "ship" || cfg.context?.showLines ? "xl" : "lg"}
+      size={cfg.lines === "ship" || cfg.context?.showLines || cfg.context?.showOrderLines ? "xl" : "lg"}
       readOnly={locked}
       /*
         ⚠ This slot renders OUTSIDE Modal's disabled <fieldset>, and it is the only
@@ -267,9 +284,24 @@ export default function StepModal({
             readOnly={locked}
             showCredit={cfg.context.showCredit}
             showLines={cfg.context.showLines}
+            showOrderLines={cfg.context.showOrderLines}
+            showCompany={cfg.context.showCompany}
             showInvoice={cfg.context.showInvoice}
             showOutward={cfg.context.showOutward}
           />
+        )}
+
+        {/* Decisions that frame the consignment — asked before the quantities. */}
+        {topFields.length > 0 && (
+          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+            {topFields.map((f) => (
+              <div key={f.key} className={f.kind === "textarea" ? "sm:col-span-2" : undefined}>
+                <FieldLabel label={f.label} required={isRequiredNow(f, values, order)}>
+                  {renderField(f)}
+                </FieldLabel>
+              </div>
+            ))}
+          </div>
         )}
 
         {cfg.lines === "ship" && (
@@ -286,19 +318,31 @@ export default function StepModal({
           people actually write a sentence into — got the narrower half of a 512px
           dialog. Short fields pair up, the textarea takes the full width beneath.
         */}
-        <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
-          {shown.map((f) => (
-            <div key={f.key} className={f.kind === "textarea" ? "sm:col-span-2" : undefined}>
-              <FieldLabel label={f.label} required={isRequiredNow(f, values, order)}>
-                {renderField(f)}
-              </FieldLabel>
-            </div>
-          ))}
-        </div>
+        {shortFields.length > 0 && (
+          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+            {shortFields.map((f) => (
+              <div key={f.key}>
+                <FieldLabel label={f.label} required={isRequiredNow(f, values, order)}>
+                  {renderField(f)}
+                </FieldLabel>
+              </div>
+            ))}
+          </div>
+        )}
 
+        {/*
+          THE FILE SITS WITH THE FIELD IT EVIDENCES, not at the bottom of the dialog.
+          The invoice belongs under the invoice number and the receiver copy under
+          the delivery outcome; parked below Remarks — a box people scroll past once
+          they have typed — a REQUIRED attachment read as an optional afterthought,
+          and the save was refused by something already off screen.
+        */}
         {cfg.attachment && (
           <section className="space-y-2">
-            <SectionHeading>{cfg.attachment.label}</SectionHeading>
+            <SectionHeading>
+              {cfg.attachment.label}
+              {cfg.attachment.required && !locked && <span className="text-orange"> *</span>}
+            </SectionHeading>
             {existingDoc?.path && !file && !locked && (
               <div className="flex items-center gap-3">
                 <StepDocLink path={existingDoc.path} name={existingDoc.name} />
@@ -309,11 +353,23 @@ export default function StepModal({
               <input
                 ref={fileRef}
                 type="file"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => { setFile(e.target.files?.[0] ?? null); setError(null); }}
                 className="block w-full text-[13px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-[#F1F4F9] file:px-3 file:py-1.5 file:text-[13px] file:font-semibold file:text-navy"
               />
             )}
           </section>
+        )}
+
+        {longFields.length > 0 && (
+          <div className="space-y-4">
+            {longFields.map((f) => (
+              <div key={f.key}>
+                <FieldLabel label={f.label} required={isRequiredNow(f, values, order)}>
+                  {renderField(f)}
+                </FieldLabel>
+              </div>
+            ))}
+          </div>
         )}
 
         {error && <p className="text-[13px] font-medium text-ryg-red">{error}</p>}

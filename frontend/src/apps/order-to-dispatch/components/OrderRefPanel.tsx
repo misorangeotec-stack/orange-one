@@ -3,8 +3,8 @@ import { Field } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
 import StepDocLink from "./StepDocLink";
-import { pendingQtyOf, type RoundView } from "../lib/rounds";
-import { CREDIT_STATUS_LABEL, DISPATCH_TYPE_LABEL, dmy } from "../lib/format";
+import type { RoundView } from "../lib/rounds";
+import { CREDIT_STATUS_LABEL, DISPATCH_TYPE_LABEL, dmy, qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -40,6 +40,10 @@ export interface OrderRefPanelProps {
   showCredit?: boolean;
   /** The full item list: ordered · dispatched · pending · going out now · LOT. */
   showLines?: boolean;
+  /** The order as raised: item · quantity · unit · line remark. */
+  showOrderLines?: boolean;
+  /** The company chosen at the stock check, which bills this consignment. */
+  showCompany?: boolean;
   /** Tally invoice no. (+ a button to open it, when not read-only). */
   showInvoice?: boolean;
   /** Gate outward no. */
@@ -49,7 +53,8 @@ export interface OrderRefPanelProps {
 
 export default function OrderRefPanel({
   order, round, readOnly = false,
-  showCredit = false, showLines = false, showInvoice = false, showOutward = false,
+  showCredit = false, showLines = false, showOrderLines = false, showCompany = false,
+  showInvoice = false, showOutward = false,
   children,
 }: OrderRefPanelProps) {
   const s = useDispatchStore();
@@ -79,6 +84,12 @@ export default function OrderRefPanel({
         )}
         {showCredit && order.ccRemarks && <Field label="Credit remark" value={order.ccRemarks} />}
 
+        {/* Chosen at the stock check. Read off the ROUND, because each consignment is
+            billed by whichever company released it. */}
+        {showCompany && (
+          <Field label="Billing company" value={s.masterName("company", round.companyId)} />
+        )}
+
         {showInvoice && <Field label="Tally invoice no." value={round.sbInvoiceNo ?? "—"} />}
         {showOutward && <Field label="Gate outward no." value={round.goOutwardNo ?? "—"} />}
         {children}
@@ -91,53 +102,116 @@ export default function OrderRefPanel({
         </div>
       )}
 
-      {showLines && <RefLines order={order} round={round} />}
+      {showOrderLines && <OrderedLines order={order} />}
+      {showLines && <RefLines round={round} />}
     </RefPanel>
   );
 }
 
 /**
- * What was ordered AND what dispatch has picked for this round — both halves,
- * deliberately. Showing only the picked lines would leave the billing clerk
- * unable to see that three more lines were requested and are still pending.
+ * The order EXACTLY as it was raised — one row per intake line, with the quantity,
+ * its unit and whatever the raiser noted against that item. No round columns: this
+ * is for the steps that run before anything has been picked, where "Dispatched" and
+ * "Going out now" would be a column of dashes.
  */
-function RefLines({ order, round }: { order: DispatchOrder; round: RoundView }) {
+function OrderedLines({ order }: { order: DispatchOrder }) {
   const s = useDispatchStore();
-  const shipByLine = new Map(round.items.map((i) => [i.orderItemId ?? "", i]));
+  const t = qtyTotals(order);
+  const totalUnit = sharedUnit(order.lines);
 
   return (
     <ScrollableTable>
       <table className="w-full text-[12.5px]">
         <thead>
           <tr className="text-left text-grey-2 border-b border-line">
-            <th className="py-1.5 pr-3 font-semibold min-w-[170px]">Item</th>
-            <th className="py-1.5 pr-3 font-semibold text-right">Ordered</th>
-            <th className="py-1.5 pr-3 font-semibold text-right">Dispatched</th>
-            <th className="py-1.5 pr-3 font-semibold text-right">Pending</th>
-            <th className="py-1.5 pr-3 font-semibold text-right">Going out now</th>
-            <th className="py-1.5 pr-3 font-semibold">LOT no.</th>
+            <th className="py-1.5 pr-3 font-semibold min-w-[200px]">Item</th>
+            <th className="py-1.5 pr-3 font-semibold text-right whitespace-nowrap">Quantity</th>
+            <th className="py-1.5 pr-3 font-semibold">Unit</th>
+            <th className="py-1.5 font-semibold min-w-[150px]">Remark</th>
           </tr>
         </thead>
         <tbody>
-          {order.lines.map((l) => {
-            const ship = shipByLine.get(l.id);
-            const unit = l.unit ?? "";
-            return (
-              <tr key={l.id} className="border-b border-line/70 last:border-0">
-                <td className="py-1.5 pr-3 text-navy">{s.itemName(l.itemId)}</td>
-                <td className="py-1.5 pr-3 text-grey text-right tabular-nums whitespace-nowrap">
-                  {l.quantity} {unit}
-                </td>
-                <td className="py-1.5 pr-3 text-grey text-right tabular-nums">{l.dispatchedQty || "—"}</td>
-                <td className="py-1.5 pr-3 text-grey text-right tabular-nums">{pendingQtyOf(l) || "—"}</td>
-                <td className="py-1.5 pr-3 text-navy font-semibold text-right tabular-nums">
-                  {ship ? ship.shipQty : "—"}
-                </td>
-                <td className="py-1.5 pr-3 text-grey">{ship?.lotNo ?? "—"}</td>
-              </tr>
-            );
-          })}
+          {order.lines.map((l) => (
+            <tr key={l.id} className="border-b border-line/70 last:border-0">
+              <td className="py-1.5 pr-3 text-navy">{s.itemName(l.itemId)}</td>
+              <td className="py-1.5 pr-3 text-navy font-semibold text-right tabular-nums">{l.quantity}</td>
+              <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{l.unit || "—"}</td>
+              <td className="py-1.5 text-grey">{l.lineRemark || "—"}</td>
+            </tr>
+          ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t border-line text-navy">
+            <td className="py-1.5 pr-3 text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+              Total
+            </td>
+            <td className="py-1.5 pr-3 text-right tabular-nums font-bold">{t.ordered}</td>
+            <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{totalUnit || "—"}</td>
+            <td />
+          </tr>
+        </tfoot>
+      </table>
+    </ScrollableTable>
+  );
+}
+
+/**
+ * THIS ROUND'S CONSIGNMENT — and nothing else.
+ *
+ * ⚠ IT DELIBERATELY DOES NOT SHOW THE ORDERED / PENDING QUANTITY. It used to show
+ *   both halves so the billing clerk could see what was still owed; that was wrong.
+ *   Everything downstream of the stock check acts on ONE consignment: the invoice,
+ *   the gate pass and the delivery confirmation all cover exactly what the store
+ *   keeper released. A quantity ordered but not picked belongs to a LATER round, and
+ *   putting it on this screen invites it onto this invoice. The balance is not lost —
+ *   it comes back as its own round, and the order page shows the full picture.
+ *
+ * Rows come off the ROUND, so an archived round shows what IT shipped rather than
+ * whatever the header now holds. Archived rows carry a frozen `itemName` (so history
+ * survives a master rename); the live projection leaves it blank for us to resolve.
+ */
+function RefLines({ round }: { round: RoundView }) {
+  const s = useDispatchStore();
+  const items = round.items;
+
+  const total = items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
+  const totalUnit = sharedUnit(items.map((i) => ({ unit: i.unitName })));
+
+  if (items.length === 0) {
+    return <p className="text-[12.5px] text-grey-2">Nothing has been picked for this round yet.</p>;
+  }
+
+  return (
+    <ScrollableTable>
+      <table className="w-full text-[12.5px]">
+        <thead>
+          <tr className="text-left text-grey-2 border-b border-line">
+            <th className="py-1.5 pr-3 font-semibold min-w-[200px]">Item</th>
+            <th className="py-1.5 pr-3 font-semibold text-right whitespace-nowrap">Going out</th>
+            <th className="py-1.5 pr-3 font-semibold">Unit</th>
+            <th className="py-1.5 pr-3 font-semibold min-w-[130px]">LOT no.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((i) => (
+            <tr key={i.id} className="border-b border-line/70 last:border-0">
+              <td className="py-1.5 pr-3 text-navy">{i.itemName || s.itemName(i.itemId)}</td>
+              <td className="py-1.5 pr-3 text-navy font-semibold text-right tabular-nums">{i.shipQty}</td>
+              <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{i.unitName || "—"}</td>
+              <td className="py-1.5 pr-3 text-grey">{i.lotNo ?? "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-line text-navy">
+            <td className="py-1.5 pr-3 text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+              Total going out
+            </td>
+            <td className="py-1.5 pr-3 text-right tabular-nums font-bold text-orange">{total}</td>
+            <td className="py-1.5 pr-3 text-grey whitespace-nowrap">{totalUnit || "—"}</td>
+            <td className="py-1.5 pr-3" />
+          </tr>
+        </tfoot>
       </table>
     </ScrollableTable>
   );

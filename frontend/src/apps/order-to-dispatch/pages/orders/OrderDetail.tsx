@@ -16,7 +16,7 @@ import StatusPill, { OutcomePill } from "../../components/StatusPill";
 import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, DISPATCH_TYPE_LABEL,
-  dmy, dmyTime, isCreditHeld, qtyTotals,
+  dmy, dmyTime, isCreditHeld, qtyTotals, sharedUnit,
 } from "../../lib/format";
 
 export default function OrderDetail() {
@@ -169,12 +169,27 @@ export default function OrderDetail() {
                   );
                 })}
               </tbody>
+              {/* Each figure totalled under its own column — the sentence below now
+                  only counts the lines, so no number is stated twice. */}
+              <tfoot>
+                <tr className="border-t border-line text-navy">
+                  <td className="py-2 pr-3 text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                    Total
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold whitespace-nowrap">
+                    {totals.ordered} {sharedUnit(order.lines)}
+                  </td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold">{totals.dispatched || "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold">{totals.pending || "—"}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums font-bold text-orange">{totals.shipping || "—"}</td>
+                  <td className="py-2 pr-3" />
+                </tr>
+              </tfoot>
             </table>
           </ScrollableTable>
           <p className="text-[12.5px] text-grey-2">
-            {order.lines.length} line{order.lines.length === 1 ? "" : "s"} · {totals.ordered} ordered ·{" "}
-            {totals.dispatched} dispatched
-            {totals.pending ? ` · ${totals.pending} still pending` : " · nothing outstanding"}
+            {order.lines.length} line{order.lines.length === 1 ? "" : "s"}
+            {totals.pending ? "" : " · nothing outstanding"}
           </p>
         </Card>
 

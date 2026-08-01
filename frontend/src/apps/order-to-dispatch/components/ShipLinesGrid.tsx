@@ -2,6 +2,7 @@ import { TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
 import { pendingQtyOf } from "../lib/rounds";
+import { qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -50,7 +51,12 @@ export default function ShipLinesGrid({
     onChange(values.map((v) => (v.id === id ? { ...v, ...part } : v)));
   };
 
+  // Ordered / dispatched / pending come off the order. "Ship now" must NOT — it is
+  // being typed right now, so it is summed from `values` and moves as you type.
+  const t = qtyTotals(order);
   const total = order.lines.reduce((a, l) => a + (Number(byId.get(l.id)?.ship_qty) || 0), 0);
+  // Named for the totals row — the row map has its own per-line `unit`.
+  const totalUnit = sharedUnit(order.lines);
 
   return (
     <div className="space-y-2">
@@ -115,11 +121,35 @@ export default function ShipLinesGrid({
               );
             })}
           </tbody>
+          {/*
+            Every figure column carries its own total, sitting directly under the
+            column it sums. "Ship now" is the live one — it re-adds on each keystroke,
+            so the store keeper can see the round's total without a calculator.
+          */}
+          <tfoot>
+            <tr className="border-t border-line text-navy">
+              <td className="py-2 pr-3 text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">
+                Total
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums font-bold whitespace-nowrap">
+                {t.ordered} {totalUnit}
+              </td>
+              <td className="py-2 pr-3 text-right tabular-nums font-bold">{t.dispatched || "—"}</td>
+              <td className="py-2 pr-3 text-right tabular-nums font-bold">{t.pending || "—"}</td>
+              {/* w-24 matches the input above it, so the figure lines up with the box. */}
+              <td className="py-2 pr-3">
+                <span className="block w-24 text-right tabular-nums font-bold text-orange">
+                  {total || "—"}
+                </span>
+              </td>
+              <td className="py-2 pr-3" />
+            </tr>
+          </tfoot>
         </table>
       </ScrollableTable>
       <p className="text-[12.5px] text-grey-2">
         {total > 0
-          ? `${total} going out on this round. Anything left pending comes back here when it is ready.`
+          ? "Anything left pending comes back here when it is ready."
           : "Enter a quantity against whatever is available. Use “Nothing available yet” if none of it is."}
       </p>
     </div>

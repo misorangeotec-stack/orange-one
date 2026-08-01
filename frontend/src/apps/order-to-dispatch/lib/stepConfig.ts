@@ -16,7 +16,7 @@
  *
  * This module stays PURE — no React, no store import.
  */
-import type { DispatchOrder } from "../types";
+import type { DispatchMasterType, DispatchOrder } from "../types";
 import type { RoundView } from "./rounds";
 import type { QueueStep } from "./queues";
 import { CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dmy, numOrDash } from "./format";
@@ -29,8 +29,22 @@ export interface StepField {
   kind: StepFieldKind;
   /** Current value, for edit/prefill. Always a string — the modal is string-keyed. */
   get: (o: DispatchOrder, v: RoundView) => string;
-  /** `select` backed by a fixed code enum. No step picks from a master any more. */
+  /** `select` backed by a fixed code enum. */
   choices?: { value: string; label: string }[];
+  /**
+   * `select` backed by a live MASTER list instead of `choices` — the modal resolves
+   * the active rows from the store. It lives here rather than as a hard-coded array
+   * because this module is PURE and must not import the store: the descriptor names
+   * the list, the modal fetches it.
+   */
+  master?: DispatchMasterType;
+  /**
+   * Render this field ABOVE the item grid instead of below it. For a decision that
+   * frames the grid rather than annotates it — the billing company is chosen for the
+   * whole consignment, so asking for it under a table of quantities reads as an
+   * afterthought and is easy to scroll past.
+   */
+  beforeLines?: boolean;
   placeholder?: string;
   /**
    * ⚠ THERE IS NO `hint` HERE, AND ONE MUST NOT BE ADDED BACK.
@@ -65,6 +79,15 @@ export interface StepContext {
   showCredit?: boolean;
   /** The full item list: ordered · dispatched · pending · going out now · LOT. */
   showLines?: boolean;
+  /**
+   * The order AS RAISED — item · quantity · unit · line remark. For steps that run
+   * BEFORE anything has been picked, where `showLines`' dispatch columns would be a
+   * row of dashes and the intake line remark — the one thing the raiser wrote per
+   * item — would not be shown at all.
+   */
+  showOrderLines?: boolean;
+  /** The billing company chosen at the stock check. */
+  showCompany?: boolean;
   /** Tally invoice no. + a button that opens the invoice. */
   showInvoice?: boolean;
   /** Gate outward no. */
@@ -121,6 +144,9 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     description:
       "Orders waiting on the collection team to approve the customer's credit, or hold the order until payment lands.",
     completedBlurb: "Approvals you record appear here, and stay revisable until the stock check is recorded.",
+    // Credit is judged against what is actually being asked for, so the whole order
+    // — header plus every item line — opens above the decision.
+    context: { showOrderLines: true },
     fields: [
       {
         key: "cc_status", label: "Credit outcome", kind: "select", required: true,
@@ -147,6 +173,17 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     completedBlurb: "Each round you send appears here, and stays revisable until its sales bill is raised.",
     context: { showCredit: true },
     fields: [
+      /*
+        THE ONLY PLACE THE COMPANY IS CHOSEN. Intake asks who is buying, not who is
+        selling — the old customer→company mapping was retired precisely because it
+        was a field nobody decided. The store keeper decides it here, per consignment,
+        and every downstream step is shown the answer rather than asked again.
+      */
+      {
+        key: "ms_company_id", label: "Billing company", kind: "select", required: true,
+        master: "company", get: (_o, v) => s(v.companyId), beforeLines: true,
+        placeholder: "which company bills this consignment",
+      },
       { key: "ms_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.msRemarks) },
     ],
     lines: "ship",
@@ -166,7 +203,7 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record sales bill",
     description: "Consignments picked and waiting for the invoice to be raised in Tally.",
     completedBlurb: "Bills you record appear here, and stay revisable until the gate outward entry is recorded.",
-    context: { showCredit: true, showLines: true },
+    context: { showCredit: true, showLines: true, showCompany: true },
     fields: [
       {
         key: "sb_invoice_no", label: "Tally invoice no.", kind: "text", required: true,
@@ -188,7 +225,7 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record gate outward",
     description: "Billed consignments waiting for the plant in-charge to write the gate register entry as the material leaves.",
     completedBlurb: "Gate entries you record appear here, and stay revisable until the delivery is confirmed.",
-    context: { showCredit: true, showLines: true, showInvoice: true },
+    context: { showCredit: true, showLines: true, showCompany: true, showInvoice: true },
     fields: [
       {
         key: "go_outward_no", label: "Gate outward no.", kind: "text", required: true,
@@ -207,7 +244,7 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       "Consignments out of the gate, waiting for confirmation that they reached the customer.",
     completedBlurb:
       "Confirmations appear here. Once a round is finished, correcting what was delivered is done from the order page.",
-    context: { showLines: true, showInvoice: true, showOutward: true },
+    context: { showLines: true, showCompany: true, showInvoice: true, showOutward: true },
     fields: [
       {
         key: "dc_status", label: "Delivery outcome", kind: "select", required: true,

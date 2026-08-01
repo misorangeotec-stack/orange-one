@@ -116,6 +116,17 @@ export function qtyTotals(o: DispatchOrder): {
 }
 
 /**
+ * The unit to print beside a column TOTAL: the one unit every line shares, or ""
+ * when they disagree. A total of 500 KGS and 3 PCS is a number with no unit, and
+ * labelling it with either one would be a lie — so the totals row prints the bare
+ * figure and the per-line units stay the record.
+ */
+export const sharedUnit = (lines: { unit: string | null }[]): string => {
+  const units = new Set(lines.map((l) => l.unit ?? "").filter(Boolean));
+  return units.size === 1 ? ([...units][0] ?? "") : "";
+};
+
+/**
  * "dd-mm-yyyy" → "yyyy-mm-dd" so a column whose DISPLAY value is dd-mm-yyyy still
  * sorts and range-filters chronologically instead of lexicographically by day.
  */
