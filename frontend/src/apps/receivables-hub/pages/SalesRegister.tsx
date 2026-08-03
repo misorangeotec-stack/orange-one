@@ -9,6 +9,10 @@
  * Data lives in lib/salesRegister.ts; the whole [from,to] window is loaded, then filtered and
  * paginated client-side (project rule: usePagination + <Pagination/>, 25/page). Export in
  * lib/exportSalesRegister.ts reproduces the source workbook.
+ *
+ * COMPANY / LOCATION come from ext_company_map (resolved in lib/salesRegister.ts), never from the
+ * table's own `company_label` — that column is the counterparty class behind TYPE, not a company.
+ * The BRANCH / RELATED distinction it used to leak into this column still reads off TYPE.
  */
 import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -56,8 +60,10 @@ export default function SalesRegister() {
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [search, setSearch] = useState("");
 
+  // One entry per book — 'O-tec — Surat', 'Enterprise — Noida' — the same labels the company
+  // picker on every other Tally report offers, and the same ones the Refresh selector lists.
   const companyOptions: MultiSelectOption[] = useMemo(
-    () => [...new Set(all.map((r) => r.company_label))].sort().map((v) => ({ value: v, label: v })),
+    () => [...new Set(all.map((r) => r.company_display))].sort().map((v) => ({ value: v, label: v })),
     [all],
   );
   const typeOptions: MultiSelectOption[] = useMemo(
@@ -68,7 +74,7 @@ export default function SalesRegister() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return all.filter((r) => {
-      if (companyFilters.length && !companyFilters.includes(r.company_label)) return false;
+      if (companyFilters.length && !companyFilters.includes(r.company_display)) return false;
       if (typeFilters.length && !typeFilters.includes(r.type)) return false;
       if (q && !(
         r.party.toLowerCase().includes(q) ||
@@ -278,8 +284,8 @@ export default function SalesRegister() {
                 ) : (
                   page.pageItems.map((r, i) => (
                     <tr key={`${r.tenant_id}-${r.voucher_no}-${r.line_no}-${i}`} className="border-b border-border/40 hover:bg-muted/40">
-                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.location}</td>
-                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.company_label}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.location_name}</td>
+                      <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.company}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap">{r.type}</td>
                       <td className="py-1.5 px-3 text-sm whitespace-nowrap tabular-nums">{r.date_display}</td>
                       <td className="py-1.5 px-3 text-sm">{r.party}</td>

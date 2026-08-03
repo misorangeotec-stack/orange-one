@@ -5,6 +5,10 @@
  *
  * Freeze panes are deliberately omitted: the community xlsx writer ignores `!freeze`, so setting it
  * would be a silent no-op (see the project note on frozen header rows).
+ *
+ * LOCATION / COMPANY carry the ext_company_map pair ('Surat', 'O-tec') the screen shows, not the
+ * table's raw `company_label` counterparty class — see the note in lib/salesRegister.ts. The 12
+ * columns and their order are unchanged, so the workbook still drops into the finance template.
  */
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
@@ -30,7 +34,7 @@ export function exportSalesRegisterXlsx(rows: RegisterRow[], meta: { from: strin
   const aoa: Array<Array<string | number>> = [[...COLUMNS]];
   for (const r of rows) {
     aoa.push([
-      r.location, r.company_label, r.type, r.date_display, r.party, r.particulars,
+      r.location_name, r.company, r.type, r.date_display, r.party, r.particulars,
       r.voucher_type, r.voucher_no, r.gstin ?? "", r.quantity, r.rate, r.revenue,
     ]);
   }

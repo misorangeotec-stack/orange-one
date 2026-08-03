@@ -17,6 +17,19 @@
  * 1-Apr. `rpt_sales_book` names the ONE winning book per (company, FY); we resolve the winning books
  * for the FY(s) the date window touches and keep only rows whose (tenant, fy) is a winning pair, so
  * an old book's stray next-FY vouchers never double-count.
+ *
+ * COMPANY & LOCATION ARE RESOLVED HERE, NOT READ FROM THE TABLE
+ * `rpt_sales_register.company_label` is NOT the company — it is the sale's counterparty class
+ * ('ORANGE O TEC' / 'ORANGE O TEC BRANCH' / 'ORANGE O TEC RELATED', 'ORANGE ENT BRANCH', …), built
+ * inside rpt_sales_register_rebuild by matching the PARTY name, and its only real job is to drive
+ * the TYPE column ('SALE' / 'BRANCH SALE' / 'Related Credit Note' / …). Rendering it under a
+ * "COMPANY" heading showed readers sister-entity buckets where they expected the book's owner.
+ * `location` on the same table is likewise guessed from the raw Tally book name (`ilike '%NOIDA%'`),
+ * the name-based heuristic companyMap.ts exists to retire — Tally mints a new book name every April.
+ *
+ * So both are resolved per row from `ext_company_map` (GUID-keyed, admin-editable in Settings →
+ * Masters), giving 'O-tec' / 'Surat' — the same pair every other Tally report shows via
+ * TallyReportFrame.companyLabel. Nothing is lost: BRANCH / RELATED still reads off TYPE.
  */
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
 import { fetchCompanyMap, makeCompanyResolver } from "./companyMap";
@@ -25,8 +38,16 @@ export interface RegisterRow {
   tenant_id: string;
   fy: string;
   line_no: number;
+  /** Raw, name-derived location on the table ('SURAT'). Display `location_name` instead. */
   location: string;
+  /** Counterparty class the TYPE column is built from — NOT the company. Never display it. */
   company_label: string;
+  /** The book's owning company from ext_company_map: 'O-tec' | 'Enterprise' | 'Colorix'. */
+  company: string;
+  /** The book's location from the same map: 'Surat' | 'Noida'. */
+  location_name: string;
+  /** 'O-tec — Surat' — the app-wide company label, used by the filter and the chips. */
+  company_display: string;
   type: string;
   date_display: string; // DD-MM-YYYY
   vch_date: string;     // YYYYMMDD
@@ -89,9 +110,18 @@ async function winningBooks(fys: string[]): Promise<Book[]> {
 
 /* ------------------------------------------------------------------ main read */
 
+/** The company/location columns the table stores, before ext_company_map is applied. */
+type RawRegisterRow = Omit<RegisterRow, "company" | "location_name" | "company_display">;
+
+/** 'O-tec — Surat', or just the company when the map carries no location. */
+export const registerCompanyLabel = (company: string, location: string) =>
+  location ? `${company} — ${location}` : company;
+
 /**
  * Every register line for [from,to] (YYYYMMDD), all companies merged. Paged in 1,000-row blocks
  * (anon-safe) and filtered to winning (tenant, fy) books so FY-split overlap can't double-count.
+ * Each row's company/location are resolved from ext_company_map (see the header note), falling back
+ * to the table's own columns for a book nobody has tagged yet.
  */
 export async function loadSalesRegister(from: string, to: string): Promise<RegisterRow[]> {
   const books = await winningBooks(fysInRange(from, to));
@@ -100,8 +130,9 @@ export async function loadSalesRegister(from: string, to: string): Promise<Regis
   const winningPair = new Set(books.map((b) => `${b.tenant_id}|${b.fy}`));
 
   const cw = getConnectwaveSupabase();
+  const resolve = makeCompanyResolver(await fetchCompanyMap());
   const PAGE = 1000;
-  const out: RegisterRow[] = [];
+  const out: RawRegisterRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const { data, error } = await cw
       .from("rpt_sales_register")
@@ -114,13 +145,21 @@ export async function loadSalesRegister(from: string, to: string): Promise<Regis
       .order("voucher_no", { ascending: true })
       .order("line_no", { ascending: true })
       .range(offset, offset + PAGE - 1)
-      .returns<RegisterRow[]>();
+      .returns<RawRegisterRow[]>();
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
     if (rows.length < PAGE) break;
   }
-  return out.filter((r) => winningPair.has(`${r.tenant_id}|${r.fy}`));
+  return out
+    .filter((r) => winningPair.has(`${r.tenant_id}|${r.fy}`))
+    .map((r) => {
+      // An untagged book falls back to what the table already held — never worse than before.
+      const id = resolve(r.tenant_id, r.company_label);
+      const company = id.company || r.company_label;
+      const location = id.location || r.location;
+      return { ...r, company, location_name: location, company_display: registerCompanyLabel(company, location) };
+    });
 }
 
 /* ------------------------------------------------- per-company manual refresh */
@@ -142,7 +181,7 @@ export async function loadRegisterCompanies(): Promise<RegisterCompany[]> {
     if (seen.has(b.tenant_id)) continue;
     seen.add(b.tenant_id);
     const id = resolve(b.tenant_id, null);
-    const label = id.location ? `${id.company} — ${id.location}` : id.company || b.company_guid;
+    const label = registerCompanyLabel(id.company, id.location) || b.company_guid;
     out.push({ tenantId: b.tenant_id, label });
   }
   return out.sort((a, b) => a.label.localeCompare(b.label));
