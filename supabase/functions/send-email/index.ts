@@ -376,7 +376,7 @@ async function compose(row: Row): Promise<Composed | null> {
   // Shared FMS renderer — payload-driven, used by every purchase-family FMS
   // (Import, RM Domestic/procurement, …). The store authors subject/eyebrow/
   // headline/rows/items/note/ctaPath; only the tag + footer wording vary by app.
-  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_")) {
+  if (row.kind.startsWith("import_") || row.kind.startsWith("procurement_") || row.kind.startsWith("sampling_") || row.kind.startsWith("office-supplies_") || row.kind.startsWith("production-entry_") || row.kind.startsWith("order-to-dispatch_") || row.kind.startsWith("asset-maintenance_") || row.kind.startsWith("hr-recruitment_") || row.kind.startsWith("hr-exit_")) {
     const isProc = row.kind.startsWith("procurement_");
     const isSampling = row.kind.startsWith("sampling_");
     // ⚠ "office-supplies_" is the FROZEN outbox prefix, not the app's name. The
@@ -390,9 +390,14 @@ async function compose(row: Row): Promise<Composed | null> {
     // already renders no actor row in that case, which is the correct reading:
     // the reminder is from the system, not from a colleague.
     const isAsset = row.kind.startsWith("asset-maintenance_");
-    const appLabel = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
-    const basePath = isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
-    const tag = isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
+    // The two HR apps enqueue master-request events ONLY (migrations 20260814120000 /
+    // 20260814120100), so anything arriving under these prefixes is master-data
+    // governance — not a step alert. The footer wording below accounts for that.
+    const isHr = row.kind.startsWith("hr-recruitment_");
+    const isExit = row.kind.startsWith("hr-exit_");
+    const appLabel = isExit ? "Employee Exit" : isHr ? "New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Sampling" : isProc ? "RM Domestic" : "Import";
+    const basePath = isExit ? "/hr-exit" : isHr ? "/hr-recruitment" : isAsset ? "/asset-maintenance" : isDispatch ? "/order-to-dispatch" : isProduction ? "/production-entry" : isSupplies ? "/general-purchase" : isSampling ? "/sampling" : isProc ? "/procurement" : "/import";
+    const tag = isExit ? "HR · Employee Exit" : isHr ? "HR · New Recruitment" : isAsset ? "Asset Maintenance" : isDispatch ? "Order to Dispatch" : isProduction ? "Production Entry" : isSupplies ? "General Purchase" : isSampling ? "Ink / RM Sampling" : isProc ? "Purchase · RM Domestic" : "Purchase · Import";
     const p = (row.payload ?? {}) as Record<string, unknown>;
     const str = (v: unknown, d = "") => (typeof v === "string" && v ? v : d);
     const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
@@ -413,7 +418,11 @@ async function compose(row: Row): Promise<Composed | null> {
       html: emailShell({
         eyebrow, headline, inner,
         tag,
-        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; automated ${appLabel} notification.<br>You're receiving this because you're the next actor on this ${appLabel} document. Replies reach the person who acted.`,
+        footer: `<b style="color:${GREY};">Orange One Hub</b> &middot; automated ${appLabel} notification.<br>${
+          isHr || isExit
+            ? `You're receiving this because you own this master, or you raised the request.`
+            : `You're receiving this because you're the next actor on this ${appLabel} document.`
+        } Replies reach the person who acted.`,
       }),
       text: `${actorName}: ${headline}${p.docLabel ? `\n${str(p.docLabel)}` : ""}\n\nOpen: ${link}`,
       replyTo,

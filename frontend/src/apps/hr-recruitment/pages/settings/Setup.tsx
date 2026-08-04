@@ -5,6 +5,7 @@ import StepDueDatesSection from "./StepDueDatesSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import SalaryVisibilitySection from "./SalaryVisibilitySection";
 import MasterOwnersSection from "./MasterOwnersSection";
+import EmailNotificationsSection from "./EmailNotificationsSection";
 
 /**
  * Setup — the no-code configuration backbone (admin only). Wire up who owns each
@@ -25,6 +26,7 @@ export default function Setup() {
     { key: "roles", label: "Coordinators" },
     { key: "salary", label: "Salary Visibility" },
     { key: "masters", label: "Master Owners" },
+    { key: "notifications", label: "Notifications" },
   ];
 
   return (
@@ -44,6 +46,7 @@ export default function Setup() {
       {tab === "roles" && <CoordinatorsSection />}
       {tab === "salary" && <SalaryVisibilitySection />}
       {tab === "masters" && <MasterOwnersSection />}
+      {tab === "notifications" && <EmailNotificationsSection />}
     </div>
   );
 }
