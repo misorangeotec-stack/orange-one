@@ -11,6 +11,7 @@ import UserLayout from "@hub/layouts/UserLayout";
 import CLevelDashboard from "@hub/pages/CLevelDashboard";
 import ExecDashboard from "@hub/pages/ExecDashboard";
 import Dashboard from "@hub/pages/Dashboard";
+import AlertsPage from "@hub/pages/Alerts";
 import CustomerRiskRegister from "@hub/pages/CustomerRiskRegister";
 import FollowupsPage from "@hub/pages/Followups";
 import SalespersonAnalysis from "@hub/pages/SalespersonAnalysis";
@@ -46,6 +47,7 @@ import LedgerOutstandingBills from "@hub/pages/LedgerOutstandingBills";
 import LedgerVoucherList from "@hub/pages/LedgerVoucherList";
 import LedgerVoucherStatement from "@hub/pages/LedgerVoucherStatement";
 import SalesRegister from "@hub/pages/SalesRegister";
+import StockSummary from "@hub/pages/StockSummary";
 import SavedViews from "@hub/pages/SavedViews";
 import Profile from "@hub/pages/Profile";
 import Settings from "@hub/pages/Settings";
@@ -92,6 +94,11 @@ function HubRoutes() {
       <Routes>
         <Route element={<UserLayout />}>
           <Route index element={<Dashboard />} />
+          {/* Guarded at the ROUTE, not just the nav entry — a hidden sidebar link is not access
+              control (see components/RequireHubMenu). */}
+          <Route element={<RequireHubMenu menu="alerts" />}>
+            <Route path="alerts" element={<AlertsPage />} />
+          </Route>
           <Route path="risk-register" element={<CustomerRiskRegister />} />
           {/* Follow-ups force the pipeline source internally — see pages/Followups.tsx. */}
           <Route path="followups" element={<FollowupsPage />} />
@@ -218,6 +225,10 @@ function HubRoutes() {
             <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
             {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
             <Route path="reports/sales-register" element={<SalesRegister />} />
+            {/* Tally Reports → Inventory Books. Reads the precomputed rpt_stock_summary_* snapshot
+                through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
+                own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
+            <Route path="reports/stock-summary" element={<StockSummary />} />
           </Route>
           {/* Customer Creation FMS.
               Deliberately NOT wrapped in RequireRole: authorization here is

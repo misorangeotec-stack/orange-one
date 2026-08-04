@@ -127,6 +127,10 @@ const FY_PINNED_ROUTES = [
   // The Sales Register carries its own From/To date window; a topbar FY selector would be a second
   // control over the same period.
   "/outstanding-dashboard/reports/sales-register",
+  // The Stock Summary carries its own company + FY + From/To period pickers and prints the period
+  // band ("1-Apr-26 to 31-Mar-27") the way Tally does. A topbar FY selector would be a second,
+  // disagreeing control over the same year.
+  "/outstanding-dashboard/reports/stock-summary",
 ];
 
 export default function UserLayout() {

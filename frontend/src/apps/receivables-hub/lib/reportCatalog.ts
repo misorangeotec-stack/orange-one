@@ -2,6 +2,7 @@ import {
   AlarmClock,
   BarChart3,
   BookOpen,
+  Boxes,
   Calculator,
   CalendarClock,
   Crown,
@@ -179,6 +180,10 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
 export const REPORT_SUBCATEGORIES: ReportSubcategory[] = [
   { id: "financial-statements", category: "tally", title: "Financial Statements" },
   { id: "books-registers", category: "tally", title: "Books & Registers" },
+  // Reports.tsx renders the tally category as one band PER REGISTERED SUBCATEGORY, so an entry
+  // whose subcategory is not in this list is silently invisible on the landing page — no error,
+  // no empty band, just a missing row. Register the subcategory before the report.
+  { id: "inventory-books", category: "tally", title: "Inventory Books" },
   { id: "outstanding", category: "tally", title: "Outstanding" },
 ];
 
@@ -599,6 +604,22 @@ export const REPORTS: ReportEntry[] = [
     source: "tally",
     status: "soon",
     keywords: ["groups", "rollup"],
+  },
+  {
+    id: "stock-summary",
+    title: "Stock Summary",
+    purpose: "Every item's opening, inward, outward and closing — quantity, rate and value, as Tally prints it.",
+    category: "tally",
+    subcategory: "inventory-books",
+    path: "reports/stock-summary",
+    icon: Boxes,
+    source: "tally",
+    status: "live",
+    keywords: [
+      "stock summary", "stock group summary", "inventory", "opening balance", "inwards", "outwards",
+      "closing balance", "item code", "primary group", "sub group", "quantity", "rate", "value",
+      "base unit", "stock item", "movement", "closing stock", "godown",
+    ],
   },
   {
     id: "ledger-outstanding",
