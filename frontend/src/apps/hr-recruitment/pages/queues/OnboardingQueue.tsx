@@ -81,6 +81,14 @@ export default function OnboardingQueue() {
       exportValue: (o) => candOf(o)?.name ?? "Unknown",
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (o) => <span className="text-grey">{deptName(reqOf(o)?.departmentId ?? "")}</span>,
+      sortValue: (o) => deptName(reqOf(o)?.departmentId ?? ""),
+      filter: { kind: "select", get: (o) => deptName(reqOf(o)?.departmentId ?? "") },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "position",
       header: "Position",
       cell: (o) => <span className="text-grey">{reqOf(o)?.jobTitle ?? "—"}</span>,
@@ -197,12 +205,6 @@ export default function OnboardingQueue() {
           rows={rows}
           rowKey={(o) => o.id}
           columns={columns}
-          groupBy={{
-            idOf: (o) => reqOf(o)?.departmentId ?? null,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="new hires"
           rowClassName={(o) => overdueRowClass(dueOf(o))}
           emptyTitle="Nobody to onboard"

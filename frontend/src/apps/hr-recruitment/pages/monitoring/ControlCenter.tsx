@@ -180,6 +180,14 @@ export default function ControlCenter() {
       tdClassName: "whitespace-nowrap",
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (e) => <span className="text-grey">{deptName(e.departmentId ?? "")}</span>,
+      sortValue: (e) => deptName(e.departmentId ?? ""),
+      filter: { kind: "select", get: (e) => deptName(e.departmentId ?? "") },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "detail",
       header: "Position / person",
       cell: (e) => <span className="text-navy">{detailOf(e)}</span>,
@@ -307,12 +315,6 @@ export default function ControlCenter() {
           rows={rows}
           rowKey={(e) => `${e.stepKey}:${e.entityId}`}
           columns={columns}
-          groupBy={{
-            idOf: (e) => e.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowClassName={(e) => (bucketOf(e.dueIso, today) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="work items"
           emptyTitle="Nothing here"

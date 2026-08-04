@@ -122,6 +122,11 @@ export function MrfDecisionModal({
  * The date posted is a business fact HR types; it is stored separately from the
  * timestamp of when this step completed, because they are genuinely different
  * things (HR often records a posting a day or two after the fact).
+ *
+ * "Others" is the one platform that asks a follow-up question. Ticking it reveals
+ * a name box, and the name is kept against THIS posting — it does not become a
+ * platform master, because a reusable platform goes through request → approval and
+ * a one-off ("a WhatsApp group") should not silently become one.
  */
 export function JobPostingModal({
   requisition,
@@ -137,6 +142,7 @@ export function JobPostingModal({
 }) {
   const s = useHrStore();
   const [platformIds, setPlatformIds] = useState<string[]>(() => s.platformIdsFor(requisition.id));
+  const [otherNote, setOtherNote] = useState(() => s.otherPlatformNoteFor(requisition.id) ?? "");
   /** Platform not in the master? Raise it for review without losing this form. */
   const [raisePlatform, setRaisePlatform] = useState(false);
   const [requested, setRequested] = useState<string | null>(null);
@@ -150,12 +156,20 @@ export function JobPostingModal({
     [s.jobPlatforms],
   );
 
+  /** The catch-all row, found by its flag — an admin may have renamed it. */
+  const otherId = useMemo(() => s.jobPlatforms.find((p) => p.isOther)?.id ?? null, [s.jobPlatforms]);
+  const othersPicked = otherId !== null && platformIds.includes(otherId);
+  const needsOtherNote = othersPicked && otherNote.trim() === "";
+
   const submit = async () => {
     setBusy(true);
     setErr(null);
+    // Untick Others and whatever was typed goes with it, rather than being saved
+    // against a platform that is no longer on the posting.
+    const note = othersPicked ? otherNote.trim() : null;
     try {
-      if (editing) await s.updatePostJob(requisition.id, platformIds, postedOn);
-      else await s.postJob(requisition.id, platformIds, postedOn);
+      if (editing) await s.updatePostJob(requisition.id, platformIds, postedOn, note);
+      else await s.postJob(requisition.id, platformIds, postedOn, note);
       onClose();
     } catch (e) {
       setErr((e as Error).message);
@@ -175,7 +189,7 @@ export function JobPostingModal({
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button size="sm" onClick={submit} disabled={busy || platformIds.length === 0}>
+          <Button size="sm" onClick={submit} disabled={busy || platformIds.length === 0 || needsOtherNote}>
             {busy ? (editing ? "Saving…" : "Posting…") : editing ? "Save changes" : "Mark as posted"}
           </Button>
         </>
@@ -204,13 +218,36 @@ export function JobPostingModal({
           )}
         </FieldLabel>
 
+        {othersPicked && (
+          <FieldLabel label="Which other platform?" required>
+            <TextInput
+              value={otherNote}
+              onChange={(e) => setOtherNote(e.target.value)}
+              placeholder="e.g. Indeed, a WhatsApp group, a trade association board"
+            />
+            <span className="mt-1 block text-[11px] leading-snug text-grey-2">
+              Recorded against this posting only. If you will use it again, {" "}
+              <button
+                type="button"
+                onClick={() => setRaisePlatform(true)}
+                className="font-semibold text-orange hover:underline"
+              >
+                request it as a platform
+              </button>{" "}
+              so it gets its own line in the effectiveness report.
+            </span>
+          </FieldLabel>
+        )}
+
         <FieldLabel label="Date of job posted" required>
           <TextInput type="date" value={postedOn} onChange={(e) => setPostedOn(e.target.value)} max={todayIso()} />
         </FieldLabel>
 
-        {platformIds.length === 0 && (
+        {platformIds.length === 0 ? (
           <p className="text-[12.5px] text-grey-2">Pick at least one platform.</p>
-        )}
+        ) : needsOtherNote ? (
+          <p className="text-[12.5px] text-grey-2">Name the other platform you posted on.</p>
+        ) : null}
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
 

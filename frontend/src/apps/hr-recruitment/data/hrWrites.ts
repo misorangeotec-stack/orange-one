@@ -211,7 +211,6 @@ export interface MrfInput {
   positionsRequired: number;
   salaryMin: number | null;
   salaryMax: number | null;
-  salaryNote: string | null;
   whyNeeded: string | null;
   businessContribution: string | null;
   impactIfUnfilled: string | null;
@@ -222,7 +221,14 @@ export interface MrfInput {
   jdName: string | null;
 }
 
-/** snake_case payload the RPC expects. `""` reads as NULL on the server side. */
+/**
+ * snake_case payload the RPC expects. `""` reads as NULL on the server side.
+ *
+ * `salary_note` is sent empty on purpose: the free-text salary band was removed from
+ * the form, so min/max are the whole story. The RPC and the column still exist (nothing
+ * here drops them), but every save from now on clears the note rather than leaving a
+ * stale sentence no screen shows.
+ */
 const mrfPayload = (i: MrfInput): Record<string, unknown> => ({
   job_title: i.jobTitle,
   department_id: i.departmentId,
@@ -237,7 +243,7 @@ const mrfPayload = (i: MrfInput): Record<string, unknown> => ({
   positions_required: i.positionsRequired,
   salary_min: i.salaryMin === null ? "" : String(i.salaryMin),
   salary_max: i.salaryMax === null ? "" : String(i.salaryMax),
-  salary_note: i.salaryNote ?? "",
+  salary_note: "",
   why_needed: i.whyNeeded ?? "",
   business_contribution: i.businessContribution ?? "",
   impact_if_unfilled: i.impactIfUnfilled ?? "",
@@ -321,22 +327,41 @@ export async function updateDecideMrf(
   if (error) throw new Error(error.message);
 }
 
-/** Requires at least one platform. Stamps posted_at (the step) AND posted_on (the date HR typed). */
-export async function postJob(requisitionId: string, platformIds: string[], postedOn: string): Promise<void> {
+/**
+ * Requires at least one platform. Stamps posted_at (the step) AND posted_on (the
+ * date HR typed).
+ *
+ * `otherNote` names the platform when the "Others" row is among the ids. The RPC
+ * insists on it in that case and stores it against the Others row only — it never
+ * becomes a platform master, so the effectiveness report still reads "Others".
+ */
+export async function postJob(
+  requisitionId: string,
+  platformIds: string[],
+  postedOn: string,
+  otherNote: string | null,
+): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_post_job", {
     p_req: requisitionId,
     p_platform_ids: platformIds,
     p_posted_on: postedOn,
+    p_other_note: otherNote ?? "",
   });
   if (error) throw new Error(error.message);
 }
 
 /** Correct the platforms / posting date while the job is posted but no candidate has landed yet. */
-export async function updatePostJob(requisitionId: string, platformIds: string[], postedOn: string): Promise<void> {
+export async function updatePostJob(
+  requisitionId: string,
+  platformIds: string[],
+  postedOn: string,
+  otherNote: string | null,
+): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_update_post_job", {
     p_req: requisitionId,
     p_platform_ids: platformIds,
     p_posted_on: postedOn,
+    p_other_note: otherNote ?? "",
   });
   if (error) throw new Error(error.message);
 }
@@ -415,10 +440,17 @@ export async function updateCandidate(id: string, input: CandidateInput): Promis
  * UI opens a modal on every drop rather than writing silently.
  */
 export interface MovePayload {
-  interviewerId?: string | null;
+  /** The whole interview panel. The RPC mirrors element 1 onto `interviewer_id`. */
+  interviewerIds?: string[];
   interviewerName?: string | null;
   scheduledOn?: string | null;
   offeredCtc?: number | null;
+  /**
+   * Agreed joining date, captured at finalize. Optional — given, the RPC stamps it
+   * on the new onboarding and seeds the checklist, so Onboarding opens ready to work
+   * instead of asking for a date that was already agreed.
+   */
+  joiningDate?: string | null;
   disqualificationReasonId?: string | null;
   disqualificationNote?: string | null;
   /** Free-text note captured when moving into Awaiting Decision / finalizing. */
@@ -427,10 +459,11 @@ export interface MovePayload {
 
 export async function moveCandidate(id: string, toStage: string, payload: MovePayload = {}): Promise<void> {
   const p: Record<string, unknown> = {};
-  if (payload.interviewerId !== undefined) p.interviewer_id = payload.interviewerId ?? "";
+  if (payload.interviewerIds !== undefined) p.interviewer_ids = payload.interviewerIds;
   if (payload.interviewerName !== undefined) p.interviewer_name = payload.interviewerName ?? "";
   if (payload.scheduledOn !== undefined) p.scheduled_on = payload.scheduledOn ?? "";
   if (payload.offeredCtc !== undefined) p.offered_ctc = payload.offeredCtc === null ? "" : String(payload.offeredCtc);
+  if (payload.joiningDate !== undefined) p.joining_date = payload.joiningDate ?? "";
   if (payload.disqualificationReasonId !== undefined)
     p.disqualification_reason_id = payload.disqualificationReasonId ?? "";
   if (payload.disqualificationNote !== undefined) p.disqualification_note = payload.disqualificationNote ?? "";
@@ -466,18 +499,23 @@ export async function hodDecide(
   if (error) throw new Error(error.message);
 }
 
-/** Book (or re-book) the round the candidate is currently in. */
+/**
+ * Book (or re-book) the round the candidate is currently in.
+ *
+ * `interviewerIds` is the whole panel. The RPC mirrors element 1 onto the legacy
+ * scalar `interviewer_id`, so a report reading that column gets the panel lead.
+ */
 export async function scheduleInterview(
   id: string,
   round: number,
-  interviewerId: string | null,
+  interviewerIds: string[],
   interviewerName: string | null,
   scheduledOn: string | null,
 ): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_schedule_interview", {
     p_id: id,
     p_round: round,
-    p_interviewer_id: interviewerId ?? undefined,
+    p_interviewer_ids: interviewerIds,
     p_interviewer_name: interviewerName ?? undefined,
     p_scheduled_on: scheduledOn ?? undefined,
   });

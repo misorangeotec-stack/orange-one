@@ -91,6 +91,14 @@ export default function ProbationQueue() {
       exportValue: (p) => candOf(p)?.name ?? "Unknown",
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (p) => <span className="text-grey">{deptName(reqOf(p)?.departmentId ?? "")}</span>,
+      sortValue: (p) => deptName(reqOf(p)?.departmentId ?? ""),
+      filter: { kind: "select", get: (p) => deptName(reqOf(p)?.departmentId ?? "") },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "position",
       header: "Position",
       cell: (p) => <span className="text-grey">{reqOf(p)?.jobTitle ?? "—"}</span>,
@@ -194,12 +202,6 @@ export default function ProbationQueue() {
           rows={rows}
           rowKey={(p) => p.id}
           columns={columns}
-          groupBy={{
-            idOf: (p) => reqOf(p)?.departmentId ?? null,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="people on probation"
           rowClassName={(p) => overdueRowClass(dueOf(p))}
           emptyTitle="Nobody on probation"

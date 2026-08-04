@@ -34,6 +34,14 @@ export default function MrfList() {
         tdClassName: "whitespace-nowrap",
       },
       {
+        key: "department",
+        header: "Department",
+        cell: (r) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+        sortValue: (r) => deptName(r.departmentId),
+        filter: { kind: "select", get: (r) => deptName(r.departmentId) },
+        tdClassName: "whitespace-nowrap",
+      },
+      {
         key: "jobTitle",
         header: "Position",
         cell: (r) => (
@@ -71,8 +79,8 @@ export default function MrfList() {
       {
         key: "salary",
         header: "Salary",
-        cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryNote)}</span>,
-        exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax, r.salaryNote),
+        cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax)}</span>,
+        exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax),
       },
       {
         key: "raised",
@@ -117,7 +125,6 @@ export default function MrfList() {
         rows={s.requisitions}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{ idOf: (r) => r.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
         rowsLabel="requisitions"
         emptyTitle="No requisitions yet"
         emptyMessage="Once a department head raises one, it will appear here."
