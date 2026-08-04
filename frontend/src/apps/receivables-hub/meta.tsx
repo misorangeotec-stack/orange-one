@@ -14,7 +14,7 @@ export const receivablesHubApp: AppManifest = {
   basePath: appBasePath("outstanding-dashboard"),
   status: "live",
   category: appCategory("outstanding-dashboard"),
-  order: 10,
+  order: 40,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <line x1="4" y1="20" x2="20" y2="20" />

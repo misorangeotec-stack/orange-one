@@ -29,7 +29,7 @@ export const customerOnboardingApp: AppManifest = {
   status: "live",
   category: appCategory("customer-onboarding"),
   subGroup: appSubGroup("customer-onboarding"),
-  order: 47,
+  order: 20,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="9.5" cy="8" r="3.5" />

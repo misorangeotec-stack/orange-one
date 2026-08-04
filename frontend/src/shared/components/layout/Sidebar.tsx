@@ -64,9 +64,26 @@ interface Group {
   direct: NavItem[];
   subs: SubGroup[];
 }
-type Node = { kind: "item"; item: NavItem } | { kind: "group"; group: Group };
+type Node =
+  /** `spaced` marks an item that WAS a group (see buildNodes), so it keeps the
+   *  group's breathing room and doesn't sit tighter than the headings around it. */
+  | { kind: "item"; item: NavItem; spaced?: boolean }
+  | { kind: "group"; group: Group };
 
-/** Flat array → ordered tree, preserving first-appearance order of each group. */
+/**
+ * Flat array → ordered tree, preserving first-appearance order of each group.
+ *
+ * A group holding exactly ONE link and no sub-groups is collapsed back into a
+ * plain item. Several categories are one app wide — Sampling, Production, Asset —
+ * and rendering those as a heading you expand to reveal a single row costs a click
+ * to say almost the same words twice ("Sampling" → "Ink / RM Sampling"). The item
+ * keeps the APP's own name and icon, not the category's: the category name is the
+ * vaguer of the two, and the app name is what the user is looking for.
+ *
+ * Done here rather than in `buildHomeNav` so it holds everywhere the tree is
+ * read — the docked list, the icon rail, and the hover flyout — instead of only
+ * on the screen that happened to build the nav.
+ */
 function buildNodes(items: NavItem[]): Node[] {
   const nodes: Node[] = [];
   const groupByLabel = new Map<string, Group>();
@@ -94,7 +111,14 @@ function buildNodes(items: NavItem[]): Node[] {
     }
     sub.items.push(item);
   }
-  return nodes;
+
+  // Second pass, not inline above: a group is only known to be solo once every
+  // item has been placed.
+  return nodes.map((node) =>
+    node.kind === "group" && node.group.subs.length === 0 && node.group.direct.length === 1
+      ? { kind: "item" as const, item: node.group.direct[0], spaced: true }
+      : node
+  );
 }
 
 const isActivePath = (pathname: string, to: string) => pathname === to || pathname.startsWith(to + "/");
@@ -243,7 +267,7 @@ export default function Sidebar({
                   onLeave={scheduleClose}
                 />
               ) : (
-                <div key={`${node.item.to}#${idx}`}>
+                <div key={`${node.item.to}#${idx}`} className={cn(node.spaced && "pt-1.5 first:pt-0")}>
                   {node.item.section && <SectionLabel label={node.item.section} first={idx === 0} />}
                   <Row item={node.item} onNavigate={onNavigate} />
                 </div>

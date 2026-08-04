@@ -24,7 +24,7 @@ export const samplingApp: AppManifest = {
   status: "live",
   category: appCategory("sampling"),
   subGroup: appSubGroup("sampling"),
-  order: 40,
+  order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M9 3h6" />

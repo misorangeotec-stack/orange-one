@@ -133,7 +133,7 @@ export const samplingProvider: MyWorkProvider = {
   key: "sampling",
   label: appName("sampling"),
   appId: "sampling",
-  category: "fms",
+  category: "sampling",
   unit: "steps",
   tier: 2,
   useMyWork: useSamplingWork,

@@ -20,7 +20,7 @@ export const hrRecruitmentApp: AppManifest = {
   status: "live",
   category: appCategory("hr-recruitment"),
   subGroup: appSubGroup("hr-recruitment"),
-  order: 40,
+  order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="9" cy="8" r="3.5" />

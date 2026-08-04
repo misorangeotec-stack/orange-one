@@ -60,7 +60,7 @@ export const hrProvider: MyWorkProvider = {
   key: "hr",
   label: appName("hr-recruitment"),
   appId: "hr-recruitment",
-  category: "fms",
+  category: "hr",
   unit: "steps",
   tier: 2,
   useMyWork: useHrWork,

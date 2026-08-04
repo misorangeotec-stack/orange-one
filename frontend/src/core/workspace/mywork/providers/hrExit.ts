@@ -70,7 +70,7 @@ export const hrExitProvider: MyWorkProvider = {
   key: "hr-exit",
   label: appName("hr-exit"),
   appId: "hr-exit",
-  category: "fms",
+  category: "hr",
   unit: "steps",
   tier: 2,
   useMyWork: useHrExitWork,

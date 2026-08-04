@@ -6,6 +6,10 @@
  * within a second of opening, is "what do I owe today?" — with every row a link
  * straight to the thing itself.
  *
+ * The cards are back as `AppLauncher`, but SUBORDINATE to that: below the
+ * approvals, collapsible, and folded away for good once you close it. They answer
+ * "what can I open?", which is a real question — just never the first one.
+ *
  * WHERE THE NUMBERS COME FROM: each module contributes a provider
  * (mywork/registry.ts) returning its own open work for THIS user. Providers hand
  * back raw `dueIso` values and never bucket; bucketing happens here, once, using
@@ -37,6 +41,7 @@ import { matchesSearch } from "@/shared/lib/search";
 import { bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
 import { useSession } from "@/core/platform/session";
 import { cn } from "@/shared/lib/cn";
+import AppLauncher from "./AppLauncher";
 import { useMyWork, type AggregateState } from "./mywork/MyWorkAggregator";
 import type { WorkItem } from "./mywork/types";
 
@@ -352,6 +357,11 @@ export function MyWorkView({ state }: { state: AggregateState }) {
       </div>
 
       {approvals.length > 0 && <ApprovalStrip items={approvals} />}
+
+      {/* Below the approvals (which are urgent) and above the work list (which is
+          long). Collapsible and remembered — see AppLauncher for why it earns the
+          spot on a screen whose job is "what do I owe today?". */}
+      <AppLauncher />
 
       <Card className="overflow-hidden">
         <div className="px-4 pt-4 pb-3 border-b border-line space-y-3">

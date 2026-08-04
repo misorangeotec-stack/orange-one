@@ -25,7 +25,7 @@ export const productionEntryApp: AppManifest = {
   status: "live",
   category: appCategory("production-entry"),
   subGroup: appSubGroup("production-entry"),
-  order: 45,
+  order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 21h18" />

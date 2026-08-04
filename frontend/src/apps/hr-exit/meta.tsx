@@ -25,7 +25,7 @@ export const hrExitApp: AppManifest = {
   status: "live",
   category: appCategory("hr-exit"),
   subGroup: appSubGroup("hr-exit"),
-  order: 50,
+  order: 20,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M13.5 3.5H6a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h7.5" />

@@ -70,7 +70,7 @@ export const orderToDispatchProvider: MyWorkProvider = {
   key: "order-to-dispatch",
   label: appName("order-to-dispatch"),
   appId: "order-to-dispatch",
-  category: "fms",
+  category: "sales",
   unit: "steps",
   tier: 2,
   useMyWork: useDispatchWork,

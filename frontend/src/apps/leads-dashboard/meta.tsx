@@ -10,7 +10,9 @@ export const leadsDashboardApp: AppManifest = {
   basePath: appBasePath("leads-dashboard"),
   status: "live",
   category: appCategory("leads-dashboard"),
-  order: 20,
+  // Sales & Receivables runs in the order a customer travels: lead → onboarded →
+  // order dispatched → money collected.
+  order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 19V5" />

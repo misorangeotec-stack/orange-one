@@ -4,7 +4,9 @@
  * This replaced the launcher's grid of cards. Nine cards was already a wall; the
  * portal is heading for dozens of modules, and a flat grid gives a reader no way
  * to find anything. Grouping is the whole point, so the grouping lives in ONE
- * place (`apps/categories.ts`) shared with the two admin permission screens.
+ * place (`apps/categories.ts`) shared with the on-page launcher and the two admin
+ * permission screens. (The cards did come back — see `AppLauncher.tsx` — but
+ * grouped the same way, and below the work list rather than instead of it.)
  *
  * Pure and hook-free so it can be unit-rendered and so `HomeLayout` can memoise it.
  *
@@ -15,6 +17,7 @@
 import type { ReactNode } from "react";
 import type { AppManifest } from "@/apps/types";
 import { groupByCategory } from "@/apps/categories";
+import { GROUP_ICONS } from "./groupIcons";
 import { HOME_LABEL, HOME_PATH, type NavItem } from "@/shared/components/layout/types";
 
 const ic: Record<string, ReactNode> = {
@@ -40,42 +43,21 @@ const ic: Record<string, ReactNode> = {
 };
 
 /**
- * One icon per category, standing in for the whole group when the sidebar is
- * collapsed to a rail. Without these every group renders the same generic folder,
- * which makes the rail unreadable — the icon IS the label in that mode.
+ * Every app this user can actually open, in the order they should be listed.
+ *
+ * Exported because the home screen lists its apps TWICE — here in the left menu
+ * and again as cards in `AppLauncher.tsx`. Two copies of "which apps, in what
+ * order" is two chances to disagree, and the one thing a launcher must never do
+ * is offer a card the menu doesn't have.
+ *
+ * Coming-soon apps are omitted rather than disabled: NavItem has no disabled
+ * state, and a menu row that silently does nothing is worse than no row.
  */
-const GROUP_ICONS: Record<string, ReactNode> = {
-  Productivity: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 4h6l1 3H8l1-3Z" />
-      <rect x="4" y="7" width="16" height="14" rx="2" />
-      <path d="m9 14 2 2 4-4" />
-    </svg>
-  ),
-  FMS: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 6h13l5 5v7H3z" />
-      <circle cx="8" cy="18" r="2" />
-      <circle cx="17" cy="18" r="2" />
-    </svg>
-  ),
-  "Sales & Receivables": (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 20h18" />
-      <rect x="5" y="11" width="3.5" height="7" />
-      <rect x="10.5" y="7" width="3.5" height="11" />
-      <rect x="16" y="13" width="3.5" height="5" />
-    </svg>
-  ),
-  Control: (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 6h16M4 12h16M4 18h16" />
-      <circle cx="9" cy="6" r="1.8" fill="currentColor" />
-      <circle cx="15" cy="12" r="1.8" fill="currentColor" />
-      <circle cx="8" cy="18" r="1.8" fill="currentColor" />
-    </svg>
-  ),
-};
+export function visibleApps(apps: AppManifest[], hasModule: (id: string) => boolean): AppManifest[] {
+  return apps
+    .filter((a) => a.status === "live" && hasModule(a.id))
+    .sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.name.localeCompare(b.name));
+}
 
 export function buildHomeNav(
   apps: AppManifest[],
@@ -85,25 +67,22 @@ export function buildHomeNav(
   // place you land on are recognisably one destination.
   const nav: NavItem[] = [{ label: HOME_LABEL, to: HOME_PATH, icon: ic.today, section: "Home" }];
 
-  // Coming-soon apps are omitted rather than disabled: NavItem has no disabled
-  // state, and a menu row that silently does nothing is worse than no row.
-  const visible = apps
-    .filter((a) => a.status === "live" && opts.hasModule(a.id))
-    .sort((a, b) => (a.order ?? 100) - (b.order ?? 100) || a.name.localeCompare(b.name));
-
   // Every category becomes a COLLAPSIBLE group (see Sidebar), which is why these
   // carry `group` rather than `section`. An empty category never reaches here, so
-  // a user with no FMS access never sees an orphan "FMS" heading.
-  for (const group of groupByCategory(visible)) {
+  // a user with no Purchase access never sees an orphan "Purchase" heading — and
+  // a category left holding ONE app is collapsed back to a plain link by the
+  // sidebar, so "Sampling → Ink / RM Sampling" doesn't cost a click to say one
+  // thing twice.
+  for (const group of groupByCategory(visibleApps(apps, opts.hasModule))) {
     for (const app of group.rows) {
       nav.push({
         label: app.name,
         to: app.basePath,
         icon: app.icon,
         group: group.label,
-        groupIcon: GROUP_ICONS[group.label],
-        // Second level, e.g. FMS → Purchase. Apps without one sit directly under
-        // the category heading.
+        groupIcon: GROUP_ICONS[group.key],
+        // Optional second level inside a category. Nothing sets one today — see
+        // the note in apps/appInfo.ts — but the level still works end to end.
         ...(app.subGroup ? { subGroup: app.subGroup } : {}),
       });
     }
@@ -113,7 +92,7 @@ export function buildHomeNav(
   // by hand. The sidebar merges it into the existing group by label, so there is no
   // duplicate-heading case to guard against.
   if (opts.isAdmin) {
-    nav.push({ label: "Admin", to: "/admin", icon: ic.admin, group: "Control", groupIcon: GROUP_ICONS.Control });
+    nav.push({ label: "Admin", to: "/admin", icon: ic.admin, group: "Control", groupIcon: GROUP_ICONS.control });
   }
 
   nav.push({ label: "My Account", to: "/account", icon: ic.account, section: "Account" });

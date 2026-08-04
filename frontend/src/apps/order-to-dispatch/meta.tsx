@@ -35,7 +35,7 @@ export const orderToDispatchApp: AppManifest = {
   status: "live",
   category: appCategory("order-to-dispatch"),
   subGroup: appSubGroup("order-to-dispatch"),
-  order: 46,
+  order: 30,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 7.5h10.5v8H3z" />

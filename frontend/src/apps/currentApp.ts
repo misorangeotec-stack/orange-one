@@ -1,7 +1,7 @@
 /**
  * "Where am I?" — turns a URL into the breadcrumb trail shown in every top strip.
  *
- *     /import/requests/new  →  FMS → Purchase → RM Import → New Request
+ *     /import/requests/new  →  Purchase → RM Import → New Request
  *
  * This exists because five of the nine modules are near-identical FMS screens and
  * the top strip only ever showed the PAGE name — "New Request", "Masters",
@@ -25,7 +25,7 @@ export interface Crumb {
   /** Set only on steps that are real destinations. Groups and the current page aren't. */
   to?: string;
   /**
-   * The family/group steps ("FMS", "Purchase"). They are the first to go when the
+   * The family/group steps ("Purchase", "Sales & Receivables"). The first to go when the
    * strip runs out of room — dropping them still leaves the module and the page,
    * which is what the reader actually needs. See Breadcrumbs.tsx.
    */
@@ -45,13 +45,19 @@ const STATIC_TRAILS: { prefix: string; crumbs: Crumb[] }[] = [
   { prefix: HOME_PATH, crumbs: [{ label: "Orange One", collapsible: true }, { label: HOME_LABEL }] },
 ];
 
-/** Display label for a category key, e.g. "fms" → "FMS". */
+/** Display label for a category key, e.g. "sales" → "Sales & Receivables". */
 const categoryLabel = (key?: string): string | undefined =>
   key ? (CATEGORIES.find((c) => c.key === key)?.label ?? UNCATEGORISED_LABEL) : undefined;
 
 /**
- * Drop the group word when the module's own name already starts with it:
- * "Purchase" + "Purchase RM Import" reads "Purchase → Purchase RM Import".
+ * Drop the group word when the module's own name already starts with it, so
+ * "Purchase" + "Purchase RM Import" reads "Purchase → RM Import" rather than
+ * saying Purchase twice.
+ *
+ * The group word is the sub-group where there is one, and otherwise the CATEGORY
+ * — which is what does the work now that the six FMS sub-groups have been
+ * promoted to categories. Before that fallback the trail read
+ * "Purchase → Purchase RM Domestic".
  *
  * Only the trail is shortened. The module keeps its full registered name on the
  * home screen, in the left menu and on the permission screens — this is a display
@@ -98,7 +104,7 @@ export function buildTrail(pathname: string, pageLabel?: string | Crumb[] | null
   const family = categoryLabel(app.category);
   if (family) crumbs.push({ label: family, collapsible: true });
   if (app.subGroup) crumbs.push({ label: app.subGroup, collapsible: true });
-  crumbs.push({ label: trimPrefix(app.name, app.subGroup), to: app.basePath });
+  crumbs.push({ label: trimPrefix(app.name, app.subGroup ?? family), to: app.basePath });
 
   // Same tidy-up one step further along: several modules name their monitoring
   // page "<module> Control Center", which the trail would render as

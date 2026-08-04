@@ -37,7 +37,15 @@ export interface AppInfo {
   basePath: string;
   /** Menu group (apps/categories.ts) — the breadcrumb's first step. */
   category?: AppCategory;
-  /** Second level inside the category — the breadcrumb's second step. */
+  /**
+   * Second level inside the category — the breadcrumb's second step.
+   *
+   * NOTHING SETS THIS TODAY. The six sub-groups that used to hang under "FMS"
+   * (Purchase, Sampling, Production, Dispatch, Assets, HR) were promoted to real
+   * categories, which emptied it. Kept because the level is still supported end
+   * to end — sidebar, breadcrumb and both permission screens — so Purchase or
+   * Sales can grow one again by setting this and nothing else.
+   */
   subGroup?: string;
 }
 
@@ -55,14 +63,12 @@ export const APPS: Record<string, AppInfo> = {
   procurement: {
     name: "Purchase RM Domestic",
     basePath: "/procurement",
-    category: "fms",
-    subGroup: "Purchase",
+    category: "purchase",
   },
   import: {
     name: "Purchase RM Import",
     basePath: "/import",
-    category: "fms",
-    subGroup: "Purchase",
+    category: "purchase",
   },
   /**
    * Renamed from "Purchase Office Supplies" and moved off /office-supplies on
@@ -76,28 +82,28 @@ export const APPS: Record<string, AppInfo> = {
   "office-supplies": {
     name: "General Purchase",
     basePath: "/general-purchase",
-    category: "fms",
-    subGroup: "Purchase",
+    category: "purchase",
   },
   sampling: {
     name: "Ink / RM Sampling",
     basePath: "/sampling",
-    category: "fms",
-    subGroup: "Sampling",
+    category: "sampling",
   },
   "production-entry": {
     name: "Production Entry",
     basePath: "/production-entry",
-    category: "fms",
-    subGroup: "Production",
+    category: "production",
   },
   // Picks up where Production Entry ends: that module closes at "FG Transfer to
   // Godown", this one takes the goods from the godown to the customer.
+  //
+  // Filed under SALES, not under a process group of its own: dispatch is the leg
+  // of the sales book between the order and the invoice, and the people chasing
+  // "where has that order got to?" are the same people watching the receivable.
   "order-to-dispatch": {
     name: "Order to Dispatch",
     basePath: "/order-to-dispatch",
-    category: "fms",
-    subGroup: "Dispatch",
+    category: "sales",
   },
   /**
    * Promoted OUT of the Outstanding Dashboard to the main menu (29-07-2026).
@@ -112,31 +118,28 @@ export const APPS: Record<string, AppInfo> = {
   "customer-onboarding": {
     name: "New Customer Onboarding",
     basePath: "/customer-onboarding",
-    // Its own top-level group, between FMS and Sales & Receivables. No subGroup:
-    // that is a second level INSIDE a category, and a lone app under a one-app
-    // heading would just be the same words twice.
-    category: "onboarding",
+    // Filed under SALES. It briefly had a top-level "Onboarding" group of its
+    // own, which read as a heading and an app saying nearly the same thing; it
+    // belongs with the sales book it is the gateway into.
+    category: "sales",
   },
-  // The only FMS whose entity is permanent: assets and their dated tracks live
-  // for years, and the thing that runs the workflow is a service JOB raised off
-  // a track when it falls due.
+  // The only workflow module whose entity is permanent: assets and their dated
+  // tracks live for years, and the thing that runs the workflow is a service JOB
+  // raised off a track when it falls due.
   "asset-maintenance": {
     name: "Asset Maintenance",
     basePath: "/asset-maintenance",
-    category: "fms",
-    subGroup: "Assets",
+    category: "asset",
   },
   "hr-recruitment": {
     name: "New Recruitment",
     basePath: "/hr-recruitment",
-    category: "fms",
-    subGroup: "HR",
+    category: "hr",
   },
   "hr-exit": {
     name: "Employee Exit",
     basePath: "/hr-exit",
-    category: "fms",
-    subGroup: "HR",
+    category: "hr",
   },
   "leads-dashboard": {
     name: "Leads Dashboard",

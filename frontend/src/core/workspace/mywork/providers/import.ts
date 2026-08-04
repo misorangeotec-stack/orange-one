@@ -52,7 +52,7 @@ export const importProvider: MyWorkProvider = {
   key: "import",
   label: appName("import"),
   appId: "import",
-  category: "fms",
+  category: "purchase",
   unit: "steps",
   tier: 2,
   useMyWork: useImportWork,

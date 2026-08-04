@@ -55,7 +55,7 @@ export const officeSuppliesProvider: MyWorkProvider = {
   key: "office-supplies",
   label: appName("office-supplies"),
   appId: "office-supplies",
-  category: "fms",
+  category: "purchase",
   unit: "steps",
   tier: 2,
   useMyWork: useOfficeSuppliesWork,

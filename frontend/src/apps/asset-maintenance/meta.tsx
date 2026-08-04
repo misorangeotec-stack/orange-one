@@ -30,7 +30,7 @@ export const assetMaintenanceApp: AppManifest = {
   status: "live",
   category: appCategory("asset-maintenance"),
   subGroup: appSubGroup("asset-maintenance"),
-  order: 60,
+  order: 10,
   icon: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14.7 6.3a4 4 0 0 0 5 5l-8 8a2.8 2.8 0 0 1-4-4z" />

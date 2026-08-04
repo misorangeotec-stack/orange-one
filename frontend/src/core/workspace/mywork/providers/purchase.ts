@@ -59,7 +59,7 @@ export const purchaseProvider: MyWorkProvider = {
   key: "purchase",
   label: appName("procurement"),
   appId: "procurement",
-  category: "fms",
+  category: "purchase",
   unit: "steps",
   tier: 2,
   useMyWork: usePurchaseWork,
