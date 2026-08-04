@@ -73,9 +73,15 @@ export default function MrfDetail() {
     return all.length ? all.join(", ") : "—";
   };
 
+  // "Others" reads as nothing on its own, so it carries the name HR typed with it.
+  const otherNote = s.otherPlatformNoteFor(r.id);
   const platforms = s
     .platformIdsFor(r.id)
-    .map((pid) => s.jobPlatforms.find((p) => p.id === pid)?.name)
+    .map((pid) => {
+      const p = s.jobPlatforms.find((x) => x.id === pid);
+      if (!p) return undefined;
+      return p.isOther && otherNote ? `${p.name} (${otherNote})` : p.name;
+    })
     .filter(Boolean) as string[];
 
   // What this user may do, at this step, on THIS requisition.
@@ -338,10 +344,10 @@ export default function MrfDetail() {
           <Field label="Department">{dept}</Field>
           <Field label="Location">{loc}</Field>
           <Field label="Job type">{jobType}</Field>
-          <Field label="Expected start date">{formatDateDMY(r.expectedStartDate)}</Field>
+          <Field label="Expected joining date">{formatDateDMY(r.expectedStartDate)}</Field>
           <Field label="Hiring manager">{peopleList(r.hiringManagerIds, null)}</Field>
           <Field label="Reporting to">{peopleList(r.reportingToIds, r.reportingToNote)}</Field>
-          <Field label="Salary range">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryNote)}</Field>
+          <Field label="Salary">{salaryLabel(r.salaryMin, r.salaryMax)}</Field>
           <Field label="Job description">
             {r.jdPath ? (
               <button

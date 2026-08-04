@@ -13,6 +13,7 @@ import CompletedTable from "../../components/CompletedTable";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { roundOf } from "../../lib/board";
+import { panelNames } from "../../lib/interviewers";
 import type { StepKey } from "../../lib/steps";
 import type { StageEntry, CompletedRow } from "../../lib/queues";
 import type { Candidate, Interview, Requisition } from "../../types";
@@ -93,9 +94,9 @@ export default function InterviewsQueue() {
 
   const dueOf = (r: Row) => s.candidateDueIso(r.candidate);
   const interviewerOf = (r: Row) =>
-    r.interview?.interviewerId
-      ? (s.profileById(r.interview.interviewerId)?.name ?? "Unknown")
-      : (r.interview?.interviewerName ?? "");
+    r.interview
+      ? panelNames(r.interview.interviewerIds, r.interview.interviewerName, (id) => s.profileById(id)?.name)
+      : "";
 
   const columns: QueueColumn<Row>[] = [
     {

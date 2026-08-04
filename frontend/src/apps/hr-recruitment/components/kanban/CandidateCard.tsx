@@ -5,6 +5,7 @@ import { cn } from "@/shared/lib/cn";
 import { dueState } from "@/shared/lib/workingDays";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, legalTargets, roundOf } from "../../lib/board";
+import { panelNames } from "../../lib/interviewers";
 import type { Candidate, CandidateStage } from "../../types";
 
 /**
@@ -62,7 +63,8 @@ export default function CandidateCard({
   const round = roundOf(c.stage);
   const iv = round !== null ? s.interviewRound(c.id, round) : undefined;
   // A round the candidate was auto-advanced into has no interviewer yet.
-  const needsScheduling = round !== null && !iv?.interviewerId && !iv?.interviewerName;
+  const needsScheduling = round !== null && !iv?.interviewerIds.length && !iv?.interviewerName;
+  const panel = iv ? panelNames(iv.interviewerIds, iv.interviewerName, (id) => s.profileById(id)?.name) : "";
   const conducted = !!iv?.heldAt;
 
   const targets = legalTargets(c.stage);
@@ -137,8 +139,7 @@ export default function CandidateCard({
             <span className="text-[11.5px] text-grey">
               Booked
               {iv?.scheduledOn && ` · ${iv.scheduledOn.split("-").reverse().join("-")}`}
-              {iv?.interviewerName && ` · ${iv.interviewerName}`}
-              {iv?.interviewerId && ` · ${s.profileById(iv.interviewerId)?.name ?? ""}`}
+              {panel && ` · ${panel}`}
             </span>
           )}
           {mine &&

@@ -6,6 +6,7 @@ import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { useHrStore } from "../../store";
 import { hrDocUrl } from "../../data/hrWrites";
 import { STAGE_LABEL } from "../../lib/board";
+import { panelNames } from "../../lib/interviewers";
 import type { Candidate } from "../../types";
 
 /** Everything known about one candidate, plus their resume and interview history. */
@@ -134,7 +135,7 @@ export default function CandidateDrawer({
                   {/* The interviewer and the date are the data here — they were grey-on-grey
                       against their own heading, which is the bug this pass is fixing. */}
                   <div className="mt-0.5 font-medium text-navy">
-                    {person(iv.interviewerId) ?? iv.interviewerName ?? (
+                    {panelNames(iv.interviewerIds, iv.interviewerName, (id) => s.profileById(id)?.name) || (
                       <span className="font-normal text-grey">Interviewer not set</span>
                     )}
                     {iv.scheduledOn && <span className="text-grey"> · {formatDateDMY(iv.scheduledOn)}</span>}

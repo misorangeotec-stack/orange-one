@@ -7,12 +7,11 @@ export const inr = (n: number): string =>
 /**
  * The salary band as HR should read it.
  *
- * The note is the truth — the sheet really does say "If fresh (Zero to two years)
- * 15000/-". The numbers exist only so an offer can be flagged as over-range, so
- * they are shown as a fallback, never instead of what the requester wrote.
+ * Both ends are optional, and either one alone still says something useful — a
+ * requisition with only a maximum is a budget ceiling, one with only a minimum is
+ * a floor. Only a blank pair reads as "not stated".
  */
-export function salaryLabel(min: number | null, max: number | null, note: string | null): string {
-  if (note) return note;
+export function salaryLabel(min: number | null, max: number | null): string {
   if (min !== null && max !== null) return `${inr(min)} – ${inr(max)}`;
   if (min !== null) return `${inr(min)}+`;
   if (max !== null) return `up to ${inr(max)}`;

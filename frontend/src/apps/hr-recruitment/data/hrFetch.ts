@@ -212,7 +212,6 @@ const mapRequisition = (r: any): Requisition => ({
   positionsRequired: r.positions_required ?? 1,
   salaryMin: num(r.salary_min),
   salaryMax: num(r.salary_max),
-  salaryNote: r.salary_note ?? null,
   whyNeeded: r.why_needed ?? null,
   businessContribution: r.business_contribution ?? null,
   impactIfUnfilled: r.impact_if_unfilled ?? null,
@@ -250,6 +249,7 @@ const mapRequisitionPlatform = (r: any): RequisitionPlatform => ({
   requisitionId: r.requisition_id,
   platformId: r.platform_id,
   postedOn: r.posted_on ?? null,
+  otherNote: r.other_note ?? null,
 });
 
 const mapCandidate = (r: any): Candidate => ({
@@ -296,6 +296,7 @@ const mapInterview = (r: any): Interview => ({
   id: r.id,
   candidateId: r.candidate_id,
   round: r.round as 0 | 1 | 2 | 3,
+  interviewerIds: (r.interviewer_ids ?? []) as string[],
   interviewerId: r.interviewer_id ?? null,
   interviewerName: r.interviewer_name ?? null,
   scheduledOn: r.scheduled_on ?? null,
@@ -394,6 +395,12 @@ const mapMaster = (r: any) => ({
   active: r.active,
   sortOrder: r.sort_order ?? 0,
   createdAt: r.created_at,
+});
+
+/** The one master with a column of its own: `is_other` flags the catch-all row. */
+const mapJobPlatform = (r: any): JobPlatform => ({
+  ...mapMaster(r),
+  isOther: r.is_other ?? false,
 });
 
 const mapOnboardingItem = (r: any): OnboardingItem => ({
@@ -526,7 +533,7 @@ export async function fetchHrData(): Promise<HrData> {
     stepOwners: stepOwners.map(mapStepOwner),
     designations: designations.map(mapDesignation),
     config,
-    jobPlatforms: jobPlatforms.map(mapMaster),
+    jobPlatforms: jobPlatforms.map(mapJobPlatform),
     jobTypes: jobTypes.map(mapMaster),
     locations: locations.map(mapMaster),
     disqualificationReasons: disqualificationReasons.map(mapMaster),

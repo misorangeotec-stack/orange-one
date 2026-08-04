@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
-import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
 import { interviewerPool, interviewerOptions } from "../../lib/interviewers";
@@ -33,7 +33,7 @@ export default function ScheduleInterviewModal({
   const s = useHrStore();
   const req = s.requisitionById(candidate.requisitionId);
 
-  const [interviewerId, setInterviewerId] = useState("");
+  const [interviewerIds, setInterviewerIds] = useState<string[]>([]);
   const [interviewerName, setInterviewerName] = useState("");
   const [scheduledOn, setScheduledOn] = useState(todayIso());
   const [busy, setBusy] = useState(false);
@@ -44,12 +44,12 @@ export default function ScheduleInterviewModal({
     () => interviewerPool(round, s.profiles, s.departments, req),
     [round, s.profiles, s.departments, req],
   );
-  const people: ComboOption[] = useMemo(() => interviewerOptions(pool.people), [pool]);
+  const people: MultiOption[] = useMemo(() => interviewerOptions(pool.people), [pool]);
 
   // The date is REQUIRED. A booking with no date is a round whose due date falls back to
   // "no date" — so it quietly leaves the overdue counts and the Control Center entirely,
   // while still being someone's work. An un-dated booking is not a booking.
-  const invalid = (!interviewerId && !interviewerName.trim()) || !scheduledOn;
+  const invalid = (interviewerIds.length === 0 && !interviewerName.trim()) || !scheduledOn;
 
   const submit = async () => {
     setBusy(true);
@@ -58,8 +58,8 @@ export default function ScheduleInterviewModal({
       await s.scheduleInterview(
         candidate.id,
         round,
-        interviewerId || null,
-        interviewerId ? null : interviewerName.trim() || null,
+        interviewerIds,
+        interviewerName.trim() || null,
         scheduledOn || null,
       );
       onClose();
@@ -88,28 +88,25 @@ export default function ScheduleInterviewModal({
       }
     >
       <div className="space-y-3.5">
-        <FieldLabel label={`Who is taking ${roundLabel}?`} required hint={pool.restricted ? pool.hint : undefined}>
-          <Combobox
-            value={interviewerId}
-            onChange={(v) => {
-              setInterviewerId(v);
-              if (v) setInterviewerName("");
-            }}
+        <FieldLabel label={`Who is taking ${roundLabel}?`} required hint="one or more">
+          <MultiSelect
+            values={interviewerIds}
+            onChange={setInterviewerIds}
             options={people}
-            placeholder="Pick a person"
-            searchable
+            placeholder="Pick the panel"
           />
-          {!pool.restricted && (
+          {pool.restricted ? (
+            <span className="mt-1.5 block text-[11.5px] leading-snug text-grey-2">{pool.hint}</span>
+          ) : (
             <span className="mt-1.5 block text-[11.5px] leading-snug text-grey">{pool.fallbackNote}</span>
           )}
+          {/* Additive, not exclusive: a panel is often two portal users PLUS an
+              external consultant, and forcing a choice would lose one of them. */}
           <TextInput
             className="mt-2"
             value={interviewerName}
-            onChange={(e) => {
-              setInterviewerName(e.target.value);
-              if (e.target.value) setInterviewerId("");
-            }}
-            placeholder="Or type a name — an external consultant, say"
+            onChange={(e) => setInterviewerName(e.target.value)}
+            placeholder="And / or type names not in the portal — an external consultant, say"
           />
         </FieldLabel>
 

@@ -1817,6 +1817,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           id: string
+          is_other: boolean
           name: string
           sort_order: number
           updated_at: string
@@ -1826,6 +1827,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_other?: boolean
           name: string
           sort_order?: number
           updated_at?: string
@@ -1835,6 +1837,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           id?: string
+          is_other?: boolean
           name?: string
           sort_order?: number
           updated_at?: string
@@ -2362,16 +2365,19 @@ export type Database = {
       }
       fms_hr_requisition_platforms: {
         Row: {
+          other_note: string | null
           platform_id: string
           posted_on: string | null
           requisition_id: string
         }
         Insert: {
+          other_note?: string | null
           platform_id: string
           posted_on?: string | null
           requisition_id: string
         }
         Update: {
+          other_note?: string | null
           platform_id?: string
           posted_on?: string | null
           requisition_id?: string
@@ -7257,7 +7263,7 @@ export type Database = {
       fms_hr_open_probation: { Args: { p_onb: string }; Returns: undefined }
       fms_hr_pending_step: { Args: { p_stage: string }; Returns: string }
       fms_hr_post_job: {
-        Args: { p_platform_ids: string[]; p_posted_on?: string; p_req: string }
+        Args: { p_other_note?: string; p_platform_ids: string[]; p_posted_on?: string; p_req: string }
         Returns: undefined
       }
       fms_hr_record_interview_result: {
@@ -7300,7 +7306,7 @@ export type Database = {
       fms_hr_schedule_interview: {
         Args: {
           p_id: string
-          p_interviewer_id?: string
+          p_interviewer_ids?: string[]
           p_interviewer_name?: string
           p_round: number
           p_scheduled_on?: string
@@ -7369,7 +7375,7 @@ export type Database = {
         Returns: undefined
       }
       fms_hr_update_post_job: {
-        Args: { p_platform_ids: string[]; p_posted_on?: string; p_req: string }
+        Args: { p_other_note?: string; p_platform_ids: string[]; p_posted_on?: string; p_req: string }
         Returns: undefined
       }
       fms_hr_update_probation_decision: {

@@ -190,6 +190,8 @@ interface HrStoreValue {
   requisitionById: (id: string) => Requisition | undefined;
   requisitionPlatforms: RequisitionPlatform[];
   platformIdsFor: (requisitionId: string) => string[];
+  /** What HR typed when they ticked "Others" on this requisition's posting. */
+  otherPlatformNoteFor: (requisitionId: string) => string | null;
   /** Requisitions this user raised (or is the hiring manager for). */
   myRequisitions: Requisition[];
   /** Sent back to me to fix and resubmit. */
@@ -333,7 +335,7 @@ interface HrStoreValue {
   scheduleInterview: (
     id: string,
     round: number,
-    interviewerId: string | null,
+    interviewerIds: string[],
     interviewerName: string | null,
     scheduledOn: string | null,
   ) => Promise<void>;
@@ -357,9 +359,19 @@ interface HrStoreValue {
   decideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
   /** Correct a completed approval (or flip it) while the next gate has not acted. */
   updateDecideMrf: (requisitionId: string, stage: MrfStage, decision: MrfDecision, remarks: string) => Promise<void>;
-  postJob: (requisitionId: string, platformIds: string[], postedOn: string) => Promise<void>;
+  postJob: (
+    requisitionId: string,
+    platformIds: string[],
+    postedOn: string,
+    otherNote: string | null,
+  ) => Promise<void>;
   /** Correct the platforms / posting date while the job is posted but no candidate has landed. */
-  updatePostJob: (requisitionId: string, platformIds: string[], postedOn: string) => Promise<void>;
+  updatePostJob: (
+    requisitionId: string,
+    platformIds: string[],
+    postedOn: string,
+    otherNote: string | null,
+  ) => Promise<void>;
   holdRequisition: (requisitionId: string, hold: boolean, reason: string) => Promise<void>;
   cancelRequisition: (requisitionId: string, reason: string) => Promise<void>;
 
@@ -516,10 +528,13 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     const requisitionById = (id: string) => reqById.get(id);
 
     const platformsByReq = new Map<string, string[]>();
+    // Only the "Others" row ever carries a note, so the first non-null is THE note.
+    const otherNoteByReq = new Map<string, string>();
     for (const rp of requisitionPlatforms) {
       const list = platformsByReq.get(rp.requisitionId) ?? [];
       list.push(rp.platformId);
       platformsByReq.set(rp.requisitionId, list);
+      if (rp.otherNote) otherNoteByReq.set(rp.requisitionId, rp.otherNote);
     }
 
     const ownsRequisition = (r: Requisition) =>
@@ -790,6 +805,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       requisitionById,
       requisitionPlatforms,
       platformIdsFor: (id) => platformsByReq.get(id) ?? [],
+      otherPlatformNoteFor: (id) => otherNoteByReq.get(id) ?? null,
       myRequisitions: requisitions.filter(ownsRequisition),
       mySentBack: requisitions.filter((r) => r.status === "sent_back" && ownsRequisition(r)),
 
@@ -994,8 +1010,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
-      scheduleInterview: async (id, round, interviewerId, interviewerName, scheduledOn) => {
-        await scheduleInterviewWrite(id, round, interviewerId, interviewerName, scheduledOn);
+      scheduleInterview: async (id, round, interviewerIds, interviewerName, scheduledOn) => {
+        await scheduleInterviewWrite(id, round, interviewerIds, interviewerName, scheduledOn);
         await invalidate();
       },
       recordInterviewResult: async (c, round, status, remarks, docPath, docName, videoUrl, nextStage) => {
@@ -1081,8 +1097,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await updateDecideMrfWrite(id, stage, decision, remarks);
         await invalidate();
       },
-      postJob: async (id, platformIds, postedOn) => {
-        await postJobWrite(id, platformIds, postedOn);
+      postJob: async (id, platformIds, postedOn, otherNote) => {
+        await postJobWrite(id, platformIds, postedOn, otherNote);
         const r = reqById.get(id);
         await safeAnnounce({
           entityType: "requisition",
@@ -1093,8 +1109,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         });
         await invalidate();
       },
-      updatePostJob: async (id, platformIds, postedOn) => {
-        await updatePostJobWrite(id, platformIds, postedOn);
+      updatePostJob: async (id, platformIds, postedOn, otherNote) => {
+        await updatePostJobWrite(id, platformIds, postedOn, otherNote);
         await invalidate();
       },
       holdRequisition: async (id, hold, reason) => {

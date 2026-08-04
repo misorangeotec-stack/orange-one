@@ -2,12 +2,15 @@ import { useMemo, useState } from "react";
 import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
+import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
 import { interviewerPool, interviewerOptions } from "../../lib/interviewers";
 import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, roundOf } from "../../lib/board";
+import { salaryLabel } from "../../lib/format";
+import PriorRounds from "./PriorRounds";
 import type { MovePayload } from "../../data/hrWrites";
 import type { Candidate, CandidateStage } from "../../types";
 
@@ -40,7 +43,7 @@ export default function MoveModal({
   const isDecision = toStage === "final_decision";
   const isBackward = false; // the caller only offers legal targets; the RPC re-checks
 
-  const [interviewerId, setInterviewerId] = useState("");
+  const [interviewerIds, setInterviewerIds] = useState<string[]>([]);
   const [interviewerName, setInterviewerName] = useState("");
   const [scheduledOn, setScheduledOn] = useState(todayIso());
   const [reasonId, setReasonId] = useState("");
@@ -49,6 +52,8 @@ export default function MoveModal({
   const [requested, setRequested] = useState<string | null>(null);
   const [note, setNote] = useState("");
   const [ctc, setCtc] = useState("");
+  /** Agreed joining date. Blank is fine — Onboarding can still set it later. */
+  const [joiningDate, setJoiningDate] = useState("");
   const [decisionRemarks, setDecisionRemarks] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -60,11 +65,22 @@ export default function MoveModal({
     () => (round !== null ? interviewerPool(round, s.profiles, s.departments, req) : null),
     [round, s.profiles, s.departments, req],
   );
-  const people: ComboOption[] = useMemo(() => (pool ? interviewerOptions(pool.people) : []), [pool]);
+  const people: MultiOption[] = useMemo(() => (pool ? interviewerOptions(pool.people) : []), [pool]);
   const reasons: ComboOption[] = useMemo(
     () => s.disqualificationReasons.filter((r) => r.active).map((r) => ({ value: r.id, label: r.name })),
     [s.disqualificationReasons],
   );
+
+  /**
+   * Go landscape only when there is a result to put in the second column. Booking
+   * Round 1 on a candidate who skipped the telephonic has nothing to show, and a
+   * wide dialog with an empty half is worse than the narrow one.
+   */
+  const showsHistory = useMemo(() => {
+    if (!isInterview && !isFinalize) return false;
+    const before = isFinalize ? 4 : (round ?? 0);
+    return s.interviewsFor(candidate.id).some((iv) => iv.round < before && iv.heldAt);
+  }, [s, candidate.id, isInterview, isFinalize, round]);
 
   // Seats already taken on this requisition — you cannot hire more than were asked for.
   const taken = s.candidatesFor(candidate.requisitionId).filter((c) => c.stage === "finalized").length;
@@ -80,7 +96,7 @@ export default function MoveModal({
     isFinalize && ctcNum !== null && req?.salaryMin !== null && req?.salaryMin !== undefined && ctcNum < req.salaryMin;
 
   const invalid =
-    (isInterview && !interviewerId && !interviewerName.trim()) ||
+    (isInterview && interviewerIds.length === 0 && !interviewerName.trim()) ||
     // An un-dated booking is not a booking: with no date the round falls into "no date"
     // and quietly leaves every overdue count while still being someone's work.
     (isInterview && !scheduledOn) ||
@@ -93,15 +109,18 @@ export default function MoveModal({
     try {
       const payload: MovePayload = {};
       if (isInterview) {
-        payload.interviewerId = interviewerId || null;
-        payload.interviewerName = interviewerId ? null : interviewerName.trim() || null;
+        payload.interviewerIds = interviewerIds;
+        payload.interviewerName = interviewerName.trim() || null;
         payload.scheduledOn = scheduledOn || null;
       }
       if (isDisqualify) {
         payload.disqualificationReasonId = reasonId || null;
         payload.disqualificationNote = note.trim() || null;
       }
-      if (isFinalize) payload.offeredCtc = ctcNum;
+      if (isFinalize) {
+        payload.offeredCtc = ctcNum;
+        payload.joiningDate = joiningDate || null;
+      }
       if (isFinalize || isDecision) payload.decisionRemarks = decisionRemarks.trim() || null;
 
       await s.moveCandidate(candidate, toStage, payload);
@@ -127,6 +146,7 @@ export default function MoveModal({
       onClose={onClose}
       title={`${candidate.name} → ${STAGE_LABEL[toStage]}`}
       subtitle={subtitle}
+      size={showsHistory ? "3xl" : "md"}
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
@@ -138,35 +158,43 @@ export default function MoveModal({
         </>
       }
     >
-      <div className="space-y-3.5">
+      <div className={showsHistory ? "grid gap-5 md:grid-cols-2 md:gap-6" : undefined}>
+        {/* History first in the DOM so the stacked (mobile) layout reads it first;
+            md:order flips it to the right-hand column on a real screen. */}
+        {showsHistory && (
+          <section className="md:order-2 md:border-l md:border-line md:pl-6">
+            <h3 className="text-[12px] font-semibold uppercase tracking-wide text-grey-2">
+              {isFinalize ? "How they did" : "What happened before"}
+            </h3>
+            <div className="mt-2.5">
+              <PriorRounds candidateId={candidate.id} before={isFinalize ? 4 : (round ?? 0)} />
+            </div>
+          </section>
+        )}
+
+        <div className="space-y-3.5 md:order-1">
         {isInterview && (
           <>
-            <FieldLabel
-              label={`Who is taking ${roundLabel}?`}
-              required
-              hint={pool?.restricted ? pool.hint : undefined}
-            >
-              <Combobox
-                value={interviewerId}
-                onChange={(v) => {
-                  setInterviewerId(v);
-                  if (v) setInterviewerName("");
-                }}
+            <FieldLabel label={`Who is taking ${roundLabel}?`} required hint="one or more">
+              <MultiSelect
+                values={interviewerIds}
+                onChange={setInterviewerIds}
                 options={people}
-                placeholder="Pick a person"
-                searchable
+                placeholder="Pick the panel"
               />
-              {pool && !pool.restricted && (
-                <span className="mt-1.5 block text-[11.5px] leading-snug text-grey">{pool.fallbackNote}</span>
-              )}
+              {pool &&
+                (pool.restricted ? (
+                  <span className="mt-1.5 block text-[11.5px] leading-snug text-grey-2">{pool.hint}</span>
+                ) : (
+                  <span className="mt-1.5 block text-[11.5px] leading-snug text-grey">{pool.fallbackNote}</span>
+                ))}
+              {/* Additive, not exclusive: a panel is often two portal users PLUS an
+                  external consultant, and forcing a choice would lose one of them. */}
               <TextInput
                 className="mt-2"
                 value={interviewerName}
-                onChange={(e) => {
-                  setInterviewerName(e.target.value);
-                  if (e.target.value) setInterviewerId("");
-                }}
-                placeholder="Or type a name — an external consultant, say"
+                onChange={(e) => setInterviewerName(e.target.value)}
+                placeholder="And / or type names not in the portal — an external consultant, say"
               />
             </FieldLabel>
             <FieldLabel label="Interview date" required>
@@ -212,9 +240,9 @@ export default function MoveModal({
             )}
             <FieldLabel label="Agreed salary (₹/month)" hint="optional but recommended">
               <TextInput inputMode="decimal" value={ctc} onChange={(e) => setCtc(e.target.value)} placeholder="18000" />
-              {req?.salaryNote && (
+              {req && (req.salaryMin !== null || req.salaryMax !== null) && (
                 <span className="mt-1 block text-[11px] leading-snug text-grey-2">
-                  The requisition asked for: {req.salaryNote}
+                  The requisition asked for: {salaryLabel(req.salaryMin, req.salaryMax)}
                 </span>
               )}
             </FieldLabel>
@@ -229,6 +257,14 @@ export default function MoveModal({
                 That's below the minimum on the requisition (₹{req?.salaryMin?.toLocaleString("en-IN")}).
               </p>
             )}
+            <FieldLabel label="Date of joining" hint="optional — set it if agreed">
+              <TextInput type="date" value={joiningDate} onChange={(e) => setJoiningDate(e.target.value)} />
+              <span className="mt-1 block text-[11px] leading-snug text-grey-2">
+                {joiningDate
+                  ? "Their onboarding opens with this date and the checklist ready to work."
+                  : "Leave it blank if the date isn't agreed yet — Onboarding will ask for it, and the checklist stays locked until then."}
+              </span>
+            </FieldLabel>
             <FieldLabel label="Decision remark" hint="optional">
               <TextArea
                 rows={2}
@@ -256,6 +292,7 @@ export default function MoveModal({
         )}
 
         {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
+        </div>
       </div>
 
       {/* Opens on top of this dialog — `stacked` keeps the move form intact underneath. */}

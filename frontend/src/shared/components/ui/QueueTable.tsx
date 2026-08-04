@@ -53,7 +53,13 @@ interface QueueTableProps<T> {
   rows: T[];
   rowKey: (row: T) => string;
   columns: QueueColumn<T>[];
-  groupBy: QueueGroupBy<T>;
+  /**
+   * Omit for a FLAT table: no group bands, no group dropdown, and a column sort that
+   * orders the whole list. Use that where the dimension reads better as its own column
+   * with a filter — HR's requisition queues do exactly that with Department, because
+   * banding a short due-date-sorted queue by department hides the order that matters.
+   */
+  groupBy?: QueueGroupBy<T>;
   /** Leading actions cell (buttons / Open link) — rendered as the first column. */
   actions?: (row: T) => ReactNode;
   rowClassName?: (row: T) => string;
@@ -111,6 +117,9 @@ const BuildingIcon = (
  * range), a per-group filter, sortable columns, and 25/page pagination. Grouping is
  * the primary order (group name A→Z); an active column sort orders rows WITHIN each
  * group. Every FMS queue uses this so they all behave identically.
+ *
+ * `groupBy` is optional: omit it and the table is flat — no bands, no group dropdown,
+ * and the column sort owns the whole list.
  */
 export default function QueueTable<T>({
   rows,
@@ -135,11 +144,12 @@ export default function QueueTable<T>({
   const [sort, setSort] = useState<SortState>(initialSort ?? null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
-  const { idOf, nameOf: groupNameOf, allLabel } = groupBy;
+  const idOf = groupBy?.idOf;
+  const groupNameOf = groupBy?.nameOf;
 
   const nameOf = (row: T): string => {
-    const id = idOf(row);
-    return id ? groupNameOf(id) : "—";
+    const id = idOf?.(row);
+    return id && groupNameOf ? groupNameOf(id) : "—";
   };
 
   const isActive = (col: QueueColumn<T>): boolean => {
@@ -175,11 +185,12 @@ export default function QueueTable<T>({
     }
   };
 
-  const hasActiveFilters = group !== "all" || columns.some(isActive);
+  const hasActiveFilters = (!!groupBy && group !== "all") || columns.some(isActive);
 
   // Distinct groups present in the source rows (for the group filter).
   const groups = useMemo(() => {
     const map = new Map<string, string>();
+    if (!idOf || !groupNameOf) return [];
     for (const row of rows) {
       const id = idOf(row);
       if (id && !map.has(id)) map.set(id, groupNameOf(id));
@@ -205,7 +216,7 @@ export default function QueueTable<T>({
   // Filter → sort (group primary, chosen column secondary).
   const sorted = useMemo(() => {
     let list = rows.filter((row) => {
-      if (group !== "all" && idOf(row) !== group) return false;
+      if (idOf && group !== "all" && idOf(row) !== group) return false;
       for (const col of columns) if (!matches(col, row)) return false;
       return true;
     });
@@ -215,9 +226,9 @@ export default function QueueTable<T>({
       .map((row, i) => ({ row, i }))
       .sort((a, b) => {
         // Group is the primary sort ONLY when its header bands are shown. With
-        // hideGroupHeaders the group is just a filter (no visible bands), so a
-        // column sort like "Raised" must order the whole list, not within-group.
-        const cn = hideGroupHeaders ? 0 : nameOf(a.row).localeCompare(nameOf(b.row));
+        // hideGroupHeaders — or no grouping at all — the group is not an ordering,
+        // so a column sort like "Due" must order the whole list, not within-group.
+        const cn = hideGroupHeaders || !groupBy ? 0 : nameOf(a.row).localeCompare(nameOf(b.row));
         if (cn !== 0) return cn;
         if (col && sort) {
           const va = col.sortValue!(a.row);
@@ -268,7 +279,7 @@ export default function QueueTable<T>({
   /** The active filters in plain English, for the export's About sheet. */
   const filterSummary = (): string[] => {
     const out: string[] = [];
-    if (group !== "all") out.push(`${groupBy.label ?? "Group"}: ${groupNameOf(group)}`);
+    if (groupBy && groupNameOf && group !== "all") out.push(`${groupBy.label ?? "Group"}: ${groupNameOf(group)}`);
     for (const col of columns) {
       if (!isActive(col) || !col.filter) continue;
       const f = filters[col.key];
@@ -288,7 +299,9 @@ export default function QueueTable<T>({
   const exportNow = () => {
     if (!exportName) return;
     const cols = [
-      { header: groupBy.label ?? "Group", width: 22, value: (row: T) => nameOf(row) },
+      // An ungrouped table has no group column to lead with — its dimension is
+      // already one of `columns`, so prepending it would export it twice.
+      ...(groupBy ? [{ header: groupBy.label ?? "Group", width: 22, value: (row: T) => nameOf(row) }] : []),
       ...columns.map((c) => ({
         header: c.header,
         width: 20,
@@ -367,14 +380,16 @@ export default function QueueTable<T>({
     <div className="space-y-3">
       {/* Top bar: group filter + result count */}
       <div className="flex flex-wrap items-center gap-2.5">
-        <select
-          value={group}
-          onChange={(e) => setGroup(e.target.value)}
-          className="h-9 pl-3 pr-8 text-[13px] rounded-lg border border-line bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange/30 focus:border-orange/50"
-        >
-          <option value="all">{allLabel}</option>
-          {groups.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </select>
+        {groupBy && (
+          <select
+            value={group}
+            onChange={(e) => setGroup(e.target.value)}
+            className="h-9 pl-3 pr-8 text-[13px] rounded-lg border border-line bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange/30 focus:border-orange/50"
+          >
+            <option value="all">{groupBy.allLabel}</option>
+            {groups.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        )}
         {hasActiveFilters && (
           <button onClick={clearAll} className="inline-flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-semibold text-grey-2 hover:text-orange rounded-lg hover:bg-page">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -452,14 +467,14 @@ export default function QueueTable<T>({
                   pg.pageItems.map((row, idx) => {
                     const thisName = nameOf(row);
                     const prevName = idx > 0 ? nameOf(pg.pageItems[idx - 1]) : null;
-                    const showHeader = !hideGroupHeaders && thisName !== prevName;
+                    const showHeader = !!groupBy && !hideGroupHeaders && thisName !== prevName;
                     return (
                       <QueueRows key={rowKey(row)}>
                         {showHeader && (
                           <tr className="bg-navy/[0.03]">
                             <td colSpan={colSpan} className="px-4 py-2 border-b border-line">
                               <span className="inline-flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-navy">
-                                {groupBy.icon ?? BuildingIcon}
+                                {groupBy?.icon ?? BuildingIcon}
                                 {thisName}
                                 <span className="text-grey-2 font-medium normal-case tracking-normal">· {countByGroup.get(thisName)}</span>
                               </span>

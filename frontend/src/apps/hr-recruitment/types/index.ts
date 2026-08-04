@@ -21,7 +21,15 @@ export interface HrMaster {
   createdAt: string;
 }
 
-export type JobPlatform = HrMaster;
+/**
+ * Job platforms carry one extra bit: `isOther` marks the single catch-all row.
+ * It is a FLAG rather than a name match, so an admin renaming it in Setup →
+ * Masters doesn't quietly break the Post Job form's free-text box.
+ */
+export interface JobPlatform extends HrMaster {
+  isOther: boolean;
+}
+
 export type JobType = HrMaster;
 export type HrLocation = HrMaster;
 export type DisqualificationReason = HrMaster;
@@ -153,8 +161,12 @@ export type PositionKind = "new" | "replacement";
  * does name two people ("Ritesh Tulsyan & Dimple"). `reportingToNote` keeps free
  * text that doesn't resolve to a portal user.
  *
- * `salaryMin`/`salaryMax` are optional and exist only for the over-range check at
- * offer time; `salaryNote` is the human truth ("If fresh (Zero to two years) 15000/-").
+ * `salaryMin`/`salaryMax` are both optional: they are the band the requisition is
+ * approved against and what flags an over-range offer. The sheet's free-text salary
+ * note is retired — the column survives in the table, nothing reads it.
+ *
+ * `expectedStartDate` is the column name; the UI calls it the expected JOINING date,
+ * which is the same thing said in HR's words. `Onboarding.joiningDate` is the real one.
  */
 export interface Requisition {
   id: string;
@@ -180,7 +192,6 @@ export interface Requisition {
 
   salaryMin: number | null;
   salaryMax: number | null;
-  salaryNote: string | null;
 
   whyNeeded: string | null;
   businessContribution: string | null;
@@ -224,11 +235,17 @@ export interface Requisition {
   createdAt: string;
 }
 
-/** One platform a requisition was advertised on (the sheet's "Which Platform"). */
+/**
+ * One platform a requisition was advertised on (the sheet's "Which Platform").
+ *
+ * `otherNote` is only ever set on the `isOther` platform — what HR typed when the
+ * list had no row for where they actually posted.
+ */
 export interface RequisitionPlatform {
   requisitionId: string;
   platformId: string;
   postedOn: string | null;
+  otherNote: string | null;
 }
 
 /* -------------------------------- candidate ------------------------------- */
@@ -319,8 +336,14 @@ export interface Interview {
   candidateId: string;
   /** 0 = telephonic screening; 1–3 = the interview rounds. */
   round: 0 | 1 | 2 | 3;
-  /** A portal user, OR a free-text name — the interviewer may be an external consultant. */
+  /**
+   * Everyone taking this round — a panel, not a person. Real technical rounds are
+   * the HOD plus someone from the team; final rounds are two directors.
+   */
+  interviewerIds: string[];
+  /** The panel lead (element 1 of `interviewerIds`). Kept for anything reading a scalar. */
   interviewerId: string | null;
+  /** Free-text fallback — an external consultant with no portal login. */
   interviewerName: string | null;
   scheduledOn: string | null;
   /** Null while the round is only BOOKED. This is what makes "scheduled" ≠ "conducted". */

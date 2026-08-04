@@ -68,8 +68,28 @@ export function interviewerPool(
   return { people: restricted ? pool : profiles, restricted, hint, fallbackNote };
 }
 
-/** The people, sorted and labelled for a Combobox. */
+/** The people, sorted and labelled for a Combobox / MultiSelect. */
 export const interviewerOptions = (people: Profile[]) =>
   [...people]
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => ({ value: p.id, label: p.designation ? `${p.name} · ${p.designation}` : p.name }));
+
+/**
+ * A round's whole panel on one line: the portal users, then any free-text name.
+ *
+ * The two are ADDITIVE, not alternatives — a real panel is often two people from
+ * the portal plus an external consultant who has no login, and showing only one
+ * of those is how you end up chasing the wrong person about a result.
+ *
+ * Lives here beside the pool rule so the card, the drawer and the queue cannot
+ * render the same panel three different ways.
+ */
+export function panelNames(
+  interviewerIds: string[],
+  interviewerName: string | null,
+  nameOf: (id: string) => string | undefined,
+): string {
+  const names = interviewerIds.map(nameOf).filter((n): n is string => !!n);
+  if (interviewerName?.trim()) names.push(interviewerName.trim());
+  return names.join(", ");
+}

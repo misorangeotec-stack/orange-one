@@ -20,6 +20,12 @@ export interface PoStageRailNode {
   people: string[];
   /** False for stages with no backing workflow step (`closed`) — no caption. */
   hasStep: boolean;
+  /**
+   * One extra line under the label, for a fact the stage carries in its own right —
+   * HR puts the date the step actually completed there. Optional: the Purchase and
+   * Import rails don't pass it and render exactly as before.
+   */
+  note?: string;
 }
 
 /**
@@ -142,6 +148,17 @@ export default function PoStageRail({
             >
               {n.label}
             </span>
+
+            {n.note && (
+              <span
+                className={cn(
+                  "w-full truncate text-center text-[10px] tabular-nums",
+                  done ? "font-medium text-grey-2" : "text-grey-2/60"
+                )}
+              >
+                {n.note}
+              </span>
+            )}
 
             {/* Fixed min-height keeps all columns bottom-aligned even where the
                 caption is empty (the `closed` node). */}

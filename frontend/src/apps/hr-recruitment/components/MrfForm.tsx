@@ -20,10 +20,10 @@ import type { HrMasterType, Requisition } from "../types";
  *    Real rows say "Ritesh Tulsyan & Dimple" and "Rakesh, Vikas and manmohan ji".
  *    A single-person picker would silently drop someone.
  *
- *  • Salary is a free-text note PLUS an optional numeric range. Real rows say
- *    "If fresh (Zero to two years) 15000/-" and "20 to 25K", which no number field
- *    can hold. The note is what HR reads; the numbers exist only so an offer can be
- *    flagged as over-range later, and are optional.
+ *  • Salary is a minimum and a maximum, both optional. The sheet's free-text band
+ *    ("If fresh (Zero to two years) 15000/-") is gone: two numbers are what HR
+ *    approves against and what flags an offer as over-range later, and a sentence
+ *    could do neither.
  *
  * Whoever raises this becomes the requisition's hiring manager by default, and
  * that is what routes every later HOD step (shortlisting, Round 2, the monthly
@@ -62,7 +62,6 @@ export default function MrfForm({
   const [previousEmployeeName, setPreviousEmployeeName] = useState(existing?.previousEmployeeName ?? "");
   const [expectedStartDate, setExpectedStartDate] = useState(existing?.expectedStartDate ?? "");
   const [positionsRequired, setPositionsRequired] = useState(String(existing?.positionsRequired ?? 1));
-  const [salaryNote, setSalaryNote] = useState(existing?.salaryNote ?? "");
   const [salaryMin, setSalaryMin] = useState(existing?.salaryMin !== null && existing?.salaryMin !== undefined ? String(existing.salaryMin) : "");
   const [salaryMax, setSalaryMax] = useState(existing?.salaryMax !== null && existing?.salaryMax !== undefined ? String(existing.salaryMax) : "");
   const [whyNeeded, setWhyNeeded] = useState(existing?.whyNeeded ?? "");
@@ -119,7 +118,6 @@ export default function MrfForm({
       positionsRequired: Math.max(1, Math.floor(Number(positionsRequired) || 1)),
       salaryMin: num(salaryMin),
       salaryMax: num(salaryMax),
-      salaryNote: salaryNote.trim() || null,
       whyNeeded: whyNeeded.trim() || null,
       businessContribution: businessContribution.trim() || null,
       impactIfUnfilled: impactIfUnfilled.trim() || null,
@@ -171,7 +169,7 @@ export default function MrfForm({
               onChange={(e) => setPositionsRequired(e.target.value)}
             />
           </FieldLabel>
-          <FieldLabel label="Expected start date">
+          <FieldLabel label="Expected joining date">
             <TextInput type="date" value={expectedStartDate} onChange={(e) => setExpectedStartDate(e.target.value)} />
           </FieldLabel>
         </div>
@@ -258,13 +256,6 @@ export default function MrfForm({
       {/* ---- Salary ---- */}
       <Card className="p-5 space-y-4">
         <h2 className="text-[15px] font-semibold text-navy">Salary</h2>
-        <FieldLabel label="Salary range" hint="write it however you like">
-          <TextInput
-            value={salaryNote}
-            onChange={(e) => setSalaryNote(e.target.value)}
-            placeholder="e.g. 20 to 25K, or: If fresh (Zero to two years) 15000/-"
-          />
-        </FieldLabel>
         <div className="grid gap-4 sm:grid-cols-2">
           <FieldLabel label="Minimum (₹/month)" hint="optional">
             <TextInput inputMode="decimal" value={salaryMin} onChange={(e) => setSalaryMin(e.target.value)} placeholder="15000" />
@@ -274,8 +265,8 @@ export default function MrfForm({
           </FieldLabel>
         </div>
         <p className="text-[11.5px] text-grey-2">
-          The numbers are optional and are used only to flag an offer that lands above the range. What you type above is
-          what everyone reads.
+          Both are optional, but they are what everyone reads on the requisition — and what flags an offer that lands
+          above the maximum.
         </p>
       </Card>
 

@@ -58,6 +58,14 @@ export default function CompletedTable({
       exportValue: (e) => subjectText(e),
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (e) => <span className="text-grey">{deptName(e.departmentId)}</span>,
+      sortValue: (e) => deptName(e.departmentId),
+      filter: { kind: "select", get: (e) => deptName(e.departmentId) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "step",
       header: "Step",
       cell: (e) => <span className="text-grey">{stepByKey(e.stepKey)?.short ?? e.stepKey}</span>,
@@ -107,7 +115,6 @@ export default function CompletedTable({
       rows={rows}
       rowKey={(e) => e.id}
       columns={columns}
-      groupBy={{ idOf: (e) => e.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
       rowsLabel="entries"
       emptyTitle="Nothing here yet"
       emptyMessage={emptyMessage}
