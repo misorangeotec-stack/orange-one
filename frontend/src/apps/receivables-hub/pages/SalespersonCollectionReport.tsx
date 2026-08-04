@@ -6,7 +6,7 @@ import { isAgainstInvoice } from "@hub/lib/allocation";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
-  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus, Pin, Target,
+  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus, Pin, Target, PhoneCall,
 } from "lucide-react";
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -265,10 +265,12 @@ export default function SalespersonCollectionReport() {
   const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
   // Outstanding (Today) collapsed by default → Total only; expanding reveals Net Debit / Net Credit.
   const [outstandingExpanded, setOutstandingExpanded] = useState<boolean>(false);
-  // Follow-up columns (Next Follow-up / Last Remark). Visible by default; the toggle collapses
-  // them to a single narrow cell rather than removing the affordance, so they can always be
-  // brought back. The log button in the label cell is NOT gated by this.
-  const [followupCols, setFollowupCols] = useState<boolean>(true);
+  // Follow-up columns (Next Follow-up / Last Remark). COLLAPSED by default: they cost two wide
+  // columns on an already-wide table to show what the row's own phone icon already carries — it
+  // is colour-coded by urgency and its tooltip gives the next date AND the full remark. Expand
+  // them when you want to scan, sort or export the log rather than glance at it. The log button
+  // in the label cell is NOT gated by this and is always available.
+  const [followupCols, setFollowupCols] = useState<boolean>(false);
   const [followupTarget, setFollowupTarget] = useState<{ type: FollowupEntityType; name: string } | null>(null);
   // Customer whose plan is being edited (customer level only — a plan must roll up unambiguously).
   const [planTarget, setPlanTarget] = useState<string | null>(null);
@@ -554,7 +556,6 @@ export default function SalespersonCollectionReport() {
      one-function swap inside plannedByLedgerMonth if that trade is ever re-decided. */
   const planCarrier = useMemo(() => {
     const byName = new Map<string, Customer>();
-    const ledgerCount = new Map<string, number>();
     const beats = (a: Customer | undefined, b: Customer): boolean => {
       if (!a) return true;
       const da = a.overdueGross ?? a.overdue ?? 0;
@@ -563,9 +564,8 @@ export default function SalespersonCollectionReport() {
     };
     for (const c of filteredCustomers) {
       if (beats(byName.get(c.name), c)) byName.set(c.name, c);
-      ledgerCount.set(c.name, (ledgerCount.get(c.name) ?? 0) + 1);
     }
-    return { byName, ledgerCount };
+    return byName;
   }, [filteredCustomers]);
 
   /** month → ledgerId → planned rupees. Only carrier ledgers appear.
@@ -579,7 +579,7 @@ export default function SalespersonCollectionReport() {
     const out = new Map<string, Map<string, number>>();
     for (const month of months) {
       const per = new Map<string, number>();
-      for (const [name, carrier] of planCarrier.byName) {
+      for (const [name, carrier] of planCarrier) {
         const amt = plannedFor(month, "customer", name);
         if (amt) per.set(carrier.id, amt);
       }
@@ -1199,7 +1199,11 @@ export default function SalespersonCollectionReport() {
       ...dimCols,
       ...(wantCompany ? ["Company"] : []),
       ...(wantLocation ? ["Location"] : []),
-      ...(followupCols ? ["Next Follow-up", "Last Remark"] : []),
+      // ALWAYS exported, even when the on-screen columns are collapsed — same rule the money
+      // breakups already follow (the file is wider than the default view). A spreadsheet is
+      // exactly where the remark text is wanted, and a hidden screen column silently dropping
+      // out of the export is the kind of gap nobody notices until the data is missing.
+      "Next Follow-up", "Last Remark",
     ];
     const moneyHeaders: string[] = [
       salesLabel, salesPrevLabel, dueLabel,
@@ -1268,7 +1272,8 @@ export default function SalespersonCollectionReport() {
         ...dims,
         ...(wantCompany ? [subCompany] : []),
         ...(wantLocation ? [subLocation] : []),
-        ...(followupCols ? [fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "", fu?.remarks ?? ""] : []),
+        fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "",
+        fu?.remarks ?? "",
         ...figuresOf(d.m, d.mPrev),
         ...(showPlanCols ? [plan?.expectedDate ? formatDateDMY(plan.expectedDate) : "", plan?.note ?? ""] : []),
       ]);
@@ -1290,7 +1295,7 @@ export default function SalespersonCollectionReport() {
       ...dimCols.map(() => ({ wch: 28 })),
       ...(wantCompany ? [{ wch: 18 }] : []),
       ...(wantLocation ? [{ wch: 16 }] : []),
-      ...(followupCols ? [{ wch: 15 }, { wch: 40 }] : []),
+      { wch: 15 }, { wch: 40 },                              // Next Follow-up, Last Remark
       ...moneyHeaders.map(() => ({ wch: 18 })),
       { wch: 13 },                                           // Collection %
       ...(showPlanCols ? [{ wch: 15 }, { wch: 40 }] : []),
@@ -1545,11 +1550,17 @@ export default function SalespersonCollectionReport() {
     if (!showPlanCols) return null;
     const gap = planGap(m);
     const editable = planName !== null && plans.canEdit();
-    // A name that spans several ledgers is planned once, on the CARRIER row; its siblings show a
-    // dash rather than a zero, and say why on hover — a blank that looks like missing data is
-    // worse than a blank that explains itself.
+    // A name that spans several ledgers is planned once, on the CARRIER row; its siblings show
+    // "planned elsewhere" instead of an empty "Set", so the blank explains itself rather than
+    // inviting a second, duplicate figure for the same customer.
+    //
+    // Test the PLAN, not the ledger count. Checking only "does this name have >1 ledger" marked
+    // every multi-ledger customer as planned-elsewhere even when nobody had planned them at all
+    // — which is most of them, and made the column read as full when it was empty.
     const carrierElsewhere =
-      planName !== null && m.planned === 0 && (planCarrier.ledgerCount.get(planName) ?? 1) > 1;
+      planName !== null
+      && m.planned === 0
+      && plans.plannedFor(selectedMonth, "customer", planName) > 0;
     return (
       <>
         <TableCell
@@ -1990,8 +2001,17 @@ export default function SalespersonCollectionReport() {
                     </TableHead>
                   </>
                 ) : (
-                  <TableHead rowSpan={anyExpanded ? 2 : 1} className="w-8 align-middle">
-                    {followupToggle}
+                  // Collapsed: a phone icon rather than a bare +, so the column reads as
+                  // "follow-ups, hidden" instead of an unexplained toggle.
+                  <TableHead
+                    rowSpan={anyExpanded ? 2 : 1}
+                    className="w-9 align-middle text-foreground/50"
+                    title="Follow-up columns are hidden — the phone icon on each row already shows its next date and last remark on hover. Click + to show them as sortable columns."
+                  >
+                    <span className="inline-flex items-center">
+                      <PhoneCall className="h-3.5 w-3.5" />
+                      {followupToggle}
+                    </span>
                   </TableHead>
                 )}
                 {sortHead(COLS.find((c) => c.key === "sales")!, anyExpanded ? 2 : 1)}
