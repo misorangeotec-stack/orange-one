@@ -44,6 +44,25 @@ export function monthEndLong(label: string): string {
   return ddmmyyyy(monthLabelToEndDate(label));
 }
 
+/** Format a JS Date as YYYY-MM-DD from its LOCAL calendar fields.
+ *  NOT `toISOString().slice(0,10)` — that is UTC, which in IST (+05:30) returns the previous day
+ *  for any time before 05:30 local. Same reasoning as followupTypes.todayISO(). */
+export function dateToISO(d: Date): string {
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+/** "May-26" → "2026-05-01". For <input type="date" min=…>, which needs ISO, not DMY. */
+export function monthStartISO(label: string): string {
+  return dateToISO(monthLabelToStartDate(label));
+}
+
+/** "May-26" → "2026-05-31". For <input type="date" max=…>. */
+export function monthEndISO(label: string): string {
+  return dateToISO(monthLabelToEndDate(label));
+}
+
 /** ISO date "2025-08-15" → trend month label "Aug-25" (matches MonthlyTrend.month). */
 export function isoToMonthLabel(iso: string): string {
   const d = new Date(iso);

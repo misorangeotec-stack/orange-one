@@ -1,12 +1,12 @@
 import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, Fragment, type ReactNode, type Dispatch, type SetStateAction, type CSSProperties } from "react";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
-import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
+import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
 import { isAgainstInvoice } from "@hub/lib/allocation";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
-  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus, Pin,
+  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus, Pin, Target,
 } from "lucide-react";
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -39,6 +39,14 @@ import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { creditsOfLedger } from "@hub/lib/agingReport";
 import { loadOnAccountEntries, displayableEntries, type OnAccountEntry } from "@hub/lib/onAccountEntries";
 import { ddmmyyyy, isoToMonthLabel, monthEndLong, monthLabelToEndDate } from "@hub/lib/months";
+import { useFollowups } from "@hub/lib/useFollowups";
+import { useCollectionPlan } from "@hub/lib/useCollectionPlan";
+import { CollectionPlanModal } from "@hub/components/CollectionPlanModal";
+import { FollowupModal } from "@hub/components/FollowupModal";
+import { FollowupRowAction } from "@hub/components/FollowupRowAction";
+import { NextFollowupCell } from "@hub/components/NextFollowupCell";
+import { entityKey, type FollowupEntityType } from "@hub/lib/followupTypes";
+import { formatDateDMY } from "@hub/lib/utils";
 import type { Customer, SaleType } from "@hub/lib/types";
 
 /* ── Group-by dimensions (the Aging-style roll-up builder) ───────────────────── */
@@ -64,6 +72,15 @@ const C_PRESETS: GroupByPreset<CDim>[] = [
 /** Composite node metrics — current + previous month, so Collection % (prev) rolls up too. */
 interface CM { m: Metrics; mPrev: Metrics; }
 const KEY_SEP = "|||";
+/** Width cap (px) for the roll-up label column.
+ *  This column is FROZEN, so every pixel it takes is viewport permanently lost to the money
+ *  columns. Left uncapped it grows to the longest ledger name plus its "Company · Location"
+ *  sub-label and swallows half the screen. The cap lives on an INNER div, never on the <td>:
+ *  max-width on a table cell is ignored under `table-layout: auto`. */
+const LABEL_W = 230;
+/** Per-ledger bucket key — the same identity `dimValue` uses for the customer/group dims. */
+const ledgerKeyOf = (c: Customer): string =>
+  `${c.name}${KEY_SEP}${c.company}${KEY_SEP}${c.location}`;
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
@@ -81,9 +98,10 @@ function formatDateLong(iso: string): string {
   return ddmmyyyy(d);
 }
 
-type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pending" | "collectionPct" | "collectionPctPrev";
+// NOTE "gap" is the one key here that is NOT a field on Metrics (it is planned − received), so
+// the sort comparator must branch on it BEFORE its `a.metrics.m[sortKey]` fallback.
+type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "planned" | "gap" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
-type ViewMode = "customer" | "group";
 
 /** All sale-type keys (mirrors SaleTypeMultiSelect); used for residual projection. */
 const ALL_SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
@@ -131,27 +149,15 @@ interface Metrics {
   /** Not-yet-overdue slice of `pending`, i.e. bills coming due before month-end — NET of any
    *  on-account that spilled past the overdue slice, so `pending − dueSoon` can never go < 0. */
   dueSoon: number;
+  /** Planned collection for this month (rupees) — what the team INTENDS to collect, entered by
+   *  hand, as against `due` (what is owed) and `received` (what arrived).
+   *
+   *  An ordinary additive metric, which is the whole point: it folds through `addInto` and so
+   *  reaches every roll-up node, the grand total, the month-wise panel and the export with no
+   *  special-casing anywhere. That only holds because a plan is resolved onto exactly ONE ledger
+   *  per customer name before it gets here — see `planCarrier`. */
+  planned: number;
 }
-interface CustomerLine { id: string; name: string; company: string; location: string; m: Metrics; mPrev: Metrics; }
-/** One constituent party (ledger) inside a group's expansion. */
-interface PartyLine { key: string; name: string; sub: string; m: Metrics; mPrev: Metrics; }
-/** A second-level drill row — either a single customer or a rolled-up customer group. */
-interface DrillRow {
-  key: string;
-  name: string;
-  /** Sub-label (e.g. "ACME · Mumbai" for a customer, or "N ledgers" for a group). */
-  sub: string;
-  /** True for a multi-party group — such rows expand to reveal their parties. */
-  isGroup: boolean;
-  /** Constituent parties (group view only; empty in customer view). */
-  children: PartyLine[];
-  /** Backing customer-ledger ids (for invoice drill-down). */
-  customerIds: string[];
-  m: Metrics;
-  mPrev: Metrics;
-}
-interface SPRow { salesperson: string; rows: DrillRow[]; customerIds: string[]; m: Metrics; mPrev: Metrics; }
-
 /** Normalize a salesperson name: trim + UPPERCASE; blank / "Others" → "OTHERS"
  *  (merges the pipeline's blank-default "Others" with explicit "OTHERS"). */
 const spName = (s: string | undefined): string => {
@@ -160,7 +166,7 @@ const spName = (s: string | undefined): string => {
 };
 
 const emptyMetrics = (): Metrics => ({
-  sales: 0, salesGst: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, receivedOther: 0, pending: 0, pendingGross: 0, onAccount: 0, dueSoon: 0,
+  sales: 0, salesGst: 0, outstanding: 0, outstandingDebit: 0, outstandingCredit: 0, due: 0, received: 0, receivedOnAccount: 0, receivedAgainst: 0, receivedOther: 0, pending: 0, pendingGross: 0, onAccount: 0, dueSoon: 0, planned: 0,
 });
 const addInto = (t: Metrics, m: Metrics): void => {
   t.sales             += m.sales;
@@ -177,8 +183,11 @@ const addInto = (t: Metrics, m: Metrics): void => {
   t.pendingGross      += m.pendingGross;
   t.onAccount         += m.onAccount;
   t.dueSoon           += m.dueSoon;
+  t.planned           += m.planned;
 };
 const collectionPct = (m: Metrics): number | null => (m.due > 0 ? (m.received / m.due) * 100 : null);
+/** Still to collect against the plan. Negative = collected beyond plan. */
+const planGap = (m: Metrics): number => m.planned - m.received;
 
 /** Start-of-month receivable pool = month-end (net) balance + that month's receipts (money
  *  already collected this month added back). Used by the invoice drill-down and the month-wise
@@ -192,22 +201,28 @@ const pctStyle = (pct: number | null): string => {
   return "text-destructive font-semibold";
 };
 
-/** Sort an array of rows (salesperson groups OR customer lines) by the active column.
- *  Both row shapes carry `m`/`mPrev`; the only difference is the name accessor. */
-function sortRows<T extends { m: Metrics; mPrev: Metrics }>(
-  arr: T[], name: (x: T) => string, key: SortKey, dir: number,
-): void {
-  arr.sort((a, b) => {
-    if (key === "salesperson") return dir * name(a).localeCompare(name(b));
-    // Previous-month Sales sorts by mPrev; every other numeric key falls through to a.m[key].
-    if (key === "salesPrev") return dir * (a.mPrev.sales - b.mPrev.sales);
-    if (key === "outstandingNow") return dir * (a.m.outstanding - b.m.outstanding);
-    if (key === "collectionPct")
-      return dir * ((collectionPct(a.m) ?? -1) - (collectionPct(b.m) ?? -1));
-    if (key === "collectionPctPrev")
-      return dir * ((collectionPct(a.mPrev) ?? -1) - (collectionPct(b.mPrev) ?? -1));
-    return dir * (a.m[key] - b.m[key]);
-  });
+/**
+ * Which follow-up / planning entity (if any) a roll-up node represents.
+ *
+ * Rows here are roll-up NODES at any depth, not customers — so unlike the Risk Register this
+ * has to be derived. Only a customer or a customer group is something you can chase or plan
+ * against; a Salesperson / Company / Location / Category subtotal is not.
+ *
+ * The `group` dimension FALLS BACK to a per-ledger bucket for a customer that isn't in the
+ * group muster (see `dimValue`), so the bucket VALUE — not the dimension — is what decides
+ * customer vs group. Reading the dim alone would file every unmapped customer as a group and
+ * silently fork its log.
+ */
+function entityOfNode(n: GroupNode<CM>): { type: FollowupEntityType; name: string } | null {
+  const last = n.path[n.path.length - 1];
+  if (!last) return null;
+  if (last.dim === "customer") return { type: "customer", name: n.label };
+  if (last.dim === "group") {
+    return last.value.startsWith("G:")
+      ? { type: "group", name: n.label }
+      : { type: "customer", name: n.label };
+  }
+  return null;
 }
 
 /* ── Component ─────────────────────────────────────────────── */
@@ -216,10 +231,19 @@ export default function SalespersonCollectionReport() {
   const { label: fyLabel } = useFY();
   const { loading, error, allCustomers, customerDetail, dashboard, customerGroupMap } = useAppData();
   const isLive = useReceivablesSource() === "connectwave";
+  // The payment-chase log, shared with the Risk Register / Follow-ups page (same query key, so
+  // this is not a second fetch). MUST stay above the loading/error early returns below — React
+  // counts hooks per render, and a hook placed after them makes the first post-load render carry
+  // one hook more than the loading render. See the note on `creditLedgers`.
+  const { latestByEntity } = useFollowups();
 
   const asOfDate = dashboard?.asOfDate ?? new Date().toISOString().slice(0, 10);
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
   const asOfMonth = months.length ? months[months.length - 1] : "";
+  // The monthly payment plan. Fetched for the WHOLE FY in one query, so the month dropdown and
+  // the month-wise panel below both read from the same cache instead of refetching per month.
+  // Same hook-ordering rule as useFollowups above.
+  const plans = useCollectionPlan(months);
 
   // Filter / control state
   const [monthState, setMonthState] = useState<string>("");
@@ -241,6 +265,13 @@ export default function SalespersonCollectionReport() {
   const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
   // Outstanding (Today) collapsed by default → Total only; expanding reveals Net Debit / Net Credit.
   const [outstandingExpanded, setOutstandingExpanded] = useState<boolean>(false);
+  // Follow-up columns (Next Follow-up / Last Remark). Visible by default; the toggle collapses
+  // them to a single narrow cell rather than removing the affordance, so they can always be
+  // brought back. The log button in the label cell is NOT gated by this.
+  const [followupCols, setFollowupCols] = useState<boolean>(true);
+  const [followupTarget, setFollowupTarget] = useState<{ type: FollowupEntityType; name: string } | null>(null);
+  // Customer whose plan is being edited (customer level only — a plan must roll up unambiguously).
+  const [planTarget, setPlanTarget] = useState<string | null>(null);
   // Frozen "pane" — Excel-style freeze of the leading group-label column so the group
   // name stays visible while scrolling right. 0 = none, 1 = frozen (default).
   const [freezeLevel, setFreezeLevel] = useState<0 | 1>(1);
@@ -497,6 +528,66 @@ export default function SalespersonCollectionReport() {
     return { receipts, other };
   }, [allCustomers, customerDetail]);
 
+  /* ── Payment plan ────────────────────────────────────────────────────────────
+     ONE PLAN, ONE LEDGER.
+
+     A plan is recorded against the consolidated customer NAME, but this report buckets per
+     LEDGER (name|||company|||location — see dimValue) and `metricsForMonth` runs once per
+     ledger. Folding the plan in per-ledger would count a name with three ledgers three times
+     and treble every subtotal above it. So each plan is resolved onto exactly ONE ledger — the
+     "carrier" — before it ever enters the metrics. `planned` then stays an ordinary additive
+     metric and every node, the grand total and the export remain true subtotals.
+
+     Carrier = the ledger of that name carrying the largest GROSS due (the one you would
+     actually chase), ties broken by the ledger key so the choice is deterministic and
+     reproducible from the same data.
+
+     Chosen from `filteredCustomers`, NOT `activeRows`: activeRows is derived from the metrics
+     this map feeds (metricsForMonth → customerMetrics → activeRows), so reading it here would
+     be circular. For the same reason the tie-break reads `overdueGross ?? overdue` off the raw
+     Customer rather than anything computed.
+
+     REJECTED ALTERNATIVE: splitting the plan pro-rata across a name's ledgers by gross due.
+     Also additive and exact, and it degrades more gracefully under a Company filter — but the
+     user entered ONE number for ONE customer, and a pro-rata split fabricates a per-company
+     allocation they never stated, which then reads as fact under a Company group-by. It is a
+     one-function swap inside plannedByLedgerMonth if that trade is ever re-decided. */
+  const planCarrier = useMemo(() => {
+    const byName = new Map<string, Customer>();
+    const ledgerCount = new Map<string, number>();
+    const beats = (a: Customer | undefined, b: Customer): boolean => {
+      if (!a) return true;
+      const da = a.overdueGross ?? a.overdue ?? 0;
+      const db = b.overdueGross ?? b.overdue ?? 0;
+      return db !== da ? db > da : ledgerKeyOf(b) < ledgerKeyOf(a);
+    };
+    for (const c of filteredCustomers) {
+      if (beats(byName.get(c.name), c)) byName.set(c.name, c);
+      ledgerCount.set(c.name, (ledgerCount.get(c.name) ?? 0) + 1);
+    }
+    return { byName, ledgerCount };
+  }, [filteredCustomers]);
+
+  /** month → ledgerId → planned rupees. Only carrier ledgers appear.
+   *
+   *  Depends on `plans.plannedFor`, NOT on `plans`: the hook returns a fresh object literal every
+   *  render, so depending on it would recompute this map — and through it metricsForMonth,
+   *  customerMetrics, activeRows and the whole tree — on every keystroke in the search box.
+   *  `plannedFor` is a useCallback over the indexed rows, so it only changes when the data does. */
+  const plannedFor = plans.plannedFor;
+  const plannedByLedgerMonth = useMemo(() => {
+    const out = new Map<string, Map<string, number>>();
+    for (const month of months) {
+      const per = new Map<string, number>();
+      for (const [name, carrier] of planCarrier.byName) {
+        const amt = plannedFor(month, "customer", name);
+        if (amt) per.set(carrier.id, amt);
+      }
+      if (per.size) out.set(month, per);
+    }
+    return out;
+  }, [months, plannedFor, planCarrier]);
+
   // Per-customer metrics for ONE month. Shared by the main table (selected month) and the
   // month-wise panel (every month) so the two always reconcile for the same month.
   //  - Received = PURE receipt vouchers (LAKHS → rupees) PLUS manual "other payments" for the
@@ -647,8 +738,12 @@ export default function SalespersonCollectionReport() {
     // `outstanding` is sign-preserving in every branch, so these roll up the tree via addInto.
     const outstandingDebit = outstanding > 0 ? outstanding : 0;
     const outstandingCredit = outstanding < 0 ? -outstanding : 0;
-    return { sales, salesGst, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, receivedOther: opReceipts, pending: openDue, pendingGross, onAccount, dueSoon };
-  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, netOnAccount, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, otherPaymentsCumByCustomerMonth, receivedSplitByCustomerMonth]);
+    // NOT run through projectAmt: a plan is a whole-customer commitment with no sale-type
+    // breakdown, and apportioning it by sales mix would invent a split nobody entered. The
+    // columns are hidden under a sale-type filter instead (showPlanCols).
+    const planned = plannedByLedgerMonth.get(month)?.get(c.id) ?? 0;
+    return { sales, salesGst, outstanding, outstandingDebit, outstandingCredit, due: openDue + received, received, receivedOnAccount, receivedAgainst, receivedOther: opReceipts, pending: openDue, pendingGross, onAccount, dueSoon, planned };
+  }, [customerDetail, asOfMonth, asOfDate, shareFor, projectAmt, netOnAccount, saleTypeActive, saleTypeSet, saleTypes, otherPaymentsByCustomerMonth, otherPaymentsCumByCustomerMonth, receivedSplitByCustomerMonth, plannedByLedgerMonth]);
 
   // Per-customer metrics for the selected month (feeds the main table + grand total).
   const customerMetrics = useMemo(() => {
@@ -693,7 +788,15 @@ export default function SalespersonCollectionReport() {
       // Test the GROSS due, never the net: a customer whose entire due is covered by untagged
       // money nets to zero, and must still be listed (that is exactly the case worth chasing up
       // with accounts). Netting must change figures, never the population.
-      return m != null && (Math.round(m.outstanding) !== 0 || Math.round(m.pendingGross + m.received) !== 0);
+      //
+      // A PLANNED customer is always listed, even at zero balance. Otherwise a plan made against
+      // future billing — or against a customer who has since settled — silently vanishes from the
+      // table AND from the grand-total Planned, which would then read lower than what was typed in.
+      return m != null && (
+        Math.round(m.outstanding) !== 0 ||
+        Math.round(m.pendingGross + m.received) !== 0 ||
+        m.planned !== 0
+      );
     }),
     [filteredCustomers, customerMetrics],
   );
@@ -722,6 +825,8 @@ export default function SalespersonCollectionReport() {
       if (sortKey === "outstandingNow")     return dir * (a.metrics.m.outstanding - b.metrics.m.outstanding);
       if (sortKey === "collectionPct")      return dir * ((collectionPct(a.metrics.m) ?? -1) - (collectionPct(b.metrics.m) ?? -1));
       if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
+      // Derived, not stored — must be handled before the Metrics-key fallback below.
+      if (sortKey === "gap")                return dir * (planGap(a.metrics.m) - planGap(b.metrics.m));
       return dir * (a.metrics.m[sortKey] - b.metrics.m[sortKey]);
     };
     return sortTree(tree.roots, cmp);
@@ -1011,7 +1116,19 @@ export default function SalespersonCollectionReport() {
     customerSearch.trim() && { label: `Search: ${customerSearch.trim()}`, onRemove: () => setCustomerSearch("") },
   ].filter(Boolean) as FilterChip[];
 
+  /** The active roll-up chain, e.g. "Salesperson → Customer". Used by the label column header,
+   *  the export's meta block and the export's per-level column names — one source of truth. */
+  const dimLabelOf = (d: CDim): string => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d;
+  const groupByChain = groupBy.map(dimLabelOf).join(" → ");
+
   const dueLabel = `Due by ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
+  const plannedLabel = `Planned (${selectedMonth || "—"})`;
+  /** The plan columns are dropped under a Sale Type filter.
+   *  `Planned` is a WHOLE-CUSTOMER commitment with no sale-type dimension, while `received` IS
+   *  filtered — so "Gap to plan" would be comparing a full-customer plan against (say) ink-only
+   *  receipts and read as a shortfall that doesn't exist. Rather than show one of the pair, drop
+   *  both: a plan figure with no comparable actual beside it invites exactly that bad subtraction. */
+  const showPlanCols = !saleTypeActive;
   // Sales raised in the selected month and the month before it. Both respect the Sale Type
   // filter exactly (via trend.salesByType), the same way Outstanding/Received do.
   const salesLabel = `Sales (${selectedMonth || "—"})`;
@@ -1058,45 +1175,153 @@ export default function SalespersonCollectionReport() {
       `Segment: ${customerSegment === "all" ? "All Customers" : customerSegment === "active" ? "Active" : "No Activity"}`,
       `Search: ${customerSearch.trim() || "—"}`,
     ]);
-    aoa.push([`Group by: ${groupBy.map((d) => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → ")}`]);
+    aoa.push([`Group by: ${groupByChain}`]);
     aoa.push([]);
-    aoa.push(["Group", salesLabel, salesPrevLabel, dueLabel, "On Account", "Against Invoices", receivedLabel, "Net Debit", "Net Credit", outstandingNowLabel, "Due Pending (Gross)", "Less On Account", `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending", "Collection %"]);
-    // Pre-order flatten of the roll-up (parents before children), indented by depth.
+
+    /* ── Column layout ─────────────────────────────────────────────────────────
+       The roll-up used to be flattened into ONE indented "Group" column, which Excel cannot
+       filter or pivot on. Instead: one column per group-by level, ancestor labels REPEATED on
+       every descendant row, plus a Level column.
+         - Level = depth + 1 (Grand Total = 0). Filter Level = <deepest> for a clean pivot
+           source, or Level = 1 for a salesperson summary.
+         - Company / Location are split out whenever a per-ledger dimension is in play and isn't
+           already its own level. Not decoration: with ancestors repeated, two ledgers of the
+           SAME customer name are otherwise identical in every leading column.
+       Everything below is computed from these arrays — no hardcoded column letters or counts,
+       which is what used to make adding a column shift the ₹ formats off their cells. */
+    const dimCols = groupBy.map(dimLabelOf);
+    const perLedgerDim = groupBy.includes("customer") || groupBy.includes("group");
+    const wantCompany = perLedgerDim && !groupBy.includes("company");
+    const wantLocation = perLedgerDim && !groupBy.includes("location");
+
+    const leadHeaders: string[] = [
+      "Level",
+      ...dimCols,
+      ...(wantCompany ? ["Company"] : []),
+      ...(wantLocation ? ["Location"] : []),
+      ...(followupCols ? ["Next Follow-up", "Last Remark"] : []),
+    ];
+    const moneyHeaders: string[] = [
+      salesLabel, salesPrevLabel, dueLabel,
+      ...(showPlanCols ? [plannedLabel, "Gap to plan"] : []),
+      "On Account", "Against Invoices", receivedLabel,
+      "Net Debit", "Net Credit", outstandingNowLabel,
+      "Due Pending (Gross)", "Less On Account",
+      `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending",
+    ];
+    // Percent + free-text plan fields sit AFTER the money block so the ₹ format can be applied
+    // to one contiguous range.
+    const tailHeaders: string[] = [
+      "Collection %",
+      ...(showPlanCols ? ["Expected Date", "Plan Note"] : []),
+    ];
+    aoa.push([...leadHeaders, ...moneyHeaders, ...tailHeaders]);
+    const headerRow = aoa.length;            // 1-indexed row of the column header, derived not guessed
+    const nLead = leadHeaders.length;
+    const nMoney = moneyHeaders.length;
+    const nCols = nLead + nMoney + tailHeaders.length;
+
+    // Pre-order flatten, carrying the ANCESTOR LABEL CHAIN rather than an indent string.
     // mPrev is carried so the previous-month Sales column can be exported per row.
-    const flat: { depth: number; label: string; m: Metrics; mPrev: Metrics }[] = [];
-    const walk = (nodes: GroupNode<CM>[]) => {
+    const flat: {
+      depth: number; labels: string[]; sub?: string;
+      entity: { type: FollowupEntityType; name: string } | null;
+      m: Metrics; mPrev: Metrics;
+    }[] = [];
+    const walk = (nodes: GroupNode<CM>[], trail: string[]) => {
       for (const n of nodes) {
-        flat.push({ depth: n.depth, label: n.sub ? `${n.label} (${n.sub})` : n.label, m: n.metrics.m, mPrev: n.metrics.mPrev });
-        if (n.children.length) walk(n.children);
+        const labels = [...trail, n.label];
+        // Reuse the SAME resolver the table uses, rather than re-deriving "is this a customer
+        // row?" from the depth: the group dimension falls back to a per-ledger bucket for an
+        // unmapped customer, so depth alone gets it wrong.
+        flat.push({ depth: n.depth, labels, sub: n.sub, entity: entityOfNode(n), m: n.metrics.m, mPrev: n.metrics.mPrev });
+        if (n.children.length) walk(n.children, labels);
       }
     };
-    walk(sortedRoots);
+    walk(sortedRoots, []);
+
+    /** The money + tail cells for one row. Shared with the Grand Total so the two can't drift. */
+    const figuresOf = (m: Metrics, mPrev: Metrics): (string | number)[] => {
+      const pct = collectionPct(m);
+      return [
+        m.sales, mPrev.sales, m.due,
+        ...(showPlanCols ? [m.planned, planGap(m)] : []),
+        m.receivedOnAccount, m.receivedAgainst, m.received,
+        m.outstandingDebit, m.outstandingCredit, m.outstanding,
+        m.pendingGross, m.onAccount, m.pending - m.dueSoon, m.dueSoon, m.pending,
+        pct === null ? "" : Math.round(pct * 10) / 10,
+      ];
+    };
+
     for (const d of flat) {
-      const pct = collectionPct(d.m);
-      aoa.push([`${"    ".repeat(d.depth)}${d.label}`, d.m.sales, d.mPrev.sales, d.m.due, d.m.receivedOnAccount, d.m.receivedAgainst, d.m.received, d.m.outstandingDebit, d.m.outstandingCredit, d.m.outstanding, d.m.pendingGross, d.m.onAccount, d.m.pending - d.m.dueSoon, d.m.dueSoon, d.m.pending, pct === null ? "" : Math.round(pct * 10) / 10]);
+      // Ancestors repeated, trailing levels blank — that is what makes autofilter work.
+      const dims = dimCols.map((_, i) => d.labels[i] ?? "");
+      // `sub` is "Company · Location" on a per-ledger node, and absent on a roll-up.
+      const [subCompany = "", subLocation = ""] = (d.sub ?? "").split(" · ");
+      // Follow-ups / plan detail only mean anything where the row IS exactly one entity.
+      const fu = d.entity ? latestByEntity.get(entityKey(d.entity.type, d.entity.name)) : undefined;
+      const plan = d.entity && showPlanCols
+        ? plans.planFor(selectedMonth, d.entity.type, d.entity.name)
+        : undefined;
+      aoa.push([
+        d.depth + 1,
+        ...dims,
+        ...(wantCompany ? [subCompany] : []),
+        ...(wantLocation ? [subLocation] : []),
+        ...(followupCols ? [fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "", fu?.remarks ?? ""] : []),
+        ...figuresOf(d.m, d.mPrev),
+        ...(showPlanCols ? [plan?.expectedDate ? formatDateDMY(plan.expectedDate) : "", plan?.note ?? ""] : []),
+      ]);
     }
-    const totalPct = collectionPct(totals);
-    aoa.push(["Grand Total", totals.sales, totalsPrev.sales, totals.due, totals.receivedOnAccount, totals.receivedAgainst, totals.received, totals.outstandingDebit, totals.outstandingCredit, totals.outstanding, totals.pendingGross, totals.onAccount, totals.pending - totals.dueSoon, totals.dueSoon, totals.pending, totalPct === null ? "" : Math.round(totalPct * 10) / 10]);
+    // Built by index, not by spreading a computed-length filler: with no group-by dimensions at
+    // all `nLead` can be 1, and `Array(nLead - 2)` would throw RangeError and kill the export.
+    const grandLead: (string | number)[] = new Array(nLead).fill("");
+    grandLead[0] = 0;                                   // Level 0 = the total row
+    if (nLead > 1) grandLead[1] = "Grand Total";
+    aoa.push([
+      ...grandLead,
+      ...figuresOf(totals, totalsPrev),
+      ...(showPlanCols ? ["", ""] : []),
+    ]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"] = [{ wch: 34 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 22 }, { wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 13 }];
-    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 15 } }];
+    ws["!cols"] = [
+      { wch: 6 },                                            // Level
+      ...dimCols.map(() => ({ wch: 28 })),
+      ...(wantCompany ? [{ wch: 18 }] : []),
+      ...(wantLocation ? [{ wch: 16 }] : []),
+      ...(followupCols ? [{ wch: 15 }, { wch: 40 }] : []),
+      ...moneyHeaders.map(() => ({ wch: 18 })),
+      { wch: 13 },                                           // Collection %
+      ...(showPlanCols ? [{ wch: 15 }, { wch: 40 }] : []),
+    ];
+    ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: nCols - 1 } }];
+    // Open filter-ready — the entire point of splitting the levels into columns.
+    ws["!autofilter"] = {
+      ref: `${XLSX.utils.encode_cell({ r: headerRow - 1, c: 0 })}:${XLSX.utils.encode_cell({ r: headerRow + flat.length, c: nCols - 1 })}`,
+    };
+
     const INR = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
-    const headerRow = 9; // 1-indexed column-header row (8 meta rows incl. Sale Type/Search + Group-by)
-    const firstData = headerRow + 1;
-    const lastData = firstData + flat.length; // includes grand total
-    for (let row = firstData; row <= lastData; row++) {
-      for (const col of ["B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"]) {
-        const cell = ws[`${col}${row}`];
+    const firstDataR = headerRow;                     // 0-indexed first data row
+    const lastDataR = headerRow + flat.length;        // 0-indexed Grand Total row
+    for (let r = firstDataR; r <= lastDataR; r++) {
+      for (let c = nLead; c < nLead + nMoney; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r, c })];
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
-      const pctCell = ws[`P${row}`];
+      const pctCell = ws[XLSX.utils.encode_cell({ r, c: nLead + nMoney })];
       if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
-    styleRow(ws, 0, 16, HEADER_STYLE);                     // title banner
-    styleRow(ws, headerRow - 1, 16, HEADER_STYLE);         // column header row (0-indexed)
-    styleRow(ws, headerRow + flat.length, 16, GRAND_TOTAL_STYLE); // Grand Total row
+    styleRow(ws, 0, nCols, HEADER_STYLE);                        // title banner
+    styleRow(ws, headerRow - 1, nCols, HEADER_STYLE);            // column header row (0-indexed)
+    // Subtotal rows keep the hierarchy legible now that the indentation is gone — light green,
+    // clearly distinct from the strong-green Grand Total.
+    const deepest = dimCols.length - 1;
+    flat.forEach((d, i) => {
+      if (d.depth < deepest) styleRow(ws, headerRow + i, nCols, TOTAL_STYLE);
+    });
+    styleRow(ws, lastDataR, nCols, GRAND_TOTAL_STYLE);           // Grand Total row
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Collection");
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
@@ -1198,6 +1423,15 @@ export default function SalespersonCollectionReport() {
       value: collectionPct(totals) === null ? "—" : `${(collectionPct(totals) as number).toFixed(1)}%`,
       icon: Percent, warn: false,
     },
+    // Only when there is a plan to report against — an empty "Planned ₹0 · 0% achieved" card
+    // would read as a miss rather than as "nobody has planned this month yet".
+    ...(showPlanCols && totals.planned > 0 ? [{
+      label: plannedLabel,
+      value: fmt(totals.planned),
+      icon: Target,
+      warn: false,
+      sub: `${((totals.received / totals.planned) * 100).toFixed(1)}% of plan collected · ${fmt(planGap(totals))} to go`,
+    }] : []),
   ];
 
   const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
@@ -1205,6 +1439,8 @@ export default function SalespersonCollectionReport() {
     { key: "sales",         label: salesLabel,          align: "right", wrap: true, width: "w-[110px]" },
     { key: "salesPrev",     label: salesPrevLabel,      align: "right", wrap: true, width: "w-[110px]" },
     { key: "due",           label: dueLabel,            align: "right", wrap: true, width: "w-[110px]" },
+    { key: "planned",       label: plannedLabel,        align: "right", wrap: true, width: "w-[110px]" },
+    { key: "gap",           label: "Gap to plan",       align: "right", wrap: true, width: "w-[100px]" },
     { key: "outstandingNow", label: outstandingNowLabel, align: "right", wrap: true, width: "w-[110px]" },
     { key: "outstandingDebit",  label: "Net Debit",         align: "right" },
     { key: "outstandingCredit", label: "Net Credit",        align: "right" },
@@ -1300,11 +1536,58 @@ export default function SalespersonCollectionReport() {
   const receivedToggle = makeToggle(receivedExpanded, setReceivedExpanded, "On Account / Against Invoices breakup");
   const pendingToggle  = makeToggle(pendingExpanded, setPendingExpanded, "As-on-today / Till-month-end breakup");
   const outstandingToggle = makeToggle(outstandingExpanded, setOutstandingExpanded, "Net Debit / Net Credit breakup");
+  const followupToggle = makeToggle(followupCols, setFollowupCols, "Next Follow-up / Last Remark columns");
+
+  /** The Planned + Gap cells. Planned is EDITABLE only where the row IS one customer — every
+   *  other row is a roll-up of other people's plans, so a figure there is a subtotal, not a
+   *  thing you can set. `planName` is null on those (and on the Grand Total). */
+  const planCells = (m: Metrics, planName: string | null, sz: string, bold: string): ReactNode => {
+    if (!showPlanCols) return null;
+    const gap = planGap(m);
+    const editable = planName !== null && plans.canEdit();
+    // A name that spans several ledgers is planned once, on the CARRIER row; its siblings show a
+    // dash rather than a zero, and say why on hover — a blank that looks like missing data is
+    // worse than a blank that explains itself.
+    const carrierElsewhere =
+      planName !== null && m.planned === 0 && (planCarrier.ledgerCount.get(planName) ?? 1) > 1;
+    return (
+      <>
+        <TableCell
+          onClick={editable ? (e) => { e.stopPropagation(); setPlanTarget(planName); } : undefined}
+          className={`${sz}text-right font-mono ${bold}border-l border-border ${editable ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+          title={
+            carrierElsewhere
+              ? `${planName} is planned once, on its main ledger row. Click to see or change that plan.`
+              : editable
+                ? `Set the planned collection for ${planName} in ${selectedMonth}`
+                : "Rolled up from the customers below"
+          }
+        >
+          {m.planned > 0
+            ? fmt(m.planned)
+            // A sibling ledger of a planned customer must NOT read "Set": the customer is
+            // already planned, just carried on another row, and offering "Set" here reads as
+            // "unplanned" and invites a second, duplicate figure.
+            : carrierElsewhere
+              ? <span className="text-[10px] font-normal opacity-50">planned elsewhere</span>
+              : editable
+                ? <span className="opacity-40">Set</span>
+                : "—"}
+          {/* Σ marks a figure you cannot edit here, so a read-only roll-up never looks like a
+              cell someone forgot to fill in. */}
+          {!editable && m.planned > 0 && <span className="ml-1 text-[10px] opacity-50">Σ</span>}
+        </TableCell>
+        <TableCell className={`${sz}text-right font-mono ${m.planned > 0 && gap > 0 ? "text-destructive" : m.planned > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
+          {m.planned > 0 ? fmt(gap) : "—"}
+        </TableCell>
+      </>
+    );
+  };
 
   /** The metric cells for one row (grand total or any roll-up node), in column order.
    *  `strong` bolds the figures (grand total + depth-0 nodes). */
   const metricCells = (
-    m: Metrics, mPrev: Metrics, ids: string[], label: string, strong: boolean,
+    m: Metrics, mPrev: Metrics, ids: string[], label: string, strong: boolean, planName: string | null = null,
   ): ReactNode => {
     const pct = collectionPct(m);
     const pctPrev = collectionPct(mPrev);
@@ -1315,6 +1598,7 @@ export default function SalespersonCollectionReport() {
         <TableCell className={`${sz}text-right font-mono ${bold}`}>{fmt(m.sales)}</TableCell>
         <TableCell className={`${sz}text-right font-mono`}>{fmt(mPrev.sales)}</TableCell>
         {drillCell(ids, "due", label, `${sz}text-right font-mono`, fmt(m.due))}
+        {planCells(m, planName, sz, bold)}
         {receivedExpanded && <>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.receivedOnAccount)}</TableCell>
           <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.receivedAgainst)}</TableCell>
@@ -1351,6 +1635,34 @@ export default function SalespersonCollectionReport() {
     );
   };
 
+  /** The follow-up cells for one row, in column order.
+   *  ONE function for the body rows AND the Grand Total, because the two must always emit the
+   *  same number of cells — a mismatch silently shifts every money figure one column left of
+   *  its header. `entity` is null on a row that isn't chaseable (and on the Grand Total). */
+  const followupCells = (
+    entity: { type: FollowupEntityType; name: string } | null,
+    latest: ReturnType<typeof latestByEntity.get>,
+  ): ReactNode => {
+    // Collapsed: one narrow cell that still carries the toggle, so the columns are never
+    // unreachable once hidden.
+    if (!followupCols) return <TableCell className="w-8" />;
+    return (
+      <>
+        {/* stopPropagation: the row's own onClick expands the node and scopes the Monthly panel. */}
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          {entity ? (
+            <NextFollowupCell latest={latest} onLog={() => setFollowupTarget(entity)} />
+          ) : (
+            <span className="text-[10px] text-muted-foreground">—</span>
+          )}
+        </TableCell>
+        <TableCell className="text-[11px] text-muted-foreground max-w-[220px] truncate" title={latest?.remarks || ""}>
+          {latest?.remarks || "—"}
+        </TableCell>
+      </>
+    );
+  };
+
   /** Recursive roll-up rows; pagination/scope is whole-tree. depth-0 click also scopes the panel. */
   const renderNodes = (nodes: GroupNode<CM>[]): ReactNode =>
     nodes.map((n) => {
@@ -1358,6 +1670,9 @@ export default function SalespersonCollectionReport() {
       const isOpen = expanded.has(n.key);
       const tint = n.depth === 0 ? "" : n.depth === 1 ? "bg-muted/20" : "bg-muted/10";
       const isSelected = n.depth === 0 && selectedNode?.label === n.label;
+      // null on any node that isn't a customer / customer group — those can't be chased.
+      const entity = entityOfNode(n);
+      const latest = entity ? latestByEntity.get(entityKey(entity.type, entity.name)) : undefined;
       return (
         <Fragment key={n.key}>
           <TableRow
@@ -1375,24 +1690,45 @@ export default function SalespersonCollectionReport() {
             {(() => { const f = freezeStick("label", { bg: "bg-surface group-hover:bg-[hsl(var(--muted))]" }); return (
               <TableCell
                 style={{ ...f.style, paddingLeft: 8 + n.depth * 18 }}
-                className={`whitespace-nowrap ${n.depth === 0 ? "font-medium text-sm" : "text-[13px] text-muted-foreground"} ${f.className}`}
+                className={`align-top ${n.depth === 0 ? "font-medium text-sm" : "text-[13px] text-muted-foreground"} ${f.className}`}
               >
-                {n.label}
-                {n.sub && <span className="ml-1.5 text-[10px] font-normal opacity-70">{n.sub}</span>}
-                {hasChildren && <span className="ml-1.5 text-[11px] opacity-70">({n.children.length})</span>}
+                {/* Capped on an INNER div — max-width on a <td> is ignored under
+                    table-layout:auto. The cap shrinks with depth so the column stays ~LABEL_W
+                    however deep the roll-up goes, and the sub-label sits on its OWN line so a
+                    long "Company · Location" can never widen the column. */}
+                <div style={{ maxWidth: LABEL_W - n.depth * 18 }} className="min-w-0">
+                  <div className="flex items-center gap-1">
+                    <span className="truncate" title={n.label}>{n.label}</span>
+                    {hasChildren && <span className="shrink-0 text-[11px] opacity-70">({n.children.length})</span>}
+                    {entity && <FollowupRowAction latest={latest} onLog={() => setFollowupTarget(entity)} />}
+                  </div>
+                  {n.sub && (
+                    <div className="truncate text-[10px] font-normal leading-tight opacity-70" title={n.sub}>
+                      {n.sub}
+                    </div>
+                  )}
+                </div>
               </TableCell>
             ); })()}
-            {metricCells(n.metrics.m, n.metrics.mPrev, n.ids, n.label, n.depth === 0)}
+            {followupCells(entity, latest)}
+            {/* Plans are recorded at CUSTOMER level only, so only a customer node is editable —
+                a group / salesperson / category row shows the roll-up of its customers' plans. */}
+            {metricCells(
+              n.metrics.m, n.metrics.mPrev, n.ids, n.label, n.depth === 0,
+              entity?.type === "customer" ? entity.name : null,
+            )}
           </TableRow>
           {isOpen && hasChildren && renderNodes(n.children)}
         </Fragment>
       );
     });
 
-  // Total column count (for empty-state colSpan): chevron + label + metric columns.
-  // Metric columns: sales, salesPrev, due, received, outstandingNow, pending, collectionPct, collectionPctPrev = 8.
-  const metricColCount = 8 + (receivedExpanded ? 2 : 0) + (outstandingExpanded ? 2 : 0) + (pendingExpanded ? pendingSubCols - 1 : 0);
-  const totalColCount = 2 + metricColCount;
+  // Total column count (for empty-state colSpan): chevron + label + follow-up + metric columns.
+  // Metric columns: sales, salesPrev, due, planned, gap, received, outstandingNow, pending,
+  // collectionPct, collectionPctPrev = 10 (planned/gap drop out under a sale-type filter).
+  const metricColCount = (showPlanCols ? 10 : 8) + (receivedExpanded ? 2 : 0) + (outstandingExpanded ? 2 : 0) + (pendingExpanded ? pendingSubCols - 1 : 0);
+  // Follow-up block is 2 columns when shown, 1 narrow toggle cell when collapsed.
+  const totalColCount = 2 + (followupCols ? 2 : 1) + metricColCount;
   // Noun for the top-level row count (the first group-by dimension, e.g. "salesperson").
   const groupByLabel = (C_DIMENSIONS.find((x) => x.key === groupBy[0])?.label ?? "group").toLowerCase();
 
@@ -1626,18 +1962,52 @@ export default function SalespersonCollectionReport() {
                   ref={spHeadRef}
                   rowSpan={anyExpanded ? 2 : 1}
                   style={freezeStick("label", { header: true }).style}
-                  className={`text-xs font-semibold text-foreground/70 align-bottom pb-2 cursor-pointer select-none whitespace-nowrap ${freezeStick("label", { header: true }).className}`}
+                  className={`text-xs font-semibold text-foreground/70 align-bottom pb-2 cursor-pointer select-none ${freezeStick("label", { header: true }).className}`}
                   onClick={() => toggleSort("salesperson")}
                 >
-                  <span className="inline-flex items-center gap-1">
-                    {groupBy.map((d) => C_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → ")}
-                    {sortIcon("salesperson")}
-                    {freezePin()}
+                  {/* Same cap as the body cells: a three-level chain ("Salesperson → Customer
+                      Group → Customer Category") is long enough to widen the frozen column on
+                      its own. The icons stay shrink-0 so only the text is ever clipped. */}
+                  <span className="flex items-center gap-1" style={{ maxWidth: LABEL_W }}>
+                    <span className="truncate" title={groupByChain}>{groupByChain}</span>
+                    <span className="shrink-0 inline-flex items-center">{sortIcon("salesperson")}</span>
+                    <span className="shrink-0 inline-flex items-center">{freezePin()}</span>
                   </span>
                 </TableHead>
+                {/* Follow-up block. rowSpan is load-bearing: when a breakup below is expanded the
+                    header becomes two rows, and a head without it would let every money column
+                    slide one cell left of its label. */}
+                {followupCols ? (
+                  <>
+                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 leading-tight align-middle whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        Next Follow-up
+                        {followupToggle}
+                      </span>
+                    </TableHead>
+                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 leading-tight align-middle whitespace-nowrap">
+                      Last Remark
+                    </TableHead>
+                  </>
+                ) : (
+                  <TableHead rowSpan={anyExpanded ? 2 : 1} className="w-8 align-middle">
+                    {followupToggle}
+                  </TableHead>
+                )}
                 {sortHead(COLS.find((c) => c.key === "sales")!, anyExpanded ? 2 : 1)}
                 {sortHead(COLS.find((c) => c.key === "salesPrev")!, anyExpanded ? 2 : 1)}
                 {sortHead(COLS.find((c) => c.key === "due")!, anyExpanded ? 2 : 1)}
+                {showPlanCols && sortHead(COLS.find((c) => c.key === "planned")!, anyExpanded ? 2 : 1, {
+                  extra: (
+                    <span
+                      className="ml-1 text-[10px] font-normal opacity-60"
+                      title="A plan is a whole-customer figure — it is not split by sale type. Filter by Sale Type and these two columns are hidden rather than shown against a partial actual."
+                    >
+                      ⓘ
+                    </span>
+                  ),
+                })}
+                {showPlanCols && sortHead(COLS.find((c) => c.key === "gap")!, anyExpanded ? 2 : 1)}
                 {receivedExpanded ? (
                   <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
                     <span className="inline-flex items-center justify-center">{receivedLabel}{receivedToggle}</span>
@@ -1746,6 +2116,7 @@ export default function SalespersonCollectionReport() {
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
                     <TableCell style={freezeStick("chevron", { bg: "bg-muted" }).style} className={freezeStick("chevron", { bg: "bg-muted" }).className} />
                     <TableCell style={freezeStick("label", { bg: "bg-muted" }).style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${freezeStick("label", { bg: "bg-muted" }).className}`}>Grand Total</TableCell>
+                    {followupCells(null, undefined)}
                     {metricCells(totals, totalsPrev, allCustomerIds, "Grand Total", true)}
                   </TableRow>
                   {renderNodes(sortedRoots)}
@@ -1767,11 +2138,16 @@ export default function SalespersonCollectionReport() {
         const sumAgainst = monthlyData.reduce((s, d) => s + d.receivedAgainst, 0);
         const latest = monthlyData[monthlyData.length - 1];
         const latestPct = latest ? collectionPct(latest) : null;
+        // `planned` rides Metrics, so monthlyData already carries it per month — the series is
+        // free. Only plotted where some month actually has a plan, so an unplanned FY doesn't
+        // gain a flat zero line pretending to be data.
+        const anyPlanned = showPlanCols && monthlyData.some((d) => d.planned > 0);
         const chartData = monthlyData.map((d) => ({
           month: d.month,
           Due: d.due,
           Received: d.received,
           Pending: d.pending,
+          ...(anyPlanned ? { Planned: d.planned } : {}),
           "Collection %": collectionPct(d) ?? 0,
         }));
         return (
@@ -1823,6 +2199,9 @@ export default function SalespersonCollectionReport() {
                   <Line yAxisId="left"  type="monotone" dataKey="Due"      stroke="hsl(217, 91%, 60%)" strokeWidth={2} dot={{ r: 2 }} />
                   <Line yAxisId="left"  type="monotone" dataKey="Received" stroke="hsl(142, 71%, 45%)" strokeWidth={2} dot={{ r: 2 }} />
                   <Line yAxisId="left"  type="monotone" dataKey="Pending"  stroke="hsl(0, 84%, 60%)"  strokeWidth={2} dot={{ r: 2 }} />
+                  {anyPlanned && (
+                    <Line yAxisId="left" type="monotone" dataKey="Planned" stroke="hsl(271, 76%, 53%)" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2 }} />
+                  )}
                   <Line yAxisId="right" type="monotone" dataKey="Collection %" stroke="hsl(28, 80%, 52%)" strokeWidth={2} strokeDasharray="4 2" dot={{ r: 2 }} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -1940,6 +2319,46 @@ export default function SalespersonCollectionReport() {
         ledgerFigures={drill?.ledgerFigures}
         asOfDate={asOfDate}
       />
+
+      {/* Log a follow-up straight from the roll-up. The entity follows the row: a customer leaf
+          logs against the customer, a Customer-Group node against the group.
+          NOTE the log is keyed on the consolidated customer NAME while this table buckets per
+          LEDGER (name|||company|||location) — so a name present in two companies shows the SAME
+          follow-up on both rows. That is correct: there is one conversation with that customer.
+          Do not "fix" it into per-ledger follow-ups; that would fork the log. */}
+      {followupTarget && (
+        <FollowupModal
+          open={!!followupTarget}
+          onOpenChange={(o) => { if (!o) setFollowupTarget(null); }}
+          entityType={followupTarget.type}
+          entityName={followupTarget.name}
+        />
+      )}
+
+      {/* Set / revise the planned collection for one customer in the selected month.
+          Due and Received are passed IN: they come from this page's metricsForMonth, which no
+          hook can reach. Summed across every ledger of the name, because the plan covers the
+          customer as a whole, not the one ledger whose row was clicked. */}
+      {planTarget && (() => {
+        const ledgers = activeRows.filter((c) => c.name === planTarget);
+        const agg = emptyMetrics();
+        for (const c of ledgers) addInto(agg, customerMetrics.get(c.id) ?? emptyMetrics());
+        return (
+          <CollectionPlanModal
+            open={!!planTarget}
+            onOpenChange={(o) => { if (!o) setPlanTarget(null); }}
+            month={selectedMonth}
+            entityName={planTarget}
+            isCurrentMonth={isCurrentMonth}
+            dueThisMonth={agg.due}
+            receivedThisMonth={agg.received}
+            outstanding={agg.outstanding}
+            salesperson={ledgers[0] ? spName(ledgers[0].salesPerson) : null}
+            multiLedger={ledgers.length > 1}
+            plans={plans}
+          />
+        );
+      })()}
 
       {/* "Less advances & credits" — the ledgers netted off the Outstanding figure */}
       <Dialog
