@@ -4,9 +4,9 @@
  * This replaced the launcher's grid of cards. Nine cards was already a wall; the
  * portal is heading for dozens of modules, and a flat grid gives a reader no way
  * to find anything. Grouping is the whole point, so the grouping lives in ONE
- * place (`apps/categories.ts`) shared with the on-page launcher and the two admin
- * permission screens. (The cards did come back — see `AppLauncher.tsx` — but
- * grouped the same way, and below the work list rather than instead of it.)
+ * place (`apps/categories.ts`) shared with the two admin permission screens. The
+ * cards came back briefly as a collapsible section on the home screen and were
+ * removed again — this menu is now the only place the app list is rendered.
  *
  * Pure and hook-free so it can be unit-rendered and so `HomeLayout` can memoise it.
  *
@@ -45,10 +45,9 @@ const ic: Record<string, ReactNode> = {
 /**
  * Every app this user can actually open, in the order they should be listed.
  *
- * Exported because the home screen lists its apps TWICE — here in the left menu
- * and again as cards in `AppLauncher.tsx`. Two copies of "which apps, in what
- * order" is two chances to disagree, and the one thing a launcher must never do
- * is offer a card the menu doesn't have.
+ * Exported so any second listing of the apps — the home screen carried one as
+ * cards for a while — has to come from here rather than re-deriving it. Two
+ * copies of "which apps, in what order" is two chances to disagree.
  *
  * Coming-soon apps are omitted rather than disabled: NavItem has no disabled
  * state, and a menu row that silently does nothing is worse than no row.

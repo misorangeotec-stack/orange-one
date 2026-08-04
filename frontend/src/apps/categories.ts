@@ -1,12 +1,11 @@
 /**
  * How apps are grouped, everywhere they are listed.
  *
- * ONE definition, FOUR consumers: the home screen's left menu
- * (`core/workspace/homeNav.tsx`), the home screen's app launcher
- * (`core/workspace/AppLauncher.tsx`), the per-user module tick-boxes
+ * ONE definition, THREE consumers: the home screen's left menu
+ * (`core/workspace/homeNav.tsx`), the per-user module tick-boxes
  * (`core/admin/UserForm.tsx`), and the Module Access matrix
  * (`core/admin/ModuleAccess.tsx`). A new app therefore lands in the right group
- * in all four at once — the grouping cannot drift apart between screens.
+ * in all three at once — the grouping cannot drift apart between screens.
  *
  * Imports nothing on purpose, exactly like `apps/universal.ts`: the session
  * layer and the registry both reach for it, and a cycle here would break both.

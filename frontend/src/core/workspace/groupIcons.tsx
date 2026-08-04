@@ -1,7 +1,5 @@
 /**
- * One icon per app category, shared by the two screens that group apps: the home
- * screen's left menu (`homeNav.tsx`) and the home screen's app launcher
- * (`AppLauncher.tsx`).
+ * One icon per app category, used by the home screen's left menu (`homeNav.tsx`).
  *
  * The menu needs these because a collapsed rail shows nothing but icons — there
  * the icon IS the label, and without one every group renders the same generic
