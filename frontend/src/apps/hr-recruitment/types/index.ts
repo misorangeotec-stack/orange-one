@@ -389,6 +389,8 @@ export interface Candidate {
   experienceYears: number | null;
   skills: string[];
   notes: string | null;
+  /** Free-text marks the process has no field for — referred, rehire, do-not-hire. */
+  tags: string[];
 
   sourcePlatformId: string | null;
   resumePath: string | null;
@@ -611,4 +613,55 @@ export interface ProbationReview {
   /** When this monthly review was last re-recorded. Distinct from updatedAt. */
   editedAt: string | null;
   editedBy: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// AI FIT SCORING
+// ---------------------------------------------------------------------------
+
+/** The five parameters a CV is read against. Fixed, so two people compare. */
+export type FitAxisKey =
+  | "must_have_skills"
+  | "experience"
+  | "role_fit"
+  | "preferred_skills"
+  | "qualifications";
+
+export interface FitAxis {
+  key: FitAxisKey;
+  label: string;
+  /** 0–10 whole number. 0 when the vacancy says nothing about this axis. */
+  score: number;
+  /** The renormalised weight actually used. 0 when not applicable. */
+  weight: number;
+  /** False when the JD gives nothing to score against — the row is then hidden. */
+  applicable: boolean;
+  /** One or two sentences naming what in the CV justified the number. */
+  evidence: string;
+}
+
+/**
+ * One advisory read of one CV against one vacancy's job description.
+ *
+ * Append-only in the database: a row is a statement made at a time, by a named
+ * model, about a named version of the JD. Nothing here can move a stage.
+ */
+export interface CandidateFit {
+  id: string;
+  candidateId: string;
+  requisitionId: string;
+  /** 0–10 whole number, computed from the axes — never the model's own arithmetic. */
+  overall: number;
+  verdict: "strong" | "possible" | "weak";
+  axes: FitAxis[];
+  notes: string | null;
+  cvQuality: "text" | "scanned" | "thin";
+  /**
+   * A digest of the JD fields this score was formed from. Recomputed on read and
+   * compared: different = the vacancy changed since, so the score is stale.
+   */
+  jdFingerprint: string;
+  model: string;
+  scoredBy: string | null;
+  scoredAt: string;
 }

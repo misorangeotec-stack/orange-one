@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
@@ -7,6 +7,7 @@ import Kpi from "@/shared/components/ui/Kpi";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDateDMY } from "@/shared/lib/date";
 import { dueState } from "@/shared/lib/workingDays";
+import { HoldCancelModal } from "../../components/MrfModals";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
@@ -28,11 +29,20 @@ import type { Requisition } from "../../types";
  * is a question people actually ask.
  *
  * Open/Closed is the table's own GROUP dimension rather than a bespoke toggle: it
- * gives the same dropdown every other FMS queue has, and grouping is the primary
- * sort, so live openings sit above closed ones however the user sorts.
+ * gives the same dropdown every other FMS queue has.
+ *
+ * ⚠ The group does NOT order the rows here. QueueTable makes the group the primary
+ *   sort only when its header bands are shown, and this table hides them
+ *   (QueueTable.tsx, "hideGroupHeaders || !groupBy ? 0"), so grouping contributes
+ *   nothing to the order and the list fell back to whatever order the store handed
+ *   over — which put a CLOSED position at the top. Open-first is therefore an
+ *   explicit `initialSort` on the State column, whose sortValue is 0 for live and 1
+ *   for everything else.
  */
 export default function PositionsList() {
   const s = useHrStore();
+  /** Pause / reopen / cancel, without a trip to the requisition page. */
+  const [holdFor, setHoldFor] = useState<{ r: Requisition; mode: "hold" | "resume" | "cancel" } | null>(null);
 
   const locationName = (id: string | null) => (id ? (s.locations.find((l) => l.id === id)?.name ?? "—") : "—");
   const jobTypeName = (id: string | null) => (id ? (s.jobTypes.find((t) => t.id === id)?.name ?? "—") : "—");
@@ -290,16 +300,59 @@ export default function PositionsList() {
             "Seats = people who have actually JOINED, out of the headcount the MRF asked for. An offer that has not been taken up yet does not count as filled.",
             "Last activity is the most recent movement of any candidate on that position — not an edit to the requisition itself.",
           ]}
-          actions={(r) => (
-            <Link
-              to={`/hr-recruitment/positions/${r.id}`}
-              className="text-[12.5px] font-semibold text-orange hover:underline"
-            >
-              Pipeline
-            </Link>
-          )}
+          initialSort={{ key: "status", dir: "asc" }}
+          actions={(r) => {
+            // Same rule the requisition page uses: only a coordinator pauses or
+            // abandons a vacancy, and a closed or cancelled one is not reopenable —
+            // there is no RPC for it, so no button pretends otherwise.
+            const mayHold = s.isProcessCoordinator;
+            const dead = r.status === "cancelled" || r.status === "closed";
+            return (
+              <div className="flex items-center gap-2.5 whitespace-nowrap">
+                <Link
+                  to={`/hr-recruitment/positions/${r.id}`}
+                  className="text-[12.5px] font-semibold text-orange hover:underline"
+                >
+                  Pipeline
+                </Link>
+                {mayHold && !dead && r.status === "on_hold" && (
+                  <button
+                    onClick={() => setHoldFor({ r, mode: "resume" })}
+                    className="text-[12.5px] font-semibold text-ryg-green hover:underline"
+                  >
+                    Reopen
+                  </button>
+                )}
+                {mayHold && !dead && r.status !== "on_hold" && (
+                  <button
+                    onClick={() => setHoldFor({ r, mode: "hold" })}
+                    className="text-[12.5px] text-grey hover:text-navy hover:underline"
+                  >
+                    Hold
+                  </button>
+                )}
+                {mayHold && !dead && (
+                  <button
+                    onClick={() => setHoldFor({ r, mode: "cancel" })}
+                    className="text-[12.5px] text-grey hover:text-ryg-red hover:underline"
+                  >
+                    Close
+                  </button>
+                )}
+              </div>
+            );
+          }}
         />
       </Card>
+
+      {holdFor && (
+        <HoldCancelModal
+          requisition={holdFor.r}
+          mode={holdFor.mode}
+          open={!!holdFor}
+          onClose={() => setHoldFor(null)}
+        />
+      )}
     </div>
   );
 }

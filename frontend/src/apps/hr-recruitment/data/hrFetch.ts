@@ -19,7 +19,9 @@ import type {
   SalaryStructure,
   SkillCategory,
   Candidate,
+  CandidateFit,
   CandidateStage,
+  FitAxis,
   Interview,
   InterviewStatus,
   Onboarding,
@@ -107,6 +109,7 @@ type Tbl =
   | "fms_hr_probations"
   | "fms_hr_probation_reviews"
   | "fms_hr_activity"
+  | "fms_hr_candidate_scores"
   | "fms_hr_notifications"
   | "fms_hr_master_managers"
   | "fms_hr_master_requests"
@@ -203,6 +206,7 @@ export interface HrData {
   probations: Probation[];
   probationReviews: ProbationReview[];
   activity: HrActivity[];
+  candidateScores: CandidateFit[];
   notifications: HrNotification[];
   masterManagers: HrMasterManager[];
   masterRequests: HrMasterRequest[];
@@ -293,6 +297,7 @@ const mapCandidate = (r: any): Candidate => ({
   experienceYears: num(r.experience_years),
   skills: (r.skills ?? []) as string[],
   notes: r.notes ?? null,
+  tags: (r.tags ?? []) as string[],
   sourcePlatformId: r.source_platform_id ?? null,
   resumePath: r.resume_path ?? null,
   resumeName: r.resume_name ?? null,
@@ -511,6 +516,34 @@ const mapActivity = (r: any): HrActivity => ({
   createdAt: r.created_at,
 });
 
+/**
+ * One advisory AI fit score. `axes` is stored as jsonb because the axis SET is a
+ * product decision that will be revisited, and adding a sixth must not be a
+ * migration against a table that already holds history — so it is re-typed here
+ * defensively rather than trusted.
+ */
+const mapCandidateScore = (r: any): CandidateFit => ({
+  id: r.id,
+  candidateId: r.candidate_id,
+  requisitionId: r.requisition_id,
+  overall: Number(r.overall) || 0,
+  verdict: (r.verdict ?? "possible") as CandidateFit["verdict"],
+  axes: (Array.isArray(r.axes) ? r.axes : []).map((a: any): FitAxis => ({
+    key: a?.key,
+    label: typeof a?.label === "string" ? a.label : "",
+    score: Number(a?.score) || 0,
+    weight: Number(a?.weight) || 0,
+    applicable: a?.applicable !== false,
+    evidence: typeof a?.evidence === "string" ? a.evidence : "",
+  })),
+  notes: r.notes ?? null,
+  cvQuality: (r.cv_quality ?? "text") as CandidateFit["cvQuality"],
+  jdFingerprint: r.jd_fingerprint ?? "",
+  model: r.model ?? "",
+  scoredBy: r.scored_by ?? null,
+  scoredAt: r.scored_at,
+});
+
 const mapNotification = (r: any): HrNotification => ({
   id: r.id,
   userId: r.user_id,
@@ -550,6 +583,7 @@ export async function fetchHrData(): Promise<HrData> {
     probations,
     probationReviews,
     activity,
+    candidateScores,
     notifications,
     masterManagers,
     masterRequests,
@@ -576,7 +610,23 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_onboarding_checks"),
     fetchAll("fms_hr_probations"),
     fetchAll("fms_hr_probation_reviews"),
-    fetchAll("fms_hr_activity"),
+    // The trail used to come back whole, which was fine while it was pure audit —
+    // a few dozen rows. Team comments live in this table too now, so it grows with
+    // the conversation rather than with the process, and it is read on EVERY app load.
+    //
+    // Windowed to match the data it describes rather than by a flat date: candidate
+    // rows follow the same window the candidates themselves use (a trail for a card
+    // nobody loaded cannot be rendered), while requisition / onboarding / probation
+    // rows stay whole because those tables are fetched whole — windowing them would
+    // silently empty the history panel on an old MRF that still opens fine today.
+    fetchAll("fms_hr_activity", "created_at", (q) =>
+      q.or(`entity_type.neq.candidate,created_at.gte.${candidateWindowStartIso()}`),
+    ),
+    // Advisory AI fit scores. Windowed exactly like the candidates they describe —
+    // a score for a card nobody loaded cannot be rendered.
+    fetchAll("fms_hr_candidate_scores", "scored_at", (q) =>
+      q.gte("scored_at", candidateWindowStartIso()),
+    ),
     fetchAll("fms_hr_notifications"),
     fetchAll("fms_hr_master_managers"),
     fetchAll("fms_hr_master_requests"),
@@ -615,6 +665,7 @@ export async function fetchHrData(): Promise<HrData> {
     probations: probations.map(mapProbation),
     probationReviews: probationReviews.map(mapProbationReview),
     activity: activity.map(mapActivity),
+    candidateScores: candidateScores.map(mapCandidateScore),
     notifications: notifications.map(mapNotification),
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
 import EmptyState from "@/shared/components/ui/EmptyState";
@@ -10,7 +10,6 @@ import Tabs from "@/shared/components/ui/Tabs";
 import MrfStepper from "../../components/MrfStepper";
 import StatusPill from "../../components/StatusPill";
 import CandidateBoard from "../../components/kanban/CandidateBoard";
-import CandidateDrawer from "../../components/kanban/CandidateDrawer";
 import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
 import ProbationPanel from "../../components/probation/ProbationPanel";
 import { HoldCancelModal, JobPostingModal, MrfDecisionModal } from "../../components/MrfModals";
@@ -70,13 +69,13 @@ async function openJd(path: string) {
 export default function MrfDetail() {
   const { id = "" } = useParams();
   const s = useHrStore();
+  const navigate = useNavigate();
 
   const [decideStage, setDecideStage] = useState<"hr" | "mgmt" | null>(null);
   const [posting, setPosting] = useState(false);
   const [holdMode, setHoldMode] = useState<"hold" | "resume" | "cancel" | null>(null);
   const [editing, setEditing] = useState(false);
   const [tab, setTab] = useState("mrf");
-  const [openCandidate, setOpenCandidate] = useState<Candidate | null>(null);
   const [openOnboarding, setOpenOnboarding] = useState<Onboarding | null>(null);
   const [openProbation, setOpenProbation] = useState<Probation | null>(null);
   const [busy, setBusy] = useState(false);
@@ -312,7 +311,10 @@ export default function MrfDetail() {
               </p>
             </Card>
           ) : (
-            <CandidateBoard requisition={r} onOpenCandidate={setOpenCandidate} />
+            <CandidateBoard
+              requisition={r}
+              onOpenCandidate={(cand) => navigate(`/hr-recruitment/candidates/${cand.id}`)}
+            />
           )}
         </div>
       )}
@@ -496,13 +498,6 @@ export default function MrfDetail() {
       {posting && <JobPostingModal requisition={r} open={posting} onClose={() => setPosting(false)} />}
       {holdMode && (
         <HoldCancelModal requisition={r} mode={holdMode} open={!!holdMode} onClose={() => setHoldMode(null)} />
-      )}
-      {openCandidate && (
-        <CandidateDrawer
-          candidate={openCandidate}
-          open={!!openCandidate}
-          onClose={() => setOpenCandidate(null)}
-        />
       )}
       {openOnboarding && (
         <OnboardingPanel

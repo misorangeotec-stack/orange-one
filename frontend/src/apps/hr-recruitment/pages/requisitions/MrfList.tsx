@@ -9,6 +9,17 @@ import { REQ_STATUS_LABEL, salaryLabel } from "../../lib/format";
 import type { Requisition } from "../../types";
 
 /**
+ * Every status except Closed, in the label form the filter shows.
+ *
+ * Derived from REQ_STATUS_LABEL rather than typed out, so a status added to the
+ * model appears in the default selection automatically — a hand-written list would
+ * silently start hiding any new status the day it was introduced.
+ */
+const OPEN_BY_DEFAULT_STATUSES = Object.entries(REQ_STATUS_LABEL)
+  .filter(([status]) => status !== "closed")
+  .map(([, label]) => label);
+
+/**
  * Every requisition the signed-in user is allowed to see (RLS decides that, not
  * this screen). Grouped by department — the HR equivalent of Purchase's company
  * grouping.
@@ -96,7 +107,15 @@ export default function MrfList() {
         header: "Status",
         cell: (r) => <StatusPill status={r.status} />,
         sortValue: (r) => REQ_STATUS_LABEL[r.status],
-        filter: { kind: "select", get: (r) => REQ_STATUS_LABEL[r.status] },
+        // Tick any combination, and open on everything EXCEPT Closed: a filled
+        // vacancy is finished business, and on a list of live work it is the one
+        // status nobody arrives wanting to read. It is a default, not a rule —
+        // Closed is one tick away, and "Clear filters" brings it back too.
+        filter: {
+          kind: "multiselect",
+          get: (r) => REQ_STATUS_LABEL[r.status],
+          initial: OPEN_BY_DEFAULT_STATUSES,
+        },
       },
     ],
     // The whole store: the Seats column reads live seat counts, so a refetch must

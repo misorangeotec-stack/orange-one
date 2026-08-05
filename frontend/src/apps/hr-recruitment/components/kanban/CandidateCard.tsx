@@ -4,8 +4,10 @@ import DueCell from "@/shared/components/ui/DueCell";
 import { FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
 import { dueState } from "@/shared/lib/workingDays";
+import { formatDateDMY } from "@/shared/lib/date";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, legalTargets, roundOf } from "../../lib/board";
+import { fitFill } from "../../lib/fit";
 import { panelNames } from "../../lib/interviewers";
 import type { Candidate, CandidateStage } from "../../types";
 
@@ -56,6 +58,7 @@ export default function CandidateCard({
   const s = useHrStore();
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const fit = s.fitFor(c.id);
 
   useEffect(() => {
     if (!menu) return;
@@ -287,13 +290,38 @@ export default function CandidateCard({
         </button>
       )}
 
-      <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="inline-flex items-center gap-1 text-[11px] text-grey-2">
-          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <circle cx="12" cy="12" r="10" />
-            <polyline points="12 6 12 12 16 14" />
-          </svg>
-          {days === 0 ? "today" : `${days}d here`}
+      {/* `flex-wrap` is load-bearing, not tidiness: the card is 260px inside, and
+          clock (~68px) + fit pill (~44px) + an OVERDUE DueCell (~160px) is 288px.
+          Only that intersection wraps, and it costs ~18px of card height. */}
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <span className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 text-[11px] text-grey-2">
+            <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            {days === 0 ? "today" : `${days}d here`}
+          </span>
+
+          {/* The AI fit score. This pill is what makes the score comparative — a
+              number you must open a page to read cannot be weighed against the
+              fourteen other people in the column. Deliberately no separate
+              "stale" styling: at 11px a second signal just reads as broken, so
+              the caveat rides in the tooltip. */}
+          {fit && (
+            <span
+              title={`AI fit ${fit.overall} out of 10 — scored ${formatDateDMY(fit.scoredAt)}`}
+              className="inline-flex shrink-0 items-center gap-1 rounded-pill bg-page px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-navy"
+            >
+              <span
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: fitFill(fit.overall) }}
+                aria-hidden="true"
+              />
+              <span className="sr-only">AI fit </span>
+              {fit.overall}
+            </span>
+          )}
         </span>
         {due && <DueCell dueIso={due} />}
       </div>

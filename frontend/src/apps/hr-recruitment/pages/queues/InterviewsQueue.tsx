@@ -1,12 +1,11 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import DueCell, { overdueRowClass } from "@/shared/components/ui/DueCell";
 import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { formatDateDMY } from "@/shared/lib/date";
-import CandidateDrawer from "../../components/kanban/CandidateDrawer";
 import InterviewResultModal from "../../components/kanban/InterviewResultModal";
 import ScheduleInterviewModal from "../../components/kanban/ScheduleInterviewModal";
 import CompletedTable from "../../components/CompletedTable";
@@ -55,7 +54,9 @@ const ROUND_LABEL: Record<0 | 1 | 2 | 3, string> = {
  */
 export default function InterviewsQueue() {
   const s = useHrStore();
-  const [open, setOpen] = useState<Candidate | null>(null);
+  const navigate = useNavigate();
+  /** The candidate now has a page, so the queue links to it rather than opening a dialog. */
+  const openCandidate = (c: Candidate) => navigate(`/hr-recruitment/candidates/${c.id}`);
   const [book, setBook] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [result, setResult] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [mineOnly, setMineOnly] = useState(false);
@@ -103,7 +104,7 @@ export default function InterviewsQueue() {
       key: "candidate",
       header: "Candidate",
       cell: (r) => (
-        <button onClick={() => setOpen(r.candidate)} className="text-left">
+        <button onClick={() => openCandidate(r.candidate)} className="text-left">
           <div className="font-semibold text-navy hover:text-orange">{r.candidate.name}</div>
           <div className="text-[12px] text-grey">{r.candidate.phone ?? "—"}</div>
         </button>
@@ -238,7 +239,7 @@ export default function InterviewsQueue() {
           exportName="HR_Interviews_Completed"
           emptyMessage="Interview rounds you record will appear here."
           onEdit={onEditCompleted}
-          onView={(e) => setOpen(e.row as Candidate)}
+          onView={(e) => openCandidate(e.row as Candidate)}
         />
       ) : (
       <QueueTable<Row>
@@ -283,7 +284,6 @@ export default function InterviewsQueue() {
       />
       )}
 
-      {open && <CandidateDrawer candidate={open} open={!!open} onClose={() => setOpen(null)} />}
       {book && (
         <ScheduleInterviewModal
           candidate={book.c}

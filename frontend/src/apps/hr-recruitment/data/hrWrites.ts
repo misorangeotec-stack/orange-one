@@ -484,6 +484,87 @@ export async function updateCandidate(id: string, input: CandidateInput): Promis
 }
 
 /**
+ * Say something about a candidate, and optionally tag colleagues into it.
+ *
+ * Stored as an `fms_hr_activity` row of type `comment`, NOT in a comments table of
+ * its own — the trail is already "who did what, with a note", so a comment is one
+ * more kind of entry and the page can render process and conversation as ONE
+ * timeline. Tagged people ride in `meta.mentions`.
+ *
+ * ⚠ Not `updateCandidate`. That path needs the resume-upload permission (HR only)
+ *   and rewrites every column, so the HOD or interviewer a comment is FOR could not
+ *   post one, and posting would risk overwriting fields with a stale copy.
+ */
+export async function postCandidateComment(
+  candidateId: string,
+  text: string,
+  mentions: string[] = [],
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_post_comment", {
+    p_candidate: candidateId,
+    p_text: text,
+    p_mentions: mentions,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** The quick note. One column, so a stale form can never clobber the rest of the record. */
+export async function setCandidateNote(candidateId: string, note: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_candidate_note", {
+    p_id: candidateId,
+    p_note: note,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Tags. The RPC trims, drops blanks and de-duplicates case-insensitively. */
+export async function setCandidateTags(candidateId: string, tags: string[]): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_candidate_tags", {
+    p_id: candidateId,
+    p_tags: tags,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Record one AI fit score.
+ *
+ * The edge function deliberately does NOT write this — it holds no service-role
+ * key, so every read it makes is gated by the caller's own RLS. The write comes
+ * back through here instead, authorised exactly like reading the candidate is.
+ *
+ * `jdFingerprint` is computed in the browser from requisition fields already in
+ * the store (lib/fit.ts) and stored verbatim, so a later JD edit shows the score
+ * as stale without a trigger or a new column on the requisition.
+ */
+export async function saveCandidateScore(
+  candidateId: string,
+  score: {
+    overall: number;
+    verdict: string;
+    axes: unknown[];
+    notes: string;
+    cvQuality: string;
+    jdFingerprint: string;
+    model: string;
+  },
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_save_candidate_score", {
+    p_candidate: candidateId,
+    p: {
+      overall: score.overall,
+      verdict: score.verdict,
+      axes: score.axes,
+      notes: score.notes,
+      cv_quality: score.cvQuality,
+      jd_fingerprint: score.jdFingerprint,
+      model: score.model,
+    } as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
  * The board move. `payload` carries the fact that justifies it — which is why the
  * UI opens a modal on every drop rather than writing silently.
  */

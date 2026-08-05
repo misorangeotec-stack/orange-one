@@ -15,6 +15,10 @@ import {
   decideProbation as decideProbationWrite,
   hodDecide as hodDecideWrite,
   moveCandidate as moveCandidateWrite,
+  postCandidateComment as postCandidateCommentWrite,
+  setCandidateNote as setCandidateNoteWrite,
+  setCandidateTags as setCandidateTagsWrite,
+  saveCandidateScore as saveCandidateScoreWrite,
   recordInterviewResult as recordInterviewResultWrite,
   recordProbationReview as recordProbationReviewWrite,
   scheduleInterview as scheduleInterviewWrite,
@@ -88,6 +92,7 @@ import {
 } from "./lib/queues";
 import type {
   Candidate,
+  CandidateFit,
   CandidateStage,
   Designation,
   HrSkill,
@@ -349,6 +354,11 @@ interface HrStoreValue {
   // activity + bell
   activity: HrActivity[];
   activityFor: (entityType: HrEntityType, entityId: string) => HrActivity[];
+  /**
+   * The latest AI fit score for a candidate, or undefined if never scored.
+   * Advisory: nothing in the app reads this to decide anything.
+   */
+  fitFor: (candidateId: string) => CandidateFit | undefined;
   notifications: HrNotification[];
   unreadCount: number;
   markNotificationsRead: (ids: string[]) => Promise<void>;
@@ -356,6 +366,27 @@ interface HrStoreValue {
   // candidate writes
   addCandidates: (requisitionId: string, candidates: CandidateInput[]) => Promise<string[]>;
   updateCandidate: (id: string, input: CandidateInput) => Promise<void>;
+  /**
+   * Say something about a candidate, tagging colleagues in. Lands in the activity
+   * trail as a `comment`, so the page shows process and conversation as one timeline.
+   */
+  postCandidateComment: (candidateId: string, text: string, mentions?: string[]) => Promise<void>;
+  /** The quick note and the tags — one column each, so neither can clobber the record. */
+  setCandidateNote: (candidateId: string, note: string) => Promise<void>;
+  setCandidateTags: (candidateId: string, tags: string[]) => Promise<void>;
+  /** Record one AI fit score. Append-only; never moves a stage and notifies nobody. */
+  saveCandidateScore: (
+    candidateId: string,
+    score: {
+      overall: number;
+      verdict: string;
+      axes: unknown[];
+      notes: string;
+      cvQuality: string;
+      jdFingerprint: string;
+      model: string;
+    },
+  ) => Promise<void>;
   moveCandidate: (candidate: Candidate, toStage: CandidateStage, payload?: MovePayload) => Promise<void>;
   shareCandidatesWithHod: (ids: string[]) => Promise<void>;
   hodDecide: (ids: string[], selected: boolean, reasonId?: string | null, note?: string) => Promise<void>;
@@ -464,6 +495,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const probations = data?.probations ?? [];
   const probationReviews = data?.probationReviews ?? [];
   const activity = data?.activity ?? [];
+  const candidateScores = data?.candidateScores ?? [];
   const notifications = data?.notifications ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
@@ -525,6 +557,15 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       const list = activityByEntity.get(k) ?? [];
       list.push(a);
       activityByEntity.set(k, list);
+    }
+
+    // The LATEST fit score per candidate. The table is append-only — one row per
+    // scoring run, so the history survives a JD edit — but only the newest is
+    // ever shown, and "newest" is derived here rather than in SQL.
+    const fitByCandidate = new Map<string, CandidateFit>();
+    for (const s of candidateScores) {
+      const held = fitByCandidate.get(s.candidateId);
+      if (!held || s.scoredAt > held.scoredAt) fitByCandidate.set(s.candidateId, s);
     }
 
     // Newest first. The base fetch orders ascending, so without this the bell
@@ -988,6 +1029,26 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await updateCandidateWrite(id, input);
         await invalidate();
       },
+      // The RPC does its own announcing — it is the only writer that knows who was
+      // tagged — so there is no safeAnnounce here, unlike the moves above.
+      postCandidateComment: async (candidateId, text, mentions) => {
+        await postCandidateCommentWrite(candidateId, text, mentions ?? []);
+        await invalidate();
+      },
+      setCandidateNote: async (candidateId, note) => {
+        await setCandidateNoteWrite(candidateId, note);
+        await invalidate();
+      },
+      setCandidateTags: async (candidateId, tags) => {
+        await setCandidateTagsWrite(candidateId, tags);
+        await invalidate();
+      },
+      // Advisory only. It records what the model said and refreshes the snapshot —
+      // it does NOT move a stage, notify anyone, or write an activity row.
+      saveCandidateScore: async (candidateId, score) => {
+        await saveCandidateScoreWrite(candidateId, score);
+        await invalidate();
+      },
       moveCandidate: async (c, toStage, payload) => {
         await moveCandidateWrite(c.id, toStage, payload ?? {});
         const nextStep = STAGE_PENDING_STEP[toStage];
@@ -1217,6 +1278,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
 
       activity,
       activityFor: (entityType, entityId) => activityByEntity.get(`${entityType}:${entityId}`) ?? [],
+      fitFor: (candidateId) => fitByCandidate.get(candidateId),
       notifications: mine,
       unreadCount: mine.filter((n) => !n.readAt).length,
       markNotificationsRead: async (ids) => {
@@ -1308,7 +1370,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   }, [
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
     onboardingItems, jobTitles, skills, qualifications,
-    stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, notifications,
+    stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, candidateScores, notifications,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute

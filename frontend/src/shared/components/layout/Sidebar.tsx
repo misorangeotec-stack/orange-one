@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { overrideRail, railRequested, subscribeRail } from "./navRail";
 import { NavLink, useLocation } from "react-router-dom";
 import Logo from "@/shared/components/ui/Logo";
 import { cn } from "@/shared/lib/cn";
@@ -145,7 +146,16 @@ export default function Sidebar({
 
   const [open, setOpen] = useState<Set<string>>(() => new Set(readJson<string[]>(OPEN_KEY, [])));
   const [width, setWidth] = useState<number>(() => clampWidth(readJson<number>(WIDTH_KEY, SIDEBAR_DEFAULT_WIDTH)));
-  const [rail, setRail] = useState<boolean>(() => docked && readJson<boolean>(RAIL_KEY, false));
+  /** The user's own choice — the one that persists. */
+  const [railPref, setRailPref] = useState<boolean>(() => docked && readJson<boolean>(RAIL_KEY, false));
+
+  /**
+   * A page can ask for the rail while it is open (the candidate screen does, to give
+   * its three columns the width). That request is transient and never written to
+   * storage, so leaving the page restores whatever the user had set.
+   */
+  const autoRail = useSyncExternalStore(subscribeRail, railRequested, () => false);
+  const rail = docked && (railPref || autoRail);
 
   const toggle = (key: string) =>
     setOpen((prev) => {
@@ -157,7 +167,11 @@ export default function Sidebar({
     });
 
   const setRailPersisted = (v: boolean) => {
-    setRail(v);
+    // Reaching for the toggle settles it: the page's request stops applying for the
+    // rest of the session, so opening the next candidate cannot shut a nav the user
+    // has just deliberately opened.
+    overrideRail();
+    setRailPref(v);
     writeJson(RAIL_KEY, v);
   };
 

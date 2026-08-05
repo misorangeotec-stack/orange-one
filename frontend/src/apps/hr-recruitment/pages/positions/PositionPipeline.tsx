@@ -1,18 +1,15 @@
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import { formatDateDMY } from "@/shared/lib/date";
 import CandidateBoard from "../../components/kanban/CandidateBoard";
-import CandidateDrawer from "../../components/kanban/CandidateDrawer";
-import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
+import PipelineSummary from "../../components/positions/PipelineSummary";
 import StatusPill from "../../components/StatusPill";
 import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
 import { isLivePosition } from "../../lib/positions";
 import { isOpenCandidate } from "../../lib/queues";
-import type { Candidate, Onboarding } from "../../types";
 
 /**
  * One position, and the people moving through it.
@@ -25,9 +22,7 @@ import type { Candidate, Onboarding } from "../../types";
 export default function PositionPipeline() {
   const { id = "" } = useParams();
   const s = useHrStore();
-  const [openCandidate, setOpenCandidate] = useState<Candidate | null>(null);
-  /** The drawer hands off to this rather than stacking a dialog on a dialog. */
-  const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
+  const navigate = useNavigate();
 
   if (!canSeeBoard(s)) return <AccessDenied />;
 
@@ -100,22 +95,12 @@ export default function PositionPipeline() {
         </p>
       )}
 
-      <CandidateBoard requisition={r} onOpenCandidate={setOpenCandidate} />
+      <PipelineSummary candidates={candidates} />
 
-      {openCandidate && (
-        <CandidateDrawer
-          candidate={openCandidate}
-          open={!!openCandidate}
-          onClose={() => setOpenCandidate(null)}
-          onOpenOnboarding={(c) => {
-            const o = s.onboardingForCandidate(c.id);
-            if (o) setOnboarding(o);
-          }}
-        />
-      )}
-      {onboarding && (
-        <OnboardingPanel onboarding={onboarding} open={!!onboarding} onClose={() => setOnboarding(null)} />
-      )}
+      <CandidateBoard
+        requisition={r}
+        onOpenCandidate={(cand) => navigate(`/hr-recruitment/candidates/${cand.id}`)}
+      />
     </div>
   );
 }

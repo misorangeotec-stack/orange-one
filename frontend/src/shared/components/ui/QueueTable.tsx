@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import EmptyState from "@/shared/components/ui/EmptyState";
+import MultiSelect from "@/shared/components/ui/MultiSelect";
 import Pagination from "@/shared/components/ui/Pagination";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
@@ -10,6 +11,16 @@ import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 export type ColumnFilter<T> =
   | { kind: "text"; get: (row: T) => string }
   | { kind: "select"; get: (row: T) => string; options?: string[] }
+  /**
+   * Tick any number of values. An empty selection means NO filter (everything),
+   * exactly as a cleared text box does.
+   *
+   * `initial` seeds the table on first render — the way to open a screen already
+   * excluding a value nobody wants to see by default, without hiding it for good.
+   * "Clear filters" still drops back to showing everything, so the excluded rows are
+   * always one click away rather than unreachable.
+   */
+  | { kind: "multiselect"; get: (row: T) => string; options?: string[]; initial?: string[] }
   | { kind: "number"; get: (row: T) => number }
   | { kind: "date"; get: (row: T) => string }; // row value as ISO (date or datetime)
 
@@ -99,7 +110,7 @@ interface QueueTableProps<T> {
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
-type FilterVal = string | { min: string; max: string } | { from: string; to: string };
+type FilterVal = string | string[] | { min: string; max: string } | { from: string; to: string };
 
 const inputBase =
   "h-8 w-full min-w-0 rounded-lg border border-line bg-white px-2.5 text-[12.5px] text-ink placeholder:text-grey-2/60 focus:outline-none focus:ring-2 focus:ring-orange/25 focus:border-orange/50";
@@ -139,7 +150,16 @@ export default function QueueTable<T>({
   selectable,
   hideGroupHeaders,
 }: QueueTableProps<T>) {
-  const [filters, setFilters] = useState<Record<string, FilterVal>>({});
+  // Seeded once from any multiselect column's `initial`, so a screen can open with a
+  // sensible default selection. Lazy on purpose: `columns` is usually rebuilt every
+  // render, and re-seeding would stamp the default back over the user's choice.
+  const [filters, setFilters] = useState<Record<string, FilterVal>>(() => {
+    const seed: Record<string, FilterVal> = {};
+    for (const c of columns) {
+      if (c.filter?.kind === "multiselect" && c.filter.initial?.length) seed[c.key] = [...c.filter.initial];
+    }
+    return seed;
+  });
   const [group, setGroup] = useState<string>(initialGroup ?? "all");
   const [sort, setSort] = useState<SortState>(initialSort ?? null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -156,6 +176,7 @@ export default function QueueTable<T>({
     const f = filters[col.key];
     if (!f || !col.filter) return false;
     if (col.filter.kind === "text" || col.filter.kind === "select") return (f as string) !== "";
+    if (col.filter.kind === "multiselect") return Array.isArray(f) && f.length > 0;
     if (col.filter.kind === "number") { const v = f as { min: string; max: string }; return v.min !== "" || v.max !== ""; }
     const v = f as { from: string; to: string }; return v.from !== "" || v.to !== "";
   };
@@ -168,6 +189,8 @@ export default function QueueTable<T>({
         return col.filter.get(row).toLowerCase().includes((f as string).trim().toLowerCase());
       case "select":
         return col.filter.get(row) === (f as string);
+      case "multiselect":
+        return (f as string[]).includes(col.filter.get(row));
       case "number": {
         const { min, max } = f as { min: string; max: string };
         const v = col.filter.get(row);
@@ -202,7 +225,7 @@ export default function QueueTable<T>({
   const selectOptions = useMemo(() => {
     const out: Record<string, string[]> = {};
     for (const c of columns) {
-      if (c.filter?.kind === "select") {
+      if (c.filter?.kind === "select" || c.filter?.kind === "multiselect") {
         if (c.filter.options) { out[c.key] = c.filter.options; continue; }
         const set = new Set<string>();
         for (const row of rows) { const v = c.filter.get(row); if (v) set.add(v); }
@@ -285,6 +308,7 @@ export default function QueueTable<T>({
       const f = filters[col.key];
       if (col.filter.kind === "text") out.push(`${col.header} contains "${f as string}"`);
       else if (col.filter.kind === "select") out.push(`${col.header} is "${f as string}"`);
+      else if (col.filter.kind === "multiselect") out.push(`${col.header} is one of: ${(f as string[]).join(", ")}`);
       else if (col.filter.kind === "number") {
         const v = f as { min: string; max: string };
         out.push(`${col.header}: ${v.min || "any"} – ${v.max || "any"}`);
@@ -335,6 +359,18 @@ export default function QueueTable<T>({
             {selectOptions[col.key]?.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
         );
+      case "multiselect": {
+        const v = (Array.isArray(f) ? f : []) as string[];
+        return (
+          <MultiSelect
+            values={v}
+            onChange={(next) => setFilter(col.key, next)}
+            options={(selectOptions[col.key] ?? []).map((o) => ({ value: o, label: o }))}
+            placeholder="All"
+            triggerClassName={inputBase}
+          />
+        );
+      }
       case "number": {
         const v = (f as { min: string; max: string }) ?? { min: "", max: "" };
         const active = v.min !== "" || v.max !== "";

@@ -36,3 +36,16 @@ verify_jwt = true
 # figures + always a signed-in admin, so JWT verification stays ON.
 [functions.analyze-receivables]
 verify_jwt = true
+
+# JD parsing (Claude) for the HR Recruitment FMS. A job description carries the salary
+# band and the headcount, so JWT verification stays ON. (It already is — this block only
+# stops that depending on the platform default.)
+[functions.parse-jd]
+verify_jwt = true
+
+# AI fit scoring (Claude) for the HR Recruitment FMS. Reads a candidate's CV out of the
+# PRIVATE fms-hr-docs bucket using the CALLER'S OWN JWT — the function holds no
+# service-role key, so every read is gated by the same RLS the CV tab is gated by.
+# Resumes are PII and the answer paraphrases one, so JWT verification is mandatory.
+[functions.score-candidate]
+verify_jwt = true

@@ -1526,6 +1526,69 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_candidate_scores: {
+        Row: {
+          axes: Json
+          candidate_id: string
+          created_at: string
+          cv_quality: string
+          id: string
+          jd_fingerprint: string
+          model: string
+          notes: string | null
+          overall: number
+          requisition_id: string
+          scored_at: string
+          scored_by: string | null
+          verdict: string
+        }
+        Insert: {
+          axes?: Json
+          candidate_id: string
+          created_at?: string
+          cv_quality?: string
+          id?: string
+          jd_fingerprint?: string
+          model?: string
+          notes?: string | null
+          overall: number
+          requisition_id: string
+          scored_at?: string
+          scored_by?: string | null
+          verdict: string
+        }
+        Update: {
+          axes?: Json
+          candidate_id?: string
+          created_at?: string
+          cv_quality?: string
+          id?: string
+          jd_fingerprint?: string
+          model?: string
+          notes?: string | null
+          overall?: number
+          requisition_id?: string
+          scored_at?: string
+          scored_by?: string | null
+          verdict?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fms_hr_candidate_scores_candidate_id_fkey"
+            columns: ["candidate_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_candidates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fms_hr_candidate_scores_requisition_id_fkey"
+            columns: ["requisition_id"]
+            isOneToOne: false
+            referencedRelation: "fms_hr_requisitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fms_hr_candidates: {
         Row: {
           candidate_no: string | null
@@ -1564,6 +1627,7 @@ export type Database = {
           skills: string[]
           source_platform_id: string | null
           stage: string
+          tags: string[]
           telephonic_at: string | null
           updated_at: string
           uploaded_at: string
@@ -1605,6 +1669,7 @@ export type Database = {
           skills?: string[]
           source_platform_id?: string | null
           stage?: string
+          tags?: string[]
           telephonic_at?: string | null
           updated_at?: string
           uploaded_at?: string
@@ -1646,6 +1711,7 @@ export type Database = {
           skills?: string[]
           source_platform_id?: string | null
           stage?: string
+          tags?: string[]
           telephonic_at?: string | null
           updated_at?: string
           uploaded_at?: string
@@ -7418,6 +7484,10 @@ export type Database = {
       fms_hr_next_seq: { Args: { p_scope: string }; Returns: number }
       fms_hr_open_probation: { Args: { p_onb: string }; Returns: undefined }
       fms_hr_pending_step: { Args: { p_stage: string }; Returns: string }
+      fms_hr_post_comment: {
+        Args: { p_candidate: string; p_mentions?: string[]; p_text: string }
+        Returns: undefined
+      }
       fms_hr_post_job: {
         Args: { p_other_note?: string; p_platform_ids: string[]; p_posted_on?: string; p_req: string }
         Returns: undefined
@@ -7473,6 +7543,18 @@ export type Database = {
       fms_hr_seats_taken: {
         Args: { p_exclude?: string; p_req: string }
         Returns: number
+      }
+      fms_hr_save_candidate_score: {
+        Args: { p: Json; p_candidate: string }
+        Returns: string
+      }
+      fms_hr_set_candidate_note: {
+        Args: { p_id: string; p_note: string }
+        Returns: undefined
+      }
+      fms_hr_set_candidate_tags: {
+        Args: { p_id: string; p_tags: string[] }
+        Returns: undefined
       }
       fms_hr_set_employee_code: {
         Args: { p_code: string; p_onb: string }

@@ -19,19 +19,20 @@ const B = "/hr-recruitment";
 /**
  * Deep-link a bell notification to the thing it is about.
  *
- * A candidate has no page of their own — they are a card on a position's board, so
- * that is where "Priya moved to Round 2" has to land. `requisitionOf` resolves the
- * card to its position; without it these two cases pointed at `/candidates/:id`, a
- * route that has never existed, and every pipeline notification hit Not Found.
+ * "Priya moved to Round 2" now lands on PRIYA. The candidate page it wants has
+ * existed only since the candidate route was added — before that these two cases
+ * pointed at `/candidates/:id`, which had never been mounted and sent every pipeline
+ * notification to Not Found, and then at the whole board, which left you to find the
+ * card yourself. `candidateOf` resolves an interview notification the extra hop.
  */
-const linkFor = (n: HrNotification, requisitionOf: (candidateId: string) => string | null): string => {
+const linkFor = (n: HrNotification, candidateOf: (entityId: string) => string | null): string => {
   switch (n.entityType) {
     case "requisition":
       return `${B}/requisitions/${n.entityId}`;
     case "candidate":
     case "interview": {
-      const reqId = requisitionOf(n.entityId);
-      return reqId ? `${B}/positions/${reqId}` : `${B}/positions`;
+      const candidateId = candidateOf(n.entityId);
+      return candidateId ? `${B}/candidates/${candidateId}` : `${B}/positions`;
     }
     case "onboarding":
       return `${B}/onboarding/${n.entityId}`;
@@ -94,15 +95,15 @@ export default function HrLayout() {
   );
 
   /**
-   * A candidate or interview notification resolves to the position whose board the
-   * card is on. An interview hops one extra step (interview → candidate) because the
-   * notification carries the interview's own id.
+   * The candidate a notification is really about. An interview hops one extra step
+   * (interview → candidate) because the notification carries the interview's own id.
+   * Null when the candidate has aged out of the load window — the caller then falls
+   * back to the positions list rather than linking to a page that cannot render.
    */
-  const positionOfCard = (entityId: string): string | null => {
-    const direct = s.candidateById(entityId);
-    if (direct) return direct.requisitionId;
+  const candidateOfCard = (entityId: string): string | null => {
+    if (s.candidateById(entityId)) return entityId;
     const iv = s.interviews.find((x) => x.id === entityId);
-    return iv ? (s.candidateById(iv.candidateId)?.requisitionId ?? null) : null;
+    return iv && s.candidateById(iv.candidateId) ? iv.candidateId : null;
   };
 
   // Who did it used to be dropped entirely — the bell showed a bare sentence.
@@ -119,7 +120,7 @@ export default function HrLayout() {
       message: n.text,
       createdAt: n.createdAt,
       unread: !n.readAt,
-      to: linkFor(n, positionOfCard),
+      to: linkFor(n, candidateOfCard),
     };
   });
 

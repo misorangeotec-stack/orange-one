@@ -105,11 +105,17 @@ export function FieldRow({
   value,
   children,
   className,
+  labelClassName,
 }: {
   label: string;
   value?: ReactNode;
   children?: ReactNode;
   className?: string;
+  /**
+   * Override the label gutter. The 124px default is sized for a full-width readout;
+   * in a narrow rail it eats most of the row, so a sidebar can ask for less.
+   */
+  labelClassName?: string;
 }) {
   const body = children ?? value;
   const blank = body === null || body === undefined || body === "" || body === "—";
@@ -117,8 +123,11 @@ export function FieldRow({
     <div className={cn("flex items-baseline gap-3 min-w-0", className)}>
       {/* Fixed gutter so every label in a column starts at the same x — that
           single alignment is most of what makes a long list feel calm. */}
-      <span className={cn("w-[124px] shrink-0", FIELD_ROW_LABEL_CLASS)}>{label}</span>
-      <span className={cn("min-w-0 flex-1", FIELD_ROW_VALUE_CLASS)}>{blank ? EMPTY : body}</span>
+      <span className={cn("w-[124px] shrink-0", FIELD_ROW_LABEL_CLASS, labelClassName)}>{label}</span>
+      {/* `min-w-0` lets the cell shrink, but shrinking alone does not wrap a string
+          with nowhere to break — an email address then runs straight out of the card.
+          `break-words` only engages when a word cannot fit, so nothing else moves. */}
+      <span className={cn("min-w-0 flex-1 break-words", FIELD_ROW_VALUE_CLASS)}>{blank ? EMPTY : body}</span>
     </div>
   );
 }
