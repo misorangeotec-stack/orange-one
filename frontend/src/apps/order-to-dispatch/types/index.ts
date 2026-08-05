@@ -28,12 +28,18 @@ export interface Company extends NamedMaster {
 
 export interface Customer extends NamedMaster {
   /**
-   * THE COMPANY↔CUSTOMER MAPPING. Which of our companies bills this customer.
-   * Required, because the sales order no longer asks — `fms_dispatch_submit_order`
-   * reads it and refuses to raise an order without it.
+   * ⚠ LEGACY, and null on all but one row. It was the customer↔company mapping
+   * that `fms_dispatch_submit_order` used to read; 20260811120200 retired it and
+   * the order now carries its own company. Kept only so the column still maps.
    */
   companyId: string | null;
   code: string | null;
+  /**
+   * Where this customer normally takes delivery. Seeded onto a new sales order
+   * the moment the customer is picked — the order keeps its own copy, so a later
+   * rename here cannot rewrite a consignment that already went out.
+   */
+  location: string | null;
   gstin: string | null;
   contactName: string | null;
   phone: string | null;
@@ -264,6 +270,8 @@ export interface DispatchRound {
   companyId: string | null;
 
   msActualDate: string | null;
+  msTempoNo: string | null;
+  msPorter: boolean | null;
   msRemarks: string | null;
   msAt: string | null;
   msBy: string | null;
@@ -308,9 +316,20 @@ export interface DispatchOrder {
 
   // ---- intake ----
   dispatchType: DispatchType;
-  /** Resolved server-side from the customer's master mapping. Never asked for. */
+  /**
+   * WHICH OF OUR ENTITIES BILLS THIS ORDER. Asked once, on the intake form, by
+   * the person who actually knows the answer.
+   *
+   * ⚠ It is ORDER-scoped, not round-scoped, so `fms_dispatch_archive_round` must
+   *   NOT wipe it — every round of an order bills the same entity. Null only on
+   *   orders raised before 20260817120000 moved the question here.
+   */
   companyId: string | null;
   customerId: string;
+  /** Where this consignment goes. Seeded from the customer master, overridable. */
+  customerLocation: string | null;
+  /** The customer's own PO reference, quoted back to them. Optional. */
+  customerPoNo: string | null;
   /** When the customer's order arrived. */
   orderDate: string;
   orderRemarks: string | null;
@@ -344,6 +363,10 @@ export interface DispatchOrder {
 
   // ---- the round in progress ----
   msActualDate: string | null;
+  /** The vehicle carrying THIS round. Optional — blank is a legitimate answer. */
+  msTempoNo: string | null;
+  /** Did this round go by porter? Null means nobody answered. */
+  msPorter: boolean | null;
   msRemarks: string | null;
   msAt: string | null;
   msBy: string | null;

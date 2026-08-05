@@ -48,6 +48,8 @@ export function exportOrderRegister(
     { header: "Type", width: 12, value: (r) => DISPATCH_TYPE_LABEL[r.order.dispatchType] },
     { header: "Order Date", width: 13, value: (r) => dmy(r.order.orderDate) },
     { header: "Customer Name", width: 26, value: (r) => deps.customerName(r.order.customerId) },
+    { header: "Customer Location", width: 20, value: (r) => r.order.customerLocation ?? "" },
+    { header: "Customer PO No.", width: 18, value: (r) => r.order.customerPoNo ?? "" },
     { header: "Company", width: 24, value: (r) => deps.companyName(r.view.companyId ?? r.order.companyId) },
     {
       header: "Item",
@@ -91,6 +93,9 @@ export function exportOrderRegister(
 
   // The documents each step produced, and the closing state.
   columns.push(
+    // Per round, from the stock check. Both optional, so blank is a real answer.
+    { header: "Tempo No.", width: 16, value: (r) => r.view.msTempoNo ?? "" },
+    { header: "Porter", width: 10, value: (r) => (r.view.msPorter === null ? "" : r.view.msPorter ? "Yes" : "No") },
     { header: "Tally Invoice No.", width: 18, value: (r) => r.view.sbInvoiceNo ?? "" },
     { header: "Sales Invoice Attached", width: 14, value: (r) => (r.view.sbAttachmentPath ? "Yes" : "No") },
     { header: "Gate Outward No.", width: 18, value: (r) => r.view.goOutwardNo ?? "" },

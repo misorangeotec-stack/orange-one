@@ -10,13 +10,16 @@ import type { DispatchOrder } from "../types";
  * The all-orders table, shared by the full list and My Orders so the two cannot
  * drift.
  *
- * Six columns, deliberately — the same shape as the purchase-request lists
- * (identity · counterparty · items · when · where it is · status). Type, Round,
- * Pending and Step due were dropped in favour of that: an order register is read
- * to find an order, and each of the four repeated something already on the row
- * (Items already carries the pending quantity) or belonged on a screen built to
- * chase lateness — the step queues and the Control Center, which read the very
- * same `lib/queues.ts` and are where a due date can actually be acted on.
+ * The shape follows the purchase-request lists: identity · counterparty · items ·
+ * when · where it is · status. Type, Round, Pending and Step due stay OUT — each
+ * repeated something already on the row (Items already carries the pending
+ * quantity) or belonged on a screen built to chase lateness: the step queues and
+ * the Control Center, which read the very same `lib/queues.ts`.
+ *
+ * Location, Company and PO no. are in, and they are the exception that proves the
+ * rule: an order register is read to FIND an order, and those are three of the
+ * things someone actually arrives holding — "the Surat one", "the one we billed
+ * from the other entity", "their PO 4471".
  */
 export default function OrdersTable({
   orders,
@@ -59,6 +62,30 @@ export default function OrdersTable({
       cell: (o) => <span className="text-navy">{s.customerName(o.customerId)}</span>,
       sortValue: (o) => s.customerName(o.customerId),
       filter: { kind: "select", get: (o) => s.customerName(o.customerId) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "location",
+      header: "Location",
+      cell: (o) => <span className="text-grey">{o.customerLocation ?? "—"}</span>,
+      sortValue: (o) => o.customerLocation ?? "",
+      filter: { kind: "select", get: (o) => o.customerLocation ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "company",
+      header: "Company",
+      cell: (o) => <span className="text-grey">{s.masterName("company", o.companyId)}</span>,
+      sortValue: (o) => s.masterName("company", o.companyId),
+      filter: { kind: "select", get: (o) => s.masterName("company", o.companyId) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "poNo",
+      header: "PO no.",
+      cell: (o) => <span className="text-grey">{o.customerPoNo ?? "—"}</span>,
+      sortValue: (o) => o.customerPoNo ?? "",
+      filter: { kind: "text", get: (o) => o.customerPoNo ?? "" },
       tdClassName: "whitespace-nowrap",
     },
     {

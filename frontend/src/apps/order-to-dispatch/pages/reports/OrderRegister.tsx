@@ -5,7 +5,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import DateRangeFilter, {
   EMPTY_RANGE, dateInRange, isRangeActive, rangeLabel, type DateRange,
 } from "@/shared/components/ui/DateRangeFilter";
-import { FieldLabel } from "@/shared/components/ui/Form";
+import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../../store";
 import { exportOrderRegister } from "../../lib/exportOrderRegister";
 import { STATUS_LABEL, DISPATCH_TYPE_LABEL } from "../../lib/format";
@@ -27,8 +27,13 @@ export default function OrderRegister() {
   const s = useDispatchStore();
   const [range, setRange] = useState<DateRange>(EMPTY_RANGE);
   const [customerId, setCustomerId] = useState("");
+  const [poNo, setPoNo] = useState("");
   const [type, setType] = useState<DispatchType | "">("");
   const [status, setStatus] = useState<DispatchStatus | "">("");
+
+  // The PO is matched as a CONTAINS, not an equals: people quote it partially
+  // ("4471") off a mail thread far more often than they retype it in full.
+  const poQuery = poNo.trim().toLowerCase();
 
   const rows = useMemo(
     () =>
@@ -36,20 +41,22 @@ export default function OrderRegister() {
         (o) =>
           (!isRangeActive(range) || dateInRange(o.orderDate, range)) &&
           (!customerId || o.customerId === customerId) &&
+          (!poQuery || (o.customerPoNo ?? "").toLowerCase().includes(poQuery)) &&
           (!type || o.dispatchType === type) &&
           (!status || o.status === status),
       ),
-    [s.orders, range, customerId, type, status],
+    [s.orders, range, customerId, poQuery, type, status],
   );
 
   const filters = useMemo(() => {
     const out: string[] = [];
     if (isRangeActive(range)) out.push(`Order date: ${rangeLabel(range)}`);
     if (customerId) out.push(`Customer: ${s.customerName(customerId)}`);
+    if (poQuery) out.push(`Customer PO: ${poNo.trim()}`);
     if (type) out.push(`Type: ${DISPATCH_TYPE_LABEL[type]}`);
     if (status) out.push(`Status: ${STATUS_LABEL[status]}`);
     return out;
-  }, [range, customerId, type, status, s]);
+  }, [range, customerId, poQuery, poNo, type, status, s]);
 
   const download = () => {
     exportOrderRegister(
@@ -88,6 +95,13 @@ export default function OrderRegister() {
               onChange={setCustomerId}
               options={[{ value: "", label: "All customers" }, ...s.customers.map((c) => ({ value: c.id, label: c.name }))]}
               searchable
+            />
+          </FieldLabel>
+          <FieldLabel label="Customer PO no.">
+            <TextInput
+              value={poNo}
+              onChange={(e) => setPoNo(e.target.value)}
+              placeholder="all POs"
             />
           </FieldLabel>
           <FieldLabel label="Type">

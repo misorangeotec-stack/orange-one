@@ -110,6 +110,38 @@ export default function ControlCenter() {
         },
       },
     },
+    // Like every cell here, these re-resolve the order: a QueueEntry carries only
+    // ref / dueIso / orderId, never the row itself.
+    {
+      key: "location",
+      header: "Location",
+      cell: (e) => {
+        const o = s.orderById(e.entityId);
+        return <span className="text-grey">{o?.customerLocation ?? "—"}</span>;
+      },
+      sortValue: (e) => s.orderById(e.entityId)?.customerLocation ?? "",
+      filter: { kind: "select", get: (e) => s.orderById(e.entityId)?.customerLocation ?? "—" },
+    },
+    {
+      key: "company",
+      header: "Company",
+      cell: (e) => {
+        const o = s.orderById(e.entityId);
+        return <span className="text-grey">{s.masterName("company", o?.companyId ?? null)}</span>;
+      },
+      sortValue: (e) => s.masterName("company", s.orderById(e.entityId)?.companyId ?? null),
+      filter: { kind: "select", get: (e) => s.masterName("company", s.orderById(e.entityId)?.companyId ?? null) },
+    },
+    {
+      key: "poNo",
+      header: "PO no.",
+      cell: (e) => {
+        const o = s.orderById(e.entityId);
+        return <span className="text-grey">{o?.customerPoNo ?? "—"}</span>;
+      },
+      sortValue: (e) => s.orderById(e.entityId)?.customerPoNo ?? "",
+      filter: { kind: "text", get: (e) => s.orderById(e.entityId)?.customerPoNo ?? "" },
+    },
     {
       key: "type",
       header: "Type",

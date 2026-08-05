@@ -217,7 +217,14 @@ export default function StepModal({
   if (!order || !view) return null;
 
   const title = editing ? `Edit — ${cfg.title}` : cfg.title;
-  const subtitle = `${order.orderNo} · ${s.customerName(order.customerId)} · round ${view.roundNo}`;
+  // The customer's own PO earns a place here: it is the reference THEY quote when
+  // they ring up, so it is what an actor matches the order against.
+  const subtitle = [
+    order.orderNo,
+    s.customerName(order.customerId),
+    `round ${view.roundNo}`,
+    order.customerPoNo ? `PO ${order.customerPoNo}` : null,
+  ].filter(Boolean).join(" · ");
 
   const recordedAt = view.dcAt ?? view.goAt ?? view.sbAt ?? view.msAt;
 
@@ -285,7 +292,6 @@ export default function StepModal({
             showCredit={cfg.context.showCredit}
             showLines={cfg.context.showLines}
             showOrderLines={cfg.context.showOrderLines}
-            showCompany={cfg.context.showCompany}
             showInvoice={cfg.context.showInvoice}
             showOutward={cfg.context.showOutward}
           />

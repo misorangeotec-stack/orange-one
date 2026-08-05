@@ -52,7 +52,12 @@ function useDispatchWork(active: boolean): MyWorkResult {
           sourceLabel: appName("order-to-dispatch"),
           ref: e.ref,
           detail: o
-            ? `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}${o.roundNo > 1 ? ` · round ${o.roundNo}` : ""}`
+            ? [
+                `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}`,
+                o.roundNo > 1 ? `round ${o.roundNo}` : null,
+                // The customer's own reference, which is how they will refer to it.
+                o.customerPoNo ? `PO ${o.customerPoNo}` : null,
+              ].filter(Boolean).join(" · ")
             : undefined,
           stage: stepByKey(e.stepKey)?.short,
           dueIso: e.dueIso,

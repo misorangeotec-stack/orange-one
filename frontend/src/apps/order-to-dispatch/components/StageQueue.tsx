@@ -87,6 +87,29 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       sortValue: (r) => s.customerName(r.order.customerId),
       filter: { kind: "select", get: (r) => s.customerName(r.order.customerId) },
     },
+    // Settled at intake, so they are known on every queue including this step's.
+    // QueueTable derives its .xlsx from `columns`, so these export for free.
+    {
+      key: "location",
+      header: "Location",
+      cell: (r) => <span className="text-grey">{r.order.customerLocation ?? "—"}</span>,
+      sortValue: (r) => r.order.customerLocation ?? "",
+      filter: { kind: "select", get: (r) => r.order.customerLocation ?? "—" },
+    },
+    {
+      key: "company",
+      header: "Company",
+      cell: (r) => <span className="text-grey">{s.masterName("company", r.order.companyId)}</span>,
+      sortValue: (r) => s.masterName("company", r.order.companyId),
+      filter: { kind: "select", get: (r) => s.masterName("company", r.order.companyId) },
+    },
+    {
+      key: "poNo",
+      header: "PO no.",
+      cell: (r) => <span className="text-grey">{r.order.customerPoNo ?? "—"}</span>,
+      sortValue: (r) => r.order.customerPoNo ?? "",
+      filter: { kind: "text", get: (r) => r.order.customerPoNo ?? "" },
+    },
     {
       key: "type",
       header: "Type",
@@ -161,6 +184,32 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       cell: (e) => <span className="text-navy">{s.customerName(e.row.customerId)}</span>,
       sortValue: (e) => s.customerName(e.row.customerId),
       filter: { kind: "select", get: (e) => s.customerName(e.row.customerId) },
+    },
+    {
+      key: "location",
+      header: "Location",
+      cell: (e) => <span className="text-grey">{e.row.customerLocation ?? "—"}</span>,
+      sortValue: (e) => e.row.customerLocation ?? "",
+      filter: { kind: "select", get: (e) => e.row.customerLocation ?? "—" },
+    },
+    {
+      key: "company",
+      // ⚠ The ROUND first. A completed row can be an ARCHIVED round, which keeps
+      //   its own frozen company; falling back to the header covers orders raised
+      //   before the company moved to intake.
+      header: "Company",
+      cell: (e) => (
+        <span className="text-grey">{s.masterName("company", e.view.companyId ?? e.row.companyId)}</span>
+      ),
+      sortValue: (e) => s.masterName("company", e.view.companyId ?? e.row.companyId),
+      filter: { kind: "select", get: (e) => s.masterName("company", e.view.companyId ?? e.row.companyId) },
+    },
+    {
+      key: "poNo",
+      header: "PO no.",
+      cell: (e) => <span className="text-grey">{e.row.customerPoNo ?? "—"}</span>,
+      sortValue: (e) => e.row.customerPoNo ?? "",
+      filter: { kind: "text", get: (e) => e.row.customerPoNo ?? "" },
     },
     {
       key: cfg.captured.key,

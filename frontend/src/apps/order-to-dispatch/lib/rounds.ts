@@ -30,9 +30,19 @@ export interface RoundView {
   /** Present only on an archived round — the id needed to amend it. */
   roundId: string | null;
   roundStartedAt: string | null;
+  /**
+   * ⚠ ORDER-scoped in everything but name. The company is chosen at intake and
+   *   is the same on every round; the archive keeps its own copy purely so a
+   *   historic round stays self-describing. Both projections below source it
+   *   from their own row, which agree by construction.
+   */
   companyId: string | null;
 
   msActualDate: string | null;
+  /** The vehicle that carried THIS round. Optional. */
+  msTempoNo: string | null;
+  /** Whether THIS round went by porter. Null ⇒ unanswered. */
+  msPorter: boolean | null;
   msRemarks: string | null;
   msAt: string | null;
   msBy: string | null;
@@ -111,6 +121,8 @@ export function currentRoundView(order: DispatchOrder): RoundView | null {
     companyId: order.companyId,
 
     msActualDate: order.msActualDate,
+    msTempoNo: order.msTempoNo,
+    msPorter: order.msPorter,
     msRemarks: order.msRemarks,
     msAt: order.msAt,
     msBy: order.msBy,
@@ -156,6 +168,8 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     companyId: r.companyId,
 
     msActualDate: r.msActualDate,
+    msTempoNo: r.msTempoNo,
+    msPorter: r.msPorter,
     msRemarks: r.msRemarks,
     msAt: r.msAt,
     msBy: r.msBy,

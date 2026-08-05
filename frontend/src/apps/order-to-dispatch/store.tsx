@@ -88,6 +88,16 @@ interface DispatchStoreValue {
    * offered to them until someone maps it.
    */
   itemsForCustomer: (customerId: string | null) => Item[];
+  /**
+   * Every delivery location anyone has used — off the customer master AND off
+   * orders already raised, so a location typed once on an order is offered to
+   * the next person instead of being retyped (and mistyped).
+   *
+   * ⚠ There is no location MASTER. The intake picker lets a new one be typed on
+   *   the spot, which is the whole point; a governed master would put an
+   *   approval queue between a driver and a delivery address.
+   */
+  knownLocations: string[];
   /** Active + sorted, for dropdowns. The full lists above back display lookups. */
   activeOf: <T extends NamedMaster>(rows: T[]) => T[];
   masterList: (mt: DispatchMasterType) => NamedMaster[];
@@ -251,6 +261,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const nameFrom = (rows: NamedMaster[], id: string | null): string =>
       !id ? "—" : rows.find((r) => r.id === id)?.name ?? "—";
 
+    // Deduped case-INSENSITIVELY but kept in the casing it was first written in,
+    // so "Surat" and "surat" are one option rather than two near-identical rows
+    // in the picker. Master locations are seeded first, so they win the casing.
+    const knownLocations: string[] = (() => {
+      const seen = new Map<string, string>();
+      const add = (raw: string | null) => {
+        const v = (raw ?? "").trim();
+        if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+      };
+      customers.forEach((c) => add(c.location));
+      orders.forEach((o) => add(o.customerLocation));
+      return [...seen.values()].sort((a, b) => a.localeCompare(b));
+    })();
+
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
       customer: customers,
@@ -347,6 +371,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         );
         return activeOf(items).filter((i) => allowed.has(i.id));
       },
+      knownLocations,
       masterName: (mt, id) => nameFrom(MASTER_LIST[mt], id),
 
       orders,

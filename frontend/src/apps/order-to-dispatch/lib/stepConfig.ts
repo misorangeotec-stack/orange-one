@@ -86,8 +86,13 @@ export interface StepContext {
    * item — would not be shown at all.
    */
   showOrderLines?: boolean;
-  /** The billing company chosen at the stock check. */
-  showCompany?: boolean;
+  /*
+   * ⚠ There is no `showCompany`. It was opt-in while the company was decided
+   *   mid-flow, so the steps before the stock check had nothing to show. The
+   *   order now carries it from the moment it is raised, along with the customer
+   *   location and PO — so OrderRefPanel prints all three unconditionally and
+   *   there is no flag to forget.
+   */
   /** Tally invoice no. + a button that opens the invoice. */
   showInvoice?: boolean;
   /** Gate outward no. */
@@ -133,6 +138,20 @@ export const DELIVERY_STATUS_OPTIONS = [
   { value: "returned", label: DELIVERY_STATUS_LABEL.returned },
 ];
 
+/**
+ * A yes/no, as a two-value select.
+ *
+ * ⚠ `StepFieldKind` has no boolean and this is deliberate: `StepModal` holds its
+ *   values as `Record<string, string>` and posts them verbatim, so a tick box
+ *   would need a new kind, a new renderer AND a string encoding anyway. The RPC
+ *   normalises "yes"/"no" (and an empty string, meaning unanswered) into the
+ *   boolean column.
+ */
+export const YES_NO_OPTIONS = [
+  { value: "yes", label: "Yes" },
+  { value: "no", label: "No" },
+];
+
 const s = (v: string | null | undefined): string => v ?? "";
 const day = (v: string | null | undefined): string => (v ? v.slice(0, 10) : "");
 
@@ -174,15 +193,24 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     context: { showCredit: true },
     fields: [
       /*
-        THE ONLY PLACE THE COMPANY IS CHOSEN. Intake asks who is buying, not who is
-        selling — the old customer→company mapping was retired precisely because it
-        was a field nobody decided. The store keeper decides it here, per consignment,
-        and every downstream step is shown the answer rather than asked again.
+        THE COMPANY IS NO LONGER ASKED HERE. It moved to the intake form: the
+        person raising the order knows which entity bills it, and asking it per
+        round let one order that shipped in two goes bill two different entities.
+        What the store keeper genuinely knows at this moment is how the material
+        is leaving — hence the two fields below.
+
+        Both are OPTIONAL. A consignment can be recorded before the vehicle is
+        arranged, and blocking the stock check on a tempo number would stop the
+        order over a fact that changes later anyway.
       */
       {
-        key: "ms_company_id", label: "Billing company", kind: "select", required: true,
-        master: "company", get: (_o, v) => s(v.companyId), beforeLines: true,
-        placeholder: "which company bills this consignment",
+        key: "ms_tempo_no", label: "Transport tempo no.", kind: "text", beforeLines: true,
+        get: (_o, v) => s(v.msTempoNo), placeholder: "vehicle carrying this consignment",
+      },
+      {
+        key: "ms_porter", label: "Porter", kind: "select", choices: YES_NO_OPTIONS, beforeLines: true,
+        get: (_o, v) => (v.msPorter === null ? "" : v.msPorter ? "yes" : "no"),
+        placeholder: "did this go by porter",
       },
       { key: "ms_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.msRemarks) },
     ],
@@ -203,7 +231,7 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record sales bill",
     description: "Consignments picked and waiting for the invoice to be raised in Tally.",
     completedBlurb: "Bills you record appear here, and stay revisable until the gate outward entry is recorded.",
-    context: { showCredit: true, showLines: true, showCompany: true },
+    context: { showCredit: true, showLines: true },
     fields: [
       {
         key: "sb_invoice_no", label: "Tally invoice no.", kind: "text", required: true,
@@ -225,7 +253,7 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     actionLabel: "Record gate outward",
     description: "Billed consignments waiting for the plant in-charge to write the gate register entry as the material leaves.",
     completedBlurb: "Gate entries you record appear here, and stay revisable until the delivery is confirmed.",
-    context: { showCredit: true, showLines: true, showCompany: true, showInvoice: true },
+    context: { showCredit: true, showLines: true, showInvoice: true },
     fields: [
       {
         key: "go_outward_no", label: "Gate outward no.", kind: "text", required: true,
@@ -244,7 +272,7 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       "Consignments out of the gate, waiting for confirmation that they reached the customer.",
     completedBlurb:
       "Confirmations appear here. Once a round is finished, correcting what was delivered is done from the order page.",
-    context: { showLines: true, showCompany: true, showInvoice: true, showOutward: true },
+    context: { showLines: true, showInvoice: true, showOutward: true },
     fields: [
       {
         key: "dc_status", label: "Delivery outcome", kind: "select", required: true,

@@ -52,6 +52,10 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
       return [
         { key: "name", label: "Customer name", type: "text", required: true },
         { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
+        // Free text, not a picker — there is no location master. It seeds the
+        // sales order, which then keeps its own copy, so a rename here cannot
+        // rewrite where a consignment that already went out was sent.
+        { key: "location", label: "Location", type: "text", placeholder: "where they take delivery" },
         { key: "contact_name", label: "Contact person", type: "text" },
         { key: "phone", label: "Phone", type: "text" },
         { key: "email", label: "Email", type: "text" },
@@ -114,7 +118,7 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
   const base: MasterValues = { name: "", sortOrder: "0" };
   switch (mt) {
     case "customer":
-      return { ...base, code: "", contact_name: "", phone: "", email: "", gstin: "" };
+      return { ...base, code: "", location: "", contact_name: "", phone: "", email: "", gstin: "" };
     case "item":
       return { ...base, code: "", unit: "", hsn_code: "" };
     case "company":

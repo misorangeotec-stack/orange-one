@@ -13,9 +13,9 @@ import { DISPATCH_MASTER_TYPES, type DispatchMasterType, type NamedMaster } from
  * The four masters: WHO buys, WHAT we sell, WHICH of it each of them may order,
  * and the companies we sell as.
  *
- * Company is a tab in its own right. It is no longer wired to the customer — an
- * order does not record a billing entity any more — but the list is still ours to
- * keep, so it stays editable here.
+ * Company is a tab in its own right. It is no longer wired to the CUSTOMER — that
+ * mapping was retired — but the order itself records a billing entity again: it
+ * is picked on the intake form, straight off this list.
  *
  * Every tab renders through the shared MasterCrud, which is where search,
  * activate/deactivate and the Excel export/import round trip come from — none of
@@ -156,6 +156,7 @@ function extraColumns(
     case "customer":
       return [
         text("Code", (r) => r.code),
+        text("Location", (r) => r.location),
         text("Phone", (r) => r.phone),
       ];
     case "item":

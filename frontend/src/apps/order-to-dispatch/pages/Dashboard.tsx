@@ -124,9 +124,13 @@ export default function Dashboard() {
           href: `${B}/orders/${e.entityId}`,
           stageShort: stepByKey(e.stepKey)?.short ?? "—",
           detail: o
-            ? `${s.customerName(o.customerId)} · ${o.lines.length} line${o.lines.length === 1 ? "" : "s"} · ${
-                totals.pending || totals.ordered
-              } pending${o.roundNo > 1 ? ` · round ${o.roundNo}` : ""}`
+            ? [
+                s.customerName(o.customerId),
+                o.customerLocation,
+                `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}`,
+                `${totals.pending || totals.ordered} pending`,
+                o.roundNo > 1 ? `round ${o.roundNo}` : null,
+              ].filter(Boolean).join(" · ")
             : "",
           dueIso: e.dueIso,
           value: null,

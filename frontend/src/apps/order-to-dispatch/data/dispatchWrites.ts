@@ -22,13 +22,22 @@ export interface OrderLineInput {
 }
 
 /**
- * ⚠ No `companyId`. The order no longer asks which of our companies is selling —
- *   `fms_dispatch_submit_order` resolves it from the customer's master mapping,
- *   and refuses to raise the order if that mapping is missing.
+ * ⚠ `companyId` IS REQUIRED. Which of our entities bills the order is settled
+ *   here, at intake, by the person raising it — `fms_dispatch_submit_order`
+ *   validates it against the active company master and refuses without one. It
+ *   used to be asked two steps later, at the stock check.
+ *
+ * `customerLocation` is seeded from the customer master but stored on the order
+ * as plain text, so a later rename of the master cannot rewrite a consignment
+ * that has already gone out. `customerPoNo` is the customer's own reference and
+ * is optional.
  */
 export interface OrderInput {
   dispatchType: DispatchType;
+  companyId: string;
   customerId: string;
+  customerLocation: string | null;
+  customerPoNo: string | null;
   orderDate: string;
   orderRemarks: string | null;
   requesterName: string;
@@ -37,7 +46,10 @@ export interface OrderInput {
 
 const orderPayload = (input: OrderInput) => ({
   dispatch_type: input.dispatchType,
+  company_id: input.companyId,
   customer_id: input.customerId,
+  customer_location: input.customerLocation ?? "",
+  customer_po_no: input.customerPoNo ?? "",
   order_date: input.orderDate ?? "",
   order_remarks: input.orderRemarks ?? "",
   requester_name: input.requesterName,

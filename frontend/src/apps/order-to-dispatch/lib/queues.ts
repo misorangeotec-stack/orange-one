@@ -258,7 +258,7 @@ export function completedFor(snap: DispatchSnapshot, step: QueueStep): StageEntr
 /** Placeholder for the impossible case of a credit row on an order with no live round. */
 const EMPTY_VIEW: RoundView = {
   roundNo: 1, isArchived: true, roundId: null, roundStartedAt: null, companyId: null,
-  msActualDate: null, msRemarks: null, msAt: null, msBy: null,
+  msActualDate: null, msTempoNo: null, msPorter: null, msRemarks: null, msAt: null, msBy: null,
   sbActualDate: null, sbInvoiceNo: null, sbAttachmentPath: null, sbAttachmentName: null,
   sbRemarks: null, sbAt: null, sbBy: null,
   goActualDate: null, goOutwardNo: null, goRemarks: null, goAt: null, goBy: null,

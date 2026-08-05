@@ -43,7 +43,8 @@ const archivedFallback = (o: DispatchOrder): RoundView => {
     ? {
         roundNo: last.roundNo, isArchived: true, roundId: last.id,
         roundStartedAt: last.roundStartedAt, companyId: last.companyId,
-        msActualDate: last.msActualDate, msRemarks: last.msRemarks, msAt: last.msAt, msBy: last.msBy,
+        msActualDate: last.msActualDate, msTempoNo: last.msTempoNo, msPorter: last.msPorter,
+        msRemarks: last.msRemarks, msAt: last.msAt, msBy: last.msBy,
         sbActualDate: last.sbActualDate, sbInvoiceNo: last.sbInvoiceNo,
         sbAttachmentPath: last.sbAttachmentPath, sbAttachmentName: last.sbAttachmentName,
         sbRemarks: last.sbRemarks, sbAt: last.sbAt, sbBy: last.sbBy,
@@ -59,7 +60,7 @@ const archivedFallback = (o: DispatchOrder): RoundView => {
     : {
         roundNo: o.roundNo, isArchived: true, roundId: null, roundStartedAt: o.roundStartedAt,
         companyId: o.companyId,
-        msActualDate: null, msRemarks: null, msAt: null, msBy: null,
+        msActualDate: null, msTempoNo: null, msPorter: null, msRemarks: null, msAt: null, msBy: null,
         sbActualDate: null, sbInvoiceNo: null, sbAttachmentPath: null, sbAttachmentName: null,
         sbRemarks: null, sbAt: null, sbBy: null,
         goActualDate: null, goOutwardNo: null, goRemarks: null, goAt: null, goBy: null,

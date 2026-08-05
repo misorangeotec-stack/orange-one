@@ -128,8 +128,8 @@ const mapMaster = (r: any): NamedMaster => ({
 const mapCustomer = (r: any): Customer => ({
   ...mapMaster(r),
   companyId: r.company_id ?? null,
-  code: str(r.code), gstin: str(r.gstin), contactName: str(r.contact_name),
-  phone: str(r.phone), email: str(r.email),
+  code: str(r.code), location: str(r.location), gstin: str(r.gstin),
+  contactName: str(r.contact_name), phone: str(r.phone), email: str(r.email),
 });
 
 const mapMasterManager = (r: any): MasterManager => ({
@@ -182,6 +182,8 @@ const mapRound = (r: any): DispatchRound => ({
   companyId: r.company_id ?? null,
 
   msActualDate: r.ms_actual_date ?? null,
+  msTempoNo: str(r.ms_tempo_no),
+  msPorter: r.ms_porter ?? null,
   msRemarks: str(r.ms_remarks),
   msAt: r.ms_at ?? null,
   msBy: r.ms_by ?? null,
@@ -226,6 +228,8 @@ const mapOrder = (r: any): DispatchOrder => ({
   dispatchType: r.dispatch_type,
   companyId: r.company_id ?? null,
   customerId: r.customer_id,
+  customerLocation: str(r.customer_location),
+  customerPoNo: str(r.customer_po_no),
   orderDate: r.order_date,
   orderRemarks: str(r.order_remarks),
 
@@ -248,6 +252,8 @@ const mapOrder = (r: any): DispatchOrder => ({
   ccEditedBy: r.cc_edited_by ?? null,
 
   msActualDate: r.ms_actual_date ?? null,
+  msTempoNo: str(r.ms_tempo_no),
+  msPorter: r.ms_porter ?? null,
   msRemarks: str(r.ms_remarks),
   msAt: r.ms_at ?? null,
   msBy: r.ms_by ?? null,

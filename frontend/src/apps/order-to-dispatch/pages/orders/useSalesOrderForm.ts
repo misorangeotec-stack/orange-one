@@ -8,26 +8,37 @@ import type { DispatchOrder, DispatchType } from "../../types";
 /**
  * Shared form state for New Order and Edit Order.
  *
- * Four fields: dispatch type, customer, order date, remarks. There is no company
- * — the order records who is buying and what is going out, and nothing else.
+ * The order states WHO is buying, WHERE it goes, WHO bills it, and what is going
+ * out. The company sits here rather than at the stock check because the person
+ * raising the order is the one who knows the answer — and because asking it per
+ * round let a single order bill two different entities.
  */
 export interface SalesOrderFormState {
   dispatchType: DispatchType;
+  companyId: string;
   customerId: string;
+  customerLocation: string;
+  customerPoNo: string;
   orderDate: string;
   orderRemarks: string;
 }
 
 const emptyState = (): SalesOrderFormState => ({
   dispatchType: "local",
+  companyId: "",
   customerId: "",
+  customerLocation: "",
+  customerPoNo: "",
   orderDate: todayLocalIso(),
   orderRemarks: "",
 });
 
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
   dispatchType: o.dispatchType,
+  companyId: o.companyId ?? "",
   customerId: o.customerId,
+  customerLocation: o.customerLocation ?? "",
+  customerPoNo: o.customerPoNo ?? "",
   orderDate: o.orderDate?.slice(0, 10) ?? todayLocalIso(),
   orderRemarks: o.orderRemarks ?? "",
 });
@@ -63,10 +74,19 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
    *   person can no longer see in the picker. Clearing is the honest reset.
    *   Re-picking the SAME customer is a no-op, so an accidental re-select of the
    *   current value cannot wipe a half-typed grid.
+   *
+   * It also SEEDS THE LOCATION from the customer's master. A customer has one
+   * usual delivery point, so typing it every time is work the form can do — and
+   * because the switch is already a hard reset, carrying the previous customer's
+   * location across would be the one field left quietly pointing at the wrong
+   * place. Overriding it afterwards is the whole point of the field.
    */
   const setCustomer = (id: string) => {
     if (id === form.customerId) return;
-    patch({ customerId: id });
+    patch({
+      customerId: id,
+      customerLocation: s.customers.find((c) => c.id === id)?.location ?? "",
+    });
     setLines([makeEmptyLine()]);
   };
 
@@ -74,6 +94,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   const filledLines = useMemo(() => lines.filter((l) => !isLineBlank(l)), [lines]);
 
   const validate = (): string | null => {
+    if (!form.companyId) return "Choose the company that bills this order.";
     if (!form.customerId) return "Choose a customer.";
     if (!form.orderDate) return "The order date is required.";
     if (filledLines.length === 0) return "Add at least one item line.";
@@ -87,7 +108,10 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
 
   const toInput = (requesterName: string): OrderInput => ({
     dispatchType: form.dispatchType,
+    companyId: form.companyId,
     customerId: form.customerId,
+    customerLocation: form.customerLocation.trim() || null,
+    customerPoNo: form.customerPoNo.trim() || null,
     orderDate: form.orderDate,
     orderRemarks: form.orderRemarks.trim() || null,
     requesterName,

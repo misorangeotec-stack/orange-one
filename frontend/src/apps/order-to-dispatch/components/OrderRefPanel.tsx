@@ -42,8 +42,6 @@ export interface OrderRefPanelProps {
   showLines?: boolean;
   /** The order as raised: item · quantity · unit · line remark. */
   showOrderLines?: boolean;
-  /** The company chosen at the stock check, which bills this consignment. */
-  showCompany?: boolean;
   /** Tally invoice no. (+ a button to open it, when not read-only). */
   showInvoice?: boolean;
   /** Gate outward no. */
@@ -53,7 +51,7 @@ export interface OrderRefPanelProps {
 
 export default function OrderRefPanel({
   order, round, readOnly = false,
-  showCredit = false, showLines = false, showOrderLines = false, showCompany = false,
+  showCredit = false, showLines = false, showOrderLines = false,
   showInvoice = false, showOutward = false,
   children,
 }: OrderRefPanelProps) {
@@ -64,13 +62,27 @@ export default function OrderRefPanel({
       {/*
         The fixed cells are the literal answer to "show whatever we entered in the
         previous steps": everything the raiser typed, plus which round this is.
-        `orderRemarks` is one of only four intake fields, so it is the most likely
-        place a special instruction lives — it must not be the thing that is cut.
+        `orderRemarks` is one of the intake fields, so it is the most likely place
+        a special instruction lives — it must not be the thing that is cut.
       */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label="Order no." value={order.orderNo} />
         <Field label="Round" value={`#${round.roundNo}`} />
         <Field label="Customer" value={s.customerName(order.customerId)} />
+        <Field label="Customer location" value={order.customerLocation ?? "—"} />
+        {/*
+          Unconditional, all three of them. They are settled the moment the order
+          is raised, so every step from the credit check onwards can be shown the
+          answer — there is no step that legitimately does not know them.
+
+          ⚠ `round.companyId ?? order.companyId` and not just one of the two: the
+            live projection reads the order header, an ARCHIVED round reads its own
+            frozen copy, and an order raised before the company moved to intake has
+            neither. The fallback covers the last case without lying about the
+            first two.
+        */}
+        <Field label="Billing company" value={s.masterName("company", round.companyId ?? order.companyId)} />
+        <Field label="Customer PO no." value={order.customerPoNo ?? "—"} />
         <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
         <Field label="Order date" value={dmy(order.orderDate)} />
         <Field label="Raised by" value={order.requesterName} />
@@ -84,11 +96,10 @@ export default function OrderRefPanel({
         )}
         {showCredit && order.ccRemarks && <Field label="Credit remark" value={order.ccRemarks} />}
 
-        {/* Chosen at the stock check. Read off the ROUND, because each consignment is
-            billed by whichever company released it. */}
-        {showCompany && (
-          <Field label="Billing company" value={s.masterName("company", round.companyId)} />
-        )}
+        {/* How this consignment left, recorded at the stock check. Round-scoped and
+            optional, so they appear only once someone has actually answered. */}
+        {round.msTempoNo && <Field label="Tempo no." value={round.msTempoNo} />}
+        {round.msPorter !== null && <Field label="Porter" value={round.msPorter ? "Yes" : "No"} />}
 
         {showInvoice && <Field label="Tally invoice no." value={round.sbInvoiceNo ?? "—"} />}
         {showOutward && <Field label="Gate outward no." value={round.goOutwardNo ?? "—"} />}

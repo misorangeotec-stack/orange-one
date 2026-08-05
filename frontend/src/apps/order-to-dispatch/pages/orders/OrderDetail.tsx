@@ -197,6 +197,9 @@ export default function OrderDetail() {
           <SectionHeading>Order</SectionHeading>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
             <Field label="Customer" value={s.customerName(order.customerId)} />
+            <Field label="Customer location" value={order.customerLocation ?? "—"} />
+            <Field label="Billing company" value={s.masterName("company", order.companyId)} />
+            <Field label="Customer PO no." value={order.customerPoNo ?? "—"} />
             <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
             <Field label="Order date" value={dmy(order.orderDate)} />
             <Field label="Round" value={`#${order.roundNo}`} />
@@ -224,6 +227,8 @@ export default function OrderDetail() {
                 <tr className="text-left text-grey-2 border-b border-line">
                   <th className="py-2 pr-3 font-semibold">Round</th>
                   <th className="py-2 pr-3 font-semibold min-w-[200px]">Shipped</th>
+                  <th className="py-2 pr-3 font-semibold">Tempo no.</th>
+                  <th className="py-2 pr-3 font-semibold">Porter</th>
                   <th className="py-2 pr-3 font-semibold">Tally invoice</th>
                   <th className="py-2 pr-3 font-semibold">Gate outward</th>
                   <th className="py-2 pr-3 font-semibold">Outcome</th>
@@ -249,6 +254,12 @@ export default function OrderDetail() {
                             </div>
                           ))
                         : "—"}
+                    </td>
+                    {/* Per ROUND, not per order: each consignment leaves on its own
+                        vehicle, and one may go by porter where the next did not. */}
+                    <td className="py-2 pr-3 text-grey whitespace-nowrap">{v.msTempoNo ?? "—"}</td>
+                    <td className="py-2 pr-3 text-grey whitespace-nowrap">
+                      {v.msPorter === null ? "—" : v.msPorter ? "Yes" : "No"}
                     </td>
                     <td className="py-2 pr-3 text-grey whitespace-nowrap">{v.sbInvoiceNo ?? "—"}</td>
                     <td className="py-2 pr-3 text-grey whitespace-nowrap">{v.goOutwardNo ?? "—"}</td>
