@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  AlertTriangle, ArrowDown, ArrowUp, BarChart3, CalendarClock, Clock, FileSpreadsheet,
+  AlertTriangle, ArrowDown, ArrowUp, BarChart3, Building2, CalendarClock, Clock, FileSpreadsheet,
   Layers, MapPin, Package, RefreshCw, TrendingDown, TrendingUp, UserCheck, Users, Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -23,10 +23,10 @@ import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import {
-  fmtSales, loadLastRefresh, loadSalesReport, loadSalespersonByParty, pctChange,
-  priorFy, refreshSalesCompany, salesCat, salesFyOptions, salesPeriod, salespersonRollup,
+  fmtSales, loadLastRefreshMany, loadSalesReportMulti, loadSalespersonByParty, pctChange,
+  priorFy, refreshSalesCompanies, salesCat, salesFyOptions, salesPeriod, salespersonRollup,
   saleTypeLabel, tickSales, SALES_CURRENT, SALES_PRIOR,
-  type BillRow, type CustomerRow, type SalesFilters,
+  type BillRow, type CustomerRow, type SalesCompanyRef, type SalesFilters,
 } from "@hub/lib/salesReport";
 
 /**
@@ -52,6 +52,14 @@ import {
  *    field is unset on every item; our sale_type master actually carries the split.
  *  - "Top 5 Sales Person Performance" is filled from ext_ledger_tags.salesperson instead of
  *    the source's "Data for this segment was not found in Tally" empty state.
+ *
+ * ONE COMPANY OR SEVERAL
+ * The company picker is a multi-select. One company is exactly the report it always was —
+ * the same single RPC, the same numbers. Several fan out one RPC per company and fold the
+ * payloads together in the browser (lib/salesReport → mergeSalesReports), so every panel
+ * reads as one combined book: a customer billed from two companies is one line carrying the
+ * total. A "Sales by Company" panel and a Company column on Bill Details appear only in that
+ * mode, so the combined figures can always be broken back down.
  */
 
 const NOIDA_GUID = "53d35745-5246-4e1a-a27a-d4769f245b50";
@@ -122,6 +130,7 @@ function WeeklyTooltip({
  */
 function SalesHero({
   company,
+  companyHint,
   fy,
   periodLabel,
   metaLine,
@@ -131,6 +140,8 @@ function SalesHero({
   controls,
 }: {
   company?: string;
+  /** Hover text behind the company chip — the full list when several are combined. */
+  companyHint?: string;
   fy: string;
   periodLabel: string;
   metaLine?: string;
@@ -151,7 +162,9 @@ function SalesHero({
             <span className="inline-flex items-center gap-1.5 rounded-pill bg-emerald-400/15 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-300">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Live · Tally
             </span>
-            {company && <span className="font-semibold text-white/75">{company}</span>}
+            {company && (
+              <span className="font-semibold text-white/75" title={companyHint}>{company}</span>
+            )}
             <span className="text-white/30">·</span>
             <span>FY {fy}</span>
             <span className="text-white/30">·</span>
@@ -244,37 +257,65 @@ const Td = ({ children = null, right, className = "" }: { children?: React.React
   </td>
 );
 
+/** `?company=` carries one guid or a comma-separated list — an old single-company link still works. */
+const parseGuids = (raw: string | null): string[] =>
+  (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
 export default function SalesReport() {
   const { companies, loading: coLoading, error: coError } = useFinancialStatements();
   const [params, setParams] = useSearchParams();
 
   const fyOptions = useMemo(() => salesFyOptions(), []);
   const [fy, setFy] = useState<string>(params.get("fy") ?? fyOptions[0]);
-  const [companyGuid, setCompanyGuid] = useState<string>(params.get("company") ?? "");
+  const [companyGuids, setCompanyGuids] = useState<string[]>(() => parseGuids(params.get("company")));
   const [filters, setFilters] = useState<SalesFilters>({});
   const [custQuery, setCustQuery] = useState("");
   const [billQuery, setBillQuery] = useState("");
 
   // Default to Orange O Tec Noida (the book the source report was produced from) when it
-  // exists, otherwise the first company in the list.
+  // exists, otherwise the first company in the list. Applied ONCE — an empty selection later
+  // means the user cleared it to get every company, and must not be re-seeded.
+  const seeded = useRef(false);
   useEffect(() => {
-    if (companyGuid || !companies.length) return;
+    if (seeded.current || companyGuids.length || !companies.length) return;
+    seeded.current = true;
     const noida = companies.find((c) => c.companyGuid === NOIDA_GUID);
-    setCompanyGuid(noida?.companyGuid ?? companies[0].companyGuid);
-  }, [companies, companyGuid]);
+    setCompanyGuids([(noida ?? companies[0]).companyGuid]);
+  }, [companies, companyGuids]);
 
-  const pick = (guid: string, nextFy: string) => {
-    setCompanyGuid(guid);
+  /**
+   * The books the report is running over. An empty selection means every company — the
+   * "Clear selection" / "All companies" convention the rest of the portal's multi-selects
+   * use; guids in the URL that no longer exist simply drop out.
+   */
+  const selected = useMemo(
+    () => (companyGuids.length
+      ? companies.filter((c) => companyGuids.includes(c.companyGuid))
+      : companies),
+    [companies, companyGuids],
+  );
+  const multi = selected.length > 1;
+
+  const refs: SalesCompanyRef[] = useMemo(
+    () => selected.map((c) => ({ guid: c.companyGuid, label: companyLabel(c) })),
+    [selected],
+  );
+  /** Order-independent cache key for the selection. */
+  const guidKey = useMemo(() => refs.map((r) => r.guid).sort().join(","), [refs]);
+  const selectedGuids = useMemo(() => refs.map((r) => r.guid), [refs]);
+
+  const pick = (guids: string[], nextFy: string) => {
+    setCompanyGuids(guids);
     setFy(nextFy);
-    setParams({ company: guid, fy: nextFy }, { replace: true });
+    setParams({ company: guids.join(","), fy: nextFy }, { replace: true });
   };
 
   const period = useMemo(() => salesPeriod(fy), [fy]);
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["salesReport", "v1", companyGuid, fy, filters],
-    queryFn: () => loadSalesReport(companyGuid, fy, filters),
-    enabled: !!companyGuid,
+    queryKey: ["salesReport", "v2", guidKey, fy, filters],
+    queryFn: () => loadSalesReportMulti(refs, fy, filters),
+    enabled: refs.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -285,9 +326,9 @@ export default function SalesReport() {
   });
 
   const { data: lastRefresh, refetch: refetchLast } = useQuery({
-    queryKey: ["salesReportLastRefresh", companyGuid, fy],
-    queryFn: () => loadLastRefresh(companyGuid, fy),
-    enabled: !!companyGuid,
+    queryKey: ["salesReportLastRefresh", guidKey, fy],
+    queryFn: () => loadLastRefreshMany(selectedGuids, fy),
+    enabled: refs.length > 0,
     staleTime: 60 * 1000,
   });
 
@@ -307,22 +348,38 @@ export default function SalesReport() {
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
 
   const onRefresh = async () => {
-    if (busy || !companyGuid) return;
+    if (busy || !selectedGuids.length) return;
     setBusy(true);
     setRefreshNote(null);
     setElapsed(0);
     timer.current = window.setInterval(() => setElapsed((s) => s + 0.25), 250);
     try {
-      const res = await refreshSalesCompany(companyGuid, fy);
-      if (res.status === "cooldown") {
-        setRefreshNote(`Already refreshed a moment ago — try again in ${res.retry_after_seconds ?? 60}s.`);
-      } else if (res.status === "busy") {
-        setRefreshNote("A refresh is already running for this company.");
-      } else if (res.status === "error") {
-        setRefreshNote(res.message ?? "Refresh failed.");
+      // Every selected company is rebuilt, one after another. A company still inside its
+      // two-minute cooldown is reported, not treated as a failure — its snapshot is already
+      // current, which is the whole point of the cooldown.
+      const res = await refreshSalesCompanies(selectedGuids, fy);
+      const ok = res.filter((r) => r.result.status === "ok");
+      const skipped = res.filter((r) => r.result.status === "cooldown" || r.result.status === "busy");
+      const failed = res.filter((r) => r.result.status === "error");
+
+      if (!ok.length && !skipped.length) {
+        setRefreshNote(failed[0]?.result.message ?? "Refresh failed.");
       } else {
-        setRefreshNote(`Refreshed in ${res.seconds}s — ${res.lines} sales lines, ${res.bills} bills.`);
-        await Promise.all([refetch(), refetchLast()]);
+        const secs = ok.reduce((s, r) => s + (Number(r.result.seconds) || 0), 0);
+        const lines = ok.reduce((s, r) => s + (Number(r.result.lines) || 0), 0);
+        const bills = ok.reduce((s, r) => s + (Number(r.result.bills) || 0), 0);
+        const head = res.length > 1
+          ? `Refreshed ${ok.length} of ${res.length} companies in ${secs.toFixed(0)}s`
+          : `Refreshed in ${secs.toFixed(0)}s`;
+        const parts = [
+          ok.length
+            ? `${head} — ${lines} sales lines, ${bills} bills.`
+            : "Nothing to refresh — every selected company was snapshotted moments ago.",
+          skipped.length && ok.length ? `${skipped.length} already up to date.` : "",
+          failed.length ? `${failed.length} failed: ${failed[0].result.message ?? "unknown error"}` : "",
+        ].filter(Boolean);
+        setRefreshNote(parts.join(" "));
+        if (ok.length) await Promise.all([refetch(), refetchLast()]);
       }
     } catch (e) {
       setRefreshNote(e instanceof Error ? e.message : String(e));
@@ -335,7 +392,12 @@ export default function SalesReport() {
 
   /* ------------------------------------------------------------ derivations */
 
-  const company = companies.find((c) => c.companyGuid === companyGuid);
+  const companyTitle = selected.length === 1
+    ? selected[0].rawName
+    : selected.length
+      ? `${selected.length} companies · combined`
+      : undefined;
+  const companyNames = selected.map(companyLabel).join(", ");
   const prior = priorFy(fy);
 
   const monthly = useMemo(() => {
@@ -408,13 +470,16 @@ export default function SalesReport() {
     const q = billQuery.trim().toLowerCase();
     const rows = data?.bills ?? [];
     return q
-      ? rows.filter((r) => r.ledger.toLowerCase().includes(q) || r.bill_ref.toLowerCase().includes(q))
+      ? rows.filter((r) =>
+          r.ledger.toLowerCase().includes(q) ||
+          r.bill_ref.toLowerCase().includes(q) ||
+          (r.company ?? "").toLowerCase().includes(q))
       : rows;
   }, [data, billQuery]);
 
-  const custPage = usePagination(customers, { pageSize: 10, resetKey: `${companyGuid}|${fy}|${custQuery}` });
-  const agePage = usePagination(data?.ageing.customers ?? [], { pageSize: 10, resetKey: `${companyGuid}|${fy}` });
-  const billPage = usePagination(bills, { pageSize: 10, resetKey: `${companyGuid}|${fy}|${billQuery}` });
+  const custPage = usePagination(customers, { pageSize: 10, resetKey: `${guidKey}|${fy}|${custQuery}` });
+  const agePage = usePagination(data?.ageing.customers ?? [], { pageSize: 10, resetKey: `${guidKey}|${fy}` });
+  const billPage = usePagination(bills, { pageSize: 10, resetKey: `${guidKey}|${fy}|${billQuery}` });
 
   const opts = (xs: string[] | undefined) => (xs ?? []).map((v) => ({ value: v, label: v }));
   const anyFilter =
@@ -429,7 +494,7 @@ export default function SalesReport() {
   const growthPct = data ? pctChange(data.kpi.ytd, data.kpi.pytd) : null;
 
   const heroSummary: React.ReactNode = heroLoading
-    ? "Gathering the sales book…"
+    ? multi ? `Gathering ${selected.length} sales books…` : "Gathering the sales book…"
     : data
       ? (
         <>
@@ -447,11 +512,13 @@ export default function SalesReport() {
       : "Sales posted to the Sales Accounts group, ex-GST — straight from the Tally books.";
 
   const heroMeta = [
+    // With several companies this is the OLDEST of their last runs — the screen is only as
+    // fresh as its stalest book (see loadLastRefreshMany).
     `Last refreshed: ${
       lastRefresh?.ran_at
         ? new Date(lastRefresh.ran_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
         : "never"
-    }`,
+    }${multi ? " (oldest of the selected)" : ""}`,
     "Currency ₹",
     "Auto-refreshes daily at 8:00 PM",
   ].join("   ·   ");
@@ -463,18 +530,21 @@ export default function SalesReport() {
     "transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-white/25";
   const heroControls = (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <select
-        value={companyGuid}
-        onChange={(e) => pick(e.target.value, fy)}
-        className={cn(darkControl, "max-w-[220px] cursor-pointer truncate [&>option]:text-navy")}
-      >
-        {companies.map((c) => (
-          <option key={c.companyGuid} value={c.companyGuid}>{companyLabel(c)}</option>
-        ))}
-      </select>
+      {/* Tick as many companies as you like — the panels below combine them. The shadcn
+          outline trigger is overridden to the hero's translucent-white treatment (cn is
+          tailwind-merge, so these classes win). */}
+      <MultiSelectFilter
+        options={companies.map((c) => ({ value: c.companyGuid, label: companyLabel(c) }))}
+        value={companyGuids}
+        onChange={(v) => pick(v, fy)}
+        allLabel="All companies"
+        unit="companies"
+        triggerClassName={cn(darkControl, "w-[220px] hover:text-white")}
+        contentClassName="w-72"
+      />
       <select
         value={fy}
-        onChange={(e) => pick(companyGuid, e.target.value)}
+        onChange={(e) => pick(companyGuids, e.target.value)}
         className={cn(darkControl, "cursor-pointer [&>option]:text-navy")}
       >
         {fyOptions.map((f) => <option key={f} value={f}>FY {f}</option>)}
@@ -482,7 +552,7 @@ export default function SalesReport() {
       <button
         type="button"
         onClick={onRefresh}
-        disabled={busy || !companyGuid}
+        disabled={busy || !selectedGuids.length}
         className={cn(darkControl, "inline-flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50")}
       >
         <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} />
@@ -497,7 +567,8 @@ export default function SalesReport() {
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto space-y-3">
       {/* ── Hero ───────────────────────────────────────────────────────── */}
       <SalesHero
-        company={company?.rawName}
+        company={companyTitle}
+        companyHint={companyNames}
         fy={fy}
         periodLabel={`${dmy(period.from)} → ${dmy(period.asOn)}`}
         metaLine={heroMeta}
@@ -516,7 +587,8 @@ export default function SalesReport() {
             />
           </div>
           <div className="text-[11px] text-muted-foreground">
-            Rebuilding this company's sales snapshot — {elapsed.toFixed(0)}s elapsed
+            Rebuilding {multi ? `${selected.length} companies'` : "this company's"} sales snapshot
+            {multi ? " (one at a time)" : ""} — {elapsed.toFixed(0)}s elapsed
             {lastRefresh?.seconds ? ` (last run took ${lastRefresh.seconds}s)` : ""}
           </div>
         </div>
@@ -560,9 +632,13 @@ export default function SalesReport() {
           <AlertTriangle className="h-4 w-4" /> {errText}
         </div>
       ) : isLoading || coLoading ? (
-        <div className="py-16 text-center text-muted-foreground text-sm">Loading the sales book…</div>
+        <div className="py-16 text-center text-muted-foreground text-sm">
+          {multi ? `Loading ${selected.length} sales books…` : "Loading the sales book…"}
+        </div>
       ) : !data ? (
-        <div className="py-16 text-center text-muted-foreground text-sm">No sales data for this company.</div>
+        <div className="py-16 text-center text-muted-foreground text-sm">
+          No sales data for {multi ? "the selected companies" : "this company"}.
+        </div>
       ) : (
         <>
           {/* ── KPI row ──────────────────────────────────────────────── */}
@@ -602,6 +678,67 @@ export default function SalesReport() {
               );
             })()}
           </div>
+
+          {/* ── Sales by Company (combined mode only) ────────────────── */}
+          {multi && (data.by_company?.length ?? 0) > 1 && (
+            <SalesPanel
+              title="Sales by Company"
+              icon={Building2}
+              subtitle="Every panel below is these companies combined — this is the split"
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <ResponsiveContainer width="100%" height={Math.max(210, (data.by_company?.length ?? 0) * 42)}>
+                  <BarChart
+                    data={(data.by_company ?? []).map((c) => ({
+                      name: c.company, ytd: Number(c.ytd), pytd: Number(c.pytd),
+                    }))}
+                    layout="vertical"
+                    margin={{ left: 8, right: 12 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART_GRID} horizontal={false} />
+                    <XAxis type="number" tickFormatter={tickSales} tick={AXIS_TICK} />
+                    <YAxis type="category" dataKey="name" tick={{ ...AXIS_TICK, fontSize: 10 }} width={150} />
+                    <Tooltip formatter={(v: number) => fmtSales(v)} />
+                    <Legend iconSize={9} wrapperStyle={{ fontSize: 11 }} />
+                    <Bar dataKey="pytd" name="PYTD" fill={SALES_PRIOR} radius={[0, 3, 3, 0]} />
+                    <Bar dataKey="ytd" name="YTD" fill={SALES_CURRENT} radius={[0, 3, 3, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <ScrollableTable className="rounded-md border border-border self-start">
+                  <table className="w-full">
+                    <thead className="bg-muted/40 border-b border-border">
+                      <tr>
+                        <Th>Company</Th><Th right>YTD</Th><Th right>PYTD</Th>
+                        <Th right>Share (in %)</Th><Th right>Change (in %)</Th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/60">
+                      {(data.by_company ?? []).map((c) => (
+                        <tr key={c.company} className="hover:bg-muted/30">
+                          <Td className="max-w-[280px] truncate">{c.company}</Td>
+                          <Td right>{fmtSales(c.ytd)}</Td>
+                          <Td right>{fmtSales(c.pytd)}</Td>
+                          <Td right>
+                            {data.kpi.ytd ? ((Number(c.ytd) / data.kpi.ytd) * 100).toFixed(2) : "0.00"}
+                          </Td>
+                          <Td right><ChangeCell current={Number(c.ytd)} prior={Number(c.pytd)} /></Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="bg-muted/40 border-t border-border font-semibold">
+                      <tr>
+                        <Td>Total</Td>
+                        <Td right>{fmtSales(data.kpi.ytd)}</Td>
+                        <Td right>{fmtSales(data.kpi.pytd)}</Td>
+                        <Td right />
+                        <Td right><ChangeCell current={data.kpi.ytd} prior={data.kpi.pytd} /></Td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </ScrollableTable>
+              </div>
+            </SalesPanel>
+          )}
 
           {/* ── Yearly · Quarterly · Monthly ─────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -853,6 +990,7 @@ export default function SalesReport() {
           <SalesPanel
             title="Contributing Customers"
             icon={Users}
+            subtitle={multi ? "One line per customer — billing from every selected company added up" : undefined}
             actions={
               <Input value={custQuery} onChange={(e) => setCustQuery(e.target.value)}
                      placeholder="Search customer…" className="h-8 w-52 text-xs" />
@@ -956,7 +1094,9 @@ export default function SalesReport() {
               <table className="w-full">
                 <thead className="bg-muted/40 border-b border-border">
                   <tr>
-                    <Th>Bill Date</Th><Th>Bill No</Th><Th>Party Name</Th><Th right>Amount</Th>
+                    <Th>Bill Date</Th><Th>Bill No</Th>
+                    {multi && <Th>Company</Th>}
+                    <Th>Party Name</Th><Th right>Amount</Th>
                     <Th>Status</Th><Th right>Due Amount</Th><Th>Due On</Th>
                   </tr>
                 </thead>
@@ -964,9 +1104,12 @@ export default function SalesReport() {
                   {billPage.pageItems.map((b) => {
                     const due = Number(b.pending) || 0;
                     return (
-                      <tr key={`${b.ledger}|${b.bill_ref}`} className="hover:bg-muted/30">
+                      // A bill number is only unique within a company, so the book is part
+                      // of the key once several are combined.
+                      <tr key={`${b.company ?? ""}|${b.ledger}|${b.bill_ref}`} className="hover:bg-muted/30">
                         <Td>{dmy(b.bill_date)}</Td>
                         <Td>{b.bill_ref}</Td>
+                        {multi && <Td className="max-w-[200px] truncate">{b.company ?? "—"}</Td>}
                         <Td className="max-w-[280px] truncate">{b.ledger}</Td>
                         <Td right>{fmtSales(b.amount)}</Td>
                         <Td className={due > 0 ? "text-amber-600" : "text-emerald-600"}>

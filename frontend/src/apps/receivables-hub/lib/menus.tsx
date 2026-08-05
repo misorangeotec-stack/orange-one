@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Bell,
   ShieldAlert,
   FileText,
   PackageOpen,
@@ -96,6 +97,9 @@ export interface ReceivablesMenu {
 
 export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
   { key: "dashboard", title: "Dashboard", url: BASE, icon: BarChart3 },
+  // Second on purpose. The Risk Register says who IS risky (a standing state); Alerts says what
+  // needs doing TODAY (an event). An action list buried below the registers never gets opened.
+  { key: "alerts", title: "Alerts", url: `${BASE}/alerts`, icon: Bell },
   { key: "risk-register", title: "Risk Register", url: `${BASE}/risk-register`, icon: ShieldAlert },
   { key: "followups", title: "Follow-ups", url: `${BASE}/followups`, icon: PhoneCall },
   // Customer Onboarding used to hang here as a sub-menu. It became its own

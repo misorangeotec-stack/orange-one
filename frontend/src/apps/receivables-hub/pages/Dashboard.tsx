@@ -28,6 +28,8 @@ import { SalesPersonMultiSelect } from "@hub/components/SalesPersonMultiSelect";
 import { CustomerCategoryMultiSelect } from "@hub/components/CustomerCategoryMultiSelect";
 import { RiskMultiSelect } from "@hub/components/RiskMultiSelect";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
+import { buildGoingCritical } from "@hub/lib/hubAlerts";
+import { useHubMenuAccess } from "@hub/lib/menus";
 
 /* ── Helpers ────────────────────────────────────────────── */
 
@@ -92,7 +94,7 @@ export default function Dashboard() {
 
   const { loading, error, kpis, trend, aging, riskSegmentation,
           topRiskyCustomers, alerts, dashboard, riskTrend, riskCountTrend,
-          groupedCustomers, netOnAccount, onAccountOfIds,
+          groupedCustomers, netOnAccount, onAccountOfIds, allCustomers,
           salesPersonOptions } = useAppData({
     risk: riskLevels.length === 0 ? "all" : riskLevels.join(","),
     saleType: saleTypes.length === 0 ? "all" : saleTypes.join(","),
@@ -102,6 +104,14 @@ export default function Dashboard() {
     salesPerson: salesPersons.length === 0 ? "all" : salesPersons.join(","),
     category: categories.length === 0 ? "all" : categories.join(","),
   });
+
+  // How many customers are about to turn critical — see the strip below for why this uses
+  // `allCustomers` and an empty detail map.
+  const { canSee } = useHubMenuAccess();
+  const goingCriticalCount = useMemo(
+    () => buildGoingCritical(allCustomers, {}).length,
+    [allCustomers],
+  );
 
   // Persist view mode in URL so refresh / deep links keep the toggle state.
   useEffect(() => {
@@ -323,6 +333,28 @@ export default function Dashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Going-critical strip — the pull-through to Alerts.
+          Counted off `allCustomers` with an EMPTY detail map on purpose: allCustomers ignores this
+          page's filters, and the going-critical doors (overdue days / utilisation) need no bills.
+          So this number stays the same whatever is filtered here, and always matches the Alerts
+          page's block count. (Detail is only needed for the ₹ crossing figure, which lives there.) */}
+      {goingCriticalCount > 0 && canSee("alerts") && (
+        <button
+          type="button"
+          onClick={() => navigate(`${hubBase}/alerts`)}
+          className="w-full flex items-center gap-3 rounded-card border border-destructive/30 bg-destructive/[0.06] px-4 py-3 text-left transition-colors hover:bg-destructive/10"
+        >
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+          <span className="text-sm text-foreground">
+            <span className="font-semibold">{goingCriticalCount} customer{goingCriticalCount === 1 ? "" : "s"}</span>
+            {" "}will turn critical within a month unless someone calls.
+          </span>
+          <span className="ml-auto flex items-center gap-1 text-sm font-medium text-destructive whitespace-nowrap">
+            See alerts <ChevronRight className="h-3.5 w-3.5" />
+          </span>
+        </button>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3">

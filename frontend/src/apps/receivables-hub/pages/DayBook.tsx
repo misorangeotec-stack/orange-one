@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BookOpen, Boxes,
+  AlertTriangle, ArrowDownToLine, ArrowUpFromLine, BookOpen, Boxes, Building2,
   CalendarClock, Package, RefreshCw, ShoppingCart, TrendingUp, Users, Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -10,6 +10,7 @@ import {
 import { Card } from "@hub/components/ui/card";
 import { cn } from "@hub/lib/utils";
 import SalesPanel from "@hub/components/masterreports/SalesPanel";
+import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
@@ -17,8 +18,9 @@ import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
 import { fmtSales } from "@hub/lib/salesReport";
 import {
-  dmy, isoToYmd, loadDayBook, loadLastDayBookRefresh, longDate, refreshDayBookCompany,
-  ymdOf, ymdToIso, type DayProduct, type DayVoucher,
+  dmy, isoToYmd, loadDayBookMulti, loadLastDayBookRefreshMany, longDate,
+  refreshDayBookCompanies, ymdOf, ymdToIso,
+  type DayCompanyRef, type DayProduct, type DayVoucher,
 } from "@hub/lib/dayBook";
 
 /**
@@ -33,6 +35,17 @@ import {
  * Direct Incomes ₹150}, Expense {Indirect Expenses ₹0.43}, 15 products = ₹6.13 L, Best Sales
  * Day 14-Jul — all exact. (Purchases differ from a point-in-time PDF only by back-dated
  * vouchers, which this live snapshot correctly carries.)
+ *
+ * ONE COMPANY OR SEVERAL
+ * The company picker is a multi-select. One company is exactly the screen it always was — the
+ * same single RPC, the same numbers. Several fan out one RPC per company and fold the payloads
+ * together in the browser (lib/dayBook → mergeDayBooks): the day's sales, purchase, collection,
+ * payment, income/expense groups, products and salespeople all add up, the voucher list carries
+ * a Company column, and a "By Company" panel gives the split.
+ *
+ * ⚠ The two "Best day in the month" tiles are the ONE figure that cannot be summed — the RPC
+ * returns each company's own best day, not a daily series. In combined mode they show the
+ * strongest single book-day, labelled and captioned as such on screen.
  */
 
 const NOIDA_GUID = "53d35745-5246-4e1a-a27a-d4769f245b50";
@@ -40,9 +53,11 @@ const NOIDA_GUID = "53d35745-5246-4e1a-a27a-d4769f245b50";
 /* ---- Hero banner (matches the Sales Report hero) ------------------------- */
 
 function DayHero({
-  company, dateYmd, metaLine, summary, controls,
+  company, companyHint, dateYmd, metaLine, summary, controls,
 }: {
   company?: string;
+  /** Hover text behind the company chip — the full list when several are combined. */
+  companyHint?: string;
   dateYmd: string;
   metaLine?: string;
   summary: React.ReactNode;
@@ -58,7 +73,9 @@ function DayHero({
             <span className="inline-flex items-center gap-1.5 rounded-pill bg-emerald-400/15 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wide text-emerald-300">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Live · Tally
             </span>
-            {company && <span className="font-semibold text-white/75">{company}</span>}
+            {company && (
+              <span className="font-semibold text-white/75" title={companyHint}>{company}</span>
+            )}
             <span className="text-white/30">·</span>
             <span>{longDate(dateYmd)}</span>
           </p>
@@ -149,14 +166,14 @@ function PlTable({ rows }: { rows: { group: string; amount: number }[] }) {
 const nf2 = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
 function ProductsPanel({
-  title, icon, rows, resetKey,
+  title, icon, rows, resetKey, subtitle,
 }: {
-  title: string; icon: LucideIcon; rows: DayProduct[]; resetKey: string;
+  title: string; icon: LucideIcon; rows: DayProduct[]; resetKey: string; subtitle?: string;
 }) {
   const page = usePagination(rows, { pageSize: 10, resetKey });
   const total = rows.reduce((s, r) => s + Number(r.amount), 0);
   return (
-    <SalesPanel title={title} icon={icon} bodyClassName="p-0" empty={rows.length === 0} emptyMessage="No data found.">
+    <SalesPanel title={title} icon={icon} subtitle={subtitle} bodyClassName="p-0" empty={rows.length === 0} emptyMessage="No data found.">
       <ScrollableTable className="border-b border-border">
         <table className="w-full">
           <thead className="bg-muted/40 border-b border-border">
@@ -186,38 +203,62 @@ function ProductsPanel({
   );
 }
 
+/** `?company=` carries one guid or a comma-separated list — an old single-company link still works. */
+const parseGuids = (raw: string | null): string[] =>
+  (raw ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+
 export default function DayBook() {
   const { companies, loading: coLoading, error: coError } = useFinancialStatements();
   const [params, setParams] = useSearchParams();
 
   const todayYmd = useMemo(() => ymdOf(new Date()), []);
   const [dateYmd, setDateYmd] = useState<string>(params.get("date") ?? todayYmd);
-  const [companyGuid, setCompanyGuid] = useState<string>(params.get("company") ?? "");
+  const [companyGuids, setCompanyGuids] = useState<string[]>(() => parseGuids(params.get("company")));
 
   // Default to Orange O Tec Noida (the book the source report came from) when present.
+  // Applied ONCE — an empty selection later means the user cleared it to get every company.
+  const seeded = useRef(false);
   useEffect(() => {
-    if (companyGuid || !companies.length) return;
+    if (seeded.current || companyGuids.length || !companies.length) return;
+    seeded.current = true;
     const noida = companies.find((c) => c.companyGuid === NOIDA_GUID);
-    setCompanyGuid(noida?.companyGuid ?? companies[0].companyGuid);
-  }, [companies, companyGuid]);
+    setCompanyGuids([(noida ?? companies[0]).companyGuid]);
+  }, [companies, companyGuids]);
 
-  const pick = (guid: string, nextDate: string) => {
-    setCompanyGuid(guid);
+  /** The books the day is being read from; an empty selection means every company. */
+  const selected = useMemo(
+    () => (companyGuids.length
+      ? companies.filter((c) => companyGuids.includes(c.companyGuid))
+      : companies),
+    [companies, companyGuids],
+  );
+  const multi = selected.length > 1;
+
+  const refs: DayCompanyRef[] = useMemo(
+    () => selected.map((c) => ({ guid: c.companyGuid, label: companyLabel(c) })),
+    [selected],
+  );
+  /** Order-independent cache key for the selection. */
+  const guidKey = useMemo(() => refs.map((r) => r.guid).sort().join(","), [refs]);
+  const selectedGuids = useMemo(() => refs.map((r) => r.guid), [refs]);
+
+  const pick = (guids: string[], nextDate: string) => {
+    setCompanyGuids(guids);
     setDateYmd(nextDate);
-    setParams({ company: guid, date: nextDate }, { replace: true });
+    setParams({ company: guids.join(","), date: nextDate }, { replace: true });
   };
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["dayBook", "v1", companyGuid, dateYmd],
-    queryFn: () => loadDayBook(companyGuid, dateYmd),
-    enabled: !!companyGuid,
+    queryKey: ["dayBook", "v2", guidKey, dateYmd],
+    queryFn: () => loadDayBookMulti(refs, dateYmd),
+    enabled: refs.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: lastRefresh, refetch: refetchLast } = useQuery({
-    queryKey: ["dayBookLastRefresh", companyGuid, dateYmd],
-    queryFn: () => loadLastDayBookRefresh(companyGuid, dateYmd),
-    enabled: !!companyGuid,
+    queryKey: ["dayBookLastRefresh", guidKey, dateYmd],
+    queryFn: () => loadLastDayBookRefreshMany(selectedGuids, dateYmd),
+    enabled: refs.length > 0,
     staleTime: 60 * 1000,
   });
 
@@ -234,22 +275,36 @@ export default function DayBook() {
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
 
   const onRefresh = async () => {
-    if (busy || !companyGuid) return;
+    if (busy || !selectedGuids.length) return;
     setBusy(true);
     setRefreshNote(null);
     setElapsed(0);
     timer.current = window.setInterval(() => setElapsed((s) => s + 0.25), 250);
     try {
-      const res = await refreshDayBookCompany(companyGuid, dateYmd);
-      if (res.status === "cooldown") {
-        setRefreshNote(`Already refreshed a moment ago — try again in ${res.retry_after_seconds ?? 60}s.`);
-      } else if (res.status === "busy") {
-        setRefreshNote("A refresh is already running for this company.");
-      } else if (res.status === "error") {
-        setRefreshNote(res.message ?? "Refresh failed.");
+      // Every selected company is rebuilt, one after another. A company still inside its
+      // two-minute cooldown is reported, not treated as a failure.
+      const res = await refreshDayBookCompanies(selectedGuids, dateYmd);
+      const ok = res.filter((r) => r.result.status === "ok");
+      const skipped = res.filter((r) => r.result.status === "cooldown" || r.result.status === "busy");
+      const failed = res.filter((r) => r.result.status === "error");
+
+      if (!ok.length && !skipped.length) {
+        setRefreshNote(failed[0]?.result.message ?? "Refresh failed.");
       } else {
-        setRefreshNote(`Refreshed in ${res.seconds}s — ${res.vouchers} vouchers.`);
-        await Promise.all([refetch(), refetchLast()]);
+        const secs = ok.reduce((s, r) => s + (Number(r.result.seconds) || 0), 0);
+        const vch = ok.reduce((s, r) => s + (Number(r.result.vouchers) || 0), 0);
+        const head = res.length > 1
+          ? `Refreshed ${ok.length} of ${res.length} companies in ${secs.toFixed(0)}s`
+          : `Refreshed in ${secs.toFixed(0)}s`;
+        const parts = [
+          ok.length
+            ? `${head} — ${vch} vouchers.`
+            : "Nothing to refresh — every selected company was snapshotted moments ago.",
+          skipped.length && ok.length ? `${skipped.length} already up to date.` : "",
+          failed.length ? `${failed.length} failed: ${failed[0].result.message ?? "unknown error"}` : "",
+        ].filter(Boolean);
+        setRefreshNote(parts.join(" "));
+        if (ok.length) await Promise.all([refetch(), refetchLast()]);
       }
     } catch (e) {
       setRefreshNote(e instanceof Error ? e.message : String(e));
@@ -262,18 +317,23 @@ export default function DayBook() {
 
   /* ------------------------------------------------------------ derivations */
 
-  const company = companies.find((c) => c.companyGuid === companyGuid);
+  const companyTitle = selected.length === 1
+    ? selected[0].rawName
+    : selected.length
+      ? `${selected.length} companies · combined`
+      : undefined;
+  const companyNames = selected.map(companyLabel).join(", ");
   const kpi = data?.kpi;
 
   const vouchers: DayVoucher[] = data?.vouchers ?? [];
-  const vchPage = usePagination(vouchers, { pageSize: 25, resetKey: `${companyGuid}|${dateYmd}` });
+  const vchPage = usePagination(vouchers, { pageSize: 25, resetKey: `${guidKey}|${dateYmd}` });
   const vchTotal = vouchers.reduce((s, v) => s + Number(v.amount), 0);
 
   const errText = error instanceof Error ? error.message : coError;
   const heroLoading = isLoading || coLoading;
 
   const heroSummary: React.ReactNode = heroLoading
-    ? "Gathering the day's book…"
+    ? multi ? `Gathering ${selected.length} day books…` : "Gathering the day's book…"
     : kpi
       ? (
         <>
@@ -284,11 +344,13 @@ export default function DayBook() {
       : "Every voucher, product and income/expense posting for the selected day — straight from the Tally books.";
 
   const heroMeta = [
+    // With several companies this is the OLDEST of their last runs — the screen is only as
+    // fresh as its stalest book (see loadLastDayBookRefreshMany).
     `Last refreshed: ${
       lastRefresh?.ran_at
         ? new Date(lastRefresh.ran_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
         : "never"
-    }`,
+    }${multi ? " (oldest of the selected)" : ""}`,
     "Currency ₹",
     "Auto-refreshes daily at 8:30 PM",
   ].join("   ·   ");
@@ -298,26 +360,29 @@ export default function DayBook() {
     "transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-white/25";
   const heroControls = (
     <div className="flex flex-wrap items-center justify-end gap-2">
-      <select
-        value={companyGuid}
-        onChange={(e) => pick(e.target.value, dateYmd)}
-        className={cn(darkControl, "max-w-[220px] cursor-pointer truncate [&>option]:text-navy")}
-      >
-        {companies.map((c) => (
-          <option key={c.companyGuid} value={c.companyGuid}>{companyLabel(c)}</option>
-        ))}
-      </select>
+      {/* Tick as many companies as you like — the panels below combine them. The shadcn
+          outline trigger is overridden to the hero's translucent-white treatment (cn is
+          tailwind-merge, so these classes win). */}
+      <MultiSelectFilter
+        options={companies.map((c) => ({ value: c.companyGuid, label: companyLabel(c) }))}
+        value={companyGuids}
+        onChange={(v) => pick(v, dateYmd)}
+        allLabel="All companies"
+        unit="companies"
+        triggerClassName={cn(darkControl, "w-[220px] hover:text-white")}
+        contentClassName="w-72"
+      />
       <input
         type="date"
         value={ymdToIso(dateYmd)}
         max={ymdToIso(todayYmd)}
-        onChange={(e) => e.target.value && pick(companyGuid, isoToYmd(e.target.value))}
+        onChange={(e) => e.target.value && pick(companyGuids, isoToYmd(e.target.value))}
         className={cn(darkControl, "cursor-pointer [color-scheme:dark]")}
       />
       <button
         type="button"
         onClick={onRefresh}
-        disabled={busy || !companyGuid}
+        disabled={busy || !selectedGuids.length}
         className={cn(darkControl, "inline-flex items-center gap-1.5 disabled:cursor-not-allowed disabled:opacity-50")}
       >
         <RefreshCw className={cn("h-4 w-4", busy && "animate-spin")} />
@@ -331,7 +396,8 @@ export default function DayBook() {
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto space-y-3">
       <DayHero
-        company={company?.rawName}
+        company={companyTitle}
+        companyHint={companyNames}
         dateYmd={dateYmd}
         metaLine={heroMeta}
         summary={heroSummary}
@@ -344,7 +410,8 @@ export default function DayBook() {
             <div className="h-full bg-primary transition-all duration-300" style={{ width: `${progress}%` }} />
           </div>
           <div className="text-[11px] text-muted-foreground">
-            Rebuilding this company's day-book snapshot — {elapsed.toFixed(0)}s elapsed
+            Rebuilding {multi ? `${selected.length} companies'` : "this company's"} day-book snapshot
+            {multi ? " (one at a time)" : ""} — {elapsed.toFixed(0)}s elapsed
             {lastRefresh?.seconds ? ` (last run took ${lastRefresh.seconds}s)` : ""}
           </div>
         </div>
@@ -356,16 +423,29 @@ export default function DayBook() {
           <AlertTriangle className="h-4 w-4" /> {errText}
         </div>
       ) : isLoading || coLoading ? (
-        <div className="py-16 text-center text-muted-foreground text-sm">Loading the day's book…</div>
+        <div className="py-16 text-center text-muted-foreground text-sm">
+          {multi ? `Loading ${selected.length} day books…` : "Loading the day's book…"}
+        </div>
       ) : !data || !kpi ? (
-        <div className="py-16 text-center text-muted-foreground text-sm">No data for this company.</div>
+        <div className="py-16 text-center text-muted-foreground text-sm">
+          No data for {multi ? "the selected companies" : "this company"}.
+        </div>
       ) : (
         <>
           {/* ── KPI row 1: sales + collection ────────────────────────── */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KpiCard tone="orange" icon={Wallet} label="Today's Sales" value={fmtSales(kpi.today_sales)} hint={dmy(dateYmd)} />
             <KpiCard tone="slate" icon={CalendarClock} label="Yesterday's Sales" value={fmtSales(kpi.yesterday_sales)} hint="Previous day" />
-            <KpiCard tone="up" icon={TrendingUp} label="Best Sales Day in Month" value={fmtSales(kpi.best_sales_day.amt)} hint={longDate(kpi.best_sales_day.date) || "—"} />
+            {/* In combined mode this is the strongest single BOOK-day, not a combined day —
+                the RPC gives each company's own best day, never a daily series. */}
+            <KpiCard
+              tone="up"
+              icon={TrendingUp}
+              label={multi ? "Best Sales Day (one book)" : "Best Sales Day in Month"}
+              value={fmtSales(kpi.best_sales_day.amt)}
+              hint={[longDate(kpi.best_sales_day.date) || "—", kpi.best_sales_day.company]
+                .filter(Boolean).join(" · ")}
+            />
             <KpiCard tone="grey" icon={ArrowDownToLine} label="Collection" value={fmtSales(kpi.collection)} hint="Receipts on this day" />
           </div>
 
@@ -373,9 +453,67 @@ export default function DayBook() {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KpiCard tone="slate" icon={ShoppingCart} label="Today's Purchase" value={fmtSales(kpi.today_purchase)} hint={dmy(dateYmd)} />
             <KpiCard tone="grey" icon={CalendarClock} label="Yesterday's Purchase" value={fmtSales(kpi.yesterday_purchase)} hint="Previous day" />
-            <KpiCard tone="up" icon={TrendingUp} label="Best Purchase Day in Month" value={fmtSales(kpi.best_purchase_day.amt)} hint={longDate(kpi.best_purchase_day.date) || "—"} />
+            <KpiCard
+              tone="up"
+              icon={TrendingUp}
+              label={multi ? "Best Purchase Day (one book)" : "Best Purchase Day in Month"}
+              value={fmtSales(kpi.best_purchase_day.amt)}
+              hint={[longDate(kpi.best_purchase_day.date) || "—", kpi.best_purchase_day.company]
+                .filter(Boolean).join(" · ")}
+            />
             <KpiCard tone="grey" icon={ArrowUpFromLine} label="Payment" value={fmtSales(kpi.payment)} hint="Payments on this day" />
           </div>
+
+          {multi && (
+            <p className="text-[11px] text-muted-foreground">
+              Every tile above adds the selected companies together — except the two Best Day
+              tiles, which show the strongest single day in one book (the day book returns each
+              company's own best day, not a combined daily series).
+            </p>
+          )}
+
+          {/* ── By Company (combined mode only) ──────────────────────── */}
+          {multi && (data.by_company?.length ?? 0) > 1 && (
+            <SalesPanel
+              title="By Company"
+              icon={Building2}
+              subtitle={`How ${dmy(dateYmd)} split across the selected books`}
+              bodyClassName="p-0"
+            >
+              <ScrollableTable className="border-b border-border">
+                <table className="w-full">
+                  <thead className="bg-muted/40 border-b border-border">
+                    <tr>
+                      <Th>Company</Th><Th right>Sales</Th><Th right>Purchase</Th>
+                      <Th right>Collection</Th><Th right>Payment</Th><Th right>Vouchers</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {(data.by_company ?? []).map((c) => (
+                      <tr key={c.company} className="hover:bg-muted/30">
+                        <Td className="max-w-[300px] truncate">{c.company}</Td>
+                        <Td right>{fmtSales(c.sales)}</Td>
+                        <Td right>{fmtSales(c.purchase)}</Td>
+                        <Td right>{fmtSales(c.collection)}</Td>
+                        <Td right>{fmtSales(c.payment)}</Td>
+                        <Td right>{c.vouchers}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-muted/40 border-t border-border font-semibold">
+                    <tr>
+                      <Td>Total</Td>
+                      <Td right>{fmtSales(kpi.today_sales)}</Td>
+                      <Td right>{fmtSales(kpi.today_purchase)}</Td>
+                      <Td right>{fmtSales(kpi.collection)}</Td>
+                      <Td right>{fmtSales(kpi.payment)}</Td>
+                      <Td right>{vouchers.length}</Td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </ScrollableTable>
+            </SalesPanel>
+          )}
 
           {/* ── Day Book voucher table ───────────────────────────────── */}
           <SalesPanel
@@ -390,14 +528,19 @@ export default function DayBook() {
               <table className="w-full">
                 <thead className="bg-muted/40 border-b border-border">
                   <tr>
-                    <Th>Date</Th><Th>Party Name</Th><Th>Voucher Number</Th>
+                    <Th>Date</Th>
+                    {multi && <Th>Company</Th>}
+                    <Th>Party Name</Th><Th>Voucher Number</Th>
                     <Th>Voucher Type</Th><Th right>Amount</Th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
-                  {vchPage.pageItems.map((v) => (
-                    <tr key={`${v.voucher_type}|${v.voucher_no}`} className="hover:bg-muted/30">
+                  {vchPage.pageItems.map((v, i) => (
+                    // A voucher number is only unique within a company, so the book — and the
+                    // row index, for the odd duplicate within one book — is part of the key.
+                    <tr key={`${v.company ?? ""}|${v.voucher_type}|${v.voucher_no}|${i}`} className="hover:bg-muted/30">
                       <Td>{dmy(v.date)}</Td>
+                      {multi && <Td className="max-w-[200px] truncate">{v.company ?? "—"}</Td>}
                       <Td className="max-w-[300px] truncate">{v.party ?? "—"}</Td>
                       <Td>{v.voucher_no ?? "—"}</Td>
                       <Td className="max-w-[220px] truncate">{v.voucher_type ?? "—"}</Td>
@@ -406,7 +549,11 @@ export default function DayBook() {
                   ))}
                 </tbody>
                 <tfoot className="bg-muted/40 border-t border-border font-semibold">
-                  <tr><Td>Total</Td><Td /><Td /><Td /><Td right>{fmtSales(vchTotal)}</Td></tr>
+                  <tr>
+                    <Td>Total</Td>
+                    {multi && <Td />}
+                    <Td /><Td /><Td /><Td right>{fmtSales(vchTotal)}</Td>
+                  </tr>
                 </tfoot>
               </table>
             </ScrollableTable>
@@ -425,8 +572,20 @@ export default function DayBook() {
 
           {/* ── Sales Products · Purchase Products ───────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <ProductsPanel title="Sales Products" icon={Package} rows={data.sales_products ?? []} resetKey={`s|${companyGuid}|${dateYmd}`} />
-            <ProductsPanel title="Purchase Products" icon={Boxes} rows={data.purchase_products ?? []} resetKey={`p|${companyGuid}|${dateYmd}`} />
+            <ProductsPanel
+              title="Sales Products"
+              icon={Package}
+              rows={data.sales_products ?? []}
+              resetKey={`s|${guidKey}|${dateYmd}`}
+              subtitle={multi ? "Quantities and amounts added across the selected companies" : undefined}
+            />
+            <ProductsPanel
+              title="Purchase Products"
+              icon={Boxes}
+              rows={data.purchase_products ?? []}
+              resetKey={`p|${guidKey}|${dateYmd}`}
+              subtitle={multi ? "Quantities and amounts added across the selected companies" : undefined}
+            />
           </div>
 
           {/* ── Sales Persons ────────────────────────────────────────── */}
