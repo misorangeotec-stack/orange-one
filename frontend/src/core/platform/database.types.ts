@@ -1844,6 +1844,126 @@ export type Database = {
         }
         Relationships: []
       }
+      fms_hr_job_titles: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          default_experience_max_years: number | null
+          default_experience_min_years: number | null
+          default_job_type_id: string | null
+          default_preferred_skill_ids: string[]
+          default_qualification_ids: string[]
+          default_responsibilities: string | null
+          default_role_summary: string | null
+          default_skill_ids: string[]
+          department_id: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          default_experience_max_years?: number | null
+          default_experience_min_years?: number | null
+          default_job_type_id?: string | null
+          default_preferred_skill_ids?: string[]
+          default_qualification_ids?: string[]
+          default_responsibilities?: string | null
+          default_role_summary?: string | null
+          default_skill_ids?: string[]
+          department_id?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          default_experience_max_years?: number | null
+          default_experience_min_years?: number | null
+          default_job_type_id?: string | null
+          default_preferred_skill_ids?: string[]
+          default_qualification_ids?: string[]
+          default_responsibilities?: string | null
+          default_role_summary?: string | null
+          default_skill_ids?: string[]
+          department_id?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_qualifications: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fms_hr_skills: {
+        Row: {
+          active: boolean
+          category: string
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          category?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       fms_hr_job_types: {
         Row: {
           active: boolean
@@ -2411,6 +2531,9 @@ export type Database = {
           edited_at: string | null
           edited_by: string | null
           expected_start_date: string | null
+          experience_max_years: number | null
+          experience_min_years: number | null
+          freshers_ok: boolean
           hiring_manager_ids: string[]
           hold_at: string | null
           hold_reason: string | null
@@ -2419,9 +2542,11 @@ export type Database = {
           hr_remarks: string | null
           id: string
           impact_if_unfilled: string | null
+          incentive_note: string | null
           jd_name: string | null
           jd_path: string | null
           job_title: string
+          job_title_id: string | null
           job_type_id: string | null
           key_responsibilities: string | null
           location_id: string | null
@@ -2435,7 +2560,9 @@ export type Database = {
           posted_by: string | null
           posted_on: string | null
           preferred_experience: string | null
+          preferred_skill_ids: string[]
           previous_employee_name: string | null
+          qualification_ids: string[]
           reject_reason: string | null
           rejected_at: string | null
           reporting_to_ids: string[]
@@ -2443,11 +2570,16 @@ export type Database = {
           request_date: string
           requester_id: string | null
           required_skills: string | null
+          role_summary: string | null
           salary_max: number | null
           salary_min: number | null
           salary_note: string | null
+          salary_period: string
+          salary_structure: string
           sent_back_at: string | null
           sent_back_reason: string | null
+          skill_ids: string[]
+          skills_note: string | null
           status: string
           submitted_at: string
           updated_at: string
@@ -2464,6 +2596,9 @@ export type Database = {
           edited_at?: string | null
           edited_by?: string | null
           expected_start_date?: string | null
+          experience_max_years?: number | null
+          experience_min_years?: number | null
+          freshers_ok?: boolean
           hiring_manager_ids?: string[]
           hold_at?: string | null
           hold_reason?: string | null
@@ -2472,9 +2607,11 @@ export type Database = {
           hr_remarks?: string | null
           id?: string
           impact_if_unfilled?: string | null
+          incentive_note?: string | null
           jd_name?: string | null
           jd_path?: string | null
           job_title: string
+          job_title_id?: string | null
           job_type_id?: string | null
           key_responsibilities?: string | null
           location_id?: string | null
@@ -2488,7 +2625,9 @@ export type Database = {
           posted_by?: string | null
           posted_on?: string | null
           preferred_experience?: string | null
+          preferred_skill_ids?: string[]
           previous_employee_name?: string | null
+          qualification_ids?: string[]
           reject_reason?: string | null
           rejected_at?: string | null
           reporting_to_ids?: string[]
@@ -2496,11 +2635,16 @@ export type Database = {
           request_date?: string
           requester_id?: string | null
           required_skills?: string | null
+          role_summary?: string | null
           salary_max?: number | null
           salary_min?: number | null
           salary_note?: string | null
+          salary_period?: string
+          salary_structure?: string
           sent_back_at?: string | null
           sent_back_reason?: string | null
+          skill_ids?: string[]
+          skills_note?: string | null
           status?: string
           submitted_at?: string
           updated_at?: string
@@ -2517,6 +2661,9 @@ export type Database = {
           edited_at?: string | null
           edited_by?: string | null
           expected_start_date?: string | null
+          experience_max_years?: number | null
+          experience_min_years?: number | null
+          freshers_ok?: boolean
           hiring_manager_ids?: string[]
           hold_at?: string | null
           hold_reason?: string | null
@@ -2525,9 +2672,11 @@ export type Database = {
           hr_remarks?: string | null
           id?: string
           impact_if_unfilled?: string | null
+          incentive_note?: string | null
           jd_name?: string | null
           jd_path?: string | null
           job_title?: string
+          job_title_id?: string | null
           job_type_id?: string | null
           key_responsibilities?: string | null
           location_id?: string | null
@@ -2541,7 +2690,9 @@ export type Database = {
           posted_by?: string | null
           posted_on?: string | null
           preferred_experience?: string | null
+          preferred_skill_ids?: string[]
           previous_employee_name?: string | null
+          qualification_ids?: string[]
           reject_reason?: string | null
           rejected_at?: string | null
           reporting_to_ids?: string[]
@@ -2549,11 +2700,16 @@ export type Database = {
           request_date?: string
           requester_id?: string | null
           required_skills?: string | null
+          role_summary?: string | null
           salary_max?: number | null
           salary_min?: number | null
           salary_note?: string | null
+          salary_period?: string
+          salary_structure?: string
           sent_back_at?: string | null
           sent_back_reason?: string | null
+          skill_ids?: string[]
+          skills_note?: string | null
           status?: string
           submitted_at?: string
           updated_at?: string

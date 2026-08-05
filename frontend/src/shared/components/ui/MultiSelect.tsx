@@ -8,6 +8,16 @@ export interface MultiOption {
   value: string;
   label: string;
   icon?: ReactNode;
+  /**
+   * Sticky heading this option sits under, mirroring {@link Combobox}'s `group`.
+   *
+   * This is what lets ONE picker stand in for several: the HR requisition form
+   * has ~113 skills spanning five categories, and five separate dropdowns on one
+   * screen reads as five times the work. Grouped, it is one familiar control with
+   * a search box. Options without a group render exactly as they always did, so
+   * every existing call site is untouched.
+   */
+  group?: string;
 }
 
 /**
@@ -28,6 +38,9 @@ export default function MultiSelect({
   triggerClassName,
   align = "left",
   searchable,
+  chips,
+  onCreate,
+  createLabel = (q) => `Add “${q}”`,
 }: {
   values: string[];
   onChange: (values: string[]) => void;
@@ -41,6 +54,24 @@ export default function MultiSelect({
   align?: "left" | "right";
   /** Force the search box on/off; default: show once there are more than 6 options. */
   searchable?: boolean;
+  /**
+   * List the selection as removable tags under the control.
+   *
+   * The trigger collapses to "11 selected" past two options, which is right in a
+   * filter bar — you set it and move on. It is wrong when the selection IS the
+   * answer: on the requisition form the skills are prefilled from a JD, and
+   * "11 selected" asks the HOD to open a menu and scroll to check work they did
+   * not do. Opt-in, so the filter bars stay compact.
+   */
+  chips?: boolean;
+  /**
+   * Called with the typed term when it matches nothing, mirroring
+   * {@link Combobox}. The requisition form hands it to the master-request modal,
+   * so a HOD who needs a skill the master doesn't have is never stuck choosing
+   * between the wrong option and no option.
+   */
+  onCreate?: (label: string) => void;
+  createLabel?: (q: string) => string;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -49,9 +80,10 @@ export default function MultiSelect({
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const showSearch = searchable ?? options.length > 6;
+  const showSearch = searchable ?? (!!onCreate || options.length > 6);
   const selectedSet = new Set(values);
-  const selectedLabels = options.filter((o) => selectedSet.has(o.value)).map((o) => o.label);
+  const selected = options.filter((o) => selectedSet.has(o.value));
+  const selectedLabels = selected.map((o) => o.label);
   const summary =
     selectedLabels.length === 0
       ? placeholder
@@ -69,9 +101,43 @@ export default function MultiSelect({
   );
   const searching = q.trim().length > 0;
 
+  /**
+   * `filtered` split into sections, in the order each group FIRST appears — so
+   * the caller controls section order by ordering its options, and never has to
+   * pass a separate list of groups. Ungrouped options collect under "" and render
+   * headerless, which is what keeps the ungrouped call sites pixel-identical.
+   */
+  const grouped = useMemo(() => {
+    const out: { group: string; options: MultiOption[] }[] = [];
+    const byGroup = new Map<string, MultiOption[]>();
+    for (const o of filtered) {
+      const g = o.group ?? "";
+      let bucket = byGroup.get(g);
+      if (!bucket) {
+        bucket = [];
+        byGroup.set(g, bucket);
+        out.push({ group: g, options: bucket });
+      }
+      bucket.push(o);
+    }
+    return out;
+  }, [filtered]);
+
   // Select all / Clear all act on the *shown* options: with a search active,
   // "Select all" adds the matches to the selection rather than picking everyone,
   // and "Clear all" drops just the matches. Unfiltered, both behave as before.
+  // Offer creation only when the term doesn't already match an option exactly.
+  const trimmed = q.trim();
+  const canCreate =
+    !!onCreate && trimmed.length > 0 && !options.some((o) => o.label.toLowerCase() === trimmed.toLowerCase());
+
+  const create = () => {
+    if (!onCreate) return;
+    onCreate(trimmed);
+    setOpen(false);
+    setQ("");
+  };
+
   const shownValues = filtered.map((o) => o.value);
   const allShownSelected = shownValues.length > 0 && shownValues.every((v) => selectedSet.has(v));
   const noneShownSelected = shownValues.every((v) => !selectedSet.has(v));
@@ -149,6 +215,32 @@ export default function MultiSelect({
         </svg>
       </button>
 
+      {/* In `options` order, so a grouped list keeps its categories together. */}
+      {chips && selected.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {selected.map((o) => (
+            <span
+              key={o.value}
+              className="inline-flex items-center gap-1 rounded-full bg-orange-soft px-2.5 py-1 text-[12px] font-medium text-orange"
+            >
+              {o.label}
+              {!disabled && (
+                <button
+                  type="button"
+                  onClick={() => toggle(o.value)}
+                  aria-label={`Remove ${o.label}`}
+                  className="text-orange/60 hover:text-orange leading-none"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </span>
+          ))}
+        </div>
+      )}
+
       {open && pos && createPortal(
         <div
           ref={menuRef}
@@ -203,35 +295,61 @@ export default function MultiSelect({
             </div>
           )}
           <ul className="max-h-60 overflow-y-auto py-1">
-            {filtered.length === 0 && (
+            {filtered.length === 0 && !canCreate && (
               <li className="px-3 py-3 text-center text-[12.5px] text-grey-2">No matches</li>
             )}
-            {filtered.map((o) => {
-              const on = selectedSet.has(o.value);
-              return (
-                <li key={o.value}>
-                  <button
-                    type="button"
-                    onClick={() => toggle(o.value)}
-                    className={cn(
-                      "w-full flex items-center gap-2.5 px-3 py-2 text-left transition border-l-[3px] border-l-transparent",
-                      on ? "bg-orange-soft/60" : "hover:bg-line hover:border-l-orange"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded-[5px] border transition",
-                        on ? "bg-orange border-orange text-white" : "border-line bg-white text-transparent"
-                      )}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
-                    </span>
-                    {o.icon && <span className="shrink-0 flex items-center">{o.icon}</span>}
-                    <span className={cn("min-w-0 flex-1 text-[13.5px] truncate", on ? "text-orange font-semibold" : "text-navy")}>{o.label}</span>
-                  </button>
-                </li>
-              );
-            })}
+            {grouped.map((section) => (
+              <li key={section.group || "__ungrouped"}>
+                {section.group && (
+                  <div className="sticky top-0 z-10 bg-page/95 backdrop-blur-sm px-3 py-1 text-[10.5px] font-semibold uppercase tracking-wide text-grey-2 border-b border-line/70">
+                    {section.group}
+                  </div>
+                )}
+                <ul>
+                  {section.options.map((o) => {
+                    const on = selectedSet.has(o.value);
+                    return (
+                      <li key={o.value}>
+                        <button
+                          type="button"
+                          onClick={() => toggle(o.value)}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-3 py-2 text-left transition border-l-[3px] border-l-transparent",
+                            on ? "bg-orange-soft/60" : "hover:bg-line hover:border-l-orange"
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "shrink-0 flex items-center justify-center w-[18px] h-[18px] rounded-[5px] border transition",
+                              on ? "bg-orange border-orange text-white" : "border-line bg-white text-transparent"
+                            )}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+                          </span>
+                          {o.icon && <span className="shrink-0 flex items-center">{o.icon}</span>}
+                          <span className={cn("min-w-0 flex-1 text-[13.5px] truncate", on ? "text-orange font-semibold" : "text-navy")}>{o.label}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </li>
+            ))}
+
+            {canCreate && (
+              <li className={cn(filtered.length > 0 && "border-t border-line mt-1 pt-1")}>
+                <button
+                  type="button"
+                  onClick={create}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition border-l-[3px] border-l-transparent hover:bg-orange-soft/40 hover:border-l-orange"
+                >
+                  <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-orange-soft text-orange">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  </span>
+                  <span className="min-w-0 flex-1 text-[13.5px] text-orange font-semibold truncate">{createLabel(trimmed)}</span>
+                </button>
+              </li>
+            )}
           </ul>
         </div>,
         document.body

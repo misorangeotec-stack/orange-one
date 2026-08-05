@@ -66,3 +66,16 @@ Misc/
 SOP/
 files/
 FMS/
+
+# Generated data extracts (.xlsx exception reports etc). Regenerate from the
+# ConnectWave mirror rather than committing a snapshot of live customer data.
+output/
+
+# Cora's generated analytics index — tool state, rebuilt on demand.
+.cora/
+
+# Word/PDF reference material that happens to sit under docs/. The prose notes
+# in docs/ ARE committed; the binaries follow the Misc/ SOP/ rule above.
+docs/**/*.doc
+docs/**/*.docx
+docs/**/*.pdf
