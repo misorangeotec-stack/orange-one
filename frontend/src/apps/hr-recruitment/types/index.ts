@@ -33,6 +33,63 @@ export interface JobPlatform extends HrMaster {
 export type JobType = HrMaster;
 export type HrLocation = HrMaster;
 export type DisqualificationReason = HrMaster;
+export type Qualification = HrMaster;
+
+/**
+ * How a skill is grouped in the MRF's two skill pickers. One flat master with a
+ * category, rather than five masters: the form shows ONE "must-have" list and one
+ * "good to have" list, with these as the group headers inside the menu. That is
+ * what keeps a full JD down to two dropdowns instead of five.
+ */
+export type SkillCategory = "technical" | "tool" | "soft" | "language" | "certification";
+
+export const SKILL_CATEGORIES: { value: SkillCategory; label: string }[] = [
+  { value: "technical", label: "Technical & domain" },
+  { value: "tool", label: "Tools & software" },
+  { value: "soft", label: "Soft skills" },
+  { value: "language", label: "Languages" },
+  { value: "certification", label: "Certifications & licences" },
+];
+
+export const skillCategoryLabel = (c: SkillCategory | string): string =>
+  SKILL_CATEGORIES.find((s) => s.value === c)?.label ?? String(c);
+
+export interface HrSkill extends HrMaster {
+  category: SkillCategory;
+}
+
+/**
+ * A job title a vacancy can be raised for, plus an optional JD TEMPLATE.
+ *
+ * NOT {@link Designation} — that is the portal-wide EMPLOYEE title list behind
+ * `profiles.designation` (six rows, admin-managed). This one is HR's own, is
+ * requestable, carries a department and carries the job description.
+ *
+ * The template is why the rebuilt MRF is short: picking a title pre-fills the
+ * whole job-description step, so the HOD reviews instead of authoring. Every
+ * `default*` field is optional — a title with no template just leaves the step
+ * empty, which is a normal state, not an error.
+ */
+export interface JobTitle extends HrMaster {
+  departmentId: string | null;
+  defaultJobTypeId: string | null;
+  defaultRoleSummary: string | null;
+  /** Newline-separated bullets, the same encoding the form's bullet editor uses. */
+  defaultResponsibilities: string | null;
+  defaultExperienceMinYears: number | null;
+  defaultExperienceMaxYears: number | null;
+  defaultQualificationIds: string[];
+  defaultSkillIds: string[];
+  defaultPreferredSkillIds: string[];
+}
+
+/** True when this title carries enough of a template to be worth pre-filling. */
+export const hasJdTemplate = (t: JobTitle | undefined): boolean =>
+  !!t &&
+  (!!t.defaultRoleSummary ||
+    !!t.defaultResponsibilities ||
+    t.defaultSkillIds.length > 0 ||
+    t.defaultQualificationIds.length > 0);
 
 /* ================= master governance ==================================== */
 
@@ -41,23 +98,29 @@ export type HrMasterType =
   | "job_type"
   | "location"
   | "disqualification_reason"
-  | "onboarding_item";
+  | "onboarding_item"
+  | "job_title"
+  | "skill"
+  | "qualification";
 
-/** Every master, for the owners config — all five can be assigned an owner. */
+/** Every master, for the owners config — all eight can be assigned an owner. */
 export const HR_MASTER_TYPES: { value: HrMasterType; label: string; plural: string }[] = [
+  { value: "job_title", label: "Job Title", plural: "Job Titles" },
+  { value: "skill", label: "Skill", plural: "Skills" },
+  { value: "qualification", label: "Qualification", plural: "Qualifications" },
   { value: "job_platform", label: "Job Platform", plural: "Job Platforms" },
-  { value: "job_type", label: "Job Type", plural: "Job Types" },
+  { value: "job_type", label: "Employment Type", plural: "Employment Types" },
   { value: "location", label: "Location", plural: "Locations" },
   { value: "disqualification_reason", label: "Disqualification Reason", plural: "Disqualification Reasons" },
   { value: "onboarding_item", label: "Checklist Item", plural: "Onboarding Checklist" },
 ];
 
 /**
- * The masters a user can REQUEST a new entry for — the four that back a dropdown.
+ * The masters a user can REQUEST a new entry for — the seven that back a dropdown.
  * The onboarding checklist is deliberately absent: it feeds no form (it is seeded
  * server-side onto each onboarding), so there is no "it's missing from this list"
  * moment. Its owner edits it directly on the Masters page. The DB agrees — the
- * master_type CHECK on fms_hr_master_requests lists only these four.
+ * master_type CHECK on fms_hr_master_requests lists only these seven.
  */
 export const REQUESTABLE_MASTER_TYPES = HR_MASTER_TYPES.filter((m) => m.value !== "onboarding_item");
 
@@ -155,6 +218,14 @@ export type RequisitionStatus =
 export type PositionKind = "new" | "replacement";
 
 /**
+ * How to READ salaryMin/salaryMax, not where the money lives. "fixed" means the
+ * form captured a single figure and wrote it to BOTH bounds — which is exactly
+ * what keeps the over-range warning on an offer working without special-casing.
+ */
+export type SalaryStructure = "fixed" | "range";
+export type SalaryPeriod = "month" | "annum";
+
+/**
  * The MRF (sheet columns A–V) plus every step's authoritative timestamp.
  *
  * `hiringManagerIds` / `reportingToIds` are ARRAYS because the live sheet really
@@ -181,7 +252,11 @@ export interface Requisition {
 
   departmentId: string;
   locationId: string | null;
+  /** The title as text. Always set — rows raised before the master existed have only this. */
   jobTitle: string;
+  /** The {@link JobTitle} master row it was raised from. Null on pre-master rows. */
+  jobTitleId: string | null;
+  /** Employment type (Full-time / Contract / …) — the fms_hr_job_types master. */
   jobTypeId: string | null;
 
   positionKind: PositionKind;
@@ -192,12 +267,34 @@ export interface Requisition {
 
   salaryMin: number | null;
   salaryMax: number | null;
+  salaryStructure: SalaryStructure;
+  salaryPeriod: SalaryPeriod;
+  incentiveNote: string | null;
 
   whyNeeded: string | null;
+  /**
+   * The two questions the rebuilt form stopped asking. Kept on the type and the
+   * table because requisitions raised before the rebuild have them filled, and
+   * the detail page still renders whatever is there. Nothing writes them now.
+   */
   businessContribution: string | null;
   impactIfUnfilled: string | null;
+
+  /* ---- the structured job description ---- */
+  roleSummary: string | null;
+  /** Newline-separated bullets. */
   keyResponsibilities: string | null;
+  experienceMinYears: number | null;
+  experienceMaxYears: number | null;
+  freshersOk: boolean;
+  qualificationIds: string[];
+  /** Must-have skills, spanning every category. */
+  skillIds: string[];
+  preferredSkillIds: string[];
+  skillsNote: string | null;
+  /** Denormalised summary of skillIds, so old text-only consumers still read something. */
   requiredSkills: string | null;
+  /** Legacy free text; superseded by experienceMin/MaxYears + preferredSkillIds. */
   preferredExperience: string | null;
 
   jdPath: string | null;
@@ -267,7 +364,14 @@ export type CandidateStage =
   | "interview_2"
   | "interview_3"
   | "final_decision"
+  /** An offer has been extended: agreed CTC, joining date, onboarding opened. */
   | "finalized"
+  /**
+   * They joined. An ACKNOWLEDGEMENT of `joined_at`, never a second record of it —
+   * the move is refused until the onboarding has actually completed, so the board
+   * and the onboarding can never tell different stories about the same person.
+   */
+  | "hired"
   | "disqualified";
 
 /** How the candidate's details got here: AI-read, AI-failed, or typed in. */

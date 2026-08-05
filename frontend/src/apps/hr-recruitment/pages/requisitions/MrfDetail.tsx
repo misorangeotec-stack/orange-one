@@ -17,9 +17,41 @@ import { HoldCancelModal, JobPostingModal, MrfDecisionModal } from "../../compon
 import MrfForm from "../../components/MrfForm";
 import { useHrStore } from "../../store";
 import { inr, salaryLabel } from "../../lib/format";
+import { experienceLabel } from "../../lib/jd";
+import { isOpenCandidate } from "../../lib/queues";
+import { bulletsFromText } from "../../components/BulletList";
 import { hrDocUrl, type MrfInput } from "../../data/hrWrites";
 import type { StepKey } from "../../lib/steps";
-import type { Candidate, Onboarding, Probation } from "../../types";
+import { SKILL_CATEGORIES, type Candidate, type Onboarding, type Probation } from "../../types";
+
+/**
+ * One labelled row of skill/qualification chips.
+ *
+ * Chips rather than a comma-joined sentence: a requisition routinely asks for a
+ * dozen skills, and a wrapped sentence of them is unreadable at a glance — which
+ * is exactly the moment an approver is deciding whether the ask is reasonable.
+ */
+function ChipRow({ label, names, muted = false }: { label: string; names: string[]; muted?: boolean }) {
+  return (
+    <div>
+      <p className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">{label}</p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {names.map((n) => (
+          <span
+            key={n}
+            className={
+              muted
+                ? "rounded-pill border border-line px-2.5 py-1 text-[12px] text-grey"
+                : "rounded-pill border border-orange/25 bg-orange/5 px-2.5 py-1 text-[12px] font-medium text-navy"
+            }
+          >
+            {n}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 const OFFER_LABEL: Record<string, string> = {
   pending: "Awaiting answer",
@@ -73,6 +105,21 @@ export default function MrfDetail() {
     return all.length ? all.join(", ") : "—";
   };
 
+  // ---- The job description, resolved for display -------------------------
+  // Responsibilities are stored newline-joined; ids resolve through the store,
+  // which drops any whose master row has since been deleted.
+  const responsibilities = bulletsFromText(r.keyResponsibilities);
+  const qualificationNames = s.qualificationNames(r.qualificationIds);
+  const preferredNames = s.skillNames(r.preferredSkillIds);
+  /** Must-have skills split back into their categories, in SKILL_CATEGORIES order. */
+  const mustHaveGroups = SKILL_CATEGORIES.map((c) => ({
+    label: c.label,
+    names: r.skillIds
+      .map((id) => s.skillById(id))
+      .filter((sk) => sk?.category === c.value)
+      .map((sk) => sk!.name),
+  })).filter((g) => g.names.length > 0);
+
   // "Others" reads as nothing on its own, so it carries the name HR typed with it.
   const otherNote = s.otherPlatformNoteFor(r.id);
   const platforms = s
@@ -98,10 +145,13 @@ export default function MrfDetail() {
   // finalized candidate who declines hands the seat straight back.
   const joined = s.seatsJoined(r.id);
   const taken = s.seatsTaken(r.id);
-  const live = candidates.filter((c) => c.stage !== "finalized" && c.stage !== "disqualified").length;
+  const live = candidates.filter(isOpenCandidate).length;
 
+  // Everyone who was offered, INCLUDING those already marked hired — a hire's
+  // onboarding is the record of how they joined and must not vanish from this tab
+  // the moment their card is acknowledged on the board.
   const onboardings = candidates
-    .filter((c) => c.stage === "finalized")
+    .filter((c) => c.stage === "finalized" || c.stage === "hired")
     .map((c) => ({ c, o: s.onboardingForCandidate(c.id) }))
     .filter((x): x is { c: Candidate; o: Onboarding } => !!x.o);
 
@@ -304,8 +354,10 @@ export default function MrfDetail() {
                     <div className="min-w-0">
                       <div className="text-[13.5px] font-semibold text-navy">{c.name}</div>
                       <div className="text-[12px] text-grey-2">
-                        {OFFER_LABEL[o.offerStatus] ?? o.offerStatus}
-                        {o.joiningDate ? ` · joining ${formatDateDMY(o.joiningDate)}` : " · joining date not set"}
+                        {/* Accepted is implied by being finalized, so it is not worth
+                            a line — only a drop-out is. */}
+                        {o.offerStatus !== "accepted" && `${OFFER_LABEL[o.offerStatus] ?? o.offerStatus} · `}
+                        {o.joiningDate ? `joining ${formatDateDMY(o.joiningDate)}` : "joining date not set"}
                         {checks.length > 0 && ` · ${ticked}/${checks.length} done`}
                         {s.canViewSalary && c.offeredCtc !== null && ` · ${inr(c.offeredCtc)}`}
                         {o.employeeCode && ` · ${o.employeeCode}`}
@@ -343,12 +395,13 @@ export default function MrfDetail() {
           <Field label="Date of request">{formatDateDMY(r.requestDate)}</Field>
           <Field label="Department">{dept}</Field>
           <Field label="Location">{loc}</Field>
-          <Field label="Job type">{jobType}</Field>
+          <Field label="Employment type">{jobType}</Field>
           <Field label="Expected joining date">{formatDateDMY(r.expectedStartDate)}</Field>
           <Field label="Hiring manager">{peopleList(r.hiringManagerIds, null)}</Field>
           <Field label="Reporting to">{peopleList(r.reportingToIds, r.reportingToNote)}</Field>
-          <Field label="Salary">{salaryLabel(r.salaryMin, r.salaryMax)}</Field>
-          <Field label="Job description">
+          <Field label="Salary">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod)}</Field>
+          <Field label="Experience">{experienceLabel(r.experienceMinYears, r.experienceMaxYears, r.freshersOk) ?? "—"}</Field>
+          <Field label="Job description file">
             {r.jdPath ? (
               <button
                 type="button"
@@ -365,14 +418,45 @@ export default function MrfDetail() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           {r.whyNeeded && <Field label="Why is this position needed?">{r.whyNeeded}</Field>}
+          {r.incentiveNote && <Field label="Performance incentives">{r.incentiveNote}</Field>}
+          {r.roleSummary && <Field label="What the role is for">{r.roleSummary}</Field>}
+          {/*
+            Asked by the old form, dropped by the rebuild. Rendered conditionally so
+            the ~13 requisitions raised before it keep showing what they captured —
+            nothing writes these any more.
+          */}
           {r.businessContribution && (
             <Field label="Contribution to business objectives">{r.businessContribution}</Field>
           )}
           {r.impactIfUnfilled && <Field label="Impact if not filled">{r.impactIfUnfilled}</Field>}
-          {r.keyResponsibilities && <Field label="Key responsibilities">{r.keyResponsibilities}</Field>}
-          {r.requiredSkills && <Field label="Required skills and qualifications">{r.requiredSkills}</Field>}
           {r.preferredExperience && <Field label="Preferred experience">{r.preferredExperience}</Field>}
         </div>
+
+        {responsibilities.length > 0 && (
+          <div>
+            <p className="text-[11.5px] font-semibold uppercase tracking-wide text-grey-2">Key responsibilities</p>
+            <ul className="mt-1.5 space-y-1">
+              {responsibilities.map((line, i) => (
+                <li key={i} className="flex gap-2 text-[13.5px] leading-relaxed text-navy">
+                  <span className="shrink-0 text-grey-2">•</span>
+                  <span>{line}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {(mustHaveGroups.length > 0 || preferredNames.length > 0 || qualificationNames.length > 0) && (
+          <div className="space-y-3">
+            {qualificationNames.length > 0 && <ChipRow label="Education" names={qualificationNames} />}
+            {mustHaveGroups.map((g) => (
+              <ChipRow key={g.label} label={g.label} names={g.names} />
+            ))}
+            {preferredNames.length > 0 && <ChipRow label="Good to have" names={preferredNames} muted />}
+          </div>
+        )}
+
+        {r.skillsNote && <Field label="Anything else">{r.skillsNote}</Field>}
       </Card>
       )}
 

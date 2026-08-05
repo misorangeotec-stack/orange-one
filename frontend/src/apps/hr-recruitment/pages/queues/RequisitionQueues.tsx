@@ -113,8 +113,8 @@ function StepQueuePage({
     {
       key: "salary",
       header: "Salary",
-      cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax)}</span>,
-      exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax),
+      cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod)}</span>,
+      exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod),
     },
     {
       key: "raised",
@@ -269,8 +269,8 @@ export function MrfApprovalsQueue() {
     {
       key: "salary",
       header: "Salary",
-      cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax)}</span>,
-      exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax),
+      cell: (r) => <span className="text-grey">{salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod)}</span>,
+      exportValue: (r) => salaryLabel(r.salaryMin, r.salaryMax, r.salaryStructure, r.salaryPeriod),
     },
     {
       key: "stage",

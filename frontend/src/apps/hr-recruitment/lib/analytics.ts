@@ -294,7 +294,7 @@ export function pipelineFunnel(candidates: Candidate[]): FunnelStage[] {
   const shortlisted = candidates.filter((c) => !!c.hrShortlistedAt).length;
   const shared = candidates.filter((c) => !!c.sharedToHodAt).length;
   // "Screened/interviewed" = any screen or round actually held. Telephonic counts too,
-  // and because rounds are now optional a candidate can reach Selected without an
+  // and because rounds are now optional a candidate can be offered the job without an
   // interview — so this stage may hold FEWER than the one after it (that is real, not a bug).
   const interviewed = candidates.filter(
     (c) => !!c.telephonicAt || !!c.interview1At || !!c.interview2At || !!c.interview3At,
@@ -307,7 +307,7 @@ export function pipelineFunnel(candidates: Candidate[]): FunnelStage[] {
     { key: "hr_shortlist", label: "Shortlisted by HR", count: shortlisted },
     { key: "hod_share", label: "Shared with HOD", count: shared },
     { key: "interviewed", label: "Interviewed", count: interviewed },
-    { key: "finalized", label: "Selected", count: finalized },
+    { key: "finalized", label: "Made Offer", count: finalized },
     { key: "joined", label: "Actually joined", count: joined },
   ];
 

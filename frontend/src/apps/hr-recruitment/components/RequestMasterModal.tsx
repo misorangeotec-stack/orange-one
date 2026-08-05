@@ -16,6 +16,7 @@ import {
   payloadFromValues,
   type MasterValues,
 } from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * "Request a new master entry" — the single raise surface for every requestable
@@ -48,6 +49,7 @@ export default function RequestMasterModal({
   onRequested?: (id: string, masterType: HrMasterType, name: string) => void;
 }) {
   const s = useHrStore();
+  const ctx = useMasterFieldCtx();
   const [mt, setMt] = useState<HrMasterType | null>(masterType);
   const [values, setValues] = useState<MasterValues>({});
   const [busy, setBusy] = useState(false);
@@ -57,7 +59,7 @@ export default function RequestMasterModal({
   useEffect(() => {
     if (!open) return;
     setMt(masterType);
-    setValues({ ...(masterType ? emptyValuesFor(masterType) : {}), ...(prefill ?? {}) });
+    setValues({ ...(masterType ? emptyValuesFor(masterType, ctx) : {}), ...(prefill ?? {}) });
     setErr(null);
     setBusy(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -69,23 +71,17 @@ export default function RequestMasterModal({
     const next = v as HrMasterType;
     setMt(next);
     // Keep the name across a type change; everything else is type-specific.
-    setValues((p) => ({ ...emptyValuesFor(next), name: p.name ?? "" }));
+    setValues((p) => ({ ...emptyValuesFor(next, ctx), name: p.name ?? "" }));
     setErr(null);
   };
 
-  const fields = mt ? masterFields(mt) : [];
+  const fields = mt ? masterFields(mt, ctx) : [];
 
   /** Already in the master, or already sitting in someone's review queue? */
   const clash = useMemo(() => {
     if (!mt || !values.name?.trim()) return null;
 
-    const existing = findExistingMaster(mt, values, {
-      jobPlatforms: s.jobPlatforms,
-      jobTypes: s.jobTypes,
-      locations: s.locations,
-      disqualificationReasons: s.disqualificationReasons,
-      onboardingItems: s.onboardingItems,
-    });
+    const existing = findExistingMaster(mt, values, s.masterLists);
     if (existing) {
       return existing.active
         ? `“${existing.name}” is already in ${masterTypePlural(mt)} — pick it from the list.`
@@ -114,7 +110,7 @@ export default function RequestMasterModal({
       setErr("Pick what you want to add.");
       return;
     }
-    const missing = missingRequired(mt, values);
+    const missing = missingRequired(mt, values, ctx);
     if (missing) {
       setErr(missing);
       return;
@@ -168,13 +164,20 @@ export default function RequestMasterModal({
         )}
 
         {fields.map((f) => (
-          <FieldLabel key={f.key} label={f.label} required={f.required}>
+          <FieldLabel key={f.key} label={f.label} required={f.required} hint={f.hint}>
             {f.type === "textarea" ? (
               <TextArea
                 rows={3}
                 value={values[f.key] ?? ""}
                 placeholder={f.placeholder}
                 onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+              />
+            ) : f.type === "select" ? (
+              <Combobox
+                value={values[f.key] ?? ""}
+                onChange={(v) => setValues((p) => ({ ...p, [f.key]: v }))}
+                options={f.options ?? []}
+                placeholder={f.placeholder ?? `Select ${f.label.toLowerCase()}`}
               />
             ) : (
               <TextInput

@@ -1,20 +1,21 @@
 import { useMemo, useState } from "react";
 import Button from "@/shared/components/ui/Button";
-import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
 import { dueState } from "@/shared/lib/workingDays";
 import { formatDateDMY } from "@/shared/lib/date";
 import { exportRowsToXlsx } from "@/shared/lib/exportXlsx";
 import { CANDIDATE_WINDOW_MONTHS } from "../../data/hrFetch";
 import { useHrStore } from "../../store";
-import { BOARD_STAGES, STAGE_LABEL, isTerminal } from "../../lib/board";
+import { BOARD_COLUMNS, STAGE_LABEL, columnOf, type BoardColumnKey } from "../../lib/board";
 import { useBoardDnd } from "./useBoardDnd";
+import BoardColumn from "./BoardColumn";
 import CandidateCard from "./CandidateCard";
 import MoveModal from "./MoveModal";
 import InterviewResultModal from "./InterviewResultModal";
 import ScheduleInterviewModal from "./ScheduleInterviewModal";
 import HodDecisionModal from "./HodDecisionModal";
 import AddCandidatesModal from "./AddCandidatesModal";
-import type { Candidate, CandidateStage, Requisition } from "../../types";
+import OnboardingPanel from "../onboarding/OnboardingPanel";
+import type { Candidate, CandidateStage, Onboarding, Requisition } from "../../types";
 
 /**
  * The candidate board for one requisition.
@@ -42,6 +43,8 @@ export default function CandidateBoard({
   const [schedule, setSchedule] = useState<{ c: Candidate; round: 0 | 1 | 2 | 3 } | null>(null);
   const [hodDecision, setHodDecision] = useState<{ ids: string[]; selected: boolean } | null>(null);
   const [addingCvs, setAddingCvs] = useState(false);
+  /** The onboarding dialog, reachable straight from a Made Offer / Hired card. */
+  const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -49,14 +52,26 @@ export default function CandidateBoard({
   const candidates = s.candidatesFor(requisition.id);
 
   // Uploading CVs belongs to the BOARD, not to one screen that happens to host it.
-  // The board is rendered both from the requisition and from the Candidate Pipeline
-  // queue, and "where do I add resumes?" must have the same answer in both places.
+  // The board is rendered both from the requisition and from the position's own
+  // page, and "where do I add resumes?" must have the same answer in both places.
   const canAddCvs = requisition.status === "sourcing" && s.canActOn("resume_upload", requisition);
 
-  const byStage = useMemo(() => {
-    const m = new Map<CandidateStage, Candidate[]>();
-    for (const st of BOARD_STAGES) m.set(st, []);
-    for (const c of candidates) m.get(c.stage)?.push(c);
+  /**
+   * Cards, grouped by the COLUMN they are drawn in — not by their raw stage.
+   *
+   * `columnOf` is total, so every card lands somewhere visible. The old grouping
+   * did `map.get(c.stage)?.push(c)`, which silently dropped any stage without a
+   * column while the queues went on counting it as open work.
+   */
+  const byColumn = useMemo(() => {
+    const m = new Map<BoardColumnKey, Candidate[]>();
+    for (const col of BOARD_COLUMNS) m.set(col.key, []);
+    for (const c of candidates) {
+      const key = columnOf(c);
+      const list = m.get(key) ?? [];
+      list.push(c);
+      m.set(key, list);
+    }
     // Oldest first inside a column — the thing that has waited longest is on top.
     for (const list of m.values()) list.sort((a, b) => a.uploadedAt.localeCompare(b.uploadedAt));
     return m;
@@ -67,6 +82,11 @@ export default function CandidateBoard({
     if (c) setMove({ c, to });
   });
 
+  const openOnboarding = (cand: Candidate) => {
+    const o = s.onboardingForCandidate(cand.id);
+    if (o) setOnboarding(o);
+  };
+
   const toggleSelect = (id: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
@@ -75,19 +95,27 @@ export default function CandidateBoard({
       return next;
     });
 
-  const selectedIn = (stage: CandidateStage) =>
-    (byStage.get(stage) ?? []).filter((c) => selected.has(c.id)).map((c) => c.id);
-
   const clearSelection = () => setSelected(new Set());
+
+  /**
+   * Bulk actions key off the ticked card's own STAGE, never off the column it is
+   * drawn in. "Shortlisted by HR" holds both `hr_shortlisted` and `shared_with_hod`,
+   * and those two owe opposite actions — one is waiting for HR to send it, the other
+   * for the HOD to decide. Selecting by column would offer "share with the HOD" for
+   * cards already with the HOD, and would never offer the HOD anything at all.
+   */
+  const ticked = useMemo(() => candidates.filter((c) => selected.has(c.id)), [candidates, selected]);
+  const shareIds = ticked.filter((c) => c.stage === "hr_shortlisted").map((c) => c.id);
+  const hodIds = ticked.filter((c) => c.stage === "shared_with_hod").map((c) => c.id);
+  const belowMin = shareIds.length > 0 && shareIds.length < s.minCvsToShare;
 
   /** Bulk: send the ticked CVs to the HOD in one action. */
   const shareSelected = async () => {
-    const ids = selectedIn("hr_shortlisted");
-    if (!ids.length) return;
+    if (!shareIds.length) return;
     setBusy(true);
     setErr(null);
     try {
-      await s.shareCandidatesWithHod(ids);
+      await s.shareCandidatesWithHod(shareIds);
       clearSelection();
     } catch (e) {
       setErr((e as Error).message);
@@ -95,10 +123,6 @@ export default function CandidateBoard({
       setBusy(false);
     }
   };
-
-  const shareIds = selectedIn("hr_shortlisted");
-  const hodIds = selectedIn("shared_with_hod");
-  const belowMin = shareIds.length > 0 && shareIds.length < s.minCvsToShare;
 
   /**
    * CVs older than the fetch window aren't loaded (see data/hrFetch.ts). For a
@@ -132,7 +156,7 @@ export default function CandidateBoard({
         { header: "Round 1 held", width: 13, value: (c) => formatDateDMY(c.interview1At) },
         { header: "Round 2 held", width: 13, value: (c) => formatDateDMY(c.interview2At) },
         { header: "Round 3 held", width: 13, value: (c) => formatDateDMY(c.interview3At) },
-        { header: "Selected on", width: 13, value: (c) => formatDateDMY(c.finalizedAt) },
+        { header: "Offer made on", width: 14, value: (c) => formatDateDMY(c.finalizedAt) },
         // Offered salary is gated: only salary viewers (admins, allowed depts/people) get the value.
         { header: "Offered CTC", width: 13, value: (c) => (s.canViewSalary ? (c.offeredCtc ?? "") : "") },
         { header: "Joined", width: 13, value: (c) => formatDateDMY(c.joinedAt) },
@@ -143,6 +167,7 @@ export default function CandidateBoard({
       notes: [
         "One row per candidate on this vacancy, whatever stage they reached.",
         "Every date is the moment the thing ACTUALLY happened, stamped by the system — an interview date means the round was held, not that it was booked.",
+        "'Offer made on' is when the offer was extended; 'Joined' is when they actually turned up and their onboarding completed. A candidate can have the first without the second.",
         "A blank date means that stage was never reached.",
         "Contains names, phone numbers, email addresses and agreed salaries — this is personal data. Handle accordingly.",
         outsideWindow
@@ -226,69 +251,46 @@ export default function CandidateBoard({
 
       {/* ---- The board ---- */}
       <div className="flex gap-3 overflow-x-auto pb-3">
-        {BOARD_STAGES.map((stage) => {
-          const cards = byStage.get(stage) ?? [];
+        {BOARD_COLUMNS.map((col) => {
+          const cards = byColumn.get(col.key) ?? [];
           const overdue = cards.filter((c) => {
             const d = s.candidateDueIso(c);
             return d ? dueState(new Date(d)).overdue : false;
           }).length;
-          const isHover = dnd.hoverStage === stage;
-          const droppable = dnd.draggingFrom !== null && dnd.allows(stage);
-          // Ticking cards only makes sense where a bulk action exists.
-          const selectable = stage === "hr_shortlisted" || stage === "shared_with_hod";
 
           return (
-            <div
-              key={stage}
-              onDragOver={(e) => dnd.onDragOver(e, stage)}
-              onDragLeave={() => dnd.onDragLeave(stage)}
-              onDrop={(e) => dnd.onDropOn(e, stage)}
-              className={`flex w-[248px] shrink-0 flex-col rounded-xl border p-2.5 transition ${
-                isHover
-                  ? "border-orange bg-orange/5"
-                  : droppable
-                    ? "border-dashed border-orange/40 bg-page/60"
-                    : isTerminal(stage)
-                      ? "border-line bg-page/40"
-                      : "border-line bg-page/60"
-              }`}
+            <BoardColumn
+              key={col.key}
+              column={col}
+              count={cards.length}
+              overdue={overdue}
+              isHover={dnd.hoverStage === col.target}
+              droppable={dnd.draggingFrom !== null && dnd.allows(col.target)}
+              onDragOver={(e) => dnd.onDragOver(e, col.target)}
+              onDragLeave={() => dnd.onDragLeave(col.target)}
+              onDrop={(e) => dnd.onDropOn(e, col.target)}
+              onAdd={col.key === "resumes" && canAddCvs ? () => setAddingCvs(true) : undefined}
             >
-              <div className="mb-2 flex items-baseline justify-between gap-2 px-0.5">
-                <span className={SECTION_HEADING_CLASS}>{STAGE_LABEL[stage]}</span>
-                <span className="flex items-center gap-1.5">
-                  {overdue > 0 && (
-                    <span className="rounded-full bg-[#FDECEC] px-1.5 py-0.5 text-[10px] font-semibold text-ryg-red">
-                      {overdue}
-                    </span>
-                  )}
-                  <span className="text-[12px] font-semibold text-grey-2">{cards.length}</span>
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-2">
-                {cards.map((c) => (
-                  <CandidateCard
-                    key={c.id}
-                    candidate={c}
-                    selectable={selectable}
-                    selected={selected.has(c.id)}
-                    onToggleSelect={toggleSelect}
-                    onMoveTo={(cand, to) => setMove({ c: cand, to })}
-                    onRecordResult={(cand, round) => setResult({ c: cand, round })}
-                    onSchedule={(cand, round) => setSchedule({ c: cand, round })}
-                    onOpen={onOpenCandidate}
-                    onDragStart={dnd.onDragStart}
-                    onDragEnd={dnd.onDragEnd}
-                    dragging={dnd.draggingId === c.id}
-                  />
-                ))}
-                {cards.length === 0 && (
-                  <div className="rounded-lg border border-dashed border-line px-3 py-6 text-center text-[12px] text-grey-2">
-                    Empty
-                  </div>
-                )}
-              </div>
-            </div>
+              {cards.map((c) => (
+                <CandidateCard
+                  key={c.id}
+                  candidate={c}
+                  // Ticking a card only means something where a bulk action exists,
+                  // and that is a property of the CARD's stage, not of the column.
+                  selectable={c.stage === "hr_shortlisted" || c.stage === "shared_with_hod"}
+                  selected={selected.has(c.id)}
+                  onToggleSelect={toggleSelect}
+                  onMoveTo={(cand, to) => setMove({ c: cand, to })}
+                  onRecordResult={(cand, round) => setResult({ c: cand, round })}
+                  onSchedule={(cand, round) => setSchedule({ c: cand, round })}
+                  onOpen={onOpenCandidate}
+                  onOpenOnboarding={openOnboarding}
+                  onDragStart={dnd.onDragStart}
+                  onDragEnd={dnd.onDragEnd}
+                  dragging={dnd.draggingId === c.id}
+                />
+              ))}
+            </BoardColumn>
           );
         })}
       </div>
@@ -325,6 +327,9 @@ export default function CandidateBoard({
       )}
       {addingCvs && (
         <AddCandidatesModal requisition={requisition} open={addingCvs} onClose={() => setAddingCvs(false)} />
+      )}
+      {onboarding && (
+        <OnboardingPanel onboarding={onboarding} open={!!onboarding} onClose={() => setOnboarding(null)} />
       )}
     </div>
   );

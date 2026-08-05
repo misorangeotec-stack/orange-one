@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import Avatar from "@/shared/components/ui/Avatar";
 import DueCell from "@/shared/components/ui/DueCell";
 import { FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { cn } from "@/shared/lib/cn";
@@ -8,10 +9,18 @@ import { STAGE_LABEL, legalTargets, roundOf } from "../../lib/board";
 import { panelNames } from "../../lib/interviewers";
 import type { Candidate, CandidateStage } from "../../types";
 
+/** Stable per-person tint, so the same face keeps the same colour across renders. */
+const TINTS = ["blue", "orange", "teal", "green", "navy"];
+const tintFor = (seed: string) => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return TINTS[h % TINTS.length];
+};
+
 /**
  * One candidate. The highlights are the ones you actually need at a glance: who
- * they are, how to reach them, which round they're in, **how long they've sat
- * there**, and whether they're overdue.
+ * they are, where they are coming from, which round they're in, **how long they've
+ * sat there**, and whether they're overdue.
  *
  * The `⋮ → Move to` menu is not a nicety — HTML5 drag-and-drop does not work on
  * touch, and this is how a phone or a keyboard moves a card. It opens the identical
@@ -26,6 +35,7 @@ export default function CandidateCard({
   onRecordResult,
   onSchedule,
   onOpen,
+  onOpenOnboarding,
   onDragStart,
   onDragEnd,
   dragging,
@@ -38,6 +48,7 @@ export default function CandidateCard({
   onRecordResult: (c: Candidate, round: 0 | 1 | 2 | 3) => void;
   onSchedule: (c: Candidate, round: 0 | 1 | 2 | 3) => void;
   onOpen: (c: Candidate) => void;
+  onOpenOnboarding: (c: Candidate) => void;
   onDragStart: (e: React.DragEvent, id: string, from: CandidateStage) => void;
   onDragEnd: () => void;
   dragging: boolean;
@@ -68,13 +79,30 @@ export default function CandidateCard({
   const conducted = !!iv?.heldAt;
 
   const targets = legalTargets(c.stage);
+  const subtitle = c.currentCompany ?? c.email ?? c.phone;
+
+  /**
+   * The onboarding is where the joining details live, and Made Offer is the column
+   * you are sitting in while you collect them — so the way through to it belongs on
+   * the card, not three screens away in the Onboarding queue.
+   */
+  const onboarding = c.stage === "finalized" || c.stage === "hired" ? s.onboardingForCandidate(c.id) : undefined;
+  const checks = onboarding ? s.checksFor(onboarding.id) : [];
+  const ticked = checks.filter((k) => k.done).length;
+
+  /**
+   * An offered candidate whose onboarding has completed HAS joined — the seat is
+   * filled, the probation clock is running. All that is left is the acknowledgement
+   * on the board, so say so rather than letting the card look untouched for weeks.
+   */
+  const readyToHire = c.stage === "finalized" && !!onboarding?.completedAt;
 
   return (
     <div
       draggable={mine}
       onDragStart={(e) => onDragStart(e, c.id, c.stage)}
       onDragEnd={onDragEnd}
-      className={`group relative rounded-xl border bg-white p-3 transition ${
+      className={`group relative rounded-xl border bg-white p-2.5 transition ${
         dragging ? "opacity-40" : ""
       } ${overdue ? "border-ryg-red/40 bg-[#FDECEC]/30" : "border-line"} ${
         mine ? "cursor-grab hover:border-orange/50 hover:shadow-sm active:cursor-grabbing" : "cursor-default"
@@ -87,15 +115,34 @@ export default function CandidateCard({
             checked={selected}
             onChange={() => onToggleSelect(c.id)}
             onClick={(e) => e.stopPropagation()}
-            className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-orange"
+            className="mt-2 h-3.5 w-3.5 shrink-0 cursor-pointer accent-orange"
             aria-label={`Select ${c.name}`}
           />
         )}
 
+        <Avatar name={c.name} color={tintFor(c.id)} size={30} className="mt-0.5" />
+
         <button onClick={() => onOpen(c)} className="min-w-0 flex-1 text-left">
-          <div className="truncate text-[13.5px] font-semibold text-navy">{c.name}</div>
-          {c.phone && <div className="truncate text-[12px] text-grey-2">{c.phone}</div>}
-          {c.currentCompany && <div className="truncate text-[11.5px] text-grey-2">{c.currentCompany}</div>}
+          <div className="flex items-center gap-1">
+            <span className="truncate text-[13px] font-semibold text-navy">{c.name}</span>
+            {/* The HOD has it — the reason this card does not need its own column. */}
+            {c.stage === "shared_with_hod" && (
+              <svg
+                viewBox="0 0 24 24"
+                className="h-3.5 w-3.5 shrink-0 text-ryg-green"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-label="Sent to the HOD"
+              >
+                <title>Sent to the HOD</title>
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            )}
+          </div>
+          {subtitle && <div className="truncate text-[11.5px] text-grey-2">{subtitle}</div>}
         </button>
 
         {mine && targets.length > 0 && (
@@ -163,14 +210,40 @@ export default function CandidateCard({
         </div>
       )}
 
+      {readyToHire && (
+        <div className="mt-2 rounded-lg bg-[#E9F8EF] px-2 py-1 text-[11.5px] font-medium text-ryg-green">
+          Joined — move to Hired
+        </div>
+      )}
+
+      {onboarding && (
+        <button
+          onClick={() => onOpenOnboarding(c)}
+          className="mt-2 flex w-full items-center justify-between gap-2 rounded-lg bg-page px-2 py-1.5 text-[11.5px] transition hover:bg-orange/[0.06]"
+        >
+          <span className="font-semibold text-orange">Onboarding →</span>
+          <span className="text-grey-2">
+            {onboarding.completedAt
+              ? "complete"
+              : checks.length > 0
+                ? `${ticked}/${checks.length}`
+                : "no checklist"}
+          </span>
+        </button>
+      )}
+
       <div className="mt-2 flex items-center justify-between gap-2">
-        <span className="text-[11px] text-grey-2">
+        <span className="inline-flex items-center gap-1 text-[11px] text-grey-2">
+          <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
           {days === 0 ? "today" : `${days}d here`}
         </span>
         {due && <DueCell dueIso={due} />}
       </div>
 
-      {s.canViewSalary && c.stage === "finalized" && c.offeredCtc !== null && (
+      {s.canViewSalary && (c.stage === "finalized" || c.stage === "hired") && c.offeredCtc !== null && (
         <div className="mt-1.5 text-[11.5px] font-medium text-ryg-green">
           ₹{c.offeredCtc.toLocaleString("en-IN")}/mo
         </div>

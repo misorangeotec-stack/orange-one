@@ -1,6 +1,6 @@
 import { supabase } from "@/core/platform/supabase";
 import type { Json } from "@/core/platform/database.types";
-import type { HrEntityType, HrMasterType } from "../types";
+import type { HrEntityType, HrMasterType, SalaryPeriod, SalaryStructure } from "../types";
 
 /**
  * HR Recruitment write layer.
@@ -45,23 +45,36 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 
 /* --------------------------------- masters -------------------------------- */
 
-/** The five HR masters, all edited through the shared <MasterCrud>. */
+/** The name/active/sortOrder HR masters, all edited through the shared <MasterCrud>. */
 export type HrMasterTable =
   | "fms_hr_job_platforms"
   | "fms_hr_job_types"
   | "fms_hr_locations"
-  | "fms_hr_disqualification_reasons";
+  | "fms_hr_disqualification_reasons"
+  | "fms_hr_job_titles"
+  | "fms_hr_skills"
+  | "fms_hr_qualifications";
 
 export interface MasterInput {
   name: string;
   active: boolean;
   sortOrder: number;
+  /**
+   * Columns beyond the shared three, already in snake_case — a skill's
+   * `category`, a job title's `department_id` and its whole JD template.
+   *
+   * An untyped bag rather than a union of per-table shapes: MasterCrud hands
+   * back a flat `Record<string, string>` whatever the table, so a discriminated
+   * type here would only be re-asserted at the one call site that builds it. The
+   * DB is the real gate — a wrong key is a PostgREST error, not silent data loss.
+   */
+  extra?: Record<string, unknown>;
 }
 
 export async function insertMaster(table: HrMasterTable, input: MasterInput): Promise<string> {
   const { data, error } = await supabase
     .from(table)
-    .insert({ name: input.name, active: input.active, sort_order: input.sortOrder })
+    .insert({ name: input.name, active: input.active, sort_order: input.sortOrder, ...(input.extra ?? {}) })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
@@ -71,7 +84,7 @@ export async function insertMaster(table: HrMasterTable, input: MasterInput): Pr
 export async function updateMaster(table: HrMasterTable, id: string, input: MasterInput): Promise<void> {
   const { error } = await supabase
     .from(table)
-    .update({ name: input.name, active: input.active, sort_order: input.sortOrder })
+    .update({ name: input.name, active: input.active, sort_order: input.sortOrder, ...(input.extra ?? {}) })
     .eq("id", id);
   if (error) throw new Error(error.message);
 }
@@ -197,9 +210,12 @@ export async function resolveMasterRequest(
  * completion timestamp on the domain row — the client never writes these tables.
  */
 export interface MrfInput {
+  /** The title as text — always sent, even when jobTitleId is set (see mrfPayload). */
   jobTitle: string;
+  jobTitleId: string | null;
   departmentId: string;
   locationId: string | null;
+  /** Employment type. */
   jobTypeId: string | null;
   /** Defaults to the raiser server-side. Every HOD step routes back to these people. */
   hiringManagerIds: string[];
@@ -211,12 +227,22 @@ export interface MrfInput {
   positionsRequired: number;
   salaryMin: number | null;
   salaryMax: number | null;
+  salaryStructure: SalaryStructure;
+  salaryPeriod: SalaryPeriod;
+  incentiveNote: string | null;
   whyNeeded: string | null;
-  businessContribution: string | null;
-  impactIfUnfilled: string | null;
+  /* ---- the structured job description ---- */
+  roleSummary: string | null;
   keyResponsibilities: string | null;
+  experienceMinYears: number | null;
+  experienceMaxYears: number | null;
+  freshersOk: boolean;
+  qualificationIds: string[];
+  skillIds: string[];
+  preferredSkillIds: string[];
+  skillsNote: string | null;
+  /** Denormalised names of `skillIds` — see mrfPayload. */
   requiredSkills: string | null;
-  preferredExperience: string | null;
   jdPath: string | null;
   jdName: string | null;
 }
@@ -224,13 +250,24 @@ export interface MrfInput {
 /**
  * snake_case payload the RPC expects. `""` reads as NULL on the server side.
  *
- * `salary_note` is sent empty on purpose: the free-text salary band was removed from
- * the form, so min/max are the whole story. The RPC and the column still exist (nothing
- * here drops them), but every save from now on clears the note rather than leaving a
- * stale sentence no screen shows.
+ * ⚠ These keys are a verbatim wire contract with fms_hr_submit_mrf /
+ * fms_hr_resubmit_mrf. A key added here without a matching column in those RPCs'
+ * insert/update chains is silently dropped.
+ *
+ * THREE deliberate omissions, all of them fields the rebuilt form stopped asking:
+ * `business_contribution`, `impact_if_unfilled` and `preferred_experience`. The
+ * columns and the RPC arms still exist so requisitions raised before the rebuild
+ * keep rendering them; omitting the keys means a resubmit of such a row clears
+ * them, which is the honest outcome — the questions are gone.
+ *
+ * `salary_note` is sent empty for the same reason it always was: min/max are the
+ * whole story, now qualified by salary_structure and salary_period.
  */
 const mrfPayload = (i: MrfInput): Record<string, unknown> => ({
+  // Both, always. job_title is what every list, export, kanban card and email
+  // reads; job_title_id is what links back to the master and its JD template.
   job_title: i.jobTitle,
+  job_title_id: i.jobTitleId ?? "",
   department_id: i.departmentId,
   location_id: i.locationId ?? "",
   job_type_id: i.jobTypeId ?? "",
@@ -244,12 +281,23 @@ const mrfPayload = (i: MrfInput): Record<string, unknown> => ({
   salary_min: i.salaryMin === null ? "" : String(i.salaryMin),
   salary_max: i.salaryMax === null ? "" : String(i.salaryMax),
   salary_note: "",
+  salary_structure: i.salaryStructure,
+  salary_period: i.salaryPeriod,
+  incentive_note: i.incentiveNote ?? "",
   why_needed: i.whyNeeded ?? "",
-  business_contribution: i.businessContribution ?? "",
-  impact_if_unfilled: i.impactIfUnfilled ?? "",
+  role_summary: i.roleSummary ?? "",
   key_responsibilities: i.keyResponsibilities ?? "",
+  experience_min_years: i.experienceMinYears === null ? "" : String(i.experienceMinYears),
+  experience_max_years: i.experienceMaxYears === null ? "" : String(i.experienceMaxYears),
+  freshers_ok: i.freshersOk,
+  qualification_ids: i.qualificationIds,
+  skill_ids: i.skillIds,
+  preferred_skill_ids: i.preferredSkillIds,
+  skills_note: i.skillsNote ?? "",
+  // A denormalised comma-joined rendering of skill_ids, so the pre-existing
+  // text-only consumers (the detail Field, exports, any future email) still show
+  // something readable without having to resolve ids.
   required_skills: i.requiredSkills ?? "",
-  preferred_experience: i.preferredExperience ?? "",
   jd_path: i.jdPath ?? "",
   jd_name: i.jdName ?? "",
 });
@@ -453,6 +501,13 @@ export interface MovePayload {
   joiningDate?: string | null;
   disqualificationReasonId?: string | null;
   disqualificationNote?: string | null;
+  /**
+   * What became of an offer that fell through, captured when disqualifying someone
+   * out of Made Offer. The RPC records it on the onboarding rather than deleting the
+   * row — it is the only input the offer-acceptance rate has. Defaults to `declined`
+   * server-side.
+   */
+  offerOutcome?: "declined" | "no_show";
   /** Free-text note captured when moving into Awaiting Decision / finalizing. */
   decisionRemarks?: string | null;
 }
@@ -467,6 +522,7 @@ export async function moveCandidate(id: string, toStage: string, payload: MovePa
   if (payload.disqualificationReasonId !== undefined)
     p.disqualification_reason_id = payload.disqualificationReasonId ?? "";
   if (payload.disqualificationNote !== undefined) p.disqualification_note = payload.disqualificationNote ?? "";
+  if (payload.offerOutcome !== undefined) p.offer_outcome = payload.offerOutcome;
   if (payload.decisionRemarks !== undefined) p.decision_remarks = payload.decisionRemarks ?? "";
 
   const { error } = await supabase.rpc("fms_hr_move_candidate", {
@@ -524,9 +580,9 @@ export async function scheduleInterview(
 
 /**
  * Record the RESULT of a round (0 = telephonic, 1–3 = interviews) — this is what
- * closes it. `selected` advances the card to `nextStage` (any later interview stage
- * still to come, or `final_decision`); left null the server picks the immediate next.
- * `rejected` sends the card to Disqualified.
+ * closes it. `selected` advances the card to `nextStage` (any later interview round
+ * still to come); left null the server picks the immediate next, and after the last
+ * round leaves the card where it is. `rejected` sends the card to Disqualified.
  */
 export async function recordInterviewResult(
   id: string,
@@ -563,23 +619,6 @@ export async function setOnboardingDate(onboardingId: string, joiningDate: strin
   const { error } = await supabase.rpc("fms_hr_set_onboarding_date", {
     p_onb: onboardingId,
     p_date: joiningDate,
-  });
-  if (error) throw new Error(error.message);
-}
-
-/**
- * The offer outcome. `declined` / `no_show` need a reason, release the seat and
- * reopen the requisition — all decided server-side, under a row lock.
- */
-export async function setOfferStatus(
-  onboardingId: string,
-  status: "accepted" | "declined" | "no_show",
-  reason = "",
-): Promise<void> {
-  const { error } = await supabase.rpc("fms_hr_set_offer_status", {
-    p_onb: onboardingId,
-    p_status: status,
-    p_reason: reason,
   });
   if (error) throw new Error(error.message);
 }

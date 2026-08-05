@@ -77,7 +77,10 @@ export const STEPS: StepDef[] = [
   { key: "interview_1",         index: 11, title: "Interview Round 1 — HR",       short: "Round 1",       scope: "candidate" },
   { key: "interview_2",         index: 12, title: "Interview Round 2 — HOD",      short: "Round 2",       scope: "candidate" },
   { key: "interview_3",         index: 13, title: "Interview Round 3 — Director", short: "Round 3",       scope: "candidate" },
-  { key: "final_decision",      index: 14, title: "Awaiting Decision",            short: "Decision",      scope: "candidate" },
+  // The step is the PERMISSION to make an offer (configured in Setup → Step Owners),
+  // which outlived the "Awaiting Decision" board column it was named after. Key kept:
+  // it is stored as free text on every historical row.
+  { key: "final_decision",      index: 14, title: "Make the Offer",               short: "Offer",         scope: "candidate" },
   { key: "onboarding",          index: 15, title: "Onboarding",                   short: "Onboarding",    scope: "hire" },
   { key: "probation_m1",        index: 16, title: "Month-1 Review (HOD)",         short: "Review M1",     scope: "hire" },
   { key: "probation_m2",        index: 17, title: "Month-2 Review (HOD)",         short: "Review M2",     scope: "hire" },
@@ -122,26 +125,13 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
   { label: "Probation", keys: ["probation_m1", "probation_m2", "probation_m3", "probation_final", "probation_extension"] },
 ];
 
-/**
- * The Kanban columns, in board order.
- *
- * These are CandidateStage values (the column a card sits in), NOT StepKeys —
- * the step DUE on a card is the one that moves it out (see STAGE_PENDING_STEP in
- * lib/queues.ts). Finalized and Disqualified are terminal: nothing is due on them.
+/*
+ * The board columns used to be duplicated here as a second, `stage: string` list
+ * with no consumers — so it never compile-failed and quietly described a board
+ * that no longer existed. The one definition now lives in lib/board.ts
+ * (`BOARD_COLUMNS`, keyed to CandidateStage), where the drop rules can be read
+ * next to it.
  */
-export const BOARD_COLUMNS: Array<{ stage: string; title: string; hint: string; terminal?: boolean }> = [
-  { stage: "resume_uploaded", title: "Resumes Uploaded", hint: "HR to screen" },
-  { stage: "hr_shortlisted", title: "Shortlisted by HR", hint: "send to the HOD" },
-  { stage: "shared_with_hod", title: "Shared with HOD", hint: "HOD to decide" },
-  { stage: "hod_shortlisted", title: "Shortlisted by HOD", hint: "screen or book a round" },
-  { stage: "telephonic", title: "Telephonic Screening", hint: "conduct + record" },
-  { stage: "interview_1", title: "Interview R1 — HR", hint: "conduct + record" },
-  { stage: "interview_2", title: "Interview R2 — HOD", hint: "conduct + record" },
-  { stage: "interview_3", title: "Interview R3 — Director", hint: "conduct + record" },
-  { stage: "final_decision", title: "Awaiting Decision", hint: "select or drop" },
-  { stage: "finalized", title: "Selected", hint: "offer made", terminal: true },
-  { stage: "disqualified", title: "Disqualified", hint: "", terminal: true },
-];
 
 /**
  * Steps owned by the requisition's OWN hiring manager (whoever raised the MRF),

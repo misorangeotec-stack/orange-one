@@ -8,6 +8,7 @@ import { useSandbox } from "@/shared/sandbox/SandboxContext";
 import PersonaSwitcher from "@/shared/sandbox/PersonaSwitcher";
 import DemoBanner from "@/shared/sandbox/DemoBanner";
 import { buildHrNav } from "./nav";
+import { canSeeBoard } from "./lib/access";
 import { usePersonas } from "./sandbox/personas";
 import { useHrStore } from "./store";
 import type { HrNotification } from "./types";
@@ -15,14 +16,23 @@ import type { HrNotification } from "./types";
 
 const B = "/hr-recruitment";
 
-/** Deep-link a bell notification to the thing it is about. */
-const linkFor = (n: HrNotification): string => {
+/**
+ * Deep-link a bell notification to the thing it is about.
+ *
+ * A candidate has no page of their own — they are a card on a position's board, so
+ * that is where "Priya moved to Round 2" has to land. `requisitionOf` resolves the
+ * card to its position; without it these two cases pointed at `/candidates/:id`, a
+ * route that has never existed, and every pipeline notification hit Not Found.
+ */
+const linkFor = (n: HrNotification, requisitionOf: (candidateId: string) => string | null): string => {
   switch (n.entityType) {
     case "requisition":
       return `${B}/requisitions/${n.entityId}`;
     case "candidate":
-    case "interview":
-      return `${B}/candidates/${n.entityId}`;
+    case "interview": {
+      const reqId = requisitionOf(n.entityId);
+      return reqId ? `${B}/positions/${reqId}` : `${B}/positions`;
+    }
     case "onboarding":
       return `${B}/onboarding/${n.entityId}`;
     case "probation":
@@ -54,8 +64,9 @@ export default function HrLayout() {
         canApproveHr: s.isStepOwner("hr_head_approval"),
         canApproveMgmt: s.isStepOwner("mgmt_approval"),
         canPostJob: s.isStepOwner("job_posting"),
-        canUploadResumes: s.isStepOwner("resume_upload"),
-        canShortlist: s.isStepOwner("hr_shortlist") || s.isStepOwner("hod_shortlist"),
+        // The same predicate the Positions pages enforce, so the sidebar never offers
+        // a screen that then refuses you — or hides one you are allowed to work.
+        canSeePositions: canSeeBoard(s),
         // Not just the interviewers: HR runs the schedule and coordinators chase it, so
         // both need the link to the page they are already allowed to open.
         canInterview:
@@ -82,6 +93,18 @@ export default function HrLayout() {
     [isAdmin, realAdmin, demoActive, s],
   );
 
+  /**
+   * A candidate or interview notification resolves to the position whose board the
+   * card is on. An interview hops one extra step (interview → candidate) because the
+   * notification carries the interview's own id.
+   */
+  const positionOfCard = (entityId: string): string | null => {
+    const direct = s.candidateById(entityId);
+    if (direct) return direct.requisitionId;
+    const iv = s.interviews.find((x) => x.id === entityId);
+    return iv ? (s.candidateById(iv.candidateId)?.requisitionId ?? null) : null;
+  };
+
   // Who did it used to be dropped entirely — the bell showed a bare sentence.
   // Directory first, org-wide list as backup: profileById is RLS-scoped, so a
   // colleague in another department resolves to nothing.
@@ -96,7 +119,7 @@ export default function HrLayout() {
       message: n.text,
       createdAt: n.createdAt,
       unread: !n.readAt,
-      to: linkFor(n),
+      to: linkFor(n, positionOfCard),
     };
   });
 

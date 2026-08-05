@@ -9,9 +9,15 @@ import type {
   HrEntityType,
   HrMasterManager,
   HrMasterRequest,
+  HrSkill,
   JobPlatform,
+  JobTitle,
   JobType,
   OnboardingItem,
+  Qualification,
+  SalaryPeriod,
+  SalaryStructure,
+  SkillCategory,
   Candidate,
   CandidateStage,
   Interview,
@@ -104,6 +110,9 @@ type Tbl =
   | "fms_hr_notifications"
   | "fms_hr_master_managers"
   | "fms_hr_master_requests"
+  | "fms_hr_job_titles"
+  | "fms_hr_skills"
+  | "fms_hr_qualifications"
   | "designations";
 
 /** Narrow a candidate read. `q` is the PostgREST builder mid-chain. */
@@ -139,7 +148,10 @@ async function fetchCandidatesInScope(liveRequisitionIds: string[]): Promise<any
   const batches = await Promise.all([
     fetchAll("fms_hr_candidates", "created_at", (q) => q.gte("uploaded_at", windowStart)), // A
     ...chunks.map((ids) => fetchAll("fms_hr_candidates", "created_at", (q) => q.in("requisition_id", ids))), // B
-    fetchAll("fms_hr_candidates", "created_at", (q) => q.eq("stage", "finalized")), // C
+    // C — every hire ever, whatever the window. BOTH terminal hire stages: an
+    // offered candidate who is later marked `hired` must not fall out of the read,
+    // or their onboarding and probation rows lose the person's name.
+    fetchAll("fms_hr_candidates", "created_at", (q) => q.in("stage", ["finalized", "hired"])),
   ]);
 
   const byId = new Map<string, any>();
@@ -178,6 +190,10 @@ export interface HrData {
   locations: HrLocation[];
   disqualificationReasons: DisqualificationReason[];
   onboardingItems: OnboardingItem[];
+  /** The JD masters — see types/index.ts. `jobTitles` is HR's own list, not `designations`. */
+  jobTitles: JobTitle[];
+  skills: HrSkill[];
+  qualifications: Qualification[];
   requisitions: Requisition[];
   requisitionPlatforms: RequisitionPlatform[];
   candidates: Candidate[];
@@ -205,6 +221,7 @@ const mapRequisition = (r: any): Requisition => ({
   departmentId: r.department_id,
   locationId: r.location_id ?? null,
   jobTitle: r.job_title,
+  jobTitleId: r.job_title_id ?? null,
   jobTypeId: r.job_type_id ?? null,
   positionKind: r.position_kind as PositionKind,
   previousEmployeeName: r.previous_employee_name ?? null,
@@ -212,10 +229,23 @@ const mapRequisition = (r: any): Requisition => ({
   positionsRequired: r.positions_required ?? 1,
   salaryMin: num(r.salary_min),
   salaryMax: num(r.salary_max),
+  // Defaulted, not `?? null`: both columns are NOT NULL with a default, and the
+  // fallbacks here are what a row written before the rebuild reads as.
+  salaryStructure: (r.salary_structure ?? "range") as SalaryStructure,
+  salaryPeriod: (r.salary_period ?? "month") as SalaryPeriod,
+  incentiveNote: r.incentive_note ?? null,
   whyNeeded: r.why_needed ?? null,
   businessContribution: r.business_contribution ?? null,
   impactIfUnfilled: r.impact_if_unfilled ?? null,
+  roleSummary: r.role_summary ?? null,
   keyResponsibilities: r.key_responsibilities ?? null,
+  experienceMinYears: num(r.experience_min_years),
+  experienceMaxYears: num(r.experience_max_years),
+  freshersOk: r.freshers_ok ?? false,
+  qualificationIds: (r.qualification_ids ?? []) as string[],
+  skillIds: (r.skill_ids ?? []) as string[],
+  preferredSkillIds: (r.preferred_skill_ids ?? []) as string[],
+  skillsNote: r.skills_note ?? null,
   requiredSkills: r.required_skills ?? null,
   preferredExperience: r.preferred_experience ?? null,
   jdPath: r.jd_path ?? null,
@@ -443,6 +473,33 @@ const mapStepOwner = (r: any): StepOwner => ({
 
 const mapDesignation = (r: any): Designation => ({ id: r.id, name: r.name, active: r.active });
 
+/** The job title master + its optional JD template. Not the same as a Designation. */
+const mapJobTitle = (r: any): JobTitle => ({
+  id: r.id,
+  name: r.name,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at,
+  departmentId: r.department_id ?? null,
+  defaultJobTypeId: r.default_job_type_id ?? null,
+  defaultRoleSummary: r.default_role_summary ?? null,
+  defaultResponsibilities: r.default_responsibilities ?? null,
+  defaultExperienceMinYears: num(r.default_experience_min_years),
+  defaultExperienceMaxYears: num(r.default_experience_max_years),
+  defaultQualificationIds: (r.default_qualification_ids ?? []) as string[],
+  defaultSkillIds: (r.default_skill_ids ?? []) as string[],
+  defaultPreferredSkillIds: (r.default_preferred_skill_ids ?? []) as string[],
+});
+
+const mapSkill = (r: any): HrSkill => ({
+  id: r.id,
+  name: r.name,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+  createdAt: r.created_at,
+  category: (r.category ?? "technical") as SkillCategory,
+});
+
 const mapActivity = (r: any): HrActivity => ({
   id: r.id,
   entityType: r.entity_type as HrEntityType,
@@ -482,6 +539,9 @@ export async function fetchHrData(): Promise<HrData> {
     locations,
     disqualificationReasons,
     onboardingItems,
+    jobTitles,
+    skills,
+    qualifications,
     requisitionPlatforms,
     candidates,
     interviews,
@@ -502,6 +562,11 @@ export async function fetchHrData(): Promise<HrData> {
     fetchAll("fms_hr_locations"),
     fetchAll("fms_hr_disqualification_reasons"),
     fetchAll("fms_hr_onboarding_items"),
+    // The JD masters. `sort_order` is the display order HR sets, so read in it —
+    // the skills list runs to ~113 rows and created_at order would be noise.
+    fetchAll("fms_hr_job_titles", "sort_order"),
+    fetchAll("fms_hr_skills", "sort_order"),
+    fetchAll("fms_hr_qualifications", "sort_order"),
     fetchAll("fms_hr_requisition_platforms", "requisition_id"),
     fetchCandidatesInScope(liveRequisitionIds),
     // Interviews exist only for candidates who actually reached a round, so they are
@@ -538,6 +603,9 @@ export async function fetchHrData(): Promise<HrData> {
     locations: locations.map(mapMaster),
     disqualificationReasons: disqualificationReasons.map(mapMaster),
     onboardingItems: onboardingItems.map(mapOnboardingItem),
+    jobTitles: jobTitles.map(mapJobTitle),
+    skills: skills.map(mapSkill),
+    qualifications: qualifications.map(mapMaster),
     requisitions: requisitions.map(mapRequisition),
     requisitionPlatforms: requisitionPlatforms.map(mapRequisitionPlatform),
     candidates: candidates.map(mapCandidate),

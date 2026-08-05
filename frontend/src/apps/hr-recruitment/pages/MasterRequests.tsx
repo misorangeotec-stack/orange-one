@@ -5,6 +5,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Tabs from "@/shared/components/ui/Tabs";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import Pagination from "@/shared/components/ui/Pagination";
+import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
@@ -20,6 +21,7 @@ import {
   missingRequired,
   type MasterValues,
 } from "../lib/masterFields";
+import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 
 /**
  * Master Requests — one page, two audiences.
@@ -31,6 +33,7 @@ import {
  */
 export default function MasterRequests() {
   const s = useHrStore();
+  const ctx = useMasterFieldCtx();
   const canReview = s.isAnyMasterManager;
 
   const [tab, setTab] = useState(canReview ? "review" : "mine");
@@ -68,7 +71,7 @@ export default function MasterRequests() {
 
   const doApprove = async () => {
     if (!approving) return;
-    const missing = missingRequired(approving.masterType, values);
+    const missing = missingRequired(approving.masterType, values, ctx);
     if (missing) {
       setErr(missing);
       return;
@@ -124,7 +127,7 @@ export default function MasterRequests() {
       ]
     : [{ key: "mine", label: "My requests", count: s.myMasterRequests.length }];
 
-  const approveFields = approving ? masterFields(approving.masterType) : [];
+  const approveFields = approving ? masterFields(approving.masterType, ctx) : [];
 
   const emptyMessage =
     tab === "review"
@@ -200,7 +203,7 @@ export default function MasterRequests() {
                           )}
                         </td>
                         <td className="px-4 py-3 font-medium text-navy whitespace-nowrap">{masterTypeLabel(r.masterType)}</td>
-                        <td className="px-4 py-3">{describePayload(r.proposedPayload)}</td>
+                        <td className="px-4 py-3">{describePayload(r.proposedPayload, ctx)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{nameOf(r.requestedBy)}</td>
                         <td className="px-4 py-3 whitespace-nowrap">{formatDate(r.createdAt)}</td>
                         <td className="px-4 py-3">{statusBadge(r.status)}</td>
@@ -254,13 +257,20 @@ export default function MasterRequests() {
       >
         <div className="space-y-3.5">
           {approveFields.map((f) => (
-            <FieldLabel key={f.key} label={f.label} required={f.required}>
+            <FieldLabel key={f.key} label={f.label} required={f.required} hint={f.hint}>
               {f.type === "textarea" ? (
                 <TextArea
                   rows={3}
                   value={values[f.key] ?? ""}
                   placeholder={f.placeholder}
                   onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+                />
+              ) : f.type === "select" ? (
+                <Combobox
+                  value={values[f.key] ?? ""}
+                  onChange={(v) => setValues((p) => ({ ...p, [f.key]: v }))}
+                  options={f.options ?? []}
+                  placeholder={f.placeholder ?? `Select ${f.label.toLowerCase()}`}
                 />
               ) : (
                 <TextInput

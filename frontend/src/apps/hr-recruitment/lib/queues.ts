@@ -66,9 +66,9 @@ export interface QueueEntry extends QueueEntryBase<StepKey> {
 export const isOpenRequisition = (r: Requisition): boolean =>
   r.status !== "closed" && r.status !== "cancelled" && r.status !== "rejected" && r.status !== "on_hold";
 
-/** A card still moving. Finalized and disqualified candidates are done. */
+/** A card still moving. Offered, hired and disqualified candidates are done. */
 export const isOpenCandidate = (c: Candidate): boolean =>
-  c.stage !== "finalized" && c.stage !== "disqualified";
+  c.stage !== "finalized" && c.stage !== "hired" && c.stage !== "disqualified";
 
 /**
  * Onboarding still to do.
@@ -80,7 +80,15 @@ export const isOpenCandidate = (c: Candidate): boolean =>
 export const isOpenOnboarding = (o: Onboarding): boolean =>
   !o.completedAt && o.offerStatus !== "declined" && o.offerStatus !== "no_show";
 
-/** A seat is CONSUMED by a finalized candidate who has not declined / no-showed. */
+/**
+ * A seat is CONSUMED by an offered candidate who has not declined / no-showed.
+ *
+ * `hired` counts too, and must: a hire who is merely acknowledged on the board has
+ * not given their seat back. Counting only `finalized` would free the seat the
+ * moment someone is marked hired — letting a second candidate be offered it, and
+ * sending `reqInResumeUpload` below back to asking for CVs on a filled vacancy.
+ * Mirrors `fms_hr_seats_taken()` in SQL.
+ */
 export const seatsTaken = (
   requisitionId: string,
   candidates: Candidate[],
@@ -90,7 +98,7 @@ export const seatsTaken = (
   return candidates.filter(
     (c) =>
       c.requisitionId === requisitionId &&
-      c.stage === "finalized" &&
+      (c.stage === "finalized" || c.stage === "hired") &&
       !["declined", "no_show"].includes(byCandidate.get(c.id)?.offerStatus ?? "pending"),
   ).length;
 };
@@ -121,7 +129,8 @@ export const STAGE_PENDING_STEP: Record<CandidateStage, StepKey | null> = {
   interview_2: "interview_2",
   interview_3: "interview_3",
   final_decision: "final_decision",
-  finalized: null,                       // closed
+  finalized: null,                       // the onboarding it opened carries the work
+  hired: null,                           // they joined; nothing is owed
   disqualified: null,
 };
 
@@ -439,6 +448,7 @@ export function daysInStage(c: Candidate): number {
     interview_3: c.interview2At ?? c.interview1At ?? c.telephonicAt ?? c.hodDecidedAt,
     final_decision: c.finalDecisionAt,
     finalized: c.finalizedAt,
+    hired: c.joinedAt,
     disqualified: c.disqualifiedAt,
   };
   const since = map[c.stage] ?? c.uploadedAt;

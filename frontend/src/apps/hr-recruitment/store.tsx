@@ -32,7 +32,6 @@ import {
   resubmitMrf as resubmitMrfWrite,
   setConfig as setConfigWrite,
   setEmployeeCode as setEmployeeCodeWrite,
-  setOfferStatus as setOfferStatusWrite,
   setOnboardingDate as setOnboardingDateWrite,
   setStepOwner as setStepOwnerWrite,
   setRequisitionJd as setRequisitionJdWrite,
@@ -56,7 +55,7 @@ import {
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
 } from "./data/hrWrites";
-import { masterTypeLabel } from "./lib/masterFields";
+import { masterTypeLabel, type MasterLists } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import { isHodStep, type StepKey } from "./lib/steps";
 import {
@@ -90,6 +89,9 @@ import type {
   Candidate,
   CandidateStage,
   Designation,
+  HrSkill,
+  JobTitle,
+  Qualification,
   DisqualificationReason,
   Interview,
   HrActivity,
@@ -133,6 +135,25 @@ interface HrStoreValue {
   onboardingItems: OnboardingItem[];
   /** Only the active items, in order — this is what a new onboarding is seeded from. */
   activeOnboardingItems: OnboardingItem[];
+  /**
+   * The JD masters behind the requisition form. `jobTitles` is HR's own list and
+   * is NOT `designations` above — that one is the portal-wide employee title list.
+   */
+  jobTitles: JobTitle[];
+  skills: HrSkill[];
+  qualifications: Qualification[];
+  jobTitleById: (id: string | null) => JobTitle | undefined;
+  skillById: (id: string) => HrSkill | undefined;
+  /** Resolve an id list to names, dropping ids whose master row is gone. */
+  skillNames: (ids: string[]) => string[];
+  qualificationNames: (ids: string[]) => string[];
+  /**
+   * Every master list in one bag, for `findExistingMaster`'s duplicate check.
+   * Built here rather than at each call site: the import module learned that
+   * letting two screens assemble the same object independently lets one of them
+   * quietly omit a list, which turns the dup check into a silent no-op.
+   */
+  masterLists: MasterLists;
 
   // master governance
   masterManagers: HrMasterManager[];
@@ -232,11 +253,6 @@ interface HrStoreValue {
   seatsJoined: (requisitionId: string) => number;
 
   setOnboardingDate: (onboardingId: string, joiningDate: string) => Promise<void>;
-  setOfferStatus: (
-    onboarding: Onboarding,
-    status: "accepted" | "declined" | "no_show",
-    reason?: string,
-  ) => Promise<void>;
   toggleOnboardingCheck: (checkId: string, done: boolean, input?: CheckInput) => Promise<void>;
   setEmployeeCode: (onboardingId: string, code: string) => Promise<void>;
 
@@ -347,7 +363,7 @@ interface HrStoreValue {
     docPath?: string | null,
     docName?: string | null,
     videoUrl?: string | null,
-    /** On `selected`, the stage to advance to (a later interview stage, or `final_decision`). */
+    /** On `selected`, the later interview round to advance to. Null after the last round. */
     nextStage?: CandidateStage | null,
   ) => Promise<void>;
 
@@ -425,6 +441,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const locations = data?.locations ?? [];
   const disqualificationReasons = data?.disqualificationReasons ?? [];
   const onboardingItems = data?.onboardingItems ?? [];
+  const jobTitles = data?.jobTitles ?? [];
+  const skills = data?.skills ?? [];
+  const qualifications = data?.qualifications ?? [];
   const requisitions = data?.requisitions ?? [];
   const requisitionPlatforms = data?.requisitionPlatforms ?? [];
   const candidates = data?.candidates ?? [];
@@ -451,6 +470,18 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
 
     const stepOwnerFor = (stepKey: StepKey) => stepOwners.find((o) => o.stepKey === stepKey);
+
+    // The JD masters, indexed. A requisition stores plain uuid[] (no FK is possible
+    // inside an array), so a master row that was deleted leaves a dangling id —
+    // these resolvers drop it rather than rendering "undefined".
+    const jobTitleIdx = new Map(jobTitles.map((t) => [t.id, t]));
+    const skillIdx = new Map(skills.map((s) => [s.id, s]));
+    const qualificationIdx = new Map(qualifications.map((q) => [q.id, q]));
+    const jobTitleById = (id: string | null) => (id ? jobTitleIdx.get(id) : undefined);
+    const skillById = (id: string) => skillIdx.get(id);
+    const skillNames = (ids: string[]) => ids.map((id) => skillIdx.get(id)?.name).filter((n): n is string => !!n);
+    const qualificationNames = (ids: string[]) =>
+      ids.map((id) => qualificationIdx.get(id)?.name).filter((n): n is string => !!n);
 
     const isStepOwner = (stepKey: StepKey): boolean => {
       if (isAdmin) return true;
@@ -583,8 +614,14 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       const r = reqById.get(c.requisitionId);
       if (!r) return false;
       const step = STAGE_PENDING_STEP[c.stage];
-      if (!step) return isAdmin || isProcessCoordinator;
-      return canActOn(step, r);
+      if (step) return canActOn(step, r);
+      // A card with no pending step owes nobody a move — except Made Offer, which
+      // still has two exits: mark them hired once they join, or disqualify them if
+      // the offer falls through. Those belong to the onboarding owner and the offer
+      // owner, and this must match the authz branches in fms_hr_move_candidate or the
+      // board hides an action the server would have allowed.
+      if (c.stage === "finalized") return canActOn("onboarding", r) || canActOn("final_decision", r);
+      return isAdmin || isProcessCoordinator;
     };
 
     /* ------------------------------- onboarding ---------------------------- */
@@ -843,26 +880,6 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await setOnboardingDateWrite(oid, joiningDate);
         await invalidate();
       },
-      setOfferStatus: async (o, status, reason) => {
-        await setOfferStatusWrite(o.id, status, reason ?? "");
-        // Declining does not just change a field: the RPC hands the seat back and
-        // reopens the vacancy, so tell the people who now have to fill it again.
-        const c = canById.get(o.candidateId);
-        const r = reqById.get(o.requisitionId);
-        const declined = status !== "accepted";
-        await safeAnnounce({
-          entityType: "onboarding",
-          entityId: o.id,
-          type: `offer_${status}`,
-          text: declined
-            ? `${c?.name ?? "The candidate"} did not take up the offer on ${r?.mrfNo ?? "the vacancy"} — the seat is open again`
-            : `${c?.name ?? "The candidate"} accepted the offer on ${r?.mrfNo ?? "the vacancy"}`,
-          recipients: declined
-            ? [...(r?.hiringManagerIds ?? []), ...ownerIdsOf("resume_upload")]
-            : ownerIdsOf("onboarding"),
-        });
-        await invalidate();
-      },
       toggleOnboardingCheck: async (checkId, done, input) => {
         await toggleOnboardingCheckWrite(checkId, done, input ?? {});
         await invalidate();
@@ -971,14 +988,14 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           text: `${c.name} → ${toStage.replace(/_/g, " ")}`,
           recipients,
         });
-        // Selection kicks off onboarding — nudge its owners to send the offer
+        // The offer kicks off onboarding — nudge its owners to send the offer
         // confirmation (there is no auto-email; the checklist item is the record).
         if (toStage === "finalized") {
           await safeAnnounce({
             entityType: "candidate",
             entityId: c.id,
             type: "send_offer_confirmation",
-            text: `${c.name} selected for ${r?.mrfNo ?? "the vacancy"} — send the offer confirmation`,
+            text: `${c.name} offered ${r?.mrfNo ?? "the vacancy"} — send the offer confirmation`,
             recipients: ownerIdsOf("onboarding"),
           });
         }
@@ -1148,6 +1165,23 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       locations,
       disqualificationReasons,
       onboardingItems,
+      jobTitles,
+      skills,
+      qualifications,
+      jobTitleById,
+      skillById,
+      skillNames,
+      qualificationNames,
+      masterLists: {
+        jobPlatforms,
+        jobTypes,
+        locations,
+        disqualificationReasons,
+        onboardingItems,
+        jobTitles,
+        skills,
+        qualifications,
+      },
       activeOnboardingItems: onboardingItems
         .filter((i) => i.active)
         .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name)),
@@ -1258,7 +1292,8 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
-    onboardingItems, stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, notifications,
+    onboardingItems, jobTitles, skills, qualifications,
+    stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, notifications,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute

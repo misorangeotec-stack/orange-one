@@ -130,11 +130,17 @@ export default function OnboardingQueue() {
     {
       key: "offer",
       header: "Offer",
-      cell: (o) => (
-        <span className={o.offerStatus === "accepted" ? "text-ryg-green" : "text-grey"}>
-          {OFFER_LABEL[o.offerStatus] ?? o.offerStatus}
-        </span>
-      ),
+      // Accepted is the assumed state — finalizing IS the acceptance, and no screen
+      // asks anyone to confirm it. This column exists to surface the DROP-OUTS, so
+      // it stays quiet unless there is one. The filter still offers every value.
+      cell: (o) =>
+        o.offerStatus === "accepted" ? (
+          <span className="text-grey-2">—</span>
+        ) : (
+          <span className={o.offerStatus === "pending" ? "text-grey" : "font-medium text-ryg-red"}>
+            {OFFER_LABEL[o.offerStatus] ?? o.offerStatus}
+          </span>
+        ),
       filter: { kind: "select", get: (o) => OFFER_LABEL[o.offerStatus] ?? o.offerStatus },
     },
     {

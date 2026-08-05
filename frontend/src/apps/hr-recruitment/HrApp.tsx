@@ -10,7 +10,8 @@ import NewMrf from "./pages/requisitions/NewMrf";
 import MrfList from "./pages/requisitions/MrfList";
 import MrfDetail from "./pages/requisitions/MrfDetail";
 import { MrfApprovalsQueue, JobPostingQueue } from "./pages/queues/RequisitionQueues";
-import PipelineQueue from "./pages/queues/PipelineQueue";
+import PositionsList from "./pages/positions/PositionsList";
+import PositionPipeline from "./pages/positions/PositionPipeline";
 import InterviewsQueue from "./pages/queues/InterviewsQueue";
 import OnboardingQueue from "./pages/queues/OnboardingQueue";
 import ProbationQueue from "./pages/queues/ProbationQueue";
@@ -72,7 +73,11 @@ export default function HrApp() {
             <Route path="requisitions/:id" element={<MrfDetail />} />
             <Route path="queues/approvals" element={<MrfApprovalsQueue />} />
             <Route path="queues/posting" element={<JobPostingQueue />} />
-            <Route path="queues/pipeline" element={<PipelineQueue />} />
+            <Route path="positions" element={<PositionsList />} />
+            <Route path="positions/:id" element={<PositionPipeline />} />
+            {/* The board used to live here, behind a vacancy dropdown. Old bookmarks,
+                and any notification written before the change, still land on it. */}
+            <Route path="queues/pipeline" element={<Navigate to="/hr-recruitment/positions" replace />} />
             <Route path="queues/interviews" element={<InterviewsQueue />} />
             <Route path="queues/onboarding" element={<OnboardingQueue />} />
             <Route path="queues/probation" element={<ProbationQueue />} />

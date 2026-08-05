@@ -3,7 +3,9 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import { SectionHeading } from "@/shared/components/ui/Readout";
 import { todayIso } from "@/shared/lib/time";
+import MrfRecap from "./MrfRecap";
 import RequestMasterModal from "./RequestMasterModal";
 import { useHrStore } from "../store";
 import type { MrfDecision, MrfStage } from "../data/hrWrites";
@@ -15,6 +17,11 @@ import type { Requisition } from "../types";
  * Reject is terminal. Send back returns it to the requester to fix and resubmit —
  * and resubmission restarts the approval clock, so a fixed requisition doesn't
  * arrive already overdue. Both need a reason; approving doesn't.
+ *
+ * Opens with {@link MrfRecap} — the briefing — above the choice, because the
+ * question this dialog asks ("approve this vacancy?") is unanswerable from an
+ * MRF number and a job title alone. Most decisions are taken from the approvals
+ * QUEUE, where finding the answer used to mean leaving the queue entirely.
  */
 export function MrfDecisionModal({
   requisition,
@@ -70,8 +77,11 @@ export function MrfDecisionModal({
     <Modal
       open={open}
       onClose={onClose}
+      // Two columns of briefing cannot breathe in the default 448px dialog.
+      size="xl"
       title={`${editing ? "Edit " : ""}${label} decision — ${requisition.mrfNo}`}
-      subtitle={`${requisition.jobTitle} · ${requisition.positionsRequired} ${requisition.positionsRequired === 1 ? "seat" : "seats"}`}
+      // No subtitle: the recap below already says the job title and the seats,
+      // and repeating it under the title read as the same line twice.
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>
@@ -83,33 +93,41 @@ export function MrfDecisionModal({
         </>
       }
     >
-      <div className="space-y-3.5">
-        <div className="grid gap-2">
-          {choices.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => setDecision(c.key)}
-              className={`rounded-xl border px-3.5 py-2.5 text-left transition ${
-                decision === c.key ? "border-orange bg-orange/5" : "border-line hover:border-grey-2/40"
-              }`}
-            >
-              <div className="text-[13.5px] font-semibold text-navy">{c.label}</div>
-              <div className="text-[12px] text-grey-2">{c.hint}</div>
-            </button>
-          ))}
+      <div className="space-y-4">
+        <MrfRecap requisition={requisition} stage={stage} />
+
+        <div className="space-y-3.5">
+          <SectionHeading>Decision</SectionHeading>
+
+          {/* Three across at this width. Grid children stretch, so the cards stay
+              equal height even though only one hint wraps to a second line. */}
+          <div className="grid gap-2 sm:grid-cols-3">
+            {choices.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setDecision(c.key)}
+                className={`rounded-xl border px-3.5 py-2.5 text-left transition ${
+                  decision === c.key ? "border-orange bg-orange/5" : "border-line hover:border-grey-2/40"
+                }`}
+              >
+                <div className="text-[13.5px] font-semibold text-navy">{c.label}</div>
+                <div className="text-[12px] text-grey-2">{c.hint}</div>
+              </button>
+            ))}
+          </div>
+
+          <FieldLabel label={needsReason ? "Reason" : "Remarks"} required={needsReason} hint={needsReason ? undefined : "optional"}>
+            <TextArea
+              rows={3}
+              value={remarks}
+              onChange={(e) => setRemarks(e.target.value)}
+              placeholder={needsReason ? "The requester will see this." : "Anything worth recording."}
+            />
+          </FieldLabel>
+
+          {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
         </div>
-
-        <FieldLabel label={needsReason ? "Reason" : "Remarks"} required={needsReason} hint={needsReason ? undefined : "optional"}>
-          <TextArea
-            rows={3}
-            value={remarks}
-            onChange={(e) => setRemarks(e.target.value)}
-            placeholder={needsReason ? "The requester will see this." : "Anything worth recording."}
-          />
-        </FieldLabel>
-
-        {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
       </div>
     </Modal>
   );
@@ -144,7 +162,8 @@ export function JobPostingModal({
   const [platformIds, setPlatformIds] = useState<string[]>(() => s.platformIdsFor(requisition.id));
   const [otherNote, setOtherNote] = useState(() => s.otherPlatformNoteFor(requisition.id) ?? "");
   /** Platform not in the master? Raise it for review without losing this form. */
-  const [raisePlatform, setRaisePlatform] = useState(false);
+  // null = closed. "" = open, blank. A name = open, prefilled with what they typed.
+  const [raisePlatform, setRaisePlatform] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
   // Editing keeps the date HR originally typed, not today.
   const [postedOn, setPostedOn] = useState(() => (editing ? (requisition.postedOn ?? todayIso()) : todayIso()));
@@ -197,14 +216,22 @@ export function JobPostingModal({
     >
       <div className="space-y-3.5">
         <FieldLabel label="Platforms posted on" required hint="one or more">
-          <MultiSelect values={platformIds} onChange={setPlatformIds} options={options} placeholder="Select platforms" />
+          <MultiSelect
+            values={platformIds}
+            onChange={setPlatformIds}
+            options={options}
+            placeholder="Select platforms"
+            chips
+            onCreate={(name) => setRaisePlatform(name)}
+            createLabel={(q) => `Request new platform “${q}”`}
+          />
           <span className="mt-1 block text-[11px] leading-snug text-grey-2">
             Recording these is what later tells you which platform actually produces hires.{" "}
-            {/* A MultiSelect has no "type a name to add it" row, so the request path
-                needs its own way in. */}
+            {/* The picker now offers "Request new platform" on a term that matches
+                nothing; this stays for anyone who reads before they type. */}
             <button
               type="button"
-              onClick={() => setRaisePlatform(true)}
+              onClick={() => setRaisePlatform("")}
               className="font-semibold text-orange hover:underline"
             >
               Request a new platform
@@ -229,7 +256,7 @@ export function JobPostingModal({
               Recorded against this posting only. If you will use it again, {" "}
               <button
                 type="button"
-                onClick={() => setRaisePlatform(true)}
+                onClick={() => setRaisePlatform(otherNote.trim())}
                 className="font-semibold text-orange hover:underline"
               >
                 request it as a platform
@@ -254,10 +281,11 @@ export function JobPostingModal({
       {/* Opens on top of this dialog — `stacked` keeps the posting form intact. */}
       <RequestMasterModal
         stacked
-        open={raisePlatform}
-        onClose={() => setRaisePlatform(false)}
+        open={raisePlatform !== null}
+        onClose={() => setRaisePlatform(null)}
         masterType="job_platform"
         lockType
+        prefill={raisePlatform ? { name: raisePlatform } : undefined}
         onRequested={(_id, _mt, name) => setRequested(name)}
       />
     </Modal>

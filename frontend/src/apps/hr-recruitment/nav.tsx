@@ -23,6 +23,9 @@ const ic = {
   candidates: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3.5" /><path d="M2 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" /><path d="M17 8h5M19.5 5.5v5" /></svg>
   ),
+  positions: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /><path d="M2 13h20" /></svg>
+  ),
   interview: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /><path d="M8 9h8M8 13h5" /></svg>
   ),
@@ -72,8 +75,8 @@ export function buildHrNav(opts: {
   canApproveHr: boolean;
   canApproveMgmt: boolean;
   canPostJob: boolean;
-  canUploadResumes: boolean;
-  canShortlist: boolean;
+  /** Anyone who works a candidate board — see lib/access.ts. */
+  canSeePositions: boolean;
   canInterview: boolean;
   canOnboard: boolean;
   canReview: boolean;
@@ -85,6 +88,10 @@ export function buildHrNav(opts: {
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     { label: "Requisitions", to: `${B}/requisitions`, icon: ic.requisitions },
   ];
+  // Positions replaced the Candidate Pipeline queue. It belongs in Workspace, not My
+  // Queues: it is not one step's worklist but the whole board, and it is gated on the
+  // same predicate the page itself enforces so the link and the screen agree.
+  if (opts.canSeePositions) nav.push({ label: "Positions", to: `${B}/positions`, icon: ic.positions });
 
   // "Actions" — the things anyone might personally start. The closure owns the
   // section header, so whichever item renders first carries it (an employee who
@@ -105,7 +112,6 @@ export function buildHrNav(opts: {
   const stepQueues: Array<{ show: boolean; label: string; to: string; icon: JSX.Element }> = [
     { show: opts.canApproveHr || opts.canApproveMgmt, label: "MRF Approvals", to: `${B}/queues/approvals`, icon: ic.approve },
     { show: opts.canPostJob, label: "Job Posting", to: `${B}/queues/posting`, icon: ic.posting },
-    { show: opts.canUploadResumes || opts.canShortlist, label: "Candidate Pipeline", to: `${B}/queues/pipeline`, icon: ic.candidates },
     { show: opts.canInterview, label: "Interviews", to: `${B}/queues/interviews`, icon: ic.interview },
     { show: opts.canOnboard, label: "Onboarding", to: `${B}/queues/onboarding`, icon: ic.onboarding },
     { show: opts.canReview, label: "Probation Reviews", to: `${B}/queues/probation`, icon: ic.probation },

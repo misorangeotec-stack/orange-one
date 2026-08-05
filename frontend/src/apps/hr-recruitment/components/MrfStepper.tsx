@@ -140,7 +140,10 @@ export default function MrfStepper({ requisition: r }: { requisition: Requisitio
     for (const c of s.candidatesFor(r.id)) {
       if (c.stage === "disqualified") continue;
 
-      if (c.stage !== "finalized") {
+      // Everyone who has been offered the job — `hired` included, since that is the
+      // same person one acknowledgement later. Below this the card is still moving,
+      // and its pending step is how far it got.
+      if (c.stage !== "finalized" && c.stage !== "hired") {
         const step = STAGE_PENDING_STEP[c.stage];
         if (step) best = Math.max(best, at(step));
         continue;

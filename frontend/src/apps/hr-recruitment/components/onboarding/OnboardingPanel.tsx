@@ -3,7 +3,7 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import DueCell from "@/shared/components/ui/DueCell";
 import { SectionHeading } from "@/shared/components/ui/Readout";
-import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
+import { TextInput } from "@/shared/components/ui/Form";
 import { formatDateDMY, formatDateTimeDMY } from "@/shared/lib/date";
 import { todayIso } from "@/shared/lib/time";
 import { useHrStore } from "../../store";
@@ -11,12 +11,24 @@ import { hrDocUrl, uploadOnboardingDoc } from "../../data/hrWrites";
 import { inr } from "../../lib/format";
 import type { Onboarding, OnboardingCheck, OfferStatus } from "../../types";
 
+/**
+ * Only the UNHAPPY answers are labelled here.
+ *
+ * `accepted` deliberately has no badge: since 20260816120000 an onboarding is BORN
+ * accepted, because finalizing the candidate IS the acceptance — no screen asks
+ * anyone to confirm it. Showing a green "Offer accepted" pill therefore claimed a
+ * decision nobody made. What the pill is for is the case where the offer fell
+ * through, which genuinely needs explaining.
+ */
 const OFFER_LABEL: Record<OfferStatus, string> = {
   pending: "Awaiting the candidate's answer",
   accepted: "Offer accepted",
   declined: "Offer declined",
   no_show: "Did not join",
 };
+
+/** Is this status worth saying out loud? "Accepted" is the assumed state. */
+const notable = (st: OfferStatus) => st !== "accepted";
 
 const OFFER_CLASS: Record<OfferStatus, string> = {
   pending: "bg-[#FFF7E6] text-yellow",
@@ -315,14 +327,18 @@ function CheckRow({
 /**
  * The onboarding of one finalized candidate.
  *
- * Three things happen here, in this order:
+ * Two things happen here, in this order:
  *   1. HR enters the JOINING DATE — that is what unlocks the checklist, because
  *      every item's due date is measured from it.
- *   2. HR records the OFFER OUTCOME. Declined / Did not join hands the seat back to
- *      the requisition, which reopens — that is decided server-side, under a lock.
- *   3. HR works the checklist. When the last item is ticked and the offer was
- *      accepted, the person has JOINED: the onboarding completes, and if that was
- *      the last seat the requisition closes itself.
+ *   2. HR works the checklist. When the last item is ticked the person has JOINED:
+ *      the onboarding completes, and if that was the last seat the requisition
+ *      closes itself.
+ *
+ * There is no "did they accept?" step: finalizing the candidate IS the acceptance,
+ * so the onboarding is born accepted (20260816120000). A drop-out is the backward
+ * card move on the board, which deletes this onboarding and frees the seat. The
+ * offer status is still READ here — the pill and the red banner — because hires
+ * marked declined / did-not-join before that change still have to explain themselves.
  */
 export default function OnboardingPanel({
   onboarding,
@@ -342,8 +358,6 @@ export default function OnboardingPanel({
 
   const [joiningDate, setJoiningDate] = useState(o.joiningDate ?? todayIso());
   const [empCode, setEmpCode] = useState(o.employeeCode ?? "");
-  const [offer, setOffer] = useState<"accepted" | "declined" | "no_show">("accepted");
-  const [offerReason, setOfferReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -363,12 +377,6 @@ export default function OnboardingPanel({
       setBusy(false);
     }
   };
-
-  const offerChoices: Array<{ key: "accepted" | "declined" | "no_show"; label: string; hint: string }> = [
-    { key: "accepted", label: "Offer accepted", hint: "Carry on with the checklist" },
-    { key: "declined", label: "Offer declined", hint: "The seat reopens on the requisition" },
-    { key: "no_show", label: "Did not join", hint: "The seat reopens on the requisition" },
-  ];
 
   return (
     <Modal
@@ -390,9 +398,11 @@ export default function OnboardingPanel({
       <div className="space-y-4">
         {/* ---- Where this onboarding stands ---- */}
         <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${OFFER_CLASS[o.offerStatus]}`}>
-            {OFFER_LABEL[o.offerStatus]}
-          </span>
+          {notable(o.offerStatus) && (
+            <span className={`rounded-full px-2.5 py-1 text-[11.5px] font-semibold ${OFFER_CLASS[o.offerStatus]}`}>
+              {OFFER_LABEL[o.offerStatus]}
+            </span>
+          )}
           {done && (
             <span className="rounded-full bg-[#E9F7EF] px-2.5 py-1 text-[11.5px] font-semibold text-ryg-green">
               Joined {formatDateDMY(o.joiningDate)}
@@ -444,54 +454,7 @@ export default function OnboardingPanel({
           </div>
         </div>
 
-        {/* ---- 2. The offer outcome. This is what seat accounting turns on. ---- */}
-        {!done && !dropped && mayAct && (
-          <div className="rounded-xl border border-line p-4">
-            <SectionHeading>Offer outcome</SectionHeading>
-            <p className="mt-0.5 text-[12px] text-grey-2">
-              Nobody counts as hired until they accept and turn up. If they drop out, the seat reopens
-              automatically.
-            </p>
-            <div className="mt-2.5 grid gap-2 sm:grid-cols-3">
-              {offerChoices.map((ch) => (
-                <button
-                  key={ch.key}
-                  type="button"
-                  onClick={() => setOffer(ch.key)}
-                  className={`rounded-xl border px-3 py-2 text-left transition ${
-                    offer === ch.key ? "border-orange bg-orange/5" : "border-line hover:border-grey-2/40"
-                  }`}
-                >
-                  <div className="text-[13px] font-semibold text-navy">{ch.label}</div>
-                  <div className="text-[11.5px] text-grey-2">{ch.hint}</div>
-                </button>
-              ))}
-            </div>
-            {offer !== "accepted" && (
-              <div className="mt-2.5">
-                <FieldLabel label="Reason" required>
-                  <TextArea
-                    rows={2}
-                    value={offerReason}
-                    onChange={(e) => setOfferReason(e.target.value)}
-                    placeholder="Why did they not take the job?"
-                  />
-                </FieldLabel>
-              </div>
-            )}
-            <div className="mt-2.5">
-              <Button
-                size="sm"
-                disabled={busy || (offer !== "accepted" && !offerReason.trim())}
-                onClick={() => void run(() => s.setOfferStatus(o, offer, offerReason.trim()))}
-              >
-                {busy ? "Saving…" : "Record the outcome"}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* ---- 3. The checklist. Config-driven — Setup → Masters, not a code change. ---- */}
+        {/* ---- 2. The checklist. Config-driven — Setup → Masters, not a code change. ---- */}
         <div>
           <SectionHeading>Checklist</SectionHeading>
           {checks.length === 0 ? (

@@ -5,11 +5,12 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { todayIso } from "@/shared/lib/time";
+import { formatDateDMY } from "@/shared/lib/date";
 import { interviewerPool, interviewerOptions } from "../../lib/interviewers";
 import RequestMasterModal from "../RequestMasterModal";
 import { useHrStore } from "../../store";
 import { STAGE_LABEL, roundOf } from "../../lib/board";
-import { salaryLabel } from "../../lib/format";
+import { inr, salaryLabel } from "../../lib/format";
 import PriorRounds from "./PriorRounds";
 import type { MovePayload } from "../../data/hrWrites";
 import type { Candidate, CandidateStage } from "../../types";
@@ -40,13 +41,28 @@ export default function MoveModal({
   const isInterview = round !== null;
   const isDisqualify = toStage === "disqualified";
   const isFinalize = toStage === "finalized";
-  const isDecision = toStage === "final_decision";
+  const isHired = toStage === "hired";
+  /** Dropping someone who already had an offer out — the outcome has to be recorded. */
+  const leavingOffer = isDisqualify && candidate.stage === "finalized";
   const isBackward = false; // the caller only offers legal targets; the RPC re-checks
+
+  /**
+   * Marking someone hired is an ACKNOWLEDGEMENT, not a new fact. Joining was
+   * recorded when their onboarding completed — that is what stamped `joined_at`,
+   * opened the probation and filled the seat. So this move writes nothing but the
+   * stage, and it is refused until that has actually happened.
+   */
+  const onboarding = s.onboardingForCandidate(candidate.id);
+  const checks = onboarding ? s.checksFor(onboarding.id) : [];
+  const checksDone = checks.filter((k) => k.done).length;
+  const hasJoined = !!onboarding?.completedAt;
 
   const [interviewerIds, setInterviewerIds] = useState<string[]>([]);
   const [interviewerName, setInterviewerName] = useState("");
   const [scheduledOn, setScheduledOn] = useState(todayIso());
   const [reasonId, setReasonId] = useState("");
+  /** Only meaningful when disqualifying someone who already had an offer out. */
+  const [offerOutcome, setOfferOutcome] = useState<"declined" | "no_show">("declined");
   /** Reason not in the master? Raise it for review without losing this form. */
   const [raiseReason, setRaiseReason] = useState<string | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
@@ -82,18 +98,28 @@ export default function MoveModal({
     return s.interviewsFor(candidate.id).some((iv) => iv.round < before && iv.heldAt);
   }, [s, candidate.id, isInterview, isFinalize, round]);
 
-  // Seats already taken on this requisition — you cannot hire more than were asked for.
-  const taken = s.candidatesFor(candidate.requisitionId).filter((c) => c.stage === "finalized").length;
+  // Seats already taken on this requisition — you cannot hire more than were asked
+  // for. `hired` counts: acknowledging a hire on the board does not free their seat.
+  const taken = s
+    .candidatesFor(candidate.requisitionId)
+    .filter((c) => c.stage === "finalized" || c.stage === "hired").length;
   const seats = req?.positionsRequired ?? 1;
   const seatsFull = isFinalize && taken >= seats;
 
   // The offered salary against the range on the MRF. A warning, not a block —
   // going over the band is a real decision, it just shouldn't be an invisible one.
+  //
+  // The field below is explicitly "Agreed salary (₹/month)", but a requisition can
+  // now be banded per ANNUM. Both sides are converted to a monthly figure before
+  // comparing: without it a ₹6,00,000/year band would flag every sane ₹50,000/month
+  // offer as below the minimum, out by exactly 12×.
   const ctcNum = ctc.trim() === "" ? null : Number(ctc.replace(/[^\d.]/g, ""));
-  const overRange =
-    isFinalize && ctcNum !== null && req?.salaryMax !== null && req?.salaryMax !== undefined && ctcNum > req.salaryMax;
-  const underRange =
-    isFinalize && ctcNum !== null && req?.salaryMin !== null && req?.salaryMin !== undefined && ctcNum < req.salaryMin;
+  const perMonth = (v: number | null | undefined): number | null =>
+    v === null || v === undefined ? null : req?.salaryPeriod === "annum" ? v / 12 : v;
+  const bandMin = perMonth(req?.salaryMin);
+  const bandMax = perMonth(req?.salaryMax);
+  const overRange = isFinalize && ctcNum !== null && bandMax !== null && ctcNum > bandMax;
+  const underRange = isFinalize && ctcNum !== null && bandMin !== null && ctcNum < bandMin;
 
   const invalid =
     (isInterview && interviewerIds.length === 0 && !interviewerName.trim()) ||
@@ -101,6 +127,7 @@ export default function MoveModal({
     // and quietly leaves every overdue count while still being someone's work.
     (isInterview && !scheduledOn) ||
     (isDisqualify && !reasonId) ||
+    (isHired && !hasJoined) ||
     seatsFull;
 
   const submit = async () => {
@@ -116,12 +143,13 @@ export default function MoveModal({
       if (isDisqualify) {
         payload.disqualificationReasonId = reasonId || null;
         payload.disqualificationNote = note.trim() || null;
+        if (leavingOffer) payload.offerOutcome = offerOutcome;
       }
       if (isFinalize) {
         payload.offeredCtc = ctcNum;
         payload.joiningDate = joiningDate || null;
       }
-      if (isFinalize || isDecision) payload.decisionRemarks = decisionRemarks.trim() || null;
+      if (isFinalize) payload.decisionRemarks = decisionRemarks.trim() || null;
 
       await s.moveCandidate(candidate, toStage, payload);
       onClose();
@@ -135,10 +163,12 @@ export default function MoveModal({
   const subtitle = isInterview
     ? "Booking the interview — not recording it. You'll record the result once it's actually happened."
     : isFinalize
-      ? "This person is selected and their onboarding starts next. The seat is only truly filled once they actually join."
+      ? "The offer goes out and their onboarding starts next. The seat is only truly filled once they actually join."
       : isDisqualify
         ? "They drop out of the pipeline. The reason is what tells you where the pipeline leaks."
-        : `${candidate.name} moves to ${STAGE_LABEL[toStage]}.`;
+        : isHired
+          ? "Confirming what the onboarding already recorded. Nothing new is written — the joining date, the seat and the probation clock are already set."
+          : `${candidate.name} moves to ${STAGE_LABEL[toStage]}.`;
 
   return (
     <Modal
@@ -205,6 +235,37 @@ export default function MoveModal({
 
         {isDisqualify && (
           <>
+            {/* Only asked when an offer was actually out. It is the single input to
+                the offer-acceptance rate — "of the people we offered, how many took
+                the job?" — which has no other way to ever see a decline. */}
+            {leavingOffer && (
+              <FieldLabel label="What happened to the offer?" required>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      { key: "declined", label: "They declined", hint: "Turned the offer down" },
+                      { key: "no_show", label: "Didn't turn up", hint: "Accepted, then never joined" },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.key}
+                      type="button"
+                      onClick={() => setOfferOutcome(o.key)}
+                      className={`rounded-xl border px-3.5 py-2.5 text-left transition ${
+                        offerOutcome === o.key ? "border-orange bg-orange/5" : "border-line hover:border-grey-2/40"
+                      }`}
+                    >
+                      <div className="text-[13px] font-semibold text-navy">{o.label}</div>
+                      <div className="text-[11.5px] text-grey-2">{o.hint}</div>
+                    </button>
+                  ))}
+                </div>
+                <span className="mt-1.5 block text-[11px] leading-snug text-grey-2">
+                  Their seat goes straight back to {req?.mrfNo ?? "the requisition"} either way. The record is kept so
+                  the offer-acceptance rate stays honest.
+                </span>
+              </FieldLabel>
+            )}
             <FieldLabel label="Reason" required>
               <Combobox
                 value={reasonId}
@@ -231,7 +292,7 @@ export default function MoveModal({
             {seatsFull ? (
               <p className="rounded-xl border border-ryg-red/30 bg-[#FDECEC]/50 px-4 py-3 text-[13px] text-navy">
                 All {seats} {seats === 1 ? "seat" : "seats"} on this requisition are already filled. Take someone else
-                out of Selected first.
+                out of Made Offer first.
               </p>
             ) : (
               <p className="text-[12.5px] text-grey-2">
@@ -242,19 +303,20 @@ export default function MoveModal({
               <TextInput inputMode="decimal" value={ctc} onChange={(e) => setCtc(e.target.value)} placeholder="18000" />
               {req && (req.salaryMin !== null || req.salaryMax !== null) && (
                 <span className="mt-1 block text-[11px] leading-snug text-grey-2">
-                  The requisition asked for: {salaryLabel(req.salaryMin, req.salaryMax)}
+                  The requisition asked for: {salaryLabel(req.salaryMin, req.salaryMax, req.salaryStructure, req.salaryPeriod)}
+                  {req.salaryPeriod === "annum" && " — compared here as a monthly figure"}
                 </span>
               )}
             </FieldLabel>
             {overRange && (
               <p className="rounded-xl border border-yellow/40 bg-[#FFF7E6] px-3.5 py-2.5 text-[12.5px] text-navy">
-                That's above the range on the requisition (max ₹{req?.salaryMax?.toLocaleString("en-IN")}). You can still
-                go ahead — it just won't be a surprise later.
+                That's above the range on the requisition (max {inr(bandMax!)}/month). You can still go ahead — it just
+                won't be a surprise later.
               </p>
             )}
             {underRange && (
               <p className="text-[12px] text-grey-2">
-                That's below the minimum on the requisition (₹{req?.salaryMin?.toLocaleString("en-IN")}).
+                That's below the minimum on the requisition ({inr(bandMin!)}/month).
               </p>
             )}
             <FieldLabel label="Date of joining" hint="optional — set it if agreed">
@@ -276,18 +338,51 @@ export default function MoveModal({
           </>
         )}
 
-        {isDecision && (
-          <FieldLabel label="Decision remark" hint="optional — why this candidate is here / what's pending">
-            <TextArea
-              rows={2}
-              value={decisionRemarks}
-              onChange={(e) => setDecisionRemarks(e.target.value)}
-              placeholder="e.g. strong on skills, checking references before we decide"
-            />
-          </FieldLabel>
-        )}
+        {isHired &&
+          (hasJoined ? (
+            <div className="space-y-2.5">
+              <p className="rounded-xl border border-ryg-green/30 bg-[#E9F8EF] px-4 py-3 text-[13px] text-navy">
+                {candidate.name} joined on {formatDateDMY(onboarding?.joiningDate ?? onboarding?.completedAt)} — their
+                onboarding is complete and their probation has started.
+              </p>
+              <p className="text-[12.5px] text-grey-2">
+                Confirming only moves the card. It writes no new dates, so the board can never disagree with the
+                onboarding about whether someone turned up.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <p className="rounded-xl border border-yellow/40 bg-[#FFF7E6] px-4 py-3 text-[13px] text-navy">
+                {candidate.name} has not joined yet, so they cannot be marked hired.
+              </p>
+              <ul className="ml-4 list-disc space-y-1 text-[12.5px] text-grey-2">
+                {!onboarding && <li>Their onboarding has not been opened.</li>}
+                {/* An onboarding is born accepted (finalizing IS the acceptance), so
+                    this only ever fires on a historical drop-out. */}
+                {onboarding && (onboarding.offerStatus === "declined" || onboarding.offerStatus === "no_show") && (
+                  <li>
+                    They were recorded as{" "}
+                    {onboarding.offerStatus === "declined" ? "having declined the offer" : "not having turned up"}.
+                    Disqualify them instead, with the reason.
+                  </li>
+                )}
+                {onboarding && !onboarding.joiningDate && (
+                  <li>No joining date is set — the checklist stays locked until it is.</li>
+                )}
+                {onboarding && checks.length > 0 && checksDone < checks.length && (
+                  <li>
+                    {checks.length - checksDone} of {checks.length} checklist{" "}
+                    {checks.length - checksDone === 1 ? "item is" : "items are"} still outstanding.
+                  </li>
+                )}
+              </ul>
+              <p className="text-[12.5px] text-grey-2">
+                Finish their onboarding and this card moves itself into reach — the badge on it will say so.
+              </p>
+            </div>
+          ))}
 
-        {!isInterview && !isDisqualify && !isFinalize && !isDecision && !isBackward && (
+        {!isInterview && !isDisqualify && !isFinalize && !isHired && !isBackward && (
           <p className="text-[13px] text-grey-2">Nothing else to capture — confirm to move the card.</p>
         )}
 
