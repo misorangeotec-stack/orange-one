@@ -34,9 +34,11 @@ import {
 } from "@hub/lib/customerOnboarding/types";
 
 /**
- * The Tally salesperson vocabulary, read straight from the receivables mirror.
+ * The Tally salesperson vocabulary, read straight from the live ConnectWave mirror
+ * (ext_ledger_tags.salesperson) — the same column the hub scopes customers on, so a
+ * name offered here always matches something.
  *
- * ⚠ IMPORTED DYNAMICALLY. supabaseFetcher is a code-split chunk — useAppData
+ * ⚠ IMPORTED DYNAMICALLY. connectwaveFetcher is a code-split chunk — useAppData
  *   import()s it so the hub's receivables machinery is not in the entry bundle.
  *   A static import here would drag the whole fetcher (and its second Supabase
  *   client) back into the main chunk for the sake of one string list. Same
@@ -46,7 +48,7 @@ export function useSalespersonNames(): string[] {
   const { data } = useQuery({
     queryKey: ["hub", "salespersonNames"],
     queryFn: async () => {
-      const { fetchSalespersonNames } = await import("@hub/lib/supabaseFetcher");
+      const { fetchSalespersonNames } = await import("@hub/lib/connectwaveFetcher");
       return fetchSalespersonNames();
     },
     staleTime: 10 * 60 * 1000,

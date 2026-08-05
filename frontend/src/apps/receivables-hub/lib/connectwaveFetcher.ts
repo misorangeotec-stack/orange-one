@@ -974,3 +974,34 @@ export async function fetchConnectwaveLedgerTxns(
 
   return { byLedger: out, billMeta, invoicesByLedger };
 }
+
+/**
+ * Distinct salesperson names, for the admin "salesperson access" picker in Orange One.
+ *
+ * WHY ext_ledger_tags AND NOT customers.sales_person
+ *   The picker must return exactly the strings the dashboard SCOPES on, or a tag is
+ *   set that matches nothing and the user silently sees an empty board. On the live
+ *   (ConnectWave) source that scoping value is `ext_ledger_tags.salesperson` — the
+ *   same column loadFromConnectwave reads to stamp `salesPerson` onto each customer
+ *   (see the tag join above). The old implementation read `customers.sales_person`
+ *   from the LEGACY receivables project, which is a different database: it still
+ *   offered names that no longer exist here — "MAYANK" is tagged on three real users
+ *   today and matches zero ledgers on this source.
+ *
+ * Trimmed and de-duplicated case-sensitively, matching how the scope filter compares.
+ * ("OTHERS" and "Others" are therefore two entries if Tally holds both — that is a
+ * data question for the Tally masters, not something to paper over here.)
+ */
+export async function fetchSalespersonNames(): Promise<string[]> {
+  const sb = getConnectwaveSupabase();
+  const rows = await fetchAll<{ ledger_id: string; salesperson: string | null }>(
+    () => sb.from("ext_ledger_tags").select("ledger_id,salesperson"),
+    ["ledger_id"],
+  );
+  const names = new Set<string>();
+  for (const r of rows) {
+    const n = (r.salesperson ?? "").trim();
+    if (n) names.add(n);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b));
+}

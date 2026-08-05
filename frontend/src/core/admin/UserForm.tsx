@@ -10,7 +10,6 @@ import { useDirectory } from "@/core/platform/store";
 import { grantableModules } from "@/apps/registry";
 import { groupByCategory } from "@/apps/categories";
 import type { AppRole } from "@/core/platform/types";
-import { fetchSalespersonNames } from "@/apps/receivables-hub/lib/supabaseFetcher";
 import {
   PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@/apps/receivables-hub/lib/menus";
@@ -113,13 +112,21 @@ export default function UserForm() {
   // who can open the Outstanding Dashboard (admins always see all of it, at full depth).
   const showSalespersonScope = role !== "admin" && moduleAccess.includes(RECEIVABLES_APP_ID);
 
-  // Lazy-load the live salesperson names (from the receivables data) the first
+  // Lazy-load the live salesperson names (ConnectWave ext_ledger_tags) the first
   // time the scope picker is shown, so the admin tags exact-matching values.
+  //
+  // ⚠ IMPORTED DYNAMICALLY, and it has to stay that way. connectwaveFetcher is a
+  //   code-split chunk (useAppData / CustomerDetail / TallyPanel all import() it);
+  //   a static import here is in the CORE admin form, so it would pull the entire
+  //   hub fetcher and its second Supabase client into the entry bundle for every
+  //   user — for the sake of one string list. Vite says so out loud if you try:
+  //   "dynamically imported by … but also statically imported by … UserForm.tsx".
   useEffect(() => {
     if (!showSalespersonScope || spNames.length || spLoading) return;
     setSpLoading(true);
     setSpError("");
-    fetchSalespersonNames()
+    import("@/apps/receivables-hub/lib/connectwaveFetcher")
+      .then((m) => m.fetchSalespersonNames())
       .then(setSpNames)
       .catch((e) => setSpError((e as Error).message))
       .finally(() => setSpLoading(false));

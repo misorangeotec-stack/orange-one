@@ -204,6 +204,17 @@ export async function fetchInvoiceNumbersForCustomers(customerIds: string[]): Pr
 }
 
 /**
+ * @deprecated SUPERSEDED by connectwaveFetcher.fetchSalespersonNames — do not import this.
+ *
+ * This reads the LEGACY receivables project, which the hub no longer shows by default:
+ * liveMode is on unless a permitted admin explicitly picks the legacy pipeline, so the
+ * names here could be offered to an admin and then match nothing on the live board.
+ * They had already drifted apart — "MAYANK" is tagged on three real users and exists in
+ * this source only.
+ *
+ * Kept (unused) only because the legacy toggle is still shipping; it goes when the
+ * toggle and loadFromSupabase do.
+ *
  * Distinct salesperson names from the receivables data, for the admin
  * "salesperson access" picker in Orange One. Returns exactly the strings the
  * dashboard scopes on (customers.sales_person), so tagged values match 1:1.

@@ -39,7 +39,7 @@ Each business app is a self-contained folder under `frontend/src/apps/<name>/` t
 - `database.types.ts` mirrors the Supabase schema; keep it in sync when columns change.
 
 ### Two separate Supabase projects (important)
-- **Auth + identity** → project `coshondiqdhorwvibrwu`, the primary client at `core/platform/supabase.ts` (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`).
+- **Auth + identity** → project `icutjkrqkbzwvmnfbzpr`, the primary client at `core/platform/supabase.ts` (`VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`). This is also where every Edge Function is deployed — `supabase functions deploy <name> --project-ref icutjkrqkbzwvmnfbzpr`. (`config.toml` says `project_id = "orange-one"`, which is a local label, **not** the ref.)
 - **Receivables data** → a *different* project `lkwtvcpeamkzzqkfnkuc`, read via a **second, read-only client** at `apps/receivables-hub/lib/receivablesSupabase.ts` (`VITE_RECEIVABLES_SUPABASE_URL` / `VITE_RECEIVABLES_SUPABASE_ANON_KEY`, `persistSession:false`). That project is populated by an **external Python pipeline** (Tally → Google Sheets → `process_data.py`) that lives in a separate "Orange Receivables Hub" repo — **not** in this codebase. The dashboard only reads it.
 
 ### The receivables-hub app (ported third-party UI)
