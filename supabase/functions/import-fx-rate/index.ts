@@ -12,8 +12,8 @@
 // Response (JSON):       { "base": "USD", "quote": "INR", "rate": 83.12,
 //                          "fetched_at": "<iso>", "source": "xe.com" | "er-api" | "frankfurter" | "cache" }
 //
-// Deploy (identity project coshondiqdhorwvibrwu):
-//   supabase functions deploy import-fx-rate --project-ref coshondiqdhorwvibrwu
+// Deploy (identity project icutjkrqkbzwvmnfbzpr):
+//   supabase functions deploy import-fx-rate --project-ref icutjkrqkbzwvmnfbzpr
 // verify_jwt stays ON (config.toml) — the caller is always a signed-in portal user.
 
 import { corsHeaders } from '../_shared/cors.ts';

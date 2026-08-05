@@ -17,7 +17,7 @@ by anything here.
 - **Pinned to Expo SDK 54.** The target phone runs Expo Go, which only supports
   SDK 54 — keep it running in **Expo Go** (no dev build, no custom native
   modules). Match the demo app's dependency versions; don't bump the SDK.
-- **Supabase = the identity / Task Management project** (`coshondiqdhorwvibrwu`),
+- **Supabase = the identity / Task Management project** (`icutjkrqkbzwvmnfbzpr`),
   the same one the web portal authenticates against. Accounts are the same;
   sign-in only (admins provision users in the web portal; mobile number is the
   initial password).

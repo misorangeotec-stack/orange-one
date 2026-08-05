@@ -11,7 +11,7 @@
 //   Both send an `x-dispatch-secret` header checked against EMAIL_DISPATCH_SECRET.
 //   Deploy with --no-verify-jwt (the shared secret is the gate).
 //
-// SECRETS (supabase secrets set ... --project-ref coshondiqdhorwvibrwu):
+// SECRETS (supabase secrets set ... --project-ref icutjkrqkbzwvmnfbzpr):
 //   EMAIL_DISPATCH_SECRET     shared secret; also in private.email_dispatch_config
 //   GMAIL_OAUTH_CLIENT_ID     OAuth client id (Web app) for the sending mailbox
 //   GMAIL_OAUTH_CLIENT_SECRET OAuth client secret

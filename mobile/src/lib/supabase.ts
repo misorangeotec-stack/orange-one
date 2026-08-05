@@ -1,6 +1,6 @@
 /**
  * Supabase client — the mobile app's single connection to the Orange One backend
- * (the Task Management / identity project, ref `coshondiqdhorwvibrwu`). It is the
+ * (the Task Management / identity project, ref `icutjkrqkbzwvmnfbzpr`). It is the
  * SAME project the web portal authenticates against, so staff sign in here with
  * their existing Orange One credentials.
  *

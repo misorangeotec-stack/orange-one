@@ -329,7 +329,7 @@ pg_cron (identity project, 08:00 IST)
                  └─▶ send-email (existing trigger + 3-min cron drain) ─▶ Gmail
 ```
 
-**Placement.** Identity project (`coshondiqdhorwvibrwu`) owns the function — that is where `ANTHROPIC_API_KEY`,
+**Placement.** Identity project (`icutjkrqkbzwvmnfbzpr`) owns the function — that is where `ANTHROPIC_API_KEY`,
 `email_outbox` and `send-email` already live. It reads ConnectWave over the anon client, exactly as
 `followups-write` already writes it.
 

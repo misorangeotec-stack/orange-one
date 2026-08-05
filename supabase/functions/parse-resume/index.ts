@@ -12,11 +12,11 @@
 // Why verify_jwt = true (unlike extract-card): resumes are PII. Only a signed-in
 // portal user may call this, and the caller's JWT rides along on the invoke.
 //
-// Secrets/config (already set on the identity project coshondiqdhorwvibrwu —
+// Secrets/config (already set on the identity project icutjkrqkbzwvmnfbzpr —
 // extract-card uses the same key):
-//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref coshondiqdhorwvibrwu
+//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref icutjkrqkbzwvmnfbzpr
 // Deploy (NO --no-verify-jwt):
-//   supabase functions deploy parse-resume --project-ref coshondiqdhorwvibrwu
+//   supabase functions deploy parse-resume --project-ref icutjkrqkbzwvmnfbzpr
 //
 // The models can be overridden with the RESUME_MODEL / RESUME_FALLBACK_MODEL secrets.
 
@@ -130,7 +130,7 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) {
     return json(
-      { error: 'Server is missing ANTHROPIC_API_KEY. Run: supabase secrets set ANTHROPIC_API_KEY=... --project-ref coshondiqdhorwvibrwu' },
+      { error: 'Server is missing ANTHROPIC_API_KEY. Run: supabase secrets set ANTHROPIC_API_KEY=... --project-ref icutjkrqkbzwvmnfbzpr' },
       500
     );
   }

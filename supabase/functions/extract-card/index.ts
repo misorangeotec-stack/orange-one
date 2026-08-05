@@ -10,10 +10,10 @@
 // Why server-side: the Anthropic API key must never ship in the app bundle.
 //
 // Secrets/config (set once with the Supabase CLI, on the identity project
-// coshondiqdhorwvibrwu):
-//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref coshondiqdhorwvibrwu
+// icutjkrqkbzwvmnfbzpr):
+//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref icutjkrqkbzwvmnfbzpr
 // Deploy:
-//   supabase functions deploy extract-card --project-ref coshondiqdhorwvibrwu --no-verify-jwt
+//   supabase functions deploy extract-card --project-ref icutjkrqkbzwvmnfbzpr --no-verify-jwt
 //
 // The model can be overridden with the CARD_MODEL secret if the default id changes.
 
@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) {
     return json(
-      { error: 'Server is missing ANTHROPIC_API_KEY. Run: supabase secrets set ANTHROPIC_API_KEY=... --project-ref coshondiqdhorwvibrwu' },
+      { error: 'Server is missing ANTHROPIC_API_KEY. Run: supabase secrets set ANTHROPIC_API_KEY=... --project-ref icutjkrqkbzwvmnfbzpr' },
       500
     );
   }

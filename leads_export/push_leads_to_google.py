@@ -26,7 +26,7 @@ copied here) but keeps its own Drive-enabled token (token_leads.json). It does n
 read or write anything in the FETCH DAILY DATA project.
 
 Required env (leads_export/.env):
-    IDENTITY_SUPABASE_URL              https://coshondiqdhorwvibrwu.supabase.co
+    IDENTITY_SUPABASE_URL              https://icutjkrqkbzwvmnfbzpr.supabase.co
     IDENTITY_SUPABASE_SERVICE_ROLE_KEY <service_role key of the identity project>
     LEADS_PARENT_FOLDER_ID            1sjzeBLO4lOgZ1O0fSFjXdEDoj8mrMw-z
 Optional env:

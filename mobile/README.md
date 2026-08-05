@@ -44,7 +44,7 @@ write before any real feature is built.
 ## Backend
 
 - Same Supabase project as the web portal: **identity / Task Management**
-  (`coshondiqdhorwvibrwu`). Sign-in only — accounts are provisioned by an admin
+  (`icutjkrqkbzwvmnfbzpr`). Sign-in only — accounts are provisioned by an admin
   in the web portal (a user's mobile number is their initial password).
 - New mobile tables are **additive** and prefixed `app_`. The scaffold's table
   is created by `../supabase/migrations/20260703120000_add_app_mobile_core.sql`

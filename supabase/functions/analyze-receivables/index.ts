@@ -11,10 +11,10 @@
 // Why verify_jwt = true: receivables figures are sensitive; only a signed-in portal user
 // may call this, and the caller's JWT rides along on the invoke.
 //
-// Secrets/config (identity project coshondiqdhorwvibrwu — same ANTHROPIC_API_KEY as parse-resume):
-//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref coshondiqdhorwvibrwu
+// Secrets/config (identity project icutjkrqkbzwvmnfbzpr — same ANTHROPIC_API_KEY as parse-resume):
+//   supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref icutjkrqkbzwvmnfbzpr
 // Deploy (NO --no-verify-jwt):
-//   supabase functions deploy analyze-receivables --project-ref coshondiqdhorwvibrwu
+//   supabase functions deploy analyze-receivables --project-ref icutjkrqkbzwvmnfbzpr
 //
 // The model can be overridden with the ANALYSIS_MODEL secret.
 
@@ -99,7 +99,7 @@ Deno.serve(async (req: Request) => {
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) {
     return json(
-      { error: 'Server is missing ANTHROPIC_API_KEY. Run: supabase secrets set ANTHROPIC_API_KEY=... --project-ref coshondiqdhorwvibrwu' },
+      { error: 'Server is missing ANTHROPIC_API_KEY. Run: supabase secrets set ANTHROPIC_API_KEY=... --project-ref icutjkrqkbzwvmnfbzpr' },
       500,
     );
   }

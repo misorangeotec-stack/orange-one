@@ -6,7 +6,7 @@ key creation (org policy `iam.managed.disableServiceAccountKeyCreation`). A user
 refresh token needs neither a key file nor domain-wide delegation, and Internal (Workspace)
 OAuth apps issue **long-lived** refresh tokens.
 
-Project ref (auth/identity): `coshondiqdhorwvibrwu`.
+Project ref (auth/identity): `icutjkrqkbzwvmnfbzpr`.
 Nothing sends until the final step (the config row), so migrations + function can be
 applied/deployed ahead of the Google setup.
 
@@ -52,12 +52,12 @@ supabase secrets set \
   GMAIL_SENDER="support@orangeotec.com" \
   GMAIL_FROM="Orange One <support@orangeotec.com>" \
   APP_BASE_URL="https://<LIVE Vercel portal URL — see Production below>" \
-  --project-ref coshondiqdhorwvibrwu
+  --project-ref icutjkrqkbzwvmnfbzpr
 ```
 
 ### B3. Deploy the function (needs `supabase login` / `SUPABASE_ACCESS_TOKEN`)
 ```
-supabase functions deploy send-email --no-verify-jwt --project-ref coshondiqdhorwvibrwu
+supabase functions deploy send-email --no-verify-jwt --project-ref icutjkrqkbzwvmnfbzpr
 ```
 
 ### B4. Smoke test to a SAFE address (before flipping the trigger on)
@@ -66,7 +66,7 @@ insert into public.email_outbox (kind, to_user_id, to_email, actor_id)
 values ('task_assigned', gen_random_uuid(), 'YOUR_TEST_INBOX@example.com', null);
 ```
 ```
-curl -i -X POST "https://coshondiqdhorwvibrwu.functions.supabase.co/send-email" \
+curl -i -X POST "https://icutjkrqkbzwvmnfbzpr.functions.supabase.co/send-email" \
   -H "x-dispatch-secret: <EMAIL_DISPATCH_SECRET>" \
   -H "Content-Type: application/json" -d '{}'
 ```
@@ -78,7 +78,7 @@ Expect delivery + `status='sent'`. If `failed`, read `last_error`.
 ### B5. Flip it ON (single go-live switch)
 ```sql
 insert into private.email_dispatch_config (id, function_url, dispatch_secret)
-values (1, 'https://coshondiqdhorwvibrwu.functions.supabase.co/send-email', '<EMAIL_DISPATCH_SECRET>')
+values (1, 'https://icutjkrqkbzwvmnfbzpr.functions.supabase.co/send-email', '<EMAIL_DISPATCH_SECRET>')
 on conflict (id) do update
   set function_url = excluded.function_url, dispatch_secret = excluded.dispatch_secret;
 ```
@@ -100,7 +100,7 @@ UI is hosted. The ONLY tie to the live site:
 - **`APP_BASE_URL` must be the production portal URL** (the live Vercel domain, e.g.
   `https://orange-one.vercel.app` or your custom domain) so the "Open task" buttons open the
   live app, not localhost.
-- The Supabase project used here (`coshondiqdhorwvibrwu`) is the SAME one prod already uses for
+- The Supabase project used here (`icutjkrqkbzwvmnfbzpr`) is the SAME one prod already uses for
   auth/tasks, so once B1–B5 are done, they serve production immediately — there is no separate
   "prod" Supabase to repeat this on.
 - No new Vercel env vars are required for email.

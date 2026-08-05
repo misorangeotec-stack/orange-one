@@ -19,7 +19,7 @@ This folder is **self-contained**: it has its own copy of the `orange-o-tec` Goo
 ## One-time setup
 
 1. **Credentials** — `credentials.json` is already copied here (read-only from FETCH DAILY DATA). Do not commit it.
-2. **`.env`** — `cp .env.example .env` and set `IDENTITY_SUPABASE_SERVICE_ROLE_KEY` (Supabase → project `coshondiqdhorwvibrwu` → Settings → API). `IDENTITY_SUPABASE_URL` and `LEADS_PARENT_FOLDER_ID` are prefilled.
+2. **`.env`** — `cp .env.example .env` and set `IDENTITY_SUPABASE_SERVICE_ROLE_KEY` (Supabase → project `icutjkrqkbzwvmnfbzpr` → Settings → API). `IDENTITY_SUPABASE_URL` and `LEADS_PARENT_FOLDER_ID` are prefilled.
 3. **Install deps** (ideally in a venv):
    ```
    pip install -r requirements.txt

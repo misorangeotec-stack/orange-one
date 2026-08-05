@@ -7,11 +7,11 @@
 // Claude then translates the transcript to natural English and extracts a short
 // summary, a suggested interest level, and follow-up actions.
 //
-// Secrets (identity project coshondiqdhorwvibrwu):
-//   supabase secrets set DEEPGRAM_API_KEY=... --project-ref coshondiqdhorwvibrwu
+// Secrets (identity project icutjkrqkbzwvmnfbzpr):
+//   supabase secrets set DEEPGRAM_API_KEY=... --project-ref icutjkrqkbzwvmnfbzpr
 //   (ANTHROPIC_API_KEY is already set for extract-card and reused here.)
 // Deploy:
-//   supabase functions deploy transcribe-voice --project-ref coshondiqdhorwvibrwu --no-verify-jwt
+//   supabase functions deploy transcribe-voice --project-ref icutjkrqkbzwvmnfbzpr --no-verify-jwt
 
 import Anthropic from 'npm:@anthropic-ai/sdk';
 
@@ -72,7 +72,7 @@ Deno.serve(async (req: Request) => {
 
   const dgKey = Deno.env.get('DEEPGRAM_API_KEY');
   if (!dgKey) {
-    return json({ error: 'Server is missing DEEPGRAM_API_KEY. Run: supabase secrets set DEEPGRAM_API_KEY=... --project-ref coshondiqdhorwvibrwu' }, 500);
+    return json({ error: 'Server is missing DEEPGRAM_API_KEY. Run: supabase secrets set DEEPGRAM_API_KEY=... --project-ref icutjkrqkbzwvmnfbzpr' }, 500);
   }
   const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!anthropicKey) return json({ error: 'Server is missing ANTHROPIC_API_KEY.' }, 500);
