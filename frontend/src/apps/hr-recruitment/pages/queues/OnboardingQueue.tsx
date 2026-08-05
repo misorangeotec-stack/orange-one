@@ -130,9 +130,9 @@ export default function OnboardingQueue() {
     {
       key: "offer",
       header: "Offer",
-      // Accepted is the assumed state — finalizing IS the acceptance, and no screen
-      // asks anyone to confirm it. This column exists to surface the DROP-OUTS, so
-      // it stays quiet unless there is one. The filter still offers every value.
+      // Accepted is the settled case, so it stays quiet. This column exists to surface
+      // the offers still HANGING (answered on the Made Offer card) and the ones that
+      // fell through. The filter still offers every value.
       cell: (o) =>
         o.offerStatus === "accepted" ? (
           <span className="text-grey-2">—</span>

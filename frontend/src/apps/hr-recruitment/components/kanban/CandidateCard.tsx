@@ -97,6 +97,32 @@ export default function CandidateCard({
    */
   const readyToHire = c.stage === "finalized" && !!onboarding?.completedAt;
 
+  /**
+   * MAKING AN OFFER IS NOT THE SAME AS IT BEING ACCEPTED. The card asks, rather than
+   * assuming — the assumption is what made the acceptance rate meaningless.
+   *
+   * Both answers live here so one question has one place. "They declined" hands off
+   * to the ordinary disqualify move, which already asks declined-vs-no-show and takes
+   * the card off the pipeline; recording the status alone would leave them sitting in
+   * Made Offer having said no.
+   */
+  const awaitingAnswer = c.stage === "finalized" && onboarding?.offerStatus === "pending";
+  const [answering, setAnswering] = useState(false);
+  const [answerErr, setAnswerErr] = useState<string | null>(null);
+
+  const accept = async () => {
+    if (!onboarding || answering) return;
+    setAnswering(true);
+    setAnswerErr(null);
+    try {
+      await s.setOfferStatus(onboarding.id, "accepted");
+    } catch (e) {
+      setAnswerErr(e instanceof Error ? e.message : "Could not record that");
+    } finally {
+      setAnswering(false);
+    }
+  };
+
   return (
     <div
       draggable={mine}
@@ -207,6 +233,35 @@ export default function CandidateCard({
                 Record result →
               </button>
             ))}
+        </div>
+      )}
+
+      {awaitingAnswer && (
+        <div className="mt-2 rounded-lg border border-orange/30 bg-orange/[0.06] px-2 py-1.5">
+          <div className="text-[11.5px] font-semibold text-navy">Offer sent — did they accept?</div>
+          {mine ? (
+            <>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <button
+                  onClick={accept}
+                  disabled={answering}
+                  className="rounded-pill border border-ryg-green/40 bg-white px-2 py-0.5 text-[11.5px] font-semibold text-ryg-green transition hover:bg-[#E9F8EF] disabled:opacity-50"
+                >
+                  {answering ? "Saving…" : "They accepted"}
+                </button>
+                <button
+                  onClick={() => onMoveTo(c, "disqualified")}
+                  disabled={answering}
+                  className="rounded-pill border border-line bg-white px-2 py-0.5 text-[11.5px] font-semibold text-ryg-red transition hover:border-ryg-red/40 disabled:opacity-50"
+                >
+                  They declined
+                </button>
+              </div>
+              {answerErr && <div className="mt-1 text-[11px] text-ryg-red">{answerErr}</div>}
+            </>
+          ) : (
+            <div className="mt-0.5 text-[11px] text-grey-2">Awaiting the answer.</div>
+          )}
         </div>
       )}
 

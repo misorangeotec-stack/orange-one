@@ -32,6 +32,7 @@ import {
   resubmitMrf as resubmitMrfWrite,
   setConfig as setConfigWrite,
   setEmployeeCode as setEmployeeCodeWrite,
+  setOfferStatus as setOfferStatusWrite,
   setOnboardingDate as setOnboardingDateWrite,
   setStepOwner as setStepOwnerWrite,
   setRequisitionJd as setRequisitionJdWrite,
@@ -255,6 +256,16 @@ interface HrStoreValue {
   setOnboardingDate: (onboardingId: string, joiningDate: string) => Promise<void>;
   toggleOnboardingCheck: (checkId: string, done: boolean, input?: CheckInput) => Promise<void>;
   setEmployeeCode: (onboardingId: string, code: string) => Promise<void>;
+  /**
+   * The answer to an offer. `pending` until somebody says — making the offer does
+   * not assert it was taken up. Accepting may complete the onboarding outright if
+   * the checklist is already done.
+   */
+  setOfferStatus: (
+    onboardingId: string,
+    status: "accepted" | "declined" | "no_show",
+    reason?: string,
+  ) => Promise<void>;
 
   // probation — the HOD's monthly work on people who have actually JOINED
   probations: Probation[];
@@ -886,6 +897,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       setEmployeeCode: async (oid, code) => {
         await setEmployeeCodeWrite(oid, code);
+        await invalidate();
+      },
+      setOfferStatus: async (oid, status, reason) => {
+        await setOfferStatusWrite(oid, status, reason ?? "");
         await invalidate();
       },
 

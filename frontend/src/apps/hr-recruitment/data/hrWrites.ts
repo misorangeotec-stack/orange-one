@@ -653,6 +653,31 @@ export async function toggleOnboardingCheck(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * The answer to the offer.
+ *
+ * Making an offer is not the same as it being accepted, so an onboarding is born
+ * `pending` and waits here. Accepting runs `fms_hr_try_complete_onboarding` inside
+ * the RPC, so a checklist that was already finished completes the moment the answer
+ * lands — the acceptance can arrive last without stranding the hire.
+ *
+ * `declined` / `no_show` are reachable from here too, but the board's move to
+ * Disqualified is the usual route: it records the same outcome AND takes the card
+ * off the pipeline, which a status change alone would not do.
+ */
+export async function setOfferStatus(
+  onboardingId: string,
+  status: "accepted" | "declined" | "no_show",
+  reason = "",
+): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_set_offer_status", {
+    p_onb: onboardingId,
+    p_status: status,
+    p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** The Employee ID from the HR system. A value on the onboarding, not a checklist task. */
 export async function setEmployeeCode(onboardingId: string, code: string): Promise<void> {
   const { error } = await supabase.rpc("fms_hr_set_employee_code", {

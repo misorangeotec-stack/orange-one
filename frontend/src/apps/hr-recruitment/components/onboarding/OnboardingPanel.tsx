@@ -27,7 +27,10 @@ const OFFER_LABEL: Record<OfferStatus, string> = {
   no_show: "Did not join",
 };
 
-/** Is this status worth saying out loud? "Accepted" is the assumed state. */
+/**
+ * Is this status worth saying out loud? Accepted is the settled, unremarkable case —
+ * the badge exists to surface an offer still hanging, or one that fell through.
+ */
 const notable = (st: OfferStatus) => st !== "accepted";
 
 const OFFER_CLASS: Record<OfferStatus, string> = {
@@ -334,11 +337,13 @@ function CheckRow({
  *      the onboarding completes, and if that was the last seat the requisition
  *      closes itself.
  *
- * There is no "did they accept?" step: finalizing the candidate IS the acceptance,
- * so the onboarding is born accepted (20260816120000). A drop-out is the backward
- * card move on the board, which deletes this onboarding and frees the seat. The
- * offer status is still READ here — the pill and the red banner — because hires
- * marked declined / did-not-join before that change still have to explain themselves.
+ * The "did they accept?" step is not here — it is on the Made Offer card, where the
+ * offer was made (20260816120300). An onboarding is born `pending`: making an offer
+ * is not the same as it being taken up, and assuming otherwise is what made the
+ * acceptance rate meaningless. This panel READS the status — the pill and the red
+ * banner — and the checklist can be worked while the answer is outstanding, because
+ * collecting documents during that wait is normal. What waits on acceptance is
+ * COMPLETION: no joined_at, no probation and no requisition close until it lands.
  */
 export default function OnboardingPanel({
   onboarding,
