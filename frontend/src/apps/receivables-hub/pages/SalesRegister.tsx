@@ -2,9 +2,9 @@
  * Sales Register — Tally Reports → Books & Registers.
  *
  * A flat, all-companies voucher-line register in the finance team's "Append1" layout. Reads the
- * precomputed ConnectWave `rpt_sales_register` snapshot (rebuilt nightly at 20:00 IST + on-demand
- * per company), so it is source-agnostic (available regardless of the Live-Tally toggle), exactly
- * like the Master Reports → Sales Report.
+ * precomputed ConnectWave `rpt_sales_register` snapshot (rebuilt within ~5 min of each book's Tally
+ * sync, a 20:00 IST nightly as backstop, + on-demand per company), so it is source-agnostic
+ * (available regardless of the Live-Tally toggle), exactly like the Master Reports → Sales Report.
  *
  * Data lives in lib/salesRegister.ts; the whole [from,to] window is loaded, then filtered and
  * paginated client-side (project rule: usePagination + <Pagination/>, 25/page). Export in
@@ -262,7 +262,7 @@ export default function SalesRegister() {
               {" · "}revenue <b className="text-foreground font-semibold">₹ {fmtRev(totalRevenue)}</b>
             </div>
             {lastRefresh?.ran_at && (
-              <div>Last refreshed {new Date(lastRefresh.ran_at).toLocaleString("en-IN")} · auto-refreshes daily at 8:00 PM</div>
+              <div>Last refreshed {new Date(lastRefresh.ran_at).toLocaleString("en-IN")} · auto-refreshes after each Tally sync</div>
             )}
           </div>
 

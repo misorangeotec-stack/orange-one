@@ -8,9 +8,16 @@
  * FOC/SOA, credit/debit notes, sales returns) across all five entities merged into one table.
  *
  * WHERE THE NUMBERS COME FROM
- * The precomputed ConnectWave table `rpt_sales_register` (rebuilt nightly at 20:00 IST + on demand),
- * which ports generate_sales_register.py onto the Tally mirror. The browser reads it as `anon`, so
- * we page it in blocks and never run the transform live.
+ * The precomputed ConnectWave table `rpt_sales_register`, which ports generate_sales_register.py onto
+ * the Tally mirror. The browser reads it as `anon`, so we page it in blocks and never run the
+ * transform live.
+ *
+ * WHEN IT REBUILDS
+ * `rpt_sales_register_refresh_if_stale()` runs every 5 minutes (cron `rpt-sales-register-after-sync`)
+ * and rebuilds only the books whose `tally_sync_state.last_sync_at` is newer than their last entry in
+ * `rpt_sales_register_refresh_log` — so the register follows the sync instead of a wall clock. The
+ * 20:00 IST `rpt_sales_register_refresh_nightly()` stays on as an unconditional backstop, and
+ * refreshRegisterCompany() below is the per-company manual path. Same shape as the Stock Summary.
  *
  * FY-SPLIT BOOKS
  * Enterprise (Surat & Noida) each keep two Tally books that share a company GUID and overlap around

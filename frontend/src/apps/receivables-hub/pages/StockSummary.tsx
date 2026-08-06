@@ -678,7 +678,7 @@ export default function StockSummary() {
             {(builtAt || lastRefresh?.ran_at) && (
               <div>
                 Last refreshed {new Date(lastRefresh?.ran_at ?? builtAt ?? "").toLocaleString("en-IN")}
-                {" · "}auto-refreshes daily at 11:15 PM
+                {" · "}auto-refreshes after each Tally sync
               </div>
             )}
           </div>
