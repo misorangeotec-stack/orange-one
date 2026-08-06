@@ -59,6 +59,70 @@ export const STAGE_LABEL: Record<CandidateStage, string> = {
   disqualified: "Disqualified",
 };
 
+/* -------------------------------------------------------------------------- */
+/*  Phases — the coarse grouping a person reads, above the twelve stages.       */
+/* -------------------------------------------------------------------------- */
+
+export type CandidatePhase = "screening" | "interviewing" | "offer" | "hired" | "dropped";
+
+/**
+ * Stage → the phase it belongs to. EXHAUSTIVE over CandidateStage on purpose.
+ *
+ * Twelve stages is the right resolution for a pipeline and the wrong one for a
+ * glance: nobody scanning a list needs "Shared with HOD" and "Shortlisted by HOD"
+ * to look different. Five phases is what the eye actually sorts on.
+ */
+export const PHASE_OF: Record<CandidateStage, CandidatePhase> = {
+  resume_uploaded: "screening",
+  hr_shortlisted: "screening",
+  shared_with_hod: "screening",
+  hod_shortlisted: "screening",
+  telephonic: "interviewing",
+  interview_1: "interviewing",
+  interview_2: "interviewing",
+  interview_3: "interviewing",
+  final_decision: "interviewing",
+  finalized: "offer",
+  hired: "hired",
+  disqualified: "dropped",
+};
+
+/**
+ * ONE HUE, LIGHT TO DARK for the three in-play phases — the same ramp the
+ * pipeline strip and the AI-fit bar use, so the encoding is learned once.
+ *
+ * The phases are ORDERED, and lightness says so; distinct hues would claim these
+ * are unrelated categories and would need a legend to decode. Hired and dropped
+ * step off the ramp because they are outcomes rather than positions along it.
+ *
+ * Red is deliberately absent. In this app red means WE ARE LATE — it is already
+ * spoken for by the overdue row tint and the due chip, and a red stage would
+ * collide with it on the very same row.
+ */
+export const PHASE_FILL: Record<CandidatePhase, string> = {
+  screening: "#FFD8C2",
+  interviewing: "#FF9C63",
+  offer: "#FF6A1F",
+  hired: "#27AE60",
+  dropped: "#8A99B0",
+};
+
+/**
+ * The pill a stage is drawn in.
+ *
+ * The three in-play phases SHARE a pill and differ only by the dot: they are all
+ * "still moving", and giving each its own background would turn a dense list into
+ * a colour chart. The two outcomes get their own pill because they are genuinely
+ * a different kind of thing — the row is finished, not further along.
+ */
+export const PHASE_PILL: Record<CandidatePhase, string> = {
+  screening: "bg-orange-soft text-orange",
+  interviewing: "bg-orange-soft text-orange",
+  offer: "bg-orange-soft text-orange",
+  hired: "bg-[#E9F8EF] text-ryg-green",
+  dropped: "bg-page text-grey-2",
+};
+
 export type BoardColumnKey =
   | "resumes"
   | "hr_shortlist"

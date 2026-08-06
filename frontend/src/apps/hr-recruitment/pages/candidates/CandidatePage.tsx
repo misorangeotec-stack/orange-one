@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
@@ -7,6 +7,8 @@ import EmptyState from "@/shared/components/ui/EmptyState";
 import Tabs from "@/shared/components/ui/Tabs";
 import { FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { useRailWhileMounted } from "@/shared/components/layout/navRail";
+import { returnToFor } from "@/shared/lib/returnTo";
+import { CANDIDATES_ROUTE } from "./CandidatesList";
 import CandidateDocuments from "../../components/kanban/CandidateDocuments";
 import MoveModal from "../../components/kanban/MoveModal";
 import OnboardingPanel from "../../components/onboarding/OnboardingPanel";
@@ -19,15 +21,8 @@ import AccessDenied from "../system/AccessDenied";
 import { useHrStore } from "../../store";
 import { canSeeBoard } from "../../lib/access";
 import { STAGE_LABEL, columnOf, legalTargets } from "../../lib/board";
+import { tintFor } from "../../lib/tint";
 import type { CandidateStage, Onboarding } from "../../types";
-
-/** Stable per-person tint, matching the board card so the same face keeps its colour. */
-const TINTS = ["blue", "orange", "teal", "green", "navy"];
-const tintFor = (seed: string) => {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return TINTS[h % TINTS.length];
-};
 
 /**
  * One candidate, on a page of their own.
@@ -46,6 +41,7 @@ const tintFor = (seed: string) => {
 export default function CandidatePage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const s = useHrStore();
 
   const [leftTab, setLeftTab] = useState("resume");
@@ -103,13 +99,30 @@ export default function CandidatePage() {
   }
 
   const r = s.requisitionById(c.requisitionId);
-  const backTo = r ? `/hr-recruitment/positions/${r.id}` : "/hr-recruitment/positions";
+  /**
+   * Back goes where you actually came from.
+   *
+   * The all-candidates list marks its links `from: "candidates"`, and returnTo
+   * remembers the exact URL it was left at — so Back restores the filters and the
+   * page you had. Every other way in (a board card, an interview queue, a bell, a
+   * pasted link) carries no such state and lands on the vacancy, exactly as before.
+   * Router state is deliberately the signal: a pasted link has none, which is right.
+   */
+  const fromList = (location.state as { from?: string } | null)?.from === "candidates";
+  const backTo = fromList
+    ? returnToFor(CANDIDATES_ROUTE)
+    : r
+      ? `/hr-recruitment/positions/${r.id}`
+      : "/hr-recruitment/positions";
   const targets = s.canActOnCandidate(c) ? legalTargets(c.stage) : [];
   const idx = siblings.findIndex((x) => x.id === c.id);
   const prev = idx > 0 ? siblings[idx - 1] : null;
   const next = idx >= 0 && idx < siblings.length - 1 ? siblings[idx + 1] : null;
 
-  const go = (candidateId: string) => navigate(`/hr-recruitment/candidates/${candidateId}`);
+  // Carry the "where I came from" marker along the pager, so working through five
+  // candidates and then hitting Back still returns to the list, not to a vacancy.
+  const go = (candidateId: string) =>
+    navigate(`/hr-recruitment/candidates/${candidateId}`, { state: location.state });
 
   return (
     <div className="space-y-4">

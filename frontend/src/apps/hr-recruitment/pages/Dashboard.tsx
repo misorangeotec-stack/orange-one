@@ -4,7 +4,6 @@ import Card from "@/shared/components/ui/Card";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import DueCell from "@/shared/components/ui/DueCell";
 import SharedKpi from "@/shared/components/ui/Kpi";
-import { FIELD_LABEL_CLASS } from "@/shared/components/ui/Readout";
 import { bucketOf, todayLocalIso } from "@/shared/lib/dueBuckets";
 import { formatDateDMY } from "@/shared/lib/date";
 import { useEffectiveIdentity } from "@/shared/sandbox/useEffectiveIdentity";
@@ -102,6 +101,14 @@ export default function Dashboard() {
   }, [s, today]);
 
   /* ------------------------------- my own work ------------------------------ */
+  /**
+   * Ordered by what is actually on fire — most overdue first, then biggest pile.
+   *
+   * This used to run in STEPS order, i.e. the order the workflow happens in. That
+   * reads well as a diagram and badly as a worklist: eleven equally-sized tiles in
+   * process order say "here is the process", when the question being asked is
+   * "what do I do first". Sorting by urgency answers it in the first row.
+   */
   const myWork = useMemo(
     () =>
       STEPS.filter((st) => QUEUE_LINK[st.key])
@@ -114,7 +121,8 @@ export default function Dashboard() {
             to: QUEUE_LINK[st.key]!,
           };
         })
-        .filter((w) => w.count > 0),
+        .filter((w) => w.count > 0)
+        .sort((a, b) => b.overdue - a.overdue || b.count - a.count),
     [s, today],
   );
 
@@ -133,6 +141,7 @@ export default function Dashboard() {
   }
 
   const myOverdue = myWork.reduce((n, w) => n + w.overdue, 0);
+  const myTotal = myWork.reduce((n, w) => n + w.count, 0);
 
   // HOD steps need no owner — they follow whoever raised the MRF.
   const assignable = STEPS.filter((st) => !isHodStep(st.key));
@@ -255,29 +264,62 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* ---- On you right now ---- */}
+      {/* ---- On you right now ----
+          A LIST, not a grid of tiles. Eleven boxes each carrying a 24px number, a
+          pink "N overdue" pill and two lines of label meant eleven things shouting
+          at equal volume — so nothing was legible as more urgent than anything
+          else, and the same "you are late" message was repeated eight times over.
+          One row per step, sorted worst-first, states each fact once. The totals
+          live in the header where they belong, said once rather than implied. */}
       <Card className="p-5">
-        <h2 className="text-[15px] font-semibold text-navy">On you right now</h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="text-[15px] font-semibold text-navy">On you right now</h2>
+          {myWork.length > 0 && (
+            <span className="text-[12.5px] text-grey-2">
+              {myTotal} item{myTotal === 1 ? "" : "s"} across {myWork.length} step
+              {myWork.length === 1 ? "" : "s"}
+              {myOverdue > 0 && <span className="font-semibold text-ryg-red"> · {myOverdue} overdue</span>}
+            </span>
+          )}
+        </div>
+
         {myWork.length === 0 ? (
           <p className="mt-2 text-[13.5px] text-grey-2">Nothing is waiting on you.</p>
         ) : (
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-2 grid gap-x-8 sm:grid-cols-2">
             {myWork.map((w) => (
               <Link
                 key={w.step.key}
                 to={w.to}
-                className="rounded-xl border border-line p-4 transition hover:border-orange/50 hover:bg-page/50"
+                className="group flex items-center gap-3 rounded-lg px-2 py-[7px] transition hover:bg-page"
               >
-                <div className={FIELD_LABEL_CLASS}>{w.step.short}</div>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-[24px] font-bold text-navy">{w.count}</span>
-                  {w.overdue > 0 && (
-                    <span className="rounded-full bg-[#FDECEC] px-1.5 py-0.5 text-[11px] font-semibold text-ryg-red">
-                      {w.overdue} overdue
-                    </span>
-                  )}
-                </div>
-                <div className="mt-0.5 text-[12.5px] text-grey-2">{w.step.title}</div>
+                {/* The one thing worth encoding in colour: is this late or not.
+                    Red is already this app's word for "we are late", so it costs
+                    the reader nothing new. */}
+                <span
+                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${w.overdue > 0 ? "bg-ryg-red" : "bg-line"}`}
+                  aria-hidden="true"
+                />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-navy group-hover:text-orange">
+                  {w.step.title}
+                </span>
+                {w.overdue > 0 && (
+                  <span className="shrink-0 text-[11.5px] font-semibold text-ryg-red">{w.overdue} overdue</span>
+                )}
+                <span className="w-6 shrink-0 text-right text-[15px] font-bold tabular-nums text-navy">
+                  {w.count}
+                </span>
+                <svg
+                  viewBox="0 0 24 24"
+                  className="h-3.5 w-3.5 shrink-0 text-grey-2 opacity-0 transition group-hover:opacity-100"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
               </Link>
             ))}
           </div>

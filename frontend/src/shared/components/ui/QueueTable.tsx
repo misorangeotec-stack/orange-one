@@ -42,6 +42,17 @@ export interface QueueColumn<T> {
    * where they'd export the wrong thing.
    */
   exportValue?: (row: T) => string | number;
+  /**
+   * Off until the reader picks it in the Columns menu — for the columns that are
+   * worth having but not worth the width by default.
+   *
+   * IGNORED unless the table opts in to `columnPicker`. Without a menu to turn it
+   * back on, a hidden column would be unreachable, so a table with no picker shows
+   * every column it was given.
+   */
+  defaultHidden?: boolean;
+  /** Cannot be hidden — the column that says WHICH ROW this is. */
+  alwaysVisible?: boolean;
 }
 
 /**
@@ -107,6 +118,15 @@ interface QueueTableProps<T> {
    * already conveys the grouping and the bands are just noise.
    */
   hideGroupHeaders?: boolean;
+  /**
+   * Opt in to a "Columns" menu, for tables wide enough that not everyone wants
+   * every column. Omitting it leaves the table exactly as it was — which is why
+   * every existing queue is unchanged by this.
+   *
+   * `storageKey` namespaces the remembered choice per table, so two tables that
+   * happen to share column keys don't overwrite each other.
+   */
+  columnPicker?: { storageKey: string };
 }
 
 type SortState = { key: string; dir: "asc" | "desc" } | null;
@@ -117,6 +137,50 @@ const inputBase =
 
 /** yyyy-mm-dd → dd-mm-yyyy for compact summaries. */
 const dmy = (iso: string): string => (iso ? iso.split("-").reverse().join("-") : "");
+
+/* ------------------------- remembered column choice ------------------------ */
+/*  Same shape as the sidebar's own preferences (Sidebar.tsx): dot-namespaced    */
+/*  key, and every access wrapped — private mode and a full quota must never     */
+/*  throw. All of this is convenience, never load-bearing.                       */
+
+const colsKey = (storageKey: string) => `orangeone.table.cols.${storageKey}`;
+
+/**
+ * The stored hidden keys, INTERSECTED with the columns that exist right now, or
+ * null when there is nothing usable to restore.
+ *
+ * Null vs empty matters: an empty set is a real choice ("show me everything"),
+ * while null means "never asked", which is what lets `defaultHidden` apply.
+ *
+ * Storing the hidden set rather than the visible one means a column added in a
+ * later release arrives visible, which is the kinder default for a new feature.
+ * The intersection is what makes a stored preference safe across releases — and
+ * it also quietly handles the salary case: a column that isn't offered to this
+ * user isn't in `valid`, so their stored "hide it" simply evaporates.
+ *
+ * Note the whole read is inside the try, `getItem` included — with cookies
+ * blocked, merely TOUCHING localStorage throws, and a display preference must
+ * never be able to take the table down with it.
+ */
+function readHiddenCols(storageKey: string, valid: Set<string>): Set<string> | null {
+  try {
+    const raw = localStorage.getItem(colsKey(storageKey));
+    if (raw == null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return new Set(parsed.filter((k): k is string => typeof k === "string" && valid.has(k)));
+  } catch {
+    return null;
+  }
+}
+
+function writeHiddenCols(storageKey: string, hidden: Set<string>): void {
+  try {
+    localStorage.setItem(colsKey(storageKey), JSON.stringify([...hidden]));
+  } catch {
+    /* private mode / quota — the table still works, it just won't remember */
+  }
+}
 
 const BuildingIcon = (
   <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 text-orange" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18M6 21V7l6-4 6 4v14M10 9h.01M14 9h.01M10 13h.01M14 13h.01M10 17h.01M14 17h.01" /></svg>
@@ -149,6 +213,7 @@ export default function QueueTable<T>({
   exportNotes,
   selectable,
   hideGroupHeaders,
+  columnPicker,
 }: QueueTableProps<T>) {
   // Seeded once from any multiselect column's `initial`, so a screen can open with a
   // sensible default selection. Lazy on purpose: `columns` is usually rebuilt every
@@ -163,6 +228,31 @@ export default function QueueTable<T>({
   const [group, setGroup] = useState<string>(initialGroup ?? "all");
   const [sort, setSort] = useState<SortState>(initialSort ?? null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+
+  /**
+   * Which columns the reader has put away. Lazily seeded, for the same reason
+   * `filters` is: `columns` is a fresh array almost every render, so re-seeding
+   * would stamp `defaultHidden` back over a choice the moment anything re-rendered.
+   *
+   * A remembered choice beats `defaultHidden` — once someone has opened the menu,
+   * the stored set is the whole truth, including "I want the default-hidden ones".
+   */
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
+    if (!columnPicker) return new Set(); // no menu ⇒ nothing may be hidden
+    const stored = readHiddenCols(columnPicker.storageKey, new Set(columns.map((c) => c.key)));
+    return stored ?? new Set(columns.filter((c) => c.defaultHidden && !c.alwaysVisible).map((c) => c.key));
+  });
+
+  /**
+   * The columns actually on screen. EVERYTHING below reads this, never `columns` —
+   * filtering, sorting, the option lists, the export and the cells. A hidden column
+   * that still filtered would narrow the table with no visible control to undo it.
+   */
+  const picking = !!columnPicker; // the prop is usually a fresh literal; its identity is noise
+  const shownColumns = useMemo(
+    () => (picking ? columns.filter((c) => c.alwaysVisible || !hiddenCols.has(c.key)) : columns),
+    [columns, hiddenCols, picking],
+  );
 
   const idOf = groupBy?.idOf;
   const groupNameOf = groupBy?.nameOf;
@@ -208,7 +298,7 @@ export default function QueueTable<T>({
     }
   };
 
-  const hasActiveFilters = (!!groupBy && group !== "all") || columns.some(isActive);
+  const hasActiveFilters = (!!groupBy && group !== "all") || shownColumns.some(isActive);
 
   // Distinct groups present in the source rows (for the group filter).
   const groups = useMemo(() => {
@@ -224,7 +314,7 @@ export default function QueueTable<T>({
   // Distinct option lists for every "select" filter column.
   const selectOptions = useMemo(() => {
     const out: Record<string, string[]> = {};
-    for (const c of columns) {
+    for (const c of shownColumns) {
       if (c.filter?.kind === "select" || c.filter?.kind === "multiselect") {
         if (c.filter.options) { out[c.key] = c.filter.options; continue; }
         const set = new Set<string>();
@@ -234,17 +324,17 @@ export default function QueueTable<T>({
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, columns]);
+  }, [rows, shownColumns]);
 
   // Filter → sort (group primary, chosen column secondary).
   const sorted = useMemo(() => {
     let list = rows.filter((row) => {
       if (idOf && group !== "all" && idOf(row) !== group) return false;
-      for (const col of columns) if (!matches(col, row)) return false;
+      for (const col of shownColumns) if (!matches(col, row)) return false;
       return true;
     });
 
-    const col = sort ? columns.find((c) => c.key === sort.key && c.sortValue) : undefined;
+    const col = sort ? shownColumns.find((c) => c.key === sort.key && c.sortValue) : undefined;
     list = list
       .map((row, i) => ({ row, i }))
       .sort((a, b) => {
@@ -265,7 +355,7 @@ export default function QueueTable<T>({
       .map((x) => x.row);
     return list;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, filters, group, sort, columns]);
+  }, [rows, filters, group, sort, shownColumns]);
 
   // Per-group counts (of the filtered set) shown in each group header.
   const countByGroup = useMemo(() => {
@@ -276,7 +366,7 @@ export default function QueueTable<T>({
   }, [sorted]);
 
   const pg = usePagination(sorted, { resetKey: `${JSON.stringify(filters)}|${group}|${sort?.key}|${sort?.dir}` });
-  const colSpan = columns.length + (actions ? 1 : 0) + (selectable ? 1 : 0);
+  const colSpan = shownColumns.length + (actions ? 1 : 0) + (selectable ? 1 : 0);
 
   // Row multi-select (opt-in). Selection is over the currently filtered rows.
   const selectedRows = selectable ? sorted.filter((r) => selectedKeys.has(rowKey(r))) : [];
@@ -295,7 +385,41 @@ export default function QueueTable<T>({
     setSort((prev) => (prev?.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
 
   const setFilter = (key: string, val: FilterVal) => setFilters((prev) => ({ ...prev, [key]: val }));
+  /**
+   * Note this does NOT bring hidden columns back. Visibility is not a filter, and
+   * reshaping the table from a button labelled "Clear filters" would be a surprise;
+   * the Columns menu has its own "Select all".
+   */
   const clearAll = () => { setFilters({}); setGroup("all"); };
+
+  /**
+   * Put columns away / bring them back.
+   *
+   * Hiding one also RELEASES ITS FILTER AND DROPS ITS SORT. Otherwise the column
+   * keeps narrowing or ordering the table from behind a control nobody can see —
+   * and the export's About sheet would go on claiming a filter that has no
+   * on-screen existence. The row count visibly grows back, which is the honest
+   * signal that a filter was let go.
+   */
+  const applyVisible = (nextVisible: string[]) => {
+    if (!columnPicker) return;
+    const visible = new Set(nextVisible);
+    const nextHidden = new Set(
+      columns.filter((c) => !c.alwaysVisible && !visible.has(c.key)).map((c) => c.key),
+    );
+    // Never leave an empty table. Turning every OPTIONAL column off is fine where
+    // an `alwaysVisible` column survives it — a name-only list is a legitimate thing
+    // to want. It is only the truly blank result that gets refused.
+    if (!columns.some((c) => c.alwaysVisible || !nextHidden.has(c.key))) return;
+    setHiddenCols(nextHidden);
+    writeHiddenCols(columnPicker.storageKey, nextHidden);
+    setFilters((prev) => {
+      const out: Record<string, FilterVal> = {};
+      for (const [k, v] of Object.entries(prev)) if (!nextHidden.has(k)) out[k] = v;
+      return out;
+    });
+    setSort((prev) => (prev && nextHidden.has(prev.key) ? null : prev));
+  };
 
   /* ------------------------------- Excel export ------------------------------ */
 
@@ -303,7 +427,7 @@ export default function QueueTable<T>({
   const filterSummary = (): string[] => {
     const out: string[] = [];
     if (groupBy && groupNameOf && group !== "all") out.push(`${groupBy.label ?? "Group"}: ${groupNameOf(group)}`);
-    for (const col of columns) {
+    for (const col of shownColumns) {
       if (!isActive(col) || !col.filter) continue;
       const f = filters[col.key];
       if (col.filter.kind === "text") out.push(`${col.header} contains "${f as string}"`);
@@ -326,7 +450,9 @@ export default function QueueTable<T>({
       // An ungrouped table has no group column to lead with — its dimension is
       // already one of `columns`, so prepending it would export it twice.
       ...(groupBy ? [{ header: groupBy.label ?? "Group", width: 22, value: (row: T) => nameOf(row) }] : []),
-      ...columns.map((c) => ({
+      // The columns ON SCREEN. The export has always promised "what you see is what
+      // you get" about filters and sorting; putting a column away is no different.
+      ...shownColumns.map((c) => ({
         header: c.header,
         width: 20,
         value: (row: T): string | number =>
@@ -426,6 +552,19 @@ export default function QueueTable<T>({
             {groups.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
+        {/* The OPTIONAL columns only. An `alwaysVisible` column would sit here as a
+            permanently-ticked row that does nothing when clicked, which reads as a
+            broken control; it is visibly in the table already. */}
+        {columnPicker && (
+          <MultiSelect
+            values={shownColumns.filter((c) => !c.alwaysVisible).map((c) => c.key)}
+            onChange={applyVisible}
+            options={columns.filter((c) => !c.alwaysVisible).map((c) => ({ value: c.key, label: c.header }))}
+            triggerLabel="Columns"
+            className="w-auto"
+            triggerClassName="h-9 py-0 rounded-lg text-[13px] whitespace-nowrap"
+          />
+        )}
         {hasActiveFilters && (
           <button onClick={clearAll} className="inline-flex items-center gap-1.5 h-9 px-3 text-[12.5px] font-semibold text-grey-2 hover:text-orange rounded-lg hover:bg-page">
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -467,7 +606,7 @@ export default function QueueTable<T>({
                     </th>
                   )}
                   {actions && <th className="font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line w-px whitespace-nowrap">Actions</th>}
-                  {columns.map((c) => (
+                  {shownColumns.map((c) => (
                     <th key={c.key} className={`font-semibold text-[12px] uppercase tracking-wide px-4 pt-3 pb-2.5 border-b border-line ${c.align === "right" ? "text-right" : ""}`}>
                       {c.sortValue ? (
                         <button onClick={() => onSort(c.key)} className={`inline-flex items-center gap-1 hover:text-navy ${sort?.key === c.key ? "text-navy" : ""}`}>
@@ -484,7 +623,7 @@ export default function QueueTable<T>({
                 <tr className="bg-page/50">
                   {selectable && <th className="px-3 py-2.5 border-b border-line" />}
                   {actions && <th className="px-3 py-2.5 border-b border-line" />}
-                  {columns.map((c) => (
+                  {shownColumns.map((c) => (
                     <th key={c.key} className="px-3 py-2.5 border-b border-line align-middle font-normal">
                       {renderFilter(c)}
                     </th>
@@ -524,7 +663,7 @@ export default function QueueTable<T>({
                             </td>
                           )}
                           {actions && <td className="px-4 py-3 border-b border-line/70 whitespace-nowrap">{actions(row)}</td>}
-                          {columns.map((c) => (
+                          {shownColumns.map((c) => (
                             <td key={c.key} className={`px-4 py-3 border-b border-line/70 ${c.align === "right" ? "text-right" : ""} ${c.tdClassName ?? ""}`}>
                               {c.cell(row)}
                             </td>

@@ -1,7 +1,8 @@
 import { useMemo } from "react";
 import { dueState } from "@/shared/lib/workingDays";
 import { useHrStore } from "../../store";
-import type { Candidate, CandidateStage } from "../../types";
+import { PHASE_FILL, PHASE_OF } from "../../lib/board";
+import type { Candidate } from "../../types";
 
 /**
  * Where this position's people actually are, in one strip.
@@ -23,26 +24,15 @@ import type { Candidate, CandidateStage } from "../../types";
  * along" and stays legible to a colour-blind reader without one.
  */
 
-/** Phase → the stages it covers. EXHAUSTIVE over CandidateStage on purpose. */
-const PHASE_OF: Record<CandidateStage, "screening" | "interviewing" | "offer" | "hired" | "dropped"> = {
-  resume_uploaded: "screening",
-  hr_shortlisted: "screening",
-  shared_with_hod: "screening",
-  hod_shortlisted: "screening",
-  telephonic: "interviewing",
-  interview_1: "interviewing",
-  interview_2: "interviewing",
-  interview_3: "interviewing",
-  final_decision: "interviewing",
-  finalized: "offer",
-  hired: "hired",
-  disqualified: "dropped",
-};
-
+/**
+ * `PHASE_OF` and the ramp now live in lib/board.ts, beside STAGE_LABEL — the
+ * candidates list reads the same two, so a phase cannot mean one thing on this
+ * strip and another in that table.
+ */
 const BARS = [
-  { key: "screening", label: "Screening", fill: "#FFD8C2" },
-  { key: "interviewing", label: "Interviewing", fill: "#FF9C63" },
-  { key: "offer", label: "Offer out", fill: "#FF6A1F" },
+  { key: "screening", label: "Screening", fill: PHASE_FILL.screening },
+  { key: "interviewing", label: "Interviewing", fill: PHASE_FILL.interviewing },
+  { key: "offer", label: "Offer out", fill: PHASE_FILL.offer },
 ] as const;
 
 export default function PipelineSummary({ candidates }: { candidates: Candidate[] }) {

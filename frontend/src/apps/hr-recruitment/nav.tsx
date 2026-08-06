@@ -92,6 +92,10 @@ export function buildHrNav(opts: {
   // Queues: it is not one step's worklist but the whole board, and it is gated on the
   // same predicate the page itself enforces so the link and the screen agree.
   if (opts.canSeePositions) nav.push({ label: "Positions", to: `${B}/positions`, icon: ic.positions });
+  // The same data seen the other way up: Positions is one vacancy at a time, this is
+  // one person at a time across all of them. Same gate — a board you may not see has
+  // no candidates you may see either.
+  if (opts.canSeePositions) nav.push({ label: "Candidates", to: `${B}/candidates`, icon: ic.candidates });
 
   // "Actions" — the things anyone might personally start. The closure owns the
   // section header, so whichever item renders first carries it (an employee who

@@ -9,15 +9,8 @@ import { useHrStore } from "../../store";
 import { STAGE_LABEL, legalTargets, roundOf } from "../../lib/board";
 import { fitFill } from "../../lib/fit";
 import { panelNames } from "../../lib/interviewers";
+import { tintFor } from "../../lib/tint";
 import type { Candidate, CandidateStage } from "../../types";
-
-/** Stable per-person tint, so the same face keeps the same colour across renders. */
-const TINTS = ["blue", "orange", "teal", "green", "navy"];
-const tintFor = (seed: string) => {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return TINTS[h % TINTS.length];
-};
 
 /**
  * One candidate. The highlights are the ones you actually need at a glance: who

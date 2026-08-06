@@ -3,15 +3,8 @@ import Avatar from "@/shared/components/ui/Avatar";
 import Button from "@/shared/components/ui/Button";
 import { formatDateTimeDMY } from "@/shared/lib/date";
 import { useHrStore } from "../../store";
+import { tintFor } from "../../lib/tint";
 import type { Candidate, HrActivity } from "../../types";
-
-/** Stable per-person tint, matching the board cards so the same face keeps its colour. */
-const TINTS = ["blue", "orange", "teal", "green", "navy"];
-const tintFor = (seed: string) => {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
-  return TINTS[h % TINTS.length];
-};
 
 /** "Monday, 3 August" — the day heading the entries sit under. */
 const dayHeading = (iso: string) =>

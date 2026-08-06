@@ -12,6 +12,7 @@ import MrfDetail from "./pages/requisitions/MrfDetail";
 import { MrfApprovalsQueue, JobPostingQueue } from "./pages/queues/RequisitionQueues";
 import PositionsList from "./pages/positions/PositionsList";
 import PositionPipeline from "./pages/positions/PositionPipeline";
+import CandidatesList from "./pages/candidates/CandidatesList";
 import CandidatePage from "./pages/candidates/CandidatePage";
 import InterviewsQueue from "./pages/queues/InterviewsQueue";
 import OnboardingQueue from "./pages/queues/OnboardingQueue";
@@ -78,6 +79,7 @@ export default function HrApp() {
             <Route path="positions/:id" element={<PositionPipeline />} />
             {/* Top level, not under positions/:id — a notification carries a candidate
                 id and nothing else, so the page resolves its own vacancy. */}
+            <Route path="candidates" element={<CandidatesList />} />
             <Route path="candidates/:id" element={<CandidatePage />} />
             {/* The board used to live here, behind a vacancy dropdown. Old bookmarks,
                 and any notification written before the change, still land on it. */}

@@ -33,6 +33,7 @@ export default function MultiSelect({
   onChange,
   options,
   placeholder = "Any",
+  triggerLabel,
   disabled,
   className,
   triggerClassName,
@@ -47,6 +48,16 @@ export default function MultiSelect({
   options: MultiOption[];
   /** Shown on the trigger when nothing is selected (means "all"). */
   placeholder?: string;
+  /**
+   * A FIXED trigger word, replacing the usual "this, that / 3 selected" summary.
+   *
+   * For a filter, the summary IS the answer — you want to read what you picked
+   * without opening the menu. For a picker whose selection is the table itself
+   * (QueueTable's column chooser), the summary is noise: "9 selected" names
+   * nothing you can act on, while the count pill beside it already carries the
+   * number. Such a control wants to say "Columns" and stay saying it.
+   */
+  triggerLabel?: string;
   disabled?: boolean;
   className?: string;
   /** Extra classes on the trigger button — used to slim it down inside a table cell. */
@@ -85,11 +96,14 @@ export default function MultiSelect({
   const selected = options.filter((o) => selectedSet.has(o.value));
   const selectedLabels = selected.map((o) => o.label);
   const summary =
-    selectedLabels.length === 0
+    triggerLabel ??
+    (selectedLabels.length === 0
       ? placeholder
       : selectedLabels.length <= 2
         ? selectedLabels.join(", ")
-        : `${selectedLabels.length} selected`;
+        : `${selectedLabels.length} selected`);
+  /** A fixed label is the control's name, not a placeholder, so it never greys out. */
+  const summaryIsPlaceholder = !triggerLabel && selectedLabels.length === 0;
 
   const toggle = (value: string) => {
     onChange(selectedSet.has(value) ? values.filter((v) => v !== value) : [...values, value]);
@@ -204,7 +218,7 @@ export default function MultiSelect({
           triggerClassName
         )}
       >
-        <span className={cn("flex-1 truncate", selectedLabels.length === 0 && "text-grey-2")}>{summary}</span>
+        <span className={cn("flex-1 truncate", summaryIsPlaceholder && "text-grey-2")}>{summary}</span>
         {selectedLabels.length > 0 && (
           <span className="shrink-0 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-orange-soft text-orange text-[11px] font-semibold">
             {selectedLabels.length}
