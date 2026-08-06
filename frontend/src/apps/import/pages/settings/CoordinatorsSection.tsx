@@ -7,7 +7,8 @@ import { useImportStore } from "../../store";
 
 /**
  * Process Coordinator config (admin). Coordinators see every entry across all
- * stages in the Monitoring center and may nudge / escalate / reassign. They do
+ * stages in the Monitoring center and may nudge / escalate. They cannot reroute
+ * an approval — the configured approvers are the sole authority — and they do
  * not silently edit captured data.
  */
 export default function CoordinatorsSection() {
@@ -48,7 +49,7 @@ export default function CoordinatorsSection() {
   return (
     <Card className="p-5 max-w-xl">
       <div className="space-y-4">
-        <FieldLabel label="Process Coordinator(s)" hint="see all entries · nudge / escalate / reassign">
+        <FieldLabel label="Process Coordinator(s)" hint="see all entries · nudge / escalate">
           <MultiSelect
             values={picked}
             onChange={(v) => {

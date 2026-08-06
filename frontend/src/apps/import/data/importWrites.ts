@@ -1131,16 +1131,6 @@ export async function announce(input: {
   if (error) throw new Error(error.message);
 }
 
-/** Reassign an approval line to a specific approver (coordinator/admin only). */
-export async function reassignLine(input: { requestItemId: string; approverId: string; note: string | null }): Promise<void> {
-  const { error } = await db.rpc("fms_import_reassign_line", {
-    p_request_item_id: input.requestItemId,
-    p_approver_id: input.approverId,
-    p_note: input.note ?? undefined,
-  });
-  if (error) throw new Error(error.message);
-}
-
 /** Mark the given notifications read (RLS limits the update to the caller's rows). */
 export async function markNotificationsRead(ids: string[]): Promise<void> {
   if (!ids.length) return;

@@ -144,7 +144,6 @@ import {
   qcDocumentUrl as qcDocumentUrlWrite,
   type QcLineInput,
   announce as announceWrite,
-  reassignLine as reassignLineWrite,
   markNotificationsRead as markNotificationsReadWrite,
   updateSharePo as updateSharePoWrite,
   updatePayment as updatePaymentWrite,
@@ -502,8 +501,6 @@ interface ImportStoreValue {
   nudge: (input: { entityType: ImportEntity; entityId: string; recipients: string[]; label: string }) => Promise<void>;
   /** Escalate a stuck entity to the process coordinators. */
   escalate: (input: { entityType: ImportEntity; entityId: string; label: string }) => Promise<void>;
-  /** Reassign an approval line to a specific approver (coordinator/admin). */
-  reassignLine: (input: { requestItemId: string; approverId: string; note: string | null }) => Promise<void>;
 
   // directory
   profiles: Profile[];
@@ -658,23 +655,21 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
     const isActiveApprover = approvalBands.some((b) => b.active && b.approverUserId === user.id);
 
-    const canApproveLine = (line: RequestItem): boolean =>
-      isAdmin || isActiveApprover || line.assignedApproverId === user.id;
+    const canApproveLine = (_line: RequestItem): boolean => isAdmin || isActiveApprover;
 
     // Request-scoped approval, no value banding: ANY active approver may decide a
     // requisition (mirrors the RPC's fms_import_is_approver check). The basis is
     // the lines still under decision (approval/on_hold) when deciding, or the
-    // approved-but-not-yet-PO'd lines when REVISING a completed decision. Also
-    // honours a per-line manual reassign: an approver assigned any of those lines
-    // may act.
+    // approved-but-not-yet-PO'd lines when REVISING a completed decision. The
+    // configured approvers are the only ones who may act — there is no per-line
+    // override (see the removed Reassign feature).
     const linesOfRequest = (requestId: string) => itemsByGroupId.get(requestId) ?? [];
     const canApproveRequest = (r: PurchaseRequest): boolean => {
       const lines = linesOfRequest(r.id);
       const pending = lines.filter(lineInApproval);
       const basis = pending.length > 0 ? pending : lines.filter(lineInPoDesk);
       if (basis.length === 0) return false;
-      if (isAdmin || isActiveApprover) return true;
-      return basis.some((l) => l.assignedApproverId === user.id);
+      return isAdmin || isActiveApprover;
     };
 
     /**
@@ -1353,10 +1348,6 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
           recipients: processCoordinatorIds,
           meta: email.reminder("escalate", label),
         });
-        await invalidate();
-      },
-      reassignLine: async (input) => {
-        await reassignLineWrite(input);
         await invalidate();
       },
 

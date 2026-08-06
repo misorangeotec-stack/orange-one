@@ -11,6 +11,8 @@ const TYPE_META: Record<string, { label: string; dot: string }> = {
   rejected: { label: "Rejected", dot: "bg-ryg-red" },
   on_hold: { label: "Put on hold", dot: "bg-yellow" },
   cancelled: { label: "Cancelled", dot: "bg-grey-2" },
+  // Reassign was removed (the configured approvers are the sole authority), but
+  // old activity rows may still exist — keep the label so history renders.
   reassigned: { label: "Reassigned", dot: "bg-orange" },
   po_generated: { label: "PO generated", dot: "bg-teal" },
   po_shared: { label: "PO shared", dot: "bg-orange" },
