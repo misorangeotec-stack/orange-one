@@ -36,6 +36,51 @@ function headerForKey(key: string, fieldByKey: Map<string, MasterFieldDef>): str
   return fieldByKey.get(key)?.label ?? humanize(key);
 }
 
+const hasCell = (rec: Record<string, unknown>, header: string) =>
+  Object.prototype.hasOwnProperty.call(rec, header);
+const cellOf = (rec: Record<string, unknown>, header: string) => String(rec[header] ?? "").trim();
+
+/**
+ * The row's identity for the import preview.
+ *
+ * ⚠ NOT every master has a name. Order to Dispatch's customer-item mapping is
+ * NAMELESS by design — the customer↔item pair IS the record, so its value bag has
+ * no `name` key. Labelling off `values.name` alone printed "(new)" on all 1,011
+ * lines of a mapping import: a reviewer was asked to approve a wall of rows that
+ * said nothing about what they contained.
+ *
+ * So when there is no name, describe the row by its OWN fields instead — a select
+ * shown as its human option label ("RUCHIRA DIGITAL — Ink Black 5L", not two
+ * uuids). Generic, so a future nameless master gets it for free.
+ *
+ * A select that failed to resolve falls back to the raw sheet text: on an invalid
+ * row that is the whole point — the reviewer needs to see the value that didn't
+ * match, next to the reason it didn't.
+ */
+function describeRow(
+  rec: Record<string, unknown>,
+  values: Values,
+  fields: MasterFieldDef[],
+): string {
+  const name = (values.name ?? "").trim();
+  if (name) return name;
+
+  const parts: string[] = [];
+  for (const f of fields) {
+    // A custom control serialises to ids and a textarea is prose — neither
+    // identifies a row at a glance.
+    if (f.key === "name" || f.type === "custom" || f.type === "textarea") continue;
+    const raw = (values[f.key] ?? "").trim();
+    const text =
+      f.type === "select" && f.options
+        ? (raw ? f.options.find((o) => o.value === raw)?.label : "") || cellOf(rec, f.label) || raw
+        : raw;
+    if (text) parts.push(text);
+    if (parts.length === 3) break; // enough to recognise a row; more is a paragraph
+  }
+  return parts.join(" — ");
+}
+
 /**
  * Columns for one master's export: `ID` (the round-trip match key) + one per value-bag
  * key + `Active`. A `select` key shows its option label (a name, not an id); a value not
@@ -126,8 +171,7 @@ export function buildImportPlan<T extends { id: string; name: string; active: bo
   const byId = new Map(existingRows.map((r) => [r.id, r]));
 
   const plan: ImportPlan = { toAdd: [], toUpdate: [], unchanged: 0, unmatched: [], invalid: [] };
-  const has = (rec: Record<string, unknown>, header: string) => Object.prototype.hasOwnProperty.call(rec, header);
-  const cellOf = (rec: Record<string, unknown>, header: string) => String(rec[header] ?? "").trim();
+  const has = hasCell;
 
   for (const rec of records) {
     const idRaw = cellOf(rec, "ID");
@@ -170,7 +214,7 @@ export function buildImportPlan<T extends { id: string; name: string; active: bo
     }
 
     if (invalidReason) {
-      plan.invalid.push({ label: values.name || existing?.name || idRaw || "(new)", reason: invalidReason });
+      plan.invalid.push({ label: describeRow(rec, values, fields) || existing?.name || idRaw || "(new)", reason: invalidReason });
       continue;
     }
 
@@ -181,12 +225,12 @@ export function buildImportPlan<T extends { id: string; name: string; active: bo
       }
     }
     if (invalidReason) {
-      plan.invalid.push({ label: values.name || existing?.name || idRaw || "(new)", reason: invalidReason });
+      plan.invalid.push({ label: describeRow(rec, values, fields) || existing?.name || idRaw || "(new)", reason: invalidReason });
       continue;
     }
 
     const active = has(rec, "Active") ? readBool(rec["Active"]) : existing ? existing.active : true;
-    const label = values.name || existing?.name || idRaw || "(new)";
+    const label = describeRow(rec, values, fields) || existing?.name || idRaw || "(new)";
 
     if (existing) {
       const changedKeys = keys.filter((k) => (values[k] ?? "") !== (base[k] ?? ""));
