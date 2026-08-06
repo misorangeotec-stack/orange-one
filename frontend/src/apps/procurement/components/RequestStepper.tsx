@@ -29,7 +29,34 @@ export default function RequestStepper({ request }: { request: PurchaseRequest }
     return s.qcInspections.some((q) => poIds.has(q.poId) && q.result === "rejected");
   }, [s, request]);
 
-  const nodes: PoStageRailNode[] = useMemo(() => buildFlowNodes(s, showReturnBranch), [s, showReturnBranch]);
+  /**
+   * Who the Approval node should name, which depends on where the requisition is:
+   *
+   *  - still under decision → the real routing answer: the matrix band for this
+   *    requisition's approval total.
+   *  - already decided      → whoever actually signed it. Recomputing the band
+   *    here would name today's approver for yesterday's decision, and once the
+   *    lines leave approval the total collapses to 0 and the band lands on L1 —
+   *    so a ₹2L requisition the Director approved would caption "Purchase Head".
+   *  - not there yet        → undefined, so the rail falls back to the configured
+   *    approval team. Nothing is routed yet, so there is no better answer.
+   *
+   * Before this, the node always showed the fixed `step_owners.approval` row —
+   * the same names whatever the requisition was worth and whoever held it.
+   */
+  const approvalOwnerIds = useMemo(() => {
+    const lines = s.itemsForRequest(request.id);
+    if (lines.some((l) => l.status === "approval" || l.status === "on_hold")) {
+      return s.requestApprovalOwnerIds(request.id, s.requestApprovalTotal(request.id));
+    }
+    const decided = [...new Set(lines.map((l) => l.approverId).filter((id): id is string => !!id))];
+    return decided.length > 0 ? decided : undefined;
+  }, [s, request]);
+
+  const nodes: PoStageRailNode[] = useMemo(
+    () => buildFlowNodes(s, showReturnBranch, approvalOwnerIds),
+    [s, showReturnBranch, approvalOwnerIds],
+  );
 
   const { activeIndex, finished } = useMemo(() => {
     const lines = s.itemsForRequest(request.id);

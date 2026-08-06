@@ -325,7 +325,6 @@ const mapRequestItem = (r: any): RequestItem => ({
   status: r.status as LineStatus,
   approverId: r.approver_id ?? null,
   approvalTier: r.approval_tier ?? null,
-  assignedApproverId: r.assigned_approver_id ?? null,
   rejectReason: r.reject_reason ?? null,
   cancelReason: r.cancel_reason ?? null,
   sourcedAt: r.sourced_at ?? null,

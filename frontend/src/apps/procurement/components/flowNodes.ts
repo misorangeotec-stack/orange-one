@@ -57,13 +57,35 @@ const visibleStages = (showReturnBranch: boolean) =>
  * department and people who own that step. Identical resolution to PoStepper:
  * personName (not profileById), because the directory is RLS-scoped to self +
  * downline + same-department peers, so cross-department owners would render blank.
+ *
+ * `approvalOwnerIds` overrides the Approval node's people. Every other step has
+ * one fixed owner list in `step_owners`, but approval is routed per requisition —
+ * by the matrix band for its value. A caller that
+ * knows which requisition this rail belongs to (RequestStepper) passes the
+ * resolved approvers here; without it the node falls back to the `step_owners`
+ * row, which is the *configured* approval team rather than this PR's approver.
  */
-export function buildFlowNodes(s: Store, showReturnBranch = false): PoStageRailNode[] {
+export function buildFlowNodes(
+  s: Store,
+  showReturnBranch = false,
+  approvalOwnerIds?: string[],
+): PoStageRailNode[] {
   return visibleStages(showReturnBranch).map((st) => {
     const stepKey = stageStepKey(st.key);
     // `closed` has no backing step, so it has no owners to show.
     if (!stepKey) {
       return { key: st.key, label: st.label, departments: [], people: [], hasStep: false };
+    }
+    if (stepKey === "approval" && approvalOwnerIds) {
+      return {
+        key: st.key,
+        label: st.label,
+        // No department chip: these people were picked by amount, not by the
+        // department stamped on the static step_owners row.
+        departments: [],
+        people: approvalOwnerIds.map((id) => s.personName(id)).filter((n) => n !== "—"),
+        hasStep: true,
+      };
     }
     const owner = s.stepOwnerFor(stepKey);
     return {

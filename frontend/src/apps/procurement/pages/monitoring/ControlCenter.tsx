@@ -1,12 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
-import Button from "@/shared/components/ui/Button";
-import Modal from "@/shared/components/ui/Modal";
 import SharedKpi from "@/shared/components/ui/Kpi";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
-import Combobox from "@/shared/components/ui/Combobox";
-import { FieldLabel, TextArea } from "@/shared/components/ui/Form";
 import { formatDate } from "@/shared/lib/time";
 import { EMPTY_COUNTS, bucketOf, todayLocalIso, type Bucket } from "@/shared/lib/dueBuckets";
 import { useProcurementStore } from "../../store";
@@ -17,7 +13,6 @@ import { ownerResolver } from "../../lib/owners";
 import { linkResolver } from "../../lib/links";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StepPipeline, { type StepPipelineNode } from "@/shared/components/ui/StepPipeline";
-import type { RequestItem } from "../../types";
 import { appName } from "@/apps/appInfo";
 
 /** What the table is currently showing. Clicking a pipeline step pins this to "delayed". */
@@ -45,7 +40,6 @@ const PIPELINE_STEPS = STEPS.filter((s) => !s.noQueue);
  */
 export default function ControlCenter() {
   const s = useProcurementStore();
-  const [reassign, setReassign] = useState<RequestItem | null>(null);
   /** Empty = no step filter (every step shows), matching the multi-select convention. */
   const [selectedSteps, setSelectedSteps] = useState<StepKey[]>([]);
   const [scope, setScope] = useState<Scope>("delayed");
@@ -269,23 +263,6 @@ export default function ControlCenter() {
           emptyMessage="No work matches this step selection and filter."
           actions={(e) => (
             <div className="flex items-center gap-3 whitespace-nowrap">
-              {/* Reassign still targets a LINE (assigned_approver_id is per line).
-                  A requisition-scoped entry reassigns via its first line still
-                  under decision — the whole requisition is one decision anyway. */}
-              {e.stepKey === "approval" && (
-                <button
-                  onClick={() =>
-                    setReassign(
-                      e.entityType === "request"
-                        ? s.itemsForRequest(e.entityId).find((l) => l.status === "approval" || l.status === "on_hold") ?? null
-                        : lineOf(e) ?? null
-                    )
-                  }
-                  className="text-[12.5px] font-semibold text-grey hover:text-navy"
-                >
-                  Reassign
-                </button>
-              )}
               <Link to={linkOf(e)} className="text-[12.5px] font-semibold text-orange hover:underline">
                 Open
               </Link>
@@ -293,8 +270,6 @@ export default function ControlCenter() {
           )}
         />
       </Card>
-
-      <ReassignModal line={reassign} onClose={() => setReassign(null)} />
     </div>
   );
 }
@@ -333,60 +308,3 @@ function Kpi({ label, value, hint, tone, hero }: { label: string; value: number;
   return <SharedKpi label={label} value={value} hint={hint} tone={tone} size={hero ? "hero" : "md"} />;
 }
 
-/** Reassign an approval line to a chosen approver (coordinator/admin). */
-function ReassignModal({ line, onClose }: { line: RequestItem | null; onClose: () => void }) {
-  const s = useProcurementStore();
-  const [approverId, setApproverId] = useState("");
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  const options = useMemo(
-    () => s.profiles.map((p) => ({ value: p.id, label: p.name, sublabel: p.designation ?? undefined })),
-    [s.profiles]
-  );
-
-  const submit = async () => {
-    if (!line) return;
-    if (!approverId) return setErr("Pick an approver.");
-    setBusy(true);
-    setErr(null);
-    try {
-      await s.reassignLine({ requestItemId: line.id, approverId, note: note.trim() || null });
-      setApproverId("");
-      setNote("");
-      onClose();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal
-      open={line !== null}
-      onClose={onClose}
-      title="Reassign approval"
-      footer={
-        <>
-          <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" onClick={submit} disabled={busy}>{busy ? "Reassigning…" : "Reassign"}</Button>
-        </>
-      }
-    >
-      <div className="space-y-3">
-        <p className="text-[13px] text-grey">
-          {line ? `${s.itemLabel(line.itemId)} · ${inr(line.lineValue)}` : ""}. The chosen approver will be able to act on this line and is notified.
-        </p>
-        <FieldLabel label="Approver" required>
-          <Combobox value={approverId} onChange={setApproverId} options={options} placeholder="Select approver…" searchable autoAdvance />
-        </FieldLabel>
-        <FieldLabel label="Note">
-          <TextArea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional message to the approver" />
-        </FieldLabel>
-        {err && <p className="text-[12.5px] text-ryg-red">{err}</p>}
-      </div>
-    </Modal>
-  );
-}

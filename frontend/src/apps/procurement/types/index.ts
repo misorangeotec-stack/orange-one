@@ -197,7 +197,6 @@ export interface RequestItem {
   status: LineStatus;
   approverId: string | null;
   approvalTier: string | null;
-  assignedApproverId: string | null;
   rejectReason: string | null;
   cancelReason: string | null;
   /** When sourcing was saved — the `sourcing` step's completion timestamp. */

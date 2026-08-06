@@ -37,6 +37,19 @@ export interface OwnerResolver {
   /** Every user who owns this work-item. Empty means unassigned. */
   ownerIdsOf: (e: QueueEntry) => string[];
   isMine: (e: QueueEntry, userId: string) => boolean;
+  /**
+   * Who may decide THIS requisition's approval — the matrix band for `total`, and
+   * nothing else. The band is the single authority on approval routing; there is
+   * deliberately no per-requisition override (see the removed Reassign feature).
+   *
+   * Exposed separately from `ownerIdsOf` because the request stepper has to caption
+   * its Approval node and holds a requisition, not a QueueEntry. It used to caption
+   * that node from `step_owners.approval` instead, which is a FIXED list that knows
+   * nothing about the amount — so the rail cheerfully printed the Director's name on
+   * a ₹34k requisition that routes to L2. Both callers now go through this one
+   * function; do not reintroduce a second answer.
+   */
+  requestApprovalOwnerIds: (requestId: string, total: number) => string[];
 }
 
 export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
@@ -69,27 +82,41 @@ export function ownerResolver(data: OwnerSnapshot): OwnerResolver {
 
   const stepOwnerIds = (stepKey: string): string[] => stepOwnerFor(stepKey)?.employeeIds ?? [];
 
+  /** The band for what these lines are worth. The matrix is the only routing input. */
+  const approvalOwnersOf = (_lines: RequestItem[], total: number): string[] => approversForAmount(total);
+
+  /** The lines actually under decision — the same set `requestApprovalTotal` sums. */
+  const linesInApproval = (requestId: string): RequestItem[] =>
+    (linesByRequest.get(requestId) ?? []).filter((l) => l.status === "approval" || l.status === "on_hold");
+
+  const requestApprovalOwnerIds = (requestId: string, total: number): string[] =>
+    approvalOwnersOf(linesInApproval(requestId), total);
+
   /**
    * Every step reads its owners from `step_owners`, except `approval` — there the
-   * owner depends on the entry's value (the approval matrix band), plus any manual
-   * reassign override stamped on an individual line.
+   * owner depends on the entry's value (the approval matrix band).
    */
   const ownerIdsOf = (e: QueueEntry): string[] => {
     if (e.stepKey === ("approval" as StepKey)) {
-      // Requisition-scoped: band on the entry's own total (the same figure the
-      // RPC uses), plus anyone manually reassigned onto one of its lines.
-      const ids = new Set<string>(approversForAmount(e.value ?? 0));
-      const lines =
-        e.entityType === "request"
-          ? (linesByRequest.get(e.entityId) ?? []).filter((l) => l.status === "approval" || l.status === "on_hold")
-          : [lineById.get(e.entityId)].filter((l): l is RequestItem => !!l);
-      for (const l of lines) if (l.assignedApproverId) ids.add(l.assignedApproverId);
-      return [...ids];
+      // Band on the entry's own total — the same figure the RPC uses.
+      return e.entityType === "request"
+        ? requestApprovalOwnerIds(e.entityId, e.value ?? 0)
+        : approvalOwnersOf(
+            [lineById.get(e.entityId)].filter((l): l is RequestItem => !!l),
+            e.value ?? 0
+          );
     }
     return stepOwnerIds(e.stepKey);
   };
 
   const isMine = (e: QueueEntry, userId: string): boolean => ownerIdsOf(e).includes(userId);
 
-  return { approversForAmount, stepOwnerFor, stepOwnerIds, ownerIdsOf, isMine };
+  return {
+    approversForAmount,
+    stepOwnerFor,
+    stepOwnerIds,
+    ownerIdsOf,
+    isMine,
+    requestApprovalOwnerIds,
+  };
 }

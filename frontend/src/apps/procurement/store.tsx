@@ -158,7 +158,6 @@ import {
   qcDocumentUrl as qcDocumentUrlWrite,
   type QcLineInput,
   announce as announceWrite,
-  reassignLine as reassignLineWrite,
   markNotificationsRead as markNotificationsReadWrite,
   type ProcEntity,
   type CompanyInput,
@@ -241,6 +240,12 @@ interface ProcurementStoreValue {
    * decide — so this returns a list, not a winner.
    */
   approversForAmount: (amount: number) => string[];
+  /**
+   * Who may decide a given requisition's approval: the matrix band for its total.
+   * Use this — never `stepOwnerFor("approval")` — whenever you need to NAME a
+   * requisition's approvers; that row is a fixed list and ignores the amount.
+   */
+  requestApprovalOwnerIds: (requestId: string, total: number) => string[];
   /** True when the current user is an approver in the matrix (or admin). */
   isApprover: boolean;
   processCoordinatorIds: string[];
@@ -515,8 +520,6 @@ interface ProcurementStoreValue {
   nudge: (input: { entityType: ProcEntity; entityId: string; recipients: string[]; label: string }) => Promise<void>;
   /** Escalate a stuck entity to the process coordinators. */
   escalate: (input: { entityType: ProcEntity; entityId: string; label: string }) => Promise<void>;
-  /** Reassign an approval line to a specific approver (coordinator/admin). */
-  reassignLine: (input: { requestItemId: string; approverId: string; note: string | null }) => Promise<void>;
 
   // directory
   profiles: Profile[];
@@ -811,6 +814,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       stepOwnerFor: owners.stepOwnerFor,
       approvalBands,
       approversForAmount,
+      requestApprovalOwnerIds: owners.requestApprovalOwnerIds,
       isApprover: isAdmin || approvalBands.some((b) => b.approverUserIds.includes(user.id)),
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
@@ -1442,10 +1446,6 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
           recipients: processCoordinatorIds,
           meta: email.reminder("escalate", label),
         });
-        await invalidate();
-      },
-      reassignLine: async (input) => {
-        await reassignLineWrite(input);
         await invalidate();
       },
 

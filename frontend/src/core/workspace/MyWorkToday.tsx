@@ -356,7 +356,9 @@ export function MyWorkView({ state }: { state: AggregateState }) {
         ))}
       </div>
 
-      {approvals.length > 0 && <ApprovalStrip items={approvals} />}
+      {/* Only an admin in All-work mode sees approvals that are not their own —
+          non-admins are scoped to themselves by every provider. */}
+      {approvals.length > 0 && <ApprovalStrip items={approvals} mine={!isAdmin || scope === "mine"} />}
 
       <Card className="overflow-hidden">
         <div className="px-4 pt-4 pb-3 border-b border-line space-y-3">
@@ -657,15 +659,25 @@ function KpiTile({
   );
 }
 
-/** Approvals are the thing people most often miss, so they sit above the list. */
-function ApprovalStrip({ items }: { items: WorkItem[] }) {
+/**
+ * Approvals are the thing people most often miss, so they sit above the list.
+ *
+ * `mine` is NOT cosmetic. An admin in All-work mode is looking at every approval
+ * in the book, most of them routed to someone else — heading that "waiting for
+ * YOUR approval" reads as a personal queue and sends them hunting for work they
+ * were never assigned. In that mode the title drops the possessive and each row
+ * that genuinely is theirs is tagged instead.
+ */
+function ApprovalStrip({ items, mine }: { items: WorkItem[]; mine: boolean }) {
   return (
     <Card className="p-4 border-orange/30 bg-orange-soft/25">
       <div className="flex items-center gap-2 mb-2.5">
         <span className="w-6 h-6 rounded-lg bg-orange text-white flex items-center justify-center [&>svg]:w-3.5 [&>svg]:h-3.5">
           <IconStamp />
         </span>
-        <h2 className="text-[13.5px] font-semibold text-navy">Waiting for your approval</h2>
+        <h2 className="text-[13.5px] font-semibold text-navy">
+          {mine ? "Waiting for your approval" : "Waiting for approval"}
+        </h2>
         <span className="text-[11px] font-bold text-orange bg-white rounded-full px-2 py-0.5 tabular-nums">
           {items.length}
         </span>
@@ -684,6 +696,11 @@ function ApprovalStrip({ items }: { items: WorkItem[] }) {
             <span className="text-[11px]">
               <DueCell dueIso={item.dueIso} />
             </span>
+            {!mine && item.assignment === "direct" && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide rounded-full bg-orange-soft text-orange px-1.5 py-0.5">
+                You
+              </span>
+            )}
           </Link>
         ))}
         {items.length > 8 && (
