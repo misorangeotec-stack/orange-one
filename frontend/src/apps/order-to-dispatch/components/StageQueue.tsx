@@ -89,9 +89,14 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
     },
     // Settled at intake, so they are known on every queue including this step's.
     // QueueTable derives its .xlsx from `columns`, so these export for free.
+    //
+    // ⚠ TWO LOCATIONS, AND BOTH HEADERS SAY WHICH. "Location" alone was fine
+    //   while there was only one; now that the order also records the site it
+    //   leaves FROM, an unqualified header is the fastest way to have somebody
+    //   filter the wrong one.
     {
-      key: "location",
-      header: "Location",
+      key: "customerLocation",
+      header: "Customer location",
       cell: (r) => <span className="text-grey">{r.order.customerLocation ?? "—"}</span>,
       sortValue: (r) => r.order.customerLocation ?? "",
       filter: { kind: "select", get: (r) => r.order.customerLocation ?? "—" },
@@ -102,6 +107,15 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       cell: (r) => <span className="text-grey">{s.masterName("company", r.order.companyId)}</span>,
       sortValue: (r) => s.masterName("company", r.order.companyId),
       filter: { kind: "select", get: (r) => s.masterName("company", r.order.companyId) },
+    },
+    {
+      key: "dispatchLocation",
+      header: "Dispatch location",
+      cell: (r) => (
+        <span className="text-grey">{s.masterName("company_location", r.order.locationId)}</span>
+      ),
+      sortValue: (r) => s.masterName("company_location", r.order.locationId),
+      filter: { kind: "select", get: (r) => s.masterName("company_location", r.order.locationId) },
     },
     {
       key: "poNo",
@@ -186,11 +200,27 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       filter: { kind: "select", get: (e) => s.customerName(e.row.customerId) },
     },
     {
-      key: "location",
-      header: "Location",
+      key: "customerLocation",
+      header: "Customer location",
       cell: (e) => <span className="text-grey">{e.row.customerLocation ?? "—"}</span>,
       sortValue: (e) => e.row.customerLocation ?? "",
       filter: { kind: "select", get: (e) => e.row.customerLocation ?? "—" },
+    },
+    {
+      // The ROUND first, for the same reason the company column reads it first:
+      // an archived round keeps its own frozen copy.
+      key: "dispatchLocation",
+      header: "Dispatch location",
+      cell: (e) => (
+        <span className="text-grey">
+          {s.masterName("company_location", e.view.locationId ?? e.row.locationId)}
+        </span>
+      ),
+      sortValue: (e) => s.masterName("company_location", e.view.locationId ?? e.row.locationId),
+      filter: {
+        kind: "select",
+        get: (e) => s.masterName("company_location", e.view.locationId ?? e.row.locationId),
+      },
     },
     {
       key: "company",

@@ -6,7 +6,7 @@ const db = supabase as any;
 
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
-  Company, Customer, Designation, DispatchActivity, DispatchMasterRequest,
+  Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
   CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, DispatchRound, Item,
   MasterManager, NamedMaster, OrderLine, RoundItem, StepOwner,
 } from "../types";
@@ -33,6 +33,7 @@ type Tbl =
   | "fms_dispatch_step_owners"
   | "fms_dispatch_config"
   | "fms_dispatch_companies"
+  | "fms_dispatch_company_locations"
   | "fms_dispatch_customer_items"
   | "fms_dispatch_customers"
   | "fms_dispatch_items"
@@ -105,6 +106,7 @@ export interface DispatchData {
   config: DispatchConfig;
 
   companies: Company[];
+  companyLocations: CompanyLocation[];
   customers: Customer[];
   items: Item[];
   customerItems: CustomerItem[];
@@ -180,6 +182,13 @@ const mapRound = (r: any): DispatchRound => ({
   roundNo: r.round_no,
   roundStartedAt: r.round_started_at ?? null,
   companyId: r.company_id ?? null,
+  locationId: r.location_id ?? null,
+
+  ccStatus: r.cc_status ?? null,
+  ccApprovedQty: num(r.cc_approved_qty),
+  ccRemarks: str(r.cc_remarks),
+  ccAt: r.cc_at ?? null,
+  ccBy: r.cc_by ?? null,
 
   msActualDate: r.ms_actual_date ?? null,
   msTempoNo: str(r.ms_tempo_no),
@@ -227,6 +236,7 @@ const mapOrder = (r: any): DispatchOrder => ({
 
   dispatchType: r.dispatch_type,
   companyId: r.company_id ?? null,
+  locationId: r.location_id ?? null,
   customerId: r.customer_id,
   customerLocation: str(r.customer_location),
   customerPoNo: str(r.customer_po_no),
@@ -244,6 +254,8 @@ const mapOrder = (r: any): DispatchOrder => ({
 
   ccStatus: r.cc_status ?? null,
   ccRemarks: str(r.cc_remarks),
+  ccApprovedQty: num(r.cc_approved_qty),
+  ccRoundNo: num(r.cc_round_no),
   ccDecidedAt: r.cc_decided_at ?? null,
   ccDecidedBy: r.cc_decided_by ?? null,
   ccAt: r.cc_at ?? null,
@@ -299,6 +311,7 @@ const mapOrder = (r: any): DispatchOrder => ({
 const mapStepOwner = (r: any): StepOwner => ({
   id: r.id,
   stepKey: r.step_key,
+  locationId: r.location_id ?? null,
   departmentIds: (r.department_ids ?? []) as string[],
   designationId: r.designation_id ?? null,
   employeeIds: (r.employee_ids ?? []) as string[],
@@ -330,10 +343,10 @@ const mapNotification = (r: any): DispatchNotification => ({
 });
 
 export async function fetchDispatchData(): Promise<DispatchData> {
-  // 15 names, 15 calls. Keep them in step.
+  // 16 names, 16 calls. Keep them in step.
   const [
     stepOwners, configRows, designations,
-    companies, customerItems, customers, items,
+    companies, companyLocations, customerItems, customers, items,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
     activity, notifications,
@@ -342,6 +355,7 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchAll("fms_dispatch_config", "key"),
     fetchAll("designations"),
     fetchAll("fms_dispatch_companies"),
+    fetchAll("fms_dispatch_company_locations"),
     fetchAll("fms_dispatch_customer_items"),
     fetchAll("fms_dispatch_customers"),
     fetchAll("fms_dispatch_items"),
@@ -407,6 +421,9 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     config,
 
     companies: companies.map((r): Company => ({ ...mapMaster(r), gstin: str(r.gstin), address: str(r.address) })),
+    companyLocations: companyLocations.map((r): CompanyLocation => ({
+      ...mapMaster(r), companyId: r.company_id,
+    })),
     customers: customers.map(mapCustomer),
     items: items.map((r): Item => ({
       ...mapMaster(r), code: str(r.code), unit: str(r.unit), hsnCode: str(r.hsn_code),

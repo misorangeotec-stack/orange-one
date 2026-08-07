@@ -82,16 +82,36 @@ export default function OrderRefPanel({
             first two.
         */}
         <Field label="Billing company" value={s.masterName("company", round.companyId ?? order.companyId)} />
+        {/* Same round-first fallback, same reason. Sits beside the company because
+            it is that company's site — reading them apart invites the wrong one. */}
+        <Field
+          label="Dispatch location"
+          value={s.masterName("company_location", round.locationId ?? order.locationId)}
+        />
         <Field label="Customer PO no." value={order.customerPoNo ?? "—"} />
         <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
         <Field label="Order date" value={dmy(order.orderDate)} />
         <Field label="Raised by" value={order.requesterName} />
         {order.orderRemarks && <Field label="Order remarks" value={order.orderRemarks} />}
 
+        {/*
+          ⚠ READ OFF THE ORDER HEADER, NOT THE ROUND, and that is deliberate. This
+            card answers "what is credit's decision on this order right now",
+            which is the question a store keeper or a biller has. The ROUND
+            carries the decision that was MADE in it — null on a round running
+            under an earlier approval — and showing that here would print a dash
+            on every looped consignment that is perfectly well authorised.
+        */}
         {showCredit && (
           <Field
             label="Credit"
-            value={order.ccStatus ? CREDIT_STATUS_LABEL[order.ccStatus] : "—"}
+            value={
+              order.ccStatus
+                ? order.ccStatus === "partial" && order.ccApprovedQty != null
+                  ? `${CREDIT_STATUS_LABEL[order.ccStatus]} · ${order.ccApprovedQty} approved`
+                  : CREDIT_STATUS_LABEL[order.ccStatus]
+                : "—"
+            }
           />
         )}
         {showCredit && order.ccRemarks && <Field label="Credit remark" value={order.ccRemarks} />}

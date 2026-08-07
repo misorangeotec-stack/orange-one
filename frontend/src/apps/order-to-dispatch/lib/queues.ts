@@ -52,15 +52,25 @@ const AT: Record<QueueStep, (o: DispatchOrder) => string | null> = {
   dispatch_confirm: (o) => o.dcAt,
 };
 
-/** The same four steps read off ANY round — live or archived. */
-const ROUND_AT: Record<Exclude<QueueStep, "credit_check">, (v: RoundView) => string | null> = {
+/**
+ * The same five steps read off ANY round — live or archived.
+ *
+ * ⚠ CREDIT IS IN HERE NOW. It used to be excluded because credit was decided
+ *   once per order; partial approval releases a quantity, so an order whose
+ *   approved quantity has all gone out comes back for another decision. Credit
+ *   is therefore per round like everything else, and a round that merely
+ *   inherited an earlier decision projects a null here.
+ */
+const ROUND_AT: Record<QueueStep, (v: RoundView) => string | null> = {
+  credit_check: (v) => v.ccAt,
   material_status: (v) => v.msAt,
   sales_bill: (v) => v.sbAt,
   gate_out: (v) => v.goAt,
   dispatch_confirm: (v) => v.dcAt,
 };
 
-const ROUND_BY: Record<Exclude<QueueStep, "credit_check">, (v: RoundView) => string | null> = {
+const ROUND_BY: Record<QueueStep, (v: RoundView) => string | null> = {
+  credit_check: (v) => v.ccBy,
   material_status: (v) => v.msBy,
   sales_bill: (v) => v.sbBy,
   gate_out: (v) => v.goBy,
@@ -94,9 +104,16 @@ const BY: Record<QueueStep, (o: DispatchOrder) => string | null> = {
  * The 12PM same-day cut-off now applies to the moment the order (re)entered the
  * store's queue, which for round 1 is still the order receipt. lib/sla.ts says
  * the same thing; the two must stay in step.
+ *
+ *   credit_check is round-scoped for the SAME reason, and this is new. A partial
+ *   approval sends an order back here once its approved quantity has gone out,
+ *   and the loop-back clears cc_decided_at. Falling through to `submittedAt`
+ *   would date round 2's credit clock from the day the order was raised — every
+ *   returning order permanently overdue, exactly the failure described above.
  */
 const ANCHOR_AT: Record<QueueStep, (o: DispatchOrder, v: RoundView | null) => string | null> = {
-  credit_check: (o) => o.ccDecidedAt ?? o.submittedAt,
+  credit_check: (o, v) =>
+    o.ccDecidedAt ?? (o.roundNo > 1 ? (v?.roundStartedAt ?? o.roundStartedAt) : o.submittedAt),
   material_status: (o, v) => v?.roundStartedAt ?? o.roundStartedAt,
   sales_bill: (_o, v) => v?.msAt ?? null,
   gate_out: (_o, v) => v?.sbAt ?? null,
@@ -202,37 +219,24 @@ const ARCHIVED_LOCK = (roundNo: number) =>
 /**
  * Every completed entry for one step — what the stage view's Completed tab renders.
  *
- * ⚠ Credit is decided ONCE PER ORDER, so it yields at most one row however many
- *   rounds an order has. The other four are per round, and MUST read the archive
- *   as well as the live header: the moment an order loops, its header is wiped,
- *   and a header-only read would make every earlier round's work vanish from the
- *   screen, from the throughput card and from the register.
+ * ⚠ ALL FIVE STEPS ARE PER ROUND, credit included. That is a change: credit used
+ *   to be decided once per order and had its own branch here, pinned to
+ *   `roundNo: 0`. Partial approval releases a QUANTITY, so an order whose
+ *   approved quantity has all gone out returns for a second decision — and two
+ *   decisions sharing one row id would have shown only the later one.
+ *
+ * ⚠ MUST read the archive as well as the live header: the moment an order loops,
+ *   its header is wiped, and a header-only read would make every earlier round's
+ *   work vanish from the screen, from the throughput card and from the register.
+ *   A round that ran under an EARLIER round's credit decision projects a null
+ *   `ccAt` and is skipped here, so one decision yields exactly one row.
  */
 export function completedFor(snap: DispatchSnapshot, step: QueueStep): StageEntry<DispatchOrder>[] {
   const out: StageEntry<DispatchOrder>[] = [];
+  const at = ROUND_AT[step];
+  const by = ROUND_BY[step];
 
   for (const o of snap.orders) {
-    if (step === "credit_check") {
-      if (!o.ccAt) continue;
-      out.push({
-        id: `${o.id}:0:credit_check`,
-        stepKey: step,
-        orderId: o.id,
-        ref: o.orderNo,
-        roundNo: 0,
-        view: currentRoundView(o) ?? { ...EMPTY_VIEW, roundNo: o.roundNo },
-        actorId: o.ccBy,
-        atIso: o.ccAt,
-        editedAtIso: o.ccEditedAt,
-        editedById: o.ccEditedBy,
-        lockReason: lockReasonFor(step, o),
-        row: o,
-      });
-      continue;
-    }
-
-    const at = ROUND_AT[step];
-    const by = ROUND_BY[step];
     for (const v of allRoundViews(o)) {
       const done = at(v);
       if (!done) continue;
@@ -245,8 +249,10 @@ export function completedFor(snap: DispatchSnapshot, step: QueueStep): StageEntr
         view: v,
         actorId: by(v),
         atIso: done,
-        editedAtIso: v.editedAt,
-        editedById: v.editedBy,
+        // Credit's own edit stamps live on the order header — there is one
+        // editable credit decision at a time, the one on the live round.
+        editedAtIso: step === "credit_check" ? (v.isArchived ? null : o.ccEditedAt) : v.editedAt,
+        editedById: step === "credit_check" ? (v.isArchived ? null : o.ccEditedBy) : v.editedBy,
         lockReason: v.isArchived ? ARCHIVED_LOCK(v.roundNo) : lockReasonFor(step, o),
         row: o,
       });
@@ -254,18 +260,6 @@ export function completedFor(snap: DispatchSnapshot, step: QueueStep): StageEntr
   }
   return out;
 }
-
-/** Placeholder for the impossible case of a credit row on an order with no live round. */
-const EMPTY_VIEW: RoundView = {
-  roundNo: 1, isArchived: true, roundId: null, roundStartedAt: null, companyId: null,
-  msActualDate: null, msTempoNo: null, msPorter: null, msRemarks: null, msAt: null, msBy: null,
-  sbActualDate: null, sbInvoiceNo: null, sbAttachmentPath: null, sbAttachmentName: null,
-  sbRemarks: null, sbAt: null, sbBy: null,
-  goActualDate: null, goOutwardNo: null, goRemarks: null, goAt: null, goBy: null,
-  dcActualDate: null, dcStatus: null, dcAttachmentPath: null, dcAttachmentName: null,
-  dcRemarks: null, dcAt: null, dcBy: null,
-  editedAt: null, editedBy: null, amendedAt: null, amendReason: null, items: [],
-};
 
 /** Every open work-item, one per (current step, order). */
 export function buildQueueEntries(snap: DispatchSnapshot): QueueEntry[] {

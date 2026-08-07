@@ -11,8 +11,15 @@
  *
  * ⚠ EVERY GETTER TAKES THE ROUND, NOT JUST THE ORDER. After a loop-back the order
  *   row holds round N while a Completed tab may be showing round 1; reading the
- *   header would show the wrong invoice under the right heading. `o` is for
- *   order-scoped facts (credit), `v` for everything round-scoped.
+ *   header would show the wrong invoice under the right heading.
+ *
+ * ⚠ CREDIT IS NO LONGER THE ORDER-SCOPED EXCEPTION. It used to be the one thing
+ *   read off `o`, because it was decided once and survived every round. Partial
+ *   approval releases a quantity, so an order comes back for a fresh decision
+ *   once that quantity has gone out — and a Completed row for round 1 must show
+ *   round 1's decision, not the one governing the order today. Read `v`.
+ *   (`OrderRefPanel` still reads the header, deliberately: its credit card
+ *   answers "what is governing this order", which is a different question.)
  *
  * This module stays PURE — no React, no store import.
  */
@@ -122,13 +129,27 @@ export interface StepConfig {
   };
   /** Renders the per-line ship-quantity grid. */
   lines?: "ship";
+  /**
+   * Renders the linked percentage / quantity control for a partial credit
+   * release. A flag rather than a field descriptor for the same reason `lines`
+   * is one: the modal holds its values as `Record<string, string>` and posts
+   * them verbatim, so a pair of inputs that write each other has nowhere to live
+   * in a single-key descriptor.
+   */
+  approvedQty?: boolean;
   /** The one column the Completed tab shows. */
   captured: CapturedColumn;
 }
 
-/** Sheet dropdown: the credit decision. */
+/**
+ * Sheet dropdown: the credit decision.
+ *
+ * Ordered release-everything → release-some → release-nothing, so the list reads
+ * as one scale rather than three unrelated buttons.
+ */
 export const CREDIT_STATUS_OPTIONS = [
   { value: "approved", label: CREDIT_STATUS_LABEL.approved },
+  { value: "partial", label: CREDIT_STATUS_LABEL.partial },
   { value: "credit_hold", label: CREDIT_STATUS_LABEL.credit_hold },
 ];
 
@@ -161,25 +182,36 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
     title: "Confirm Credit Limit",
     actionLabel: "Record credit decision",
     description:
-      "Orders waiting on the collection team to approve the customer's credit, or hold the order until payment lands.",
-    completedBlurb: "Approvals you record appear here, and stay revisable until the stock check is recorded.",
+      "Orders waiting on the collection team to approve the customer's credit, release part of it, or hold the order until payment lands.",
+    completedBlurb: "Decisions you record appear here, and stay revisable until the stock check is recorded.",
     // Credit is judged against what is actually being asked for, so the whole order
     // — header plus every item line — opens above the decision.
     context: { showOrderLines: true },
     fields: [
       {
         key: "cc_status", label: "Credit outcome", kind: "select", required: true,
-        choices: CREDIT_STATUS_OPTIONS, get: (o) => s(o.ccStatus),
+        choices: CREDIT_STATUS_OPTIONS, get: (_o, v) => s(v.ccStatus),
       },
       {
-        key: "cc_remarks", label: "Remarks", kind: "textarea", get: (o) => s(o.ccRemarks),
-        requiredWhen: (v) => v.cc_status === "credit_hold",
-        placeholder: "why the order is being held",
+        key: "cc_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.ccRemarks),
+        // A hold and a part-release are both judgements someone downstream has
+        // to act on, so both owe a reason. A full approval does not.
+        requiredWhen: (v) => v.cc_status === "credit_hold" || v.cc_status === "partial",
+        placeholder: "why the order is being held, or how much is released and why",
       },
     ],
+    approvedQty: true,
     captured: {
       key: "ccStatus", header: "Credit outcome",
-      get: (o) => (o.ccStatus ? CREDIT_STATUS_LABEL[o.ccStatus] : "—"),
+      get: (o, v) => {
+        if (!v.ccStatus) return "—";
+        const label = CREDIT_STATUS_LABEL[v.ccStatus];
+        if (v.ccStatus !== "partial" || v.ccApprovedQty == null) return label;
+        // The figure IS the decision on a partial, so the column shows it rather
+        // than a word that could mean anything from 1 kg to 69.
+        const ordered = o.lines.reduce((a, l) => a + (Number(l.quantity) || 0), 0);
+        return `${label} · ${v.ccApprovedQty} of ${ordered}`;
+      },
     },
   },
 
@@ -321,12 +353,12 @@ export function missingRequired(
 }
 
 /** Used by the order register for the "Actual" column of each step. */
-export const stepActualDate = (step: QueueStep, o: DispatchOrder, v: RoundView): string => {
+export const stepActualDate = (step: QueueStep, _o: DispatchOrder, v: RoundView): string => {
   if (step === "credit_check") {
     // cc_actual_date was dropped with the rest of the credit capture; the
     // completion stamp is a TIMESTAMP, so slice it before it reaches a
     // date-only formatter — feeding it whole yields "NaN" in the export.
-    return dmy(o.ccAt ? o.ccAt.slice(0, 10) : null);
+    return dmy(v.ccAt ? v.ccAt.slice(0, 10) : null);
   }
   const raw =
     step === "material_status" ? v.msActualDate

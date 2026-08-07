@@ -8,9 +8,13 @@
  * never appear twice here. There are NO approval steps in this flow — isApproval
  * is always false.
  *
- * The delivery-confirmation step has one extra owner the step-owner list does not
- * know about: the portal user linked to the order's driver. That mirrors
- * `fms_dispatch_can_act`, so a driver sees their own delivery on this screen.
+ * ⚠ OWNERSHIP HERE IS PER LOCATION, so this does NOT use the shared
+ *   `isMineByStepOwners`. That helper answers "is this user in the one owner row
+ *   for this step", which is exactly right for HR, Exit and Purchase — none of
+ *   which have locations — and wrong here twice over: dispatch now has SEVERAL
+ *   rows per step, so its `.find()` would silently pick whichever came first,
+ *   and owning gate-out at Vapi should not put an Ahmedabad order on your list.
+ *   `ownsStepAt` below is the local rule and mirrors `fms_dispatch_is_step_owner`.
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -19,8 +23,25 @@ import { appName } from "@/apps/appInfo";
 import { fetchDispatchData, dispatchQueryKey } from "@/apps/order-to-dispatch/data/dispatchFetch";
 import { buildQueueEntries, dispatchSnapshotFrom } from "@/apps/order-to-dispatch/lib/queues";
 import { stepByKey } from "@/apps/order-to-dispatch/lib/steps";
-import { isMineByStepOwners } from "@/shared/lib/fmsOwners";
+import type { StepOwner } from "@/apps/order-to-dispatch/types";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
+
+/**
+ * Does `uid` own `stepKey` at `locationId`? A row with a null location is the
+ * fallback grant and covers every site.
+ */
+const ownsStepAt = (
+  stepKey: string,
+  locationId: string | null,
+  uid: string,
+  owners: StepOwner[],
+): boolean =>
+  owners.some(
+    (o) =>
+      o.stepKey === stepKey &&
+      o.employeeIds.includes(uid) &&
+      (o.locationId === null || o.locationId === locationId),
+  );
 
 function useDispatchWork(active: boolean): MyWorkResult {
   const { user, isAdmin } = useSession();
@@ -43,7 +64,7 @@ function useDispatchWork(active: boolean): MyWorkResult {
      */
 
     return buildQueueEntries(dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla }))
-      .filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners))
+      .filter((e) => isAdmin || ownsStepAt(e.stepKey, orderById.get(e.orderId)?.locationId ?? null, uid, owners))
       .map((e) => {
         const o = orderById.get(e.orderId);
         return {
@@ -62,7 +83,9 @@ function useDispatchWork(active: boolean): MyWorkResult {
           stage: stepByKey(e.stepKey)?.short,
           dueIso: e.dueIso,
           to: `/order-to-dispatch/orders/${e.orderId}`,
-          assignment: isMineByStepOwners(e.stepKey, uid, owners) ? ("direct" as const) : ("team" as const),
+          assignment: ownsStepAt(e.stepKey, o?.locationId ?? null, uid, owners)
+            ? ("direct" as const)
+            : ("team" as const),
           isApproval: false,
         };
       });

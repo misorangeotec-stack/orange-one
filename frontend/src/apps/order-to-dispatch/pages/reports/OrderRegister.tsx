@@ -67,6 +67,7 @@ export default function OrderRegister() {
         customerName: s.customerName,
         itemName: s.itemName,
         companyName: (id) => s.masterName("company", id),
+        locationName: (id) => s.masterName("company_location", id),
       },
       filters,
     );

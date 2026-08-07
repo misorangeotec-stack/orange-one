@@ -42,6 +42,7 @@ export const DISPATCH_TYPE_LABEL: Record<DispatchType, string> = {
 
 export const CREDIT_STATUS_LABEL: Record<CreditStatus, string> = {
   approved: "Approved",
+  partial: "Partially approved",
   credit_hold: "On hold",
 };
 

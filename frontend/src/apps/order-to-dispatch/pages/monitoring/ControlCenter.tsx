@@ -62,6 +62,10 @@ export default function ControlCenter() {
     [s, today],
   );
 
+  /** Who owns this entry's step AT THIS ORDER'S SITE. */
+  const ownersOf = (e: QueueEntry): string[] =>
+    s.ownerNamesFor(e.stepKey, s.orderById(e.entityId)?.locationId ?? null);
+
   const columns: QueueColumn<QueueEntry>[] = [
     {
       key: "ref",
@@ -82,14 +86,17 @@ export default function ControlCenter() {
       filter: { kind: "select", get: (e) => stepByKey(e.stepKey)?.title ?? e.stepKey },
     },
     {
+      // ⚠ Scoped to the order's OWN location. Listing every owner of the step
+      //   across every site would name people who cannot see this order, let
+      //   alone action it — the exact question this column is asked.
       key: "owner",
       header: "Owner",
       cell: (e) => {
-        const names = s.ownerNamesFor(e.stepKey);
+        const names = ownersOf(e);
         return <span className="text-grey">{names.length ? names.join(", ") : "Unassigned"}</span>;
       },
-      sortValue: (e) => s.ownerNamesFor(e.stepKey).join(", "),
-      filter: { kind: "select", get: (e) => s.ownerNamesFor(e.stepKey).join(", ") || "Unassigned" },
+      sortValue: (e) => ownersOf(e).join(", "),
+      filter: { kind: "select", get: (e) => ownersOf(e).join(", ") || "Unassigned" },
     },
     {
       key: "customer",
@@ -113,14 +120,30 @@ export default function ControlCenter() {
     // Like every cell here, these re-resolve the order: a QueueEntry carries only
     // ref / dueIso / orderId, never the row itself.
     {
-      key: "location",
-      header: "Location",
+      key: "customerLocation",
+      header: "Customer location",
       cell: (e) => {
         const o = s.orderById(e.entityId);
         return <span className="text-grey">{o?.customerLocation ?? "—"}</span>;
       },
       sortValue: (e) => s.orderById(e.entityId)?.customerLocation ?? "",
       filter: { kind: "select", get: (e) => s.orderById(e.entityId)?.customerLocation ?? "—" },
+    },
+    // The site the work sits at — the dimension the Control Center is about to
+    // be sliced by once step ownership becomes per-location.
+    {
+      key: "dispatchLocation",
+      header: "Dispatch location",
+      cell: (e) => (
+        <span className="text-grey">
+          {s.masterName("company_location", s.orderById(e.entityId)?.locationId ?? null)}
+        </span>
+      ),
+      sortValue: (e) => s.masterName("company_location", s.orderById(e.entityId)?.locationId ?? null),
+      filter: {
+        kind: "select",
+        get: (e) => s.masterName("company_location", s.orderById(e.entityId)?.locationId ?? null),
+      },
     },
     {
       key: "company",

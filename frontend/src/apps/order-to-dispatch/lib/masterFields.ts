@@ -91,6 +91,16 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
         sortField,
       ];
 
+    case "company_location":
+      // OUR site, under one of our companies. The company is required because a
+      // location that belongs to nobody cannot be offered on any order — the
+      // intake picker filters strictly by the company already chosen.
+      return [
+        { key: "name", label: "Location name", type: "text", required: true, placeholder: "e.g. Ahmedabad, Unit 2" },
+        { key: "company_id", label: "Company", type: "select", required: true, options: ctx.companyOptions, placeholder: "Select company" },
+        sortField,
+      ];
+
     // unit, category — name only.
     default:
       return [
@@ -123,6 +133,8 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
       return { ...base, code: "", unit: "", hsn_code: "" };
     case "company":
       return { ...base, gstin: "", address: "" };
+    case "company_location":
+      return { ...base, company_id: "" };
     // No `name` in the bag — the row has none. Including it would put an empty
     // Name column in the Excel round trip and send `name: null` on every save.
     case "customer_item":
@@ -166,7 +178,11 @@ export const masterTypePlural = (mt: DispatchMasterType) =>
 export function describePayload(
   mt: DispatchMasterType,
   payload: Record<string, unknown>,
-  lookup?: { customerName: (id: string) => string; itemName: (id: string) => string },
+  lookup?: {
+    customerName: (id: string) => string;
+    itemName: (id: string) => string;
+    companyName?: (id: string) => string;
+  },
 ): string {
   if (mt === "customer_item") {
     const c = lookup?.customerName(String(payload.customer_id ?? "")) ?? "";
@@ -175,6 +191,12 @@ export function describePayload(
     return c && i ? `${c} — ${i}` : "Customer-item mapping";
   }
   const name = typeof payload.name === "string" ? payload.name.trim() : "";
+  if (mt === "company_location") {
+    // A location name alone is ambiguous across companies — "Unit 1" could be
+    // anyone's. The parent is the half that makes the request reviewable.
+    const co = lookup?.companyName?.(String(payload.company_id ?? "")) ?? "";
+    return co ? `${name || "—"} · ${co}` : name || "—";
+  }
   const extra = mt === "item" && payload.code ? ` · ${payload.code}` : "";
   return (name || "—") + extra;
 }

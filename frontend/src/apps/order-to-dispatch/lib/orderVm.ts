@@ -13,7 +13,7 @@
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { STEPS, type StepKey } from "./steps";
 import { dispatchDueIso, type DispatchSnapshot, type QueueStep } from "./queues";
-import { allRoundViews, currentRoundView, type RoundView } from "./rounds";
+import { allRoundViews, archivedRoundView, currentRoundView, type RoundView } from "./rounds";
 import {
   CREDIT_STATUS_LABEL,
   DELIVERY_STATUS_LABEL,
@@ -21,45 +21,45 @@ import {
 } from "./format";
 import type { DispatchOrder } from "../types";
 
-/** A round's own completion stamps, for the four round-scoped steps. */
+/**
+ * A round's own completion stamps.
+ *
+ * ⚠ CREDIT IS IN HERE NOW. It used to be read off the order header because it
+ *   was decided once and survived every round; a partial approval sends an
+ *   order back for a fresh decision once its released quantity has gone out, so
+ *   round 1's rail must show round 1's credit stamp, not today's.
+ */
 const roundDoneAt = (step: QueueStep, v: RoundView): string | null =>
-  step === "material_status" ? v.msAt
+  step === "credit_check" ? v.ccAt
+  : step === "material_status" ? v.msAt
   : step === "sales_bill" ? v.sbAt
   : step === "gate_out" ? v.goAt
   : step === "dispatch_confirm" ? v.dcAt
   : null;
 
 const roundDoneBy = (step: QueueStep, v: RoundView): string | null =>
-  step === "material_status" ? v.msBy
+  step === "credit_check" ? v.ccBy
+  : step === "material_status" ? v.msBy
   : step === "sales_bill" ? v.sbBy
   : step === "gate_out" ? v.goBy
   : step === "dispatch_confirm" ? v.dcBy
   : null;
 
-/** A closed/cancelled order has no live round; fall back to its last archived one. */
+/**
+ * A closed/cancelled order has no live round; fall back to its last archived one.
+ *
+ * The archived branch defers to `archivedRoundView` — this used to restate all
+ * thirty-odd fields by hand, which meant every new column on a round had to be
+ * remembered in two places or one of them silently returned undefined.
+ */
 const archivedFallback = (o: DispatchOrder): RoundView => {
   const last = o.rounds[o.rounds.length - 1];
   return last
-    ? {
-        roundNo: last.roundNo, isArchived: true, roundId: last.id,
-        roundStartedAt: last.roundStartedAt, companyId: last.companyId,
-        msActualDate: last.msActualDate, msTempoNo: last.msTempoNo, msPorter: last.msPorter,
-        msRemarks: last.msRemarks, msAt: last.msAt, msBy: last.msBy,
-        sbActualDate: last.sbActualDate, sbInvoiceNo: last.sbInvoiceNo,
-        sbAttachmentPath: last.sbAttachmentPath, sbAttachmentName: last.sbAttachmentName,
-        sbRemarks: last.sbRemarks, sbAt: last.sbAt, sbBy: last.sbBy,
-        goActualDate: last.goActualDate, goOutwardNo: last.goOutwardNo,
-        goRemarks: last.goRemarks, goAt: last.goAt, goBy: last.goBy,
-        dcActualDate: last.dcActualDate, dcStatus: last.dcStatus,
-        dcAttachmentPath: last.dcAttachmentPath, dcAttachmentName: last.dcAttachmentName,
-        dcRemarks: last.dcRemarks, dcAt: last.dcAt, dcBy: last.dcBy,
-        editedAt: last.editedAt, editedBy: last.editedBy,
-        amendedAt: last.amendedAt, amendReason: last.amendReason,
-        items: last.items,
-      }
+    ? archivedRoundView(last)
     : {
         roundNo: o.roundNo, isArchived: true, roundId: null, roundStartedAt: o.roundStartedAt,
-        companyId: o.companyId,
+        companyId: o.companyId, locationId: o.locationId,
+        ccStatus: null, ccApprovedQty: null, ccRemarks: null, ccAt: null, ccBy: null,
         msActualDate: null, msTempoNo: null, msPorter: null, msRemarks: null, msAt: null, msBy: null,
         sbActualDate: null, sbInvoiceNo: null, sbAttachmentPath: null, sbAttachmentName: null,
         sbRemarks: null, sbAt: null, sbBy: null,
@@ -107,8 +107,15 @@ function statusLabelFor(step: StepKey, o: DispatchOrder, v: RoundView): string {
   switch (step) {
     case "sales_order":
       return "Raised";
-    case "credit_check":
-      return o.ccStatus ? CREDIT_STATUS_LABEL[o.ccStatus] : "—";
+    case "credit_check": {
+      if (!v.ccStatus) return "—";
+      const label = CREDIT_STATUS_LABEL[v.ccStatus];
+      // On a partial the figure IS the decision — "Partially approved" alone
+      // could mean 1 of 70 or 69 of 70.
+      return v.ccStatus === "partial" && v.ccApprovedQty != null
+        ? `${label} · ${v.ccApprovedQty}`
+        : label;
+    }
     case "material_status": {
       const total = v.items.reduce((a, i) => a + (Number(i.shipQty) || 0), 0);
       return total ? `${total} going out` : "—";
@@ -127,7 +134,7 @@ function statusLabelFor(step: StepKey, o: DispatchOrder, v: RoundView): string {
 function remarksFor(step: StepKey, o: DispatchOrder, v: RoundView): string | null {
   switch (step) {
     case "sales_order": return o.orderRemarks;
-    case "credit_check": return o.ccRemarks;
+    case "credit_check": return v.ccRemarks;
     case "material_status": return v.msRemarks;
     case "sales_bill": return v.sbRemarks;
     case "gate_out": return v.goRemarks;
@@ -144,7 +151,7 @@ function actualIsoFor(step: StepKey, o: DispatchOrder, v: RoundView): string | n
     //   falls back to the completion stamp — which is a TIMESTAMP. It must be
     //   sliced to a date before it reaches dayDiff, or lateDays computes NaN and
     //   the register exports the literal text "NaN".
-    case "credit_check": return o.ccAt ? o.ccAt.slice(0, 10) : null;
+    case "credit_check": return v.ccAt ? v.ccAt.slice(0, 10) : null;
     case "material_status": return v.msActualDate;
     case "sales_bill": return v.sbActualDate;
     case "gate_out": return v.goActualDate;
@@ -165,8 +172,15 @@ function docFor(step: StepKey, v: RoundView): { path: string; name: string } | n
 
 export interface OrderVmDeps {
   snap: DispatchSnapshot;
-  /** Resolves a step's configured owners to display names. */
-  ownerNamesFor: (stepKey: StepKey) => string[];
+  /**
+   * Resolves a step's configured owners to display names.
+   *
+   * ⚠ TAKES THE ORDER'S LOCATION. Ownership is per site, so the owners of
+   *   gate-out depend on where the consignment leaves from; passing only the
+   *   step would name everyone who owns it anywhere, most of whom cannot even
+   *   see this order.
+   */
+  ownerNamesFor: (stepKey: StepKey, locationId: string | null) => string[];
   todayIso?: string;
 }
 
@@ -184,13 +198,8 @@ export function orderStepRows(o: DispatchOrder, deps: OrderVmDeps, view?: RoundV
 
   return STEPS.map((st) => {
     const isOrigin = st.key === "sales_order";
-    const isCredit = st.key === "credit_check";
-    const doneAtIso = isOrigin
-      ? o.submittedAt
-      : isCredit ? o.ccAt : roundDoneAt(st.key as QueueStep, v);
-    const doneById = isOrigin
-      ? o.raisedBy
-      : isCredit ? o.ccBy : roundDoneBy(st.key as QueueStep, v);
+    const doneAtIso = isOrigin ? o.submittedAt : roundDoneAt(st.key as QueueStep, v);
+    const doneById = isOrigin ? o.raisedBy : roundDoneBy(st.key as QueueStep, v);
     const plannedIso = isOrigin ? null : dispatchDueIso(deps.snap, o, st.key as QueueStep, v);
     const actualIso = actualIsoFor(st.key, o, v);
 
@@ -214,7 +223,9 @@ export function orderStepRows(o: DispatchOrder, deps: OrderVmDeps, view?: RoundV
       index: st.index,
       title: st.title,
       short: st.short,
-      ownerNames: isOrigin ? [o.requesterName].filter(Boolean) : deps.ownerNamesFor(st.key),
+      ownerNames: isOrigin
+        ? [o.requesterName].filter(Boolean)
+        : deps.ownerNamesFor(st.key, v.locationId ?? o.locationId),
       plannedIso,
       actualIso,
       doneAtIso,

@@ -16,6 +16,8 @@ import type { DispatchOrder, DispatchType } from "../../types";
 export interface SalesOrderFormState {
   dispatchType: DispatchType;
   companyId: string;
+  /** OUR site the goods leave from. Not `customerLocation` — see the types file. */
+  locationId: string;
   customerId: string;
   customerLocation: string;
   customerPoNo: string;
@@ -26,6 +28,7 @@ export interface SalesOrderFormState {
 const emptyState = (): SalesOrderFormState => ({
   dispatchType: "local",
   companyId: "",
+  locationId: "",
   customerId: "",
   customerLocation: "",
   customerPoNo: "",
@@ -36,6 +39,7 @@ const emptyState = (): SalesOrderFormState => ({
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
   dispatchType: o.dispatchType,
   companyId: o.companyId ?? "",
+  locationId: o.locationId ?? "",
   customerId: o.customerId,
   customerLocation: o.customerLocation ?? "",
   customerPoNo: o.customerPoNo ?? "",
@@ -90,11 +94,30 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     setLines([makeEmptyLine()]);
   };
 
+  /**
+   * Picking the billing company.
+   *
+   * ⚠ IT CLEARS THE LOCATION. Sites belong to one company, so a location chosen
+   *   under the previous one is not merely stale — the RPC refuses it outright.
+   *   Auto-selecting when there is exactly one site is not a shortcut but the
+   *   honest answer: a single-site company has no choice to offer.
+   */
+  const setCompany = (id: string) => {
+    if (id === form.companyId) return;
+    const sites = s.locationsForCompany(id);
+    patch({ companyId: id, locationId: sites.length === 1 ? sites[0]!.id : "" });
+  };
+
   /** The lines that will actually be submitted — the trailing blank is dropped. */
   const filledLines = useMemo(() => lines.filter((l) => !isLineBlank(l)), [lines]);
 
   const validate = (): string | null => {
     if (!form.companyId) return "Choose the company that bills this order.";
+    // Compulsory only where the company HAS sites — mirrors fms_dispatch_submit_order.
+    // A company nobody has added locations to must not block order entry.
+    if (!form.locationId && s.locationsForCompany(form.companyId).length > 0) {
+      return "Choose the location this order dispatches from.";
+    }
     if (!form.customerId) return "Choose a customer.";
     if (!form.orderDate) return "The order date is required.";
     if (filledLines.length === 0) return "Add at least one item line.";
@@ -109,6 +132,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   const toInput = (requesterName: string): OrderInput => ({
     dispatchType: form.dispatchType,
     companyId: form.companyId,
+    locationId: form.locationId || null,
     customerId: form.customerId,
     customerLocation: form.customerLocation.trim() || null,
     customerPoNo: form.customerPoNo.trim() || null,
@@ -125,7 +149,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   return {
     form, patch, setForm,
     lines, setLines, filledLines,
-    setCustomer,
+    setCustomer, setCompany,
     error, setError,
     busy, setBusy,
     validate, toInput,

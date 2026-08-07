@@ -1,7 +1,7 @@
 import { TextInput } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../store";
-import { pendingQtyOf } from "../lib/rounds";
+import { creditHeadroomOf, pendingQtyOf } from "../lib/rounds";
 import { qtyTotals, sharedUnit } from "../lib/format";
 import type { DispatchOrder } from "../types";
 
@@ -19,6 +19,13 @@ import type { DispatchOrder } from "../types";
  *     pre-filling the balance would make sending everything the accidental default.
  *   • A line with nothing left pending is locked and labelled Complete. It cannot
  *     be typed into, so nobody discovers by round-trip that the server refuses it.
+ *
+ * ⚠ THE CREDIT CEILING IS A SUM, NOT A PER-LINE CLAMP. Credit approves a quantity
+ *   for the consignment and leaves the split to whoever can see the stock, so no
+ *   individual input is capped — the TOTAL is, and it says so live in the footer.
+ *   Clamping rows individually would invent a per-line allocation credit never
+ *   made. A null headroom means uncapped: every order raised before partial
+ *   approval existed has one, and they must keep behaving exactly as they did.
  */
 
 export interface ShipLineValue {
@@ -57,6 +64,8 @@ export default function ShipLinesGrid({
   const total = order.lines.reduce((a, l) => a + (Number(byId.get(l.id)?.ship_qty) || 0), 0);
   // Named for the totals row — the row map has its own per-line `unit`.
   const totalUnit = sharedUnit(order.lines);
+  const headroom = creditHeadroomOf(order);
+  const over = headroom !== null && total > headroom;
 
   return (
     <div className="space-y-2">
@@ -138,7 +147,11 @@ export default function ShipLinesGrid({
               <td className="py-2 pr-3 text-right tabular-nums font-bold">{t.pending || "—"}</td>
               {/* w-24 matches the input above it, so the figure lines up with the box. */}
               <td className="py-2 pr-3">
-                <span className="block w-24 text-right tabular-nums font-bold text-orange">
+                <span
+                  className={`block w-24 text-right tabular-nums font-bold ${
+                    over ? "text-ryg-red" : "text-orange"
+                  }`}
+                >
                   {total || "—"}
                 </span>
               </td>
@@ -147,6 +160,18 @@ export default function ShipLinesGrid({
           </tfoot>
         </table>
       </ScrollableTable>
+
+      {/* The ceiling belongs beside the figure it caps, and it has to be legible
+          BEFORE anyone types — a limit discovered by a refused save is not a
+          limit, it is a surprise. */}
+      {headroom !== null && (
+        <p className={`text-[12.5px] ${over ? "text-ryg-red" : "text-grey-2"}`}>
+          {over
+            ? `Credit has authorised only ${headroom}${totalUnit ? ` ${totalUnit}` : ""} more on this order — reduce the quantities going out.`
+            : `Credit approved: ${headroom}${totalUnit ? ` ${totalUnit}` : ""} still authorised.`}
+        </p>
+      )}
+
       <p className="text-[12.5px] text-grey-2">
         {total > 0
           ? "Anything left pending comes back here when it is ready."

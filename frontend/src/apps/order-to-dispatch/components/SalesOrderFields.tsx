@@ -20,16 +20,21 @@ import type { DispatchType } from "../types";
  *
  * FIELD ORDER IS THE POINT OF THE LAYOUT, not decoration:
  *
- *   Dispatch type · Order date · Billing company      ← how it moves, when, who bills
- *   Customer PO no. · Customer · Customer location    ← everything about the buyer
+ *   Dispatch type · Order date · Billing company        ← how it moves, when, who bills
+ *   Dispatch location · Customer · Customer location    ← where from, and the buyer
+ *   Customer PO no.
  *   Remarks (full width)
  *
  * ⚠ Keep Customer immediately before Customer location. Picking the first FILLS
  *   the second, so the answer has to land where the eye already is — and they
- *   only stay side by side at BOTH widths (3-up desktop, 2-up tablet) while they
- *   are consecutive children starting on an odd column, which is what the PO
- *   sitting ahead of them buys. Insert anything between them and the pairing
- *   silently breaks on tablet only.
+ *   only stay side by side at BOTH widths (3-up desktop, 2-up tablet) while
+ *   Customer's position is odd AND not a multiple of three. It is 5th here; the
+ *   PO was moved off the front of that row to keep it 5th when Dispatch location
+ *   joined. Move anything and re-count, because it breaks on tablet only.
+ *
+ * ⚠ DISPATCH LOCATION ALWAYS RENDERS, even for a company with no sites — it is
+ *   disabled and says so. Hiding it would change the child count and silently
+ *   break the pairing above at one breakpoint.
  */
 export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesOrderForm> }) {
   const s = useDispatchStore();
@@ -44,6 +49,9 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
    *   `knownLocations` yet — would leave the field looking empty while the state
    *   held it. Unioning it in is what makes free-typing actually visible.
    */
+  /** OUR sites under the chosen company. Empty until a company is picked. */
+  const siteOptions: ComboOption[] = opts(s.locationsForCompany(f.form.companyId || null));
+
   const locationOptions: ComboOption[] = (() => {
     const known = s.knownLocations;
     const cur = f.form.customerLocation.trim();
@@ -83,22 +91,34 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
         <FieldLabel label="Billing company" required>
           <Combobox
             value={f.form.companyId}
-            onChange={(v) => f.patch({ companyId: v })}
+            onChange={f.setCompany}
             options={opts(s.activeOf(s.companies))}
             placeholder="which company bills this order"
             searchable
           />
         </FieldLabel>
 
-        {/* ---- row 2: everything about the buyer ---- */}
+        {/* ---- row 2: where it leaves from, and who is buying ---- */}
 
-        <FieldLabel label="Customer PO no.">
-          <TextInput
-            value={f.form.customerPoNo}
-            onChange={(e) => f.patch({ customerPoNo: e.target.value })}
-            placeholder="the customer's own reference (optional)"
-          />
-        </FieldLabel>
+        <div>
+          <FieldLabel label="Dispatch location" required={siteOptions.length > 0}>
+            <Combobox
+              value={f.form.locationId}
+              onChange={(v) => f.patch({ locationId: v })}
+              options={siteOptions}
+              placeholder={
+                !f.form.companyId ? "pick the billing company first"
+                : siteOptions.length === 0 ? "no locations set up for this company"
+                : "which of our sites it leaves from"
+              }
+              disabled={siteOptions.length === 0}
+              searchable
+            />
+          </FieldLabel>
+          <p className="mt-1 text-[11.5px] text-grey-2">
+            Our site the goods leave from — not where the customer takes delivery.
+          </p>
+        </div>
 
         <div>
           <FieldLabel label="Customer" required>
@@ -131,6 +151,14 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
             Filled in from the customer master. Change it, or type a new one.
           </p>
         </div>
+
+        <FieldLabel label="Customer PO no.">
+          <TextInput
+            value={f.form.customerPoNo}
+            onChange={(e) => f.patch({ customerPoNo: e.target.value })}
+            placeholder="the customer's own reference (optional)"
+          />
+        </FieldLabel>
       </div>
 
       <FieldLabel label="Remarks">

@@ -10,8 +10,9 @@ import {
   STEP_CONFIG, isRequiredNow, missingRequired, visibleFields, type StepField,
 } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
-import { currentRoundView, type RoundView } from "../lib/rounds";
+import { creditHeadroomOf, currentRoundView, type RoundView } from "../lib/rounds";
 import OrderRefPanel, { OrderRefDocs } from "./OrderRefPanel";
+import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
 import StepDocLink from "./StepDocLink";
 import type { DispatchOrder } from "../types";
@@ -65,6 +66,9 @@ export default function StepModal({
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [shipLines, setShipLines] = useState<ShipLineValue[]>([]);
+  /** The partial credit release. Its own state because it is a pair of linked
+   *  inputs, not a single descriptor-driven field — see CreditApprovalPanel. */
+  const [approvedQty, setApprovedQty] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,6 +83,23 @@ export default function StepModal({
     for (const f of cfg.fields) next[f.key] = f.get(order, view);
     setValues(next);
     setShipLines(cfg.lines === "ship" ? shipLinesFrom(order) : []);
+    /*
+      The panel asks for THIS decision's quantity; the column stores the
+      CUMULATIVE ceiling. Headroom is the conversion, and it is exact here:
+      an editable partial is one nothing has yet shipped under, so
+      `ccApprovedQty - dispatched` is precisely what this decision released.
+      (Once something does ship under it and the round loops, `ccRoundNo` stops
+      matching and the round view carries no decision at all.)
+
+      An archived round is not convertible — the dispatched total has moved on
+      since — so it renders a read-only sentence instead of these boxes.
+    */
+    const headroom = creditHeadroomOf(order);
+    setApprovedQty(
+      cfg.approvedQty && !view.isArchived && view.ccStatus === "partial" && headroom != null
+        ? String(headroom)
+        : "",
+    );
     setFile(null);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -93,6 +114,38 @@ export default function StepModal({
   // evidences them, then the free-text remark.
   const shortFields = bodyFields.filter((f) => f.kind !== "textarea");
   const longFields = bodyFields.filter((f) => f.kind === "textarea");
+
+  /* The partial-release control appears only once "Partially approved" is the
+     chosen outcome, and only on a live round — an archived decision cannot be
+     converted back into its per-decision figure, so it reads as a sentence. */
+  const showApprovedQty = !!cfg.approvedQty && values.cc_status === "partial" && !view?.isArchived;
+
+  /* How much the credit decision still allows out, and whether the grid is over
+     it. Null headroom means uncapped, which is every order raised before partial
+     approval existed — those must behave exactly as they always have. */
+  const creditHeadroom = order ? creditHeadroomOf(order) : null;
+  const shipTotal = shipLines.reduce((a, l) => a + (Number(l.ship_qty) || 0), 0);
+  const overCredit = creditHeadroom !== null && shipTotal > creditHeadroom;
+
+  /**
+   * Why Save cannot be pressed yet, or null.
+   *
+   * ⚠ THE SCREEN ALREADY SAYS WHY, IN PLACE, so this only greys the button and
+   *   never adds a second message: the grid turns its total red and prints the
+   *   ceiling, the approval panel prints its own error, and the empty grid has
+   *   standing copy pointing at "Nothing available yet". A refusal the person
+   *   can only discover by clicking is the thing being removed here — leaving
+   *   the button live while the reason is already on screen just invites the
+   *   click that gets rejected.
+   *
+   * `save()` re-checks all of this. This is the courtesy layer; the RPC is the
+   * gate.
+   */
+  const blocked: string | null =
+    cfg.lines === "ship" && shipTotal <= 0 ? "nothing entered"
+    : cfg.lines === "ship" && overCredit ? "over the credit ceiling"
+    : showApprovedQty && order && approvedQtyError(order, approvedQty) ? "approved quantity"
+    : null;
 
   // Editing clears the last refusal. Without this, filling in the very field the
   // error named leaves "Delivery outcome is required." sitting under a filled-in
@@ -160,6 +213,20 @@ export default function StepModal({
       setError(`${cfg.attachment.label} is required.`);
       return;
     }
+    // A partial release with no usable figure is not a decision. Caught here so
+    // nobody discovers by round-trip that 70 of 70 is an approval, not a partial.
+    if (showApprovedQty) {
+      const bad = approvedQtyError(order, approvedQty);
+      if (bad) { setError(bad); return; }
+    }
+    // The credit ceiling, enforced at the point of typing as well as in the RPC —
+    // the store keeper should see the limit while filling the grid, not after.
+    if (cfg.lines === "ship" && overCredit) {
+      setError(
+        `Credit has authorised ${creditHeadroom} more on this order. Reduce the quantities going out.`,
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -171,6 +238,11 @@ export default function StepModal({
           .filter((l) => Number(l.ship_qty) > 0)
           .map((l) => ({ id: l.id, ship_qty: l.ship_qty, lot_no: l.lot_no }));
       }
+
+      // Sent only on a partial. On a full approval the RPC sets the ceiling to
+      // the whole order itself, and a stale figure from a since-changed outcome
+      // must not reach it.
+      if (showApprovedQty) payload.cc_approved_qty = approvedQty.trim();
 
       if (cfg.attachment) {
         if (file) {
@@ -278,7 +350,9 @@ export default function StepModal({
                 Nothing available yet
               </Button>
             )}
-            <Button onClick={save} disabled={busy}>{busy ? "Saving…" : cfg.actionLabel}</Button>
+            <Button onClick={save} disabled={busy || !!blocked}>
+              {busy ? "Saving…" : cfg.actionLabel}
+            </Button>
           </>
         )
       }
@@ -334,6 +408,28 @@ export default function StepModal({
               </div>
             ))}
           </div>
+        )}
+
+        {/*
+          ABOVE Remarks, below the outcome. The quantity is the second half of the
+          decision the outcome above it started, and the remark underneath exists
+          to explain this figure — putting it after the remark would ask for the
+          justification before the thing being justified.
+        */}
+        {showApprovedQty && (
+          <CreditApprovalPanel
+            order={order}
+            value={approvedQty}
+            onChange={(v) => { setApprovedQty(v); setError(null); }}
+            readOnly={locked}
+          />
+        )}
+        {cfg.approvedQty && view.isArchived && view.ccStatus === "partial" && view.ccApprovedQty != null && (
+          <p className="text-[12.5px] text-grey">
+            Credit had authorised{" "}
+            <span className="font-semibold text-navy tabular-nums">{view.ccApprovedQty}</span>{" "}
+            of this order in total at that point.
+          </p>
         )}
 
         {/*

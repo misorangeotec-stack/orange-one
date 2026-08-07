@@ -25,8 +25,15 @@ type Tab = "review" | "mine" | "all";
 export default function MasterRequests() {
   const s = useDispatchStore();
 
-  /** Only the nameless mapping needs this — its payload is two ids. */
-  const nameLookup = { customerName: s.customerName, itemName: s.itemName };
+  /**
+   * The relational masters need this: the mapping's payload is two ids, and a
+   * location's name means nothing without the company it hangs off.
+   */
+  const nameLookup = {
+    customerName: s.customerName,
+    itemName: s.itemName,
+    companyName: (id: string) => s.masterName("company", id),
+  };
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<Tab>(s.isAnyMasterManager ? "review" : "mine");
   const [raising, setRaising] = useState(false);

@@ -20,7 +20,7 @@
  * This module stays PURE — no React, no store import.
  */
 import type {
-  DeliveryStatus, DispatchOrder, DispatchRound, OrderLine, RoundItem,
+  CreditStatus, DeliveryStatus, DispatchOrder, DispatchRound, OrderLine, RoundItem,
 } from "../types";
 
 export interface RoundView {
@@ -37,6 +37,24 @@ export interface RoundView {
    *   from their own row, which agree by construction.
    */
   companyId: string | null;
+  /** ORDER-scoped too, and frozen onto the archive for the same reason. */
+  locationId: string | null;
+
+  /**
+   * The credit decision MADE IN THIS ROUND, or null when the round ran under a
+   * decision an earlier round had already made.
+   *
+   * ⚠ THIS IS NOT "the decision governing the order" — for that, read the order
+   *   header. The two answer different questions and the difference is visible:
+   *   a partial approval large enough to cover two rounds is recorded against
+   *   the first only, so the Completed tab lists one row per DECISION rather
+   *   than one per round that happened to run under it.
+   */
+  ccStatus: CreditStatus | null;
+  ccApprovedQty: number | null;
+  ccRemarks: string | null;
+  ccAt: string | null;
+  ccBy: string | null;
 
   msActualDate: string | null;
   /** The vehicle that carried THIS round. Optional. */
@@ -85,6 +103,28 @@ export const pendingQtyOf = (l: OrderLine): number =>
 /** A line nobody needs to touch again. */
 export const isLineComplete = (l: OrderLine): boolean => pendingQtyOf(l) <= 0;
 
+/** What the customer asked for, across every line. */
+export const orderedTotalOf = (o: DispatchOrder): number =>
+  o.lines.reduce((a, l) => a + (Number(l.quantity) || 0), 0);
+
+/** Delivered so far, across every line and every round. */
+export const dispatchedTotalOf = (o: DispatchOrder): number =>
+  o.lines.reduce((a, l) => a + (Number(l.dispatchedQty) || 0), 0);
+
+/** Still owed. `qtyTotals` returns this too — use that when you want all four. */
+export const pendingTotalOf = (o: DispatchOrder): number =>
+  o.lines.reduce((a, l) => a + pendingQtyOf(l), 0);
+
+/**
+ * How much may still go out under the credit decision governing this order.
+ *
+ * ⚠ NULL MEANS UNCAPPED, and every caller must treat it that way. Every order
+ *   raised before partial approval existed has a null `ccApprovedQty`, and
+ *   reading that as "nothing authorised" would freeze the whole back catalogue.
+ */
+export const creditHeadroomOf = (o: DispatchOrder): number | null =>
+  o.ccApprovedQty == null ? null : Math.max(o.ccApprovedQty - dispatchedTotalOf(o), 0);
+
 /**
  * The live header's selected lines, in the same shape the archive stores.
  * `itemName` / `unitName` are resolved by the caller for the live case (the
@@ -113,12 +153,24 @@ function liveItems(order: DispatchOrder): RoundItem[] {
  */
 export function currentRoundView(order: DispatchOrder): RoundView | null {
   if (order.status === "closed" || order.status === "cancelled") return null;
+  // Credit only belongs to this round if this round is what it was decided for.
+  // An order looping under an earlier approval carries that approval on its
+  // header but must project NO decision here, or the Completed tab would grow a
+  // fresh credit row on every lap.
+  const ownCredit = order.ccRoundNo === order.roundNo;
   return {
     roundNo: order.roundNo,
     isArchived: false,
     roundId: null,
     roundStartedAt: order.roundStartedAt,
     companyId: order.companyId,
+    locationId: order.locationId,
+
+    ccStatus: ownCredit ? order.ccStatus : null,
+    ccApprovedQty: ownCredit ? order.ccApprovedQty : null,
+    ccRemarks: ownCredit ? order.ccRemarks : null,
+    ccAt: ownCredit ? order.ccAt : null,
+    ccBy: ownCredit ? order.ccBy : null,
 
     msActualDate: order.msActualDate,
     msTempoNo: order.msTempoNo,
@@ -166,6 +218,13 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     roundId: r.id,
     roundStartedAt: r.roundStartedAt,
     companyId: r.companyId,
+    locationId: r.locationId,
+
+    ccStatus: r.ccStatus,
+    ccApprovedQty: r.ccApprovedQty,
+    ccRemarks: r.ccRemarks,
+    ccAt: r.ccAt,
+    ccBy: r.ccBy,
 
     msActualDate: r.msActualDate,
     msTempoNo: r.msTempoNo,

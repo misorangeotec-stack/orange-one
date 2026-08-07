@@ -184,6 +184,18 @@ function extraColumns(
       ];
     case "company":
       return [text("GSTIN", (r) => r.gstin)];
+    case "company_location":
+      // The parent is the point — "Unit 1" means nothing until you know whose.
+      return [
+        {
+          header: "Company",
+          render: (r) => (
+            <span className="text-grey-2">
+              {s.masterName("company", (r as unknown as { companyId: string }).companyId)}
+            </span>
+          ),
+        },
+      ];
     default:
       return [];
   }

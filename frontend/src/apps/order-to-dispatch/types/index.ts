@@ -26,6 +26,18 @@ export interface Company extends NamedMaster {
   address: string | null;
 }
 
+/**
+ * One of OUR sites, under a selling company — the place a consignment leaves from.
+ *
+ * ⚠ NOT `Customer.location`, and the two must not be conflated. That one is free
+ *   text describing where the CUSTOMER takes delivery, deliberately un-mastered
+ *   so a rename cannot rewrite where a past consignment went. This is a real
+ *   master with a real FK on the order, because it decides who sees the work.
+ */
+export interface CompanyLocation extends NamedMaster {
+  companyId: string;
+}
+
 export interface Customer extends NamedMaster {
   /**
    * ⚠ LEGACY, and null on all but one row. It was the customer↔company mapping
@@ -76,7 +88,8 @@ export interface CustomerItem extends NamedMaster {
 /*  Master governance                                                          */
 /* -------------------------------------------------------------------------- */
 
-export type DispatchMasterType = "company" | "customer" | "item" | "customer_item";
+export type DispatchMasterType =
+  | "company" | "customer" | "item" | "customer_item" | "company_location";
 
 export interface MasterTypeDef {
   value: DispatchMasterType;
@@ -85,20 +98,24 @@ export interface MasterTypeDef {
 }
 
 /**
- * Every master type, in Masters-tab order. All four are OWNABLE (they take an
- * owner list and are editable by their owner) and all four have a tab.
+ * Every master type, in Masters-tab order. All are OWNABLE (they take an owner
+ * list and are editable by their owner) and all have a tab.
  *
  * The reshape cut this from eighteen, and the mapping change cut two more: UNIT
  * is one word per item and now lives on the item as text, and CATEGORY was read
  * by a single display column and nothing in the flow. Their tables are dropped —
  * do not re-add a type here without the matching table and an arm in
  * `fms_dispatch_resolve_master_request`.
+ *
+ * COMPANY LOCATION sits directly after Company because it is read as its child:
+ * a location is meaningless without the company it hangs off.
  */
 export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
-  { value: "customer",      label: "Customer",              plural: "Customers" },
-  { value: "item",          label: "Item",                  plural: "Items" },
-  { value: "customer_item", label: "Customer-Item Mapping", plural: "Customer-Item Mappings" },
-  { value: "company",       label: "Company",               plural: "Companies" },
+  { value: "customer",         label: "Customer",              plural: "Customers" },
+  { value: "item",             label: "Item",                  plural: "Items" },
+  { value: "customer_item",    label: "Customer-Item Mapping", plural: "Customer-Item Mappings" },
+  { value: "company",          label: "Company",               plural: "Companies" },
+  { value: "company_location", label: "Company Location",      plural: "Company Locations" },
 ];
 
 /**
@@ -108,8 +125,12 @@ export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
  * and could plausibly find missing mid-task. Company is excluded: it is one-time
  * configuration a coordinator sets up, and it is now the customer↔company
  * mapping, so inventing one mid-order is exactly what should not happen.
+ *
+ * Company location is excluded for the same reason and a sharper one: it is
+ * about to decide who can see an order, so inventing one from an order form is
+ * inventing a permission scope.
  */
-const NOT_REQUESTABLE: DispatchMasterType[] = ["company"];
+const NOT_REQUESTABLE: DispatchMasterType[] = ["company", "company_location"];
 export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] =
   DISPATCH_MASTER_TYPES.filter((m) => !NOT_REQUESTABLE.includes(m.value));
 
@@ -135,9 +156,18 @@ export interface DispatchMasterRequest {
 /*  Config / owners / feed                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * One owner-set: who owns a step, at a location.
+ *
+ * ⚠ `locationId: null` IS THE FALLBACK GRANT — it covers every location, and
+ *   every order whose own location is unset. It is not "no location": there is
+ *   at most one such row per step, and every owner-set that existed before
+ *   locations did is one.
+ */
 export interface StepOwner {
   id: string;
   stepKey: string;
+  locationId: string | null;
   departmentIds: string[];
   designationId: string | null;
   employeeIds: string[];
@@ -206,8 +236,12 @@ export type DispatchStatus =
  * and a credit hold is a different thing — the order stays in the credit queue
  * and its own owner releases it. Two holds sharing one token is how the wrong
  * one gets read.
+ *
+ * `partial` releases a QUANTITY rather than the order: it advances exactly like
+ * `approved`, and the figure it carries (`ccApprovedQty`) is what caps the
+ * material-status check downstream.
  */
-export type CreditStatus = "approved" | "credit_hold";
+export type CreditStatus = "approved" | "partial" | "credit_hold";
 
 export type DeliveryStatus = "delivered" | "returned";
 
@@ -268,6 +302,23 @@ export interface DispatchRound {
   roundNo: number;
   roundStartedAt: string | null;
   companyId: string | null;
+  /** Frozen with the company, so a historic round stays self-describing. */
+  locationId: string | null;
+
+  /**
+   * The credit decision MADE DURING this round, or null when the round ran
+   * under a decision an earlier round had already made.
+   *
+   * ⚠ NOT "the decision governing the order" — that lives on the order header.
+   *   A partial approval big enough to cover two rounds is archived onto the
+   *   first only; the second inherits it and archives nothing, so one decision
+   *   never appears twice in a Completed tab.
+   */
+  ccStatus: CreditStatus | null;
+  ccApprovedQty: number | null;
+  ccRemarks: string | null;
+  ccAt: string | null;
+  ccBy: string | null;
 
   msActualDate: string | null;
   msTempoNo: string | null;
@@ -325,6 +376,17 @@ export interface DispatchOrder {
    *   orders raised before 20260817120000 moved the question here.
    */
   companyId: string | null;
+  /**
+   * WHICH OF OUR SITES THIS LEAVES FROM. Chosen at intake beside the company and,
+   * like it, true for every round — `fms_dispatch_archive_round` must not wipe it.
+   *
+   * ⚠ NOT `customerLocation`. That is free text for where the CUSTOMER takes
+   *   delivery; this is a governed master pointing at one of our own places.
+   *
+   * Null on orders raised before this existed, and on any company that has no
+   * locations configured — the form asks for one only where one exists.
+   */
+  locationId: string | null;
   customerId: string;
   /** Where this consignment goes. Seeded from the customer master, overridable. */
   customerLocation: string | null;
@@ -349,13 +411,30 @@ export interface DispatchOrder {
    */
   roundStartedAt: string;
 
-  // ---- step 2: credit_check (decided ONCE PER ORDER, survives every round) ----
+  /* ---- step 2: credit_check — the decision GOVERNING the order right now ----
+   *
+   * ⚠ NO LONGER ONCE PER ORDER. A partial approval releases a quantity, and once
+   *   that quantity has all gone out the order comes back here for a fresh
+   *   decision on the balance. This block is therefore the CURRENT decision;
+   *   `DispatchRound` holds the ones earlier rounds were run under.
+   */
   ccStatus: CreditStatus | null;
   ccRemarks: string | null;
+  /**
+   * CUMULATIVE quantity credit has authorised across every decision on this
+   * order. What may still go out is this minus everything already dispatched —
+   * see `creditHeadroomOf`.
+   *
+   * ⚠ NULL MEANS UNCAPPED, not "nothing approved". Every order raised before
+   *   partial approval existed carries a null here.
+   */
+  ccApprovedQty: number | null;
+  /** Which round the current decision was made for. Null ⇒ none made yet. */
+  ccRoundNo: number | null;
   /** When the outcome was last set — Approve OR On hold. The credit SLA anchor. */
   ccDecidedAt: string | null;
   ccDecidedBy: string | null;
-  /** STEP COMPLETION. Stamped on Approve only; null while the order is held. */
+  /** STEP COMPLETION. Stamped on a release; null while the order is held. */
   ccAt: string | null;
   ccBy: string | null;
   ccEditedAt: string | null;

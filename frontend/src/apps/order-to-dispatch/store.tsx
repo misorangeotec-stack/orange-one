@@ -21,6 +21,7 @@ import {
   setConfig as setConfigWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
+  deleteStepOwner as deleteStepOwnerWrite,
   stepDocumentUrl as stepDocumentUrlWrite,
   submitOrder as submitOrderWrite,
   updateMaster as updateMasterWrite,
@@ -48,7 +49,7 @@ import { masterTypeLabel } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
-  Company, Customer, Designation, DispatchActivity, DispatchMasterRequest,
+  Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
   CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
@@ -65,9 +66,11 @@ interface DispatchStoreValue {
   canMonitor: boolean;
   canActOn: (step: QueueStep, order: DispatchOrder) => boolean;
   canEditOrder: (order: DispatchOrder) => boolean;
-  isStepOwner: (stepKey: StepKey) => boolean;
-  stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
-  ownerNamesFor: (stepKey: StepKey) => string[];
+  /** Omit the location to ask "owns this step anywhere". */
+  isStepOwner: (stepKey: StepKey, locationId?: string | null) => boolean;
+  /** `null` is the FALLBACK owner-set (all locations), not "any". */
+  stepOwnerFor: (stepKey: StepKey, locationId?: string | null) => StepOwner | undefined;
+  ownerNamesFor: (stepKey: StepKey, locationId?: string | null) => string[];
   personName: (id: string | null) => string;
 
   // directory
@@ -78,9 +81,18 @@ interface DispatchStoreValue {
 
   // masters
   companies: Company[];
+  companyLocations: CompanyLocation[];
   customers: Customer[];
   items: Item[];
   customerItems: CustomerItem[];
+  /**
+   * The sites a given company dispatches from — ACTIVE only, sorted.
+   *
+   * ⚠ Empty is a legitimate answer, and the intake form must treat it as one: a
+   *   company nobody has added sites to asks nothing extra of the person raising
+   *   the order. The RPC applies the same rule.
+   */
+  locationsForCompany: (companyId: string | null) => CompanyLocation[];
   /**
    * The items a customer may order — ACTIVE mappings only, sorted by item name.
    * The sales-order picker is built from this, never from the full catalogue.
@@ -149,7 +161,10 @@ interface DispatchStoreValue {
   amendRound: (roundId: string, input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[] }) => Promise<void>;
   uploadStepDocument: (orderId: string, folder: string, file: File, roundNo?: number) => Promise<{ path: string; name: string }>;
   stepDocumentUrl: (path: string) => Promise<string>;
-  setStepOwner: (stepKey: string, input: StepOwnerInput) => Promise<void>;
+  /** `locationId: null` writes the fallback (all-locations) owner-set. */
+  setStepOwner: (stepKey: string, locationId: string | null, input: StepOwnerInput) => Promise<void>;
+  /** Hand a location back to the fallback grant. */
+  deleteStepOwner: (stepKey: string, locationId: string) => Promise<void>;
   setConfig: (key: string, value: Record<string, unknown>) => Promise<void>;
   insertMaster: (mt: DispatchMasterType, input: MasterInput) => Promise<void>;
   updateMaster: (mt: DispatchMasterType, id: string, input: MasterInput) => Promise<void>;
@@ -188,6 +203,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
   const companies = data?.companies ?? [];
+  const companyLocations = data?.companyLocations ?? [];
   const customers = data?.customers ?? [];
   const items = data?.items ?? [];
   const customerItems = data?.customerItems ?? [];
@@ -204,10 +220,28 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const uid = userId ?? "";
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
 
-    const stepOwnerFor = (stepKey: StepKey) => stepOwners.find((o) => o.stepKey === stepKey);
+    /**
+     * The owner-set for a step at a location. `locationId: null` asks for the
+     * FALLBACK grant — the one covering every location — not "any of them".
+     */
+    const stepOwnerFor = (stepKey: StepKey, locationId: string | null = null) =>
+      stepOwners.find((o) => o.stepKey === stepKey && (o.locationId ?? null) === locationId);
 
-    const isStepOwner = (stepKey: StepKey): boolean =>
-      isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(uid));
+    /**
+     * Does this person own the step?
+     *
+     * With no location, the question is "anywhere" — which is what the nav and
+     * the My Work feed want. With one, it narrows to the sets covering that
+     * site: its own, plus the fallback. Mirrors fms_dispatch_is_step_owner.
+     */
+    const isStepOwner = (stepKey: StepKey, locationId?: string | null): boolean =>
+      isAdmin ||
+      stepOwners.some(
+        (o) =>
+          o.stepKey === stepKey &&
+          o.employeeIds.includes(uid) &&
+          (locationId === undefined || o.locationId === null || o.locationId === locationId),
+      );
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
@@ -218,34 +252,66 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     /**
      * Mirrors fms_dispatch_can_act(step, order, uid): admin / coordinator / step
-     * owner.
+     * owner AT THAT ORDER'S LOCATION.
+     *
+     * ⚠ THE ORDER ARGUMENT IS USED NOW. It was named `_o` for as long as
+     *   ownership was global; owning gate-out at Vapi no longer lets you record
+     *   gate-out on an Ahmedabad consignment.
      *
      * ⚠ The old driver arm is gone with the Drivers master — delivery
      *   confirmation now REQUIRES a configured step owner. Seed one before
      *   go-live or the last step falls back to admins only.
      */
-    const canActOn = (stepKey: QueueStep, _o: DispatchOrder): boolean =>
-      isAdmin || isProcessCoordinator || isStepOwner(stepKey);
+    const canActOn = (stepKey: QueueStep, o: DispatchOrder): boolean =>
+      isAdmin || isProcessCoordinator || isStepOwner(stepKey, o.locationId);
 
     /**
      * Who may raise an order: open to every granted user unless `sales_order` has
      * owners configured, then only those owners (or admin / coordinator). The DB
      * deliberately allows owners on the origin step — see the foundations migration.
+     *
+     * ⚠ LOCATION-AGNOSTIC ON PURPOSE, and the server agrees. The location is
+     *   chosen ON the form, so there is nothing to scope against until the order
+     *   exists; `fms_dispatch_submit_order` then validates the site against the
+     *   company. Any owner-set on the origin step, at any location, may raise.
      */
-    const salesOrderOwners = stepOwnerFor("sales_order")?.employeeIds ?? [];
+    const salesOrderOwners = [
+      ...new Set(stepOwners.filter((o) => o.stepKey === "sales_order").flatMap((o) => o.employeeIds)),
+    ];
     const canRaise = salesOrderOwners.length === 0 || isAdmin || isProcessCoordinator || salesOrderOwners.includes(uid);
 
-    /** Mirrors fms_dispatch_update_order's authz: the raiser / admin / coordinator,
-     *  and only while the order is still at the origin step. */
+    /**
+     * Mirrors fms_dispatch_update_order's authz: the raiser / admin / coordinator,
+     * and only while the order is still at the origin step.
+     *
+     * ⚠ THE "NO ROUNDS YET" CLAUSE IS LOAD-BEARING. A partial credit approval
+     *   sends an order back to awaiting_credit_check once its approved quantity
+     *   has gone out, and the loop-back clears cc_at — so the first two tests
+     *   pass again on an order that has already dispatched. Without this, its
+     *   Edit button would light up and offer to change the customer and the
+     *   billing entity mid-flight. The RPC refuses on the same test; this is
+     *   what stops the button appearing in the first place.
+     */
     const canEditOrder = (o: DispatchOrder): boolean =>
       (o.raisedBy === uid || isAdmin || isProcessCoordinator) &&
       o.status === "awaiting_credit_check" &&
-      o.ccAt == null;
+      o.ccAt == null &&
+      o.rounds.length === 0;
 
-    const ownerNamesFor = (stepKey: StepKey): string[] =>
-      (stepOwnerFor(stepKey)?.employeeIds ?? [])
-        .map((id) => personName(id))
-        .filter((n) => n !== "—" && n !== "Unknown user");
+    /**
+     * The people who own a step, named. With a location, the set that actually
+     * covers it — its own if one exists, the fallback otherwise; a location
+     * row REPLACES the fallback rather than adding to it, which is what makes
+     * "Vapi is handled by these two, everywhere else by the default" sayable.
+     * Without one, everybody who owns the step anywhere.
+     */
+    const ownerNamesFor = (stepKey: StepKey, locationId?: string | null): string[] => {
+      const ids =
+        locationId === undefined
+          ? [...new Set(stepOwners.filter((o) => o.stepKey === stepKey).flatMap((o) => o.employeeIds))]
+          : (stepOwnerFor(stepKey, locationId) ?? stepOwnerFor(stepKey, null))?.employeeIds ?? [];
+      return ids.map((id) => personName(id)).filter((n) => n !== "—" && n !== "Unknown user");
+    };
 
     /* --------------------------- masters --------------------------- */
 
@@ -277,6 +343,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
+      company_location: companyLocations,
       customer: customers,
       item: items,
       // Rows carry a synthetic "Customer - Item" name so the shared MasterCrud
@@ -358,7 +425,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       designations,
       dispatchUsers: dir.profiles,
 
-      companies, customers, items, customerItems,
+      companies, companyLocations, customers, items, customerItems,
       activeOf,
       masterList: (mt) => MASTER_LIST[mt],
 
@@ -371,6 +438,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         );
         return activeOf(items).filter((i) => allowed.has(i.id));
       },
+      locationsForCompany: (companyId) =>
+        !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId),
       knownLocations,
       masterName: (mt, id) => nameFrom(MASTER_LIST[mt], id),
 
@@ -446,8 +515,12 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       uploadStepDocument: uploadStepDocumentWrite,
       stepDocumentUrl: stepDocumentUrlWrite,
-      setStepOwner: async (stepKey, input) => {
-        await setStepOwnerWrite(stepKey, input);
+      setStepOwner: async (stepKey, locationId, input) => {
+        await setStepOwnerWrite(stepKey, locationId, input);
+        await invalidate();
+      },
+      deleteStepOwner: async (stepKey, locationId) => {
+        await deleteStepOwnerWrite(stepKey, locationId);
         await invalidate();
       },
       setConfig: async (key, val) => {
@@ -502,7 +575,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     };
   }, [
     userId, isAdmin, isLoading, error, queryClient, dir, orgPeople,
-    stepOwners, designations, companies, customers, items, customerItems,
+    stepOwners, designations, companies, companyLocations, customers, items, customerItems,
     masterManagers, masterRequests, orders, activity, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,
   ]);

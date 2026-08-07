@@ -199,13 +199,25 @@ export default function OrderDetail() {
             <Field label="Customer" value={s.customerName(order.customerId)} />
             <Field label="Customer location" value={order.customerLocation ?? "—"} />
             <Field label="Billing company" value={s.masterName("company", order.companyId)} />
+            <Field
+              label="Dispatch location"
+              value={s.masterName("company_location", order.locationId)}
+            />
             <Field label="Customer PO no." value={order.customerPoNo ?? "—"} />
             <Field label="Dispatch type" value={DISPATCH_TYPE_LABEL[order.dispatchType]} />
             <Field label="Order date" value={dmy(order.orderDate)} />
             <Field label="Round" value={`#${order.roundNo}`} />
+            {/* The decision GOVERNING the order — the header, not the round. A
+                partial is meaningless without its figure, so it carries one. */}
             <Field
               label="Credit"
-              value={order.ccStatus ? CREDIT_STATUS_LABEL[order.ccStatus] : "—"}
+              value={
+                order.ccStatus
+                  ? order.ccStatus === "partial" && order.ccApprovedQty != null
+                    ? `${CREDIT_STATUS_LABEL[order.ccStatus]} · ${order.ccApprovedQty} of ${totals.ordered}`
+                    : CREDIT_STATUS_LABEL[order.ccStatus]
+                  : "—"
+              }
             />
             {order.orderRemarks && <Field label="Remarks" value={order.orderRemarks} />}
             {order.sbInvoiceNo && <Field label="Invoice (this round)" value={order.sbInvoiceNo} />}

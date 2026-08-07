@@ -64,9 +64,12 @@ export default function OrdersTable({
       filter: { kind: "select", get: (o) => s.customerName(o.customerId) },
       tdClassName: "whitespace-nowrap",
     },
+    // ⚠ Both location headers say WHICH location. One is where the customer takes
+    //   delivery, the other is the site we ship from; an unqualified "Location"
+    //   is the fastest way to have somebody filter the wrong one.
     {
-      key: "location",
-      header: "Location",
+      key: "customerLocation",
+      header: "Customer location",
       cell: (o) => <span className="text-grey">{o.customerLocation ?? "—"}</span>,
       sortValue: (o) => o.customerLocation ?? "",
       filter: { kind: "select", get: (o) => o.customerLocation ?? "—" },
@@ -78,6 +81,16 @@ export default function OrdersTable({
       cell: (o) => <span className="text-grey">{s.masterName("company", o.companyId)}</span>,
       sortValue: (o) => s.masterName("company", o.companyId),
       filter: { kind: "select", get: (o) => s.masterName("company", o.companyId) },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "dispatchLocation",
+      header: "Dispatch location",
+      cell: (o) => (
+        <span className="text-grey">{s.masterName("company_location", o.locationId)}</span>
+      ),
+      sortValue: (o) => s.masterName("company_location", o.locationId),
+      filter: { kind: "select", get: (o) => s.masterName("company_location", o.locationId) },
       tdClassName: "whitespace-nowrap",
     },
     {

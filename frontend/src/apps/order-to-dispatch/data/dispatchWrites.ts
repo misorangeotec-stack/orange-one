@@ -27,14 +27,20 @@ export interface OrderLineInput {
  *   validates it against the active company master and refuses without one. It
  *   used to be asked two steps later, at the stock check.
  *
- * `customerLocation` is seeded from the customer master but stored on the order
- * as plain text, so a later rename of the master cannot rewrite a consignment
- * that has already gone out. `customerPoNo` is the customer's own reference and
- * is optional.
+ * ⚠ `locationId` AND `customerLocation` ARE DIFFERENT FACTS. The first is one of
+ *   OUR sites — a real FK, chosen from the company's own list, and about to
+ *   decide who may see the order. The second is where the CUSTOMER takes
+ *   delivery: seeded from the customer master but stored as plain text, so a
+ *   later rename cannot rewrite a consignment that has already gone out.
+ *
+ * `locationId` is nullable because a company with no sites configured asks for
+ * none; `fms_dispatch_submit_order` requires one wherever the company has any.
+ * `customerPoNo` is the customer's own reference and is optional.
  */
 export interface OrderInput {
   dispatchType: DispatchType;
   companyId: string;
+  locationId: string | null;
   customerId: string;
   customerLocation: string | null;
   customerPoNo: string | null;
@@ -47,6 +53,7 @@ export interface OrderInput {
 const orderPayload = (input: OrderInput) => ({
   dispatch_type: input.dispatchType,
   company_id: input.companyId,
+  location_id: input.locationId ?? "",
   customer_id: input.customerId,
   customer_location: input.customerLocation ?? "",
   customer_po_no: input.customerPoNo ?? "",
@@ -218,16 +225,57 @@ export interface StepOwnerInput {
   employeeIds: string[];
 }
 
-export async function setStepOwner(stepKey: string, input: StepOwnerInput): Promise<void> {
-  const { error } = await db.from("fms_dispatch_step_owners").upsert(
-    {
-      step_key: stepKey,
-      department_ids: input.departmentIds,
-      designation_id: input.designationId,
-      employee_ids: input.employeeIds,
-    },
-    { onConflict: "step_key" },
-  );
+/**
+ * Write one owner-set: who owns `stepKey` at `locationId`.
+ *
+ * ⚠ `locationId: null` IS THE FALLBACK GRANT covering every location — not
+ *   "unscoped". There is at most one per step.
+ *
+ * ⚠ THE UPSERT CANNOT CARRY THIS. PostgREST's `onConflict` needs a unique
+ *   constraint, and the two that replaced `unique (step_key)` are PARTIAL
+ *   indexes — Postgres will not use a partial index as a conflict target. So
+ *   this reads the existing row and does an update or an insert itself. The
+ *   partial indexes still guarantee uniqueness underneath; this is just how the
+ *   client has to spell it.
+ */
+export async function setStepOwner(
+  stepKey: string,
+  locationId: string | null,
+  input: StepOwnerInput,
+): Promise<void> {
+  const row = {
+    step_key: stepKey,
+    location_id: locationId,
+    department_ids: input.departmentIds,
+    designation_id: input.designationId,
+    employee_ids: input.employeeIds,
+  };
+
+  let find = db.from("fms_dispatch_step_owners").select("id").eq("step_key", stepKey);
+  find = locationId === null ? find.is("location_id", null) : find.eq("location_id", locationId);
+  const { data: existing, error: findError } = await find.maybeSingle();
+  if (findError) throw new Error(findError.message);
+
+  const { error } = existing
+    ? await db.from("fms_dispatch_step_owners").update(row).eq("id", existing.id)
+    : await db.from("fms_dispatch_step_owners").insert(row);
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Remove a location's owner-set entirely.
+ *
+ * Distinct from saving it with nobody in it: an empty employee list is still a
+ * row, and a row that exists says "this location is configured, and nobody owns
+ * it" — which suppresses nothing but reads as deliberate. Deleting it hands the
+ * location back to the fallback grant.
+ */
+export async function deleteStepOwner(stepKey: string, locationId: string): Promise<void> {
+  const { error } = await db
+    .from("fms_dispatch_step_owners")
+    .delete()
+    .eq("step_key", stepKey)
+    .eq("location_id", locationId);
   if (error) throw new Error(error.message);
 }
 
@@ -242,6 +290,7 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 
 const MASTER_TABLE: Record<DispatchMasterType, string> = {
   company: "fms_dispatch_companies",
+  company_location: "fms_dispatch_company_locations",
   customer: "fms_dispatch_customers",
   item: "fms_dispatch_items",
   customer_item: "fms_dispatch_customer_items",

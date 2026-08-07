@@ -22,6 +22,8 @@ export interface RegisterDeps extends OrderVmDeps {
   customerName: (id: string | null) => string;
   itemName: (id: string | null) => string;
   companyName: (id: string | null) => string;
+  /** OUR site the round left from — not `customerLocation`, which is free text. */
+  locationName: (id: string | null) => string;
 }
 
 /** A flat row: one round of one order, plus that round's step cells. */
@@ -51,6 +53,9 @@ export function exportOrderRegister(
     { header: "Customer Location", width: 20, value: (r) => r.order.customerLocation ?? "" },
     { header: "Customer PO No.", width: 18, value: (r) => r.order.customerPoNo ?? "" },
     { header: "Company", width: 24, value: (r) => deps.companyName(r.view.companyId ?? r.order.companyId) },
+    // Round first, header as the fallback — an archived round keeps its own copy,
+    // and an order raised before locations existed has neither.
+    { header: "Dispatch Location", width: 20, value: (r) => deps.locationName(r.view.locationId ?? r.order.locationId) },
     {
       header: "Item",
       width: 30,
@@ -61,6 +66,14 @@ export function exportOrderRegister(
       width: 18,
       value: (r) =>
         r.order.lines.map((l) => `${l.quantity} ${l.unit ?? ""}`.trim()).join(", "),
+    },
+    {
+      // The ceiling credit had set when this round ran. Blank on an uncapped
+      // order — every one raised before partial approval existed — rather than
+      // a zero, which would read as "credit approved nothing".
+      header: "Credit Approved Qty",
+      width: 18,
+      value: (r) => (r.order.ccApprovedQty == null ? "" : r.order.ccApprovedQty),
     },
     {
       header: "Dispatched This Round",
