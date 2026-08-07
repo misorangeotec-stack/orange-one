@@ -271,9 +271,15 @@ export function buildLastReceiptDates(
  * they are kept as separate functions so the four other reports that consume the date map
  * (DSO, Overdue Aging, Customer Category) are untouched.
  *
- * Under LIVE the bulk snapshot carries no per-voucher detail (only monthly totals), so the
- * exact last-voucher amount is unknowable here → null. The date still comes through, so the
- * column shows a date with a "—" amount on the live source.
+ * Under LIVE the bulk snapshot carries no per-voucher DETAIL, but it does now carry this one
+ * pre-computed figure: collection_customer_snapshot.last_receipt_amount, filled by a set-based
+ * pass over tally_voucher_line at the end of every collection_refresh(). Deriving it in the
+ * browser is not an option — that query is a 5s nested loop over ~1,800 ledgers.
+ *
+ * The snapshot only ever writes the amount when its own computed date agrees with the stored
+ * last_receipt_date, so a null here means "genuinely unknown", never "belongs to another
+ * voucher". Before the first refresh after the migration every Live row is null and the column
+ * reads "—", exactly as it did before.
  */
 export function buildLastReceiptAmounts(
   ledgers: Customer[],
@@ -284,7 +290,7 @@ export function buildLastReceiptAmounts(
 
   for (const c of ledgers) {
     if (source === "live") {
-      out.set(c.id, null);
+      out.set(c.id, c.lastReceiptAmount ?? null);
       continue;
     }
 
@@ -414,7 +420,9 @@ export interface CollectionFacts {
   /** Days from lastReceiptDate to as-of. null when never paid. */
   daysSinceLastReceipt: number | null;
   /** ₹ of the voucher behind lastReceiptDate (from the ledger that owns the latest date).
-   *  null = never paid OR unavailable (the live snapshot has no per-voucher amount). */
+   *  null = never paid, or the source hasn't got the figure yet (Live carries it from the
+   *  snapshot's last_receipt_amount, which is null until the first refresh after that column
+   *  was added). */
   lastReceiptAmount?: number | null;
 
   /**
@@ -668,6 +676,162 @@ export function factsForScoped(
   };
 }
 
+// ── The same facts, for an arbitrary DATE range ─────────────────────────────────────
+
+/**
+ * One ledger's day-level totals for a chosen From→To range, straight from the
+ * `collection_range_facts` RPC. Rupees; `journals` is signed (Dr − Cr).
+ *
+ * `mvSinceFrom` / `mvSincePriorFrom` are the movement (in movementOf's sense) from that date
+ * through the as-of date — what the canonical outstanding has to be wound BACK through to get
+ * the opening balance. The RPC computes them with movementOf's exact formula.
+ */
+export interface RangeFacts {
+  receipts: number;
+  sales: number;
+  creditNotes: number;
+  debitNotes: number;
+  journals: number;
+  chequeReturns: number;
+  priorReceipts: number;
+  priorSales: number;
+  mvSinceFrom: number;
+  mvSincePriorFrom: number;
+}
+
+/**
+ * factsForScoped's TWIN, for a date range instead of a run of whole months.
+ *
+ * ── Why a twin and not a parameter ────────────────────────────────────────────────────────
+ * Everything the monthly path reads is bucketed by month (the ConnectWave snapshot stores
+ * sales/receipts as a month→totals jsonb), so a date range simply cannot be answered from it —
+ * the numbers would silently round to whole months. This reads day-level vouchers instead.
+ *
+ * THE TWO MUST STAY IN STEP. Every line of arithmetic below is deliberately identical to
+ * factsForScoped: the same clamps, the same journal netting rule, the same collectible
+ * definition, the same trap-1 and trap-2 handling. Only the SOURCE of the six per-window
+ * figures differs. If you change a rule there, change it here.
+ *
+ * ── Where the two agree, and where this one is BETTER ─────────────────────────────────────
+ * Receipts and Sales tie exactly: a range covering N whole months reproduces the N-month preset
+ * to the rupee (verified over Jun–Aug 2026: 1,831 ledgers, ₹69.50 Cr receipts, ₹75.81 Cr sales,
+ * zero mismatches). Anything listed by a receipts-only predicate — the whole Zero-Collection
+ * report — is therefore identical either way.
+ *
+ * Opening / Collectible / Collection % can legitimately DIFFER, and when they do this side is
+ * the accurate one. Under Live the monthly path has only sales and receipts per month; credit
+ * notes, debit notes, journals and cheque returns exist in the snapshot as a per-customer YEARLY
+ * total, which buildMonthlySeries spreads across months by sales/receipt weight (see its "Live
+ * only: spread the YEARLY notes" block — it says outright that it is an estimate). This path
+ * reads all four on their real voucher dates. Measured over Jun–Aug 2026: 225 of 1,831 ledgers
+ * differ, ₹3.30 Cr of movement; 613 ledgers carry ₹56.23 Cr of such notes this FY. Do not
+ * "reconcile" the two by degrading this one.
+ *
+ * Sale recency (`lastSaleMonth` / `monthsSinceLastSale`) stays on the MONTH series, because it
+ * is a month-grain question by definition — see the CollectionFacts note on lastSaleMonth.
+ * `windowMonths` is therefore still passed, as the months the date range touches.
+ */
+export function factsForRange(
+  c: ConsolidatedCustomer,
+  range: Map<string, RangeFacts>,
+  series: Map<string, Map<string, MonthFacts>>,
+  lastDates: Map<string, string | null>,
+  balances: Map<string, number>,
+  months: string[],
+  windowMonths: string[],
+  hasPrior: boolean,
+  asOfDate: string,
+  scopeIds: ReadonlySet<string> | null = null,
+  includeJournalSettlement = false,
+  lastAmounts?: Map<string, number | null>,
+): CollectionFacts {
+  const all = c.constituentIds?.length ? c.constituentIds : [c.id];
+  const ids = scopeIds ? all.filter((id) => scopeIds.has(id)) : all;
+
+  let inWindow = 0, inPrior = 0, salesInWindow = 0, chequeReturns = 0, creditNotes = 0;
+  let salesInPrior = 0;
+  let journalInWindowRaw = 0;
+  let openingRaw = 0, priorOpeningRaw = 0;
+  let lastReceiptDate: string | null = null;
+  let lastReceiptAmount: number | null = null;
+  let lastSaleMonth: string | null = null;
+
+  for (const id of ids) {
+    const rf = range.get(id);
+    if (rf) {
+      inWindow      += rf.receipts;
+      inPrior       += rf.priorReceipts;
+      salesInWindow += rf.sales;
+      salesInPrior  += rf.priorSales;
+      chequeReturns += rf.chequeReturns;
+      creditNotes   += rf.creditNotes;
+      journalInWindowRaw += rf.journals;
+    }
+    // Opening is derived PER LEDGER from that ledger's own canonical balance and summed raw —
+    // the same contract as openingForLedger, for the same reason (see its header). A ledger with
+    // no vouchers in range still has an opening: its balance, unmoved.
+    const bal = balances.get(id) ?? 0;
+    openingRaw += bal - (rf?.mvSinceFrom ?? 0);
+    if (hasPrior) priorOpeningRaw += bal - (rf?.mvSincePriorFrom ?? 0);
+
+    const last = lastDates.get(id) ?? null;
+    if (last && (!lastReceiptDate || last > lastReceiptDate)) {
+      lastReceiptDate = last;
+      lastReceiptAmount = lastAmounts?.get(id) ?? null;
+    }
+
+    const sale = lastSaleMonthOf(series.get(id), months);
+    if (sale && (!lastSaleMonth || months.indexOf(sale) > months.indexOf(lastSaleMonth)))
+      lastSaleMonth = sale;
+  }
+
+  const endIdx = windowMonths.length
+    ? months.indexOf(windowMonths[windowMonths.length - 1])
+    : months.length - 1;
+  const saleIdx = lastSaleMonth ? months.indexOf(lastSaleMonth) : -1;
+  const monthsSinceLastSale =
+    saleIdx < 0 || endIdx < 0 ? NEVER_SOLD : Math.max(0, endIdx - saleIdx);
+
+  const opening = Math.max(0, openingRaw);
+  const collectible = opening + salesInWindow;
+  const journalSettledInWindow = Math.max(0, -journalInWindowRaw);
+  const collected = inWindow + (includeJournalSettlement ? journalSettledInWindow : 0);
+  const collectedNet = Math.max(0, collected - chequeReturns);
+
+  const priorCollectible = hasPrior ? Math.max(0, priorOpeningRaw) + salesInPrior : 0;
+
+  const pct = pctOf(collected, collectible);
+  const pctNet = pctOf(collectedNet, collectible);
+  const pctEff = pct === null || pctNet === null ? null : Math.min(pct, pctNet);
+  const priorPct = hasPrior ? pctOf(inPrior, priorCollectible) : null;
+
+  return {
+    inWindow,
+    inPrior,
+    salesInWindow,
+    salesInPrior,
+    chequeReturns,
+    creditNotes,
+    journalSettledInWindow,
+    opening,
+    collectible,
+    collected,
+    collectedNet,
+    pct,
+    pctNet,
+    pctEff,
+    priorCollectible,
+    priorPct,
+    deltaPp: pct !== null && priorPct !== null ? pct - priorPct : null,
+    lastReceiptDate,
+    daysSinceLastReceipt:
+      lastReceiptDate && asOfDate ? daysBetween(lastReceiptDate, asOfDate) : null,
+    lastReceiptAmount,
+    lastSaleMonth,
+    monthsSinceLastSale,
+  };
+}
+
 // ── The three predicates ────────────────────────────────────────────────────────────
 
 /**
@@ -784,6 +948,9 @@ export interface ZCMetrics {
   deteriorating: number;
   zeroCollectors: number;
   creditLimit: number;
+  /** Agreed credit period in days, from the Tally master. -1 = none set (renders "—", not "0d").
+   *  Leaf-only on screen: credit terms are a per-customer fact and summing them is meaningless. */
+  creditDays: number;
 }
 
 /** Sentinel for "no receipt in the entire data horizon" — sorts as the worst possible. */
@@ -804,7 +971,7 @@ export const emptyMetrics = (): ZCMetrics => ({
   lastReceiptAt: 0, lastReceiptAmount: 0,
   neverPaid: 0, neverSold: 0, stillBuying: 0, wentQuiet: 0, bounced: 0,
   deteriorating: 0, zeroCollectors: 0,
-  creditLimit: 0,
+  creditLimit: 0, creditDays: -1,
 });
 
 /**
@@ -851,6 +1018,9 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
     deteriorating: f.deltaPp !== null && f.deltaPp < -DETERIORATION_PP ? 1 : 0,
     zeroCollectors: f.collected < ZERO_EPS ? 1 : 0,
     creditLimit: c.creditLimit ?? 0,
+    // ~half the Tally masters carry no credit period. -1 (not 0) so `daysText` renders "—" —
+    // "0d" would read as "cash only", which is a different and much harsher claim.
+    creditDays: (c.creditPeriod ?? 0) > 0 ? c.creditPeriod : -1,
   };
 };
 
@@ -883,6 +1053,11 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
   acc.daysSinceLastReceipt = Math.max(acc.daysSinceLastReceipt, m.daysSinceLastReceipt);
   acc.monthsSinceLastSale  = Math.max(acc.monthsSinceLastSale, m.monthsSinceLastSale);
   acc.lastReceiptAt        = Math.max(acc.lastReceiptAt, m.lastReceiptAt);
+  // Credit terms fold with MAX for the same reason consolidateByName does it across a customer's
+  // ledgers. It MUST be folded even though the column is leaf-only: a leaf node's metrics are
+  // also built by accumulating onto emptyMetrics(), so leaving it out doesn't "keep the leaf's
+  // value" — it strands every row on the -1 sentinel and the whole column renders "—".
+  acc.creditDays           = Math.max(acc.creditDays, m.creditDays);
 }
 
 // ── Focus lenses (the clickable KPI cards) ──────────────────────────────────────────
@@ -1070,7 +1245,7 @@ export type ZCColumnKey =
   | "collectionPct" | "shortfall" | "priorPct" | "deltaPp"
   | "priorCollections" | "chequeReturns" | "creditNotes"
   | "daysSinceLastReceipt" | "lastReceipt" | "lastReceiptAmount"
-  | "monthsSinceLastSale" | "maxOverdueDays" | "creditLimit";
+  | "monthsSinceLastSale" | "maxOverdueDays" | "creditLimit" | "creditDays";
 
 export interface ZCColumn {
   key: ZCColumnKey;
@@ -1121,8 +1296,8 @@ export const ZC_COLUMNS: ZCColumn[] = [
   { key: "chequeReturns",        label: "Cheque Returns",    kind: "money", value: (m) => m.chequeReturns, alarm: true },
   { key: "creditNotes",          label: "Credit Notes",      kind: "money", value: (m) => m.creditNotes },
   { key: "daysSinceLastReceipt", label: "Days Since Receipt", kind: "days", value: (m) => m.daysSinceLastReceipt, alarm: true },
-  // Leaf-only: a date/amount can't be summed onto a group row. The exact voucher amount only
-  // exists in the pipeline day-detail — "—" under the live snapshot, where the date still shows.
+  // Leaf-only: a date/amount can't be summed onto a group row. Both sources carry the exact
+  // voucher amount now — the pipeline from its day detail, Live from the snapshot column.
   { key: "lastReceipt",       label: "Last Receipt",   kind: "date",  leafOnly: true, value: (m) => m.lastReceiptAt || null },
   { key: "lastReceiptAmount", label: "Last Receipt ₹", kind: "money", leafOnly: true, value: (m) => m.lastReceiptAmount || null },
   // Folded with MAX, so a group reads as its DEADEST member. The exact month label is a
@@ -1130,6 +1305,9 @@ export const ZC_COLUMNS: ZCColumn[] = [
   { key: "monthsSinceLastSale",  label: "Months Since Sale", kind: "months", value: (m) => m.monthsSinceLastSale, alarm: true },
   { key: "maxOverdueDays",       label: "Max Overdue Days",  kind: "days",  value: (m) => m.maxOverdueDays },
   { key: "creditLimit",          label: "Credit Limit",      kind: "money", value: (m) => m.creditLimit },
+  // Leaf-only, and no `alarm`: long credit terms aren't a fault, so this column never turns red
+  // (the days rule at CollectionPerformanceReport's `alarm` would otherwise flag anything > 180).
+  { key: "creditDays",           label: "Credit Days",       kind: "days",  leafOnly: true, value: (m) => m.creditDays },
 ];
 
 /** Which of the three reports this is. Decides the predicate, the defaults and the lenses. */
@@ -1148,7 +1326,10 @@ export type CollectionsMode = "zero" | "threshold" | "dormant";
  */
 export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
   if (mode === "zero")
-    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "journalSettled", "priorCollections", "daysSinceLastReceipt", "lastReceipt", "lastReceiptAmount"];
+    // Credit Days + Credit Limit close the loop the rest of the row opens: this customer paid
+    // nothing — were they ever given terms, and how much rope? Both come straight from the Tally
+    // master, so ~half read "—" (951 of 1,831 ledgers carry no credit period, 908 no limit).
+    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "journalSettled", "priorCollections", "daysSinceLastReceipt", "lastReceipt", "lastReceiptAmount", "creditDays", "creditLimit"];
   if (mode === "dormant")
     return ["customers", "outstanding", "overdue", "over180", "collected", "monthsSinceLastSale", "daysSinceLastReceipt"];
   return [
@@ -1159,12 +1340,24 @@ export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
 
 // ── Window resolution ───────────────────────────────────────────────────────────────
 
-export type PeriodPreset = "1m" | "3m" | "6m" | "fy" | "all" | "custom";
+export type PeriodPreset = "15d" | "1m" | "3m" | "6m" | "fy" | "all" | "custom";
 
 export const PERIOD_LABELS: Record<PeriodPreset, string> = {
+  "15d": "Last 15 Days",
   "1m": "This Month", "3m": "Last 3 Months", "6m": "Last 6 Months",
   fy: "This FY", all: "All", custom: "Custom",
 };
+
+/**
+ * Presets measured in DAYS, not whole months. They resolve to a date range and are answered by
+ * the day-level engine (factsForRange), exactly as Custom is — `resolveWindow` cannot express
+ * them, and calling it with one is a bug. `isDateRangePreset` is the guard for that.
+ */
+export const DATE_RANGE_PRESETS = { "15d": 15 } as const satisfies Partial<Record<PeriodPreset, number>>;
+
+/** True for the presets that mean a run of days: "15d" and the user-picked "custom". */
+export const isDateRangePreset = (p: PeriodPreset): boolean =>
+  p === "custom" || p in DATE_RANGE_PRESETS;
 
 /**
  * Resolve a preset into the contiguous run of trend month labels it covers.
@@ -1174,6 +1367,10 @@ export const PERIOD_LABELS: Record<PeriodPreset, string> = {
 export function resolveWindow(months: string[], preset: PeriodPreset): string[] {
   if (months.length === 0) return [];
   switch (preset) {
+    // A day-based preset has no month answer — its window is derived from real dates and its
+    // touched months come from monthRange(). Falling through to `months` here would silently
+    // widen "Last 15 Days" to the entire data horizon.
+    case "15d": return months.slice(-1);
     case "1m": return months.slice(-1);
     case "3m": return months.slice(-3);
     case "6m": return months.slice(-6);

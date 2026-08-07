@@ -172,6 +172,10 @@ interface CustSnap {
   check_returns: number | null; payments_out: number | null;
   receipts_3m: number | null; receipts_6m: number | null;
   last_receipt_date: string | null;
+  // Added 07-08-2026. Nullable for one refresh cycle after the migration (and absent entirely if
+  // the frontend ships first — the snapshot is read with select("*"), so a missing column is
+  // simply undefined here and the column reads "—", exactly as it did before.
+  last_receipt_amount: number | null;
   proposed_3m: number | null; proposed_3m_delta: number | null;
   proposed_ai: number | null; proposed_ai_delta: number | null; proposed_reason: any;
 }
@@ -266,6 +270,10 @@ function toCustomer(r: CustSnap, identity: CompanyIdentity): Customer {
     obReceiptsApplied: 0,
     obCreditNotesApplied: 0,
     lastReceiptDate,
+    // Twinned with the date above by the DB (collection_last_receipt_amount_apply only writes the
+    // amount when its own computed date agrees with last_receipt_date), so the pair can never
+    // describe two different vouchers. Null until the first refresh after the migration.
+    lastReceiptAmount: r.last_receipt_amount != null ? Number(r.last_receipt_amount) : null,
     daysSinceLastReceipt,
     receipts1M: Number(r.month_receipts) || 0,
     receipts3M: Number(r.receipts_3m) || 0,

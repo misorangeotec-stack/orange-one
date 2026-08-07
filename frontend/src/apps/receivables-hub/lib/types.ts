@@ -147,6 +147,11 @@ export interface Customer {
   obReceiptsApplied:    number;
   obCreditNotesApplied: number;
   lastReceiptDate:             string | null;
+  /** ₹ of the voucher(s) dated `lastReceiptDate` (same-day receipts summed). Live (Tally) only —
+   *  the pipeline derives it from its own day detail instead (buildLastReceiptAmounts), so it
+   *  leaves this null. Always describes the SAME voucher as `lastReceiptDate`: the DB refuses to
+   *  set one without the other agreeing. */
+  lastReceiptAmount:           number | null;
   daysSinceLastReceipt:        number | null;
   receipts1M:                  number;
   receipts3M:                  number;

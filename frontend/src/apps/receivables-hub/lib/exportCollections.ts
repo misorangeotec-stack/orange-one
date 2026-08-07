@@ -3,32 +3,35 @@
  * (Zero Collections at threshold 0, Below-30% at threshold 30, and Dormant Debtors —
  * one workbook shape, since they share one engine).
  *
- * Three rules drive everything here:
+ * ONE sheet, flat, built to be worked in rather than read:
  *
- *  1. WYSIWYG. The workbook carries exactly what was on screen — same period, threshold,
- *     filters, view preset, sort and visible columns. An export that quietly differs from
- *     the thing that was reviewed is worse than no export at all. Hence the Filters band:
- *     without it, a sheet mailed on Monday is unauditable by Friday.
+ *  1. Every grouping level is its OWN COLUMN and every row is a leaf. No indentation, no
+ *     interleaved subtotals. That is what makes the sheet sortable, filterable and pivotable
+ *     — and it means a SUM down a column is correct, which it is not when group totals sit in
+ *     among the detail.
  *
  *  2. Money is written as NUMBERS with an INR display format, never as pre-formatted
  *     strings ("₹1.20 L"). Strings look right and are useless — Excel can't SUM them.
  *     Percentages get the same treatment (a numeric 12.3 with a `0.0"%"` display format),
  *     so finance can sort and filter on them.
  *
- *  3. A percentage is NEVER summed. The roll-up sheet's % cells come from each node's own
- *     Σcollected / Σcollectible via the column's value() — the same function the screen
- *     uses. Sheet 2 additionally gets an autofilter so finance can slice it without coming
- *     back to the app, which is what they'll actually do.
+ *  3. A percentage is NEVER summed. The % cells come from each node's own
+ *     Σcollected / Σcollectible via the column's value() — the same function the screen uses.
+ *
+ * The preamble is three lines (title, what it is, period) and nothing more. It used to carry
+ * As on / View / Basis / Shortfall target / Filters too; that was seven rows of scaffolding
+ * ahead of the first number. The cost is that the sheet no longer records the filters behind
+ * it, so a mailed copy can't be traced back to the screen that produced it — accepted
+ * deliberately, on the grounds that nobody was reading the band anyway.
  */
 
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { formatDateDMY } from "./utils";
-import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
-import { utilizationPct } from "./receivables";
+import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import {
-  NEVER_PAID, NEVER_SOLD, BAND_LABELS, bandOf, shortfallOf,
-  type ZCColumn, type ZCMetrics, type ZCRow,
+  NEVER_PAID, NEVER_SOLD,
+  type ZCColumn, type ZCMetrics,
 } from "./collections";
 import type { GroupNode } from "./groupTree";
 
@@ -39,20 +42,25 @@ const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
  *  (Excel's native `0.0%` would multiply by 100 and render 1230.0%.) */
 const PCT_FMT = '0.0"%";-0.0"%";"—"';
 
+// (No subtotal style here: this sheet exports leaf rows only — see buildRollupSheet. The shared
+// TOTAL_STYLE is still used by the other receivables exports, which do carry subtotal rows.)
+
 export interface ZCExportMeta {
   /** Report title, e.g. "Customers Below 30% Collection". */
   title: string;
-  /** The View preset name, e.g. "Salesperson → Customer". */
+  /** One line saying what the report is — the same sentence shown under the title on screen. */
+  description: string;
+  /** The View preset name. Not printed; the fallback header when a report renders ungrouped. */
   viewLabel: string;
+  /**
+   * The active grouping levels, outermost first — one exported column each on the roll-up sheet.
+   * Labels, not keys ("Sale Type", not "saleType"), so the sheet reads like the screen.
+   */
+  dims: { key: string; label: string }[];
   /** Human-readable period, e.g. "Last 3 Months (01-05-2026 → 12-07-2026)". */
   periodLabel: string;
-  /** The basis paragraph — how the number was arrived at. */
-  basis: string;
-  /** Shortfall target, in percent. */
-  targetPct: number;
+  /** Not printed — only stamps the downloaded filename. */
   asOfDate: string;
-  /** Active-filter lines, e.g. ["Salesperson: Rakesh, Vinay", "Min Outstanding: ≥ ₹1 L"]. */
-  filterSummary: string[];
 }
 
 /** Days-since-receipt renders as a number, except the never-paid sentinel. */
@@ -88,23 +96,34 @@ const cellFor = (col: ZCColumn, m: ZCMetrics, isLeaf: boolean): string | number 
   return Math.round(v);
 };
 
-/** Pre-order walk of the tree → flat rows carrying their depth and whether they're a leaf. */
-function flatten(
-  nodes: GroupNode<ZCMetrics>[],
-): { label: string; depth: number; metrics: ZCMetrics; isLeaf: boolean }[] {
-  const out: { label: string; depth: number; metrics: ZCMetrics; isLeaf: boolean }[] = [];
-  const walk = (list: GroupNode<ZCMetrics>[]) => {
+interface FlatRow {
+  /** One entry per grouping level, root first: the labels of this node's ancestors and itself.
+   *  Shorter than the dimension list on a subtotal row — a salesperson subtotal has only its own
+   *  label, because the customer and sale type below it are precisely what it is summing over. */
+  labels: string[];
+  depth: number;
+  metrics: ZCMetrics;
+  isLeaf: boolean;
+}
+
+/**
+ * Pre-order walk of the tree → flat rows, each carrying the LABELS of its whole ancestor chain.
+ *
+ * The chain is what lets the sheet give every grouping level its own column. `GroupNode.path`
+ * looks like it would do the job and doesn't: it carries bucket VALUES, and for Sale Type the
+ * value is the raw key ("spare_parts") where the screen shows "Spare Parts". Walking the tree
+ * and collecting `label` keeps Excel and the screen reading identically.
+ */
+function flatten(nodes: GroupNode<ZCMetrics>[]): FlatRow[] {
+  const out: FlatRow[] = [];
+  const walk = (list: GroupNode<ZCMetrics>[], ancestors: string[]) => {
     for (const n of list) {
-      out.push({
-        label: n.sub ? `${n.label} (${n.sub})` : n.label,
-        depth: n.depth,
-        metrics: n.metrics,
-        isLeaf: n.children.length === 0,
-      });
-      if (n.children.length) walk(n.children);
+      const labels = [...ancestors, n.sub ? `${n.label} (${n.sub})` : n.label];
+      out.push({ labels, depth: n.depth, metrics: n.metrics, isLeaf: n.children.length === 0 });
+      if (n.children.length) walk(n.children, labels);
     }
   };
-  walk(nodes);
+  walk(nodes, []);
   return out;
 }
 
@@ -126,8 +145,8 @@ function formatCells(
 }
 
 /**
- * Sheet 1 — the roll-up, exactly as displayed: title + period + filter bands, then the
- * depth-indented tree, then the grand total.
+ * The sheet: a three-line preamble, then one column per grouping level beside the visible
+ * metric columns, one row per leaf, then the grand total.
  */
 function buildRollupSheet(
   roots: GroupNode<ZCMetrics>[],
@@ -137,165 +156,117 @@ function buildRollupSheet(
 ): XLSX.WorkSheet {
   const aoa: Array<Array<string | number>> = [];
 
+  // THREE rows and nothing else: what the report is called, what it means, and what period it
+  // covers. The block used to carry As on / View / Basis / Shortfall target / Filters as well —
+  // seven rows of preamble before a single figure, which read as clutter rather than context.
+  // (Trade-off accepted deliberately: the sheet no longer records which filters produced it, so a
+  // mailed copy can't be audited back to the screen that made it. The period is still stated.)
   aoa.push([meta.title]);
+  aoa.push([meta.description]);
   aoa.push(["Period", meta.periodLabel]);
-  aoa.push(["As on", formatDateDMY(meta.asOfDate)]);
-  aoa.push(["View", meta.viewLabel]);
-  aoa.push(["Basis", meta.basis]);
-  aoa.push(["Shortfall target", `${meta.targetPct}%`]);
-  aoa.push(["Filters", meta.filterSummary.length ? meta.filterSummary.join(" · ") : "None"]);
   aoa.push([]);
 
-  const header = [meta.viewLabel, ...columns.map((c) => c.label)];
+  /**
+   * ONE COLUMN PER GROUPING LEVEL, not one indented column.
+   *
+   * Group by Salesperson → Customer → Sale Type and you get three real columns, so the sheet can
+   * be pivoted, filtered and sorted in Excel. The old single indented column carried the same
+   * information as leading spaces, which Excel cannot group, filter or pivot on at all.
+   *
+   * Every exported row is a LEAF, carrying its full chain, so every grouping column is filled.
+   * `meta.dims` is empty only if a report ever renders ungrouped, and the fallback keeps one label
+   * column so the sheet is never headerless.
+   */
+  const dimLabels = meta.dims.length ? meta.dims.map((d) => d.label) : [meta.viewLabel];
+  const nDims = dimLabels.length;
+
+  /**
+   * "Customers" is dropped from the export.
+   *
+   * It counts how many customers a row covers, which is meaningful on screen where a salesperson
+   * row stands for 40 of them. Every exported row is a leaf, so the column would read 1 all the
+   * way down — a column of ones next to the customer name, inviting the reader to wonder what
+   * they'd missed. It stays on screen; only the sheet loses it.
+   */
+  const metricCols = columns.filter((c) => c.key !== "customers");
+
+  const header = [...dimLabels, ...metricCols.map((c) => c.label)];
   const headerRow0 = aoa.length;
   aoa.push(header);
 
   const firstData0 = aoa.length;
-  const rows = flatten(roots);
+  /**
+   * LEAVES ONLY — the interim group-total rows are deliberately not exported.
+   *
+   * On screen the subtotal rows are the point: they collapse and expand. In a spreadsheet they
+   * are in the way — they interleave totals with detail, so a SUM over the column double-counts,
+   * and any sort or filter scatters them away from the rows they were summing. A flat leaf table
+   * is what Excel is good at: every grouping level is a column, so a pivot rebuilds any subtotal
+   * on demand, correctly. The grand total still sits at the bottom, below the filter range.
+   *
+   * Nothing is lost: leaves are the finest buckets, so they add up to exactly the same grand total.
+   */
+  const rows = flatten(roots).filter((r) => r.isLeaf);
   for (const r of rows) {
-    aoa.push([
-      `${"    ".repeat(r.depth)}${r.label}`,
-      ...columns.map((c) => cellFor(c, r.metrics, r.isLeaf)),
-    ]);
+    const dimCells: (string | number)[] = Array.from({ length: nDims }, (_, i) => r.labels[i] ?? "");
+    aoa.push([...dimCells, ...metricCols.map((c) => cellFor(c, r.metrics, r.isLeaf))]);
   }
 
   const grandRow0 = aoa.length;
-  aoa.push(["GRAND TOTAL", ...columns.map((c) => cellFor(c, total, false))]);
+  aoa.push([
+    "GRAND TOTAL",
+    ...Array.from({ length: nDims - 1 }, () => ""),
+    ...metricCols.map((c) => cellFor(c, total, false)),
+  ]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const ncols = header.length;
-  ws["!cols"] = [{ wch: 40 }, ...columns.map(() => ({ wch: 16 }))];
+  ws["!cols"] = [
+    // The first level is usually the widest (customer names run long); the rest are narrower.
+    ...dimLabels.map((_, i) => ({ wch: i === 0 ? 34 : 26 })),
+    ...metricCols.map(() => ({ wch: 16 })),
+  ];
 
+  // Metric columns now start after the dimension block, not after a single label column.
   // +1 on the row count → include the grand total.
   const pick = (k: ZCColumn["kind"]) =>
-    columns.map((c, i) => (c.kind === k ? i + 1 : -1)).filter((i) => i >= 0);
+    metricCols.map((c, i) => (c.kind === k ? i + nDims : -1)).filter((i) => i >= 0);
   formatCells(ws, firstData0, rows.length + 1, pick("money"), INR_FMT);
   formatCells(ws, firstData0, rows.length + 1, pick("pct"), PCT_FMT);
 
   styleRow(ws, 0, ncols, HEADER_STYLE);
   styleRow(ws, headerRow0, ncols, HEADER_STYLE);
-  // Parent rows are subtotals of their children — tint them so the hierarchy survives
-  // the trip into Excel, where the indent alone is easy to miss.
-  rows.forEach((r, i) => {
-    if (!r.isLeaf) styleRow(ws, firstData0 + i, ncols, TOTAL_STYLE);
-  });
+  // No per-row styling: every data row is a leaf now, so there is no hierarchy left to signal.
   styleRow(ws, grandRow0, ncols, GRAND_TOTAL_STYLE);
 
-  // Freeze the header block + the label column.
-  ws["!freeze"] = { xSplit: 1, ySplit: headerRow0 + 1 };
-
-  return ws;
-}
-
-/**
- * Sheet 2 — flat, one row per listed customer, every column regardless of the ColumnPicker.
- * This is the sheet finance pivots and filters in, so it gets the autofilter and the full
- * attribute set (including the leaf-only columns the roll-up can't show on a group row).
- */
-function buildCustomerSheet(rows: ZCRow[], meta: ZCExportMeta): XLSX.WorkSheet {
-  // "Last Sale Month" is the one figure the roll-up sheet CANNOT carry: a month label doesn't
-  // sum, so a group row has nothing honest to show for it. This sheet is per-customer, so here
-  // it can be exact — which is why the dormant report's month lands in Excel and not on screen.
-  const header = [
-    "Customer", "Group", "Company", "Location", "Salesperson", "Category",
-    "Outstanding", "Overdue", "> 180 Days",
-    "Opening", "Sales in Period", "Collectible", "Collected", "Journal Settled",
-    "Collection %", "Collection % (net of cheque returns)", `Shortfall vs ${meta.targetPct}%`, "Band",
-    "Prior Collections", "Prior %", "Δ pp",
-    "Cheque Returns", "Credit Notes",
-    "Max Overdue Days", "Days Since Receipt", "Last Receipt Date", "Last Receipt Amount",
-    "Sales in Prior Period", "Last Sale Month", "Months Since Sale",
-    "Credit Limit", "Utilization %", "Risk", "Red Mark",
-  ];
-  // "Last Receipt Amount" is inserted at col 26, so everything from "Sales in Prior Period"
-  // (was 26, now 27) onward shifts +1 — including "Credit Limit" (was 29, now 30).
-  const MONEY_COLS = [6, 7, 8, 9, 10, 11, 12, 13, 16, 18, 21, 22, 26, 27, 30];
-  const PCT_COLS = [14, 15, 19, 20];
-
-  const aoa: Array<Array<string | number>> = [];
-  aoa.push([`${meta.title} — ${meta.periodLabel}`]);
-  aoa.push([]);
-  const headerRow0 = aoa.length;
-  aoa.push(header);
-
-  const firstData0 = aoa.length;
-  for (const r of rows) {
-    const c = r.customer;
-    const f = r.facts;
-    aoa.push([
-      c.name,
-      r.group,
-      c.companies?.join(" / ") || c.company,
-      c.locations?.join(" / ") || c.location,
-      c.salesPersons?.length ? c.salesPersons.join(", ") : c.salesPerson || "Others",
-      c.categories?.length ? c.categories.join(", ") : c.category || "Uncategorized",
-      Math.round(c.outstanding),
-      Math.round(c.overdue),
-      Math.round(c.agingBuckets?.["180_plus"] ?? 0),
-      Math.round(f.opening),
-      Math.round(f.salesInWindow),
-      Math.round(f.collectible),
-      Math.round(f.collected),
-      Math.round(f.journalSettledInWindow),
-      pctCell(f.pct),
-      pctCell(f.pctNet),
-      Math.round(shortfallOf(f, meta.targetPct)),
-      BAND_LABELS[bandOf(f)],
-      Math.round(f.inPrior),
-      pctCell(f.priorPct),
-      pctCell(f.deltaPp),
-      Math.round(f.chequeReturns),
-      Math.round(f.creditNotes),
-      c.maxOverdueDays ?? 0,
-      f.lastReceiptDate === null ? "Never" : (f.daysSinceLastReceipt ?? 0),
-      f.lastReceiptDate ? formatDateDMY(f.lastReceiptDate) : "Never",
-      f.lastReceiptAmount != null ? Math.round(f.lastReceiptAmount) : "—",
-      Math.round(f.salesInPrior),
-      f.lastSaleMonth ?? "None",
-      monthsCell(f.monthsSinceLastSale),
-      Math.round(c.creditLimit ?? 0),
-      utilizationPct(c),
-      c.risk,
-      c.blocked ? "Yes" : "No",
-    ]);
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const ncols = header.length;
-  ws["!cols"] = [
-    { wch: 38 }, { wch: 28 }, { wch: 18 }, { wch: 16 }, { wch: 18 }, { wch: 12 },
-    { wch: 15 }, { wch: 15 }, { wch: 15 },
-    { wch: 15 }, { wch: 16 }, { wch: 15 }, { wch: 15 }, { wch: 15 },
-    { wch: 13 }, { wch: 30 }, { wch: 17 }, { wch: 13 },
-    { wch: 17 }, { wch: 11 }, { wch: 10 },
-    { wch: 15 }, { wch: 14 },
-    { wch: 16 }, { wch: 17 }, { wch: 16 }, { wch: 18 },
-    { wch: 19 }, { wch: 15 }, { wch: 16 },
-    { wch: 15 }, { wch: 13 }, { wch: 10 }, { wch: 9 },
-  ];
-
-  formatCells(ws, firstData0, rows.length, MONEY_COLS, INR_FMT);
-  formatCells(ws, firstData0, rows.length, PCT_COLS, PCT_FMT);
-
-  styleRow(ws, 0, ncols, HEADER_STYLE);
-  styleRow(ws, headerRow0, ncols, HEADER_STYLE);
-
-  // The two things that make this sheet actually usable outside the app.
+  // Freeze the header block + the whole dimension block, so the grouping columns stay on screen
+  // while scrolling right through the metrics.
+  ws["!freeze"] = { xSplit: nDims, ySplit: headerRow0 + 1 };
+  // Autofilter over the dimension columns + metrics: with real columns this sheet can now be
+  // sliced in Excel the same way the Customers sheet can.
   ws["!autofilter"] = {
     ref: XLSX.utils.encode_range(
       { r: headerRow0, c: 0 },
-      { r: headerRow0 + rows.length, c: ncols - 1 },
+      { r: grandRow0 - 1, c: ncols - 1 },
     ),
   };
-  ws["!freeze"] = { xSplit: 1, ySplit: headerRow0 + 1 };
 
   return ws;
 }
 
+
+/**
+ * ONE sheet, not two.
+ *
+ * There used to be a second "Customers" tab: flat, one row per customer, every column whether or
+ * not it was ticked on screen. It existed because the roll-up sheet put the whole hierarchy in a
+ * single indented column, which Excel cannot filter or pivot — so finance needed somewhere to
+ * slice the data. Now that each grouping level has its own real column and the sheet carries an
+ * autofilter, that need is gone and a second tab is just a thing to explain.
+ */
 export function exportCollectionsXlsx(
   roots: GroupNode<ZCMetrics>[],
   total: ZCMetrics,
-  leafRows: ZCRow[],
   columns: ZCColumn[],
   meta: ZCExportMeta,
 ): void {
@@ -303,7 +274,6 @@ export function exportCollectionsXlsx(
   // Excel caps sheet names at 31 chars and rejects most punctuation.
   const tab = meta.title.replace(/[\\/?*[\]:]/g, "").slice(0, 31) || "Collections";
   XLSX.utils.book_append_sheet(wb, buildRollupSheet(roots, total, columns, meta), tab);
-  XLSX.utils.book_append_sheet(wb, buildCustomerSheet(leafRows, meta), "Customers");
 
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   const stamp = formatDateDMY(meta.asOfDate) || "export";

@@ -160,6 +160,9 @@ function toCustomer(r: CustomerRow): Customer {
     overdueByType: r.overdue_by_type ?? {},
     openingBalanceByType: r.opening_balance_by_type ?? {},
     lastReceiptDate: null,
+    // Live (Tally) only — this source derives the last receipt (date AND amount) from its own
+    // day-level receiptTransactions in buildLastReceiptAmounts, not from the customer row.
+    lastReceiptAmount: null,
     daysSinceLastReceipt: null,
     consecutiveNoPaymentMonths: 0,
     paymentActiveMonths: 0,

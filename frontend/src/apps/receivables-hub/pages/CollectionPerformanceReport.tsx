@@ -38,9 +38,13 @@ import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
-import { monthEndLong, monthStartLong } from "@hub/lib/months";
+import { monthEndLong, monthStartLong, monthStartISO, monthEndISO, isoToMonthLabel } from "@hub/lib/months";
+import { Input } from "@hub/components/ui/input";
+import { useQuery } from "@tanstack/react-query";
+import { fetchRangeFacts, priorRange, lastNDays } from "@hub/lib/collectionsRange";
 import {
-  buildLastReceiptDates, buildLastReceiptAmounts, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor,
+  buildLastReceiptDates, buildLastReceiptAmounts, buildLedgerBalances, buildMonthlySeries, buildOutstandingByType, factsFor, factsForRange,
+  DATE_RANGE_PRESETS, isDateRangePreset,
   isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
   applyFocus, totalsOf, detailPathFor, defaultColumnsFor,
@@ -186,6 +190,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   } = useAppData({});
   const asOfDate = dashboard?.asOfDate ?? "";
 
+  // Which backend the engine is reading. Declared HERE, above the period controls, because the
+  // custom date range is Live-only and the period block below has to know.
+  const collSource = useReceivablesSource() === "connectwave" ? "live" : "pipeline";
+  const isLive = collSource === "live";
+
   // The org-wide month list, chronological — the vocabulary every period control speaks.
   const months = useMemo(() => (dashboard?.trend ?? []).map((t) => t.month), [dashboard]);
 
@@ -194,41 +203,133 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const horizonLabel = months[0] ?? "—";
 
   // ── Period ────────────────────────────────────────────────────────────────────────
-  // Dormant opens on 6 months: one quiet quarter is a lull, two is a dead account. (The
-  // collection reports open on 3 — that's a cash-flow question, and it moves faster.)
-  const defaultPreset: PeriodPreset = isDormantMode ? "6m" : "3m";
+  // The collection reports open on the LAST 15 DAYS: chasing cash is a fortnightly rhythm, and a
+  // customer who has paid nothing for a fortnight is the one worth a call today.
+  //
+  // Dormant deliberately does NOT follow. Its predicate is "billed nothing in the window", and
+  // over 15 days that is nearly every customer on the books — the report would list everyone and
+  // mean nothing. Six months stands: one quiet quarter is a lull, two is a dead account.
+  const defaultPreset: PeriodPreset = isDormantMode ? "6m" : "15d";
   const [preset, setPreset] = useState<PeriodPreset>(defaultPreset);
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
 
-  // Seed the custom pickers from the active preset the first time months arrive, so
-  // switching to Custom starts from what the user was already looking at.
+  /** Where the data itself begins, as a date — the floor for both pickers and the prior window. */
+  const horizonIso = useMemo(() => (months.length ? monthStartISO(months[0]) : ""), [months]);
+
+  // Seed the custom pickers from the active preset the first time months arrive, so switching to
+  // Custom starts from what the user was already looking at. ISO DATES, not month labels.
   useEffect(() => {
     if (!months.length || customFrom) return;
+    const days = DATE_RANGE_PRESETS[defaultPreset as keyof typeof DATE_RANGE_PRESETS];
+    const seed = days && asOfDate ? lastNDays(asOfDate, days, horizonIso) : null;
+    if (seed) { setCustomFrom(seed.fromIso); setCustomTo(seed.toIso); return; }
     const w = resolveWindow(months, defaultPreset);
-    setCustomFrom(w[0] ?? months[0]);
-    setCustomTo(w[w.length - 1] ?? months[months.length - 1]);
-  }, [months, customFrom, defaultPreset]);
+    setCustomFrom(monthStartISO(w[0] ?? months[0]));
+    setCustomTo(monthEndISO(w[w.length - 1] ?? months[months.length - 1]));
+  }, [months, customFrom, defaultPreset, asOfDate, horizonIso]);
+  /** Nothing later than the as-of date is knowable, so neither picker may go past it. */
+  const maxIso = asOfDate || (months.length ? monthEndISO(months[months.length - 1]) : "");
+  /**
+   * How far the opening-balance wind-back must reach: the END OF THE AS-OF MONTH, not the as-of
+   * date. Opening = canonical outstanding − movement since From, and that outstanding reflects
+   * every voucher in the mirror — including the rest of the current month, which the monthly
+   * series also carries (its buckets are whole months). Stopping at the as-of date would leave
+   * that movement out and make Opening disagree with the presets. See collectionsRange.
+   */
+  const horizonEndIso = useMemo(
+    () => (months.length ? monthEndISO(months[months.length - 1]) : ""),
+    [months],
+  );
 
+  /**
+   * The date range in force, or null when the period is measured in whole months.
+   *
+   * "Last 15 Days" and "Custom" are the same machine: both resolve to real dates and are answered
+   * by the day-level engine. The only difference is where the dates come from — counted back from
+   * the as-of date, or typed by the user.
+   */
+  const dateRange = useMemo<{ fromIso: string; toIso: string } | null>(() => {
+    const days = DATE_RANGE_PRESETS[preset as keyof typeof DATE_RANGE_PRESETS];
+    if (days) return asOfDate ? lastNDays(asOfDate, days, horizonIso) : null;
+    if (preset === "custom")
+      return customFrom && customTo && customFrom <= customTo ? { fromIso: customFrom, toIso: customTo } : null;
+    return null;
+  }, [preset, asOfDate, horizonIso, customFrom, customTo]);
+
+  /** Custom is selected but the two dates don't make a range — the only user-fixable error here. */
+  const customInvalid = preset === "custom" && !dateRange;
+
+  /**
+   * The months the window touches. For the month presets this IS the window. For a date range it
+   * is NOT — the money comes from the day-level engine — but it is still what the month-grain
+   * figures (last sale month / months since sale) are measured against, and what the caption
+   * falls back to when the day-level engine can't run.
+   */
   const windowMonths = useMemo(() => {
-    if (preset === "custom") {
-      return customFrom && customTo ? monthRange(months, customFrom, customTo) : [];
+    if (isDateRangePreset(preset)) {
+      return dateRange
+        ? monthRange(months, isoToMonthLabel(dateRange.fromIso), isoToMonthLabel(dateRange.toIso))
+        : [];
     }
     return resolveWindow(months, preset);
-  }, [months, preset, customFrom, customTo]);
+  }, [months, preset, dateRange]);
 
   const prevMonths = useMemo(() => priorWindow(months, windowMonths), [months, windowMonths]);
-  /** Trap 3: the data is FY-scoped, so a "This FY" window simply has no prior period. */
-  const hasPrior = prevMonths.length > 0;
 
-  const periodRange = windowMonths.length
-    ? `${monthStartLong(windowMonths[0])} → ${
-        windowMonths[windowMonths.length - 1] === months[months.length - 1]
-          ? formatDateDMY(asOfDate)
-          : monthEndLong(windowMonths[windowMonths.length - 1])
-      }`
-    : "—";
+  /** The range's prior period: the same number of DAYS immediately before it, or null when that
+   *  would reach back before the data horizon. */
+  const prevRange = useMemo(
+    () => (dateRange && horizonIso ? priorRange(dateRange.fromIso, dateRange.toIso, horizonIso) : null),
+    [dateRange, horizonIso],
+  );
+
+  /**
+   * Day-level facts for the active date range. ONE query per range, ~1-2.5s end to end, cached
+   * for five minutes. Since "Last 15 Days" is the default period it now runs on the first load of
+   * this report; the month presets still issue nothing. Live (Tally) only — the pipeline source
+   * has no bulk day-level table and stays on whole months.
+   */
+  const rangeQuery = useQuery({
+    queryKey: ["collectionRange", dateRange?.fromIso ?? null, dateRange?.toIso ?? null, prevRange?.fromIso ?? null, horizonEndIso],
+    queryFn: () => fetchRangeFacts(dateRange!.fromIso, dateRange!.toIso, prevRange?.fromIso ?? null, horizonEndIso),
+    enabled: isLive && !!dateRange && !!horizonEndIso,
+    staleTime: 5 * 60_000,
+  });
+  /** True once the day-level engine is actually driving the numbers. Until then (loading, or a
+   *  failed/undeployed RPC) the report stays on the month path rather than showing nothing. */
+  const usingDateRange = isLive && !!dateRange && !!rangeQuery.data;
+
+  /** Trap 3: the data is FY-scoped, so a "This FY" window simply has no prior period. */
+  const hasPrior = usingDateRange ? prevRange !== null : prevMonths.length > 0;
+
+  // On a date range the caption states the REAL dates. It falls back to whole months while the
+  // day-level query is in flight (or on the pipeline source), so the caption never claims a
+  // precision the numbers underneath it don't have.
+  const periodRange = usingDateRange && dateRange
+    ? `${formatDateDMY(dateRange.fromIso)} → ${formatDateDMY(dateRange.toIso)}`
+    : windowMonths.length
+      ? `${monthStartLong(windowMonths[0])} → ${
+          windowMonths[windowMonths.length - 1] === months[months.length - 1]
+            ? formatDateDMY(asOfDate)
+            : monthEndLong(windowMonths[windowMonths.length - 1])
+        }`
+      : "—";
   const periodLabel = `${PERIOD_LABELS[preset]} (${periodRange})`;
+
+  /**
+   * The prior period, spelled out — "" when there isn't one.
+   *
+   * Must be read through this, never off prevMonths[0] directly: on a custom date range the prior
+   * period is a run of DAYS, and prevMonths can legitimately be empty while a prior period exists
+   * (a range starting inside the first month has no earlier whole month, but does have earlier
+   * days). monthStartLong(undefined) is the bug this prevents.
+   */
+  const priorLabel = usingDateRange
+    ? (prevRange ? `${formatDateDMY(prevRange.fromIso)} → ${formatDateDMY(prevRange.toIso)}` : "")
+    : prevMonths.length
+      ? `${monthStartLong(prevMonths[0])} → ${monthEndLong(prevMonths[prevMonths.length - 1])}`
+      : "";
 
   // ── Target (drives Shortfall ₹) ───────────────────────────────────────────────────
   const [target, setTarget] = useState<number>(30);
@@ -277,7 +378,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   );
 
   // ── View ──────────────────────────────────────────────────────────────────────────
-  const [groupBy, setGroupBy] = useState<ZCDim[]>(["customer"]);
+  // Opens on Salesperson → Customer → Sale Type: chasing money is owned by a person first, and
+  // the sale type underneath tells them WHICH bill to chase (ink and machine are different
+  // conversations). A flat customer list is still one click away in the View row.
+  const [groupBy, setGroupBy] = useState<ZCDim[]>(["salesperson", "customer", "saleType"]);
   const viewLabel = useMemo(
     () => groupBy.map((d) => ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → "),
     [groupBy],
@@ -344,8 +448,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // receipts + last-receipt from the live customer row (buildMonthlySeries/buildLastReceiptDates),
   // and buildMonthlySeries spreads the yearly notes across months so Below-30%'s opening stays
   // honest. Zero + Dormant are exact under Live; only Below-30% uses the note estimate.
-  const collSource = useReceivablesSource() === "connectwave" ? "live" : "pipeline";
-  const isLive = collSource === "live";
+  // (collSource / isLive are declared above the period controls — the custom date range needs them.)
   const series = useMemo(
     () => buildMonthlySeries(allCustomers, customerDetail, collSource),
     [allCustomers, customerDetail, collSource],
@@ -354,8 +457,9 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     () => buildLastReceiptDates(allCustomers, customerDetail, collSource),
     [allCustomers, customerDetail, collSource],
   );
-  // Exact ₹ of each ledger's last receipt voucher, twinned with lastDates. Null under Live
-  // (the bulk snapshot has no per-voucher detail), so the amount column reads "—" there.
+  // Exact ₹ of each ledger's last receipt voucher, twinned with lastDates. Both sources carry it:
+  // the pipeline sums its own same-day receipt vouchers, Live reads the snapshot column that
+  // collection_refresh fills. Null only means "not known", never "belongs to another voucher".
   const lastAmounts = useMemo(
     () => buildLastReceiptAmounts(allCustomers, customerDetail, collSource),
     [allCustomers, customerDetail, collSource],
@@ -427,10 +531,14 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
    */
   const { rows, noPool } = useMemo(() => {
     if (!windowMonths.length) return { rows: [] as ZCRow[], noPool: 0 };
+    const range = usingDateRange ? rangeQuery.data! : null;
     const out: ZCRow[] = [];
     let dropped = 0;
     for (const c of eligible) {
-      const facts = factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, countJournalSettlements, lastAmounts);
+      // factsForRange is factsFor's twin — same arithmetic, day-level sources. See its header.
+      const facts = range
+        ? factsForRange(c, range, series, lastDates, balances, months, windowMonths, prevRange !== null, asOfDate, null, countJournalSettlements, lastAmounts)
+        : factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, countJournalSettlements, lastAmounts);
       const listed =
         mode === "dormant" ? isDormant(facts)
         : mode === "zero"  ? isZeroCollection(facts)
@@ -439,7 +547,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped++;
     }
     return { rows: out, noPool: dropped };
-  }, [eligible, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements]);
+  }, [eligible, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements, usingDateRange, rangeQuery.data, prevRange]);
 
   // ── Focus (the clickable KPI cards) + severity bands ──────────────────────────────
   // A layer ON TOP of the filter chain: eligible → rows → focusedRows. Lenses AND together.
@@ -480,6 +588,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
   // Switching report (zero ⇄ threshold) must not strand a lens or band that no longer applies.
   useEffect(() => { setFocus(new Set()); setBands(new Set()); }, [mode]);
+
+  // ...nor strand the PERIOD. The collection reports open on 15 days and Dormant on 6 months, and
+  // those are not interchangeable: carrying 15 days into Dormant asks "who hasn't bought this
+  // fortnight", which is nearly the whole ledger. Each report returns to its own default.
+  useEffect(() => { setPreset(defaultPreset); }, [defaultPreset]);
 
   // ── Roll-up ───────────────────────────────────────────────────────────────────────
   // Built from the FOCUSED rows, so the table, its grand total, pagination and the export
@@ -823,7 +936,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         <>
           These customers <strong>used to pay better</strong>. Their collection % fell by more than{" "}
           {DETERIORATION_PP} percentage points versus the previous period of the same length
-          ({monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}).
+          ({priorLabel}).
           <br />
           <br />
           Something changed <strong>recently</strong> — worth a call before it hardens. This is what
@@ -958,9 +1071,8 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         : "This period has no earlier months to compare against — pick a shorter period.",
       explain: hasPrior ? (
         <>
-          They were buying in the <strong>previous</strong> period of the same length (
-          {monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}) and
-          have billed nothing since. They hold <strong>{money(kpis.wentQuietOutstanding)}</strong>.
+          They were buying in the <strong>previous</strong> period of the same length ({priorLabel})
+          and have billed nothing since. They hold <strong>{money(kpis.wentQuietOutstanding)}</strong>.
           <br />
           <br />
           <strong>The ones you can still save.</strong> A customer who went quiet last quarter is a
@@ -1070,38 +1182,21 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     return s;
   }, [focus, bands, search, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, saleTypes]);
 
-  // Live (Tally) caveat, appended only under the ConnectWave source. Zero + Dormant are exact —
-  // they read live receipts / live monthly sales — so they say so. Below-30% leans on the opening
-  // balance, whose per-month notes the live feed doesn't carry, so it's honest about the estimate.
-  const liveNote = !isLive
-    ? ""
-    : (isDormantMode || mode === "zero") && !(mode === "zero" && countJournalSettlements)
-      ? " Source: the live Tally feed (ConnectWave) — read directly, no estimate."
-      : mode === "zero"
-        ? " Source: the live Tally feed (ConnectWave). Receipts are read directly; journal settlements are apportioned from each customer's yearly journal total (the live feed doesn't carry journals month by month), so journal-cleared customers are dropped accurately over a full FY and approximately over shorter windows."
-        : " Source: the live Tally feed (ConnectWave). Credit notes, debit notes, journals and bounced cheques are estimated from each customer's yearly total (the live feed doesn't carry them month by month), so the Opening balance and % are close, not exact.";
-
-  const basis = (isDormantMode
-    ? `A customer is listed when they owe money (Outstanding > ₹0) and billed NO sales at all in the period. Sales are read at month grain from the customer trend and summed over every ledger the customer consolidates. Months Since Sale counts back to the most recent month with any billing; "None" means nothing billed anywhere in the available data, which begins ${horizonLabel} — it does NOT mean the customer never bought from us. A group row shows its deadest member. "Paid Nothing Either" narrows to those who also collected ₹0 in the period; "Recently Gone Quiet" to those who were still buying in the previous period of the same length. The Sale Type filter scopes the report to customers whose outstanding is DOMINATED by the selected types (the single largest type wins; untagged balances count as Other). MACHINE IS EXCLUDED BY DEFAULT: a machine is a one-time capital sale paid down over months, so a machine customer not re-ordering is normal rather than a warning — select it in the Sale Type filter to bring those customers back in.`
-    : mode === "zero"
-      ? (countJournalSettlements
-          ? "No receipt voucher, manual Other Payment, OR journal settlement in the period. A customer whose balance was cleared by a journal (e.g. paid in one company, moved across by an inter-company journal) is treated as paid and drops off — the amount shows in the Journal Settled column. Only journals that NET to a credit count; journal charges don't. Cheque returns are reported, not netted."
-          : "No receipt voucher and no Other Payment in the period. Journal settlements are NOT counted (toggle off). Cheque returns are reported, not netted.")
-      : `Collection % = Collected ÷ (Opening Outstanding at period start + Sales billed in the period). Collected = receipt vouchers + manual Other Payments${countJournalSettlements ? " + net journal settlements (see the Journal Settled column)" : ""}. Opening is derived by rolling today's outstanding back through the period, so Opening + Sales − Collected reconciles to Outstanding (within credit/debit notes and journals). A customer is listed when EITHER the gross or the net-of-cheque-returns percentage falls below ${threshold}%.`) + liveNote;
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
   // `focusedRows` (not `rows`) feeds the flat Customers sheet: otherwise the roll-up sheet
   // would be focused while the flat sheet silently listed every customer — a mismatch you'd
   // only ever discover in Excel.
   const handleExport = () => {
-    exportCollectionsXlsx(sortedRoots, tree.total, focusedRows, columns, {
+    exportCollectionsXlsx(sortedRoots, tree.total, columns, {
       title,
+      // The same sentence shown under the title on screen — one source, so they can't drift.
+      description: subtitle,
       viewLabel,
+      // One exported column per grouping level, in the order they're nested on screen.
+      dims: groupBy.map((d) => ({ key: d, label: ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d })),
       periodLabel,
-      basis,
-      targetPct: target,
       asOfDate,
-      filterSummary,
     });
   };
 
@@ -1412,7 +1507,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           <div className={`flex flex-wrap items-center gap-2 ${isDormantMode ? "" : "pt-1 border-t border-border/60"}`}>
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide pt-2">Period</span>
             <div className="pt-2 flex flex-wrap items-center gap-2">
-              {(["1m", "3m", "6m", "fy", "all", "custom"] as PeriodPreset[]).map((p) => (
+              {(["15d", "1m", "3m", "6m", "fy", "all", "custom"] as PeriodPreset[]).map((p) => (
                 <Button
                   key={p}
                   variant={preset === p ? "default" : "outline"}
@@ -1424,20 +1519,21 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                 </Button>
               ))}
               {preset === "custom" && (
+                // Real dates, not month labels. Bounded by the data horizon and the as-of date so
+                // the pickers can never disagree with the FY selector or ask for a future that
+                // isn't in the mirror yet.
                 <div className="flex items-center gap-1">
-                  <Select value={customFrom} onValueChange={setCustomFrom}>
-                    <SelectTrigger className="h-7 w-28 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    type="date" value={customFrom} min={horizonIso} max={maxIso}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="h-7 w-36 rounded-input border-border text-xs"
+                  />
                   <span className="text-muted-foreground text-xs">→</span>
-                  <Select value={customTo} onValueChange={setCustomTo}>
-                    <SelectTrigger className="h-7 w-28 rounded-input border-border text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {months.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
+                  <Input
+                    type="date" value={customTo} min={horizonIso} max={maxIso}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="h-7 w-36 rounded-input border-border text-xs"
+                  />
                 </div>
               )}
             </div>
@@ -1445,13 +1541,29 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
           <p className="text-[11px] text-muted-foreground">
             {periodRange}
-            {windowMonths.length > 0 && windowMonths[windowMonths.length - 1] === months[months.length - 1] && (
+            {!usingDateRange && windowMonths.length > 0 && windowMonths[windowMonths.length - 1] === months[months.length - 1] && (
               <span className="opacity-70"> · the current month is still in progress</span>
             )}
+            {/* Say plainly which engine is behind the numbers. A custom range counts to the day;
+                everything else counts whole months. */}
+            {isDateRangePreset(preset) && dateRange && (
+              usingDateRange ? (
+                <span className="opacity-70"> · counted to the day</span>
+              ) : rangeQuery.isFetching ? (
+                <span className="opacity-70"> · counting to the day…</span>
+              ) : isLive ? (
+                <span className="text-destructive"> · day-level figures unavailable, showing whole months ({windowMonths.join(", ")})</span>
+              ) : (
+                <span className="opacity-70"> · this source counts whole months ({windowMonths.join(", ")}), not exact dates</span>
+              )
+            )}
+            {customInvalid && (
+              <span className="text-destructive"> · pick a From date on or before the To date</span>
+            )}
             {hasPrior ? (
-              <span className="opacity-70"> · compared against {monthStartLong(prevMonths[0])} → {monthEndLong(prevMonths[prevMonths.length - 1])}</span>
+              <span className="opacity-70"> · compared against {priorLabel}</span>
             ) : (
-              <span className="opacity-70"> · no prior period in this fiscal year, so Prior % and Δ read “—”</span>
+              <span className="opacity-70"> · no equal-length period before this one inside the data, so Prior % and Δ read “—”</span>
             )}
           </p>
 
@@ -1737,8 +1849,28 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                     then — not merely none this period.
                   </li>
                   <li>
+                    <strong className="text-foreground">Prior Collections</strong> is money actually{" "}
+                    <strong className="text-foreground">received</strong> in the equal-length period immediately before
+                    this one{priorLabel ? ` (${priorLabel})` : ""} — receipts only, so journal settlements are not added
+                    and cheque returns are not subtracted. A customer listed here with a large Prior Collections figure
+                    has <em>just stopped paying</em>; one showing ₹0 has been silent throughout.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Credit Days and Credit Limit</strong> come straight from the
+                    Tally master, so they read “—” where none is set — which is about half of all ledgers.
+                  </li>
+                  <li>
                     <strong className="text-foreground">It reconciles.</strong> Collections are month-wise, matching
                     the Salesperson Collection Report exactly.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Custom counts to the day.</strong> The four ready-made periods
+                    count whole months; picking <em>Custom</em> reads the vouchers themselves, so any From–To dates are
+                    exact. Money received and billed comes out identical either way — a Custom range covering whole
+                    months matches the preset to the rupee. <em>Opening</em> and <em>Collection %</em> can differ
+                    slightly, because the month view has to spread each customer's credit notes, debit notes, journals
+                    and cheque returns evenly across the year while the day view reads them on their real dates. Where
+                    they disagree, the Custom figure is the accurate one.
                   </li>
                 </>
               ) : (
