@@ -54,7 +54,6 @@ type SortDir = "asc" | "desc";
 
 const GROUP_KEY = "orangeone.home.groupBySource";
 const EXPANDED_KEY = "orangeone.home.expandedSources";
-const SCOPE_KEY = "orangeone.home.scope";
 
 function readPref<T>(key: string, fallback: T): T {
   try {
@@ -144,16 +143,24 @@ export function MyWorkView({ state }: { state: AggregateState }) {
   const [q, setQ] = useState("");
 
   // Admins receive the whole book (they own no workflow steps, so a strict
-  // personal filter would otherwise leave them empty). This tab lets them narrow
-  // to just what is theirs — the default — and switch back to the full view.
+  // personal filter would otherwise leave them empty). This tab lets them widen
+  // to everyone's work; every visit starts on their own.
+  //
+  // The admin's choice is held separately from the effective scope, and the
+  // effective scope is derived on EVERY render rather than seeded once at mount.
+  // The directory that decides `isAdmin` loads after this screen first paints, so
+  // at mount an admin still looks like an employee — seeding from `isAdmin` there
+  // pinned them to "all" for the whole visit, which is exactly the "why does it
+  // open on All work" bug. It is in-memory only, matching every other sticky
+  // filter in the app: a reload returns you to your own work rather than to a
+  // whole-book view you opened once, days ago.
+  //
   // Non-admins are already scoped to their own work by each provider, so the tab
   // is hidden for them and scope is pinned to "all" (a no-op on their data).
-  const [scope, setScope] = useState<"mine" | "all">(() =>
-    isAdmin ? readPref(SCOPE_KEY, "mine") : "all"
-  );
+  const [adminScope, setAdminScope] = useState<"mine" | "all">("mine");
+  const scope: "mine" | "all" = isAdmin ? adminScope : "all";
   const setScopePref = (s: "mine" | "all") => {
-    setScope(s);
-    writePref(SCOPE_KEY, s);
+    setAdminScope(s);
     if (s === "mine") setAssignment([]); // drop any stale You/Team chip
   };
   const [sort, setSort] = useState<SortKey>("urgency");
