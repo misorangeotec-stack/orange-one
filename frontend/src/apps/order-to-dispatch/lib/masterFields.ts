@@ -88,6 +88,14 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
         { key: "name", label: "Company name", type: "text", required: true },
         { key: "gstin", label: "GSTIN", type: "text" },
         { key: "address", label: "Address", type: "textarea" },
+        // Drives the gate pass series — OTEC-2608-001. Optional: a company left
+        // blank falls back to GP rather than blocking the billing clerk, and the
+        // server rejects two companies sharing one prefix (case-insensitively),
+        // because they would silently interleave into a single series.
+        {
+          key: "gate_pass_prefix", label: "Gate pass prefix", type: "text",
+          placeholder: "e.g. OTEC — blank falls back to GP",
+        },
         sortField,
       ];
 
@@ -132,7 +140,7 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
     case "item":
       return { ...base, code: "", unit: "", hsn_code: "" };
     case "company":
-      return { ...base, gstin: "", address: "" };
+      return { ...base, gstin: "", address: "", gate_pass_prefix: "" };
     case "company_location":
       return { ...base, company_id: "" };
     // No `name` in the bag — the row has none. Including it would put an empty

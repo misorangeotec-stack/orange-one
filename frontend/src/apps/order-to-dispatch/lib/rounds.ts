@@ -72,6 +72,15 @@ export interface RoundView {
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
+  /**
+   * The gate pass issued for this round's invoice.
+   *
+   * ⚠ NO ROUND-OWNERSHIP TEST, unlike the `cc*` fields above. A credit decision
+   *   can span several rounds, so those have to ask whether THIS round made it;
+   *   `gp_no` is cleared on archive, so whatever the header holds always belongs
+   *   to the round in progress.
+   */
+  gpNo: string | null;
 
   goActualDate: string | null;
   goOutwardNo: string | null;
@@ -186,6 +195,7 @@ export function currentRoundView(order: DispatchOrder): RoundView | null {
     sbRemarks: order.sbRemarks,
     sbAt: order.sbAt,
     sbBy: order.sbBy,
+    gpNo: order.gpNo,
 
     goActualDate: order.goActualDate,
     goOutwardNo: order.goOutwardNo,
@@ -240,6 +250,7 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     sbRemarks: r.sbRemarks,
     sbAt: r.sbAt,
     sbBy: r.sbBy,
+    gpNo: r.gpNo,
 
     goActualDate: r.goActualDate,
     goOutwardNo: r.goOutwardNo,

@@ -204,6 +204,7 @@ const mapRound = (r: any): DispatchRound => ({
   sbRemarks: str(r.sb_remarks),
   sbAt: r.sb_at ?? null,
   sbBy: r.sb_by ?? null,
+  gpNo: str(r.gp_no),
 
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str(r.go_outward_no),
@@ -277,6 +278,7 @@ const mapOrder = (r: any): DispatchOrder => ({
   sbRemarks: str(r.sb_remarks),
   sbAt: r.sb_at ?? null,
   sbBy: r.sb_by ?? null,
+  gpNo: str(r.gp_no),
 
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str(r.go_outward_no),
@@ -420,7 +422,10 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     designations: designations.map(mapDesignation),
     config,
 
-    companies: companies.map((r): Company => ({ ...mapMaster(r), gstin: str(r.gstin), address: str(r.address) })),
+    companies: companies.map((r): Company => ({
+      ...mapMaster(r), gstin: str(r.gstin), address: str(r.address),
+      gatePassPrefix: str(r.gate_pass_prefix),
+    })),
     companyLocations: companyLocations.map((r): CompanyLocation => ({
       ...mapMaster(r), companyId: r.company_id,
     })),

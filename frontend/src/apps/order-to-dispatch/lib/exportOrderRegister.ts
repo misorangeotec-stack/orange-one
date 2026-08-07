@@ -110,6 +110,8 @@ export function exportOrderRegister(
     { header: "Tempo No.", width: 16, value: (r) => r.view.msTempoNo ?? "" },
     { header: "Porter", width: 10, value: (r) => (r.view.msPorter === null ? "" : r.view.msPorter ? "Yes" : "No") },
     { header: "Tally Invoice No.", width: 18, value: (r) => r.view.sbInvoiceNo ?? "" },
+    // One pass per invoice, so it sits beside the invoice it was issued for.
+    { header: "Gate Pass No.", width: 16, value: (r) => r.view.gpNo ?? "" },
     { header: "Sales Invoice Attached", width: 14, value: (r) => (r.view.sbAttachmentPath ? "Yes" : "No") },
     { header: "Gate Outward No.", width: 18, value: (r) => r.view.goOutwardNo ?? "" },
     { header: "Receiver Copy Attached", width: 14, value: (r) => (r.view.dcAttachmentPath ? "Yes" : "No") },

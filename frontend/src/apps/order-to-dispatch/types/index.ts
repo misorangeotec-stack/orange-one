@@ -24,6 +24,14 @@ export interface NamedMaster {
 export interface Company extends NamedMaster {
   gstin: string | null;
   address: string | null;
+  /**
+   * Names this company's gate pass series — `OTEC` gives `OTEC-2608-001`.
+   *
+   * Null falls back to `GP` rather than blocking a sales bill, and the database
+   * refuses two companies the same prefix (case-insensitively), because they
+   * would otherwise interleave silently into one series.
+   */
+  gatePassPrefix: string | null;
 }
 
 /**
@@ -334,6 +342,8 @@ export interface DispatchRound {
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
+  /** The gate pass issued for THIS round's invoice. One pass per invoice. */
+  gpNo: string | null;
 
   goActualDate: string | null;
   goOutwardNo: string | null;
@@ -457,6 +467,15 @@ export interface DispatchOrder {
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
+  /**
+   * Gate pass number for the round in progress, e.g. `OTEC-2608-001`.
+   *
+   * Allocated by the server when the sales bill is recorded — one pass per
+   * invoice — and cleared when the round is archived, because the next round
+   * raises its own invoice. Printing never allocates: press it ten times and
+   * the same number comes out ten times.
+   */
+  gpNo: string | null;
 
   goActualDate: string | null;
   /** Typed from the plant's paper register. Not generated, not unique. */

@@ -183,7 +183,9 @@ function extraColumns(
         },
       ];
     case "company":
-      return [text("GSTIN", (r) => r.gstin)];
+      // The prefix is worth a column: it is what the gate pass series is named
+      // after, so a company sitting blank here is quietly issuing GP-... passes.
+      return [text("GSTIN", (r) => r.gstin), text("Gate pass prefix", (r) => r.gatePassPrefix)];
     case "company_location":
       // The parent is the point — "Unit 1" means nothing until you know whose.
       return [

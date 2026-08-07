@@ -15,6 +15,7 @@ import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
 import StatusPill from "./StatusPill";
+import GatePassButton from "./GatePassButton";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -318,14 +319,19 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
             label: "Customer",
           }}
           actions={(e) => (
-            <StageRowAction
-              as="button"
-              lockReason={e.lockReason}
-              canEdit={s.canActOn(stepKey, e.row)}
-              permissionReason="Only an owner of this step can edit the entry."
-              onEdit={() => acting.openEdit({ order: e.row, view: e.view })}
-              onView={() => acting.openView({ order: e.row, view: e.view })}
-            />
+            <div className="flex items-center justify-end gap-2">
+              {/* Reprints. An archived round keeps its own number, so this hands
+                  back the identical slip however long afterwards. */}
+              {stepKey === "gate_out" && <GatePassButton order={e.row} view={e.view} />}
+              <StageRowAction
+                as="button"
+                lockReason={e.lockReason}
+                canEdit={s.canActOn(stepKey, e.row)}
+                permissionReason="Only an owner of this step can edit the entry."
+                onEdit={() => acting.openEdit({ order: e.row, view: e.view })}
+                onView={() => acting.openView({ order: e.row, view: e.view })}
+              />
+            </div>
           )}
           rowsLabel="entries"
           emptyTitle="Nothing recorded here yet"
@@ -338,20 +344,30 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rowKey={(r) => r.order.id}
           columns={pendingColumns}
           groupBy={groupBy}
-          actions={(r) =>
-            s.canActOn(stepKey, r.order) ? (
-              <Button size="sm" onClick={() => acting.openEdit({ order: r.order, view: currentRoundView(r.order) })}>
-                {cfg.actionLabel}
-              </Button>
-            ) : (
-              <Link
-                to={`${B}/orders/${r.order.id}`}
-                className="text-[13px] font-semibold text-orange hover:underline"
-              >
-                Open
-              </Link>
-            )
-          }
+          actions={(r) => (
+            <div className="flex items-center justify-end gap-2">
+              {/* ⚠ GATED ON THE STEP. StageQueue renders all five queues, so an
+                  ungated button would offer a gate pass at the credit check. It
+                  sits here rather than only inside the modal because the ask was
+                  to print it BEFORE recording the gate entry — the slip travels
+                  with the goods, the register entry happens as they leave. */}
+              {stepKey === "gate_out" && (
+                <GatePassButton order={r.order} view={currentRoundView(r.order)} />
+              )}
+              {s.canActOn(stepKey, r.order) ? (
+                <Button size="sm" onClick={() => acting.openEdit({ order: r.order, view: currentRoundView(r.order) })}>
+                  {cfg.actionLabel}
+                </Button>
+              ) : (
+                <Link
+                  to={`${B}/orders/${r.order.id}`}
+                  className="text-[13px] font-semibold text-orange hover:underline"
+                >
+                  Open
+                </Link>
+              )}
+            </div>
+          )}
           rowClassName={(r) => overdueRowClass(r.dueIso)}
           rowsLabel="orders"
           initialSort={{ key: "due", dir: "asc" }}

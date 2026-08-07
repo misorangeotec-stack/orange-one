@@ -12,6 +12,7 @@ import { formatDateTime } from "@/shared/lib/time";
 import { useDispatchStore } from "../../store";
 import DispatchStepper from "../../components/DispatchStepper";
 import StepDocLink from "../../components/StepDocLink";
+import GatePassButton from "../../components/GatePassButton";
 import StatusPill, { OutcomePill } from "../../components/StatusPill";
 import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import {
@@ -292,14 +293,22 @@ export default function OrderDetail() {
                       )}
                     </td>
                     <td className="py-2 pr-3">
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col items-start gap-1">
                         {v.sbAttachmentPath && (
                           <StepDocLink path={v.sbAttachmentPath} name={v.sbAttachmentName ?? "Invoice"} />
                         )}
                         {v.dcAttachmentPath && (
                           <StepDocLink path={v.dcAttachmentPath} name={v.dcAttachmentName ?? "Receiver copy"} />
                         )}
-                        {!v.sbAttachmentPath && !v.dcAttachmentPath && <span className="text-grey-2">—</span>}
+                        {/* The round's third document. Unlike the other two it is
+                            generated rather than uploaded, but it belongs to the
+                            same round and is what people come back here to
+                            reprint. An archived round keeps its own number, so
+                            this is always the identical slip. */}
+                        {v.gpNo && <GatePassButton order={order} view={v} />}
+                        {!v.sbAttachmentPath && !v.dcAttachmentPath && !v.gpNo && (
+                          <span className="text-grey-2">—</span>
+                        )}
                       </div>
                     </td>
                     {s.isProcessCoordinator && (

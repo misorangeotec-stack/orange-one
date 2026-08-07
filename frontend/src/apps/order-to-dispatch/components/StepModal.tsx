@@ -15,6 +15,7 @@ import OrderRefPanel, { OrderRefDocs } from "./OrderRefPanel";
 import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
 import StepDocLink from "./StepDocLink";
+import GatePassButton from "./GatePassButton";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -146,6 +147,17 @@ export default function StepModal({
     : cfg.lines === "ship" && overCredit ? "over the credit ceiling"
     : showApprovedQty && order && approvedQtyError(order, approvedQty) ? "approved quantity"
     : null;
+
+  /**
+   * The printable slip, offered beside the action rather than instead of it.
+   *
+   * Gate outward only — this modal drives all five steps. It sits in the footer
+   * of BOTH the editable and the locked branch on purpose: a reprint is the most
+   * likely reason to open a finished round at all, and refusing it there would
+   * send someone back to the order page for a read-only document.
+   */
+  const gatePass =
+    stepKey === "gate_out" && order ? <GatePassButton order={order} view={view} /> : null;
 
   // Editing clears the last refusal. Without this, filling in the very field the
   // error named leaves "Delivery outcome is required." sitting under a filled-in
@@ -335,9 +347,13 @@ export default function StepModal({
       }
       footer={
         locked ? (
-          <Button variant="ghost" onClick={onClose}>Close</Button>
+          <>
+            {gatePass}
+            <Button variant="ghost" onClick={onClose}>Close</Button>
+          </>
         ) : (
           <>
+            {gatePass}
             <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
             {/*
               The store keeper's other legal answer. Without it, an order whose

@@ -122,6 +122,10 @@ export default function OrderRefPanel({
         {round.msPorter !== null && <Field label="Porter" value={round.msPorter ? "Yes" : "No"} />}
 
         {showInvoice && <Field label="Tally invoice no." value={round.sbInvoiceNo ?? "—"} />}
+        {/* Rides with the invoice, because it was issued for it. Shown wherever
+            the invoice is, so the number on the printed slip can be checked
+            against the screen without leaving the step. */}
+        {showInvoice && round.gpNo && <Field label="Gate pass no." value={round.gpNo} />}
         {showOutward && <Field label="Gate outward no." value={round.goOutwardNo ?? "—"} />}
         {children}
       </div>

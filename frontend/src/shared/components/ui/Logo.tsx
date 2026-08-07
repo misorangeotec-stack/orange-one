@@ -7,7 +7,7 @@ import { cn } from "@/shared/lib/cn";
  *   - variant="dark"   → white logo for use on dark backgrounds
  * Both files live in /public/assets so they share one source of truth across the app.
  */
-const LOGO_SRC = {
+export const LOGO_SRC = {
   light: "/assets/Orang_O_Tec_logo.jpg",
   dark: "/assets/orange-one-logo-dark.png",
 } as const;
