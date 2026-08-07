@@ -66,7 +66,18 @@ export function formatDateTime(iso: string | null): string {
   return `${dd}-${mm}-${yyyy} ${h}:${min} ${ampm}`;
 }
 
-/** Today's date as yyyy-mm-dd (local). */
+/**
+ * Today's date as yyyy-mm-dd, in **UTC**.
+ *
+ * ⚠ THE COMMENT HERE USED TO SAY "(local)". It never was: `toISOString()` is UTC
+ *   by definition, so east of Greenwich this returns YESTERDAY until the clock
+ *   passes midnight UTC — in IST, any time before 05:30. Behaviour is unchanged
+ *   and deliberately so; every caller, including `DateRangeFilter`'s presets and
+ *   the dispatch dashboard, is comparing against dates Postgres stamped with
+ *   `current_date` on a UTC database, so UTC is the basis that AGREES with the
+ *   stored values. `todayLocalIso()` in shared/lib/dueBuckets is the genuinely
+ *   local one, for due dates a person reads off a calendar.
+ */
 export const todayIso = () => new Date().toISOString().slice(0, 10);
 
 /** Friendly date label: Today / Tomorrow / Yesterday / dd-mm-yyyy. */
@@ -126,6 +137,22 @@ export function isoWeekOf(iso: string): { isoYear: number; isoWeek: number } {
   firstThursday.setUTCDate(firstThursday.getUTCDate() - ftDay + 3);
   const isoWeek = 1 + Math.round((d.getTime() - firstThursday.getTime()) / (7 * 86400000));
   return { isoYear, isoWeek };
+}
+
+/** First day (yyyy-mm-dd) of the month containing iso. */
+export function monthStartOf(iso: string): string {
+  return `${iso.slice(0, 7)}-01`;
+}
+
+/**
+ * Last day (yyyy-mm-dd) of the month containing iso.
+ *
+ * Day 0 of the FOLLOWING month is the last day of this one, which is how this
+ * avoids a 28/29/30/31 table and gets February right in a leap year for free.
+ */
+export function monthEndOf(iso: string): string {
+  const [y, m] = iso.slice(0, 7).split("-").map(Number);
+  return new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
 }
 
 /** Month key "yyyy-mm" for grouping. */
