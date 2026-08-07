@@ -119,6 +119,23 @@ export async function buildGatePassPdf(d: GatePassData): Promise<jsPDF> {
   const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a5" });
   const right = PAGE_W - M;
 
+  /*
+   * The page has always BEEN A5 (148×210mm). What was missing is telling the
+   * viewer to keep it that way at print time: with no instruction, Acrobat and
+   * every browser print dialog default to the printer's own paper -- A4 here --
+   * and "fit to page" the slip up to fill it. The result reads as an A4 gate
+   * pass, which is what it was.
+   *
+   *   PrintScaling: "None"      -> print at true size, do not fit-to-page
+   *   PickTrayByPDFSize: true   -> ask for A5 paper rather than the default tray
+   *
+   * Both are hints a viewer MAY honour, not guarantees, so the person at the
+   * printer can still override them. They flip the default from "wrong" to
+   * "right", which is the part we control.
+   */
+  pdf.viewerPreferences({ PrintScaling: "None", PickTrayByPDFSize: true });
+  pdf.setProperties({ title: `Gate Pass ${d.gpNo ?? d.orderNo}` });
+
   /* ---- header: serial left, logo right ---- */
   const logo = await loadLogoDataUrl();
   let drew = false;
