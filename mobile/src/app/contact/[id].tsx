@@ -21,7 +21,7 @@ import { Chip } from '@/components/ui/Chip';
 import { Brand, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { autofillFromVoice } from '@/lib/leads/suggestions';
-import { newId, useLeads } from '@/lib/leads/store';
+import { aiStatusOf, newId, useLeads } from '@/lib/leads/store';
 import type { Contact, VoiceNote } from '@/lib/leads/types';
 
 function formatDateTime(iso: string): string {
@@ -35,7 +35,7 @@ export default function ViewCardScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { getContact, updateContact, deleteContact, masters } = useLeads();
+  const { getContact, updateContact, deleteContact, retryAi, masters } = useLeads();
 
   const contact = getContact(id);
   const [tab, setTab] = useState<'person' | 'company'>('person');
@@ -244,6 +244,28 @@ export default function ViewCardScreen() {
                 <ThemedText type="small" themeColor="textSecondary">AI insights coming in Phase 2</ThemedText>
               </View>
 
+              {/* The card could not be read. Say so, say what IS safe, and offer a
+                  way out — instead of a blank name field with no explanation. */}
+              {aiStatusOf(contact) === 'stalled' ? (
+                <View style={[styles.notRead, { borderColor: Brand.orange, backgroundColor: Brand.orangeSoft }]}>
+                  <View style={styles.metaHead}>
+                    <Ionicons name="alert-circle-outline" size={16} color={Brand.orange} />
+                    <ThemedText type="smallBold" style={{ color: Brand.navy }}>Card not read yet</ThemedText>
+                  </View>
+                  <ThemedText type="small" style={{ color: Brand.navy }}>
+                    {contact.extractError || 'The card reader could not be reached.'}
+                  </ThemedText>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    The card photo and voice note are saved. It tries again on its own once a day — or edit this lead
+                    and type the details in now.
+                  </ThemedText>
+                  <Pressable onPress={() => retryAi(contact.id)} style={[styles.retryBtn, { backgroundColor: Brand.orange }]}>
+                    <Ionicons name="refresh" size={16} color="#ffffff" />
+                    <ThemedText type="smallBold" style={{ color: '#ffffff' }}>Read again</ThemedText>
+                  </Pressable>
+                </View>
+              ) : null}
+
               {/* Card images — tap to view full size */}
               {cardImages.length ? (
                 <View style={styles.cardImages}>
@@ -332,6 +354,17 @@ const styles = StyleSheet.create({
   alsoTitle: { fontSize: 14 },
   alsoPerson: { borderWidth: 1, borderRadius: Spacing.two + 2, padding: Spacing.three, gap: Spacing.two },
   insights: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, padding: Spacing.three, borderRadius: Spacing.two },
+  notRead: { gap: Spacing.one, borderWidth: 1, borderRadius: Spacing.two + 2, padding: Spacing.three },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: Spacing.one,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.two,
+    marginTop: Spacing.one,
+  },
   cardImages: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
   cardImage: { width: 140, height: 88, borderRadius: Spacing.two },
   zoomHint: { position: 'absolute', right: 6, bottom: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center' },

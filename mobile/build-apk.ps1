@@ -14,11 +14,38 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 
-# --- Toolchain env (Android Studio's bundled JDK + your Android SDK) ---
-$env:JAVA_HOME    = 'C:\Program Files\Android\Android Studio\jbr'
-$env:ANDROID_HOME = Join-Path $env:LOCALAPPDATA 'Android\Sdk'
-if (-not (Test-Path $env:JAVA_HOME))    { throw "JAVA_HOME not found: $env:JAVA_HOME (is Android Studio installed there?)" }
-if (-not (Test-Path $env:ANDROID_HOME)) { throw "Android SDK not found: $env:ANDROID_HOME" }
+# --- Toolchain env (JDK 17 + Android SDK) ---
+# SEARCHED, not hardcoded. The original single hardcoded path was Android Studio's
+# bundled JDK on one particular developer's machine; on any other machine the
+# script died before it could build anything. Order = most explicit first, so an
+# env var or a machine-wide install always beats the standalone toolchain.
+function Resolve-First([string[]]$candidates) {
+    foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
+    return $null
+}
+
+$jdkCandidates = @(
+    $env:JAVA_HOME,
+    'D:\android-toolchain\jdk\jdk-17.0.20+8',
+    (Get-ChildItem 'D:\android-toolchain\jdk' -Directory -ErrorAction SilentlyContinue | Select-Object -First 1).FullName,
+    'C:\Program Files\Android\Android Studio\jbr',
+    "$env:LOCALAPPDATA\Programs\Android Studio\jbr"
+)
+$sdkCandidates = @(
+    $env:ANDROID_HOME,
+    $env:ANDROID_SDK_ROOT,
+    'D:\android-toolchain\sdk',
+    (Join-Path $env:LOCALAPPDATA 'Android\Sdk')
+)
+
+$env:JAVA_HOME    = Resolve-First $jdkCandidates
+$env:ANDROID_HOME = Resolve-First $sdkCandidates
+if (-not $env:JAVA_HOME)    { throw "No JDK found. Looked in: $($jdkCandidates -ne $null -join ', ')" }
+if (-not $env:ANDROID_HOME) { throw "No Android SDK found. Looked in: $($sdkCandidates -ne $null -join ', ')" }
+$env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+Write-Host ("==> JDK: {0}" -f $env:JAVA_HOME) -ForegroundColor Cyan
+Write-Host ("==> SDK: {0}" -f $env:ANDROID_HOME) -ForegroundColor Cyan
 
 # --- Load .env into the build environment (CRITICAL for sync) ---
 # EXPO_PUBLIC_* vars are inlined into the JS bundle AT BUILD TIME. `expo start`

@@ -64,6 +64,8 @@ type LeadsContextValue = {
   addContact: (draft: ContactDraft) => Contact;
   updateContact: (id: string, draft: ContactDraft) => void;
   deleteContact: (id: string) => void;
+  /** Force a stalled card read / voice transcript to retry now. */
+  retryAi: (id: string) => void;
   labelOf: (type: MasterType, id?: string | null) => string;
   // Sync surface
   syncing: boolean;
@@ -151,8 +153,11 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
 
       if (cache) {
         const deduped = dedupeById(cache.contacts);
-        setContacts(deduped);
-        if (deduped.length !== cache.contacts.length) saveContactsCache(userId, deduped); // heal on disk
+        const healed = healAbandonedExtracts(deduped);
+        setContacts(healed);
+        // Write back only when something actually changed — dedupeById always
+        // returns a fresh array, so identity alone is not evidence of a change.
+        if (deduped.length !== cache.contacts.length || healed !== deduped) saveContactsCache(userId, healed);
         setMasters(cache.masters ?? defaultMasters());
         mastersUpdatedAtRef.current = cache.mastersUpdatedAt;
         cursorRef.current = cache.cursor;
@@ -254,6 +259,39 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       scheduleSync();
     },
     [persistOutbox, scheduleSync]
+  );
+
+  /**
+   * "Read again" — put a stalled card / voice note back in the fast lane and sync
+   * now, instead of waiting out the day. This is the manual escape hatch for the
+   * case the daily retry handles slowly: someone has just fixed the service and
+   * wants their card read this minute. Purely additive — it resets counters, and
+   * touches no captured data.
+   */
+  const retryAi = useCallback(
+    (id: string) => {
+      setContacts((prev) =>
+        prev.map((c) => {
+          if (c.id !== id) return c;
+          const hasCard = !!(c.cardImages?.front || c.cardImages?.back);
+          return {
+            ...c,
+            pendingExtract: hasCard ? true : c.pendingExtract,
+            extractStalled: false,
+            extractAttempts: 0,
+            extractLastTriedAt: null,
+            voiceNotes: c.voiceNotes.map((v) =>
+              owesTranscript(v)
+                ? { ...v, status: 'pending' as const, transcribeAttempts: 0, transcribeLastTriedAt: null }
+                : v
+            ),
+            updatedAt: nowIso(),
+          };
+        })
+      );
+      markContactDirty(id);
+    },
+    [markContactDirty]
   );
 
   // ---- Masters (read-only) -------------------------------------------------
@@ -367,7 +405,10 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
   const hasPendingWork = useCallback(() => {
     const o = outboxRef.current;
     if (o.contactIds.length > 0 || Object.keys(o.deletes).length > 0) return true;
-    return contactsRef.current.some((c) => c.pendingExtract || c.voiceNotes.some((v) => v.status === 'pending'));
+    // Work that is DUE — a stalled card waiting out its day is not a reason to
+    // wake the network on every app resume.
+    const now = Date.now();
+    return contactsRef.current.some((c) => aiDueNow(c, now));
   }, []);
   useSync(userId ?? null, ready, triggerSync, hasPendingWork);
 
@@ -382,6 +423,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       addContact,
       updateContact,
       deleteContact,
+      retryAi,
       labelOf,
       syncing,
       pendingCount,
@@ -392,7 +434,7 @@ export function LeadsProvider({ children }: { children: ReactNode }) {
       isPending,
       syncNow: () => runSyncRef.current?.('manual'),
     }),
-    [ready, contacts, masters, getContact, addContact, updateContact, deleteContact, labelOf, syncing, pendingCount, pendingAiCount, lastSyncedAt, syncStep, syncError, isPending]
+    [ready, contacts, masters, getContact, addContact, updateContact, deleteContact, retryAi, labelOf, syncing, pendingCount, pendingAiCount, lastSyncedAt, syncStep, syncError, isPending]
   );
 
   return <LeadsContext.Provider value={value}>{children}</LeadsContext.Provider>;
@@ -416,6 +458,28 @@ async function importLegacy(): Promise<Contact[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Re-adopt cards the PREVIOUS build abandoned. That build cleared `pendingExtract`
+ * at the attempt cap and left nothing behind, so those leads owe a read that
+ * nothing will ever schedule — they would sit unread forever even now that the
+ * retry never gives up.
+ *
+ * The test is exact, not a guess: a successful read clears `extractAttempts` back
+ * to undefined, so a card still carrying a spent count demonstrably never got
+ * read. Runs once on cache load; a healed card just rejoins the daily retry.
+ */
+function healAbandonedExtracts(list: Contact[]): Contact[] {
+  let changed = false;
+  const out = list.map((c) => {
+    const spent = (c.extractAttempts ?? 0) >= QUICK_AI_ATTEMPTS;
+    const hasCard = !!(c.cardImages?.front || c.cardImages?.back);
+    if (!spent || !hasCard || c.pendingExtract || c.extractStalled) return c;
+    changed = true;
+    return { ...c, extractStalled: true };
+  });
+  return changed ? out : list;
 }
 
 const allEmpty = (a: string[]) => a.filter(Boolean).length === 0;
@@ -444,10 +508,32 @@ function fillFromExtract(c: Contact, ex: ContactDraft): Contact {
 // no local copy of the image (see bytesBase64FromUri).
 const base64Of = (uri: string): Promise<string | null> => bytesBase64FromUri(uri);
 
-// Give up on a card read / voice transcription after this many failed online
-// attempts so an unreadable card/audio can never wedge the card on "Processing…"
-// forever. Attempts only tick on real sync cycles, so this spans several tries.
-const MAX_AI_ATTEMPTS = 5;
+// ---- Retry policy: slow down, never abandon --------------------------------
+//
+// A card read fails for two very different reasons, and the app cannot tell them
+// apart from the outside: the PHOTO is unreadable (blurry, cropped, not a card),
+// or the SERVICE is down (expired API credit, provider outage, rate limit). The
+// first is permanent; the second fixes itself in hours.
+//
+// This used to stop after 5 tries and never look again — which meant one empty
+// credit balance during an exhibition permanently blanked every card scanned that
+// day, with the photos sitting right there, readable, forever unread.
+//
+// So: try fast a few times, then keep trying once a day, indefinitely. A daily
+// retry on a genuinely unreadable photo costs a fraction of a rupee a month; a
+// card abandoned mid-outage costs a lead. The lead, its photo and its voice note
+// are saved at capture regardless — the only thing at stake here is whether
+// anyone ever tries to read it again.
+const QUICK_AI_ATTEMPTS = 5;
+const SLOW_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** Is this piece of AI work allowed to run right now? */
+function retryDue(attempts: number | undefined, lastTriedAt: string | null | undefined, now: number): boolean {
+  if ((attempts ?? 0) < QUICK_AI_ATTEMPTS) return true; // still in the fast lane
+  if (!lastTriedAt) return true; // stalled by an older build that kept no timestamp
+  const last = new Date(lastTriedAt).getTime();
+  return !Number.isFinite(last) || now - last >= SLOW_RETRY_MS;
+}
 
 /** A lead captured offline holds a "lat, lng" address — the geocoder was unreachable. */
 const owesAddress = (c: Contact): boolean =>
@@ -456,8 +542,25 @@ const owesAddress = (c: Contact): boolean =>
 /** Cards/voice processed at once. Each is a multi-second edge-function round-trip. */
 const AI_CONCURRENCY = 3;
 
+/** A card still owed a read — whether it is queued (pendingExtract) or stalled. */
+const owesExtract = (c: Contact): boolean =>
+  (!!c.pendingExtract || !!c.extractStalled) && !!(c.cardImages?.front || c.cardImages?.back);
+
+/** A voice note still owed a transcript. 'failed' is retryable, not terminal. */
+const owesTranscript = (v: VoiceNote): boolean => v.status === 'pending' || v.status === 'failed';
+
+/** Does this contact owe AI work at all (regardless of whether it may run yet)? */
 const owesAI = (c: Contact): boolean =>
-  !!c.pendingExtract || c.voiceNotes.some((v) => v.status === 'pending') || owesAddress(c);
+  owesExtract(c) || c.voiceNotes.some(owesTranscript) || owesAddress(c);
+
+/** Does it owe work that is allowed to run RIGHT NOW (fast lane, or a day elapsed)? */
+const aiDueNow = (c: Contact, now: number): boolean => {
+  if (!owesAI(c)) return false;
+  if (owesExtract(c) && retryDue(c.extractAttempts, c.extractLastTriedAt, now)) return true;
+  if (c.voiceNotes.some((v) => owesTranscript(v) && retryDue(v.transcribeAttempts, v.transcribeLastTriedAt, now)))
+    return true;
+  return owesAddress(c);
+};
 
 /**
  * All the NETWORK work one contact owes, run concurrently. Touches no shared
@@ -467,14 +570,19 @@ const owesAI = (c: Contact): boolean =>
  */
 async function enrichContact(
   contact: Contact,
-  masters: Masters
+  masters: Masters,
+  now: number
 ): Promise<{ contact: Contact; touched: boolean; extracted: boolean }> {
   let c = contact;
   let touched = false;
   let extracted = false;
 
-  const wantsExtract = c.pendingExtract && (c.cardImages.front || c.cardImages.back);
-  const pendingNotes = c.voiceNotes.filter((v) => v.status === 'pending');
+  // Only the pieces whose retry is actually due — a stalled card waiting out its
+  // day must not re-fire on every app resume.
+  const wantsExtract = owesExtract(c) && retryDue(c.extractAttempts, c.extractLastTriedAt, now);
+  const pendingNotes = c.voiceNotes.filter(
+    (v) => owesTranscript(v) && retryDue(v.transcribeAttempts, v.transcribeLastTriedAt, now)
+  );
 
   // Card read, every voice note, and the address lookup all fire together — a
   // card with two voice notes used to cost three round-trips end to end.
@@ -500,13 +608,32 @@ async function enrichContact(
 
   if (wantsExtract) {
     if (card?.ok) {
-      c = { ...fillFromExtract(c, card.draft), pendingExtract: false, extractAttempts: undefined };
+      // Success clears every trace of the struggle, including a stall from days ago.
+      c = {
+        ...fillFromExtract(c, card.draft),
+        pendingExtract: false,
+        extractStalled: false,
+        extractAttempts: undefined,
+        extractLastTriedAt: null,
+        extractError: null,
+      };
       touched = true;
       extracted = true;
     } else {
-      // Count the failed attempt; give up (stop showing "Processing…") after the cap.
+      // Failed. Count it, remember WHY and WHEN — then either stay in the fast lane
+      // or drop to the daily retry. `pendingExtract` going false is what releases
+      // the lead from Drafts onto Home so it can be used and typed into; it is NOT
+      // a surrender, because `extractStalled` keeps it in the retry queue for good.
       const n = (c.extractAttempts ?? 0) + 1;
-      c = { ...c, extractAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { pendingExtract: false } : {}) };
+      const stalled = n >= QUICK_AI_ATTEMPTS;
+      c = {
+        ...c,
+        extractAttempts: n,
+        extractLastTriedAt: nowIso(),
+        extractError: card?.error ?? 'Could not reach the card reader',
+        pendingExtract: !stalled,
+        extractStalled: stalled,
+      };
       touched = true;
     }
   }
@@ -528,6 +655,8 @@ async function enrichContact(
           suggestedInterest: r.data?.suggestedInterest || null,
           followUps: r.data?.followUps ?? [],
           status: 'done',
+          transcribeAttempts: undefined,
+          transcribeLastTriedAt: null,
         };
         notes.push(nv);
         touched = true;
@@ -544,10 +673,16 @@ async function enrichContact(
           notes: fill.noteText ? [{ id: newId('n'), text: fill.noteText, createdAt: nowIso() }] : c.notes,
         };
       } else {
-        // Count the failed attempt; mark 'failed' (terminal, no longer "pending"
-        // → card leaves "Processing…") once the cap is hit. Persisted via touched.
+        // Count it and drop out of "Processing…" once the fast tries are spent —
+        // but 'failed' still owes a transcript, so the daily retry keeps picking
+        // it up. The recording itself is safe either way.
         const n = (v.transcribeAttempts ?? 0) + 1;
-        notes.push({ ...v, transcribeAttempts: n, ...(n >= MAX_AI_ATTEMPTS ? { status: 'failed' as const } : {}) });
+        notes.push({
+          ...v,
+          transcribeAttempts: n,
+          transcribeLastTriedAt: nowIso(),
+          status: n >= QUICK_AI_ATTEMPTS ? ('failed' as const) : ('pending' as const),
+        });
         touched = true;
       }
     }
@@ -582,7 +717,9 @@ async function processDeferredAI(
 ): Promise<{ contacts: Contact[]; changed: string[] }> {
   const net = await NetInfo.fetch();
   const online = net.isConnected !== false && net.isInternetReachable !== false;
-  const targets = list.filter(owesAI);
+  // One clock for the whole batch, so items don't drift across a long cycle.
+  const now = Date.now();
+  const targets = list.filter((c) => aiDueNow(c, now));
   if (!online || !targets.length) return { contacts: list, changed: [] };
 
   const out = [...list];
@@ -590,7 +727,7 @@ async function processDeferredAI(
   const changed = new Set<string>();
 
   await mapPool(targets, AI_CONCURRENCY, async (target) => {
-    const { contact, touched, extracted } = await enrichContact(target, masters);
+    const { contact, touched, extracted } = await enrichContact(target, masters, now);
     if (!touched) return;
 
     // Everything below is synchronous — no other task can interleave, so `out` is
@@ -612,6 +749,25 @@ async function processDeferredAI(
   });
 
   return { contacts: out, changed: [...changed] };
+}
+
+/**
+ * What a lead's AI work looks like TO A HUMAN. One definition, so the Home card,
+ * the Drafts list and the View-card screen can never disagree about whether a
+ * card is being read, waiting for another go, or done.
+ *
+ *   working — queued or in the fast retry lane; show a spinner, it is in hand
+ *   stalled — the fast tries are spent; it retries daily, and a person may want
+ *             to type the details rather than wait
+ *   none    — nothing owed
+ */
+export type AiStatus = 'working' | 'stalled' | 'none';
+
+export function aiStatusOf(c: Contact): AiStatus {
+  if (c.pendingExtract || c.voiceNotes.some((v) => v.status === 'pending')) return 'working';
+  const stalledCard = !!c.extractStalled && !!(c.cardImages?.front || c.cardImages?.back);
+  const stalledVoice = c.voiceNotes.some((v) => v.status === 'failed');
+  return stalledCard || stalledVoice ? 'stalled' : 'none';
 }
 
 export { clearUserCache };

@@ -11,7 +11,7 @@ import { MediaImage } from '@/components/leads/MediaImage';
 import { ThemedText } from '@/components/themed-text';
 import { Brand, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useLeads } from '@/lib/leads/store';
+import { aiStatusOf, useLeads } from '@/lib/leads/store';
 import type { Contact } from '@/lib/leads/types';
 
 function formatDate(iso: string): string {
@@ -24,9 +24,10 @@ export function ContactCard({ contact }: { contact: Contact }) {
   const router = useRouter();
   const { masters, isPending } = useLeads();
   const pending = isPending(contact.id);
-  // AI still owed (card read / voice transcription) → show "Processing…" so a
-  // draft reads as working, not merely stuck offline.
-  const processing = !!contact.pendingExtract || contact.voiceNotes.some((v) => v.status === 'pending');
+  // Say which of the two it is. "Processing…" on a card that has quietly given up
+  // is the worst of both worlds: it looks busy, so nobody types the details in,
+  // and nobody knows anything is wrong.
+  const aiStatus = aiStatusOf(contact);
 
   const interest = masters.interestLevels.find((i) => i.id === contact.interestLevelId);
   const phone = contact.person.mobiles.find(Boolean) ?? contact.company.mobiles.find(Boolean);
@@ -44,10 +45,15 @@ export function ContactCard({ contact }: { contact: Contact }) {
         <ThemedText type="smallBold" style={styles.headerText} numberOfLines={1}>
           {contact.company.name || 'No company'}
         </ThemedText>
-        {processing ? (
+        {aiStatus === 'working' ? (
           <View style={styles.processing}>
             <ActivityIndicator size="small" color="#ffffff" />
             <ThemedText type="small" style={styles.processingText}>Processing…</ThemedText>
+          </View>
+        ) : aiStatus === 'stalled' ? (
+          <View style={styles.processing}>
+            <Ionicons name="alert-circle-outline" size={15} color={Brand.orange} />
+            <ThemedText type="small" style={[styles.processingText, { color: Brand.orange }]}>Not read</ThemedText>
           </View>
         ) : pending ? (
           <Ionicons name="cloud-offline-outline" size={15} color="rgba(255,255,255,0.85)" />

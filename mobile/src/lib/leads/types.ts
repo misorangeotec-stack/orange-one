@@ -42,10 +42,16 @@ export type VoiceNote = {
   summary?: string | null;
   suggestedInterest?: string | null;
   followUps?: string[];
-  /** Transcription lifecycle: pending = queued (offline), waiting for network. */
+  /**
+   * Transcription lifecycle: pending = queued (offline), waiting for network.
+   * `failed` is NOT terminal — the note drops out of the fast queue but is still
+   * retried once a day (see QUICK_AI_ATTEMPTS / SLOW_RETRY_MS in store.tsx).
+   */
   status?: 'pending' | 'processing' | 'done' | 'failed';
-  /** Failed online transcription attempts; at MAX_AI_ATTEMPTS the note goes 'failed'. */
+  /** Failed online transcription attempts; past QUICK_AI_ATTEMPTS it retries daily. */
   transcribeAttempts?: number;
+  /** When the last failed attempt ran — paces the daily retry. */
+  transcribeLastTriedAt?: string | null;
   createdAt: string; // ISO
 };
 
@@ -96,8 +102,20 @@ export type Contact = {
   capturedAt?: CapturedAt | null;
   /** True when a card was captured offline and still needs AI extraction. */
   pendingExtract?: boolean;
-  /** Failed online extraction attempts; at MAX_AI_ATTEMPTS we stop retrying. */
+  /** Failed online extraction attempts; past QUICK_AI_ATTEMPTS it retries daily. */
   extractAttempts?: number;
+  /**
+   * The fast retries are spent and the card STILL isn't read. The lead stops
+   * being a draft (it shows on Home, editable, with whatever fields are blank) but
+   * is NEVER abandoned: a stalled card is retried once a day, forever, and clears
+   * itself the moment a read succeeds. Nothing about the lead depends on this —
+   * the card photo, voice note and every typed field are already saved.
+   */
+  extractStalled?: boolean;
+  /** When the last failed read ran — paces the daily retry. */
+  extractLastTriedAt?: string | null;
+  /** Why the last read failed, in words a salesperson can act on. */
+  extractError?: string | null;
   /**
    * Set by the background read when this freshly-scanned card matches an existing
    * contact (by phone/email): the id of that existing contact. While set, the

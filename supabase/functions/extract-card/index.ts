@@ -161,12 +161,24 @@ Deno.serve(async (req: Request) => {
   const isWeak = (c: Card | null) => !c || (c.people.length === 0 && !c.company.name);
 
   // One model call → normalized card, or null on API/parse failure (never throws).
+  //
+  // The failure REASON is captured, never swallowed. A blanket `catch {}` here
+  // once made an outage indistinguishable from a blurry photo: when the API
+  // rejected the model id, every card came back "Could not parse card. Please
+  // fill the details manually." — advice that is correct for a bad photo and
+  // useless for a broken key, with nothing in the logs to tell them apart.
+  const failures: string[] = [];
   async function tryModel(model: string): Promise<Card | null> {
     try {
       const completion = await anthropic.messages.create({ model, max_tokens: 1024, system: SYSTEM, messages: [{ role: 'user', content }] });
       const text = completion.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('').trim();
-      return normalize(extractJson(text));
-    } catch {
+      const card = normalize(extractJson(text));
+      if (!card) failures.push(`${model}: model replied with unparseable JSON`);
+      return card;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      failures.push(`${model}: ${msg}`);
+      console.error(`[extract-card] ${model} failed: ${msg}`);
       return null;
     }
   }
@@ -181,7 +193,17 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  if (!result) return json({ error: 'Could not parse card. Please fill the details manually.' }, 422);
+  // Both models are down → this is an OUTAGE, not an unreadable card. Say so, and
+  // carry the reason in `detail` so the next person sees it without a redeploy.
+  if (!result) {
+    return json(
+      {
+        error: 'Card reading is temporarily unavailable. Please fill the details manually.',
+        detail: failures.join(' | '),
+      },
+      422
+    );
+  }
   // Return `people` (new, all contacts) AND a legacy `person` (= the primary) so
   // older app builds that read `body.person` keep working after this deploys.
   const primary = result.people[0] ?? { name: '', jobTitles: [], mobiles: [], emails: [] };
