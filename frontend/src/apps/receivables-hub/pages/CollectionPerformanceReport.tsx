@@ -47,7 +47,7 @@ import {
   DATE_RANGE_PRESETS, isDateRangePreset,
   isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
-  applyFocus, totalsOf, detailPathFor, defaultColumnsFor,
+  applyFocus, totalsOf, detailPathFor, defaultColumnsFor, defaultGroupByFor,
   COLLECTIBLE_EPS, DETERIORATION_PP, NEVER_PAID, NEVER_SOLD, ZERO_EPS, SALE_TYPES,
   BAND_LABELS, BAND_ORDER,
   PERIOD_LABELS, ZC_COLUMNS, ZC_DIMENSIONS, ZC_PRESETS, ZC_FOCUS_LABELS,
@@ -378,10 +378,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   );
 
   // ── View ──────────────────────────────────────────────────────────────────────────
-  // Opens on Salesperson → Customer → Sale Type: chasing money is owned by a person first, and
-  // the sale type underneath tells them WHICH bill to chase (ink and machine are different
-  // conversations). A flat customer list is still one click away in the View row.
-  const [groupBy, setGroupBy] = useState<ZCDim[]>(["salesperson", "customer", "saleType"]);
+  // Which view each report opens on — and WHY the middle level differs between them — lives in
+  // `defaultGroupByFor`, beside the View presets it has to stay in step with. A flat customer
+  // list is still one click away in the View row.
+  const [groupBy, setGroupBy] = useState<ZCDim[]>(() => defaultGroupByFor(mode));
   const viewLabel = useMemo(
     () => groupBy.map((d) => ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d).join(" → "),
     [groupBy],
@@ -405,7 +405,14 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const [sortKey, setSortKey] = useState<SortKey>(() => defaultSortFor(mode));
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
+  // Re-seed the view, the columns and the sort whenever the report changes underneath us.
+  // `?below=0` and `?below=30` are the SAME route, so switching threshold does not remount this
+  // component and the useState initialisers above never run a second time — without this effect
+  // the Zero report would keep whatever grouping the Below-N% report was left on. The cost is
+  // that switching threshold also discards a hand-picked grouping, exactly as it already
+  // discards hand-picked columns.
   useEffect(() => {
+    setGroupBy(defaultGroupByFor(mode));
     setVisibleCols(defaultColumnsFor(mode));
     setSortKey(defaultSortFor(mode));
     setSortDir("desc");

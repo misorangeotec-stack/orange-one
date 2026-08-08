@@ -5,10 +5,19 @@
  *
  * ONE sheet, flat, built to be worked in rather than read:
  *
- *  1. Every grouping level is its OWN COLUMN and every row is a leaf. No indentation, no
- *     interleaved subtotals. That is what makes the sheet sortable, filterable and pivotable
- *     — and it means a SUM down a column is correct, which it is not when group totals sit in
- *     among the detail.
+ *  1. Every grouping level is its OWN COLUMN, and the detail rows are leaves. No indentation:
+ *     that is what makes the sheet sortable, filterable and pivotable, where the old single
+ *     indented column carried its hierarchy as leading spaces that Excel cannot read.
+ *
+ *     ONE exception to "leaves only": each TOP-LEVEL group gets a total row HEADING its block —
+ *     grouped by Salesperson, that is what the sales head opens the file to read, so it comes
+ *     before the detail rather than after it. The grand total leads the whole sheet for the same
+ *     reason, frozen under the header. The inner levels carry no totals; a pivot rebuilds those.
+ *
+ *     Know the cost: a SUM down the WHOLE Outstanding column double-counts, re-sorting the sheet
+ *     in Excel scatters the total rows away from their blocks, and the autofilter range now spans
+ *     the totals (it has to be contiguous), so a filter can hide them. Sum within a block, or
+ *     read the GRAND TOTAL at the top.
  *
  *  2. Money is written as NUMBERS with an INR display format, never as pre-formatted
  *     strings ("₹1.20 L"). Strings look right and are useless — Excel can't SUM them.
@@ -28,7 +37,7 @@
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { formatDateDMY } from "./utils";
-import { HEADER_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
+import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import {
   NEVER_PAID, NEVER_SOLD,
   type ZCColumn, type ZCMetrics,
@@ -42,8 +51,8 @@ const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
  *  (Excel's native `0.0%` would multiply by 100 and render 1230.0%.) */
 const PCT_FMT = '0.0"%";-0.0"%";"—"';
 
-// (No subtotal style here: this sheet exports leaf rows only — see buildRollupSheet. The shared
-// TOTAL_STYLE is still used by the other receivables exports, which do carry subtotal rows.)
+// TOTAL_STYLE (light green) marks the one subtotal row per top-level group; GRAND_TOTAL_STYLE
+// (strong green) stays reserved for the single row at the bottom, so the two never read alike.
 
 export interface ZCExportMeta {
   /** Report title, e.g. "Customers Below 30% Collection". */
@@ -104,6 +113,8 @@ interface FlatRow {
   depth: number;
   metrics: ZCMetrics;
   isLeaf: boolean;
+  /** This row is a top-level group's TOTAL, not detail — see buildRollupSheet. */
+  isSubtotal?: boolean;
 }
 
 /**
@@ -145,8 +156,10 @@ function formatCells(
 }
 
 /**
- * The sheet: a three-line preamble, then one column per grouping level beside the visible
- * metric columns, one row per leaf, then the grand total.
+ * The sheet: a three-line preamble, then one column per grouping level beside the visible metric
+ * columns — and TOTALS FIRST. The grand total sits directly under the header, and each group's
+ * total heads its own block rather than closing it, so the figure arrives before the detail that
+ * explains it and you never scroll to find it.
  */
 function buildRollupSheet(
   roots: GroupNode<ZCMetrics>[],
@@ -173,51 +186,93 @@ function buildRollupSheet(
    * be pivoted, filtered and sorted in Excel. The old single indented column carried the same
    * information as leading spaces, which Excel cannot group, filter or pivot on at all.
    *
-   * Every exported row is a LEAF, carrying its full chain, so every grouping column is filled.
-   * `meta.dims` is empty only if a report ever renders ungrouped, and the fallback keeps one label
-   * column so the sheet is never headerless.
+   * Every DETAIL row is a leaf carrying its full chain, so every grouping column is filled; the
+   * subtotal rows fill the first column only. `meta.dims` is empty only if a report ever renders
+   * ungrouped, and the fallback keeps one label column so the sheet is never headerless.
    */
   const dimLabels = meta.dims.length ? meta.dims.map((d) => d.label) : [meta.viewLabel];
   const nDims = dimLabels.length;
 
+  // The metric block, written after the dimension block — every column ticked on screen, in screen
+  // order. (This used to drop "Customers"; it no longer does. See cellForRow.)
+  const metricCols = columns;
+
   /**
-   * "Customers" is dropped from the export.
+   * "Customers" is blanked on DETAIL rows, but only when it would be a column of ones.
    *
-   * It counts how many customers a row covers, which is meaningful on screen where a salesperson
-   * row stands for 40 of them. Every exported row is a leaf, so the column would read 1 all the
-   * way down — a column of ones next to the customer name, inviting the reader to wonder what
-   * they'd missed. It stays on screen; only the sheet loses it.
+   * The column counts how many customers a row covers. Group by … → Customer → … and every detail
+   * row is one customer by construction, so the column reads 1 all the way down: noise beside the
+   * name, inviting the reader to wonder what they'd missed. Group by Salesperson → Customer Group
+   * → Sale Type and a detail row covers however many customers bought that type inside that group
+   * — a real number that must not be hidden.
+   *
+   * So the test is the GROUPING, not leaf-ness. Subtotal and grand-total rows always carry it:
+   * "how many customers is this salesperson sitting on" is the whole reason the column exists.
    */
-  const metricCols = columns.filter((c) => c.key !== "customers");
+  const customerIsGrouped = meta.dims.some((d) => d.key === "customer");
+  const cellForRow = (c: ZCColumn, r: FlatRow): string | number =>
+    c.key === "customers" && customerIsGrouped && !r.isSubtotal
+      ? ""
+      : cellFor(c, r.metrics, !r.isSubtotal);
 
   const header = [...dimLabels, ...metricCols.map((c) => c.label)];
   const headerRow0 = aoa.length;
   aoa.push(header);
 
-  const firstData0 = aoa.length;
-  /**
-   * LEAVES ONLY — the interim group-total rows are deliberately not exported.
-   *
-   * On screen the subtotal rows are the point: they collapse and expand. In a spreadsheet they
-   * are in the way — they interleave totals with detail, so a SUM over the column double-counts,
-   * and any sort or filter scatters them away from the rows they were summing. A flat leaf table
-   * is what Excel is good at: every grouping level is a column, so a pivot rebuilds any subtotal
-   * on demand, correctly. The grand total still sits at the bottom, below the filter range.
-   *
-   * Nothing is lost: leaves are the finest buckets, so they add up to exactly the same grand total.
-   */
-  const rows = flatten(roots).filter((r) => r.isLeaf);
-  for (const r of rows) {
-    const dimCells: (string | number)[] = Array.from({ length: nDims }, (_, i) => r.labels[i] ?? "");
-    aoa.push([...dimCells, ...metricCols.map((c) => cellFor(c, r.metrics, r.isLeaf))]);
-  }
-
+  // The grand total leads the sheet, immediately under the header, and is frozen alongside it
+  // (see !freeze) so it stays on screen however far you scroll. At the bottom it was a figure you
+  // had to go looking for, past however many hundred rows the report happened to produce.
   const grandRow0 = aoa.length;
   aoa.push([
     "GRAND TOTAL",
     ...Array.from({ length: nDims - 1 }, () => ""),
     ...metricCols.map((c) => cellFor(c, total, false)),
   ]);
+
+  const firstData0 = aoa.length;
+  /**
+   * LEAVES, plus ONE total row per TOP-LEVEL group, HEADING its block. The inner levels stay
+   * unexported.
+   *
+   * Every interim total used to be dropped, because interleaving totals with detail is what makes
+   * a spreadsheet misbehave: a SUM down the column double-counts, and any sort or filter scatters
+   * the totals away from the rows they were summing. That is still true of the INNER levels, and a
+   * pivot rebuilds those on demand from the grouping columns, correctly.
+   *
+   * The outermost level is the exception, and it is worth the cost. Grouped by Salesperson, that
+   * row is "what this person is sitting on" — the one figure the sales head reads before anything
+   * else, and the reason the sheet gets opened at all. Rebuilding it by hand in Excel every time
+   * is not a reasonable ask of the person it is mailed to.
+   *
+   * The trade-off is real and accepted: SUM the whole Outstanding column and you get double the
+   * money, and re-sorting the sheet in Excel moves the total rows away from their blocks. Sum
+   * within a block, or read the GRAND TOTAL at the top.
+   */
+  const emitted: FlatRow[] = [];
+  for (const root of roots) {
+    // flatten() is pre-order, so the root is always first and its subtree follows.
+    const [self, ...rest] = flatten([root]);
+    // A single grouping level makes the root its own leaf — emit it once, as detail. Otherwise it
+    // would appear twice, as a row and as a total of itself.
+    if (!rest.length) { emitted.push(self); continue; }
+    // Total FIRST, then the rows it is made of: the block reads as a headline and its working,
+    // and a salesperson's figure is on screen the moment you reach their name.
+    emitted.push({ ...self, isSubtotal: true });
+    emitted.push(...rest.filter((r) => r.isLeaf));
+  }
+
+  for (const r of emitted) {
+    // A subtotal names its group in the FIRST column and leaves the levels it is summing over
+    // blank — those are precisely what it collapsed.
+    const dimCells: (string | number)[] = Array.from({ length: nDims }, (_, i) =>
+      r.isSubtotal
+        ? (i === 0 ? `${r.labels[0]} — TOTAL` : "")
+        : (r.labels[i] ?? ""),
+    );
+    aoa.push([...dimCells, ...metricCols.map((c) => cellForRow(c, r))]);
+  }
+
+  const lastRow0 = aoa.length - 1;
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const ncols = header.length;
@@ -227,27 +282,39 @@ function buildRollupSheet(
     ...metricCols.map(() => ({ wch: 16 })),
   ];
 
-  // Metric columns now start after the dimension block, not after a single label column.
-  // +1 on the row count → include the grand total.
+  // Metric columns now start after the dimension block, not after a single label column. The
+  // formatted span starts at the GRAND TOTAL row, which now leads the block, and runs to the end.
   const pick = (k: ZCColumn["kind"]) =>
     metricCols.map((c, i) => (c.kind === k ? i + nDims : -1)).filter((i) => i >= 0);
-  formatCells(ws, firstData0, rows.length + 1, pick("money"), INR_FMT);
-  formatCells(ws, firstData0, rows.length + 1, pick("pct"), PCT_FMT);
+  const nFormatted = lastRow0 - grandRow0 + 1;
+  formatCells(ws, grandRow0, nFormatted, pick("money"), INR_FMT);
+  formatCells(ws, grandRow0, nFormatted, pick("pct"), PCT_FMT);
 
   styleRow(ws, 0, ncols, HEADER_STYLE);
   styleRow(ws, headerRow0, ncols, HEADER_STYLE);
-  // No per-row styling: every data row is a leaf now, so there is no hierarchy left to signal.
   styleRow(ws, grandRow0, ncols, GRAND_TOTAL_STYLE);
+  // The only hierarchy left to signal: one total row heading each top-level group.
+  emitted.forEach((r, i) => {
+    if (r.isSubtotal) styleRow(ws, firstData0 + i, ncols, TOTAL_STYLE);
+  });
 
-  // Freeze the header block + the whole dimension block, so the grouping columns stay on screen
-  // while scrolling right through the metrics.
-  ws["!freeze"] = { xSplit: nDims, ySplit: headerRow0 + 1 };
+  // Freeze the dimension block (so the grouping columns stay put when scrolling right) AND the
+  // header + grand total (so the sheet's headline figure is always on screen). That pinning is
+  // half the point of moving the grand total to the top.
+  ws["!freeze"] = { xSplit: nDims, ySplit: grandRow0 + 1 };
   // Autofilter over the dimension columns + metrics: with real columns this sheet can now be
   // sliced in Excel the same way the Customers sheet can.
+  //
+  // The range has to run from the header to the LAST row, which now puts both the grand total and
+  // the group totals inside it: an autofilter range must be contiguous, and with the totals moved
+  // above the rows they summarise there is no longer a clean block of detail to fence off. So a
+  // filter treats the total rows as data and may hide them. Frozen panes keep the grand total
+  // visible regardless; a group total that vanishes under a filter is the accepted cost of having
+  // it lead its block.
   ws["!autofilter"] = {
     ref: XLSX.utils.encode_range(
       { r: headerRow0, c: 0 },
-      { r: grandRow0 - 1, c: ncols - 1 },
+      { r: lastRow0, c: ncols - 1 },
     ),
   };
 

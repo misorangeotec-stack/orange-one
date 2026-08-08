@@ -1155,8 +1155,15 @@ export const ZC_DIMENSIONS: { key: ZCDim; label: string }[] = [
 
 /** Quick "View" buttons. These are shortcuts, not the whole surface — the report renders
  *  the shared GroupByBuilder, so any dimension can be chained to any depth
- *  (e.g. Customer Group → Customer → Salesperson). */
+ *  (e.g. Customer Group → Customer → Salesperson).
+ *
+ *  The first two are the reports' own opening views (see `defaultGroupByFor`). They are listed
+ *  because GroupByBuilder highlights a chip only on an exact dimension-for-dimension match: with
+ *  no preset behind the default, the View row came up on first load with nothing lit, and the
+ *  grouping you were looking at appeared to be one nobody had chosen. */
 export const ZC_PRESETS: GroupByPreset<ZCDim>[] = [
+  { label: "Salesperson → Customer Group → Sale Type", dims: ["salesperson", "group", "saleType"] },
+  { label: "Salesperson → Customer → Sale Type", dims: ["salesperson", "customer", "saleType"] },
   { label: "Salesperson → Customer",   dims: ["salesperson", "customer"] },
   { label: "Customer",                 dims: ["customer"] },
   { label: "Customer Group",           dims: ["group"] },
@@ -1336,6 +1343,25 @@ export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
     "customers", "outstanding", "opening", "salesInWindow", "collectible", "collected", "journalSettled",
     "collectionPct", "shortfall", "priorPct", "deltaPp", "chequeReturns", "creditNotes",
   ];
+}
+
+/**
+ * The view each report OPENS on. Lives here, next to ZC_PRESETS, so the default and the chip
+ * that highlights it cannot drift apart.
+ *
+ * Salesperson first in all three: chasing money is owned by a person before it is owned by a
+ * ledger, and Sale Type underneath tells them WHICH bill to chase (ink and machine are different
+ * conversations).
+ *
+ * The middle level differs. Zero Collections lists everyone who paid nothing at all, which on the
+ * live book is hundreds of ledgers — one row per customer is a list to scroll, not to read. It
+ * opens on Customer Group instead, so the first question answered is which HOUSE has stopped
+ * paying; the customers are one expand away. The other two reports are already narrowed by their
+ * own predicate, so the customer row is the useful grain there.
+ */
+export function defaultGroupByFor(mode: CollectionsMode): ZCDim[] {
+  if (mode === "zero") return ["salesperson", "group", "saleType"];
+  return ["salesperson", "customer", "saleType"];
 }
 
 // ── Window resolution ───────────────────────────────────────────────────────────────
