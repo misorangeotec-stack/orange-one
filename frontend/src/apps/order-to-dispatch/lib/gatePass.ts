@@ -26,6 +26,16 @@ export interface GatePassData {
   /** e.g. `OTEC-2608-001`. Null means no invoice yet — callers must not get here. */
   gpNo: string | null;
   companyName: string;
+  /**
+   * OUR site the consignment left from — the order's Dispatch location.
+   *
+   * ⚠ THE COUNTERPART TO `customerLocation`, NOT A SYNONYM. This one is a master
+   *   naming one of our own places (SURAT / NOIDA); that one is free text saying
+   *   where the buyer takes delivery. Both print on the slip, which is exactly
+   *   why the customer's row is labelled CUSTOMER LOCATION rather than LOCATION.
+   *   Null when the order has no location, and then no line is drawn at all.
+   */
+  companyLocation: string | null;
   customerName: string;
   /** Where the CUSTOMER takes delivery — free text on the order. */
   customerLocation: string | null;
@@ -50,6 +60,7 @@ export function gatePassFromRound(
   meta: {
     orderNo: string;
     companyName: string;
+    companyLocation: string | null;
     customerName: string;
     customerLocation: string | null;
     itemName: (id: string | null) => string;
@@ -58,6 +69,7 @@ export function gatePassFromRound(
   return {
     gpNo: view.gpNo,
     companyName: meta.companyName,
+    companyLocation: meta.companyLocation,
     customerName: meta.customerName,
     customerLocation: meta.customerLocation,
     invoiceNo: view.sbInvoiceNo,
@@ -136,9 +148,8 @@ export async function buildGatePassPdf(d: GatePassData): Promise<jsPDF> {
   pdf.viewerPreferences({ PrintScaling: "None", PickTrayByPDFSize: true });
   pdf.setProperties({ title: `Gate Pass ${d.gpNo ?? d.orderNo}` });
 
-  /* ---- header: serial left, logo right ---- */
+  /* ---- header: serial + who sent it on the left, logo right ---- */
   const logo = await loadLogoDataUrl();
-  let drew = false;
   if (logo) {
     try {
       // Width derived from the image's own dimensions, never hard-coded — a
@@ -147,15 +158,11 @@ export async function buildGatePassPdf(d: GatePassData): Promise<jsPDF> {
       const props = pdf.getImageProperties(logo);
       const w = (props.width / props.height) * LOGO_H;
       pdf.addImage(logo, "JPEG", right - w, M - 4, w, LOGO_H);
-      drew = true;
     } catch {
-      // A corrupt or unexpected image must not cost us the pass.
-      drew = false;
+      // A corrupt or unexpected image must not cost us the pass. Nothing is
+      // drawn in its place: the masthead below already names the company, and
+      // it did NOT before — this block used to be the fallback for exactly that.
     }
-  }
-  if (!drew) {
-    pdf.setFont("helvetica", "bold").setFontSize(9);
-    pdf.text(d.companyName, right, M + 2, { align: "right" });
   }
 
   pdf.setFont("helvetica", "bold").setFontSize(10);
@@ -163,26 +170,51 @@ export async function buildGatePassPdf(d: GatePassData): Promise<jsPDF> {
   pdf.setFontSize(12);
   pdf.text(d.gpNo ?? "—", M + 16, M);
 
-  pdf.setFontSize(15);
-  pdf.text("GATE PASS", PAGE_W / 2, M + 14, { align: "center" });
+  /*
+   * The masthead — WHO SENT THIS, which the slip did not say. The serial encodes
+   * it (ENT- / OTEC-) but only to someone who knows the prefixes, and the logo is
+   * common to both companies. Left-aligned under the serial: the logo owns the
+   * right of this band, while the longest company name reaches x = 60mm, so the
+   * two cannot meet.
+   */
+  pdf.setFont("helvetica", "bold").setFontSize(9);
+  pdf.text(d.companyName, M, M + 6);
+  const branch = d.companyLocation?.trim();
+  if (branch) {
+    pdf.setFont("helvetica", "normal").setFontSize(8.5);
+    pdf.text(branch, M, M + 10.5);
+  }
+
+  // Everything below the masthead shifts by whether that second line exists —
+  // reserving its space unconditionally would leave a visible gap on an order
+  // with no location.
+  const headTop = M + (branch ? 7 : 3);
+
+  pdf.setFont("helvetica", "bold").setFontSize(15);
+  pdf.text("GATE PASS", PAGE_W / 2, headTop + 14, { align: "center" });
   pdf.setLineWidth(0.4);
-  pdf.line(M, M + 17, right, M + 17);
+  pdf.line(M, headTop + 17, right, headTop + 17);
 
   /* ---- the facts ---- */
-  let y = M + 25;
+  let y = headTop + 25;
+  // Wide enough for CUSTOMER LOCATION:, the longest label — it ends at x = 48.3mm
+  // at 9pt bold, so the old 28mm column would have run the label into its value.
+  const VALUE_X = M + 40;
   const row = (label: string, value: string) => {
     pdf.setFont("helvetica", "bold").setFontSize(9);
     pdf.text(label, M, y);
     pdf.setFont("helvetica", "normal").setFontSize(9);
     // Wrapped, because a customer name can be longer than the slip is wide.
-    const lines = pdf.splitTextToSize(value || "—", right - (M + 28)) as string[];
-    pdf.text(lines, M + 28, y);
+    const lines = pdf.splitTextToSize(value || "—", right - VALUE_X) as string[];
+    pdf.text(lines, VALUE_X, y);
     y += 6 + (lines.length - 1) * 4.2;
   };
 
   row("DATE:", dmy(d.invoiceDateIso));
   row("NAME:", d.customerName);
-  row("LOCATION:", d.customerLocation || "—");
+  // Labelled for the buyer explicitly: our own location now prints in the
+  // masthead, and a bare "LOCATION" would be two facts under one word.
+  row("CUSTOMER LOCATION:", d.customerLocation || "—");
   row("INV. NO:", d.invoiceNo || "—");
   row("ORDER NO:", d.orderNo);
 

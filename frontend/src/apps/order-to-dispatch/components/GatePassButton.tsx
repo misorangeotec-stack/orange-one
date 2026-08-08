@@ -37,10 +37,16 @@ export default function GatePassButton({
     if (!view || !gpNo) return;
     setBusy(true);
     try {
+      // ⚠ THE EM DASH TEST IS LOAD-BEARING. `masterName` answers "—" for a null
+      //   or unknown id, and a masthead reading the company name over a bare "—"
+      //   is worse than one with no second line at all. Mapping it to null is
+      //   what lets the slip close the gap instead of printing the dash.
+      const branch = s.masterName("company_location", order.locationId);
       await downloadGatePass(
         gatePassFromRound(view, {
           orderNo: order.orderNo,
           companyName: s.masterName("company", order.companyId),
+          companyLocation: branch === "—" ? null : branch,
           customerName: s.customerName(order.customerId),
           customerLocation: order.customerLocation,
           itemName: s.itemName,
