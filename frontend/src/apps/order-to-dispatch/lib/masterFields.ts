@@ -152,6 +152,25 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
   }
 }
 
+/**
+ * Value-bag keys that are stored in CAPS.
+ *
+ * A customer's LOCATION is free text, and it feeds the intake form's picker of
+ * "every location anyone has used" — so Sachin / SACHIN / sachin would stand in
+ * that list as three different places, and picking between them is a coin toss.
+ * One casing, applied on EVERY write path: the Masters form, its Excel import, a
+ * master request, and the approval that turns one into a row.
+ *
+ * The same rule is applied to the order's own `customer_location` in
+ * pages/orders/useSalesOrderForm.ts, which is the other half of that list, and to
+ * the rows already stored, by db/seed/load_fms_dispatch_customer_locations.py.
+ */
+export const UPPERCASE_MASTER_KEYS = new Set<string>(["location"]);
+
+/** Trim, and upper-case the keys that are kept in CAPS. */
+export const normalizeMasterValue = (key: string, raw: string): string =>
+  UPPERCASE_MASTER_KEYS.has(key) ? raw.trim().toUpperCase() : raw.trim();
+
 export function missingRequired(mt: DispatchMasterType, v: MasterValues, ctx: MasterFieldCtx): string | null {
   for (const f of masterFields(mt, ctx)) {
     if (f.required && !String(v[f.key] ?? "").trim()) return `${f.label} is required.`;
@@ -164,7 +183,7 @@ export function payloadFromValues(mt: DispatchMasterType, v: MasterValues): Reco
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(emptyValuesFor(mt))) {
     if (key === "sortOrder") continue; // not part of the request payload
-    const raw = String(v[key] ?? "").trim();
+    const raw = normalizeMasterValue(key, String(v[key] ?? ""));
     if (raw) out[key] = raw;
   }
   // A nameless master must NOT get a name key: the resolve RPC exempts it from
