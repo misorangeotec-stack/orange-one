@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 import { matchesSearch } from "@/shared/lib/search";
+import { menuHeightFor, placeMenu, type MenuPos } from "@/shared/lib/menuPlacement";
 
 export interface ComboOption {
   value: string;
@@ -72,7 +73,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [active, setActive] = useState(0); // keyboard-highlighted row
-  const [pos, setPos] = useState<{ top: number; left?: number; right?: number; minWidth: number } | null>(null);
+  const [pos, setPos] = useState<MenuPos | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -83,18 +84,23 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
   const showSearch = searchable ?? (!!onCreate || options.length > 6);
   const selected = options.find((o) => o.value === value);
 
-  // Position the portalled menu under the trigger using fixed coords so it
-  // escapes any `overflow-hidden` ancestor (e.g. a Card) that would clip it.
+  /*
+   * Position the portalled menu against the trigger using fixed coords, so it
+   * escapes any `overflow-hidden` ancestor (e.g. a Card) that would clip it —
+   * and against the VIEWPORT, so the bottom of the screen cannot clip it either:
+   * `placeMenu` flips the list above the trigger when that is where the room is,
+   * and always caps its height to what actually fits. See lib/menuPlacement.ts.
+   *
+   * The wanted height is measured from the FULL option list, once, on open — not
+   * from the filtered list, or the menu would hop over its trigger mid-typing.
+   */
   useLayoutEffect(() => {
     if (!open) return;
+    const wantedHeight = menuHeightFor(options.length + (onCreate ? 1 : 0), { search: showSearch });
     const place = () => {
       const r = ref.current?.getBoundingClientRect();
       if (!r) return;
-      setPos({
-        top: r.bottom + 4,
-        minWidth: r.width,
-        ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }),
-      });
+      setPos(placeMenu(r, { align, wantedHeight }));
     };
     place();
     window.addEventListener("resize", place);
@@ -103,6 +109,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, align]);
 
   useEffect(() => {
@@ -255,11 +262,21 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
           // Marks an open portalled menu, so an enclosing Modal knows to let
           // Escape close just this menu instead of the whole dialog.
           data-portal-menu=""
-          style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: pos.minWidth }}
-          className="z-[70] w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
+          style={{
+            position: "fixed",
+            top: pos.top,
+            bottom: pos.bottom,
+            left: pos.left,
+            right: pos.right,
+            minWidth: pos.minWidth,
+            maxHeight: pos.maxHeight,
+          }}
+          // `flex flex-col` is what makes the capped height reach the list: the
+          // search box keeps its size and the <ul> below takes what is left.
+          className="z-[70] flex flex-col w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
         >
           {showSearch && (
-            <div className="p-2 border-b border-line">
+            <div className="shrink-0 p-2 border-b border-line">
               <div className="relative">
                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-grey-2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input
@@ -272,7 +289,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
               </div>
             </div>
           )}
-          <ul className="max-h-60 overflow-y-auto py-1">
+          <ul className="flex-1 min-h-0 max-h-60 overflow-y-auto py-1">
             {filtered.length === 0 && !canCreate ? (
               <li className="px-3 py-3 text-center text-[12.5px] text-grey-2">No matches</li>
             ) : (

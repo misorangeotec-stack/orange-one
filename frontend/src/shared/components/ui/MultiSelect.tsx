@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/shared/lib/cn";
 import { matchesSearch } from "@/shared/lib/search";
+import { menuHeightFor, placeMenu, type MenuPos } from "@/shared/lib/menuPlacement";
 
 export interface MultiOption {
   value: string;
@@ -86,7 +87,7 @@ export default function MultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [pos, setPos] = useState<{ top: number; left?: number; right?: number; minWidth: number } | null>(null);
+  const [pos, setPos] = useState<MenuPos | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -159,18 +160,24 @@ export default function MultiSelect({
   const clearAllShown = () =>
     onChange(searching ? values.filter((v) => !shownValues.includes(v)) : []);
 
-  // Position the portalled menu under the trigger using fixed coords so it
-  // escapes any `overflow-hidden` ancestor (e.g. a Card) that would clip it.
+  /*
+   * Position the portalled menu against the trigger using fixed coords, so it
+   * escapes any `overflow-hidden` ancestor (e.g. a Card) that would clip it —
+   * and against the VIEWPORT, so the bottom of the screen cannot clip it either:
+   * `placeMenu` flips the list above the trigger when that is where the room is,
+   * and caps its height to what fits. Same rule as Combobox; see
+   * lib/menuPlacement.ts.
+   */
   useLayoutEffect(() => {
     if (!open) return;
+    const wantedHeight = menuHeightFor(options.length + (onCreate ? 1 : 0), {
+      search: showSearch,
+      header: options.length > 0, // the select-all / clear-all bar
+    });
     const place = () => {
       const r = ref.current?.getBoundingClientRect();
       if (!r) return;
-      setPos({
-        top: r.bottom + 4,
-        minWidth: r.width,
-        ...(align === "right" ? { right: window.innerWidth - r.right } : { left: r.left }),
-      });
+      setPos(placeMenu(r, { align, wantedHeight }));
     };
     place();
     window.addEventListener("resize", place);
@@ -179,6 +186,7 @@ export default function MultiSelect({
       window.removeEventListener("resize", place);
       window.removeEventListener("scroll", place, true);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, align]);
 
   useEffect(() => {
@@ -262,11 +270,21 @@ export default function MultiSelect({
           // Marks an open portalled menu, so an enclosing Modal knows to let
           // Escape close just this menu instead of the whole dialog.
           data-portal-menu=""
-          style={{ position: "fixed", top: pos.top, left: pos.left, right: pos.right, minWidth: pos.minWidth }}
-          className="z-[70] w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
+          style={{
+            position: "fixed",
+            top: pos.top,
+            bottom: pos.bottom,
+            left: pos.left,
+            right: pos.right,
+            minWidth: pos.minWidth,
+            maxHeight: pos.maxHeight,
+          }}
+          // `flex flex-col` is what makes the capped height reach the list: the
+          // search box and the select-all bar keep their size, the <ul> takes the rest.
+          className="z-[70] flex flex-col w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
         >
           {showSearch && (
-            <div className="p-2 border-b border-line">
+            <div className="shrink-0 p-2 border-b border-line">
               <div className="relative">
                 <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-grey-2" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input
@@ -280,7 +298,7 @@ export default function MultiSelect({
             </div>
           )}
           {options.length > 0 && (
-            <div className="px-2 py-1.5 border-b border-line flex items-center justify-between gap-2">
+            <div className="shrink-0 px-2 py-1.5 border-b border-line flex items-center justify-between gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-grey-2">
                 {searching
                   ? `${filtered.length} match${filtered.length === 1 ? "" : "es"}`
@@ -308,7 +326,7 @@ export default function MultiSelect({
               </span>
             </div>
           )}
-          <ul className="max-h-60 overflow-y-auto py-1">
+          <ul className="flex-1 min-h-0 max-h-60 overflow-y-auto py-1">
             {filtered.length === 0 && !canCreate && (
               <li className="px-3 py-3 text-center text-[12.5px] text-grey-2">No matches</li>
             )}
