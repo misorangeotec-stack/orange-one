@@ -139,8 +139,36 @@ export const sumQty = (rows: Consignment[]): Record<string, number> => {
   return out;
 };
 
-const num = (n: number): string =>
+export const qtyNum = (n: number): string =>
   Number.isInteger(n) ? n.toLocaleString("en-IN") : Number(n.toFixed(3)).toLocaleString("en-IN");
+const num = qtyNum;
+
+/**
+ * The unit carrying the most volume across a set — KGS, here, essentially always.
+ *
+ * ⚠ THIS EXISTS SO NOTHING HAS TO ADD KGS TO PCS. Quantity is the headline
+ *   measure on this board now, and a headline needs ONE number to size a bar and
+ *   order a list by. The honest single number is "how much of the unit that
+ *   dominates this set", not a cross-unit sum — 500 KGS + 3 PCS = 503 is the exact
+ *   arithmetic `qtyByUnit` was built to prevent. Rows measured in some other unit
+ *   still print their real quantity; they simply do not win the ranking.
+ */
+export function dominantUnit(rows: { qtyByUnit: Record<string, number> }[]): string | null {
+  const totals: Record<string, number> = {};
+  for (const r of rows) {
+    for (const [unit, n] of Object.entries(r.qtyByUnit)) totals[unit] = (totals[unit] ?? 0) + n;
+  }
+  let best: string | null = null;
+  let bestN = 0;
+  for (const [unit, n] of Object.entries(totals)) {
+    if (n > bestN) { best = unit; bestN = n; }
+  }
+  return best;
+}
+
+/** How much of one unit a quantity split holds — 0 when it holds none. */
+export const qtyIn = (q: Record<string, number>, unit: string | null): number =>
+  unit ? (q[unit] ?? 0) : 0;
 
 /**
  * "3,450 KGS · 200 LTR", biggest first.
@@ -168,9 +196,13 @@ export interface RankRow {
 }
 
 /**
- * Group and rank by volume — biggest first, which is the only order that makes
- * sense for "who did we ship the most to". Ties break on the name so the list
- * does not reshuffle between renders on equal counts.
+ * Group and rank BY QUANTITY — biggest first.
+ *
+ * ⚠ QUANTITY, NOT COUNT, AND THAT IS THE POINT. This used to sort on the number
+ *   of consignments, which put a customer who took four 30 KG parcels above one
+ *   who took a single 400 KG load. The business measure is what physically went
+ *   out; the count is a supporting detail. Count is the first tie-break, so a
+ *   set with no quantity recorded still ranks sensibly.
  */
 export function rankBy(
   rows: Consignment[],
@@ -184,9 +216,64 @@ export function rankBy(
     if (list) list.push(r);
     else by.set(k, [r]);
   }
-  return [...by.entries()]
-    .map(([key, list]) => ({ key, label: labelOf(key), count: list.length, qtyByUnit: sumQty(list) }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  const out = [...by.entries()].map(([key, list]) => ({
+    key,
+    label: labelOf(key),
+    count: list.length,
+    qtyByUnit: sumQty(list),
+  }));
+  return sortByQty(out);
+}
+
+/** Shared ordering for every ranked list on the board. */
+export function sortByQty<T extends RankRow>(rows: T[]): T[] {
+  const unit = dominantUnit(rows);
+  return [...rows].sort(
+    (a, b) =>
+      qtyIn(b.qtyByUnit, unit) - qtyIn(a.qtyByUnit, unit) ||
+      b.count - a.count ||
+      a.label.localeCompare(b.label),
+  );
+}
+
+/* ------------------------------ company blocks ----------------------------- */
+
+/**
+ * One selling company, with everything that went out under it.
+ *
+ * ⚠ THE COMPANY IS THE OUTER GROUPING ON PURPOSE. Both companies operate a site
+ *   called SURAT-HOJIWALA, so a flat "dispatched by location" list printed that
+ *   name twice with no way to tell the two apart, and a flat customer list gave
+ *   no clue which company had billed whom. Nesting site and customer UNDER the
+ *   company is what makes those two lists readable — it is not decoration.
+ */
+export interface CompanyBlock extends RankRow {
+  locations: RankRow[];
+  customers: RankRow[];
+}
+
+export function companyBlocks(
+  rows: Consignment[],
+  companyLabel: (id: string) => string,
+  locationLabel: (id: string) => string,
+  customerLabel: (id: string) => string,
+): CompanyBlock[] {
+  const by = new Map<string, Consignment[]>();
+  for (const r of rows) {
+    const k = r.companyId ?? "—";
+    const list = by.get(k);
+    if (list) list.push(r);
+    else by.set(k, [r]);
+  }
+  const out = [...by.entries()].map(([key, list]) => ({
+    key,
+    label: companyLabel(key),
+    count: list.length,
+    qtyByUnit: sumQty(list),
+    locations: rankBy(list, (c) => c.locationId ?? "—", locationLabel),
+    customers: rankBy(list, (c) => c.customerId, customerLabel),
+  }));
+  return sortByQty(out);
 }
 
 /* ---------------------------------- trend ---------------------------------- */
@@ -203,26 +290,43 @@ export function daysBetween(from: string, to: string): string[] {
   return out;
 }
 
+export interface DayPoint {
+  dayIso: string;
+  /** Quantity in `unit` — what the bar is drawn from. */
+  qty: number;
+  /** Consignments that day — the supporting number, shown in the tooltip. */
+  count: number;
+}
+
 /**
- * Consignments per day across the range.
+ * Quantity (and consignments) per day across the range.
  *
  * ⚠ ZERO-FILLED, and that is the whole point. Plotting only the days that had a
  *   dispatch draws six evenly spaced bars across a month and reads as steady
  *   activity — the empty days ARE the signal.
+ *
+ * `unit` is the series' basis, normally `dominantUnit(rows)`. Consignments
+ * measured in anything else still contribute to `count` but not to `qty`, for
+ * the reason spelled out on `dominantUnit`.
  */
 export function perDay(
   rows: Consignment[],
   range: DateRange,
   basis: Basis,
-): { dayIso: string; count: number }[] {
+  unit: string | null,
+): DayPoint[] {
   if (!range.from || !range.to) return [];
   const counts = new Map<string, number>();
+  const qtys = new Map<string, number>();
   for (const r of rows) {
     const d = dateFor(r, basis);
-    if (d) counts.set(d, (counts.get(d) ?? 0) + 1);
+    if (!d) continue;
+    counts.set(d, (counts.get(d) ?? 0) + 1);
+    qtys.set(d, (qtys.get(d) ?? 0) + qtyIn(r.qtyByUnit, unit));
   }
   return daysBetween(range.from, range.to).map((dayIso) => ({
     dayIso,
+    qty: qtys.get(dayIso) ?? 0,
     count: counts.get(dayIso) ?? 0,
   }));
 }

@@ -66,6 +66,8 @@ interface DispatchStoreValue {
   canRaise: boolean;
   canMonitor: boolean;
   canActOn: (step: QueueStep, order: DispatchOrder) => boolean;
+  /** May this person see the step's queue at all — nav link, route, page. */
+  canSeeQueue: (step: QueueStep) => boolean;
   canEditOrder: (order: DispatchOrder) => boolean;
   /** Omit the location to ask "owns this step anywhere". */
   isStepOwner: (stepKey: StepKey, locationId?: string | null) => boolean;
@@ -269,6 +271,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       isAdmin || isProcessCoordinator || isStepOwner(stepKey, o.locationId);
 
     /**
+     * May this person see the step's QUEUE at all — the nav link, the route, the page?
+     *
+     * Location-agnostic on purpose: owning gate-out at one site is reason enough for
+     * the link to exist, and `canActOn` then decides which rows appear on it.
+     *
+     * ⚠ A step with NO owner rows resolves to admin / coordinator only — which is
+     *   exactly what `canActOn` already says, so the queue disappears rather than
+     *   opening with every button dead. Seeding owners is a go-live step, not an
+     *   option; StepOwnersSection says so at the top of the file.
+     */
+    const canSeeQueue = (stepKey: QueueStep): boolean =>
+      isProcessCoordinator || isStepOwner(stepKey);
+
+    /**
      * Who may raise an order: open to every granted user unless `sales_order` has
      * owners configured, then only those owners (or admin / coordinator). The DB
      * deliberately allows owners on the origin step — see the foundations migration.
@@ -417,6 +433,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       canRaise,
       canMonitor: isProcessCoordinator,
       canActOn,
+      canSeeQueue,
       canEditOrder,
       isStepOwner,
       stepOwnerFor,

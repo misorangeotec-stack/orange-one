@@ -29,10 +29,11 @@ import { DISPATCH_QK } from "../data/dispatchFetch";
 import { useDispatchStore } from "../store";
 import { STEPS } from "../lib/steps";
 import { dmy } from "../lib/format";
-import RankBars from "../components/RankBars";
+import CompanyBreakdown from "../components/CompanyBreakdown";
 import DispatchTrend from "../components/DispatchTrend";
 import {
-  consignmentsOf, daysSince, inRange, notGone, perDay, qtyLabel, rankBy, sumQty,
+  companyBlocks, consignmentsOf, daysSince, dominantUnit, inRange, notGone, perDay,
+  qtyLabel, qtyNum, sumQty,
   type Consignment, type ConsignmentState,
 } from "../lib/dispatchBoard";
 
@@ -68,6 +69,55 @@ const longDate = (iso: string): string =>
   new Date(`${iso}T00:00:00Z`).toLocaleDateString("en-IN", {
     weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC",
   });
+
+/**
+ * A quantity as a KPI headline — the number full size, its unit small beside it.
+ *
+ * ⚠ QUANTITY IS THE HEADLINE ON EVERY TILE NOW, and the consignment count has
+ *   moved down into the hint. The tiles used to lead with the count, which
+ *   answered "how many pieces of paper did we raise" rather than "how much
+ *   material moved" — the second is the question the plant actually asks.
+ *
+ * Only the LARGEST unit is set full size, because the tile is one line wide and
+ * "2,425 KGS · 200 LTR" at 30px does not fit. A second unit is flagged with a
+ * "+1" and spelled out in full in the hint below, so nothing is silently dropped.
+ */
+function QtyValue({ q }: { q: Record<string, number> }) {
+  const parts = Object.entries(q).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  if (parts.length === 0) return <span className="text-grey-2">—</span>;
+  const [unit, n] = parts[0];
+  return (
+    <span className="whitespace-nowrap tabular-nums">
+      {qtyNum(n)}
+      {unit !== "—" && (
+        <span className="ml-1 text-[0.5em] font-semibold uppercase tracking-wide text-grey">{unit}</span>
+      )}
+      {parts.length > 1 && (
+        <span className="ml-1.5 align-top text-[0.4em] font-semibold text-grey-2">+{parts.length - 1}</span>
+      )}
+    </span>
+  );
+}
+
+/** The tile's supporting line: the count, prefixed by the full split when a tile's
+ *  headline had to collapse more than one unit into a "+N". */
+const qtyHint = (q: Record<string, number>, tail: string): string => {
+  const units = Object.entries(q).filter(([, n]) => n > 0).length;
+  return units > 1 ? `${qtyLabel(q, 4)} · ${tail}` : tail;
+};
+
+const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/**
+ * One comparable number for a quantity split — FOR ORDERING AND FILTERING ONLY.
+ *
+ * ⚠ NEVER RENDER THIS. It adds KGS to PCS, which is exactly the sum `qtyByUnit`
+ *   exists to prevent showing anyone. A sort and a min–max box both need a single
+ *   scalar per row, and neither ever puts the scalar on screen; the cell prints
+ *   the honest split. `dispatchBoard.qtyIn` is what the visible figures use.
+ */
+const qtyAcross = (q: Record<string, number>): number =>
+  Object.values(q).reduce((a, n) => a + n, 0);
 
 export default function Dashboard() {
   const s = useDispatchStore();
@@ -139,65 +189,94 @@ export default function Dashboard() {
 
   const returnedCount = dispatched.filter((c) => c.state === "returned").length;
 
+  /* Quantity is what every tile leads with, so each set's split is computed once. */
+  const dispatchedQty = useMemo(() => sumQty(dispatched), [dispatched]);
+  const billedQty = useMemo(() => sumQty(billed), [billed]);
+  const notGoneQty = useMemo(() => sumQty(billedNotGone), [billedNotGone]);
+  const backlogQty = useMemo(() => sumQty(backlog), [backlog]);
+
+  /*
+   * A tile is a doorway only for someone who may walk through it. The two queues
+   * these link to are owner-gated at the route now, so an unconditional href would
+   * hand a non-owner a number that opens on Access Denied. `KpiTile.href` is
+   * optional — without one the tile renders plain, which is the honest answer.
+   */
+  const gateOutHref = s.canSeeQueue("gate_out") ? `${B}/queues/gate-out` : undefined;
+  const salesBillHref = s.canSeeQueue("sales_bill") ? `${B}/queues/sales-bill` : undefined;
+
   const tiles: KpiTile[] = [
     {
       key: "dispatched",
       label: "Dispatched",
-      value: dispatched.length,
-      hint: `${qtyLabel(sumQty(dispatched))} · left the gate${returnedCount ? ` · ${returnedCount} returned` : ""}`,
+      value: <QtyValue q={dispatchedQty} />,
+      hint: qtyHint(
+        dispatchedQty,
+        `${plural(dispatched.length, "consignment")} · left the gate${
+          returnedCount ? ` · ${returnedCount} returned` : ""
+        }`,
+      ),
       size: "hero",
-      href: `${B}/queues/gate-out`,
+      href: gateOutHref,
     },
     {
       key: "billed",
       label: "Sales bills raised",
-      value: billed.length,
-      hint: `${qtyLabel(sumQty(billed))} · invoices raised`,
-      href: `${B}/queues/sales-bill`,
+      value: <QtyValue q={billedQty} />,
+      hint: qtyHint(billedQty, `${plural(billed.length, "invoice")} raised`),
+      href: salesBillHref,
     },
     {
       key: "notGone",
       label: "Billed, not gone",
-      value: billedNotGone.length,
-      hint: `${qtyLabel(sumQty(billedNotGone))} · still in the plant`,
+      value: <QtyValue q={notGoneQty} />,
+      hint: qtyHint(notGoneQty, `${plural(billedNotGone.length, "consignment")} · still in the plant`),
       tone: billedNotGone.length > 0 ? "red" : undefined,
-      href: `${B}/queues/gate-out`,
+      href: gateOutHref,
     },
     {
       key: "backlog",
       label: "Awaiting gate out",
-      value: backlog.length,
+      value: <QtyValue q={backlogQty} />,
       // ⚠ NOT range-scoped, unlike the three tiles beside it. A bill raised four
       //   days ago and still not gone is the real operational problem and would
       //   be invisible in a "today" view. The hint says so, because one
       //   differently-scoped tile in a row is a classic way to mislead.
-      hint: `${qtyLabel(sumQty(backlog))} · all dates${oldestWait > 0 ? ` · oldest ${oldestWait}d` : ""}`,
+      hint: qtyHint(
+        backlogQty,
+        `${plural(backlog.length, "consignment")} · all dates${oldestWait > 0 ? ` · oldest ${oldestWait}d` : ""}`,
+      ),
       tone: oldestWait >= 3 ? "red" : undefined,
-      href: `${B}/queues/gate-out`,
+      href: gateOutHref,
     },
   ];
 
-  const byCompany = useMemo(
-    () => rankBy(dispatched, (c) => c.companyId ?? "—", (k) => s.masterName("company", k === "—" ? null : k)),
-    [dispatched, s],
-  );
   /**
-   * WHERE it went out FROM — our own site, not the customer's.
-   *
-   * It shares the column with the company because the two answer one question
-   * between them: there are two selling companies, and the interesting half of
-   * "who dispatched this" is which of their sites did.
+   * The unit every bar and the trend chart are sized in — see `dominantUnit`.
+   * Derived from what is actually in the range, not hard-coded to KGS, so a range
+   * that happens to be all LTR still draws bars in proportion to each other.
    */
-  const byLocation = useMemo(
-    () => rankBy(dispatched, (c) => c.locationId ?? "—", (k) => s.masterName("company_location", k === "—" ? null : k)),
-    [dispatched, s],
-  );
-  const byCustomer = useMemo(
-    () => rankBy(dispatched, (c) => c.customerId, (k) => s.customerName(k)),
+  const unit = useMemo(() => dominantUnit(dispatched), [dispatched]);
+
+  /**
+   * One block per selling company, each carrying its own sites and customers.
+   *
+   * ⚠ THE OLD FLAT CARDS WERE GENUINELY AMBIGUOUS, not just cluttered. Both
+   *   companies run a site named SURAT-HOJIWALA, so "Dispatched by location"
+   *   listed that name twice with nothing to tell them apart, and the customer
+   *   list never said which company had billed whom.
+   */
+  const blocks = useMemo(
+    () =>
+      companyBlocks(
+        dispatched,
+        (k) => s.masterName("company", k === "—" ? null : k),
+        (k) => s.masterName("company_location", k === "—" ? null : k),
+        (k) => s.customerName(k),
+      ),
     [dispatched, s],
   );
 
-  const trend = useMemo(() => perDay(dispatched, range, "dispatched"), [dispatched, range]);
+  const trend = useMemo(() => perDay(dispatched, range, "dispatched", unit), [dispatched, range, unit]);
   const multiDay = !!range.from && !!range.to && range.from !== range.to;
 
   /**
@@ -218,6 +297,20 @@ export default function Dashboard() {
     return rows;
   }, [dispatched, billed, tab]);
 
+  /*
+   * ⚠ EVERY LIST FILTER HERE IS `multiselect`, NOT `select`, AND THAT IS THE
+   *   WHOLE POINT OF IT. A plain <select> gives a native dropdown you can only
+   *   scroll — with a few hundred customers, finding one meant hunting down the
+   *   list by eye. `MultiSelect` opens with a search box (it shows one past six
+   *   options) and lets several values be ticked at once, so "these three
+   *   customers" is one filter rather than three passes over the table.
+   *
+   *   The date and quantity columns had NO filter at all, which is why the three
+   *   numbers people most want to narrow by — when it was billed, when it left,
+   *   how much of it — were the three you could not narrow by. `QueueTable`
+   *   already knows how to render a date range and a min–max; they simply were
+   *   never asked for here.
+   */
   const columns: QueueColumn<Consignment>[] = [
     {
       key: "order",
@@ -237,14 +330,14 @@ export default function Dashboard() {
       header: "Customer",
       cell: (c) => <span className="text-grey">{s.customerName(c.customerId)}</span>,
       sortValue: (c) => s.customerName(c.customerId),
-      filter: { kind: "select", get: (c) => s.customerName(c.customerId) },
+      filter: { kind: "multiselect", get: (c) => s.customerName(c.customerId) },
     },
     {
       key: "customerLocation",
       header: "Customer location",
       cell: (c) => <span className="text-grey">{c.customerLocation ?? "—"}</span>,
       sortValue: (c) => c.customerLocation ?? "",
-      filter: { kind: "select", get: (c) => c.customerLocation ?? "—" },
+      filter: { kind: "multiselect", get: (c) => c.customerLocation ?? "—" },
       defaultHidden: true,
     },
     {
@@ -252,14 +345,14 @@ export default function Dashboard() {
       header: "Company",
       cell: (c) => <span className="text-grey">{s.masterName("company", c.companyId)}</span>,
       sortValue: (c) => s.masterName("company", c.companyId),
-      filter: { kind: "select", get: (c) => s.masterName("company", c.companyId) },
+      filter: { kind: "multiselect", get: (c) => s.masterName("company", c.companyId) },
     },
     {
       key: "site",
       header: "Dispatch location",
       cell: (c) => <span className="text-grey">{s.masterName("company_location", c.locationId)}</span>,
       sortValue: (c) => s.masterName("company_location", c.locationId),
-      filter: { kind: "select", get: (c) => s.masterName("company_location", c.locationId) },
+      filter: { kind: "multiselect", get: (c) => s.masterName("company_location", c.locationId) },
     },
     {
       key: "invoice",
@@ -273,6 +366,7 @@ export default function Dashboard() {
       header: "Invoice date",
       cell: (c) => <span className="text-grey whitespace-nowrap">{dmy(c.invoiceDateIso)}</span>,
       sortValue: (c) => c.invoiceDateIso ?? "",
+      filter: { kind: "date", get: (c) => c.invoiceDateIso ?? "" },
       exportValue: (c) => (c.invoiceDateIso ? dmy(c.invoiceDateIso) : ""),
     },
     {
@@ -293,13 +387,28 @@ export default function Dashboard() {
           <span className="text-ryg-red font-semibold whitespace-nowrap">Not yet</span>
         ),
       sortValue: (c) => c.gateOutIso ?? "9999-12-31",
+      // ⚠ A "Not yet" row has no date, so it matches NO gate-out range — asking
+      //   "what left between the 1st and the 7th" must not answer with things
+      //   that have not left at all. The "Billed, not gone" tab is how you ask
+      //   for those.
+      filter: { kind: "date", get: (c) => c.gateOutIso ?? "" },
       exportValue: (c) => (c.gateOutIso ? dmy(c.gateOutIso) : "Not yet"),
     },
     {
       key: "qty",
       header: "Quantity",
-      cell: (c) => <span className="text-grey tabular-nums whitespace-nowrap">{qtyLabel(c.qtyByUnit, 3)}</span>,
-      sortValue: (c) => Object.values(c.qtyByUnit).reduce((a, n) => a + n, 0),
+      // The measure the board is about, so it is set like one: right-aligned and
+      // navy, not another grey field among the reference numbers.
+      cell: (c) => (
+        <span className="font-semibold text-navy tabular-nums whitespace-nowrap">{qtyLabel(c.qtyByUnit, 3)}</span>
+      ),
+      align: "right",
+      sortValue: (c) => qtyAcross(c.qtyByUnit),
+      // ⚠ ADDS ACROSS UNITS, which nothing DISPLAYED here is allowed to do. It is
+      //   confined to filtering and sorting, where the number is never shown and
+      //   a single comparable value is the only way to have a min–max at all; the
+      //   sort has always worked this way. The cell keeps printing the true split.
+      filter: { kind: "number", get: (c) => qtyAcross(c.qtyByUnit) },
       exportValue: (c) => qtyLabel(c.qtyByUnit, 3),
     },
     {
@@ -313,7 +422,7 @@ export default function Dashboard() {
         </span>
       ),
       sortValue: (c) => STATE_LABEL[c.state],
-      filter: { kind: "select", get: (c) => STATE_LABEL[c.state] },
+      filter: { kind: "multiselect", get: (c) => STATE_LABEL[c.state] },
     },
   ];
 
@@ -340,7 +449,10 @@ export default function Dashboard() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {counts.delayed > 0 && (
+          {/* The Control Center is coordinator-only, so the alarm that leads there is
+              shown to coordinators only — otherwise it counts work across steps the
+              reader cannot open and links somewhere that Access Denies. */}
+          {s.canMonitor && counts.delayed > 0 && (
             <Link
               to={`${B}/monitoring`}
               className="text-[12.5px] font-semibold text-ryg-red hover:underline whitespace-nowrap"
@@ -360,35 +472,17 @@ export default function Dashboard() {
       <KpiRow tiles={tiles} />
 
       {/*
-        LEFT COLUMN, TWO CARDS. There are two selling companies, so that card
-        needs four rows at most and the rest of the height was empty — the site a
-        consignment left from is the answer that column has room to give as well.
-        The customer card keeps the whole right column: its list is the long one.
+        ONE CARD PER SELLING COMPANY, each carrying its own sites and customers —
+        replacing the three flat cards that sat here. See `CompanyBreakdown`.
       */}
-      <div className="grid gap-4 lg:grid-cols-2 items-start">
-        <div className="space-y-4">
-          <RankBars
-            title="Dispatched by company"
-            rows={byCompany}
-            limit={4}
-            emptyLabel="Nothing left the plant in this range."
-          />
-          <RankBars
-            title="Dispatched by location"
-            rows={byLocation}
-            limit={6}
-            emptyLabel="Nothing left the plant in this range."
-          />
-        </div>
-        <RankBars
-          title="Dispatched by customer"
-          rows={byCustomer}
-          emptyLabel="Nothing left the plant in this range."
-        />
-      </div>
+      <CompanyBreakdown
+        blocks={blocks}
+        unit={unit}
+        emptyLabel="Nothing left the plant in this range."
+      />
 
       {/* A one-bar chart is noise, so a single-day range gets no chart at all. */}
-      {multiDay && <DispatchTrend data={trend} />}
+      {multiDay && <DispatchTrend data={trend} unit={unit} />}
 
       <Card className="p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-2">
