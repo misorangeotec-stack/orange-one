@@ -297,6 +297,10 @@ export default function OrderDetail() {
                         {v.sbAttachmentPath && (
                           <StepDocLink path={v.sbAttachmentPath} name={v.sbAttachmentName ?? "Invoice"} />
                         )}
+                        {/* Only when the consignment needed one — most do not. */}
+                        {v.sbEwayPath && (
+                          <StepDocLink path={v.sbEwayPath} name={v.sbEwayName ?? "E-way bill"} />
+                        )}
                         {v.dcAttachmentPath && (
                           <StepDocLink path={v.dcAttachmentPath} name={v.dcAttachmentName ?? "Receiver copy"} />
                         )}

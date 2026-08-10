@@ -73,6 +73,27 @@ export interface StepField {
   showWhen?: (values: Record<string, string>, order: DispatchOrder | null) => boolean;
 }
 
+/**
+ * One file a step collects.
+ *
+ * ⚠ WIRE CONTRACT, same as a field: `pathKey` / `nameKey` are jsonb payload keys
+ *   read verbatim by the step's RPC. And the OMIT rule matters here — StepModal
+ *   leaves both keys out when editing without choosing a new file, so the RPC
+ *   keeps what is stored (see its `p ? 'key'` presence tests).
+ */
+export interface StepAttachment {
+  label: string;
+  folder: string;
+  pathKey: string;
+  nameKey: string;
+  required?: boolean;
+  /** Shown under the label when there is nothing to attach yet. */
+  note?: string;
+  /** Read off the ROUND, so a Completed row shows its own file. */
+  getPath: (v: RoundView) => string | null;
+  getName: (v: RoundView) => string | null;
+}
+
 export interface CapturedColumn {
   key: string;
   header: string;
@@ -117,16 +138,15 @@ export interface StepConfig {
   /** The read-only recap the step opens with. */
   context?: StepContext;
   fields: StepField[];
-  attachment?: {
-    label: string;
-    folder: string;
-    pathKey: string;
-    nameKey: string;
-    required?: boolean;
-    /** Read off the ROUND, so a Completed row shows its own file. */
-    getPath: (v: RoundView) => string | null;
-    getName: (v: RoundView) => string | null;
-  };
+  /**
+   * The files this step collects, in the order they are asked for.
+   *
+   * ⚠ A LIST, not one slot, and required-ness is PER FILE. The sales bill asks
+   *   for the Tally invoice (required) and the e-way bill (optional, because a
+   *   consignment below the threshold has none) — a single-slot config could only
+   *   have made the second one required too, or hidden it.
+   */
+  attachments?: StepAttachment[];
   /** Renders the per-line ship-quantity grid. */
   lines?: "ship";
   /**
@@ -271,11 +291,22 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       },
       { key: "sb_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.sbRemarks) },
     ],
-    attachment: {
-      label: "Sales invoice", folder: "invoice",
-      pathKey: "sb_attachment_path", nameKey: "sb_attachment_name", required: true,
-      getPath: (v) => v.sbAttachmentPath, getName: (v) => v.sbAttachmentName,
-    },
+    attachments: [
+      {
+        label: "Sales invoice", folder: "invoice",
+        pathKey: "sb_attachment_path", nameKey: "sb_attachment_name", required: true,
+        getPath: (v) => v.sbAttachmentPath, getName: (v) => v.sbAttachmentName,
+      },
+      {
+        // Generated at the same moment, by the same person, so it is asked for in
+        // the same place. OPTIONAL: below the threshold, local or hand-carried
+        // consignments have no e-way bill, and requiring one would stop the bill.
+        label: "E-way bill", folder: "eway",
+        pathKey: "sb_eway_path", nameKey: "sb_eway_name",
+        note: "Optional — attach it when the consignment needs one.",
+        getPath: (v) => v.sbEwayPath, getName: (v) => v.sbEwayName,
+      },
+    ],
     captured: { key: "sbInvoiceNo", header: "Invoice no.", get: (_o, v) => s(v.sbInvoiceNo) || "—" },
   },
 
@@ -312,11 +343,13 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       },
       { key: "dc_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.dcRemarks) },
     ],
-    attachment: {
-      label: "Receiver copy / LR", folder: "receiver",
-      pathKey: "dc_attachment_path", nameKey: "dc_attachment_name", required: true,
-      getPath: (v) => v.dcAttachmentPath, getName: (v) => v.dcAttachmentName,
-    },
+    attachments: [
+      {
+        label: "Receiver copy / LR", folder: "receiver",
+        pathKey: "dc_attachment_path", nameKey: "dc_attachment_name", required: true,
+        getPath: (v) => v.dcAttachmentPath, getName: (v) => v.dcAttachmentName,
+      },
+    ],
     captured: {
       key: "dcStatus", header: "Outcome",
       get: (_o, v) => (v.dcStatus ? DELIVERY_STATUS_LABEL[v.dcStatus] : "—"),

@@ -70,10 +70,10 @@ export default function StepModal({
   /** The partial credit release. Its own state because it is a pair of linked
    *  inputs, not a single descriptor-driven field — see CreditApprovalPanel. */
   const [approvedQty, setApprovedQty] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  /** The file chosen for each attachment slot, keyed by its `pathKey`. */
+  const [files, setFiles] = useState<Record<string, File | null>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Re-seed whenever the modal opens on a different row, a different ROUND, or
   // flips edit/record. The round number is load-bearing in these deps: without
@@ -101,7 +101,7 @@ export default function StepModal({
         ? String(headroom)
         : "",
     );
-    setFile(null);
+    setFiles({});
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, order?.id, view?.roundNo, view?.isArchived, editing, cfg.stepKey]);
@@ -212,17 +212,21 @@ export default function StepModal({
 
   // Read off the ROUND, via the descriptor — never off the order header, which
   // belongs to whichever round is currently in progress.
-  const existingDoc =
-    cfg.attachment && view
-      ? { path: cfg.attachment.getPath(view), name: cfg.attachment.getName(view) }
-      : null;
+  const slots = (cfg.attachments ?? []).map((a) => ({
+    spec: a,
+    stored: view ? { path: a.getPath(view), name: a.getName(view) } : null,
+    file: files[a.pathKey] ?? null,
+  }));
 
   const save = async () => {
     if (!order || busy || locked) return;
     const miss = missingRequired(cfg, values, order);
     if (miss) { setError(miss); return; }
-    if (cfg.attachment?.required && !file && !existingDoc?.path) {
-      setError(`${cfg.attachment.label} is required.`);
+    // Per slot, because required-ness is per slot: the invoice must be there,
+    // the e-way bill need not be.
+    const missingDoc = slots.find((sl) => sl.spec.required && !sl.file && !sl.stored?.path);
+    if (missingDoc) {
+      setError(`${missingDoc.spec.label} is required.`);
       return;
     }
     // A partial release with no usable figure is not a decision. Caught here so
@@ -256,16 +260,16 @@ export default function StepModal({
       // must not reach it.
       if (showApprovedQty) payload.cc_approved_qty = approvedQty.trim();
 
-      if (cfg.attachment) {
-        if (file) {
-          const up = await s.uploadStepDocument(order.id, cfg.attachment.folder, file, order.roundNo);
-          payload[cfg.attachment.pathKey] = up.path;
-          payload[cfg.attachment.nameKey] = up.name;
+      for (const sl of slots) {
+        if (sl.file) {
+          const up = await s.uploadStepDocument(order.id, sl.spec.folder, sl.file, order.roundNo);
+          payload[sl.spec.pathKey] = up.path;
+          payload[sl.spec.nameKey] = up.name;
         } else if (!editing) {
           // Recording with no file: send blanks so the RPC stores nulls (and,
           // where the attachment is required, refuses).
-          payload[cfg.attachment.pathKey] = "";
-          payload[cfg.attachment.nameKey] = "";
+          payload[sl.spec.pathKey] = "";
+          payload[sl.spec.nameKey] = "";
         }
         // Editing with no new file: the keys stay OMITTED — the RPC keeps the file.
       }
@@ -455,28 +459,36 @@ export default function StepModal({
           they have typed — a REQUIRED attachment read as an optional afterthought,
           and the save was refused by something already off screen.
         */}
-        {cfg.attachment && (
-          <section className="space-y-2">
+        {slots.map((sl) => (
+          <section key={sl.spec.pathKey} className="space-y-2">
             <SectionHeading>
-              {cfg.attachment.label}
-              {cfg.attachment.required && !locked && <span className="text-orange"> *</span>}
+              {sl.spec.label}
+              {sl.spec.required && !locked && <span className="text-orange"> *</span>}
             </SectionHeading>
-            {existingDoc?.path && !file && !locked && (
+            {sl.stored?.path && !sl.file && (
               <div className="flex items-center gap-3">
-                <StepDocLink path={existingDoc.path} name={existingDoc.name} />
-                <span className="text-[12px] text-grey-2">choose a file below to replace it</span>
+                <StepDocLink path={sl.stored.path} name={sl.stored.name} />
+                {!locked && <span className="text-[12px] text-grey-2">choose a file below to replace it</span>}
               </div>
+            )}
+            {/* An optional slot says so where it is asked, not in a legend — this is
+                the moment someone decides whether the consignment needs one. */}
+            {!locked && !sl.spec.required && !sl.stored?.path && sl.spec.note && (
+              <p className="text-[12px] text-grey-2">{sl.spec.note}</p>
             )}
             {!locked && (
               <input
-                ref={fileRef}
                 type="file"
-                onChange={(e) => { setFile(e.target.files?.[0] ?? null); setError(null); }}
+                onChange={(e) => {
+                  const picked = e.target.files?.[0] ?? null;
+                  setFiles((p) => ({ ...p, [sl.spec.pathKey]: picked }));
+                  setError(null);
+                }}
                 className="block w-full text-[13px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-[#F1F4F9] file:px-3 file:py-1.5 file:text-[13px] file:font-semibold file:text-navy"
               />
             )}
           </section>
-        )}
+        ))}
 
         {longFields.length > 0 && (
           <div className="space-y-4">

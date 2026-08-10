@@ -69,6 +69,9 @@ export interface RoundView {
   sbInvoiceNo: string | null;
   sbAttachmentPath: string | null;
   sbAttachmentName: string | null;
+  /** The e-way bill that went with this invoice, when one was needed. */
+  sbEwayPath: string | null;
+  sbEwayName: string | null;
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
@@ -192,6 +195,8 @@ export function currentRoundView(order: DispatchOrder): RoundView | null {
     sbInvoiceNo: order.sbInvoiceNo,
     sbAttachmentPath: order.sbAttachmentPath,
     sbAttachmentName: order.sbAttachmentName,
+    sbEwayPath: order.sbEwayPath,
+    sbEwayName: order.sbEwayName,
     sbRemarks: order.sbRemarks,
     sbAt: order.sbAt,
     sbBy: order.sbBy,
@@ -247,6 +252,8 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     sbInvoiceNo: r.sbInvoiceNo,
     sbAttachmentPath: r.sbAttachmentPath,
     sbAttachmentName: r.sbAttachmentName,
+    sbEwayPath: r.sbEwayPath,
+    sbEwayName: r.sbEwayName,
     sbRemarks: r.sbRemarks,
     sbAt: r.sbAt,
     sbBy: r.sbBy,

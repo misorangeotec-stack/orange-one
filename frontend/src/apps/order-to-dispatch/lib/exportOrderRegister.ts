@@ -113,6 +113,9 @@ export function exportOrderRegister(
     // One pass per invoice, so it sits beside the invoice it was issued for.
     { header: "Gate Pass No.", width: 16, value: (r) => r.view.gpNo ?? "" },
     { header: "Sales Invoice Attached", width: 14, value: (r) => (r.view.sbAttachmentPath ? "Yes" : "No") },
+    // Optional by design, so "No" here is an ordinary answer — a consignment
+    // below the threshold has no e-way bill to attach.
+    { header: "E-Way Bill Attached", width: 14, value: (r) => (r.view.sbEwayPath ? "Yes" : "No") },
     { header: "Gate Outward No.", width: 18, value: (r) => r.view.goOutwardNo ?? "" },
     { header: "Receiver Copy Attached", width: 14, value: (r) => (r.view.dcAttachmentPath ? "Yes" : "No") },
     { header: "Round Corrected", width: 26, value: (r) => r.view.amendReason ?? "" },

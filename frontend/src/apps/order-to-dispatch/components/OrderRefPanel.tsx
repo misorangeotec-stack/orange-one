@@ -130,10 +130,17 @@ export default function OrderRefPanel({
         {children}
       </div>
 
-      {/* The invoice itself. See the trap note above for why this is gated. */}
-      {showInvoice && !readOnly && round.sbAttachmentPath && (
-        <div>
-          <StepDocLink path={round.sbAttachmentPath} name={round.sbAttachmentName ?? "Sales invoice"} />
+      {/* The invoice itself, and the e-way bill when the consignment carries one —
+          the gate is exactly where both get checked. See the trap note above for
+          why this is gated. */}
+      {showInvoice && !readOnly && (round.sbAttachmentPath || round.sbEwayPath) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {round.sbAttachmentPath && (
+            <StepDocLink path={round.sbAttachmentPath} name={round.sbAttachmentName ?? "Sales invoice"} />
+          )}
+          {round.sbEwayPath && (
+            <StepDocLink path={round.sbEwayPath} name={round.sbEwayName ?? "E-way bill"} />
+          )}
         </div>
       )}
 
@@ -261,11 +268,15 @@ export function OrderRefDocs({
   round, showInvoice = false, showReceiver = false,
 }: { round: RoundView; showInvoice?: boolean; showReceiver?: boolean }) {
   const invoice = showInvoice && round.sbAttachmentPath ? round.sbAttachmentPath : null;
+  // Travels with the invoice — same step, same consignment — and is null on the
+  // many consignments that need no e-way bill at all.
+  const eway = showInvoice && round.sbEwayPath ? round.sbEwayPath : null;
   const receiver = showReceiver && round.dcAttachmentPath ? round.dcAttachmentPath : null;
-  if (!invoice && !receiver) return null;
+  if (!invoice && !eway && !receiver) return null;
   return (
     <div className="flex flex-wrap items-center gap-4">
       {invoice && <StepDocLink path={invoice} name={round.sbAttachmentName ?? "Sales invoice"} />}
+      {eway && <StepDocLink path={eway} name={round.sbEwayName ?? "E-way bill"} />}
       {receiver && <StepDocLink path={receiver} name={round.dcAttachmentName ?? "Receiver copy / LR"} />}
     </div>
   );
