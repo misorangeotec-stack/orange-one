@@ -13,6 +13,7 @@ import {
   closeOrder as closeOrderWrite,
   holdOrder as holdOrderWrite,
   insertMaster as insertMasterWrite,
+  insertMasters as insertMastersWrite,
   markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordStep as recordStepWrite,
@@ -167,6 +168,8 @@ interface DispatchStoreValue {
   deleteStepOwner: (stepKey: string, locationId: string) => Promise<void>;
   setConfig: (key: string, value: Record<string, unknown>) => Promise<void>;
   insertMaster: (mt: DispatchMasterType, input: MasterInput) => Promise<void>;
+  /** Several rows of one master in a single write — the customer↔item mapping form. */
+  insertMasters: (mt: DispatchMasterType, inputs: MasterInput[]) => Promise<void>;
   updateMaster: (mt: DispatchMasterType, id: string, input: MasterInput) => Promise<void>;
   setMasterManagers: (mt: DispatchMasterType, userIds: string[]) => Promise<void>;
   requestNewMaster: (mt: DispatchMasterType, payload: Record<string, unknown>) => Promise<void>;
@@ -529,6 +532,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       insertMaster: async (mt, input) => {
         await insertMasterWrite(mt, input);
+        await invalidate();
+      },
+      insertMasters: async (mt, inputs) => {
+        await insertMastersWrite(mt, inputs);
         await invalidate();
       },
       updateMaster: async (mt, id, input) => {

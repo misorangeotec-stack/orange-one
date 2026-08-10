@@ -321,7 +321,20 @@ const masterRow = (mt: DispatchMasterType, input: MasterInput) => ({
 });
 
 export async function insertMaster(mt: DispatchMasterType, input: MasterInput): Promise<void> {
-  const { error } = await db.from(MASTER_TABLE[mt]).insert(masterRow(mt, input));
+  await insertMasters(mt, [input]);
+}
+
+/**
+ * Insert SEVERAL rows of one master in ONE statement.
+ *
+ * The customer↔item mapping is what asks for this: a customer's catalogue is
+ * dozens of items, and adding them a pair at a time is the same customer picked
+ * dozens of times over. One statement is also one outcome — a loop of inserts
+ * can half-succeed and leave the form unable to say which half.
+ */
+export async function insertMasters(mt: DispatchMasterType, inputs: MasterInput[]): Promise<void> {
+  if (inputs.length === 0) return;
+  const { error } = await db.from(MASTER_TABLE[mt]).insert(inputs.map((i) => masterRow(mt, i)));
   if (error) throw new Error(error.message);
 }
 

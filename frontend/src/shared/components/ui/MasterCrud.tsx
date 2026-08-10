@@ -36,8 +36,12 @@ export interface MasterFieldDef {
    * serialise itself into one string (a MultiSelect: comma-joined ids). Keeping the
    * bag flat is what lets `toValues` / `emptyValues` / the required-check stay dumb.
    * Only read when `type: "custom"`.
+   *
+   * The whole bag is handed over as well, because a control can depend on a
+   * SIBLING field: Dispatch's customer↔item mapping offers only the items that
+   * customer does not already have, which it cannot know from its own value.
    */
-  render?: (value: string, onChange: (next: string) => void) => ReactNode;
+  render?: (value: string, onChange: (next: string) => void, values: Record<string, string>) => ReactNode;
 }
 
 export interface MasterColumn<T> {
@@ -59,6 +63,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   rows,
   columns,
   fields,
+  createFields,
   searchText,
   canManage,
   canCreate,
@@ -71,7 +76,17 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   singular: string;
   rows: T[];
   columns: MasterColumn<T>[];
+  /** The master's schema: the edit form, the Excel round trip and the import all read it. */
   fields: MasterFieldDef[];
+  /**
+   * A DIFFERENT form for ADDING, when adding one row at a time is the wrong shape
+   * of question. Dispatch's customer↔item mapping asks for a customer and MANY
+   * items here and writes a row per pair, while `fields` — one customer, one item
+   * — stays the truth for editing an existing pair and for the Excel columns.
+   *
+   * Defaults to `fields`, so every other master is untouched.
+   */
+  createFields?: MasterFieldDef[];
   searchText: (row: T) => string;
   canManage: boolean;
   /**
@@ -180,9 +195,12 @@ export default function MasterCrud<T extends { id: string; name: string; active:
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
 
+  /** What the OPEN dialog is asking for — see the `createFields` note above. */
+  const formFields = creating ? (createFields ?? fields) : fields;
+
   const submit = async () => {
     setErr(null);
-    for (const f of fields) {
+    for (const f of formFields) {
       if (f.required && !values[f.key]?.trim()) {
         setErr(`${f.label} is required.`);
         return;
@@ -222,7 +240,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
    * exactly as they were: a two-column grid holding one field would only leave
    * half the dialog empty.
    */
-  const wide = fields.length > 4;
+  const wide = formFields.length > 4;
 
   return (
     <div className="space-y-3">
@@ -351,7 +369,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
           {/* Two columns only once `wide`; the single-column path is byte-for-byte
               the old layout, so the small masters cannot shift. */}
           <div className={wide ? "grid gap-x-5 gap-y-3.5 sm:grid-cols-2" : "space-y-3.5"}>
-            {fields.map((f) => (
+            {formFields.map((f) => (
               /* A textarea and a custom control (HR Exit's owner MultiSelect, Asset
                  Maintenance's track picker) are as wide as they are tall — halving
                  them wastes the extra room the landscape dialog just bought. */
@@ -361,7 +379,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
               >
                 <FieldLabel label={f.label} required={f.required}>
                   {f.type === "custom" ? (
-                    f.render?.(values[f.key] ?? "", (next) => setField(f.key, next))
+                    f.render?.(values[f.key] ?? "", (next) => setField(f.key, next), values)
                   ) : f.type === "select" ? (
                     <Combobox
                       value={values[f.key] ?? ""}
