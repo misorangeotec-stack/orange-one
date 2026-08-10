@@ -127,20 +127,23 @@ export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
 ];
 
 /**
- * The subset offered in the "Request a new entry" picker.
+ * What the "Request a new entry" picker offers: EVERY master.
  *
- * A master is REQUESTABLE when it feeds a dropdown a non-owner has to pick from
- * and could plausibly find missing mid-task. Company is excluded: it is one-time
- * configuration a coordinator sets up, and it is now the customer↔company
- * mapping, so inventing one mid-order is exactly what should not happen.
+ * Company and company location used to be held back as one-time configuration —
+ * the worry being that a location decides who can see an order, so inventing one
+ * from an order form would be inventing a permission scope. That is not what a
+ * request does. A request proposes; the master's OWNER reviews the payload,
+ * edits it and approves it, and only then does a row exist. Excluding a master
+ * from the picker does not stop anyone raising it — it only leaves the person at
+ * the intake form stuck mid-order with nobody to ask, which is the failure this
+ * whole surface exists to prevent. Every picker on the sales order can now raise
+ * its own master, exactly as the other FMS apps do.
  *
- * Company location is excluded for the same reason and a sharper one: it is
- * about to decide who can see an order, so inventing one from an order form is
- * inventing a permission scope.
+ * ⚠ Kept as its own export (not an alias) because it is the picker's list: a
+ *   master that should never be requestable is removed HERE, not from
+ *   DISPATCH_MASTER_TYPES, which is the Masters-tab order.
  */
-const NOT_REQUESTABLE: DispatchMasterType[] = ["company", "company_location"];
-export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] =
-  DISPATCH_MASTER_TYPES.filter((m) => !NOT_REQUESTABLE.includes(m.value));
+export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] = [...DISPATCH_MASTER_TYPES];
 
 export interface MasterManager {
   id: string;
@@ -339,6 +342,9 @@ export interface DispatchRound {
   sbInvoiceNo: string | null;
   sbAttachmentPath: string | null;
   sbAttachmentName: string | null;
+  /** The e-way bill for this invoice. OPTIONAL — a consignment below the threshold has none. */
+  sbEwayPath: string | null;
+  sbEwayName: string | null;
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
@@ -464,6 +470,9 @@ export interface DispatchOrder {
   sbInvoiceNo: string | null;
   sbAttachmentPath: string | null;
   sbAttachmentName: string | null;
+  /** The e-way bill for this invoice. OPTIONAL — a consignment below the threshold has none. */
+  sbEwayPath: string | null;
+  sbEwayName: string | null;
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;

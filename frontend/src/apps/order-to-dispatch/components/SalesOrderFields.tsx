@@ -3,6 +3,8 @@ import PillToggle from "@/shared/components/ui/PillToggle";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
 import { DISPATCH_TYPE_LABEL } from "../lib/format";
+import { masterTypeLabel } from "../lib/masterFields";
+import RequestMasterModal from "./RequestMasterModal";
 import type { useSalesOrderForm } from "../pages/orders/useSalesOrderForm";
 import type { DispatchType } from "../types";
 
@@ -35,6 +37,11 @@ import type { DispatchType } from "../types";
  * ⚠ DISPATCH LOCATION ALWAYS RENDERS, even for a company with no sites — it is
  *   disabled and says so. Hiding it would change the child count and silently
  *   break the pairing above at one breakpoint.
+ *
+ * EVERY PICKER HERE CAN RAISE ITS OWN MASTER. Type a name that is not in the
+ * list and the dropdown offers to request it, the way every other FMS intake
+ * form does. Nothing is added on the spot: the request goes to that master's
+ * owner, and the order is raised with what exists today.
  */
 export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesOrderForm> }) {
   const s = useDispatchStore();
@@ -95,6 +102,8 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
             options={opts(s.activeOf(s.companies))}
             placeholder="which company bills this order"
             searchable
+            onCreate={(name) => f.setRaise({ mt: "company", prefill: { name }, from: "header" })}
+            createLabel={(q) => `Request new company “${q}”`}
           />
         </FieldLabel>
 
@@ -108,11 +117,22 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               options={siteOptions}
               placeholder={
                 !f.form.companyId ? "pick the billing company first"
-                : siteOptions.length === 0 ? "no locations set up for this company"
+                : siteOptions.length === 0 ? "no locations set up — type to request one"
                 : "which of our sites it leaves from"
               }
-              disabled={siteOptions.length === 0}
+              /* Disabled ONLY without a company. A company with no sites used to
+                 disable this outright, which is precisely when the person needs to
+                 ask for one — and the request needs the company to hang it off. */
+              disabled={!f.form.companyId}
               searchable
+              onCreate={(name) =>
+                f.setRaise({
+                  mt: "company_location",
+                  prefill: { name, company_id: f.form.companyId },
+                  from: "header",
+                })
+              }
+              createLabel={(q) => `Request new location “${q}”`}
             />
           </FieldLabel>
           <p className="mt-1 text-[11.5px] text-grey-2">
@@ -128,6 +148,8 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               options={opts(s.activeOf(s.customers))}
               placeholder="Select customer…"
               searchable
+              onCreate={(name) => f.setRaise({ mt: "customer", prefill: { name }, from: "header" })}
+              createLabel={(q) => `Request new customer “${q}”`}
             />
           </FieldLabel>
           <p className="mt-1 text-[11.5px] text-grey-2">
@@ -137,13 +159,16 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
 
         <div>
           <FieldLabel label="Customer location">
+            {/* CAPS on the way in, not just on save, so the field shows exactly
+                what will be stored — and a typed location joins the shared list
+                as the same place, not a second spelling of it. */}
             <Combobox
               value={f.form.customerLocation}
-              onChange={(v) => f.patch({ customerLocation: v })}
+              onChange={(v) => f.patch({ customerLocation: v.toUpperCase() })}
               options={locationOptions}
               placeholder="Select or type a location…"
-              onCreate={(label) => label}
-              createLabel={(q) => `Use “${q}”`}
+              onCreate={(label) => label.toUpperCase()}
+              createLabel={(q) => `Use “${q.toUpperCase()}”`}
               searchable
             />
           </FieldLabel>
@@ -169,6 +194,31 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
           placeholder="anything the next steps should know"
         />
       </FieldLabel>
+
+      {f.requested?.from === "header" && (
+        <p className="text-[12.5px] text-teal">
+          Requested {f.requested.text} — selectable here once the master's owner approves it.
+        </p>
+      )}
+
+      {/*
+        ONE modal for the whole intake form, header and item grid alike (the grid
+        raises through the same `f.setRaise`). Two would mean two copies of the
+        duplicate checks, and Purchase has already been down that road. It renders
+        nothing while closed, so it costs the layout nothing to live here.
+      */}
+      <RequestMasterModal
+        open={f.raise !== null}
+        onClose={() => f.setRaise(null)}
+        masterType={f.raise?.mt}
+        prefill={f.raise?.prefill}
+        onRequested={(mt, label) =>
+          f.setRequested({
+            from: f.raise?.from ?? "header",
+            text: `${masterTypeLabel(mt).toLowerCase()} “${label}”`,
+          })
+        }
+      />
     </div>
   );
 }

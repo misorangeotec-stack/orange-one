@@ -2,8 +2,9 @@ import { useMemo, useState } from "react";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useDispatchStore } from "../../store";
 import { isLineBlank, makeEmptyLine, type OrderLineRow } from "../../components/OrderLinesGrid";
+import type { MasterValues } from "../../lib/masterFields";
 import type { OrderInput } from "../../data/dispatchWrites";
-import type { DispatchOrder, DispatchType } from "../../types";
+import type { DispatchMasterType, DispatchOrder, DispatchType } from "../../types";
 
 /**
  * Shared form state for New Order and Edit Order.
@@ -23,6 +24,20 @@ export interface SalesOrderFormState {
   customerPoNo: string;
   orderDate: string;
   orderRemarks: string;
+}
+
+/**
+ * Which half of the intake form asked for a master, so the answer ("Requested
+ * …") lands next to the picker that raised it rather than a card away.
+ */
+export type RaiseOrigin = "header" | "lines";
+
+/** A master the intake form is missing — handed straight to RequestMasterModal. */
+export interface MasterRaise {
+  mt: DispatchMasterType;
+  /** What the form already knows: the typed name, and the parent it was typed under. */
+  prefill: MasterValues;
+  from: RaiseOrigin;
 }
 
 const emptyState = (): SalesOrderFormState => ({
@@ -65,6 +80,15 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  /*
+    THE MASTER A PICKER COULD NOT OFFER. Every dropdown on this form can raise the
+    master behind it — the customer, the billing company, our dispatch site, the
+    item — instead of leaving the person mid-order with nothing to choose. The
+    request goes to that master's owner; nothing is added here.
+  */
+  const [raise, setRaise] = useState<MasterRaise | null>(null);
+  const [requested, setRequested] = useState<{ from: RaiseOrigin; text: string } | null>(null);
 
   const patch = (next: Partial<SalesOrderFormState>) => setForm((f) => ({ ...f, ...next }));
 
@@ -134,7 +158,10 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     companyId: form.companyId,
     locationId: form.locationId || null,
     customerId: form.customerId,
-    customerLocation: form.customerLocation.trim() || null,
+    // CAPS, like the customer master it is seeded from — the intake picker lists
+    // every location anyone has used, and two casings read as two places.
+    // See lib/masterFields.ts UPPERCASE_MASTER_KEYS.
+    customerLocation: form.customerLocation.trim().toUpperCase() || null,
     customerPoNo: form.customerPoNo.trim() || null,
     orderDate: form.orderDate,
     orderRemarks: form.orderRemarks.trim() || null,
@@ -150,6 +177,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     form, patch, setForm,
     lines, setLines, filledLines,
     setCustomer, setCompany,
+    raise, setRaise, requested, setRequested,
     error, setError,
     busy, setBusy,
     validate, toInput,

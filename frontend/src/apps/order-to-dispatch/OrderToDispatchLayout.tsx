@@ -48,9 +48,10 @@ export default function OrderToDispatchLayout() {
         canMonitor: s.isProcessCoordinator,
         hasOrders,
         canRaise: s.canRaise,
+        pendingReviews: s.resolvableRequests.length,
         queues,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, queues],
+    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, s.resolvableRequests.length, queues],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

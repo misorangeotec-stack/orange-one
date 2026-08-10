@@ -6,8 +6,8 @@ import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
 import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 import {
-  emptyValuesFor, findExistingMaster, isNameless, masterFields, masterTypeLabel, missingRequired,
-  payloadFromValues, type MasterValues,
+  describePayload, emptyValuesFor, findExistingMaster, isNameless, masterFields, masterTypeLabel,
+  missingRequired, payloadFromValues, type MasterValues,
 } from "../lib/masterFields";
 import { REQUESTABLE_DISPATCH_MASTER_TYPES, type DispatchMasterType } from "../types";
 import { dmy } from "../lib/format";
@@ -27,16 +27,24 @@ export default function RequestMasterModal({
   open,
   onClose,
   masterType,
-  prefillName,
+  prefill,
   stacked,
+  onRequested,
 }: {
   open: boolean;
   onClose: () => void;
   /** Fix the type (raised from a specific dropdown), or let the user choose. */
   masterType?: DispatchMasterType;
-  prefillName?: string;
+  /**
+   * Whatever the form raising this already knows — the name just typed into a
+   * picker, and for a mapping the customer it was typed against. Everything the
+   * requester would otherwise re-enter to say what they already said.
+   */
+  prefill?: MasterValues;
   /** Raised from inside another modal — see Modal's z-index note. */
   stacked?: boolean;
+  /** Fired after the request lands, so the caller can say what was asked for. */
+  onRequested?: (masterType: DispatchMasterType, label: string) => void;
 }) {
   const s = useDispatchStore();
   const ctx = useMasterFieldCtx();
@@ -49,10 +57,10 @@ export default function RequestMasterModal({
     if (!open) return;
     const next = masterType ?? mt;
     setMt(next);
-    setValues({ ...emptyValuesFor(next), name: prefillName ?? "" });
+    setValues({ ...emptyValuesFor(next), ...(prefill ?? {}) });
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, masterType, prefillName]);
+  }, [open, masterType, prefill]);
 
   const fields = useMemo(() => masterFields(mt, ctx).filter((f) => f.key !== "sortOrder"), [mt, ctx]);
 
@@ -67,12 +75,21 @@ export default function RequestMasterModal({
         (m) => m.customerId === (values.customer_id ?? "") && m.itemId === (values.item_id ?? ""),
       )
     : findExistingMaster(s.masterList(mt), values.name ?? "");
-  const pending = s.masterRequests.find(
-    (r) =>
-      r.status === "pending" &&
-      r.masterType === mt &&
-      String(r.proposedPayload.name ?? "").trim().toLowerCase() === (values.name ?? "").trim().toLowerCase(),
-  );
+  /*
+    ⚠ AND THE SAME TRAP HERE. A nameless master's payload has no `name`, so
+      matching on one compares "" to "" and reports the FIRST pending mapping
+      request — any mapping — as "already requested". The pair is what identifies it.
+  */
+  const pending = s.masterRequests.find((r) => {
+    if (r.status !== "pending" || r.masterType !== mt) return false;
+    if (isNameless(mt)) {
+      return (
+        String(r.proposedPayload.customer_id ?? "") === (values.customer_id ?? "") &&
+        String(r.proposedPayload.item_id ?? "") === (values.item_id ?? "")
+      );
+    }
+    return String(r.proposedPayload.name ?? "").trim().toLowerCase() === (values.name ?? "").trim().toLowerCase();
+  });
 
   const reviewers = s.masterReviewersFor(mt).map((id) => s.personName(id)).filter((n) => n !== "—");
 
@@ -84,7 +101,13 @@ export default function RequestMasterModal({
     setBusy(true);
     setError(null);
     try {
-      await s.requestNewMaster(mt, payloadFromValues(mt, values));
+      const payload = payloadFromValues(mt, values);
+      await s.requestNewMaster(mt, payload);
+      onRequested?.(mt, describePayload(mt, payload, {
+        customerName: s.customerName,
+        itemName: s.itemName,
+        companyName: (id) => s.masterName("company", id),
+      }));
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send the request.");

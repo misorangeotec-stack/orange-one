@@ -13,10 +13,9 @@ const REQUESTABLE = new Set(REQUESTABLE_DISPATCH_MASTER_TYPES.map((m) => m.value
  * Master Owners (admin).
  *
  * ⭐ ALL FIVE MASTERS ARE OWNABLE — an owner may CRUD that master and resolve
- *    its new-entry requests. Only FOUR are REQUESTABLE: the one excluded
- *    (companies) are one-time
- *    configuration nobody would raise mid-task, so they never appear in the
- *    "request a new entry" picker.
+ *    its new-entry requests — and all five are REQUESTABLE: every picker on the
+ *    sales order can raise the master behind it, and the owner named here is who
+ *    that request goes to.
  *
  * A master with no owner falls back to admins — never to nobody.
  */

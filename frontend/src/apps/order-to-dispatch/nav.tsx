@@ -28,12 +28,26 @@ export const QUEUE_PATH: Record<QueueStep, string> = {
   dispatch_confirm: "dispatch-confirm",
 };
 
+/**
+ * ⚠ MASTER REQUESTS IS TWO DIFFERENT THINGS, and where it sits says which.
+ *
+ * For a master's OWNER (and every admin) it is an approval queue — so it belongs
+ * under Administration beside Masters, badged with what is waiting, which is
+ * where an approver looks for it. For everybody else it is a personal worklist
+ * of what they have asked for, and it belongs under Actions.
+ *
+ * It used to sit unbadged under Actions for everyone, including admins: the page
+ * existed, the approve buttons worked, and nobody could find them. Purchase,
+ * Production and Office Supplies all already split it this way.
+ */
 export function buildDispatchNav(opts: {
   isAdmin: boolean;
   canManageMasters: boolean;
   canMonitor: boolean;
   hasOrders: boolean;
   canRaise: boolean;
+  /** Requests this person can actually resolve. 0 shows no badge. */
+  pendingReviews: number;
   queues: Record<QueueStep, boolean>;
 }): NavItem[] {
   const nav: NavItem[] = [
@@ -47,7 +61,10 @@ export function buildDispatchNav(opts: {
           { label: "My Orders", to: `${B}/my-orders`, icon: ic.mine },
         ]
       : [{ label: "My Orders", to: `${B}/my-orders`, icon: ic.mine, section: "Actions" }]),
-    { label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests },
+    // A reviewer's copy of this lives under Administration instead — see above.
+    ...(opts.canManageMasters
+      ? []
+      : [{ label: "Master Requests", to: `${B}/master-requests`, icon: ic.requests }]),
   ];
 
   let queueUsed = false;
@@ -65,13 +82,18 @@ export function buildDispatchNav(opts: {
   }
 
   let adminUsed = false;
-  const admin = (label: string, to: string, icon: JSX.Element) => {
-    nav.push({ label, to, icon, section: adminUsed ? undefined : "Administration" });
+  const admin = (label: string, to: string, icon: JSX.Element, badge?: number) => {
+    nav.push({ label, to, icon, badge, section: adminUsed ? undefined : "Administration" });
     adminUsed = true;
   };
   if (opts.hasOrders) admin("Order Register", `${B}/reports/register`, ic.report);
   if (opts.canMonitor) admin(`${appName("order-to-dispatch")} Control Center`, `${B}/monitoring`, ic.monitor);
-  if (opts.canManageMasters) admin("Masters", `${B}/masters`, ic.masters);
+  if (opts.canManageMasters) {
+    admin("Masters", `${B}/masters`, ic.masters);
+    // Beside the masters it approves INTO, and carrying the count — raising a
+    // master is now one click from any picker, so this queue fills fast.
+    admin("Master Requests", `${B}/master-requests`, ic.requests, opts.pendingReviews || undefined);
+  }
   if (opts.isAdmin) admin("Setup", `${B}/settings`, ic.settings);
 
   nav.push({ label: "My Account", to: "/account", icon: ic.account });

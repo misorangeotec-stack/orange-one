@@ -66,7 +66,13 @@ export default function EditOrder() {
 
       <Card className="p-5 space-y-3">
         <SectionHeading>Items</SectionHeading>
-        <OrderLinesGrid rows={f.lines} onRowsChange={f.setLines} customerId={f.form.customerId} />
+        <OrderLinesGrid
+          rows={f.lines}
+          onRowsChange={f.setLines}
+          customerId={f.form.customerId}
+          onRaise={f.setRaise}
+          requested={f.requested?.from === "lines" ? f.requested.text : null}
+        />
       </Card>
 
       {f.error && <p className="text-[13px] font-medium text-ryg-red">{f.error}</p>}
