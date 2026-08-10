@@ -22,7 +22,9 @@ export default function ProductionEntryLayout() {
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
   const queues = useMemo(() => {
     const out = {} as Record<QueueStep, boolean>;
-    for (const step of queueSteps) out[step] = s.isProcessCoordinator || s.isStepOwner(step) || s.myQueue(step).length > 0;
+    // Same predicate the routes enforce, so the sidebar can never offer a screen
+    // that then refuses you.
+    for (const step of queueSteps) out[step] = s.canSeeQueue(step);
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s]);

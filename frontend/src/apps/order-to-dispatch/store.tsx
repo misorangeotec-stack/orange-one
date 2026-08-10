@@ -473,14 +473,28 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       stepSla,
       dueIsoFor: (o, step) => dispatchDueIso(snapshot, o, step),
 
-      // Owner-agnostic on purpose: the page composes "Mine" on top, and the
-      // Control Centers must count everyone's work.
+      /**
+       * The step's pending queue AS THIS PERSON MAY ACT ON IT. Ownership is per
+       * location, so a Vapi-only owner does not get Ahmedabad's rows.
+       *
+       * ⚠ THIS WAS ONCE OWNER-AGNOSTIC, AND THAT IS THE BUG IT CAUSED. The nav
+       *   asked "does this person have work here?" by calling it, got back
+       *   everyone's work, and so showed every queue to everyone who owned one
+       *   step. RLS hands a credit checker every order at their location, which
+       *   made the answer yes for all five steps.
+       *
+       * ⚠ NOT the number the Control Centers show. They read `queueEntries`
+       *   directly and must keep counting everyone's work; only the two
+       *   owner-facing surfaces — the nav and StageQueue — come through here.
+       */
       myQueue: (step) =>
         queueEntries
           .filter((e) => e.stepKey === step)
           .map((e) => ({ order: orderIndex.get(e.entityId)!, dueIso: e.dueIso }))
-          .filter((r) => !!r.order),
-      completedFor: (step) => completedForPure(snapshot, step),
+          .filter((r) => !!r.order && canActOn(step, r.order)),
+      // Scoped the same way, or a queue that no longer lists another site's pending
+      // rows would still show that site's finished ones under Completed.
+      completedFor: (step) => completedForPure(snapshot, step).filter((e) => canActOn(step, e.row)),
 
       masterManagers,
       masterRequests,

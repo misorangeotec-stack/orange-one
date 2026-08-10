@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { AssetStoreProvider, useAssetStore } from "./store";
+import type { QueueStep } from "./lib/queues";
 import AssetMaintenanceLayout from "./AssetMaintenanceLayout";
 import Loaded from "./components/Loaded";
 import Dashboard from "./pages/Dashboard";
@@ -43,6 +44,21 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
+ * One step's queue, for its owners, the coordinators, and a custodian with work in
+ * it. Same predicate the nav uses, so the sidebar can never offer a screen that then
+ * refuses you, and no screen is reachable that the sidebar deliberately hid.
+ *
+ * ⚠ Must sit INSIDE <Loaded>, like the gates above it — `canSeeQueue` is derived
+ *   from the module's first fetch, so gating before it resolves would bounce a
+ *   legitimate owner to Access Denied on a slow load.
+ */
+function RequireQueue({ step, children }: { step: QueueStep; children: ReactNode }) {
+  const { canSeeQueue } = useAssetStore();
+  if (!canSeeQueue(step)) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the Asset Maintenance FMS. Mounted per-user (App.tsx wraps it in
  * RequireModule); what each person sees is decided by the nav, the store's
  * capability flags and — authoritatively — RLS plus the RPCs' own authz.
@@ -74,9 +90,9 @@ export default function AssetMaintenanceApp() {
           <Route path="jobs" element={<Loaded><JobsList /></Loaded>} />
           <Route path="jobs/:id" element={<Loaded><JobDetail /></Loaded>} />
 
-          <Route path="queues/schedule" element={<Loaded><ScheduleQueue /></Loaded>} />
-          <Route path="queues/service" element={<Loaded><ServiceQueue /></Loaded>} />
-          <Route path="queues/verify" element={<Loaded><VerifyQueue /></Loaded>} />
+          <Route path="queues/schedule" element={<Loaded><RequireQueue step="schedule"><ScheduleQueue /></RequireQueue></Loaded>} />
+          <Route path="queues/service" element={<Loaded><RequireQueue step="service_done"><ServiceQueue /></RequireQueue></Loaded>} />
+          <Route path="queues/verify" element={<Loaded><RequireQueue step="verify_close"><VerifyQueue /></RequireQueue></Loaded>} />
 
           <Route path="master-requests" element={<Loaded><MasterRequests /></Loaded>} />
           <Route path="reports" element={<Loaded><Reports /></Loaded>} />

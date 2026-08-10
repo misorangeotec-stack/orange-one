@@ -24,14 +24,18 @@ export default function OnboardingLayout() {
   const orgPersonById = useOrgPersonById();
 
   /**
-   * A queue is shown to its owners and to coordinators — and to anyone who
-   * actually has work sitting in it, so a stand-in covering for someone on leave
-   * never loses the link to their own pending work.
+   * A queue is shown to its owners and to coordinators. Nobody else — which is
+   * what nav.tsx's own header has always promised.
+   *
+   * ⚠ THERE WAS A THIRD CLAUSE HERE — `queueFor(step).length > 0`, meant to keep
+   *   the link for a stand-in covering someone on leave. `queueFor` returns EVERY
+   *   pending entry, not the reader's, so it was true for everyone the moment a
+   *   step had work: all four queues showed for every user of the module.
    */
   const queues = useMemo(() => {
     const out: Record<string, boolean> = {};
     for (const step of OWNED_STEPS) {
-      out[step] = s.isCoordinator || s.isStepOwner(step) || s.queueFor(step).length > 0;
+      out[step] = s.canSeeQueue(step);
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps

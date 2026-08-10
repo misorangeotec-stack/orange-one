@@ -7,10 +7,13 @@
  * whole pipeline legible from any one of them: you can see the Director queue is
  * empty without navigating to it.
  *
- * ⚠ THE URL IS NOT A PERMISSION. Anyone with hub access can reach
- *   ?step=director_approval. What they get is a read-only list scoped by RLS,
- *   and the action panel on the detail page decides whether they may act. Never
- *   let a queue page imply authority.
+ * ⚠ THE URL IS NOW A PERMISSION, WHICH IT DID NOT USED TO BE. Reaching
+ *   ?step=director_approval once gave anyone with hub access a read-only list,
+ *   on the argument that RLS scopes it and the detail page gates the action.
+ *   That still holds for the DATA — but a queue page for a step you do not own
+ *   reads as authority you do not have, and the sidebar had already stopped
+ *   offering it. `canSeeQueue` now gates the page and the step tabs together,
+ *   so the two agree.
  */
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -50,7 +53,15 @@ export default function PendingQueue() {
   const s = useCustomerStore();
 
   const raw = params.get("step");
-  const step: StepKey = isStepKey(raw) ? raw : "accounts_verification";
+  /**
+   * The queues this person may see. EMPTY while the first fetch is in flight —
+   * which is why the loading guard below must come before the refusal, or a slow
+   * load would read as "you have no business here".
+   */
+  const visible = OWNED_STEPS.filter((k) => s.canSeeQueue(k));
+  // No ?step= lands on the first queue that is actually theirs, not on a fixed
+  // one they may not own.
+  const step: StepKey = isStepKey(raw) ? raw : (visible[0] ?? "accounts_verification");
 
   const pending = useMemo(() => s.queueFor(step).map((e) => e.request), [s, step]);
   const completed = useMemo(() => s.completedFor(step), [s, step]);
@@ -97,9 +108,25 @@ export default function PendingQueue() {
     );
   }
 
-  // Step-level, not row-level: for every owned step canActOn() reduces to
-  // "coordinator, or an owner of this step" — it never looks at the row.
-  const mayAct = s.isCoordinator || s.isStepOwner(step);
+  /*
+   * The gate, after loading and error so neither is mistaken for a refusal.
+   * Hiding the sidebar link was never enough on its own: this page is one typed
+   * URL away, and the step tabs move between queues by query string.
+   */
+  if (!s.canSeeQueue(step)) {
+    return (
+      <div className="p-6">
+        <Card><CardContent className="p-6 space-y-1">
+          <p className="text-sm font-medium text-foreground">This queue is not yours.</p>
+          <p className="text-sm text-muted-foreground">
+            {stepTitle(step)} belongs to its configured owners. If you should be one of
+            them, ask an administrator to add you in Onboarding settings.
+          </p>
+        </CardContent></Card>
+      </div>
+    );
+  }
+
   const owners = s.stepOwnerIds(step);
 
   return (
@@ -114,7 +141,9 @@ export default function PendingQueue() {
       {/* Switching queue is a URL change, so the sidebar's active child stays in
           step and the view is linkable. */}
       <div className="flex flex-wrap gap-2">
-        {OWNED_STEPS.map((k) => {
+        {/* Only the reader's own queues. Showing all four with live counts would
+            put back, one line lower, exactly what the sidebar stopped leaking. */}
+        {visible.map((k) => {
           const n = s.queueFor(k).length;
           const on = k === step;
           return (
@@ -162,11 +191,9 @@ export default function PendingQueue() {
               columns={pendingColumns}
               rowHref={(r) => detailHref(r.id)}
               searchPlaceholder="Search by name, GST, city, request number…"
-              empty={
-                mayAct
-                  ? "Nothing is waiting at this step."
-                  : "Nothing is waiting at this step — and this queue is not yours to action."
-              }
+              // Only owners and coordinators reach this page now, so the old
+              // "not yours to action" variant is unreachable and gone.
+              empty="Nothing is waiting at this step."
             />
           </CardContent></Card>
         </TabsContent>

@@ -26,12 +26,22 @@ export default function OrderToDispatchLayout() {
 
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
 
-  // A queue appears for its owners and coordinators, and for anyone who happens to
-  // have work sitting in it — so a stand-in never loses the link to their own work.
+  /**
+   * A queue appears for its owners, and for the coordinators and admins who oversee
+   * every step. Nobody else — a step you have no permission for is not a step you
+   * should be reading about.
+   *
+   * ⚠ THERE WAS A THIRD CLAUSE HERE — `myQueue(step).length > 0`, meant to keep the
+   *   link for a stand-in covering someone's work. It did the opposite: `myQueue`
+   *   returned EVERY pending entry for the step, so it was true for everyone, and
+   *   every queue showed for anyone who owned any one step. `myQueue` is now scoped
+   *   to what the caller may act on, which makes the clause strictly narrower than
+   *   `canSeeQueue` and therefore pointless — so it is gone rather than rewritten.
+   */
   const queues = useMemo(() => {
     const out = {} as Record<QueueStep, boolean>;
     for (const step of queueSteps) {
-      out[step] = s.isProcessCoordinator || s.isStepOwner(step) || s.myQueue(step).length > 0;
+      out[step] = s.canSeeQueue(step);
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps

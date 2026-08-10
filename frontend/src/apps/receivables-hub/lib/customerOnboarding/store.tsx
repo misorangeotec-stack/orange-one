@@ -60,6 +60,8 @@ interface CustomerStore {
   isAnyStepOwner: boolean;
   canRaise: boolean;
   canActOn: (step: StepKey, r: CustomerRequest) => boolean;
+  /** May this person see a back-office queue at all — nav link and tab. */
+  canSeeQueue: (step: StepKey) => boolean;
 
   stepOwnerFor: (step: StepKey) => StepOwner | undefined;
   stepOwnerIds: (step: StepKey) => string[];
@@ -132,6 +134,19 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
       return isStepOwner(step);
     };
 
+    /**
+     * May this person see a back-office queue at all — the nav link and the tab?
+     *
+     * The four OWNED_STEPS have no per-row arm in `canActOn` (only `submission`
+     * does, and it has no queue), so this is the whole rule for them.
+     *
+     * ⚠ THE NAV USED TO ADD "…or the queue is non-empty", reading `queueFor`,
+     *   which returns EVERY pending entry rather than the reader's. It was true
+     *   for everyone whenever a step had work, so all four queues showed for any
+     *   user of the module — the opposite of what nav.tsx's own header promises.
+     */
+    const canSeeQueue = (step: StepKey): boolean => isCoordinator || isStepOwner(step);
+
     const queueEntries = buildQueueEntries(requests, snap.stepSla);
 
     /**
@@ -170,6 +185,7 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
       isAnyStepOwner: OWNED_STEPS.some((s) => isStepOwner(s)),
       canRaise,
       canActOn,
+      canSeeQueue,
 
       stepOwnerFor: (step) => ownerByStep.get(step),
       stepOwnerIds,

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { DispatchStoreProvider, useDispatchStore } from "./store";
+import type { QueueStep } from "./lib/queues";
 import OrderToDispatchLayout from "./OrderToDispatchLayout";
 import Dashboard from "./pages/Dashboard";
 import NewOrder from "./pages/orders/NewOrder";
@@ -41,6 +42,22 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
+ * One step's queue, for its owners only. Same predicate the nav uses, so the sidebar
+ * can never offer a screen that then refuses you, and no screen is reachable that the
+ * sidebar deliberately hid.
+ *
+ * ⚠ Hiding the nav link is NOT the gate — the five queue routes were reachable by
+ *   typing the URL for as long as they existed. RLS and the RPCs' own authz are the
+ *   real boundary; this is so the page says so instead of opening on work that is
+ *   none of the reader's business.
+ */
+function RequireQueue({ step, children }: { step: QueueStep; children: ReactNode }) {
+  const { canSeeQueue } = useDispatchStore();
+  if (!canSeeQueue(step)) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the Order to Dispatch FMS. Mounted per-user (App.tsx wraps it in
  * RequireModule); what each person sees is decided by the nav, the store's
  * capability flags and — authoritatively — RLS plus the RPCs' own authz.
@@ -59,11 +76,11 @@ export default function OrderToDispatchApp() {
           {/* "orders/:id/edit" must come before ":id" would swallow "edit". */}
           <Route path="orders/:id/edit" element={<EditOrder />} />
           <Route path="orders/:id" element={<OrderDetail />} />
-          <Route path="queues/credit-check" element={<CreditCheckQueue />} />
-          <Route path="queues/material-status" element={<MaterialStatusQueue />} />
-          <Route path="queues/sales-bill" element={<SalesBillQueue />} />
-          <Route path="queues/gate-out" element={<GateOutQueue />} />
-          <Route path="queues/dispatch-confirm" element={<DispatchConfirmQueue />} />
+          <Route path="queues/credit-check" element={<RequireQueue step="credit_check"><CreditCheckQueue /></RequireQueue>} />
+          <Route path="queues/material-status" element={<RequireQueue step="material_status"><MaterialStatusQueue /></RequireQueue>} />
+          <Route path="queues/sales-bill" element={<RequireQueue step="sales_bill"><SalesBillQueue /></RequireQueue>} />
+          <Route path="queues/gate-out" element={<RequireQueue step="gate_out"><GateOutQueue /></RequireQueue>} />
+          <Route path="queues/dispatch-confirm" element={<RequireQueue step="dispatch_confirm"><DispatchConfirmQueue /></RequireQueue>} />
           <Route path="reports/register" element={<OrderRegister />} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />

@@ -28,13 +28,13 @@ export default function AssetMaintenanceLayout() {
 
   const queueSteps = STEPS.filter((st) => !st.noQueue).map((st) => st.key as QueueStep);
 
-  // A queue appears for its owners and coordinators, and for anyone who happens to
-  // have work sitting in it — so a stand-in (and an asset's custodian, who may act
-  // on two of the steps) never loses the link to their own work.
+  // A queue appears for its owners and coordinators, and for an asset's custodian
+  // once they actually have work in it — they own no step, yet may record the
+  // schedule and the service on their own assets. `canSeeQueue` says all three.
   const queues = useMemo(() => {
     const out = {} as Record<QueueStep, boolean>;
     for (const step of queueSteps) {
-      out[step] = s.isProcessCoordinator || s.isStepOwner(step) || s.myQueue(step).length > 0;
+      out[step] = s.canSeeQueue(step);
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps

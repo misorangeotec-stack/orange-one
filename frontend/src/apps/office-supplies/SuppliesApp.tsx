@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { SuppliesStoreProvider, useSuppliesStore } from "./store";
+import type { StepKey } from "./lib/steps";
 import SuppliesLayout from "./SuppliesLayout";
 import Dashboard from "./pages/Dashboard";
 import NewRequest from "./pages/requests/NewRequest";
@@ -42,6 +43,17 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Gate to one step's queue — its owners, plus the coordinators. First approval is
+ * the exception the store's `canSeeQueue` encodes: it belongs to department HODs,
+ * who own no step. Same predicate the nav uses, so the two cannot disagree.
+ */
+function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }) {
+  const { canSeeQueue } = useSuppliesStore();
+  if (!canSeeQueue(step)) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the General Purchase FMS. App.tsx already wraps this whole app in
  * <RequireModule appId="office-supplies">, so only admins and users granted the module
  * in Module access reach it — this file adds no further gate of its own. What each
@@ -63,9 +75,9 @@ export default function SuppliesApp() {
           <Route path="requests" element={<RequestsList />} />
           <Route path="requests/:id" element={<RequestDetail />} />
           <Route path="requests/:id/edit" element={<EditRequest />} />
-          <Route path="queues/first-approval" element={<FirstApprovalQueue />} />
-          <Route path="queues/second-approval" element={<SecondApprovalQueue />} />
-          <Route path="queues/handover" element={<HandoverQueue />} />
+          <Route path="queues/first-approval" element={<RequireQueue step="first_approval"><FirstApprovalQueue /></RequireQueue>} />
+          <Route path="queues/second-approval" element={<RequireQueue step="second_approval"><SecondApprovalQueue /></RequireQueue>} />
+          <Route path="queues/handover" element={<RequireQueue step="handover"><HandoverQueue /></RequireQueue>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
           <Route path="master-requests" element={<MasterRequests />} />

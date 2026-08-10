@@ -159,6 +159,8 @@ interface SamplingStoreValue {
   /** ANY source. NAV VISIBILITY ONLY — never authorization; use canActOn for that. */
   isStepOwner: (stepKey: StepKey) => boolean;
   canActOn: (stepKey: StepKey, r: SamplingRequest) => boolean;
+  /** May this person see the step's queue at all — nav link, route, page. */
+  canSeeQueue: (stepKey: StepKey) => boolean;
 
   // master governance
   masterManagers: SamplingMasterManager[];
@@ -414,6 +416,39 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
         return r ? canActOn(stepKey, r) : false;
       });
 
+    /*
+     * Named on ANY request in this role, not only where work is still pending — so
+     * a collector's link survives the moment they finish collecting rather than
+     * vanishing mid-flow. Lifted out of SamplingLayout so the route guard and the
+     * sidebar cannot drift apart.
+     */
+    const everCollector = !!uid && requests.some((r) => r.collectorId === uid);
+    const everHandoverRecipient = !!uid && requests.some((r) => r.handoverRecipientId === uid);
+    const everResultRecipient = !!uid && requests.some((r) => r.labResultToId === uid);
+
+    /**
+     * May this person see the step's QUEUE at all — the nav link, the route, the page?
+     *
+     * ⚠ OWNERSHIP IS NOT THE WHOLE RULE IN THIS MODULE, and a bare `isStepOwner`
+     *   here would lock out the people who do most of the work: the collector, the
+     *   hand-over recipient and whoever the lab addressed the result to are named
+     *   ON THE REQUEST and own no step at all. `myQueue` (which runs `canActOn`)
+     *   catches them while work is pending; the `ever*` flags keep the link after.
+     *
+     * ⚠ `testing` IS LEGACY — nothing routes into it any more. It appears only
+     *   while pre-lab-gate rows still sit in it, so the entry retires itself.
+     *   Coordinators and admins are not special-cased: `canActOn` is already true
+     *   for them, so `myQueue` keeps the entry while work exists.
+     */
+    const canSeeQueue = (stepKey: StepKey): boolean => {
+      if (stepKey === "testing") return myQueue("testing").length > 0;
+      if (isProcessCoordinator || isStepOwner(stepKey) || myQueue(stepKey).length > 0) return true;
+      if (stepKey === "sample_collect") return everCollector;
+      if (stepKey === "sample_received" || stepKey === "sample_to_lab") return everHandoverRecipient;
+      if (stepKey === "result_received") return everResultRecipient;
+      return false;
+    };
+
     // Resolves through the request, so a source-scoped step reports the owners
     // who actually cover that dispatch rather than the (inert) legacy row.
     const queueOwnerIds = (e: QueueEntry): string[] =>
@@ -460,6 +495,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       isProcessCoordinator,
       isStepOwner,
       canActOn,
+      canSeeQueue,
 
       masterManagers,
       managerIdsFor,

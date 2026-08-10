@@ -22,31 +22,21 @@ export default function SamplingLayout() {
   const s = useSamplingStore();
   const orgPersonById = useOrgPersonById();
 
-  // Keep a person's queue link visible even after they finish the step, so it
-  // never disappears mid-flow: show it if they are/were the collector (or the
-  // hand-over recipient) on any request, not only while work is pending.
-  const uid = user?.id ?? "";
-  const iAmCollector = !!uid && s.requests.some((r) => r.collectorId === uid);
-  const iAmRecipient = !!uid && s.requests.some((r) => r.handoverRecipientId === uid);
-  const iAmResultRecipient = !!uid && s.requests.some((r) => r.labResultToId === uid);
-
-  // `testing` is LEGACY — nothing routes into it any more (outward dropped it;
-  // inward now runs lab_process). Shown ONLY while pre-lab-gate rows are actually
-  // sitting in it, so the entry retires itself. Coordinators and admins are not
-  // special-cased here: `myQueue` runs `canActOn`, which is already true for them,
-  // so they keep seeing the entry while work exists.
-  // `receive_sample` had the same treatment until it was retired outright on
-  // 08-08-2026 (migration 20260808120200).
-  const canTest = s.myQueue("testing").length > 0;
-  const canCollect = s.isProcessCoordinator || s.isStepOwner("sample_collect") || s.myQueue("sample_collect").length > 0 || iAmCollector;
-  const canSampleReceived = s.isProcessCoordinator || s.isStepOwner("sample_received") || s.myQueue("sample_received").length > 0 || iAmRecipient;
-  const canSampleToLab = s.isProcessCoordinator || s.isStepOwner("sample_to_lab") || s.myQueue("sample_to_lab").length > 0 || iAmRecipient;
-  const canLabProcess = s.isProcessCoordinator || s.isStepOwner("lab_process") || s.myQueue("lab_process").length > 0;
-  const canResultReceived = s.isProcessCoordinator || s.isStepOwner("result_received") || s.myQueue("result_received").length > 0 || iAmResultRecipient;
-  const canSend = s.isProcessCoordinator || s.isStepOwner("send_sample") || s.myQueue("send_sample").length > 0;
-  const canConfirm = s.isProcessCoordinator || s.isStepOwner("confirm_receipt") || s.myQueue("confirm_receipt").length > 0;
-  const canResult = s.isProcessCoordinator || s.isStepOwner("result") || s.myQueue("result").length > 0;
-  const canHandover = s.isProcessCoordinator || s.isStepOwner("result_handover") || s.myQueue("result_handover").length > 0;
+  // Every per-step rule now lives in `store.canSeeQueue` — step owners, coordinators,
+  // and the per-request assignees (collector, hand-over recipient, result recipient)
+  // who own no step yet do most of the work. It moved there so the route guards in
+  // SamplingApp enforce exactly what the sidebar offers, rather than a second copy
+  // of ten conditions drifting out of step with these.
+  const canTest = s.canSeeQueue("testing");
+  const canCollect = s.canSeeQueue("sample_collect");
+  const canSampleReceived = s.canSeeQueue("sample_received");
+  const canSampleToLab = s.canSeeQueue("sample_to_lab");
+  const canLabProcess = s.canSeeQueue("lab_process");
+  const canResultReceived = s.canSeeQueue("result_received");
+  const canSend = s.canSeeQueue("send_sample");
+  const canConfirm = s.canSeeQueue("confirm_receipt");
+  const canResult = s.canSeeQueue("result");
+  const canHandover = s.canSeeQueue("result_handover");
   const canMonitor = s.isProcessCoordinator;
   const hasRequests =
     s.requests.length > 0 || s.isProcessCoordinator || canCollect || canSampleReceived ||

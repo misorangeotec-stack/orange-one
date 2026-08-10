@@ -67,6 +67,8 @@ interface AssetStoreValue {
   canRaise: boolean;
   canMonitor: boolean;
   canActOn: (step: QueueStep, job: ServiceJob) => boolean;
+  /** May this person see the step's queue at all — nav link, route, page. */
+  canSeeQueue: (step: QueueStep) => boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
   stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
   ownerNamesFor: (stepKey: StepKey) => string[];
@@ -306,11 +308,35 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
     const jobById = (id: string) => jobs.find((j) => j.id === id);
     const openJobs = jobs.filter(isOpenJob);
 
+    /**
+     * Open work at this step AS THIS PERSON MAY ACT ON IT.
+     *
+     * ⚠ THIS WAS ONCE UNSCOPED, AND THAT IS THE BUG IT CAUSED. The nav asked "does
+     *   this person have work here?" by calling it, got back everyone's work, and so
+     *   showed all three queues to every user of the module. Scoping it through
+     *   `canActOn` is also what makes the CUSTODIAN arm work: a custodian now gets
+     *   the jobs on their own assets, and only those.
+     *
+     * ⚠ NOT the number the Control Center shows. It reads `queueEntries` directly
+     *   and must keep counting everyone's work.
+     */
     const myQueue = (step: QueueStep) =>
       queueEntries
         .filter((e) => e.stepKey === step)
         .map((e) => ({ job: jobById(e.jobId) as ServiceJob, dueIso: e.dueIso }))
-        .filter((x) => !!x.job);
+        .filter((x) => !!x.job && canActOn(step, x.job));
+
+    /**
+     * May this person see the step's QUEUE at all — the nav link, the route, the page?
+     *
+     * ⚠ THE THIRD CLAUSE IS LOAD-BEARING HERE, unlike in Order to Dispatch where the
+     *   equivalent was deleted. An asset's CUSTODIAN owns no step and appears in no
+     *   owner list, yet `canActOn` lets them record the schedule and the service on
+     *   their own assets. Ownership alone cannot express that; having work sitting in
+     *   the queue can. Now that `myQueue` is scoped, this asks the right question.
+     */
+    const canSeeQueue = (step: QueueStep): boolean =>
+      isProcessCoordinator || isStepOwner(step) || myQueue(step).length > 0;
 
     /* --------------------------- governance --------------------------- */
 
@@ -331,6 +357,7 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
       canRaise,
       canMonitor: isProcessCoordinator,
       canActOn,
+      canSeeQueue,
       isStepOwner,
       stepOwnerFor,
       ownerNamesFor,

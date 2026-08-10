@@ -121,6 +121,8 @@ interface SuppliesStoreValue {
   /** Departments this user is the HOD of — drives the First Approval queue visibility. */
   hodDepartmentIds: string[];
   canActOn: (stepKey: StepKey, r: SupplyRequest) => boolean;
+  /** May this person see the step's queue at all — nav link, route, page. */
+  canSeeQueue: (stepKey: StepKey) => boolean;
 
   // master governance
   masterManagers: SupplyMasterManager[];
@@ -291,6 +293,20 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       return isStepOwner(stepKey);
     };
 
+    /**
+     * May this person see the step's QUEUE at all — the nav link, the route, the page?
+     *
+     * ⚠ FIRST APPROVAL IS NOT A STEP-OWNER QUESTION, and asking `isStepOwner` here
+     *   would both hide the queue from every HOD and show it to a step owner who may
+     *   act on nothing. It belongs to whoever heads a department — `canActOn` then
+     *   narrows the rows to that HOD's own department.
+     */
+    const canSeeQueue = (stepKey: StepKey): boolean => {
+      if (isProcessCoordinator) return true;
+      if (stepKey === "first_approval") return hodDepartmentIds.length > 0;
+      return isStepOwner(stepKey);
+    };
+
     // Resolves against the org-wide list, not `dir.profileById`: the directory is
     // RLS-scoped, so a cross-department actor would render blank. Null actors are
     // real — every actor FK is `on delete set null`.
@@ -414,6 +430,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       isFulfilmentStaff,
       hodDepartmentIds,
       canActOn,
+      canSeeQueue,
 
       masterManagers,
       masterRequests,

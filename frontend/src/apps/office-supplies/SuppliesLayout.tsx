@@ -29,12 +29,12 @@ export default function SuppliesLayout() {
   const s = useSuppliesStore();
   const orgPersonById = useOrgPersonById();
 
-  // No step-owner clause: first approval belongs to the department's HOD alone.
-  const canFirstApprove =
-    s.isProcessCoordinator || s.hodDepartmentIds.length > 0 || s.myQueue("first_approval").length > 0;
-  const canSecondApprove =
-    s.isProcessCoordinator || s.isStepOwner("second_approval") || s.myQueue("second_approval").length > 0;
-  const canHandover = s.isProcessCoordinator || s.isStepOwner("handover") || s.myQueue("handover").length > 0;
+  // `canSeeQueue` carries the per-step rule — first approval belongs to the
+  // department's HOD alone, the other two to their step owners — so the sidebar and
+  // the route guards in SuppliesApp cannot drift apart.
+  const canFirstApprove = s.canSeeQueue("first_approval");
+  const canSecondApprove = s.canSeeQueue("second_approval");
+  const canHandover = s.canSeeQueue("handover");
   const canMonitor = s.isProcessCoordinator;
   const hasRequests =
     s.requests.length > 0 || s.isFulfilmentStaff || s.isProcessCoordinator || s.hodDepartmentIds.length > 0;

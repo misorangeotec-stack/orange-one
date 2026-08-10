@@ -53,6 +53,41 @@ function RequireMonitor({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Gate to one step's queue. Takes the SAME store flag `nav.tsx` uses to decide
+ * whether to show the link, so the sidebar and the URL can never disagree.
+ *
+ * ⚠ Import has no `canSeeQueue`, deliberately: ownership here is a flat set of
+ *   capability booleans (`canInward`, `canQc`, …) rather than a step-keyed
+ *   predicate, and approval is a value band rather than an owner list. Passing the
+ *   flag keeps the two lists — nav's and this one's — visibly parallel.
+ */
+function RequireCap({ when, children }: { when: boolean; children: ReactNode }) {
+  if (!when) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/** One `useImportStore()` for the whole route table, rather than nine. */
+function ImportQueueRoutes() {
+  const s = useImportStore();
+  return (
+    <Routes>
+      <Route path="approvals" element={<RequireCap when={s.isApprover}><ApprovalsQueue /></RequireCap>} />
+      <Route path="share" element={<RequireCap when={s.canSharePo}><SharePoQueue /></RequireCap>} />
+      <Route path="collect-pi" element={<RequireCap when={s.canCollectPi}><CollectPiQueue /></RequireCap>} />
+      <Route path="follow-up" element={<RequireCap when={s.canFollowup}><FollowUpQueue /></RequireCap>} />
+      <Route path="inward" element={<RequireCap when={s.canInward}><InwardQueue /></RequireCap>} />
+      <Route path="tally" element={<RequireCap when={s.canTally}><TallyQueue /></RequireCap>} />
+      <Route path="qc" element={<RequireCap when={s.canQc}><QcQueue /></RequireCap>} />
+      <Route path="purchase-return" element={<RequireCap when={s.canPurchaseReturn}><PurchaseReturnQueue /></RequireCap>} />
+      <Route path="gate-outward" element={<RequireCap when={s.canGateOutward}><GateOutwardQueue /></RequireCap>} />
+      {/* `queues/*` swallows the parent's catch-all, so an unknown queue path must
+          land on Not Found here or it renders a blank page. */}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
+  );
+}
+
+/**
  * Root of the Purchase FMS (import) app. Owns all routing under
  * /import, beneath the live data store. Routes are added stage by stage as
  * each build phase lands (requests, queues, PO detail, setup, monitoring).
@@ -72,16 +107,13 @@ export default function ImportApp() {
             <Route path="requests/new" element={<NewRequest />} />
             <Route path="requests/:id" element={<RequestDetail />} />
             <Route path="requests/:id/edit" element={<EditRequest />} />
-            {/* No Sourcing queue in Import — vendors + pricing are fixed masters. */}
-            <Route path="queues/approvals" element={<ApprovalsQueue />} />
-            <Route path="queues/share" element={<SharePoQueue />} />
-            <Route path="queues/collect-pi" element={<CollectPiQueue />} />
-            <Route path="queues/follow-up" element={<FollowUpQueue />} />
-            <Route path="queues/inward" element={<InwardQueue />} />
-            <Route path="queues/tally" element={<TallyQueue />} />
-            <Route path="queues/qc" element={<QcQueue />} />
-            <Route path="queues/purchase-return" element={<PurchaseReturnQueue />} />
-            <Route path="queues/gate-outward" element={<GateOutwardQueue />} />
+            {/* No Sourcing queue in Import — vendors + pricing are fixed masters.
+                Each queue is gated on its own capability flag — see ImportQueueRoutes. */}
+            <Route path="queues/*" element={<ImportQueueRoutes />} />
+            {/* ⚠ DELIBERATELY UNGATED, unlike the queues above. The workbench has a
+                read-only mode with a banner saying only the PO Desk may generate a
+                PO, and an email CTA ("Open PO desk") lands here. Gating it would
+                turn a documented affordance into an Access Denied. */}
             <Route path="po/workbench" element={<PoWorkbench />} />
             <Route path="pos" element={<PoList />} />
             <Route path="pos/:id" element={<PoDetail />} />

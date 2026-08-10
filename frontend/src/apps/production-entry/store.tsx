@@ -107,6 +107,8 @@ interface ProductionStoreValue {
   isProcessCoordinator: boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
   canActOn: (stepKey: QueueStep, r: ProductionRequest) => boolean;
+  /** May this person see the step's queue at all — nav link, route, page. */
+  canSeeQueue: (stepKey: QueueStep) => boolean;
   canRaise: boolean;
 
   // master governance
@@ -232,6 +234,17 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     // Mirrors fms_production_can_act(step, req, uid): admin / coordinator / step owner.
     const canActOn = (stepKey: QueueStep, _r: ProductionRequest): boolean =>
       isAdmin || isProcessCoordinator || isStepOwner(stepKey);
+
+    /**
+     * May this person see the step's QUEUE at all — the nav link, the route, the page?
+     *
+     * The same disjunction `canActOn` reduces to once the row is dropped, which is
+     * the whole rule here: this module has no per-request actor. The nav carried a
+     * third `myQueue(step).length > 0` clause that could never add anything (that
+     * queue is itself filtered by `canActOn`), so both now ask this instead.
+     */
+    const canSeeQueue = (stepKey: QueueStep): boolean =>
+      isProcessCoordinator || isStepOwner(stepKey);
 
     // Who may raise a job card: open to all module users unless issue_slip has
     // owners configured, then only those owners (or admin / coordinator).
@@ -360,6 +373,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       isProcessCoordinator,
       isStepOwner,
       canActOn,
+      canSeeQueue,
       canRaise,
 
       masterManagers,

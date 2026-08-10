@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { SamplingStoreProvider, useSamplingStore } from "./store";
+import type { StepKey } from "./lib/steps";
 import SamplingLayout from "./SamplingLayout";
 import Dashboard from "./pages/Dashboard";
 import NewRequest from "./pages/requests/NewRequest";
@@ -46,6 +47,17 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Gate to one step's queue. `canSeeQueue` carries the whole rule — step owners,
+ * coordinators, and the per-request assignees who own no step — so this enforces
+ * exactly what SamplingLayout offers in the sidebar.
+ */
+function RequireQueue({ step, children }: { step: StepKey; children: ReactNode }) {
+  const { canSeeQueue } = useSamplingStore();
+  if (!canSeeQueue(step)) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the Sampling FMS. Mounted per-user (App.tsx wraps it in RequireModule),
  * so what each person can see is decided by the nav, the store's capability flags
  * and — authoritatively — RLS.
@@ -69,16 +81,16 @@ export default function SamplingApp() {
           {/* "Sample Received at Lab" retired 08-08-2026 — its rows moved to collect.
               Kept as a redirect so an old bookmark or email link still lands somewhere. */}
           <Route path="queues/receive" element={<Navigate to="/sampling/queues/collect" replace />} />
-          <Route path="queues/collect" element={<CollectQueue />} />
-          <Route path="queues/received" element={<SampleReceivedQueue />} />
-          <Route path="queues/to-lab" element={<SampleToLabQueue />} />
-          <Route path="queues/lab" element={<LabProcessQueue />} />
-          <Route path="queues/result-received" element={<ResultReceivedQueue />} />
-          <Route path="queues/send" element={<SendQueue />} />
-          <Route path="queues/confirm" element={<ConfirmQueue />} />
-          <Route path="queues/testing" element={<TestingQueue />} />
-          <Route path="queues/result" element={<ResultQueue />} />
-          <Route path="queues/handover" element={<HandoverQueue />} />
+          <Route path="queues/collect" element={<RequireQueue step="sample_collect"><CollectQueue /></RequireQueue>} />
+          <Route path="queues/received" element={<RequireQueue step="sample_received"><SampleReceivedQueue /></RequireQueue>} />
+          <Route path="queues/to-lab" element={<RequireQueue step="sample_to_lab"><SampleToLabQueue /></RequireQueue>} />
+          <Route path="queues/lab" element={<RequireQueue step="lab_process"><LabProcessQueue /></RequireQueue>} />
+          <Route path="queues/result-received" element={<RequireQueue step="result_received"><ResultReceivedQueue /></RequireQueue>} />
+          <Route path="queues/send" element={<RequireQueue step="send_sample"><SendQueue /></RequireQueue>} />
+          <Route path="queues/confirm" element={<RequireQueue step="confirm_receipt"><ConfirmQueue /></RequireQueue>} />
+          <Route path="queues/testing" element={<RequireQueue step="testing"><TestingQueue /></RequireQueue>} />
+          <Route path="queues/result" element={<RequireQueue step="result"><ResultQueue /></RequireQueue>} />
+          <Route path="queues/handover" element={<RequireQueue step="result_handover"><HandoverQueue /></RequireQueue>} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
