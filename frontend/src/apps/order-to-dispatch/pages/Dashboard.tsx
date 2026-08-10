@@ -181,6 +181,17 @@ export default function Dashboard() {
     () => rankBy(dispatched, (c) => c.companyId ?? "—", (k) => s.masterName("company", k === "—" ? null : k)),
     [dispatched, s],
   );
+  /**
+   * WHERE it went out FROM — our own site, not the customer's.
+   *
+   * It shares the column with the company because the two answer one question
+   * between them: there are two selling companies, and the interesting half of
+   * "who dispatched this" is which of their sites did.
+   */
+  const byLocation = useMemo(
+    () => rankBy(dispatched, (c) => c.locationId ?? "—", (k) => s.masterName("company_location", k === "—" ? null : k)),
+    [dispatched, s],
+  );
   const byCustomer = useMemo(
     () => rankBy(dispatched, (c) => c.customerId, (k) => s.customerName(k)),
     [dispatched, s],
@@ -348,12 +359,27 @@ export default function Dashboard() {
 
       <KpiRow tiles={tiles} />
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <RankBars
-          title="Dispatched by company"
-          rows={byCompany}
-          emptyLabel="Nothing left the plant in this range."
-        />
+      {/*
+        LEFT COLUMN, TWO CARDS. There are two selling companies, so that card
+        needs four rows at most and the rest of the height was empty — the site a
+        consignment left from is the answer that column has room to give as well.
+        The customer card keeps the whole right column: its list is the long one.
+      */}
+      <div className="grid gap-4 lg:grid-cols-2 items-start">
+        <div className="space-y-4">
+          <RankBars
+            title="Dispatched by company"
+            rows={byCompany}
+            limit={4}
+            emptyLabel="Nothing left the plant in this range."
+          />
+          <RankBars
+            title="Dispatched by location"
+            rows={byLocation}
+            limit={6}
+            emptyLabel="Nothing left the plant in this range."
+          />
+        </div>
         <RankBars
           title="Dispatched by customer"
           rows={byCustomer}
