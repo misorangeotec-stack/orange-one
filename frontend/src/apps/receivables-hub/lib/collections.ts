@@ -72,6 +72,7 @@
  */
 
 import { isoToMonthLabel } from "./months";
+import { fmtINRMoney } from "./utils";
 import type { GroupByPreset } from "../components/GroupByBuilder";
 import type { ConsolidatedCustomer, Customer, CustomerDetail, SaleType } from "./types";
 
@@ -366,6 +367,58 @@ export function dominantSaleTypeOf(
     if (totals[t] > max) { max = totals[t]; best = t; }
   }
   return max < 0.5 ? "other" : best;
+}
+
+// ── Overdue, split by sale type (the Zero Collections card strip) ───────────────────
+
+/**
+ * The two types that should NEVER be sitting overdue.
+ *
+ * A machine is capital equipment paid down over months, and ink is a running consumable
+ * account — some balance riding on those is the normal shape of the business. A HEAD or a
+ * SPARE PART is not: both are small, one-off, fix-it-now purchases against a machine the
+ * customer is already running, and they are supposed to be settled almost immediately. Money
+ * stuck there is not a payment plan running its course, it is a customer who has simply not
+ * paid for a part they are using — so the card turns critical the moment it is non-zero.
+ */
+export const CRITICAL_SALE_TYPES: SaleType[] = ["head", "spare_parts"];
+export const isCriticalSaleType = (t: SaleType): boolean => CRITICAL_SALE_TYPES.includes(t);
+
+/** Card order: the two that should never be overdue lead, then the rest in book order. */
+export const SALE_TYPE_CARD_ORDER: SaleType[] = ["head", "spare_parts", "ink", "machine", "other"];
+
+export interface SaleTypeOverdue {
+  type: SaleType;
+  /** How many listed customers are DOMINATED by this type. */
+  customers: number;
+  overdue: number;
+  outstanding: number;
+}
+
+/**
+ * Overdue on the listed customers, split by sale type.
+ *
+ * Split by the customer's DOMINANT type (dominantSaleTypeOf), not by the per-bill
+ * `overdueByType` figures — deliberately, and it is the difference between a card that can be
+ * clicked and one that cannot. The Sale Type FILTER, the Sale Type group-by level and these
+ * cards then all cut the report the same way, so the rupees printed on a card are exactly the
+ * rupees the table shows when you click it. Splitting by bill would print a number no filter on
+ * this report can reproduce — every machine ledger carries a small spare-parts sliver, so a
+ * "Spare Parts" card would count money belonging to customers the card cannot select.
+ */
+export function overdueBySaleType(
+  rows: ZCRow[],
+  byType: Map<string, Partial<Record<SaleType, number>>>,
+): Record<SaleType, SaleTypeOverdue> {
+  const out = {} as Record<SaleType, SaleTypeOverdue>;
+  for (const t of SALE_TYPES) out[t] = { type: t, customers: 0, overdue: 0, outstanding: 0 };
+  for (const r of rows) {
+    const bucket = out[dominantSaleTypeOf(r.customer, byType)];
+    bucket.customers += 1;
+    bucket.overdue += r.customer.overdue;
+    bucket.outstanding += r.customer.outstanding;
+  }
+  return out;
 }
 
 /** Everything the report knows about one customer's collection behaviour in a window. */
@@ -915,7 +968,21 @@ export interface ZCRow {
 export interface ZCMetrics {
   customers: number;
   outstanding: number;
+  /**
+   * Overdue NET of On Account — the same figure every other page shows, and the reason this
+   * report's Overdue never equals the sum of its own overdue bills. See `onAccount` below.
+   */
   overdue: number;
+  /** Σ pending of past-due bills BEFORE On Account. The bill-wise figure. */
+  overdueGross: number;
+  /**
+   * Money the customer has already paid that settles no open invoice (untagged receipts, or
+   * credit filed against a bill reference), capped per ledger at that ledger's own gross
+   * overdue. `overdue === overdueGross − onAccount` at every level, because the cap is applied
+   * per ledger in the database before the browser sees it — which is what lets customer, group
+   * and grand-total rows all reconcile by plain addition.
+   */
+  onAccount: number;
   over180: number;
   opening: number;
   salesInWindow: number;
@@ -964,7 +1031,7 @@ export const NEVER_SOLD = Number.MAX_SAFE_INTEGER;
 export const DETERIORATION_PP = 10;
 
 export const emptyMetrics = (): ZCMetrics => ({
-  customers: 0, outstanding: 0, overdue: 0, over180: 0,
+  customers: 0, outstanding: 0, overdue: 0, overdueGross: 0, onAccount: 0, over180: 0,
   opening: 0, salesInWindow: 0, collectible: 0, collected: 0, journalSettled: 0, shortfall: 0,
   priorCollections: 0, priorCollectible: 0, chequeReturns: 0, creditNotes: 0,
   maxOverdueDays: 0, daysSinceLastReceipt: -1, monthsSinceLastSale: -1,
@@ -994,6 +1061,11 @@ export const makeMetricsOf = (targetPct: number) => (r: ZCRow): ZCMetrics => {
     customers: 1,
     outstanding: c.outstanding,
     overdue: c.overdue,
+    // Both sides of the Overdue bridge. `?? c.overdue` / `?? 0` is the legacy-pipeline fallback:
+    // that feed carries no split, so gross reads equal to net and On Account reads ₹0 — which is
+    // true of it, rather than a guess.
+    overdueGross: c.overdueGross ?? c.overdue,
+    onAccount: c.onAccount ?? 0,
     over180: c.agingBuckets?.["180_plus"] ?? 0,
     opening: f.opening,
     salesInWindow: f.salesInWindow,
@@ -1028,6 +1100,8 @@ export function addMetrics(acc: ZCMetrics, m: ZCMetrics): void {
   acc.customers        += m.customers;
   acc.outstanding      += m.outstanding;
   acc.overdue          += m.overdue;
+  acc.overdueGross     += m.overdueGross;
+  acc.onAccount        += m.onAccount;
   acc.over180          += m.over180;
   acc.opening          += m.opening;
   acc.salesInWindow    += m.salesInWindow;
@@ -1162,8 +1236,9 @@ export const ZC_DIMENSIONS: { key: ZCDim; label: string }[] = [
  *  no preset behind the default, the View row came up on first load with nothing lit, and the
  *  grouping you were looking at appeared to be one nobody had chosen. */
 export const ZC_PRESETS: GroupByPreset<ZCDim>[] = [
-  { label: "Salesperson → Customer Group → Sale Type", dims: ["salesperson", "group", "saleType"] },
+  { label: "Salesperson → Customer Group", dims: ["salesperson", "group"] },
   { label: "Salesperson → Customer → Sale Type", dims: ["salesperson", "customer", "saleType"] },
+  { label: "Salesperson → Customer Group → Sale Type", dims: ["salesperson", "group", "saleType"] },
   { label: "Salesperson → Customer",   dims: ["salesperson", "customer"] },
   { label: "Customer",                 dims: ["customer"] },
   { label: "Customer Group",           dims: ["group"] },
@@ -1247,7 +1322,7 @@ export function zcDimValue(
 // ── Columns ─────────────────────────────────────────────────────────────────────────
 
 export type ZCColumnKey =
-  | "customers" | "outstanding" | "overdue" | "over180"
+  | "customers" | "outstanding" | "overdue" | "overdueGross" | "onAccount" | "over180"
   | "opening" | "salesInWindow" | "collectible" | "collected" | "journalSettled"
   | "collectionPct" | "shortfall" | "priorPct" | "deltaPp"
   | "priorCollections" | "chequeReturns" | "creditNotes"
@@ -1259,6 +1334,12 @@ export interface ZCColumn {
   label: string;
   /** How the cell renders: money (₹), a plain count, a day count, a month count, a %, or a date. */
   kind: "money" | "count" | "days" | "pct" | "months" | "date";
+  /**
+   * One line, in plain English, on what the column means and why it matters — shown on hover
+   * over the table header. A header is four words wide; this is where the rest of the sentence
+   * goes, so a reader never has to open "How this report is calculated" to read a column.
+   */
+  help: string;
   /**
    * The node's value for this column, derived from its SUMMED metrics.
    *
@@ -1276,21 +1357,53 @@ export interface ZCColumn {
   /** A per-customer fact that can't be summed — shown only on leaf rows, "—" on group rows
    *  and the grand total (the same reason "Last Sale Month" never went on screen). */
   leafOnly?: boolean;
+  /**
+   * A small second line printed UNDER the figure, on every row that has one.
+   *
+   * Exists for exactly one job: a column whose value has already had something taken off it has
+   * to say so on the row itself. Overdue is net of On Account, so a reader comparing it against
+   * the bills behind it finds a gap and has no way to know why. A tooltip is not enough — nobody
+   * hovers a number they have no reason to doubt. Same treatment, same wording, as the Salesperson
+   * Collection Report's "less On Account" line under Due Pending.
+   */
+  note?: (m: ZCMetrics) => string | null;
 }
 
 export const ZC_COLUMNS: ZCColumn[] = [
-  { key: "customers",     label: "Customers",       kind: "count", value: (m) => m.customers },
-  { key: "outstanding",   label: "Outstanding",     kind: "money", value: (m) => m.outstanding, drill: "outstanding" },
-  { key: "overdue",       label: "Overdue",         kind: "money", value: (m) => m.overdue, drill: "overdue", alarm: true },
-  { key: "over180",       label: "> 180 Days",      kind: "money", value: (m) => m.over180, drill: "over180", alarm: true },
-  { key: "opening",       label: "Opening",         kind: "money", value: (m) => m.opening },
-  { key: "salesInWindow", label: "Sales in Period", kind: "money", value: (m) => m.salesInWindow, alarm: true },
-  { key: "collectible",   label: "Collectible",     kind: "money", value: (m) => m.collectible },
-  { key: "collected",     label: "Collected",       kind: "money", value: (m) => m.collected },
-  { key: "journalSettled", label: "Journal Settled", kind: "money", value: (m) => m.journalSettled },
-  { key: "collectionPct", label: "Collection %",    kind: "pct",   value: (m) => pctOf(m.collected, m.collectible), lowIsBad: true },
-  { key: "shortfall",     label: "Shortfall",       kind: "money", value: (m) => m.shortfall, alarm: true },
-  { key: "priorPct",      label: "Prior %",         kind: "pct",   value: (m) => pctOf(m.priorCollections, m.priorCollectible) },
+  { key: "customers",     label: "Customers",       kind: "count", value: (m) => m.customers,
+    help: "How many customers are rolled up into this row." },
+  { key: "outstanding",   label: "Outstanding",     kind: "money", value: (m) => m.outstanding, drill: "outstanding",
+    help: "Everything this row still owes as on the report date. Click to see the bills behind it." },
+  { key: "overdue",       label: "Overdue",         kind: "money", value: (m) => m.overdue, drill: "overdue", alarm: true,
+    // Says on the row itself that the figure is already net. Without it the number silently
+    // disagrees with its own drill-down, which is where this started.
+    note: (m) => (m.onAccount > 0.5 ? `less On Account ${fmtINRMoney(m.onAccount)}` : null),
+    help: "The part of Outstanding that is already past its due date, AFTER setting off On Account (money paid but tagged to no bill). Gross overdue minus On Account." },
+  // The two halves of the Overdue bridge, for anyone who wants them as real, sortable, exportable
+  // columns rather than as the note under Overdue. Off by default: the note answers the question
+  // for most readers, and these would be two more columns on an already wide call-list.
+  { key: "overdueGross",  label: "Overdue (Gross)", kind: "money", value: (m) => m.overdueGross, alarm: true,
+    help: "Overdue before On Account is set off: the straight sum of what is pending on every past-due bill. This is the figure the drill-down lists." },
+  { key: "onAccount",     label: "On Account",      kind: "money", value: (m) => m.onAccount,
+    help: "Money the customer has already paid that settles no specific bill (advances, credit notes, untagged receipts). It is subtracted from Gross to give Overdue." },
+  { key: "over180",       label: "> 180 Days",      kind: "money", value: (m) => m.over180, drill: "over180", alarm: true,
+    help: "Unpaid for more than six months. The oldest money on the book, and the hardest to recover." },
+  { key: "opening",       label: "Opening",         kind: "money", value: (m) => m.opening,
+    help: "What this row already owed at the START of the period, before anything was billed in it." },
+  { key: "salesInWindow", label: "Sales in Period", kind: "money", value: (m) => m.salesInWindow, alarm: true,
+    help: "What we billed them during the period. A large figure here means we kept selling to a non-payer." },
+  { key: "collectible",   label: "Collectible",     kind: "money", value: (m) => m.collectible,
+    help: "Everything we could have collected in the period: Opening + Sales in Period. The denominator of Collection %." },
+  { key: "collected",     label: "Collected",       kind: "money", value: (m) => m.collected,
+    help: "Cash that actually came in during the period: receipt vouchers plus manual Other Payments." },
+  { key: "journalSettled", label: "Journal Settled", kind: "money", value: (m) => m.journalSettled,
+    help: "Dues cleared by a journal entry (typically an inter-company adjustment) rather than by cash." },
+  { key: "collectionPct", label: "Collection %",    kind: "pct",   value: (m) => pctOf(m.collected, m.collectible), lowIsBad: true,
+    help: "Collected ÷ Collectible, so how much of what was due actually came in. Group rows are weighted, never averaged." },
+  { key: "shortfall",     label: "Shortfall",       kind: "money", value: (m) => m.shortfall, alarm: true,
+    help: "Rupees short of the target collection. The size of the gap to chase, not just a percentage." },
+  { key: "priorPct",      label: "Prior %",         kind: "pct",   value: (m) => pctOf(m.priorCollections, m.priorCollectible),
+    help: "The same Collection % for the equal-length period immediately before this one." },
   {
     key: "deltaPp", label: "Δ pp", kind: "pct",
     value: (m) => {
@@ -1298,34 +1411,74 @@ export const ZC_COLUMNS: ZCColumn[] = [
       const prior = pctOf(m.priorCollections, m.priorCollectible);
       return cur === null || prior === null ? null : cur - prior;
     },
+    help: "Change in Collection % against the prior period, in percentage points. Negative means they are getting worse.",
   },
-  { key: "priorCollections",     label: "Prior Collections", kind: "money", value: (m) => m.priorCollections },
-  { key: "chequeReturns",        label: "Cheque Returns",    kind: "money", value: (m) => m.chequeReturns, alarm: true },
-  { key: "creditNotes",          label: "Credit Notes",      kind: "money", value: (m) => m.creditNotes },
-  { key: "daysSinceLastReceipt", label: "Days Since Receipt", kind: "days", value: (m) => m.daysSinceLastReceipt, alarm: true },
+  { key: "priorCollections",     label: "Prior Collections", kind: "money", value: (m) => m.priorCollections,
+    help: "Cash received in the equal-length period just before this one. A large figure means they have JUST stopped paying; ₹0 means they were always silent." },
+  { key: "chequeReturns",        label: "Cheque Returns",    kind: "money", value: (m) => m.chequeReturns, alarm: true,
+    help: "Payments that bounced in the period. They count as paid and are then reversed, so they can hide a defaulter." },
+  { key: "creditNotes",          label: "Credit Notes",      kind: "money", value: (m) => m.creditNotes,
+    help: "Dues cleared by a credit note (sales return or adjustment) instead of cash. The balance fell without money arriving." },
+  { key: "daysSinceLastReceipt", label: "Days Since Receipt", kind: "days", value: (m) => m.daysSinceLastReceipt, alarm: true,
+    help: "Days since the last rupee arrived from this customer. “Never” means none since the data starts." },
   // Leaf-only: a date/amount can't be summed onto a group row. Both sources carry the exact
   // voucher amount now — the pipeline from its day detail, Live from the snapshot column.
-  { key: "lastReceipt",       label: "Last Receipt",   kind: "date",  leafOnly: true, value: (m) => m.lastReceiptAt || null },
-  { key: "lastReceiptAmount", label: "Last Receipt ₹", kind: "money", leafOnly: true, value: (m) => m.lastReceiptAmount || null },
+  { key: "lastReceipt",       label: "Last Receipt",   kind: "date",  leafOnly: true, value: (m) => m.lastReceiptAt || null,
+    help: "The date of the most recent payment received. Shown per customer only, because a date cannot be summed onto a group row." },
+  { key: "lastReceiptAmount", label: "Last Receipt ₹", kind: "money", leafOnly: true, value: (m) => m.lastReceiptAmount || null,
+    help: "How much that most recent payment was for. A token ₹5,000 against ₹40 L reads very differently from a real one." },
   // Folded with MAX, so a group reads as its DEADEST member. The exact month label is a
   // per-customer fact and can't be summed — it ships in the Excel export instead.
-  { key: "monthsSinceLastSale",  label: "Months Since Sale", kind: "months", value: (m) => m.monthsSinceLastSale, alarm: true },
-  { key: "maxOverdueDays",       label: "Max Overdue Days",  kind: "days",  value: (m) => m.maxOverdueDays },
-  { key: "creditLimit",          label: "Credit Limit",      kind: "money", value: (m) => m.creditLimit },
+  { key: "monthsSinceLastSale",  label: "Months Since Sale", kind: "months", value: (m) => m.monthsSinceLastSale, alarm: true,
+    help: "Months since we last billed them, so how dormant the account is. A group row shows its deadest member." },
+  { key: "maxOverdueDays",       label: "Max Overdue Days",  kind: "days",  value: (m) => m.maxOverdueDays,
+    help: "The age of the oldest unpaid invoice in this row, so how far back the problem goes." },
+  { key: "creditLimit",          label: "Credit Limit",      kind: "money", value: (m) => m.creditLimit,
+    help: "The credit limit set on this customer in Tally. A dash means none was ever set." },
   // Leaf-only, and no `alarm`: long credit terms aren't a fault, so this column never turns red
   // (the days rule at CollectionPerformanceReport's `alarm` would otherwise flag anything > 180).
-  { key: "creditDays",           label: "Credit Days",       kind: "days",  leafOnly: true, value: (m) => m.creditDays },
+  { key: "creditDays",           label: "Credit Days",       kind: "days",  leafOnly: true, value: (m) => m.creditDays,
+    help: "The credit period agreed with this customer in Tally. A dash means no terms were ever recorded." },
 ];
 
 /** Which of the three reports this is. Decides the predicate, the defaults and the lenses. */
 export type CollectionsMode = "zero" | "threshold" | "dormant";
 
 /**
- * The default (management) column set. Everything else lives behind the ColumnPicker.
+ * WHICH COLUMNS THE PICKER EVEN OFFERS, per report.
+ *
+ * Zero Collections is a call-list, not a workbench. Every percentage column reads 0% / "—" at
+ * threshold 0, and Opening / Collectible / Shortfall / Δ pp only make sense next to a percentage
+ * — offering all 23 columns there was 11 choices that could only make the report worse. So the
+ * picker on that report is CLOSED to the twelve columns the report is actually about; eight of
+ * them are on by default (see defaultColumnsFor) and the other four are one click away.
+ *
+ * The other two reports keep the full set: Below-N% is exactly the percentage working, and the
+ * dormant report is read side by side with it.
+ */
+const ZERO_PICKER_COLUMNS: ZCColumnKey[] = [
+  "customers", "outstanding", "overdue", "overdueGross", "onAccount", "over180",
+  "salesInWindow", "journalSettled",
+  "priorCollections", "daysSinceLastReceipt", "lastReceipt", "lastReceiptAmount",
+  "creditDays", "creditLimit",
+];
+
+export function pickerColumnsFor(mode: CollectionsMode): ZCColumn[] {
+  if (mode !== "zero") return ZC_COLUMNS;
+  const allowed = new Set<ZCColumnKey>(ZERO_PICKER_COLUMNS);
+  return ZC_COLUMNS.filter((c) => allowed.has(c.key));
+}
+
+/**
+ * The default (management) column set — what the report OPENS on. Everything else its picker
+ * offers (see pickerColumnsFor) is one click away.
  *
  * The three reports want different defaults:
- *  - zero      : at threshold 0 every percentage column reads 0% / "—" and only wastes width,
- *                so it keeps exactly the columns it shipped with.
+ *  - zero      : at threshold 0 every percentage column reads 0% / "—" and only wastes width, so
+ *                it opens on the eight figures that decide a call: who, how much, how overdue,
+ *                are we still billing them, when did they last pay and how much, and what terms
+ *                were they given. > 180 Days, Journal Settled, Prior Collections and Days Since
+ *                Receipt are the second question, not the first — they stay in the picker.
  *  - threshold : the full percentage working.
  *  - dormant   : "Sales in Period" is ₹0 for EVERY row by construction (that's the predicate),
  *                so it is dropped for the two figures that actually rank a dead account —
@@ -1336,7 +1489,7 @@ export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
     // Credit Days + Credit Limit close the loop the rest of the row opens: this customer paid
     // nothing — were they ever given terms, and how much rope? Both come straight from the Tally
     // master, so ~half read "—" (951 of 1,831 ledgers carry no credit period, 908 no limit).
-    return ["customers", "outstanding", "overdue", "over180", "salesInWindow", "journalSettled", "priorCollections", "daysSinceLastReceipt", "lastReceipt", "lastReceiptAmount", "creditDays", "creditLimit"];
+    return ["customers", "outstanding", "overdue", "salesInWindow", "lastReceipt", "lastReceiptAmount", "creditDays", "creditLimit"];
   if (mode === "dormant")
     return ["customers", "outstanding", "overdue", "over180", "collected", "monthsSinceLastSale", "daysSinceLastReceipt"];
   return [
@@ -1358,9 +1511,15 @@ export function defaultColumnsFor(mode: CollectionsMode): ZCColumnKey[] {
  * opens on Customer Group instead, so the first question answered is which HOUSE has stopped
  * paying; the customers are one expand away. The other two reports are already narrowed by their
  * own predicate, so the customer row is the useful grain there.
+ *
+ * Zero Collections also stops at TWO levels. A third Sale Type split under every group turned a
+ * salesperson's call-list into a tree nobody expanded — the sale-type question is answered by the
+ * Sale Type filter and the overdue-by-type cards above the table, not by a third nesting level.
+ * The dimension itself is untouched: "Sale Type" is still in the View presets and the Group by
+ * dropdown, one click away, on this report as on the other two.
  */
 export function defaultGroupByFor(mode: CollectionsMode): ZCDim[] {
-  if (mode === "zero") return ["salesperson", "group", "saleType"];
+  if (mode === "zero") return ["salesperson", "group"];
   return ["salesperson", "customer", "saleType"];
 }
 

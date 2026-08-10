@@ -6,7 +6,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   UserX, ChevronRight, ChevronDown, Download, ArrowLeft, Info, Pin, Search, X,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Wallet, TrendingDown,
-  CalendarClock, ShoppingCart, Ban, Percent, Target, Undo2,
+  CalendarClock, ShoppingCart, Ban, Percent, Target, Undo2, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Card, CardContent } from "@hub/components/ui/card";
@@ -47,15 +47,17 @@ import {
   DATE_RANGE_PRESETS, isDateRangePreset,
   isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
-  applyFocus, totalsOf, detailPathFor, defaultColumnsFor, defaultGroupByFor,
+  applyFocus, totalsOf, detailPathFor, defaultColumnsFor, defaultGroupByFor, pickerColumnsFor,
+  overdueBySaleType, isCriticalSaleType, SALE_TYPE_CARD_ORDER,
   COLLECTIBLE_EPS, DETERIORATION_PP, NEVER_PAID, NEVER_SOLD, ZERO_EPS, SALE_TYPES,
   BAND_LABELS, BAND_ORDER,
   PERIOD_LABELS, ZC_COLUMNS, ZC_DIMENSIONS, ZC_PRESETS, ZC_FOCUS_LABELS,
   type CollectionBand, type CollectionsMode, type PeriodPreset, type ZCColumn, type ZCColumnKey,
   type ZCDim, type ZCFocus, type ZCMetrics, type ZCRow,
 } from "@hub/lib/collections";
+import { useReportColumnPrefs, REPORT_PREF_IDS } from "@hub/lib/reportPrefs";
 import { exportCollectionsXlsx } from "@hub/lib/exportCollections";
-import type { ConsolidatedCustomer } from "@hub/lib/types";
+import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
 
 /**
  * Collection Performance — ONE screen, THREE reports.
@@ -88,6 +90,22 @@ import type { ConsolidatedCustomer } from "@hub/lib/types";
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, "all"] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
+
+/**
+ * The header row is frozen to the top of the scroll box, always — a table 100 rows deep whose
+ * column names scroll away is a table you can only read by scrolling back up. Applied per CELL,
+ * not to the `<tr>`: `position: sticky` on a table row does nothing in Chrome.
+ *
+ * Three things this class has to carry, all load-bearing:
+ *  - OPAQUE background (bg-muted, not the row's bg-muted/60) or the rows slide visibly under it.
+ *  - z-20, which clears the frozen body cells (z-10). The two cells frozen on BOTH axes take
+ *    z-30 in `freezeStick`.
+ *  - the bottom rule as an INSET SHADOW, not a border. The table is `border-collapse`, and a
+ *    collapsed border belongs to the table rather than the cell — so the header's real
+ *    `border-b` scrolls away with the body and the frozen row loses its underline exactly when
+ *    it is doing its job. A shadow is painted by the cell and stays put.
+ */
+const HEADER_STICKY = "sticky top-0 z-20 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]";
 
 /** Cut the long tail without a fiddly ₹ input. */
 const MIN_OUTSTANDING_OPTIONS = [
@@ -179,7 +197,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       ? "Customers with Zero Collections"
       : `Customers Below ${threshold}% Collection`;
   const subtitle = isDormantMode
-    ? "Customers who owe money and have billed nothing in the period — dormant accounts with cash stuck in them."
+    ? "Customers who owe money and have billed nothing in the period. Dormant accounts with cash stuck in them."
     : mode === "zero"
       ? "Customers who owe money and paid nothing in the period."
       : `Customers who collected less than ${threshold}% of what we could have collected from them.`;
@@ -390,13 +408,46 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // ── Columns + sort ────────────────────────────────────────────────────────────────
   // The two reports want different defaults: at threshold 0 every percentage column reads
   // 0% / "—" and only wastes width. Switching threshold therefore re-seeds both.
-  const columnOptions: ColumnOption[] = ZC_COLUMNS.map((c) => ({ key: c.key, label: c.label }));
+  //
+  // WHICH columns the picker offers is also per report — Zero Collections is a call-list and
+  // closes its picker to the twelve columns that report is about. See pickerColumnsFor.
+  const pickerCols = useMemo(() => pickerColumnsFor(mode), [mode]);
+  const columnOptions: ColumnOption[] = useMemo(
+    () => pickerCols.map((c) => ({ key: c.key, label: c.label, help: c.help })),
+    [pickerCols],
+  );
+  const pickerKeys = useMemo(() => pickerCols.map((c) => c.key), [pickerCols]);
+
+  // This user's own saved layout for THIS report, if they have ever saved one. Read from
+  // profiles.receivables_report_prefs, so it follows them to any browser. Fails soft: while it
+  // loads, and forever if the column isn't there, the report just uses its shipped default.
+  const prefReportId =
+    mode === "dormant" ? REPORT_PREF_IDS.collectionsDormant
+    : mode === "zero"  ? REPORT_PREF_IDS.collectionsZero
+    : REPORT_PREF_IDS.collectionsThreshold;
+  const colPrefs = useReportColumnPrefs(prefReportId, pickerKeys);
+
   const [visibleCols, setVisibleCols] = useState<string[]>(() => defaultColumnsFor(mode));
   const columns = useMemo<ZCColumn[]>(
-    () => ZC_COLUMNS.filter((c) => visibleCols.includes(c.key)),
-    [visibleCols],
+    () => pickerCols.filter((c) => visibleCols.includes(c.key)),
+    [pickerCols, visibleCols],
   );
   const colByKey = useMemo(() => new Map(ZC_COLUMNS.map((c) => [c.key, c])), []);
+
+  /**
+   * Apply the saved layout once it arrives, and again whenever the report changes underneath us
+   * (?below=0 ⇄ ?below=30 don't remount — see the re-seed effect below).
+   *
+   * `appliedPrefFor` makes this a ONE-SHOT per report: without it, every hand-toggle of a column
+   * would be overwritten on the next render by the saved set, and the picker would be unusable.
+   */
+  const appliedPrefFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (colPrefs.loading) return;
+    if (appliedPrefFor.current === prefReportId) return;
+    appliedPrefFor.current = prefReportId;
+    setVisibleCols(colPrefs.saved ?? defaultColumnsFor(mode));
+  }, [colPrefs.loading, colPrefs.saved, prefReportId, mode]);
 
   type SortKey = ZCColumnKey | "label";
   /** Dormant and zero rank by the money at stake; threshold ranks by the shortfall it defines. */
@@ -405,15 +456,18 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const [sortKey, setSortKey] = useState<SortKey>(() => defaultSortFor(mode));
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
-  // Re-seed the view, the columns and the sort whenever the report changes underneath us.
+  // Re-seed the view and the sort whenever the report changes underneath us.
   // `?below=0` and `?below=30` are the SAME route, so switching threshold does not remount this
   // component and the useState initialisers above never run a second time — without this effect
   // the Zero report would keep whatever grouping the Below-N% report was left on. The cost is
   // that switching threshold also discards a hand-picked grouping, exactly as it already
   // discards hand-picked columns.
+  //
+  // The COLUMNS are re-seeded by the saved-layout effect above instead, not here: each report
+  // has its own saved layout, and re-seeding in two places would race (both effects flush
+  // together, and the loser wins).
   useEffect(() => {
     setGroupBy(defaultGroupByFor(mode));
-    setVisibleCols(defaultColumnsFor(mode));
     setSortKey(defaultSortFor(mode));
     setSortDir("desc");
   }, [mode]);
@@ -482,19 +536,21 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     [customerGroupMap],
   );
 
-  /** Customers eligible for the report at all: they owe us money (the KPI denominator). */
-  const eligible = useMemo(() => {
+  /**
+   * Customers eligible for the report at all: they owe us money (the KPI denominator) — with
+   * every filter applied EXCEPT sale type.
+   *
+   * Sale type is held back one step so the overdue-by-type cards can be built over the whole
+   * book. If the sale-type filter ran here, the Machine card would read ₹0 the moment Machine
+   * is deselected (which is the default), and clicking any card would delete the other four.
+   * The cards have to be a stable, complete strip you can click between — so they are measured
+   * before the filter and the filter is applied after. See `rows`.
+   */
+  const eligibleAllTypes = useMemo(() => {
     let d = consolidatedCustomers.filter((c) => matchesCategory(c, categories));
     if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => (c.companies ?? [c.company]).some((x) => s.has(x))); }
     if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => (c.locations ?? [c.location]).some((x) => s.has(x))); }
     if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => (c.salesPersons?.length ? c.salesPersons : [c.salesPerson]).some((x) => s.has(x))); }
-    // Scope by the customer's DOMINANT sale type. Active only on a PROPER subset: empty and full
-    // both mean "no filter", the same convention SaleTypeMultiSelect labels ("All Sale Types") and
-    // every other multi-select in the app uses. Default excludes Machine (see DEFAULT_SALE_TYPES).
-    if (saleTypes.length > 0 && saleTypes.length < SALE_TYPES.length) {
-      const s = new Set(saleTypes);
-      d = d.filter((c) => s.has(dominantSaleTypeOf(c, outstandingByType)));
-    }
     if (segment === "active")
       d = d.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
     else if (segment === "no_activity")
@@ -517,8 +573,26 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   }, [
     consolidatedCustomers, categories, companies, locations, salespersons,
     segment, blockedOnly, includeNonDebtors, minOut, search, groupOf,
-    saleTypes, outstandingByType,
   ]);
+
+  /**
+   * Scope by the customer's DOMINANT sale type. Active only on a PROPER subset: empty and full
+   * both mean "no filter", the same convention SaleTypeMultiSelect labels ("All Sale Types") and
+   * every other multi-select in the app uses. Default excludes Machine (see DEFAULT_SALE_TYPES).
+   */
+  const inSaleTypeScope = useCallback(
+    (c: ConsolidatedCustomer) => {
+      if (saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length) return true;
+      return saleTypes.includes(dominantSaleTypeOf(c, outstandingByType));
+    },
+    [saleTypes, outstandingByType],
+  );
+
+  /** The KPI denominator — eligible AND inside the sale-type scope, as it has always been. */
+  const eligible = useMemo(
+    () => eligibleAllTypes.filter(inSaleTypeScope),
+    [eligibleAllTypes, inSaleTypeScope],
+  );
 
   /**
    * The report itself.
@@ -536,12 +610,12 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
    * letting them silently vanish. Threshold-only: the other two predicates have no denominator
    * to be undefined, so they drop nobody.
    */
-  const { rows, noPool } = useMemo(() => {
-    if (!windowMonths.length) return { rows: [] as ZCRow[], noPool: 0 };
+  const { allTypeRows, allTypeNoPool } = useMemo(() => {
+    if (!windowMonths.length) return { allTypeRows: [] as ZCRow[], allTypeNoPool: [] as ConsolidatedCustomer[] };
     const range = usingDateRange ? rangeQuery.data! : null;
     const out: ZCRow[] = [];
-    let dropped = 0;
-    for (const c of eligible) {
+    const dropped: ConsolidatedCustomer[] = [];
+    for (const c of eligibleAllTypes) {
       // factsForRange is factsFor's twin — same arithmetic, day-level sources. See its header.
       const facts = range
         ? factsForRange(c, range, series, lastDates, balances, months, windowMonths, prevRange !== null, asOfDate, null, countJournalSettlements, lastAmounts)
@@ -551,10 +625,27 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         : mode === "zero"  ? isZeroCollection(facts)
         : isBelowThreshold(facts, threshold);
       if (listed) out.push({ customer: c, facts, group: groupOf(c) });
-      else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped++;
+      else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped.push(c);
     }
-    return { rows: out, noPool: dropped };
-  }, [eligible, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements, usingDateRange, rangeQuery.data, prevRange]);
+    return { allTypeRows: out, allTypeNoPool: dropped };
+  }, [eligibleAllTypes, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements, usingDateRange, rangeQuery.data, prevRange]);
+
+  /** The report as filtered — sale type applied last, so the type cards above stay complete. */
+  const rows = useMemo(
+    () => allTypeRows.filter((r) => inSaleTypeScope(r.customer)),
+    [allTypeRows, inSaleTypeScope],
+  );
+  const noPool = useMemo(
+    () => allTypeNoPool.filter(inSaleTypeScope).length,
+    [allTypeNoPool, inSaleTypeScope],
+  );
+
+  /** Overdue split by sale type, over the LISTED customers before the sale-type filter.
+   *  Zero Collections only — the other two reports don't show the strip. */
+  const typeOverdue = useMemo(
+    () => overdueBySaleType(mode === "zero" ? allTypeRows : [], outstandingByType),
+    [mode, allTypeRows, outstandingByType],
+  );
 
   // ── Focus (the clickable KPI cards) + severity bands ──────────────────────────────
   // A layer ON TOP of the filter chain: eligible → rows → focusedRows. Lenses AND together.
@@ -682,6 +773,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       outstanding: t.outstanding,
       sharePct: eligibleOutstanding > 0 ? (t.outstanding / eligibleOutstanding) * 100 : 0,
       overdue: t.overdue,
+      // The bridge behind it, so the card can say the figure is net rather than leave the reader
+      // to discover it in the drill-down.
+      overdueGross: t.overdueGross,
+      onAccount: t.onAccount,
       over180: t.over180,
       neverPaid: t.neverPaid,
       neverPaidOutstanding,
@@ -735,7 +830,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.count,
       explain: (
         <>
-          Customers who owe you money and paid <strong>nothing at all</strong> in this period —
+          Customers who owe you money and paid <strong>nothing at all</strong> in this period:
           no receipt voucher and no manual Other Payment.
           <br />
           <br />
@@ -752,7 +847,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.count,
       explain: (
         <>
-          The total these zero-collection customers owe you — <strong>{money(kpis.outstanding)}</strong>.
+          The total these zero-collection customers owe you is <strong>{money(kpis.outstanding)}</strong>.
           <br />
           <br />
           That is <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in
@@ -764,15 +859,28 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     {
       label: "Overdue Locked", icon: TrendingDown, focusKey: "overdue",
       value: fmtINRMoney(kpis.overdue),
-      sub: "already past due date",
+      sub: kpis.onAccount > 0.5
+        ? `past due date · less On Account ${fmtINRMoney(kpis.onAccount)}`
+        : "already past due date",
       count: kpis.overdue,
       explain: (
         <>
-          How much of that money is <strong>already past its due date</strong> — you had a
+          How much of that money is <strong>already past its due date</strong>. You had a
           contractual right to it and it still hasn’t come.
           <br />
           <br />
           The rest of the Outstanding is still inside its credit period.
+          {kpis.onAccount > 0.5 && (
+            <>
+              <br />
+              <br />
+              <strong>This figure is net.</strong> The bills themselves come to{" "}
+              {money(kpis.overdueGross)}, but {money(kpis.onAccount)} of that has already been paid
+              as <strong>On Account</strong>: advances, credit notes and receipts that settle no
+              specific bill, so they cannot be knocked off any one invoice.{" "}
+              {money(kpis.overdueGross)} − {money(kpis.onAccount)} = {money(kpis.overdue)}.
+            </>
+          )}
         </>
       ),
     },
@@ -783,7 +891,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.neverPaid,
       explain: (
         <>
-          Of those, how many have <strong>never made a single payment</strong> — not one receipt
+          Of those, how many have <strong>never made a single payment</strong>: not one receipt
           since the data begins (01-04-2025). They hold {money(kpis.neverPaidOutstanding)}.
           <br />
           <br />
@@ -803,7 +911,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           you nothing.
           <br />
           <br />
-          This is the card that gets a decision made — it’s a <strong>credit</strong> decision, not
+          This is the card that gets a decision made, and it’s a <strong>credit</strong> decision, not
           a collections one.
         </>
       ),
@@ -815,7 +923,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.over180,
       explain: (
         <>
-          Money on bills more than <strong>180 days past due</strong> — the oldest and hardest to
+          Money on bills more than <strong>180 days past due</strong>: the oldest and hardest to
           recover.
           <br />
           <br />
@@ -869,7 +977,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           in every rupee</strong>.
           <br />
           <br />
-          This is <strong>weighted</strong> — total collected ÷ total collectible — not the average
+          This is <strong>weighted</strong>: total collected ÷ total collectible, not the average
           of their individual percentages, which would let a tiny customer count as much as a
           ₹1 Cr one.
         </>
@@ -905,12 +1013,12 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.count,
       explain: (
         <>
-          The total these under-payers owe you — <strong>{money(kpis.outstanding)}</strong>, which is{" "}
+          The total these under-payers owe you is <strong>{money(kpis.outstanding)}</strong>, which is{" "}
           <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in scope.
           <br />
           <br />
           This is the “how bad is it really” card. A high share means the problem isn’t a long tail
-          of small defaulters — it’s sitting where most of your money already is.
+          of small defaulters; it’s sitting where most of your money already is.
         </>
       ),
     },
@@ -926,7 +1034,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           under-paying you.
           <br />
           <br />
-          The most actionable card here — it’s a <strong>credit</strong> decision, not a collections
+          The most actionable card here. It’s a <strong>credit</strong> decision, not a collections
           one.
         </>
       ),
@@ -938,7 +1046,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: hasPrior ? kpis.deteriorating : 0,
       disabledHint: hasPrior
         ? undefined
-        : "This fiscal year has no earlier months to compare against — pick a shorter period.",
+        : "This fiscal year has no earlier months to compare against. Pick a shorter period.",
       explain: hasPrior ? (
         <>
           These customers <strong>used to pay better</strong>. Their collection % fell by more than{" "}
@@ -946,7 +1054,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           ({priorLabel}).
           <br />
           <br />
-          Something changed <strong>recently</strong> — worth a call before it hardens. This is what
+          Something changed <strong>recently</strong>, so it is worth a call before it hardens. This is what
           separates a customer who just went quiet from a chronic non-payer.
         </>
       ) : (
@@ -955,7 +1063,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           <br />
           <br />
           <strong>Unavailable here:</strong> this fiscal year has no earlier months to compare
-          against, so Prior % and Δ read “—”. Pick a shorter period to enable it.
+          against, so Prior % and Δ read as a dash. Pick a shorter period to enable it.
         </>
       ),
     },
@@ -971,7 +1079,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           <br />
           <br />
           A bounced cheque is not a collection. Without this check, several of these customers would
-          look like they had paid and would <strong>never appear on this report at all</strong> —
+          look like they had paid and would <strong>never appear on this report at all</strong>,
           so a customer is listed if they fall below {threshold}% on <em>either</em> the gross or the
           net-of-bounces figure.
         </>
@@ -984,7 +1092,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.neverPaid,
       explain: (
         <>
-          Not a single payment <strong>ever</strong> — no receipt since the data begins
+          Not a single payment <strong>ever</strong>: no receipt since the data begins
           (01-04-2025). They hold <strong>{money(kpis.neverPaidOutstanding)}</strong>.
           <br />
           <br />
@@ -1008,7 +1116,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       explain: (
         <>
           Customers who owe you money and have billed <strong>nothing at all</strong> in this
-          period — you are no longer selling to them, but they are still holding your cash.
+          period. You are no longer selling to them, but they are still holding your cash.
           <br />
           <br />
           <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
@@ -1024,7 +1132,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: kpis.count,
       explain: (
         <>
-          The total these dormant customers owe you — <strong>{money(kpis.outstanding)}</strong>,
+          The total these dormant customers owe you is <strong>{money(kpis.outstanding)}</strong>,
           which is <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in
           scope.
           <br />
@@ -1044,7 +1152,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           How much of that dormant money is <strong>already past its due date</strong>.
           <br />
           <br />
-          The rest is still inside its credit period — a customer can have stopped buying and
+          The rest is still inside its credit period, so a customer can have stopped buying and
           still not be late yet.
         </>
       ),
@@ -1061,7 +1169,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           <br />
           <br />
           <strong>The list that matters.</strong> The others are dormant but still clearing their
-          balance — these have stopped buying <em>and</em> stopped paying. Nothing is coming back
+          balance; these have stopped buying <em>and</em> stopped paying. Nothing is coming back
           on its own.
         </>
       ),
@@ -1075,7 +1183,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       count: hasPrior ? kpis.wentQuiet : 0,
       disabledHint: hasPrior
         ? undefined
-        : "This period has no earlier months to compare against — pick a shorter period.",
+        : "This period has no earlier months to compare against. Pick a shorter period.",
       explain: hasPrior ? (
         <>
           They were buying in the <strong>previous</strong> period of the same length ({priorLabel})
@@ -1106,7 +1214,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           {horizonLabel}. They hold <strong>{money(kpis.neverSoldOutstanding)}</strong>.
           <br />
           <br />
-          This does <strong>not</strong> mean they never bought from you — only that they haven’t
+          This does <strong>not</strong> mean they never bought from you, only that they haven’t
           since the data starts. The balance is a leftover from an older relationship, and it is
           the oldest, hardest money on this report.
         </>
@@ -1219,9 +1327,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     detailPathFor(n.path[n.path.length - 1]?.dim as ZCDim | undefined, n.label, realGroupNames);
 
   // ── Invoice drill-down ────────────────────────────────────────────────────────────
-  const [drill, setDrill] = useState<{ open: boolean; title: string; subtitle: string; rows: InvoiceDrillRow[] }>(
-    { open: false, title: "", subtitle: "", rows: [] },
-  );
+  const [drill, setDrill] = useState<{
+    open: boolean; title: string; subtitle: string; rows: InvoiceDrillRow[];
+    ledgerFigures?: Record<string, number>;
+  }>({ open: false, title: "", subtitle: "", rows: [] });
 
   const rowsById = useMemo(() => {
     const m = new Map<string, ZCRow>();
@@ -1229,25 +1338,67 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     return m;
   }, [rows]);
 
+  /**
+   * Open the bill-level popup behind a clicked figure — and make it RECONCILE.
+   *
+   * The bills are gross; the report's Overdue and Outstanding are net of On Account (money the
+   * customer has paid that settles no open invoice). Listing the bills alone therefore shows a
+   * bigger number than the row that was clicked, with nothing on screen to explain it — which is
+   * exactly how this looked before. Two things close it:
+   *
+   *  - `ledgerFigures` hands the popup the report's own net figure per ledger, so it can strike a
+   *    balancing line and make every subtotal tie back.
+   *  - for the OVERDUE drill we also emit the On Account explicitly, as an `isOnAccount` row. That
+   *    is what earns the popup's full bridge — "Invoice total (N invoices)" → the credit →
+   *    "Net after on account" — instead of one unlabelled adjustment.
+   *
+   * Only Overdue gets the explicit credit line, because `Customer.onAccount` is defined as the
+   * credit netted off GROSS OVERDUE and capped there. Outstanding is already a net ledger balance
+   * (deducting again would double-count) and the >180 bucket is bill-based with no per-bucket
+   * allocation, so both are left to the generic reconciliation.
+   */
   const openDrill = (node: GroupNode<ZCMetrics> | null, col: ZCColumn) => {
     if (!col.drill) return;
     const ids = node ? node.ids : tree.totalIds;
     const drillRows: InvoiceDrillRow[] = [];
+    // Keyed exactly as the popup buckets ledgers: name ||| company ||| location.
+    const ledgerFigures: Record<string, number> = {};
+    const onAcctRows: InvoiceDrillRow[] = [];
     for (const id of ids) {
       const r = rowsById.get(id);
       if (!r) continue;
+      const c = r.customer;
+      const key = `${c.name}|||${c.company}|||${c.location}`;
+      const net =
+        col.drill === "outstanding" ? c.outstanding
+        : col.drill === "overdue" ? c.overdue
+        : (c.agingBuckets?.["180_plus"] ?? 0);
+      ledgerFigures[key] = (ledgerFigures[key] ?? 0) + net;
+
+      const onAccount = c.onAccount ?? 0;
+      if (col.drill === "overdue" && onAccount > 0.5) {
+        onAcctRows.push({
+          customerName: c.name, groupName: r.group, company: c.company, location: c.location,
+          number: "", billRefName: "", date: "",
+          amount: 0, received: 0, pending: -onAccount,
+          dueDate: "", overdueDays: 0, status: "pending", voucherType: "other",
+          isOnAccount: true,
+          onAccountLabel: "On Account (paid, tagged to no bill)",
+        });
+      }
+
       // A consolidated row's bills live under its constituent LEDGER ids.
-      const ledgerIds = r.customer.constituentIds?.length ? r.customer.constituentIds : [r.customer.id];
+      const ledgerIds = c.constituentIds?.length ? c.constituentIds : [c.id];
       for (const lid of ledgerIds) {
         for (const inv of customerDetail[lid]?.invoices ?? []) {
           if (inv.pending <= 0) continue;
           if (col.drill === "overdue" && inv.overdueDays <= 0) continue;
           if (col.drill === "over180" && inv.overdueDays <= 180) continue;
           drillRows.push({
-            customerName: r.customer.name,
+            customerName: c.name,
             groupName: r.group,
-            company: r.customer.company,
-            location: r.customer.location,
+            company: c.company,
+            location: c.location,
             number: inv.number,
             billRefName: inv.billRefName,
             date: inv.date,
@@ -1265,9 +1416,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     if (drillRows.length === 0) return;
     setDrill({
       open: true,
-      title: `${col.label} — open bills`,
+      title: `${col.label}: open bills`,
       subtitle: node ? (node.sub ? `${node.label} · ${node.sub}` : node.label) : "All rows",
-      rows: drillRows,
+      rows: [...drillRows, ...onAcctRows],
+      ledgerFigures,
     });
   };
 
@@ -1292,11 +1444,23 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     id: FreezeId,
     opts?: { header?: boolean; bg?: string },
   ): { className: string; style?: CSSProperties } => {
-    if (freezeLevel < 1) return { className: "" };
+    // The HEADER ROW is frozen unconditionally (see HEADER_STICKY) — the pin only ever governs
+    // the name COLUMN, so a header cell stays sticky-to-top even when the pin is off.
+    if (freezeLevel < 1) return { className: opts?.header ? HEADER_STICKY : "" };
     const bg = opts?.bg ?? (opts?.header ? "bg-muted" : "bg-surface");
-    const shadow = id === "label" ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]" : "";
+    // z-30 on the frozen header cells: they sit at the intersection of the frozen row and the
+    // frozen column, so they must outrank both the plain header cells (z-20) and the frozen
+    // body cells (z-10) they cross. Shadows are written out as whole literal class names —
+    // Tailwind scans the source text, so a composed string would never be generated.
+    const stick = opts?.header
+      ? (id === "label"
+          ? "sticky top-0 z-30 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18),inset_0_-1px_0_hsl(var(--border))]"
+          : "sticky top-0 z-30 shadow-[inset_0_-1px_0_hsl(var(--border))]")
+      : (id === "label"
+          ? "sticky z-10 shadow-[2px_0_4px_-2px_rgba(0,0,0,0.18)]"
+          : "sticky z-10");
     return {
-      className: `sticky ${opts?.header ? "z-20" : "z-10"} ${bg} ${shadow}`,
+      className: `${stick} ${bg}`,
       style: { left: id === "chevron" ? 0 : colW.chev },
     };
   };
@@ -1347,6 +1511,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           ? (col.key === "deltaPp" ? `${v > 0 ? "+" : ""}${v.toFixed(1)}` : `${v.toFixed(1)}%`)
           : String(v);
 
+      // The second line under the figure (today: "less On Account" under Overdue). Printed on
+      // every row that carries one, grand total included — the netting happens at every level,
+      // so hiding it on the roll-ups would leave the total looking unexplained.
+      const note = suppressed ? null : col.note?.(m) ?? null;
+
       return (
         <TableCell
           key={col.key}
@@ -1355,6 +1524,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
           className={`text-right font-mono whitespace-nowrap ${isTotal ? "text-sm" : "text-[13px]"} ${alarm ? "text-destructive" : ""} ${clickable ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
         >
           {text}
+          {note && (
+            <span className="block text-[10px] font-normal leading-tight text-muted-foreground whitespace-nowrap">
+              {note}
+            </span>
+          )}
         </TableCell>
       );
     });
@@ -1437,7 +1611,21 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
             </span>
           )}
           <div className="flex items-center gap-2">
-            <ColumnPicker columns={columnOptions} visible={visibleCols} onChange={setVisibleCols} />
+            {/* "Save my view" writes the layout to the user's profile, so the report opens on
+                it next time — on any browser. See lib/reportPrefs.ts. */}
+            <ColumnPicker
+              columns={columnOptions}
+              visible={visibleCols}
+              onChange={setVisibleCols}
+              onSave={colPrefs.save}
+              onResetSaved={async () => {
+                await colPrefs.clear();
+                setVisibleCols(defaultColumnsFor(mode));
+              }}
+              hasSaved={colPrefs.saved !== null}
+              saving={colPrefs.saving}
+              saveError={colPrefs.error}
+            />
             <Button
               onClick={handleExport}
               disabled={focusedRows.length === 0}
@@ -1570,7 +1758,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
             {hasPrior ? (
               <span className="opacity-70"> · compared against {priorLabel}</span>
             ) : (
-              <span className="opacity-70"> · no equal-length period before this one inside the data, so Prior % and Δ read “—”</span>
+              <span className="opacity-70"> · no equal-length period before this one inside the data, so Prior % and Δ read as a dash</span>
             )}
           </p>
 
@@ -1591,7 +1779,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                 </Button>
                 <span className="text-[11px] text-muted-foreground">
                   {countJournalSettlements
-                    ? "A customer whose balance was cleared by a journal (e.g. inter-company transfer) counts as paid — see the Journal Settled column. Journal charges (net debit) don’t count."
+                    ? "A customer whose balance was cleared by a journal (e.g. inter-company transfer) counts as paid. See the Journal Settled column. Journal charges (net debit) don’t count."
                     : "Only cash / bank receipts and manual Other Payments count; journal settlements are ignored."}
                 </span>
               </div>
@@ -1672,6 +1860,122 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         })}
       </div>
 
+      {/* Overdue by sale type — Zero Collections only. The question the salesperson asks next:
+          "they paid nothing, but WHAT did they not pay for?" Head and Spare Parts are called
+          out as critical because, unlike a machine EMI or a running ink account, they should
+          never be sitting overdue at all. Clicking a card scopes the whole report to that type,
+          so the rupees on the card are the rupees in the table. */}
+      {mode === "zero" && (
+        <div className="space-y-2 -mt-1">
+          <div className="flex flex-wrap items-baseline gap-2">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
+              Overdue by sale type
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              across all {allTypeRows.length} zero-collection customers. Click a card to show only that type
+            </span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+            {SALE_TYPE_CARD_ORDER.map((t) => {
+              const d = typeOverdue[t];
+              const label = saleTypeLabel(t);
+              // Critical = a type that should never carry overdue at all, carrying some.
+              const critical = isCriticalSaleType(t) && d.overdue > 0.5;
+              const only = saleTypes.length === 1 && saleTypes[0] === t;
+              const clickable = d.customers > 0 || only;
+              const pick = () => setSaleTypes(only ? [...DEFAULT_SALE_TYPES] : [t]);
+              return (
+                <Tooltip key={t} delayDuration={200}>
+                  <TooltipTrigger asChild>
+                    <Card
+                      onClick={clickable ? pick : undefined}
+                      role="button"
+                      tabIndex={clickable ? 0 : -1}
+                      aria-pressed={only}
+                      aria-disabled={!clickable}
+                      onKeyDown={(e) => {
+                        if (!clickable) return;
+                        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
+                      }}
+                      className={`rounded-card shadow-soft transition-all ${
+                        only
+                          ? "bg-surface border-primary/50 ring-2 ring-primary"
+                          : critical
+                            ? "bg-destructive/5 border-destructive/40 cursor-pointer hover:border-destructive hover:shadow-card-hover"
+                            : clickable
+                              ? "bg-surface border-border cursor-pointer hover:border-primary/40 hover:shadow-card-hover"
+                              : "bg-surface border-border opacity-50"
+                      }`}
+                    >
+                      <CardContent className="p-3">
+                        <div className="flex items-start justify-between gap-2 mb-1.5">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground leading-tight">
+                            {label}
+                          </span>
+                          <span className={`inline-flex items-center justify-center h-6 w-6 rounded-lg shrink-0 ${
+                            critical ? "bg-destructive/15 text-destructive"
+                            : only ? "bg-primary/15 text-primary"
+                            : "bg-muted text-muted-foreground"
+                          }`}>
+                            {critical ? <AlertTriangle className="h-3.5 w-3.5" /> : <ShoppingCart className="h-3.5 w-3.5" />}
+                          </span>
+                        </div>
+                        <p className={`text-xl font-bold leading-none ${d.overdue > 0.5 ? "text-destructive" : "text-foreground"}`}>
+                          {fmtINRMoney(d.overdue)}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground leading-tight mt-1.5">
+                          {d.customers} customer{d.customers === 1 ? "" : "s"} · {fmtINRMoney(d.outstanding)} outstanding
+                        </p>
+                        {critical && (
+                          <p className="text-[10px] font-semibold text-destructive leading-tight mt-1">
+                            Critical: should never be overdue
+                          </p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="bottom"
+                    align="start"
+                    className="max-w-[320px] p-3 text-[11px] leading-relaxed font-normal text-left"
+                  >
+                    <p className="font-semibold text-[12px] mb-1.5">{label} overdue</p>
+                    <p>
+                      <strong>{money(d.overdue)}</strong> already past its due date, owed by the{" "}
+                      <strong>{d.customers}</strong> zero-collection customer{d.customers === 1 ? "" : "s"} whose
+                      business with us is mainly <strong>{label}</strong>. They owe{" "}
+                      {money(d.outstanding)} in total.
+                      {critical && (
+                        <>
+                          <br />
+                          <br />
+                          <strong>This should be ₹0.</strong> A {label.toLowerCase()} sale is a small,
+                          one-off purchase against a machine the customer is already running, and it is meant
+                          to be settled at once, not carried. Unlike a machine (capital, paid down over
+                          months) or ink (a running consumable account), anything overdue here is simply
+                          unpaid.
+                        </>
+                      )}
+                    </p>
+                    <p className="mt-2 pt-2 border-t border-border/50 text-[10px] opacity-80">
+                      {!clickable
+                        ? `No zero-collection customer is mainly ${label.toLowerCase()}.`
+                        : only
+                          ? "Click to go back to the default sale-type scope."
+                          : `Click to scope the whole report to ${label} customers.`}
+                    </p>
+                    <p className="mt-1 text-[10px] opacity-70">
+                      Split by each customer’s dominant sale type, the same rule the Sale Type filter
+                      and grouping use, so the card and the table always agree.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Severity bands — how bad is "below the bar"? Only meaningful once there's a bar. */}
       {mode === "threshold" && visibleBands.length > 1 && (
         <div className="flex flex-wrap items-center gap-2 -mt-2">
@@ -1699,7 +2003,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
       {(focus.size > 0 || bands.size > 0) && (
         <p className="text-[11px] text-primary -mt-3">
-          Showing {focusedRows.length} of {rows.length} customers —{" "}
+          Showing {focusedRows.length} of {rows.length} customers:{" "}
           {[...[...focus].map((f) => ZC_FOCUS_LABELS[f]), ...[...bands].map((b) => BAND_LABELS[b])].join(" + ")}
           {focus.size + bands.size > 1 && <span className="text-muted-foreground"> (all conditions met)</span>}
           . The cards above still count all {rows.length}.
@@ -1802,7 +2106,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                     <Checkbox className="mt-0.5" checked={includeNonDebtors} onCheckedChange={(v) => setIncludeNonDebtors(v === true)} />
                     <span className="text-xs text-foreground leading-snug">
                       Include zero &amp; credit balances
-                      <span className="block text-[10px] text-muted-foreground">They owe nothing — off by default.</span>
+                      <span className="block text-[10px] text-muted-foreground">They owe nothing, so off by default.</span>
                     </span>
                   </label>
                 </PopoverContent>
@@ -1843,7 +2147,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   <li>
                     <strong className="text-foreground">Who is listed.</strong> Customers who owe money and made{" "}
                     <strong className="text-foreground">no receipt voucher and no manual Other Payment</strong> in the
-                    period — they paid nothing at all.
+                    period. They paid nothing at all.
                   </li>
                   <li>
                     <strong className="text-foreground">Cheque returns are shown, not netted.</strong> A bounced payer
@@ -1853,18 +2157,29 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   <li>
                     <strong className="text-foreground">“Never” means never.</strong> The data starts{" "}
                     <strong className="text-foreground">01-04-2025</strong>, so “Never Paid” means no receipt since
-                    then — not merely none this period.
+                    then, not merely none this period.
                   </li>
                   <li>
-                    <strong className="text-foreground">Prior Collections</strong> is money actually{" "}
+                    <strong className="text-foreground">Prior Collections</strong> (add it from{" "}
+                    <strong className="text-foreground">Columns</strong>) is money actually{" "}
                     <strong className="text-foreground">received</strong> in the equal-length period immediately before
-                    this one{priorLabel ? ` (${priorLabel})` : ""} — receipts only, so journal settlements are not added
+                    this one{priorLabel ? ` (${priorLabel})` : ""}. Receipts only, so journal settlements are not added
                     and cheque returns are not subtracted. A customer listed here with a large Prior Collections figure
                     has <em>just stopped paying</em>; one showing ₹0 has been silent throughout.
                   </li>
                   <li>
+                    <strong className="text-foreground">Overdue is net of On Account.</strong> Some money a customer has
+                    paid settles no particular bill: an advance, a credit note, an untagged receipt. It is real cash and
+                    it is deducted, but it belongs to no invoice, so the bills alone always add up to{" "}
+                    <em>more</em> than the Overdue figure. Where that applies the row says{" "}
+                    <strong className="text-foreground">less On Account</strong> under the figure, the drill-down shows
+                    the same bridge bill by bill, and{" "}
+                    <strong className="text-foreground">Overdue (Gross)</strong> and{" "}
+                    <strong className="text-foreground">On Account</strong> are available as columns.
+                  </li>
+                  <li>
                     <strong className="text-foreground">Credit Days and Credit Limit</strong> come straight from the
-                    Tally master, so they read “—” where none is set — which is about half of all ledgers.
+                    Tally master, so they read as a dash where none is set, which is about half of all ledgers.
                   </li>
                   <li>
                     <strong className="text-foreground">It reconciles.</strong> Collections are month-wise, matching
@@ -1873,7 +2188,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   <li>
                     <strong className="text-foreground">Custom counts to the day.</strong> The four ready-made periods
                     count whole months; picking <em>Custom</em> reads the vouchers themselves, so any From–To dates are
-                    exact. Money received and billed comes out identical either way — a Custom range covering whole
+                    exact. Money received and billed comes out identical either way: a Custom range covering whole
                     months matches the preset to the rupee. <em>Opening</em> and <em>Collection %</em> can differ
                     slightly, because the month view has to spread each customer's credit notes, debit notes, journals
                     and cheque returns evenly across the year while the day view reads them on their real dates. Where
@@ -1895,7 +2210,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   </li>
                   <li>
                     <strong className="text-foreground">A group’s % is weighted.</strong> Every salesperson, group and
-                    company row is its own <strong className="text-foreground">Σ Collected ÷ Σ Collectible</strong> —{" "}
+                    company row is its own <strong className="text-foreground">Σ Collected ÷ Σ Collectible</strong>,{" "}
                     <em>never</em> the average of its customers’ percentages, which would let a ₹1 L customer count as
                     much as a ₹1 Cr one.
                   </li>
@@ -1903,7 +2218,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                     <strong className="text-foreground">The columns add up.</strong> Opening is derived by rolling
                     today’s Outstanding <em>back</em> through the period’s movements, so{" "}
                     <strong className="text-foreground">Opening + Sales − Collected reconciles to Outstanding</strong>{" "}
-                    — to the rupee, once credit/debit notes and journals are taken in.
+                    to the rupee, once credit/debit notes and journals are taken in.
                   </li>
                   <li>
                     <strong className="text-foreground">A bounced cheque cannot hide a defaulter.</strong> A customer is
@@ -1914,7 +2229,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   </li>
                   <li>
                     <strong className="text-foreground">Credit notes clear a bill without cash.</strong> A customer
-                    whose balance was cleared by sales returns still appears here — they paid nothing. The{" "}
+                    whose balance was cleared by sales returns still appears here; they paid nothing. The{" "}
                     <strong className="text-foreground">Credit Notes</strong> column says why.
                   </li>
                   <li>
@@ -1922,10 +2237,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                     {noPool > 0 ? (
                       <>
                         {noPool} customer{noPool === 1 ? "" : "s"} had no opening balance and no sales this period, so{" "}
-                        {noPool === 1 ? "it is" : "they are"} left out — a percentage of nothing is undefined.
+                        {noPool === 1 ? "it is" : "they are"} left out, because a percentage of nothing is undefined.
                       </>
                     ) : (
-                      <>A customer with no opening balance and no sales is left out — a percentage of nothing is undefined.</>
+                      <>A customer with no opening balance and no sales is left out, because a percentage of nothing is undefined.</>
                     )}
                   </li>
                   <li>
@@ -1939,8 +2254,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                 <strong className="text-foreground">Getting around.</strong> Click a{" "}
                 <strong className="text-foreground">Customer</strong> or{" "}
                 <strong className="text-foreground">Customer Group</strong> row to open its detail page in a new tab
-                (use the caret to expand instead). Use the <Pin className="h-3 w-3 inline" /> to freeze the name column
-                while scrolling.
+                (use the caret to expand instead). The header row stays put as you scroll down; use the{" "}
+                <Pin className="h-3 w-3 inline" /> to freeze the name column as you scroll across. Hover any column
+                heading to see what it means, and use <strong className="text-foreground">Columns</strong> to add or
+                remove one. <strong className="text-foreground">Save my view</strong> in there keeps your choice for
+                next time, on any device.
               </li>
             </ul>
           </CardContent>
@@ -1969,14 +2287,29 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                   {freezePin()}
                 </span>
               </TableHead>
+              {/* Every column says what it means on hover. A four-word header on a management
+                  report is a headline, not a definition — and a column nobody can define gets
+                  quoted wrong in a meeting. The tooltip sits on the LABEL, not the cell, so it
+                  doesn't fight the click-to-sort on the header. */}
               {columns.map((col) => (
                 <TableHead
                   key={col.key}
                   onClick={() => toggleSort(col.key)}
-                  className="text-right text-[11px] font-semibold text-foreground/60 whitespace-nowrap cursor-pointer select-none"
+                  className={`text-right text-[11px] font-semibold text-foreground/60 whitespace-nowrap cursor-pointer select-none ${HEADER_STICKY}`}
                 >
                   <span className="inline-flex items-center gap-1 justify-end w-full">
-                    {col.label}{sortIcon(col.key)}
+                    <Tooltip delayDuration={200}>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help underline decoration-dotted decoration-foreground/25 underline-offset-4">
+                          {col.label}
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" align="end" className="max-w-[280px] p-2.5 text-[11px] leading-relaxed font-normal text-left">
+                        <p className="font-semibold text-[12px] mb-1">{col.label}</p>
+                        <p>{col.help}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    {sortIcon(col.key)}
                   </span>
                 </TableHead>
               ))}
@@ -2009,9 +2342,9 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
                       </button>
                     </>
                   ) : mode === "zero" ? (
-                    "No customer matches — everyone who owes money paid something in this period."
+                    "No customer matches. Everyone who owes money paid something in this period."
                   ) : (
-                    `No customer matches — everyone who owes money collected at least ${threshold}% in this period.`
+                    `No customer matches. Everyone who owes money collected at least ${threshold}% in this period.`
                   )}
                 </TableCell>
               </TableRow>
@@ -2099,6 +2432,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         subtitle={drill.subtitle}
         rows={drill.rows}
         asOfDate={asOfDate}
+        ledgerFigures={drill.ledgerFigures}
       />
     </div>
   );

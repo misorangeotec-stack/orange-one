@@ -6555,6 +6555,7 @@ export type Database = {
           receivables_admin_menus: string[] | null
           receivables_allow_pipeline: boolean | null
           receivables_hidden_menus: string[] | null
+          receivables_report_prefs: Json | null
           receivables_salespersons: string[] | null
           updated_at: string
         }
@@ -6571,6 +6572,7 @@ export type Database = {
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
           receivables_hidden_menus?: string[] | null
+          receivables_report_prefs?: Json | null
           receivables_salespersons?: string[] | null
           updated_at?: string
         }
@@ -6587,6 +6589,7 @@ export type Database = {
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
           receivables_hidden_menus?: string[] | null
+          receivables_report_prefs?: Json | null
           receivables_salespersons?: string[] | null
           updated_at?: string
         }
@@ -7200,6 +7203,10 @@ export type Database = {
       email_module_enabled: { Args: { p_module: string }; Returns: boolean }
       set_email_module_enabled: {
         Args: { p_enabled: boolean; p_module: string }
+        Returns: undefined
+      }
+      set_receivables_report_prefs: {
+        Args: { p_columns?: string[] | null; p_report_id: string }
         Returns: undefined
       }
       app_mobile_has_access: { Args: never; Returns: boolean }
