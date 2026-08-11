@@ -67,6 +67,7 @@ export default function PoStageRail({
   nodes,
   activeIndex,
   finished,
+  stopped = false,
   fit = false,
 }: {
   nodes: PoStageRailNode[];
@@ -74,6 +75,18 @@ export default function PoStageRail({
   activeIndex: number;
   /** True once the final stage is itself complete (a closed PO). */
   finished: boolean;
+  /**
+   * The record is dead (cancelled), so `activeIndex` is where it STOPPED — not
+   * where work is happening. Renders that node as a halt: red, crossed, and
+   * uncaptioned, instead of the orange "somebody is on this now" treatment.
+   *
+   * ⚠ Neither existing prop can say this. `finished` ticks the node green, which
+   *   claims the step was done; dropping activeIndex below zero greys the whole
+   *   rail, which denies the steps that genuinely were. Hence a third state.
+   *
+   * Optional and off by default — the five other FMS rails render unchanged.
+   */
+  stopped?: boolean;
   /**
    * Fit every node into the available width instead of scrolling. Fixed-width
    * nodes (the default) scroll when the rail is wider than its container — fine
@@ -88,7 +101,8 @@ export default function PoStageRail({
     <div className={cn("flex items-start py-1", !fit && "overflow-x-auto")}>
       {nodes.map((n, i) => {
         const done = i < activeIndex || (finished && i === activeIndex);
-        const current = i === activeIndex && !finished;
+        const halted = stopped && i === activeIndex && !finished;
+        const current = i === activeIndex && !finished && !halted;
 
         const shown = n.people.slice(0, MAX_NAMES);
         const extraPeople = n.people.length - shown.length;
@@ -129,11 +143,14 @@ export default function PoStageRail({
                 "relative z-10 flex h-7 w-7 items-center justify-center rounded-full border-2 text-[12px] font-semibold",
                 done && "bg-ryg-green border-ryg-green text-white",
                 current && "bg-orange border-orange text-white",
-                !done && !current && "bg-white border-line text-grey-2"
+                halted && "bg-ryg-red border-ryg-red text-white",
+                !done && !current && !halted && "bg-white border-line text-grey-2"
               )}
             >
               {done ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+              ) : halted ? (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
               ) : (
                 i + 1
               )}
@@ -143,7 +160,9 @@ export default function PoStageRail({
               title={n.label}
               className={cn(
                 "mt-1 w-full truncate text-center text-[10.5px]",
-                current ? "text-orange font-semibold" : "text-grey-2"
+                current && "text-orange font-semibold",
+                halted && "text-ryg-red font-semibold",
+                !current && !halted && "text-grey-2"
               )}
             >
               {n.label}

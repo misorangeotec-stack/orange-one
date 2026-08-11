@@ -125,9 +125,24 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
     });
   }, [s, order.requesterName, order.locationId, siteName]);
 
-  const rounds = order.rounds.length + (order.status === "closed" || order.status === "cancelled" ? 0 : 1);
-  const multi = order.rounds.length > 0 || order.roundNo > 1;
+  /*
+    ⚠ ONLY A ROUND THAT WAS GATED OUT HAS "GONE OUT". `order.rounds` is every
+    ARCHIVED round, and cancelling an order archives its live round too
+    (`archived_reason = 'cancelled'`) — a round that never left the premises. So
+    counting the array told a cancelled order it "has already gone out 1 time,
+    the rail restarts for the balance", directly beside a rail saying it was
+    cancelled and an items table showing nothing dispatched. `goAt` is the fact.
+  */
+  const goneOut = order.rounds.filter((r) => r.goAt != null).length;
+  const rounds = goneOut + (order.status === "closed" || order.status === "cancelled" ? 0 : 1);
+  const multi = goneOut > 0;
   const awaitingReturn = order.status === "awaiting_sales_return";
+  /*
+    A dead order's rail shows where it STOPPED. Painting that node orange — the
+    colour every other screen uses for "this is the live step, somebody owns it"
+    — put SO-2627-0097 on Gate Out in the same breath as its Cancelled pill.
+  */
+  const stopped = order.status === "cancelled" || awaitingReturn;
 
   return (
     <div className="space-y-3">
@@ -158,7 +173,7 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
           <span className="text-grey-2">
             {order.status === "closed"
               ? `delivered over ${rounds} consignment${rounds === 1 ? "" : "s"}`
-              : `this order has already gone out ${order.rounds.length} time${order.rounds.length === 1 ? "" : "s"} — the rail restarts for the balance`}
+              : `this order has already gone out ${goneOut} time${goneOut === 1 ? "" : "s"} — the rail restarts for the balance`}
           </span>
         </div>
       )}
@@ -177,7 +192,13 @@ export default function DispatchStepper({ order, fit }: { order: DispatchOrder; 
           </span>
         </div>
       )}
-      <PoStageRail nodes={nodes} activeIndex={activeIndex(order)} finished={order.status === "closed"} fit={fit} />
+      <PoStageRail
+        nodes={nodes}
+        activeIndex={activeIndex(order)}
+        finished={order.status === "closed"}
+        stopped={stopped}
+        fit={fit}
+      />
     </div>
   );
 }
