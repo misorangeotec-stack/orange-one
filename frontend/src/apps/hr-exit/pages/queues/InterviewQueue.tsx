@@ -61,7 +61,7 @@ export default function InterviewQueue() {
   // See the header: the confidential gate, not "do I have rows".
   if (!s.canReadConfidential) return <AccessDenied />;
 
-  const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
+  const deptName = (id: string | null) => (id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—");
 
   /** How far ahead of the last working day this interview is still owed. */
   const daysLeft = (r: Row): string => {
@@ -100,6 +100,13 @@ export default function InterviewQueue() {
       sortValue: (r) => r.case.employeeName,
       filter: { kind: "text", get: (r) => `${r.case.employeeName} ${r.case.employeeCode}` },
       exportValue: (r) => `${r.case.employeeName} (${r.case.employeeCode})`,
+    },
+    {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+      sortValue: (r) => deptName(r.departmentId),
+      filter: { kind: "select", get: (r) => deptName(r.departmentId) },
     },
     {
       key: "type",
@@ -190,12 +197,6 @@ export default function InterviewQueue() {
           // steps at once, and a duplicate React key silently drops a row.
           rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
           columns={columns}
-          groupBy={{
-            idOf: (r) => r.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="interviews"
           rowClassName={(r) => overdueRowClass(r.dueIso)}
           emptyTitle="Nothing waiting on you"

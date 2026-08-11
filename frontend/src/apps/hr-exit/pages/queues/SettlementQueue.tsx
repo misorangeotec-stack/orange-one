@@ -75,7 +75,7 @@ export default function SettlementQueue() {
   // See the header: the finance gate, not "do I have rows".
   if (!(s.isFinanceStaff || s.isProcessCoordinator)) return <AccessDenied />;
 
-  const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
+  const deptName = (id: string | null) => (id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—");
 
   const columns: QueueColumn<Row>[] = [
     {
@@ -105,6 +105,13 @@ export default function SettlementQueue() {
       sortValue: (r) => r.case.employeeName,
       filter: { kind: "text", get: (r) => `${r.case.employeeName} ${r.case.employeeCode}` },
       exportValue: (r) => `${r.case.employeeName} (${r.case.employeeCode})`,
+    },
+    {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+      sortValue: (r) => deptName(r.departmentId),
+      filter: { kind: "select", get: (r) => deptName(r.departmentId) },
     },
     {
       key: "work",
@@ -207,12 +214,6 @@ export default function SettlementQueue() {
           // COMPOSITE. A case is legitimately owed at several of these steps at once.
           rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
           columns={columns}
-          groupBy={{
-            idOf: (r) => r.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="items"
           rowClassName={(r) => overdueRowClass(r.dueIso)}
           emptyTitle="Nothing waiting on you"

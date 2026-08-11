@@ -230,12 +230,6 @@ export default function ControlCenter() {
         rows={rows}
         rowKey={(e) => `${e.stepKey}:${e.entityId}`}
         columns={columns}
-        groupBy={{
-          idOf: (e) => e.stepKey,
-          nameOf: (id) => stepByKey(id)?.short ?? id,
-          allLabel: "All steps",
-          label: "Step",
-        }}
         rowClassName={(e) => overdueRowClass(e.dueIso)}
         rowsLabel="work-items"
         initialSort={{ key: "due", dir: "asc" }}

@@ -46,6 +46,14 @@ export default function RequestsList() {
       filter: { kind: "text", get: (r) => r.requestedForName },
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="text-grey">{s.departmentById(r.departmentId)?.name ?? "—"}</span>,
+      sortValue: (r) => s.departmentById(r.departmentId)?.name ?? "—",
+      filter: { kind: "select", get: (r) => s.departmentById(r.departmentId)?.name ?? "—" },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "qty",
       header: "Qty",
       cell: (r) => <span className="text-grey-2">{r.quantity}</span>,
@@ -75,12 +83,6 @@ export default function RequestsList() {
         rows={s.requests}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{
-          idOf: (r) => r.departmentId,
-          nameOf: (id) => s.departmentById(id)?.name ?? "—",
-          allLabel: "All departments",
-          label: "Department",
-        }}
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="requests"
         emptyTitle="No requests yet"

@@ -218,13 +218,6 @@ export default function RequestQueue({
           rows={stage.rows}
           rowKey={(e) => e.id}
           columns={completedColumns}
-          groupBy={{
-            idOf: (e) => e.row.companyId,
-            nameOf: (id) => s.companyById(id)?.name ?? "—",
-            allLabel: "All companies",
-            label: "Company",
-          }}
-          hideGroupHeaders
           rowsLabel="requests"
           emptyTitle="Nothing here yet"
           emptyMessage={completedBlurb}
@@ -244,13 +237,6 @@ export default function RequestQueue({
           rows={rows}
           rowKey={({ request }) => request.id}
           columns={columns}
-          groupBy={{
-            idOf: ({ request }) => request.companyId,
-            nameOf: (id) => s.companyById(id)?.name ?? "—",
-            allLabel: "All companies",
-            label: "Company",
-          }}
-          hideGroupHeaders
           initialSort={{ key: "due", dir: "asc" }}
           rowsLabel="requests"
           emptyTitle="Nothing waiting on you"

@@ -13,7 +13,7 @@ import {
   payloadFromValues, type MasterValues,
 } from "../lib/masterFields";
 import { dmy } from "../lib/format";
-import type { DispatchMasterRequest, DispatchMasterType } from "../types";
+import type { DispatchMasterRequest } from "../types";
 
 type Tab = "review" | "mine" | "all";
 
@@ -167,12 +167,6 @@ export default function MasterRequests() {
         rows={rows}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{
-          idOf: (r) => r.masterType,
-          nameOf: (id) => masterTypeLabel(id as DispatchMasterType),
-          allLabel: "All types",
-          label: "Type",
-        }}
         actions={(r) =>
           r.status === "pending" && s.canManage(r.masterType) ? (
             <div className="flex gap-2">

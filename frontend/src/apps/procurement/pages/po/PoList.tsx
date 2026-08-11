@@ -43,8 +43,6 @@ export default function PoList() {
           rows={rows}
           rowKey={(p) => p.id}
           columns={columns}
-          groupBy={{ idOf: (p) => p.companyId, nameOf: companyName, allLabel: "All companies" }}
-          hideGroupHeaders
           rowsLabel="POs"
           emptyTitle="No purchase orders yet"
           emptyMessage="Generate POs from the PO Workbench."

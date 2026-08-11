@@ -85,8 +85,6 @@ export default function MyRequests() {
         rows={s.myRequests}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{ idOf: () => "all", nameOf: () => "All job cards", allLabel: "All job cards", label: "Status" }}
-        hideGroupHeaders
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="job cards"
         exportName="My_Production_Job_Cards"

@@ -46,8 +46,6 @@ export default function SourcingQueue() {
           rows={s.sourcingQueue}
           rowKey={(l) => l.id}
           columns={columns}
-          groupBy={{ idOf: companyOf, nameOf: companyName, allLabel: "All companies" }}
-          hideGroupHeaders
           rowClassName={(l) => overdueRowClass(dueIso(l))}
           rowsLabel="lines"
           emptyTitle="Nothing to source"

@@ -61,7 +61,7 @@ export default function ClosureQueue() {
   const stage = useStageMode(completed, s.userId);
   const openEntry = (e: StageEntry<ExitCase>) => setWorking(e.row);
 
-  const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
+  const deptName = (id: string | null) => (id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—");
 
   /** Issued / acknowledged, read from the documents themselves. */
   const tally = (caseId: string) => {
@@ -98,6 +98,13 @@ export default function ClosureQueue() {
       sortValue: (r) => r.case.employeeName,
       filter: { kind: "text", get: (r) => `${r.case.employeeName} ${r.case.employeeCode}` },
       exportValue: (r) => `${r.case.employeeName} (${r.case.employeeCode})`,
+    },
+    {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+      sortValue: (r) => deptName(r.departmentId),
+      filter: { kind: "select", get: (r) => deptName(r.departmentId) },
     },
     {
       key: "work",
@@ -208,12 +215,6 @@ export default function ClosureQueue() {
           // COMPOSITE — mandatory on any mixed-step table.
           rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
           columns={columns}
-          groupBy={{
-            idOf: (r) => r.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="items"
           rowClassName={(r) => overdueRowClass(r.dueIso)}
           emptyTitle="Nothing waiting on you"

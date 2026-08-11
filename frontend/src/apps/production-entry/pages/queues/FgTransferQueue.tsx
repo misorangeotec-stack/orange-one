@@ -108,7 +108,6 @@ export default function FgTransferQueue() {
         rows={rows}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{ idOf: () => "all", nameOf: () => "All job cards", allLabel: "All job cards", label: "" }}
         rowsLabel="job cards"
         emptyTitle="Nothing waiting for transfer"
         emptyMessage="Cards ready for the finished-good transfer will appear here."

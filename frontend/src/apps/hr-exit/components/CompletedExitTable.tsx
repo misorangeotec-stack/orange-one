@@ -61,6 +61,13 @@ export default function CompletedExitTable({
       exportValue: (e) => `${e.row.employeeName} (${e.row.employeeCode})`,
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (e) => <span className="text-grey">{deptName(e.departmentId)}</span>,
+      sortValue: (e) => deptName(e.departmentId),
+      filter: { kind: "select", get: (e) => deptName(e.departmentId) },
+    },
+    {
       key: "step",
       header: "Step",
       cell: (e) => <span className="text-grey">{stepByKey(e.stepKey)?.short ?? e.stepKey}</span>,
@@ -110,7 +117,6 @@ export default function CompletedExitTable({
       rows={rows}
       rowKey={(e) => e.id}
       columns={columns}
-      groupBy={{ idOf: (e) => e.departmentId, nameOf: deptName, allLabel: "All departments", label: "Department" }}
       rowsLabel="exits"
       emptyTitle="Nothing here yet"
       emptyMessage={emptyMessage}

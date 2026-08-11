@@ -32,8 +32,6 @@ export default function RequestsList() {
           rows={rows}
           rowKey={(r) => r.id}
           columns={columns}
-          groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies", label: "Company" }}
-          hideGroupHeaders
           rowsLabel="requests"
           emptyTitle="No requests"
           emptyMessage="Raise a purchase request to get started."

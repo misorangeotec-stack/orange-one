@@ -89,7 +89,6 @@ export default function ReadyToDispatchQueue() {
         rows={rows}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{ idOf: () => "all", nameOf: () => "All job cards", allLabel: "All job cards", label: "" }}
         rowsLabel="job cards"
         emptyTitle="Nothing ready to dispatch"
         emptyMessage="Packed cards ready to dispatch will appear here."

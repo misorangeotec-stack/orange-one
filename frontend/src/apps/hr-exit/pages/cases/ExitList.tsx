@@ -57,6 +57,13 @@ export default function ExitList() {
         exportValue: (c) => `${c.employeeName} (${c.employeeCode})`,
       },
       {
+        key: "department",
+        header: "Department",
+        cell: (c) => <span className="text-grey">{deptName(c.departmentId)}</span>,
+        sortValue: (c) => deptName(c.departmentId),
+        filter: { kind: "select", get: (c) => deptName(c.departmentId) },
+      },
+      {
         key: "type",
         header: "Type",
         cell: (c) => <span className="text-grey">{CASE_TYPE_LABEL[c.caseType]}</span>,
@@ -130,12 +137,6 @@ export default function ExitList() {
         rows={s.cases}
         rowKey={(c) => c.id}
         columns={columns}
-        groupBy={{
-          idOf: (c) => c.departmentId,
-          nameOf: deptName,
-          allLabel: "All departments",
-          label: "Department",
-        }}
         rowsLabel="exit cases"
         emptyTitle="No exit cases"
         emptyMessage="Cases you are allowed to see will appear here."

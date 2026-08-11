@@ -125,6 +125,13 @@ export default function InterviewsQueue() {
         </Link>
       ),
       sortValue: (r) => r.requisition.mrfNo,
+      // Carries the job title as well as the number, because this filter replaced
+      // the "All vacancies" dropdown the grouping used to provide — and that listed
+      // both. The cell shows the MRF alone; picking one still needs the title.
+      filter: {
+        kind: "select",
+        get: (r) => `${r.requisition.mrfNo} · ${r.requisition.jobTitle}`,
+      },
       exportValue: (r) => `${r.requisition.mrfNo} — ${r.requisition.jobTitle}`,
       tdClassName: "whitespace-nowrap",
     },
@@ -246,15 +253,6 @@ export default function InterviewsQueue() {
         rows={rows}
         rowKey={(r) => `${r.candidate.id}-${r.round}`}
         columns={columns}
-        groupBy={{
-          idOf: (r) => r.requisition.id,
-          nameOf: (id) => {
-            const req = s.requisitionById(id);
-            return req ? `${req.mrfNo} · ${req.jobTitle}` : "—";
-          },
-          allLabel: "All vacancies",
-          label: "Vacancy",
-        }}
         rowsLabel="interviews"
         rowClassName={(r) => overdueRowClass(dueOf(r))}
         emptyTitle="No interviews to run"

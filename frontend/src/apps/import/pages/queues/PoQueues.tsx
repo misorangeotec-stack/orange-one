@@ -162,8 +162,6 @@ function StepQueuePage<E>({
             // companyId is stamped onto the entry at build time on purpose: QueueTable
             // calls idOf from inside its sort comparator, so a lookup here would be
             // O(n·m) over a list that grows for the life of the business.
-            groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowsLabel="entries"
             emptyTitle="Nothing here yet"
             emptyMessage={completed.emptyMessage}
@@ -179,8 +177,6 @@ function StepQueuePage<E>({
             rows={rows}
             rowKey={(p) => p.id}
             columns={columns}
-            groupBy={{ idOf: (p) => p.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowClassName={rowClassName ?? ((p) => overdueRowClass(dueIso(p)))}
             rowsLabel="POs"
             emptyMessage="POs needing your action will appear here."

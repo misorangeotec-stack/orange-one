@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
@@ -47,16 +46,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   const acting = useEntryModal<ServiceJob>();
 
   const B = "/asset-maintenance";
-
-  const groupBy = useMemo(
-    () => ({
-      idOf: (r: PendingRow) => r.job.scheduleTypeId ?? "",
-      nameOf: (id: string) => s.scheduleTypeName(id || null),
-      allLabel: "All types",
-      label: "What is due",
-    }),
-    [s],
-  );
 
   const pendingColumns: QueueColumn<PendingRow>[] = [
     {
@@ -197,12 +186,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rows={stage.rows}
           rowKey={(e) => e.id}
           columns={completedColumns}
-          groupBy={{
-            idOf: (e) => e.row.scheduleTypeId ?? "",
-            nameOf: (id) => s.scheduleTypeName(id || null),
-            allLabel: "All types",
-            label: "What was due",
-          }}
           actions={(e) => (
             <StageRowAction
               as="button"
@@ -223,7 +206,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rows={pending}
           rowKey={(r) => r.job.id}
           columns={pendingColumns}
-          groupBy={groupBy}
           actions={(r) =>
             s.canActOn(stepKey, r.job) ? (
               <Button size="sm" onClick={() => acting.openEdit(r.job)}>

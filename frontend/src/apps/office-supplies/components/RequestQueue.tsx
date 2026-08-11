@@ -68,6 +68,12 @@ export default function RequestQueue({
       .filter((r): r is Row => r !== null);
   }, [s, stepKey]);
 
+  /**
+   * The completed entry stamps `departmentId` nullable, the request's is not — one
+   * helper so both Department columns render an unset department the same way.
+   */
+  const deptName = (id: string | null): string => (id ? (s.departmentById(id)?.name ?? "—") : "—");
+
   const columns: QueueColumn<Row>[] = [
     {
       key: "reqNo",
@@ -96,6 +102,14 @@ export default function RequestQueue({
       key: "for",
       header: "Requested for",
       cell: ({ request: r }) => <span className="text-grey">{r.requestedForName}</span>,
+    },
+    {
+      key: "department",
+      header: "Department",
+      cell: ({ request: r }) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+      sortValue: ({ request }) => deptName(request.departmentId),
+      filter: { kind: "select", get: ({ request }) => deptName(request.departmentId) },
+      tdClassName: "whitespace-nowrap",
     },
     { key: "qty", header: "Qty", cell: ({ request: r }) => <span className="text-grey-2">{r.quantity}</span> },
     {
@@ -141,6 +155,17 @@ export default function RequestQueue({
       header: "Requested for",
       cell: (e) => <span className="text-grey">{e.row.requestedForName}</span>,
       sortValue: (e) => e.row.requestedForName,
+    },
+    // Reads the entry's OWN `departmentId`, stamped at build time in lib/queues.ts
+    // — not a lookup off `e.row`. The filter runs per row per sort comparison, so
+    // resolving it here would be the O(n·m) this module has always avoided.
+    {
+      key: "department",
+      header: "Department",
+      cell: (e) => <span className="text-grey">{deptName(e.departmentId)}</span>,
+      sortValue: (e) => deptName(e.departmentId),
+      filter: { kind: "select", get: (e) => deptName(e.departmentId) },
+      tdClassName: "whitespace-nowrap",
     },
     { key: "qty", header: "Qty", cell: (e) => <span className="text-grey-2">{e.row.quantity}</span> },
     isHandover
@@ -237,15 +262,6 @@ export default function RequestQueue({
           rows={stage.rows}
           rowKey={(e) => e.id}
           columns={completedColumns}
-          // departmentId is stamped onto the entry at build time on purpose:
-          // QueueTable calls idOf from inside its sort comparator, so a lookup
-          // here would be O(n·m) over a list that grows for the life of the business.
-          groupBy={{
-            idOf: (e) => e.departmentId,
-            nameOf: (id) => s.departmentById(id)?.name ?? "—",
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="requests"
           emptyTitle="Nothing here yet"
           emptyMessage={completedBlurb}
@@ -265,12 +281,6 @@ export default function RequestQueue({
           rows={rows}
           rowKey={({ request }) => request.id}
           columns={columns}
-          groupBy={{
-            idOf: ({ request }) => request.departmentId,
-            nameOf: (id) => s.departmentById(id)?.name ?? "—",
-            allLabel: "All departments",
-            label: "Department",
-          }}
           initialSort={{ key: "due", dir: "asc" }}
           rowsLabel="requests"
           emptyTitle="Nothing waiting on you"

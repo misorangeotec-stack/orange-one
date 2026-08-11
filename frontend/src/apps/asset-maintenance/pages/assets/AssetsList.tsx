@@ -166,12 +166,6 @@ export default function AssetsList() {
         rows={rows}
         rowKey={(a) => a.id}
         columns={columns}
-        groupBy={{
-          idOf: (a) => a.categoryId ?? "",
-          nameOf: (id) => s.masterName("category", id || null),
-          allLabel: "All categories",
-          label: "Category",
-        }}
         rowsLabel="assets"
         initialSort={{ key: "nextDue", dir: "asc" }}
         emptyTitle="No assets yet"

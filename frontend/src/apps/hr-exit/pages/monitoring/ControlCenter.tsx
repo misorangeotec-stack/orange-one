@@ -157,7 +157,7 @@ export default function ControlCenter() {
       .sort((a, b) => (a.dueIso ?? "9999").localeCompare(b.dueIso ?? "9999"));
   }, [s.queueEntries, selectedSteps, scope, today]);
 
-  const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
+  const deptName = (id: string | null) => (id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—");
   const caseOf = (e: QueueEntry) => s.caseById(e.caseId);
 
   /** Who is leaving — the thing every row is really about. */
@@ -241,6 +241,13 @@ export default function ControlCenter() {
       sortValue: (e) => caseOf(e)?.employeeName ?? "",
       filter: { kind: "text", get: employeeOf },
       exportValue: employeeOf,
+    },
+    {
+      key: "department",
+      header: "Department",
+      cell: (e) => <span className="text-grey">{deptName(e.departmentId)}</span>,
+      sortValue: (e) => deptName(e.departmentId),
+      filter: { kind: "select", get: (e) => deptName(e.departmentId) },
     },
     {
       key: "step",
@@ -431,12 +438,6 @@ export default function ControlCenter() {
           // and a duplicate React key silently drops rows.
           rowKey={(e) => `${e.stepKey}:${e.entityId}:${e.checkId ?? ""}`}
           columns={columns}
-          groupBy={{
-            idOf: (e) => e.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowClassName={(e) => (bucketOf(e.dueIso, today) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="work items"
           emptyTitle="Nothing here"

@@ -12,10 +12,20 @@ import type { ProductionRequest, ProductionStatus } from "../../types";
 export default function RequestsList() {
   const s = useProductionStore();
   const [params] = useSearchParams();
-  // Dashboard tiles / status bars deep-link here as `?status=<key>`; honour it only
-  // if it's a real status, else fall through to "all".
+  /**
+   * Dashboard tiles / status bars deep-link here as `?status=<key>`; honour it only
+   * if it's a real status, else show everything.
+   *
+   * ⚠ This seeds the Status COLUMN's filter. It used to seed the table's group
+   *   dropdown, but the list is flat now, so the column is the only thing left that
+   *   can carry it — and the filter matches on the LABEL, hence the lookup here
+   *   rather than passing the raw key straight through.
+   */
   const statusParam = params.get("status");
-  const initialGroup = statusParam && statusParam in STATUS_LABEL ? statusParam : undefined;
+  const initialStatusLabel =
+    statusParam && statusParam in STATUS_LABEL
+      ? STATUS_LABEL[statusParam as ProductionStatus]
+      : undefined;
 
   const slLookups = {
     fgItemName: (id: string | null) => s.fgItemById(id)?.name ?? "",
@@ -61,7 +71,16 @@ export default function RequestsList() {
       key: "status",
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
-      filter: { kind: "select", get: (r) => r.status },
+      // Multiselect rather than select for two reasons: it is the only filter kind
+      // that carries `initial` (which the `?status=` deep link above needs), and it
+      // lets someone watch several statuses at once — something the single group
+      // dropdown this replaced could never do. Matching on the LABEL, not the raw
+      // key, so the options read the way the pill does.
+      filter: {
+        kind: "multiselect",
+        get: (r) => STATUS_LABEL[r.status] ?? r.status,
+        initial: initialStatusLabel ? [initialStatusLabel] : undefined,
+      },
     },
     {
       key: "submitted",
@@ -83,9 +102,6 @@ export default function RequestsList() {
         rows={s.requests}
         rowKey={(r) => r.id}
         columns={columns}
-        groupBy={{ idOf: (r) => r.status, nameOf: (id) => STATUS_LABEL[id as ProductionStatus] ?? id, allLabel: "All statuses", label: "Status" }}
-        initialGroup={initialGroup}
-        hideGroupHeaders
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="job cards"
         exportName="Production_Job_Cards"

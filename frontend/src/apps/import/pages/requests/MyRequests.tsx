@@ -32,8 +32,6 @@ export default function MyRequests() {
           rows={rows}
           rowKey={(r) => r.id}
           columns={columns}
-          groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies", label: "Company" }}
-          hideGroupHeaders
           initialSort={{ key: "created", dir: "desc" }}
           rowsLabel="requests"
           exportName="My_Import_Purchase_Requests"

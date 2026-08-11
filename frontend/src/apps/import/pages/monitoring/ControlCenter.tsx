@@ -228,8 +228,6 @@ export default function ControlCenter() {
           rows={rows}
           rowKey={(e) => `${e.stepKey}:${e.entityId}`}
           columns={columns}
-          groupBy={{ idOf: (e) => e.companyId, nameOf: (id) => s.companyById(id)?.name ?? "—", allLabel: "All companies" }}
-          hideGroupHeaders
           rowClassName={(e) => (bucketFor(e) === "delayed" ? "bg-[#FDECEC]/40" : "")}
           rowsLabel="entries"
           emptyTitle="Nothing here"

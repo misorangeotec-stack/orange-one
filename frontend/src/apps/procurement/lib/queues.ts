@@ -540,9 +540,10 @@ const PO_STEPS: { stepKey: StepKey; match: (idx: ProcIndex, p: PurchaseOrder) =>
  * and useless here — a PO with three PIs has three entries, and a PI collected
  * yesterday is done even if line 3 is still open.
  *
- * `companyId` is resolved at BUILD time, not in the table's `groupBy.idOf`.
- * QueueTable calls `idOf` from inside its sort comparator, so a `pos.find(...)`
- * there would be O(n·m) — measured in seconds once this list is a year deep.
+ * `companyId` is resolved at BUILD time, so the table's Company column reads it
+ * straight off the entry. Keep it that way: a `pos.find(...)` inside the column's
+ * cell / sortValue / filter runs per row per sort comparison — O(n·m), measured in
+ * seconds once this list is a year deep.
  *
  * Like every predicate in this file, this is owner-agnostic: it returns
  * everyone's entries and the caller filters to "mine". The Control Center needs

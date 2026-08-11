@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
@@ -50,16 +49,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   const acting = useEntryModal<ActingRow>();
 
   const B = "/order-to-dispatch";
-
-  const groupBy = useMemo(
-    () => ({
-      idOf: (r: PendingRow) => r.order.customerId,
-      nameOf: (id: string) => s.customerName(id),
-      allLabel: "All customers",
-      label: "Customer",
-    }),
-    [s],
-  );
 
   const pendingColumns: QueueColumn<PendingRow>[] = [
     {
@@ -312,12 +301,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rows={stage.rows}
           rowKey={(e) => e.id}
           columns={completedColumns}
-          groupBy={{
-            idOf: (e) => e.row.customerId,
-            nameOf: (id) => s.customerName(id),
-            allLabel: "All customers",
-            label: "Customer",
-          }}
           actions={(e) => (
             <div className="flex items-center justify-end gap-2">
               {/* Reprints. An archived round keeps its own number, so this hands
@@ -343,7 +326,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rows={pending}
           rowKey={(r) => r.order.id}
           columns={pendingColumns}
-          groupBy={groupBy}
           actions={(r) => (
             <div className="flex items-center justify-end gap-2">
               {/* ⚠ GATED ON THE STEP. StageQueue renders all five queues, so an

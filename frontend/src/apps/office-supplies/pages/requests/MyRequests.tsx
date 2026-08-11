@@ -82,13 +82,6 @@ export default function MyRequests() {
         rows={s.myRequests}
         rowKey={(r) => r.id}
         columns={columns}
-        hideGroupHeaders
-        groupBy={{
-          idOf: (r) => r.companyId,
-          nameOf: (id) => s.companyById(id)?.name ?? "—",
-          allLabel: "All companies",
-          label: "Company",
-        }}
         initialSort={{ key: "submitted", dir: "desc" }}
         rowsLabel="requests"
         exportName="My_Purchase_Requests"

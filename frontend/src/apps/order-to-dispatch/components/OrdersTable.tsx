@@ -150,16 +150,6 @@ export default function OrdersTable({
       rows={orders}
       rowKey={(o) => o.id}
       columns={columns}
-      groupBy={{
-        idOf: (o) => o.customerId,
-        nameOf: (id) => s.customerName(id),
-        allLabel: "All customers",
-        label: "Customer",
-      }}
-      // The customer is already a column, so the grey band above each run of rows
-      // only repeated it. Kept as a groupBy so the picker above the table still
-      // filters by customer, and so the Excel export still carries the column.
-      hideGroupHeaders
       actions={(o) => (
         <Link to={`${B}/orders/${o.id}`} className="text-[13px] font-semibold text-orange hover:underline">
           Open

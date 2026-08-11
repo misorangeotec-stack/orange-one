@@ -228,7 +228,6 @@ export default function StageQueue({
           rows={stage.rows}
           rowKey={(e) => e.id}
           columns={completedColumns}
-          groupBy={{ idOf: () => "all", nameOf: () => "All job cards", allLabel: "All job cards", label: "" }}
           rowsLabel="job cards"
           emptyTitle="Nothing here yet"
           emptyMessage={cfg.completedBlurb}
@@ -260,7 +259,6 @@ export default function StageQueue({
           rows={rows}
           rowKey={({ request }) => request.id}
           columns={columns}
-          groupBy={{ idOf: () => "all", nameOf: () => "All job cards", allLabel: "All job cards", label: "" }}
           initialSort={{ key: "due", dir: "asc" }}
           rowsLabel="job cards"
           emptyTitle="Nothing waiting on you"

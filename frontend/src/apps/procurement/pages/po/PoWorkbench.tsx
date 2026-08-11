@@ -187,8 +187,6 @@ export default function PoWorkbench() {
             rows={stage.rows}
             rowKey={(e) => e.id}
             columns={completedColumns}
-            groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowsLabel="POs"
             emptyTitle="Nothing here yet"
             emptyMessage="POs you generate will appear here. The PO number, Tally PO number and PDF stay amendable until the PO is shared."
@@ -207,8 +205,6 @@ export default function PoWorkbench() {
             rows={s.poRequestQueue}
             rowKey={(r) => r.id}
             columns={columns}
-            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to PO"

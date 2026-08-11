@@ -181,8 +181,6 @@ export default function ApprovalsQueue() {
             rows={stage.rows}
             rowKey={(e) => e.id}
             columns={completedColumns}
-            groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Decisions you make will appear here, and stay revisable until the PO is generated."
@@ -201,8 +199,6 @@ export default function ApprovalsQueue() {
             rows={s.approvalRequestQueue}
             rowKey={(r) => r.id}
             columns={columns}
-            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to approve"

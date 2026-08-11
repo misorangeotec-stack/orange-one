@@ -122,12 +122,6 @@ export default function JobsList() {
         rows={rows}
         rowKey={(j) => j.id}
         columns={columns}
-        groupBy={{
-          idOf: (j) => j.scheduleTypeId ?? "",
-          nameOf: (id) => s.scheduleTypeName(id || null),
-          allLabel: "All types",
-          label: "What",
-        }}
         rowsLabel="jobs"
         initialSort={{ key: "due", dir: "asc" }}
         emptyTitle="No service jobs"

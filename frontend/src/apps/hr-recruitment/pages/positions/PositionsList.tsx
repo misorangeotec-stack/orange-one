@@ -28,16 +28,15 @@ import type { Requisition } from "../../types";
  * time-to-hire and platform effectiveness live, and "we filled this last quarter"
  * is a question people actually ask.
  *
- * Open/Closed is the table's own GROUP dimension rather than a bespoke toggle: it
- * gives the same dropdown every other FMS queue has.
+ * Open/Closed is the State COLUMN's own select filter — the table is flat, like
+ * every other FMS list. It used to be a `groupBy`, which bought nothing: the bands
+ * were hidden, and QueueTable only makes the group the primary sort when its bands
+ * are shown, so the grouping contributed no ordering either.
  *
- * ⚠ The group does NOT order the rows here. QueueTable makes the group the primary
- *   sort only when its header bands are shown, and this table hides them
- *   (QueueTable.tsx, "hideGroupHeaders || !groupBy ? 0"), so grouping contributes
- *   nothing to the order and the list fell back to whatever order the store handed
- *   over — which put a CLOSED position at the top. Open-first is therefore an
- *   explicit `initialSort` on the State column, whose sortValue is 0 for live and 1
- *   for everything else.
+ * ⚠ Open-first is therefore an explicit `initialSort` on the State column, whose
+ *   sortValue is 0 for live and 1 for everything else. Without it the list falls
+ *   back to whatever order the store handed over — which put a CLOSED position at
+ *   the top. Do not remove that sort.
  */
 export default function PositionsList() {
   const s = useHrStore();
@@ -279,13 +278,6 @@ export default function PositionsList() {
           rows={rows}
           rowKey={(r) => r.id}
           columns={columns}
-          groupBy={{
-            idOf: (r) => (isLivePosition(r) ? "open" : "closed"),
-            nameOf: (id) => (id === "open" ? "Open" : "Closed"),
-            allLabel: "All positions",
-            label: "State",
-          }}
-          hideGroupHeaders
           rowsLabel="positions"
           // Closed positions stay legible but recede — reference material sitting
           // under the ones you can still act on.

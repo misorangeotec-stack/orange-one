@@ -107,6 +107,13 @@ export default function ApprovalsQueue() {
       exportValue: (r) => `${r.case.employeeName} (${r.case.employeeCode})`,
     },
     {
+      key: "department",
+      header: "Department",
+      cell: (r) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+      sortValue: (r) => deptName(r.departmentId),
+      filter: { kind: "select", get: (r) => deptName(r.departmentId) },
+    },
+    {
       key: "type",
       header: "Type",
       cell: (r) => <span className="text-grey">{CASE_TYPE_LABEL[r.case.caseType]}</span>,
@@ -181,12 +188,6 @@ export default function ApprovalsQueue() {
           rows={rows}
           rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
           columns={columns}
-          groupBy={{
-            idOf: (r) => r.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Department",
-          }}
           rowsLabel="exits"
           rowClassName={(r) => overdueRowClass(r.dueIso)}
           emptyTitle="Nothing waiting on you"

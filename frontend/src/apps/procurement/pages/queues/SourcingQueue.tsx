@@ -169,8 +169,6 @@ export default function SourcingQueue() {
             rows={stage.rows}
             rowKey={(e) => e.id}
             columns={completedColumns}
-            groupBy={{ idOf: (e) => e.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowsLabel="requests"
             emptyTitle="Nothing here yet"
             emptyMessage="Requisitions you source will appear here, and stay editable until the approver decides."
@@ -192,8 +190,6 @@ export default function SourcingQueue() {
             rows={s.sourcingRequestQueue}
             rowKey={(r) => r.id}
             columns={columns}
-            groupBy={{ idOf: (r) => r.companyId, nameOf: companyName, allLabel: "All companies" }}
-            hideGroupHeaders
             rowClassName={(r) => overdueRowClass(dueIso(r))}
             rowsLabel="requests"
             emptyTitle="Nothing to source"

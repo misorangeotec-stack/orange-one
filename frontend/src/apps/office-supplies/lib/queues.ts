@@ -88,10 +88,11 @@ export function supplyDueIso(snap: SupplySnapshot, r: SupplyRequest, step: StepK
  * One piece of work a user COMPLETED at a step — the counterpart to a queue
  * entry, which is work still owed.
  *
- * `departmentId` is resolved at BUILD time, not in the table's `groupBy.idOf`.
- * QueueTable calls `idOf` from inside its sort comparator, so a lookup there
- * would be O(n·m) once this list is a year deep. (This app groups by department,
- * not company — the request's own department is the owning unit.)
+ * `departmentId` is resolved at BUILD time, so the table's Department column reads
+ * it straight off the entry. Keep it that way: a lookup inside the column's cell /
+ * sortValue / filter runs per row per sort comparison — O(n·m) once this list is a
+ * year deep. (Department, not company — the request's own department is the owning
+ * unit here.)
  *
  * Like every predicate in this file, this is owner-agnostic: it returns
  * everyone's entries and the caller filters to "mine" (via `useStageMode`).

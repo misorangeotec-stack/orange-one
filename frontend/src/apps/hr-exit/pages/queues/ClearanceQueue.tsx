@@ -97,7 +97,7 @@ export default function ClearanceQueue() {
 
   if (!canSeePage) return <AccessDenied />;
 
-  const deptName = (id: string) => s.departments.find((d) => d.id === id)?.name ?? "—";
+  const deptName = (id: string | null) => (id ? (s.departments.find((d) => d.id === id)?.name ?? "—") : "—");
 
   /**
    * WHO OWES THIS ROW.
@@ -183,6 +183,16 @@ export default function ClearanceQueue() {
       sortValue: (r) => r.case.employeeName,
       filter: { kind: "text", get: (r) => `${r.case.employeeName} ${r.case.employeeCode}` },
       exportValue: (r) => `${r.case.employeeName} (${r.case.employeeCode})`,
+    },
+    {
+      // ⚠ THE EMPLOYEE'S department, not the one doing the clearing — this screen
+      //   carries both, and "Clearing dept" below is the other one. An unqualified
+      //   "Department" here is the fastest way to have somebody filter the wrong one.
+      key: "department",
+      header: "Employee's department",
+      cell: (r) => <span className="text-grey">{deptName(r.departmentId)}</span>,
+      sortValue: (r) => deptName(r.departmentId),
+      filter: { kind: "select", get: (r) => deptName(r.departmentId) },
     },
     {
       // The two sign-off steps carry two signatures each and settle clearance rows of
@@ -311,12 +321,6 @@ export default function ClearanceQueue() {
           // silently drop the duplicates.
           rowKey={(r) => `${r.stepKey}:${r.entityId}:${r.checkId ?? ""}`}
           columns={columns}
-          groupBy={{
-            idOf: (r) => r.departmentId,
-            nameOf: deptName,
-            allLabel: "All departments",
-            label: "Employee's department",
-          }}
           rowsLabel="items"
           rowClassName={(r) => overdueRowClass(r.dueIso)}
           emptyTitle="Nothing waiting on you"
