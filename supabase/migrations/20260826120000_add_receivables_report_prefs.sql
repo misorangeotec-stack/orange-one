@@ -74,7 +74,14 @@ begin
 end;
 $$;
 
+-- `from public` alone is NOT enough here, and the first run proved it: Supabase ships
+-- `alter default privileges in schema public grant all on functions to ... anon ...`, so a
+-- newly created function is granted to anon DIRECTLY, and revoking PUBLIC leaves that grant
+-- standing. Saving a column layout is a signed-in act; anon has no business calling it at all.
+-- (The auth.uid() guard inside would reject the call anyway — but "cannot call it" beats
+-- "calls it and gets an error".)
 revoke all on function public.set_receivables_report_prefs(text, text[]) from public;
+revoke all on function public.set_receivables_report_prefs(text, text[]) from anon;
 grant execute on function public.set_receivables_report_prefs(text, text[]) to authenticated;
 
 comment on function public.set_receivables_report_prefs(text, text[]) is
