@@ -88,7 +88,46 @@ function useDispatchWork(active: boolean): MyWorkResult {
             : ("team" as const),
           isApproval: false,
         };
-      });
+      })
+      /*
+        The Sales Return step, appended LOCALLY.
+
+        It is not a `QueueEntry` and must not become one: `buildQueueEntries` is
+        the shared builder this file, the dispatch store and the FMS Control
+        Center all read, and putting a cancelled order through it would make
+        every cancellation count as open work on the six-step scoreboards. So the
+        rule is restated here, over ten lines, rather than widened there.
+
+        No due date — the window belongs to Tally, not to an SLA this app sets.
+      */
+      .concat(
+        data.orders
+          .filter(
+            (o) =>
+              o.status === "awaiting_sales_return" &&
+              o.srAt == null &&
+              (isAdmin || ownsStepAt("sales_return", o.locationId, uid, owners)),
+          )
+          .map((o) => ({
+            id: `order-to-dispatch:${o.id}:sales_return`,
+            source: "order-to-dispatch",
+            sourceLabel: appName("order-to-dispatch"),
+            ref: o.orderNo,
+            detail: [
+              o.srInvoiceNo ? `invoice ${o.srInvoiceNo}` : null,
+              "cancel the bill in Tally or punch a sales return",
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            stage: "Sales Return",
+            dueIso: null,
+            to: `/order-to-dispatch/orders/${o.id}`,
+            assignment: ownsStepAt("sales_return", o.locationId, uid, owners)
+              ? ("direct" as const)
+              : ("team" as const),
+            isApproval: false,
+          })),
+      );
   }, [data, uid, isAdmin]);
 
   return { items, isLoading, error };

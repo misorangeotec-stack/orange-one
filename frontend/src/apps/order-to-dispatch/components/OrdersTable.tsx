@@ -2,8 +2,8 @@ import { Link } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useDispatchStore } from "../store";
 import { stepByKey } from "../lib/steps";
-import { dmy, qtyTotals } from "../lib/format";
-import StatusPill from "./StatusPill";
+import { dmy, isCreditHeld, qtyTotals } from "../lib/format";
+import StatusPill, { OutcomePill } from "./StatusPill";
 import type { DispatchOrder } from "../types";
 
 /**
@@ -39,6 +39,11 @@ export default function OrdersTable({
     if (o.status === "closed") return "Closed";
     if (o.status === "cancelled") return "Cancelled";
     if (o.status === "on_hold") return "On hold";
+    // Without this the row contradicts itself: the Status column says the
+    // cancellation is pending while this one still reads "Sales Bill" or "Gate
+    // Out", as though the order were live work. It feeds the sort and the step
+    // filter too, so the row would file itself under the wrong step as well.
+    if (o.status === "awaiting_sales_return") return "Sales return";
     return stepByKey(o.currentStep)?.short ?? "—";
   };
 
@@ -138,9 +143,21 @@ export default function OrdersTable({
     {
       key: "status",
       header: "Status",
-      cell: (o) => <StatusPill status={o.status} />,
-      sortValue: (o) => o.status,
-      filter: { kind: "select", get: (o) => o.status },
+      /*
+        ⚠ A CREDIT HOLD DOES NOT SHOW IN `status`. The order stays
+          `awaiting_credit_check` while credit holds it, so the pill alone reads
+          "Awaiting credit" — identical to an order nobody has looked at yet. The
+          second chip is the only thing on this screen that tells them apart, and
+          the filter value follows it so "show me the held ones" is one click.
+      */
+      cell: (o) => (
+        <span className="inline-flex items-center gap-1.5">
+          <StatusPill status={o.status} />
+          {isCreditHeld(o) && <OutcomePill label="Credit on hold" tone="yellow" />}
+        </span>
+      ),
+      sortValue: (o) => (isCreditHeld(o) ? `${o.status} hold` : o.status),
+      filter: { kind: "select", get: (o) => (isCreditHeld(o) ? "Credit on hold" : o.status) },
       tdClassName: "whitespace-nowrap",
     },
   ];

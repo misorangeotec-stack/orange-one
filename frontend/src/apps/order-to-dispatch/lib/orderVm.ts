@@ -212,12 +212,17 @@ export function orderStepRows(o: DispatchOrder, deps: OrderVmDeps, view?: RoundV
     const lateDays =
       plannedIso && actualIso && doneAtIso ? Math.max(0, dayDiff(actualIso, plannedIso)) : null;
 
+    // `awaiting_sales_return` counts as finished for this purpose: the order is
+    // cancelled in intent and nobody is expected to work its remaining steps.
+    // Without it, every incomplete step goes red the moment the cancellation is
+    // raised, and stays red for as long as accounts take to unwind the invoice.
     const overdue =
       state !== "done" &&
       !!plannedIso &&
       plannedIso < today &&
       o.status !== "closed" &&
-      o.status !== "cancelled";
+      o.status !== "cancelled" &&
+      o.status !== "awaiting_sales_return";
 
     return {
       stepKey: st.key,

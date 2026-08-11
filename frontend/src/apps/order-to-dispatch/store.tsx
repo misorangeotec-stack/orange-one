@@ -16,6 +16,7 @@ import {
   insertMasters as insertMastersWrite,
   markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
+  recordSalesReturn as recordSalesReturnWrite,
   recordStep as recordStepWrite,
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
@@ -27,11 +28,14 @@ import {
   submitOrder as submitOrderWrite,
   updateMaster as updateMasterWrite,
   updateOrder as updateOrderWrite,
+  updateSalesReturn as updateSalesReturnWrite,
   updateStep as updateStepWrite,
   uploadStepDocument as uploadStepDocumentWrite,
+  withdrawCancelRequest as withdrawCancelRequestWrite,
   type AmendRoundLine,
   type MasterInput,
   type OrderInput,
+  type SalesReturnPayload,
   type StepOwnerInput,
   type StepPayload,
 } from "./data/dispatchWrites";
@@ -47,15 +51,16 @@ import {
   type StageEntry,
 } from "./lib/queues";
 import { masterTypeLabel } from "./lib/masterFields";
+import { isSalesReturnDone, isSalesReturnPending } from "./lib/salesReturn";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
-import type { StepKey } from "./lib/steps";
+import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
   CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
 
-interface DispatchStoreValue {
+export interface DispatchStoreValue {
   isLoading: boolean;
   error: unknown;
 
@@ -65,16 +70,41 @@ interface DispatchStoreValue {
   isProcessCoordinator: boolean;
   canRaise: boolean;
   canMonitor: boolean;
-  canActOn: (step: QueueStep, order: DispatchOrder) => boolean;
+  /**
+   * ⚠ TAKES `OwnerStepKey`, NOT `QueueStep` — "sales_return" is a real owner key
+   *   that is deliberately absent from the six-step chain. These four are safe to
+   *   widen because they only ever consult `fms_dispatch_step_owners`; anything
+   *   that INDEXES a `Record<QueueStep, …>` (dueIsoFor, myQueue, completedFor,
+   *   recordStep, updateStep) must stay narrow, or it reads `undefined` off a
+   *   lookup table that has no arm for it.
+   */
+  canActOn: (step: OwnerStepKey, order: DispatchOrder) => boolean;
   /** May this person see the step's queue at all — nav link, route, page. */
-  canSeeQueue: (step: QueueStep) => boolean;
+  canSeeQueue: (step: OwnerStepKey) => boolean;
   canEditOrder: (order: DispatchOrder) => boolean;
   /** Omit the location to ask "owns this step anywhere". */
-  isStepOwner: (stepKey: StepKey, locationId?: string | null) => boolean;
+  isStepOwner: (stepKey: OwnerStepKey, locationId?: string | null) => boolean;
   /** `null` is the FALLBACK owner-set (all locations), not "any". */
-  stepOwnerFor: (stepKey: StepKey, locationId?: string | null) => StepOwner | undefined;
-  ownerNamesFor: (stepKey: StepKey, locationId?: string | null) => string[];
+  stepOwnerFor: (stepKey: OwnerStepKey, locationId?: string | null) => StepOwner | undefined;
+  /**
+   * The owner-set covering a location — its own row, else the fallback. Use this
+   * to CAPTION a step; `stepOwnerFor(step)` on its own finds only the fallback.
+   */
+  stepOwnerCovering: (stepKey: OwnerStepKey, locationId: string | null) => StepOwner | undefined;
+  ownerNamesFor: (stepKey: OwnerStepKey, locationId?: string | null) => string[];
   personName: (id: string | null) => string;
+  /**
+   * May this person cancel the order? The RAISER may, at any open stage — that is
+   * the point, and why this is not `isProcessCoordinator`. Mirrors
+   * fms_dispatch_cancel_order.
+   *
+   * `closed` is excluded because a fully delivered order has nothing to withdraw
+   * ("Correct this round" re-opens it first), and `awaiting_sales_return` because
+   * it is already being cancelled — cancelling again would skip the Tally unwind.
+   */
+  canCancelOrder: (order: DispatchOrder) => boolean;
+  /** Take back a cancellation that is still waiting on its sales return. */
+  canWithdrawCancel: (order: DispatchOrder) => boolean;
 
   // directory
   profiles: Profile[];
@@ -96,6 +126,14 @@ interface DispatchStoreValue {
    *   the order. The RPC applies the same rule.
    */
   locationsForCompany: (companyId: string | null) => CompanyLocation[];
+  /**
+   * The intake pickers, narrowed to the sites this person is assigned to in
+   * Setup → Step Owners. Unassigned-anywhere, admin and coordinator all see
+   * everything. `includeId` always survives the filter, so editing an order
+   * raised elsewhere still shows its own company / site rather than blanking.
+   */
+  assignedCompanies: (includeId?: string | null) => Company[];
+  assignedLocationsForCompany: (companyId: string | null, includeId?: string | null) => CompanyLocation[];
   /**
    * The items a customer may order — ACTIVE mappings only, sorted by item name.
    * The sales-order picker is built from this, never from the full catalogue.
@@ -136,6 +174,19 @@ interface DispatchStoreValue {
   myQueue: (step: QueueStep) => { order: DispatchOrder; dueIso: string | null }[];
   completedFor: (step: QueueStep) => StageEntry<DispatchOrder>[];
 
+  /**
+   * The Sales Return step's two lists, scoped to what this person may action.
+   *
+   * ⚠ NOT `QueueEntry`s, and not built from `buildQueueEntries`. Sales Return is
+   *   off the six-step chain, so a cancelled order stays out of `queueEntries`,
+   *   `openOrders`, the Control Center rail and the cross-FMS scoreboard — all of
+   *   which read that one builder precisely so their counts cannot disagree.
+   *   There is no due date here either: the window is a matter for Tally, not an
+   *   SLA this app can set.
+   */
+  salesReturnPending: DispatchOrder[];
+  salesReturnCompleted: DispatchOrder[];
+
   // master governance
   masterManagers: MasterManager[];
   masterRequests: DispatchMasterRequest[];
@@ -158,7 +209,15 @@ interface DispatchStoreValue {
   recordStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   updateStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   holdOrder: (orderId: string, hold: boolean, reason: string) => Promise<void>;
+  /**
+   * ⚠ ONE CALL, TWO OUTCOMES. With no sales bill raised the order is cancelled
+   *   outright; with one, it moves to `awaiting_sales_return` instead and the
+   *   Sales Return owners are told. Read the status back — do not assume.
+   */
   cancelOrder: (orderId: string, reason: string) => Promise<void>;
+  recordSalesReturn: (orderId: string, payload: SalesReturnPayload) => Promise<void>;
+  updateSalesReturn: (orderId: string, payload: SalesReturnPayload) => Promise<void>;
+  withdrawCancelRequest: (orderId: string, reason: string) => Promise<void>;
   closeOrder: (orderId: string, reason: string) => Promise<void>;
   materialNothingAvailable: (orderId: string, remarks: string) => Promise<void>;
   amendRound: (roundId: string, input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[] }) => Promise<void>;
@@ -229,8 +288,24 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * The owner-set for a step at a location. `locationId: null` asks for the
      * FALLBACK grant — the one covering every location — not "any of them".
      */
-    const stepOwnerFor = (stepKey: StepKey, locationId: string | null = null) =>
+    const stepOwnerFor = (stepKey: OwnerStepKey, locationId: string | null = null) =>
       stepOwners.find((o) => o.stepKey === stepKey && (o.locationId ?? null) === locationId);
+
+    /**
+     * The owner-set that actually COVERS a location: its own row if one exists,
+     * else the all-locations fallback.
+     *
+     * ⚠ THIS IS THE DISPLAY LOOKUP, and `stepOwnerFor(step)` alone is not it.
+     *   That default asks for the FALLBACK ROW, not "any location" — so once a
+     *   step is owned per site, a caller that omits the location finds nothing
+     *   and captions a fully-staffed step "Unassigned". The rail did exactly
+     *   that for every location-scoped step.
+     *
+     * ⚠ Display only. `isStepOwner` / `canActOn` stay as they are: widening what
+     *   someone may DO is a permissions change, and this is a caption.
+     */
+    const stepOwnerCovering = (stepKey: OwnerStepKey, locationId: string | null): StepOwner | undefined =>
+      stepOwnerFor(stepKey, locationId) ?? stepOwnerFor(stepKey, null);
 
     /**
      * Does this person own the step?
@@ -239,7 +314,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * the My Work feed want. With one, it narrows to the sets covering that
      * site: its own, plus the fallback. Mirrors fms_dispatch_is_step_owner.
      */
-    const isStepOwner = (stepKey: StepKey, locationId?: string | null): boolean =>
+    const isStepOwner = (stepKey: OwnerStepKey, locationId?: string | null): boolean =>
       isAdmin ||
       stepOwners.some(
         (o) =>
@@ -267,7 +342,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   confirmation now REQUIRES a configured step owner. Seed one before
      *   go-live or the last step falls back to admins only.
      */
-    const canActOn = (stepKey: QueueStep, o: DispatchOrder): boolean =>
+    const canActOn = (stepKey: OwnerStepKey, o: DispatchOrder): boolean =>
       isAdmin || isProcessCoordinator || isStepOwner(stepKey, o.locationId);
 
     /**
@@ -281,7 +356,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   opening with every button dead. Seeding owners is a go-live step, not an
      *   option; StepOwnersSection says so at the top of the file.
      */
-    const canSeeQueue = (stepKey: QueueStep): boolean =>
+    const canSeeQueue = (stepKey: OwnerStepKey): boolean =>
       isProcessCoordinator || isStepOwner(stepKey);
 
     /**
@@ -318,17 +393,48 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       o.rounds.length === 0;
 
     /**
+     * Mirrors fms_dispatch_cancel_order's authz and its refusals.
+     *
+     * ⚠ THE RAISER MAY CANCEL, not just a coordinator. That is the change, and
+     *   the reason this is not `isProcessCoordinator`. Step owners are
+     *   deliberately absent: owning gate-out is authority over a step, not over
+     *   whether the order should exist.
+     *
+     * ⚠ UP TO THE GATE, AND NOT PAST IT. `goAt` set means this consignment has
+     *   physically left the plant; cancelling then would leave goods on a
+     *   vehicle with no delivery record and nothing owed against them. Tested on
+     *   `goAt` rather than the status, because a held order keeps its timestamps
+     *   and a status test would let one through. The way out is to confirm the
+     *   delivery (or record it as Returned) and cancel the balance afterwards.
+     *
+     * ⚠ `awaiting_sales_return` is excluded, and that exclusion is load-bearing.
+     *   Without it the Cancel button stays live on an order that is already
+     *   being cancelled, and a second press would jump straight past the Tally
+     *   unwind — the exact thing this whole flow exists to prevent. The RPC is
+     *   idempotent as a backstop; this is what stops the button appearing.
+     */
+    const canCancelOrder = (o: DispatchOrder): boolean =>
+      (o.raisedBy === uid || isProcessCoordinator) &&
+      o.status !== "cancelled" &&
+      o.status !== "closed" &&
+      o.status !== "awaiting_sales_return" &&
+      o.goAt == null;
+
+    const canWithdrawCancel = (o: DispatchOrder): boolean =>
+      (o.raisedBy === uid || isProcessCoordinator) && isSalesReturnPending(o);
+
+    /**
      * The people who own a step, named. With a location, the set that actually
      * covers it — its own if one exists, the fallback otherwise; a location
      * row REPLACES the fallback rather than adding to it, which is what makes
      * "Vapi is handled by these two, everywhere else by the default" sayable.
      * Without one, everybody who owns the step anywhere.
      */
-    const ownerNamesFor = (stepKey: StepKey, locationId?: string | null): string[] => {
+    const ownerNamesFor = (stepKey: OwnerStepKey, locationId?: string | null): string[] => {
       const ids =
         locationId === undefined
           ? [...new Set(stepOwners.filter((o) => o.stepKey === stepKey).flatMap((o) => o.employeeIds))]
-          : (stepOwnerFor(stepKey, locationId) ?? stepOwnerFor(stepKey, null))?.employeeIds ?? [];
+          : stepOwnerCovering(stepKey, locationId)?.employeeIds ?? [];
       return ids.map((id) => personName(id)).filter((n) => n !== "—" && n !== "Unknown user");
     };
 
@@ -336,6 +442,61 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     const activeOf = <T extends NamedMaster>(rows: T[]): T[] =>
       rows.filter((r) => r.active).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name));
+
+    /**
+     * The sites this person is assigned to — `null` meaning UNRESTRICTED, not
+     * "none". The intake form reads this so somebody is offered the site they
+     * actually work at rather than every site in the group.
+     *
+     * ⚠ IT IS DERIVED FROM STEP OWNERSHIP, which is already assigned per location
+     *   in Setup → Step Owners. There is no second place to maintain, and no new
+     *   column: the assignment the admin already made IS the answer.
+     *
+     * ⚠ ANY step, not just `sales_order`. RLS shows an order to whoever owns a
+     *   step at its location (`fms_dispatch_can_see_order`), so scoping this to
+     *   the raising step alone would let someone raise an order at a site where
+     *   they own nothing — and then lose sight of it the moment it saved.
+     *
+     * Each `null` below is a considered "everywhere", never an oversight:
+     *   · admins and coordinators already act everywhere;
+     *   · a step-owner row with a null location IS the all-locations grant;
+     *   · nobody assigned anywhere means owners are not seeded yet, and an empty
+     *     picker would stop order entry dead — today's behaviour is kept instead.
+     */
+    const myLocationIds: string[] | null = (() => {
+      if (isAdmin || isProcessCoordinator) return null;
+      const mine = stepOwners.filter((o) => o.employeeIds.includes(uid));
+      if (mine.some((o) => o.locationId === null)) return null;
+      const ids = [...new Set(mine.map((o) => o.locationId).filter((id): id is string => !!id))];
+      return ids.length ? ids : null;
+    })();
+
+    /**
+     * Sites under a company that this person may dispatch from.
+     *
+     * `includeId` keeps a value the form is ALREADY showing, whatever the
+     * assignment says. Editing an order raised at another site would otherwise
+     * find its location missing from the list and blank the field — silent data
+     * loss dressed up as a permission.
+     */
+    const assignedLocationsForCompany = (
+      companyId: string | null,
+      includeId?: string | null,
+    ): CompanyLocation[] => {
+      const all = !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId);
+      if (!myLocationIds) return all;
+      return all.filter((l) => myLocationIds.includes(l.id) || l.id === includeId);
+    };
+
+    /** Companies this person has at least one assigned site under. */
+    const assignedCompanies = (includeId?: string | null): Company[] => {
+      const all = activeOf(companies);
+      if (!myLocationIds) return all;
+      const allowed = new Set(
+        companyLocations.filter((l) => myLocationIds.includes(l.id)).map((l) => l.companyId),
+      );
+      return all.filter((c) => allowed.has(c.id) || c.id === includeId);
+    };
 
     // Display lookups read the FULL list, never the active-only one — a
     // deactivated customer must still render by name on an old order.
@@ -435,8 +596,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       canActOn,
       canSeeQueue,
       canEditOrder,
+      canCancelOrder,
+      canWithdrawCancel,
       isStepOwner,
       stepOwnerFor,
+      stepOwnerCovering,
       ownerNamesFor,
       personName,
 
@@ -460,6 +624,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       locationsForCompany: (companyId) =>
         !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId),
+      assignedCompanies,
+      assignedLocationsForCompany,
       knownLocations,
       masterName: (mt, id) => nameFrom(MASTER_LIST[mt], id),
 
@@ -495,6 +661,13 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       // Scoped the same way, or a queue that no longer lists another site's pending
       // rows would still show that site's finished ones under Completed.
       completedFor: (step) => completedForPure(snapshot, step).filter((e) => canActOn(step, e.row)),
+
+      // Sales Return. Plain filters over `orders`, scoped by the same per-location
+      // rule as every other queue — deliberately NOT routed through
+      // `buildQueueEntries`, so a cancelled order stays out of the six-step
+      // scoreboards. See the interface note above.
+      salesReturnPending: orders.filter((o) => isSalesReturnPending(o) && canActOn("sales_return", o)),
+      salesReturnCompleted: orders.filter((o) => isSalesReturnDone(o) && canActOn("sales_return", o)),
 
       masterManagers,
       masterRequests,
@@ -533,6 +706,18 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       cancelOrder: async (orderId, reason) => {
         await cancelOrderWrite(orderId, reason);
+        await invalidate();
+      },
+      recordSalesReturn: async (orderId, payload) => {
+        await recordSalesReturnWrite(orderId, payload);
+        await invalidate();
+      },
+      updateSalesReturn: async (orderId, payload) => {
+        await updateSalesReturnWrite(orderId, payload);
+        await invalidate();
+      },
+      withdrawCancelRequest: async (orderId, reason) => {
+        await withdrawCancelRequestWrite(orderId, reason);
         await invalidate();
       },
       closeOrder: async (orderId, reason) => {

@@ -162,6 +162,21 @@ function liveItems(order: DispatchOrder): RoundItem[] {
 /**
  * The round in progress, or null when the order is between nothing — closed,
  * cancelled, or (harmlessly) sitting at the credit check with nothing selected.
+ *
+ * ⚠ `awaiting_sales_return` IS DELIBERATELY ABSENT FROM THE GUARD BELOW, and
+ *   that omission is load-bearing in both directions.
+ *
+ *   A cancellation waiting on its sales return has NOT had its round archived —
+ *   `fms_dispatch_cancel_order` defers that to `record_sales_return`, precisely
+ *   so the invoice number stays readable on the Sales Return screen. The round
+ *   really is still live, so it must still project here; adding the status would
+ *   blank the very screen the deferral exists to feed.
+ *
+ *   Equally, it must not be added "for tidiness" once the return IS recorded:
+ *   by then the status is `cancelled` and the first clause already covers it. If
+ *   the archive had instead happened at request time, this same line would have
+ *   double-counted the round — once from the archive, once from the stale header
+ *   — which is the failure this file's header warning describes.
  */
 export function currentRoundView(order: DispatchOrder): RoundView | null {
   if (order.status === "closed" || order.status === "cancelled") return null;

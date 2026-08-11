@@ -12,10 +12,13 @@ import { STATUS_LABEL, DISPATCH_TYPE_LABEL } from "../../lib/format";
 import OrdersTable from "../../components/OrdersTable";
 import type { DispatchStatus, DispatchType } from "../../types";
 
-const STATUSES: DispatchStatus[] = [
-  "awaiting_credit_check", "awaiting_material_status",   "awaiting_sales_bill", "awaiting_gate_out", "awaiting_dispatch_confirm",
-  "closed", "on_hold", "cancelled",
-];
+/**
+ * Derived, never re-listed. This was a hand-written array of the eight statuses,
+ * which type-checks happily when a ninth is added — so a new status silently
+ * dropped out of the filter and became unfindable in the register. `STATUS_LABEL`
+ * is exhaustive over `DispatchStatus`, so taking its keys cannot drift.
+ */
+const STATUSES = Object.keys(STATUS_LABEL) as DispatchStatus[];
 
 /**
  * The Order Register — the spreadsheet replacement.

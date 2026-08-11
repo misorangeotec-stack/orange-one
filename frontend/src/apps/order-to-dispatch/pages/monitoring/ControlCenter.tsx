@@ -11,7 +11,7 @@ import { queueRollup } from "@/shared/lib/fmsDashboard";
 import { useDispatchStore } from "../../store";
 import { STEPS, STAGES, stepByKey, type StepKey } from "../../lib/steps";
 import { stepVariance } from "../../lib/orderVm";
-import { DISPATCH_TYPE_LABEL, dmy } from "../../lib/format";
+import { DISPATCH_TYPE_LABEL, dmy, isCreditHeld } from "../../lib/format";
 import type { QueueEntry } from "../../lib/queues";
 
 const B = "/order-to-dispatch";
@@ -36,6 +36,31 @@ export default function ControlCenter() {
   const s = useDispatchStore();
   const today = todayLocalIso();
   const [selected, setSelected] = useState<StepKey[]>([]);
+
+  /**
+   * Orders credit has parked, longest first.
+   *
+   * ⚠ Counted here IN ADDITION TO the queue, not instead of it. A credit hold
+   *   leaves the order at `awaiting_credit_check`, so it is still an open
+   *   work-item and still owed by the credit team — unlike a held requisition in
+   *   HR, which leaves its queue entirely. Pulling these out of `queueRollup`
+   *   would quietly shrink the Credit node, the cross-FMS scoreboard and My Work,
+   *   all of which read the same `buildQueueEntries`. This strip only makes them
+   *   findable: without it the hold is a word in one column of one screen.
+   */
+  const held = useMemo(
+    () =>
+      s.orders
+        .filter(isCreditHeld)
+        .map((o) => ({
+          o,
+          days: o.ccDecidedAt
+            ? Math.max(0, Math.floor((Date.now() - new Date(o.ccDecidedAt).getTime()) / 86_400_000))
+            : null,
+        }))
+        .sort((a, b) => (b.days ?? 0) - (a.days ?? 0)),
+    [s.orders],
+  );
 
   const pipelineSteps = useMemo(() => STEPS.filter((st) => !st.noQueue), []);
   const { counts, nodes } = useMemo(
@@ -219,12 +244,61 @@ export default function ControlCenter() {
         ))}
       </div>
 
+      {/*
+        A plain count, deliberately NOT a sixth KPI tile and NOT a node on the
+        rail. Those are both built from `queueEntries`, which a cancelled order
+        never enters — Sales Return sits beside the six-step chain, not inside
+        it, so it has no bucket and no due date to roll up. But a coordinator is
+        who chases an invoice that has been left live in Tally, so the number
+        belongs on this page even though the machinery behind it does not.
+      */}
+      {s.salesReturnPending.length > 0 && (
+        <Card className="p-3.5 border-l-4 border-l-ryg-red">
+          <p className="text-[13px] text-navy">
+            <span className="font-semibold">
+              {s.salesReturnPending.length} cancelled{" "}
+              {s.salesReturnPending.length === 1 ? "order has" : "orders have"} a sales bill still to
+              be unwound in Tally.
+            </span>{" "}
+            <Link to={`${B}/queues/sales-return`} className="font-semibold text-orange hover:underline">
+              Open Sales Return
+            </Link>
+          </p>
+        </Card>
+      )}
+
       <StepPipeline<StepKey>
         nodes={nodes}
         selectedKeys={selected}
         onChange={setSelected}
         groups={STAGES.map((g) => ({ label: g.label, keys: g.keys }))}
       />
+
+      {held.length > 0 && (
+        <Card className="p-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-grey">On hold</span>
+            <span className="text-[12px] text-grey">
+              {held.length} {held.length === 1 ? "order" : "orders"} credit has parked — still counted above,
+              because the decision to release them is the credit team's own work.
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {held.map(({ o, days }) => (
+              <Link
+                key={o.id}
+                to={`${B}/orders/${o.id}`}
+                title={o.ccRemarks ?? undefined}
+                className="inline-flex items-center gap-2 rounded-lg border border-line bg-page/60 px-2.5 py-1.5 text-[12px] transition hover:border-orange/40"
+              >
+                <span className="font-semibold text-navy">{o.orderNo}</span>
+                <span className="max-w-[180px] truncate text-grey">{s.customerName(o.customerId)}</span>
+                {days !== null && <span className="font-semibold text-grey-2">{days}d</span>}
+              </Link>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <QueueTable<QueueEntry>
         rows={rows}

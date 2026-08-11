@@ -14,10 +14,12 @@ import DispatchStepper from "../../components/DispatchStepper";
 import StepDocLink from "../../components/StepDocLink";
 import GatePassButton from "../../components/GatePassButton";
 import StatusPill, { OutcomePill } from "../../components/StatusPill";
+import SalesReturnModal from "../../components/SalesReturnModal";
 import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
+import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
 import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, DISPATCH_TYPE_LABEL,
-  dmy, dmyTime, isCreditHeld, qtyTotals, sharedUnit,
+  dmy, dmyTime, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
 
 export default function OrderDetail() {
@@ -29,6 +31,8 @@ export default function OrderDetail() {
   const [holdOpen, setHoldOpen] = useState(false);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [closeOpen, setCloseOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [salesReturnOpen, setSalesReturnOpen] = useState(false);
   const [amendRound, setAmendRound] = useState<RoundView | null>(null);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,11 +48,28 @@ export default function OrderDetail() {
   const rounds = allRoundViews(order).filter((v) => v.msAt || v.isArchived);
   const held = isCreditHeld(order);
 
+  /*
+    Cancelled, but not cancelled YET: the sales bill was already raised, so the
+    order waits here until somebody unwinds the invoice in Tally.
+
+    ⚠ EVERY COORDINATOR ACTION ON THIS PAGE MUST STAND DOWN WHILE THIS IS TRUE.
+      Hold would overwrite the status, and taking it off again resumes from the
+      step TIMESTAMPS — which still say "billed" — so the order would quietly
+      un-cancel itself back into the gate queue with a live invoice. Cancel would
+      jump straight past the unwind. Correcting a round would move delivered
+      quantities underneath it. The RPCs refuse all three; these flags are what
+      stop the buttons appearing in the first place.
+  */
+  const awaitingReturn = isSalesReturnPending(order);
+  const returnRound = salesReturnRound(order);
+
   // Closing early is only legal BETWEEN rounds — mid-round the goods may already
   // be through the gate. The server enforces it; this keeps the button honest.
   const betweenRounds = order.status === "awaiting_material_status" || order.status === "on_hold";
   const canClose =
     s.isProcessCoordinator && betweenRounds && order.status !== "closed" && order.status !== "cancelled";
+  const canHold =
+    s.isProcessCoordinator && order.status !== "cancelled" && order.status !== "closed" && !awaitingReturn;
 
   const act = async (fn: () => Promise<void>, close: () => void) => {
     setBusy(true);
@@ -88,14 +109,21 @@ export default function OrderDetail() {
               Edit order
             </Button>
           )}
-          {s.isProcessCoordinator && order.status !== "cancelled" && order.status !== "closed" && (
+          {canHold && (
             <Button variant="ghost" onClick={() => setHoldOpen(true)}>
               {order.status === "on_hold" ? "Take off hold" : "Put on hold"}
             </Button>
           )}
           {canClose && <Button variant="ghost" onClick={() => setCloseOpen(true)}>Close order</Button>}
-          {s.isProcessCoordinator && order.status !== "cancelled" && order.status !== "closed" && (
+          {/* The RAISER may cancel too, at any open stage — not coordinators only. */}
+          {s.canCancelOrder(order) && (
             <Button variant="ghost" onClick={() => setCancelOpen(true)}>Cancel order</Button>
+          )}
+          {awaitingReturn && s.canActOn("sales_return", order) && (
+            <Button onClick={() => setSalesReturnOpen(true)}>Record sales return</Button>
+          )}
+          {s.canWithdrawCancel(order) && (
+            <Button variant="ghost" onClick={() => setWithdrawOpen(true)}>Withdraw cancellation</Button>
           )}
         </div>
       </div>
@@ -127,13 +155,82 @@ export default function OrderDetail() {
       {order.status === "on_hold" && order.holdReason && (
         <p className="text-[13px] text-yellow">On hold: {order.holdReason}</p>
       )}
-      {order.status === "cancelled" && order.cancelReason && (
+      {/* Suppressed when the sales-return card below is showing — it carries the
+          same reason, plus who and when, and two lines saying it reads as two
+          separate cancellations. */}
+      {order.status === "cancelled" && order.cancelReason && !hasSalesReturn(order) && (
         <p className="text-[13px] text-ryg-red">Cancelled: {order.cancelReason}</p>
       )}
       {order.closedReason && (
         <p className="text-[13px] text-grey-2">
           Closed early by {s.personName(order.closedBy)}: {order.closedReason}
         </p>
+      )}
+
+      {/*
+        A CARD, not the one-line note the other three get. This is the loudest
+        state this page has: an order somebody has cancelled, with a real invoice
+        still live in Tally against it. It also has to say WHO is expected to act,
+        because the answer is not the reader — it is whoever owns Sales Return.
+      */}
+      {hasSalesReturn(order) && (
+        <Card className={`p-4 border-l-4 ${awaitingReturn ? "border-l-ryg-red" : "border-l-line"}`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-1">
+              <p className="text-[13px] text-navy">
+                <span className="font-semibold">
+                  {awaitingReturn
+                    ? `Cancelled — sales bill ${order.srInvoiceNo ?? ""} still has to be unwound in Tally.`
+                    : `Cancelled — sales bill ${order.srInvoiceNo ?? ""} was unwound.`}
+                </span>{" "}
+                {order.cancelReason}
+              </p>
+              <p className="text-[12.5px] text-grey-2">
+                Cancelled by {s.personName(order.cancelRequestedBy)}
+                {order.cancelRequestedAt ? ` · ${dmyTime(order.cancelRequestedAt)}` : ""}
+                {order.srInvoiceDate ? ` · invoice dated ${dmy(order.srInvoiceDate)}` : ""}
+              </p>
+              {awaitingReturn ? (
+                <p className="text-[12.5px] text-grey-2">
+                  Waiting on {s.ownerNamesFor("sales_return", order.locationId).join(", ") || "the Sales Return owners"}.
+                  The order is not cancelled until they record what was done.
+                </p>
+              ) : (
+                <p className="text-[12.5px] text-grey-2">
+                  {order.srMode ? SALES_RETURN_MODE_LABEL[order.srMode] : "Recorded"}
+                  {order.srReferenceNo ? ` · ${order.srReferenceNo}` : ""} ·{" "}
+                  {s.personName(order.srBy)}
+                  {order.srAt ? ` · ${dmyTime(order.srAt)}` : ""}
+                  {order.srRemarks ? ` · ${order.srRemarks}` : ""}
+                </p>
+              )}
+              {order.srEwayExpected && awaitingReturn && (
+                <p className="text-[12.5px] text-navy">
+                  This consignment carried an e-way bill — cancel it on the portal too.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              {returnRound?.sbAttachmentPath && (
+                <StepDocLink
+                  path={returnRound.sbAttachmentPath}
+                  name={returnRound.sbAttachmentName ?? "Sales invoice"}
+                />
+              )}
+              {order.srAttachmentPath && (
+                <StepDocLink
+                  path={order.srAttachmentPath}
+                  name={order.srAttachmentName ?? "Sales return document"}
+                />
+              )}
+              {!awaitingReturn && s.canActOn("sales_return", order) && (
+                <Button variant="ghost" size="sm" onClick={() => setSalesReturnOpen(true)}>
+                  Correct
+                </Button>
+              )}
+            </div>
+          </div>
+        </Card>
       )}
 
       <div className="grid gap-5 lg:grid-cols-3">
@@ -317,7 +414,10 @@ export default function OrderDetail() {
                     </td>
                     {s.isProcessCoordinator && (
                       <td className="py-2 pr-3">
-                        {v.isArchived && v.roundId && (
+                        {/* Not while the order is mid-cancellation: correcting a
+                            round recalculates the delivered totals, and the RPC
+                            refuses for that reason. */}
+                        {v.isArchived && v.roundId && !awaitingReturn && (
                           <Button size="sm" variant="ghost" onClick={() => { setAmendRound(v); setError(null); }}>
                             Correct
                           </Button>
@@ -430,12 +530,75 @@ export default function OrderDetail() {
       >
         <div className="space-y-3">
           <p className="text-[13px] text-grey-2">A cancelled order leaves every queue and cannot be reopened.</p>
+          {/*
+            Say what will actually happen, rather than letting it be a surprise.
+            This is the one late-cancellation case that IS allowed: the invoice
+            exists but the goods are still in the plant.
+
+            There is no companion warning for "already left the gate" — that is
+            refused outright now (`canCancelOrder`), so this modal cannot open
+            on such an order.
+          */}
+          {order.sbAt && (
+            <p className="rounded-lg bg-ryg-red/10 px-3 py-2 text-[13px] text-navy">
+              <span className="font-semibold">
+                Sales bill {order.sbInvoiceNo ?? ""} has already been raised.
+              </span>{" "}
+              Cancelling sends this to the Sales Return step for the billing team to unwind in Tally.
+              The order stays open until they record what they did.
+            </p>
+          )}
           <FieldLabel label="Reason" required>
             <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
           </FieldLabel>
           {error && <p className="text-[13px] font-medium text-ryg-red">{error}</p>}
         </div>
       </Modal>
+
+      {/*
+        Without this an order sent to Sales Return by mistake has no route back:
+        both outcomes of that step COMPLETE the cancellation. It costs nothing —
+        the server puts the order back at whatever step its own timestamps say,
+        which still works because the round was never archived.
+      */}
+      <Modal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        title="Withdraw the cancellation"
+        subtitle={order.orderNo}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setWithdrawOpen(false)} disabled={busy}>
+              Keep it cancelled
+            </Button>
+            <Button
+              onClick={() => act(() => s.withdrawCancelRequest(order.id, reason), () => setWithdrawOpen(false))}
+              disabled={busy}
+            >
+              {busy ? "Withdrawing…" : "Withdraw"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-[13px] text-grey-2">
+            The order goes back to the step it was on, and sales bill{" "}
+            {order.srInvoiceNo ?? "—"} stands. Only possible while the sales return is still
+            outstanding — once it is recorded the cancellation is final.
+          </p>
+          <FieldLabel label="Note">
+            <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} />
+          </FieldLabel>
+          {error && <p className="text-[13px] font-medium text-ryg-red">{error}</p>}
+        </div>
+      </Modal>
+
+      <SalesReturnModal
+        order={order}
+        open={salesReturnOpen}
+        onClose={() => setSalesReturnOpen(false)}
+        editing={!awaitingReturn}
+      />
 
       {amendRound && (
         <AmendRoundModal

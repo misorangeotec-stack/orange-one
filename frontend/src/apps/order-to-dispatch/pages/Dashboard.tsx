@@ -13,7 +13,7 @@
  * ⚠ EVERY FIGURE IS A ROUND, NOT AN ORDER, and comes from `lib/dispatchBoard`.
  *   See that file for why the order header cannot be read directly.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import Card from "@/shared/components/ui/Card";
@@ -28,9 +28,11 @@ import { monthEndOf, monthStartOf, todayIso, weekEndOf, weekStartOf } from "@/sh
 import { DISPATCH_QK } from "../data/dispatchFetch";
 import { useDispatchStore } from "../store";
 import { STEPS } from "../lib/steps";
-import { dmy } from "../lib/format";
+import { dmy, isCreditHeld } from "../lib/format";
+import type { DispatchOrder, OrderLine } from "../types";
 import CompanyBreakdown from "../components/CompanyBreakdown";
 import DispatchTrend from "../components/DispatchTrend";
+import StatusPill, { OutcomePill } from "../components/StatusPill";
 import {
   companyBlocks, consignmentsOf, daysSince, dominantUnit, inRange, notGone, perDay,
   qtyLabel, qtyNum, sumQty,
@@ -48,13 +50,42 @@ const PRESETS: { value: Preset; label: string }[] = [
   { value: "custom", label: "Custom" },
 ];
 
-type Tab = "all" | "dispatched" | "notGone";
+/**
+ * Which KPI the table below is currently showing.
+ *
+ * ⚠ THE TILES ARE FILTERS, NOT LINKS, and that is the point of this type. They
+ *   used to navigate to the step queue behind each number — which only works for
+ *   someone who owns that step. A salesperson looking at "On hold" was sent to a
+ *   credit queue that answers Access Denied. Everyone who may see an order may
+ *   see it in this table, so the drill-down happens here.
+ *
+ * "all" is the resting state: the board as it reads before anything is picked.
+ */
+type Focus = "all" | "punched" | "billed" | "awaiting" | "dispatched" | "onHold";
 
+/**
+ * Two of the five tiles count ORDERS, not consignments, and no filter can bridge
+ * that — a just-punched or credit-held order has no invoice and no gate pass, so
+ * `consignmentsOf` never emits a row for it. The table therefore swaps its row
+ * model with the tile, rather than pretending one shape fits both.
+ */
+const ORDER_FOCUS: Focus[] = ["punched", "onHold"];
+
+/*
+  One name for one condition. "Billed but not yet through the gate" is the KPI
+  tile, the table tab and this row state, and it used to be worded differently in
+  all three — which is how a reader ends up believing they are three conditions.
+*/
 const STATE_LABEL: Record<ConsignmentState, string> = {
-  billed: "Billed, not gone",
+  billed: "Awaiting dispatch",
   dispatched: "Dispatched",
   delivered: "Delivered",
   returned: "Returned",
+  // The order was cancelled after this invoice was raised, and the invoice is
+  // still live in Tally until somebody unwinds it. The row stays in the billed
+  // figures because the invoice is real — this is what stops it reading as a
+  // clean sale while it is on its way out.
+  reversing: "Being reversed",
 };
 
 const STATE_BADGE: Record<ConsignmentState, string> = {
@@ -62,6 +93,7 @@ const STATE_BADGE: Record<ConsignmentState, string> = {
   dispatched: "bg-[#EAF1FE] text-blue",
   delivered: "bg-[#E8F7EE] text-ryg-green",
   returned: "bg-[#FDECEC] text-ryg-red",
+  reversing: "bg-[#FDECEC] text-ryg-red",
 };
 
 /** Long-form date for the subtitle, so what is being counted is never in doubt. */
@@ -109,6 +141,38 @@ const qtyHint = (q: Record<string, number>, tail: string): string => {
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
+ * Quantity across ORDER LINES, split by unit — the order-level counterpart of
+ * `sumQty`, which measures consignments.
+ *
+ * ⚠ Two tiles here describe orders that have not become consignments yet: one
+ *   just punched, one credit is holding. Neither has a `shipQty` to sum, so
+ *   `sumQty` cannot see them at all — hence a second summer rather than a reuse.
+ *
+ * Keys units exactly as `consignmentsOf` does, "—" for a line whose unit was
+ * never set, so `QtyValue` renders these tiles identically to the four beside
+ * them. Cages, KGS and PCS stay separate: 500 KGS + 3 CAGES is not 503.
+ */
+const lineQty = (
+  orders: DispatchOrder[],
+  pick: (l: OrderLine) => number,
+): Record<string, number> => {
+  const out: Record<string, number> = {};
+  for (const o of orders) {
+    for (const l of o.lines) {
+      const q = pick(l);
+      if (q <= 0) continue;
+      const unit = (l.unit ?? "").trim() || "—";
+      out[unit] = (out[unit] ?? 0) + q;
+    }
+  }
+  return out;
+};
+
+/** What one order still owes, split by unit — the per-row form of `lineQty`. */
+const pendingByUnit = (o: DispatchOrder): Record<string, number> =>
+  lineQty([o], (l) => Math.max((Number(l.quantity) || 0) - (Number(l.dispatchedQty) || 0), 0));
+
+/**
  * One comparable number for a quantity split — FOR ORDERING AND FILTERING ONLY.
  *
  * ⚠ NEVER RENDER THIS. It adds KGS to PCS, which is exactly the sum `qtyByUnit`
@@ -125,7 +189,26 @@ export default function Dashboard() {
 
   const [preset, setPreset] = useState<Preset>("today");
   const [custom, setCustom] = useState<DateRange>(() => ({ from: todayIso(), to: todayIso() }));
-  const [tab, setTab] = useState<Tab>("all");
+  const [focus, setFocus] = useState<Focus>("all");
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Clicking the tile you are already looking through puts the board back.
+   *
+   * ⚠ IT ALSO SCROLLS TO THE TABLE. The tiles sit above a company breakdown and
+   *   a trend chart, so on any normal screen the list they filter is off the
+   *   bottom — the tile would ring, the rows would change, and nothing the
+   *   reader could see would move. Only on SELECT: scrolling down after someone
+   *   has just cleared the filter would drag them away from the tiles they are
+   *   plainly still reading.
+   */
+  const pick = (f: Focus) => {
+    const next = focus === f ? "all" : f;
+    setFocus(next);
+    if (next === "all") return;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    tableRef.current?.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  };
 
   /**
    * The range is derived on EVERY render, never seeded into state.
@@ -170,12 +253,32 @@ export default function Dashboard() {
     };
   }, [qc]);
 
+  /**
+   * Orders PUNCHED in the range — raised on the system, whatever date the person
+   * typed on the form.
+   *
+   * ⚠ `submittedAt`, not `orderDate`. "Punched today" is a question about data
+   *   entry, and the two part company exactly when it matters: yesterday's order
+   *   keyed in this morning is today's work and would vanish from this tile if it
+   *   were dated by the form field instead.
+   *
+   * ⚠ Range-scoped like Dispatched and Sales bills beside it, so the date picker
+   *   governs all three. The picker opens on Today, which is the asked-for view.
+   */
+  const punched = useMemo(() => {
+    if (!range.from || !range.to) return [];
+    return s.orders.filter((o) => {
+      const d = (o.submittedAt ?? "").slice(0, 10);
+      return !!d && d >= range.from! && d <= range.to!;
+    });
+  }, [s.orders, range]);
+  const punchedQty = useMemo(() => lineQty(punched, (l) => Number(l.quantity) || 0), [punched]);
+
   const all = useMemo(() => consignmentsOf(s.orders), [s.orders]);
 
   const dispatched = useMemo(() => inRange(all, range, "dispatched"), [all, range]);
   const billed = useMemo(() => inRange(all, range, "billed"), [all, range]);
   /** Of what was billed IN THIS RANGE, what has still not left. */
-  const billedNotGone = useMemo(() => notGone(billed), [billed]);
   /** Everything still sitting in the plant, whenever it was billed. */
   const backlog = useMemo(() => notGone(all), [all]);
 
@@ -192,7 +295,6 @@ export default function Dashboard() {
   /* Quantity is what every tile leads with, so each set's split is computed once. */
   const dispatchedQty = useMemo(() => sumQty(dispatched), [dispatched]);
   const billedQty = useMemo(() => sumQty(billed), [billed]);
-  const notGoneQty = useMemo(() => sumQty(billedNotGone), [billedNotGone]);
   const backlogQty = useMemo(() => sumQty(backlog), [backlog]);
 
   /*
@@ -203,8 +305,89 @@ export default function Dashboard() {
    */
   const gateOutHref = s.canSeeQueue("gate_out") ? `${B}/queues/gate-out` : undefined;
   const salesBillHref = s.canSeeQueue("sales_bill") ? `${B}/queues/sales-bill` : undefined;
+  const creditHref = s.canSeeQueue("credit_check") ? `${B}/queues/credit-check` : undefined;
 
+  /**
+   * Orders credit is holding, and how long the oldest has waited.
+   *
+   * Read off `s.orders` rather than a queue, so the tile counts every held order
+   * this person can see — the dashboard is a summary of the operation, not of one
+   * step's inbox.
+   */
+  const held = useMemo(() => s.orders.filter(isCreditHeld), [s.orders]);
+  /*
+    What is actually stuck: the quantity STILL OWED on a held order, not what was
+    originally ordered. On a part-shipped order that has looped back to credit,
+    the quantity already delivered is not being held by anybody.
+  */
+  const heldQty = useMemo(
+    () =>
+      lineQty(held, (l) =>
+        Math.max((Number(l.quantity) || 0) - (Number(l.dispatchedQty) || 0), 0),
+      ),
+    [held],
+  );
+  const oldestHold = useMemo(
+    () =>
+      held.reduce((worst, o) => {
+        if (!o.ccDecidedAt) return worst;
+        const days = Math.max(0, Math.floor((Date.now() - new Date(o.ccDecidedAt).getTime()) / 86_400_000));
+        return Math.max(worst, days);
+      }, 0),
+    [held],
+  );
+
+  /*
+    ORDERED AS THE WORK FLOWS: punched → billed → waiting to go → gone, with the
+    exception parked at the end. A row that runs in process order can be read
+    left to right as the state of the day; the previous order led with the
+    outcome, which made the row a scoreboard rather than a pipeline.
+
+    ⚠ NO `href` ON ANY OF THEM. Every tile is a filter for the table below —
+      see `Focus`. The step queues they used to link to are owner-gated, so the
+      link was a dead end for exactly the people the number was meant to inform.
+  */
   const tiles: KpiTile[] = [
+    {
+      key: "punched",
+      label: "New sales orders",
+      value: <QtyValue q={punchedQty} />,
+      hint: qtyHint(punchedQty, `${plural(punched.length, "order")} punched`),
+      onSelect: () => pick("punched"),
+      selected: focus === "punched",
+    },
+    {
+      key: "billed",
+      label: "Sales bills raised",
+      value: <QtyValue q={billedQty} />,
+      hint: qtyHint(billedQty, `${plural(billed.length, "invoice")} raised`),
+      onSelect: () => pick("billed"),
+      selected: focus === "billed",
+    },
+    {
+      key: "backlog",
+      label: "Awaiting dispatch",
+      value: <QtyValue q={backlogQty} />,
+      /*
+        ⚠ ALL DATES, unlike the three tiles beside it, and the hint says so —
+          one differently-scoped tile in a row is a classic way to mislead.
+
+        This REPLACED a pair: "Billed, not gone" asked the same question inside
+        the date filter, so a bill raised four days ago and still sitting was
+        invisible on it while the tile next door counted it. Two tiles, one
+        question, two answers — the range-scoped one is the one that could not
+        show the backlog it was named after, so it went.
+      */
+      hint: qtyHint(
+        backlogQty,
+        `${plural(backlog.length, "consignment")} · billed, still in the plant · all dates${
+          oldestWait > 0 ? ` · oldest ${oldestWait}d` : ""
+        }`,
+      ),
+      tone: oldestWait >= 3 ? "red" : undefined,
+      onSelect: () => pick("awaiting"),
+      selected: focus === "awaiting",
+    },
     {
       key: "dispatched",
       label: "Dispatched",
@@ -216,37 +399,32 @@ export default function Dashboard() {
         }`,
       ),
       size: "hero",
-      href: gateOutHref,
+      onSelect: () => pick("dispatched"),
+      selected: focus === "dispatched",
     },
     {
-      key: "billed",
-      label: "Sales bills raised",
-      value: <QtyValue q={billedQty} />,
-      hint: qtyHint(billedQty, `${plural(billed.length, "invoice")} raised`),
-      href: salesBillHref,
-    },
-    {
-      key: "notGone",
-      label: "Billed, not gone",
-      value: <QtyValue q={notGoneQty} />,
-      hint: qtyHint(notGoneQty, `${plural(billedNotGone.length, "consignment")} · still in the plant`),
-      tone: billedNotGone.length > 0 ? "red" : undefined,
-      href: gateOutHref,
-    },
-    {
-      key: "backlog",
-      label: "Awaiting gate out",
-      value: <QtyValue q={backlogQty} />,
-      // ⚠ NOT range-scoped, unlike the three tiles beside it. A bill raised four
-      //   days ago and still not gone is the real operational problem and would
-      //   be invisible in a "today" view. The hint says so, because one
-      //   differently-scoped tile in a row is a classic way to mislead.
-      hint: qtyHint(
-        backlogQty,
-        `${plural(backlog.length, "consignment")} · all dates${oldestWait > 0 ? ` · oldest ${oldestWait}d` : ""}`,
-      ),
-      tone: oldestWait >= 3 ? "red" : undefined,
-      href: gateOutHref,
+      key: "creditHold",
+      label: "On hold",
+      /*
+        Leads with QUANTITY, like every tile beside it — how many cages credit is
+        sitting on is the operational question; the order count is the footnote.
+
+        ⚠ NOT range-scoped, for the same reason "Awaiting dispatch" is not: a hold
+          placed three weeks ago is precisely the one worth chasing, and a "today"
+          view would hide it.
+      */
+      value: <QtyValue q={heldQty} />,
+      hint: held.length
+        ? qtyHint(
+            heldQty,
+            `${plural(held.length, "order")} · credit not released${
+              oldestHold > 0 ? ` · oldest ${oldestHold}d` : ""
+            }`,
+          )
+        : "nothing held",
+      tone: oldestHold >= 7 ? "red" : undefined,
+      onSelect: () => pick("onHold"),
+      selected: focus === "onHold",
     },
   ];
 
@@ -292,10 +470,29 @@ export default function Dashboard() {
       seen.add(c.key);
       rows.push(c);
     }
-    if (tab === "dispatched") return rows.filter((c) => !!c.gateOutIso);
-    if (tab === "notGone") return rows.filter((c) => !c.gateOutIso);
+    /*
+      ⚠ AWAITING DISPATCH IS ALL-DATES, so it cannot be served by filtering the
+        range rows above — the whole point of that tile is the bill raised four
+        days ago that still has not left, which is not in today's range at all.
+        It reads `backlog` directly.
+    */
+    if (focus === "awaiting") return backlog;
+    if (focus === "dispatched") return dispatched;
+    if (focus === "billed") return billed;
     return rows;
-  }, [dispatched, billed, tab]);
+  }, [dispatched, billed, backlog, focus]);
+
+  /**
+   * The order-level counterpart, for the two tiles that count orders.
+   *
+   * Held orders are all-dates like their tile; punched orders follow the range
+   * like theirs. Each list is exactly what its number counted, so the table can
+   * never disagree with the tile above it.
+   */
+  const orderRows = useMemo(
+    () => (focus === "onHold" ? held : focus === "punched" ? punched : []),
+    [focus, held, punched],
+  );
 
   /*
    * ⚠ EVERY LIST FILTER HERE IS `multiselect`, NOT `select`, AND THAT IS THE
@@ -389,7 +586,7 @@ export default function Dashboard() {
       sortValue: (c) => c.gateOutIso ?? "9999-12-31",
       // ⚠ A "Not yet" row has no date, so it matches NO gate-out range — asking
       //   "what left between the 1st and the 7th" must not answer with things
-      //   that have not left at all. The "Billed, not gone" tab is how you ask
+      //   that have not left at all. The "Awaiting dispatch" tab is how you ask
       //   for those.
       filter: { kind: "date", get: (c) => c.gateOutIso ?? "" },
       exportValue: (c) => (c.gateOutIso ? dmy(c.gateOutIso) : "Not yet"),
@@ -426,12 +623,138 @@ export default function Dashboard() {
     },
   ];
 
+  /**
+   * Columns for the two ORDER-level tiles.
+   *
+   * Deliberately not the consignment columns minus a few: invoice no., gate pass
+   * and gate-out date do not exist yet for these rows, and a table of "—" reads
+   * as missing data rather than as a stage not reached. What an order at this
+   * point does have is who it is for, when it was raised, how much is owed and
+   * why it is sitting — so that is what it shows.
+   */
+  const orderColumns: QueueColumn<DispatchOrder>[] = [
+    {
+      key: "order",
+      header: "Order",
+      cell: (o) => (
+        <Link to={`${B}/orders/${o.id}`} className="font-semibold text-navy hover:text-orange">
+          {o.orderNo}
+          {o.roundNo > 1 && <span className="text-grey-2 font-normal"> · R{o.roundNo}</span>}
+        </Link>
+      ),
+      sortValue: (o) => o.orderNo,
+      filter: { kind: "text", get: (o) => o.orderNo },
+      alwaysVisible: true,
+    },
+    {
+      key: "customer",
+      header: "Customer",
+      cell: (o) => <span className="text-grey">{s.customerName(o.customerId)}</span>,
+      sortValue: (o) => s.customerName(o.customerId),
+      filter: { kind: "multiselect", get: (o) => s.customerName(o.customerId) },
+    },
+    {
+      key: "customerLocation",
+      header: "Customer location",
+      cell: (o) => <span className="text-grey">{o.customerLocation ?? "—"}</span>,
+      sortValue: (o) => o.customerLocation ?? "",
+      filter: { kind: "multiselect", get: (o) => o.customerLocation ?? "—" },
+      defaultHidden: true,
+    },
+    {
+      key: "company",
+      header: "Company",
+      cell: (o) => <span className="text-grey">{s.masterName("company", o.companyId)}</span>,
+      sortValue: (o) => s.masterName("company", o.companyId),
+      filter: { kind: "multiselect", get: (o) => s.masterName("company", o.companyId) },
+    },
+    {
+      key: "site",
+      header: "Dispatch location",
+      cell: (o) => <span className="text-grey">{s.masterName("company_location", o.locationId)}</span>,
+      sortValue: (o) => s.masterName("company_location", o.locationId),
+      filter: { kind: "multiselect", get: (o) => s.masterName("company_location", o.locationId) },
+    },
+    {
+      key: "orderDate",
+      header: "Order date",
+      cell: (o) => <span className="text-grey whitespace-nowrap">{dmy(o.orderDate)}</span>,
+      sortValue: (o) => o.orderDate ?? "",
+      filter: { kind: "date", get: (o) => o.orderDate ?? "" },
+      exportValue: (o) => (o.orderDate ? dmy(o.orderDate) : ""),
+    },
+    {
+      key: "raisedOn",
+      header: "Punched on",
+      // The date the tile counted on — see `punched`. Distinct from the order
+      // date above, which is whatever the person typed on the form.
+      cell: (o) => <span className="text-grey whitespace-nowrap">{dmy(o.submittedAt)}</span>,
+      sortValue: (o) => o.submittedAt ?? "",
+      filter: { kind: "date", get: (o) => (o.submittedAt ?? "").slice(0, 10) },
+      exportValue: (o) => (o.submittedAt ? dmy(o.submittedAt) : ""),
+      defaultHidden: true,
+    },
+    {
+      key: "qty",
+      header: "Pending",
+      /*
+        PENDING, not ordered — it is what the tile above measured, and on a
+        part-shipped order that looped back it is the only honest figure: the
+        quantity already delivered is not waiting on anybody.
+      */
+      cell: (o) => (
+        <span className="font-semibold text-navy tabular-nums whitespace-nowrap">
+          {qtyLabel(pendingByUnit(o), 3)}
+        </span>
+      ),
+      align: "right",
+      sortValue: (o) => qtyAcross(pendingByUnit(o)),
+      filter: { kind: "number", get: (o) => qtyAcross(pendingByUnit(o)) },
+      exportValue: (o) => qtyLabel(pendingByUnit(o), 3),
+    },
+    {
+      key: "hold",
+      header: "Hold reason",
+      cell: (o) =>
+        isCreditHeld(o) ? (
+          <span className="text-[12.5px] text-grey">{o.ccRemarks ?? "—"}</span>
+        ) : (
+          <span className="text-grey-2">—</span>
+        ),
+      sortValue: (o) => o.ccRemarks ?? "",
+      filter: { kind: "text", get: (o) => o.ccRemarks ?? "" },
+    },
+    {
+      key: "status",
+      header: "Status",
+      cell: (o) => (
+        <span className="inline-flex items-center gap-1.5">
+          <StatusPill status={o.status} />
+          {isCreditHeld(o) && <OutcomePill label="On hold" tone="yellow" />}
+        </span>
+      ),
+      sortValue: (o) => o.status,
+      filter: { kind: "multiselect", get: (o) => (isCreditHeld(o) ? "Credit on hold" : o.status) },
+    },
+  ];
+
   /* The overdue alarm the old monitoring cards used to carry, reduced to one line. */
   const pipelineSteps = useMemo(() => STEPS.filter((st) => !st.noQueue), []);
   const { counts } = useMemo(
     () => queueRollup(s.queueEntries, pipelineSteps, todayLocalIso()),
     [s.queueEntries, pipelineSteps],
   );
+
+  const showOrders = ORDER_FOCUS.includes(focus);
+  /* The heading names what is on screen, so the table cannot be read as the
+     wrong list once a tile has narrowed it. */
+  const tableTitle =
+    focus === "punched" ? "New sales orders"
+    : focus === "onHold" ? "On hold"
+    : focus === "billed" ? "Sales bills raised"
+    : focus === "awaiting" ? "Awaiting dispatch"
+    : focus === "dispatched" ? "Dispatched"
+    : "Consignments";
 
   const rangeSubtitle =
     range.from && range.to
@@ -484,34 +807,66 @@ export default function Dashboard() {
       {/* A one-bar chart is noise, so a single-day range gets no chart at all. */}
       {multiDay && <DispatchTrend data={trend} unit={unit} />}
 
+      {/* `scroll-mt` keeps the heading clear of the sticky topbar when `pick`
+          scrolls here — without it the title lands underneath the chrome and the
+          table appears to start mid-way down. */}
+      <div ref={tableRef} className="scroll-mt-24">
       <Card className="p-4 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-2">
-          <h3 className={SECTION_HEADING_CLASS}>Consignments</h3>
-          <PillToggle<Tab>
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: "all", label: "All" },
-              { value: "dispatched", label: "Dispatched" },
-              { value: "notGone", label: "Billed, not gone" },
-            ]}
-          />
+          <h3 className={SECTION_HEADING_CLASS}>{tableTitle}</h3>
+          {focus !== "all" && (
+            <button
+              type="button"
+              onClick={() => setFocus("all")}
+              className="text-[12.5px] font-semibold text-orange hover:underline"
+            >
+              Clear filter
+            </button>
+          )}
         </div>
 
-        <QueueTable<Consignment>
-          rows={tableRows}
-          rowKey={(c) => c.key}
-          columns={columns}
-          // Namespaced so the reader's column choice here cannot collide with
-          // another table that happens to use the same column keys.
-          columnPicker={{ storageKey: "dispatch.dashboard.consignments" }}
-          rowsLabel="consignments"
-          initialSort={{ key: "invoiceDate", dir: "desc" }}
-          emptyTitle="Nothing in this range"
-          emptyMessage="Sales bills and gate entries recorded in the selected dates will appear here."
-          exportName="Order_To_Dispatch_Consignments"
-        />
+        {/*
+          TWO ROW MODELS, ONE CARD. The three consignment tiles answer "what
+          moved"; the two order tiles answer "what has not moved yet", and those
+          orders have no consignment to render — see `ORDER_FOCUS`. Swapping the
+          table is what lets every tile drill down without inventing empty
+          invoice and gate-pass columns for rows that cannot have them.
+        */}
+        {showOrders ? (
+          <QueueTable<DispatchOrder>
+            rows={orderRows}
+            rowKey={(o) => o.id}
+            columns={orderColumns}
+            columnPicker={{ storageKey: "dispatch.dashboard.orders" }}
+            rowsLabel="orders"
+            initialSort={{ key: "orderDate", dir: "desc" }}
+            emptyTitle={focus === "onHold" ? "Nothing on hold" : "Nothing punched in this range"}
+            emptyMessage={
+              focus === "onHold"
+                ? "Orders credit is holding will appear here."
+                : "Orders raised in the selected dates will appear here."
+            }
+            exportName={
+              focus === "onHold" ? "Order_To_Dispatch_On_Hold" : "Order_To_Dispatch_New_Orders"
+            }
+          />
+        ) : (
+          <QueueTable<Consignment>
+            rows={tableRows}
+            rowKey={(c) => c.key}
+            columns={columns}
+            // Namespaced so the reader's column choice here cannot collide with
+            // another table that happens to use the same column keys.
+            columnPicker={{ storageKey: "dispatch.dashboard.consignments" }}
+            rowsLabel="consignments"
+            initialSort={{ key: "invoiceDate", dir: "desc" }}
+            emptyTitle="Nothing in this range"
+            emptyMessage="Sales bills and gate entries recorded in the selected dates will appear here."
+            exportName="Order_To_Dispatch_Consignments"
+          />
+        )}
       </Card>
+      </div>
     </div>
   );
 }

@@ -231,16 +231,36 @@ export interface DispatchNotification {
  */
 export type DispatchType = "local" | "transport";
 
-/** STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled live only here. */
+/**
+ * STATUSES ARE NOT STEP KEYS — closed / on_hold / cancelled live only here.
+ *
+ * `awaiting_sales_return` is the one status that maps to a step, and even then
+ * the step is off the chain (`lib/steps.ts`, SALES_RETURN_KEY). It means: the
+ * order has been cancelled, but its sales bill was already raised in Tally, so
+ * it is not cancelled yet — somebody has to unwind the invoice first. The order
+ * is frozen while it sits here: out of every queue, un-holdable, un-cancellable,
+ * and no earlier step can be edited underneath it.
+ */
 export type DispatchStatus =
   | "awaiting_credit_check"
   | "awaiting_material_status"
   | "awaiting_sales_bill"
   | "awaiting_gate_out"
   | "awaiting_dispatch_confirm"
+  | "awaiting_sales_return"
   | "closed"
   | "on_hold"
   | "cancelled";
+
+/**
+ * How a raised invoice was unwound.
+ *
+ * ⚠ CHOSEN BY A PERSON, NEVER DERIVED. Whether the bill could still be
+ *   cancelled outright or needed a sales return against it is a judgement made
+ *   against Tally and GST outside this system. There is deliberately no
+ *   24-hour rule, no clock and no deadline anywhere in this module.
+ */
+export type SalesReturnMode = "invoice_cancelled" | "sales_return";
 
 /**
  * `credit_hold`, not `on_hold`: the ORDER-level status already owns that word,
@@ -512,6 +532,41 @@ export interface DispatchOrder {
   holdReason: string | null;
   cancelledAt: string | null;
   cancelReason: string | null;
+
+  /* ---- cancellation, and the sales return it may owe --------------------- *
+   *
+   * The whole `sr` block is ORDER-scoped and TERMINAL: an order is cancelled
+   * once and there is no way back, so there is no copy on `DispatchRound` and
+   * `fms_dispatch_archive_round` must NEVER wipe it. That matters more than it
+   * looks — the archive runs when the sales return is RECORDED, so this block
+   * is the only surviving record of which invoice was unwound and how.
+   *
+   * `cancelRequestedAt` is stamped on every cancellation, immediate or not.
+   * `srRequired` is really "srInvoiceAt is not null" — see lib/salesReturn.ts.
+   */
+  cancelRequestedAt: string | null;
+  cancelRequestedBy: string | null;
+
+  /** Which round's invoice is being unwound — the pointer into `rounds`. */
+  srRoundNo: number | null;
+  /** Snapshot of the invoice, taken before the archive could wipe it. */
+  srInvoiceNo: string | null;
+  srInvoiceAt: string | null;
+  srInvoiceDate: string | null;
+  /** The consignment carried an e-way bill: a reminder to cancel it on the portal. */
+  srEwayExpected: boolean | null;
+
+  srMode: SalesReturnMode | null;
+  /** The sales return / credit note number. Required only when mode is `sales_return`. */
+  srReferenceNo: string | null;
+  srActualDate: string | null;
+  srRemarks: string | null;
+  srAttachmentPath: string | null;
+  srAttachmentName: string | null;
+  srAt: string | null;
+  srBy: string | null;
+  srEditedAt: string | null;
+  srEditedBy: string | null;
 
   createdAt: string;
 

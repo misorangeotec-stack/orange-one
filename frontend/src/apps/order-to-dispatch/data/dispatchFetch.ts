@@ -309,6 +309,28 @@ const mapOrder = (r: any): DispatchOrder => ({
   cancelledAt: r.cancelled_at ?? null,
   cancelReason: str(r.cancel_reason),
 
+  // Every one of these defaults, so the app loads cleanly against a database
+  // that has not had 20260827120000 applied yet. That is what lets the frontend
+  // ship FIRST — the reverse order would let the new RPC write a status this
+  // build has never heard of, and `status` below is an unvalidated passthrough.
+  cancelRequestedAt: r.cancel_requested_at ?? null,
+  cancelRequestedBy: r.cancel_requested_by ?? null,
+  srRoundNo: num(r.sr_round_no),
+  srInvoiceNo: str(r.sr_invoice_no),
+  srInvoiceAt: r.sr_invoice_at ?? null,
+  srInvoiceDate: r.sr_invoice_date ?? null,
+  srEwayExpected: r.sr_eway_expected ?? null,
+  srMode: r.sr_mode ?? null,
+  srReferenceNo: str(r.sr_reference_no),
+  srActualDate: r.sr_actual_date ?? null,
+  srRemarks: str(r.sr_remarks),
+  srAttachmentPath: str(r.sr_attachment_path),
+  srAttachmentName: str(r.sr_attachment_name),
+  srAt: r.sr_at ?? null,
+  srBy: r.sr_by ?? null,
+  srEditedAt: r.sr_edited_at ?? null,
+  srEditedBy: r.sr_edited_by ?? null,
+
   createdAt: r.created_at,
   lines: [],
   rounds: [],

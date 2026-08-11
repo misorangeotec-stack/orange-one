@@ -6,7 +6,7 @@ import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelec
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../../store";
-import { STEPS, type StepKey } from "../../lib/steps";
+import { OWNER_STEPS, type OwnerStepKey } from "../../lib/steps";
 
 /**
  * Step Owners (admin). EVERY step can have owners — including step 1, Sales Order.
@@ -28,12 +28,12 @@ import { STEPS, type StepKey } from "../../lib/steps";
 export default function StepOwnersSection() {
   const s = useDispatchStore();
   /** Which owner-set is open: the step, and the site (null = All locations). */
-  const [editing, setEditing] = useState<{ step: StepKey; locationId: string | null } | null>(null);
+  const [editing, setEditing] = useState<{ step: OwnerStepKey; locationId: string | null } | null>(null);
   const [deptIds, setDeptIds] = useState<string[]>([]);
   const [empIds, setEmpIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<StepKey>>(new Set());
+  const [expanded, setExpanded] = useState<Set<OwnerStepKey>>(new Set());
 
   const sites = useMemo(() => s.activeOf(s.companyLocations), [s]);
 
@@ -58,7 +58,7 @@ export default function StepOwnersSection() {
     setEmpIds((prev) => prev.filter((id) => allowed.has(id)));
   };
 
-  const open = (step: StepKey, locationId: string | null) => {
+  const open = (step: OwnerStepKey, locationId: string | null) => {
     const cur = s.stepOwnerFor(step, locationId);
     setDeptIds(cur?.departmentIds ?? []);
     setEmpIds(cur?.employeeIds ?? []);
@@ -66,7 +66,7 @@ export default function StepOwnersSection() {
     setEditing({ step, locationId });
   };
 
-  const toggle = (step: StepKey) =>
+  const toggle = (step: OwnerStepKey) =>
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(step)) next.delete(step);
@@ -107,11 +107,11 @@ export default function StepOwnersSection() {
     }
   };
 
-  const editingStep = STEPS.find((st) => st.key === editing?.step);
+  const editingStep = OWNER_STEPS.find((st) => st.key === editing?.step);
   const editingSite = editing?.locationId ? s.masterName("company_location", editing.locationId) : "All locations";
   const overridden = !!editing?.locationId && !!s.stepOwnerFor(editing.step, editing.locationId);
 
-  const ownerCell = (step: StepKey, locationId: string | null) => {
+  const ownerCell = (step: OwnerStepKey, locationId: string | null) => {
     const own = s.stepOwnerFor(step, locationId);
     // No row of its own means this site runs on the default — say so rather
     // than showing "Unassigned", which would read as nobody owning it.
@@ -137,8 +137,8 @@ export default function StepOwnersSection() {
       <p className="text-[12.5px] text-grey-2">
         Owners can action their step and are notified about it. Everyone here also{" "}
         <span className="font-semibold text-navy">sees</span> the orders at the locations they own —
-        and nobody else's. Set the All-locations row first; add a site row only where that site is
-        handled by different people.
+        every order there, not only the ones at their own step. Set the All-locations row first; add
+        a site row only where that site is handled by different people.
       </p>
 
       <Card className="overflow-hidden">
@@ -154,7 +154,7 @@ export default function StepOwnersSection() {
               </tr>
             </thead>
             <tbody>
-              {STEPS.map((st) => {
+              {OWNER_STEPS.map((st) => {
                 const isOpen = expanded.has(st.key);
                 return (
                   <>
@@ -241,6 +241,15 @@ export default function StepOwnersSection() {
             <p className="text-[12.5px] text-grey-2">
               Name someone here. Delivery confirmation has no other route into it — the old
               driver-confirms-their-own-delivery path went with the Drivers master.
+            </p>
+          )}
+          {editing?.step === "sales_return" && (
+            <p className="text-[12.5px] text-grey-2">
+              Name someone here. When an order is cancelled after its sales bill has been raised,
+              this is who is told to cancel the bill in Tally — or punch a sales return against it —
+              and the order stays uncancelled until they record which they did. Usually the people
+              who generate the sales bill; name accounts instead if they own the reversal. Leave it
+              empty and only coordinators will be told.
             </p>
           )}
           {editing?.locationId !== null && editing !== null && (

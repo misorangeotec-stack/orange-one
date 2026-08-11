@@ -29,6 +29,16 @@ export const QUEUE_PATH: Record<QueueStep, string> = {
 };
 
 /**
+ * Sales Return's path, kept OUT of `QUEUE_PATH` above.
+ *
+ * That record is `Record<QueueStep, string>` and must stay five-keyed: it is
+ * indexed by the loop over `STEPS`, and Sales Return is deliberately not in
+ * `STEPS` (see lib/steps.ts). Its nav item is pushed by hand below for the same
+ * reason — the loop would never emit it.
+ */
+export const SALES_RETURN_PATH = "sales-return";
+
+/**
  * ⚠ MASTER REQUESTS IS TWO DIFFERENT THINGS, and where it sits says which.
  *
  * For a master's OWNER (and every admin) it is an approval queue — so it belongs
@@ -48,7 +58,19 @@ export function buildDispatchNav(opts: {
   canRaise: boolean;
   /** Requests this person can actually resolve. 0 shows no badge. */
   pendingReviews: number;
+  /**
+   * Orders this person can see sitting on a credit hold. 0 shows no badge.
+   *
+   * A held order stays in the credit queue rather than leaving it, so the queue
+   * count alone cannot say how much of the backlog is parked on payment versus
+   * genuinely undecided. This is the only queue link that carries a badge.
+   */
+  heldCredit: number;
   queues: Record<QueueStep, boolean>;
+  /** May this person see the Sales Return queue — an owner of it, or a coordinator. */
+  canSeeSalesReturn: boolean;
+  /** Cancelled orders whose sales bill still needs unwinding. 0 shows no badge. */
+  salesReturnPending: number;
 }): NavItem[] {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
@@ -76,6 +98,25 @@ export function buildDispatchNav(opts: {
       label: st.title,
       to: `${B}/queues/${QUEUE_PATH[step]}`,
       icon: ic.step,
+      badge: step === "credit_check" ? opts.heldCredit || undefined : undefined,
+      section: queueUsed ? undefined : "Queues",
+    });
+    queueUsed = true;
+  }
+
+  // Pushed by hand, because the loop above walks STEPS and Sales Return is
+  // deliberately not in it. Last in the Queues group: it is where an order goes
+  // when it leaves the chain, not a step on the way through.
+  //
+  // BADGED, unlike the four ordinary queues. This page is not somewhere anybody
+  // visits out of habit, and what waits on it is an invoice that is still live
+  // in Tally for an order that no longer exists.
+  if (opts.canSeeSalesReturn) {
+    nav.push({
+      label: "Sales Return",
+      to: `${B}/queues/${SALES_RETURN_PATH}`,
+      icon: ic.step,
+      badge: opts.salesReturnPending || undefined,
       section: queueUsed ? undefined : "Queues",
     });
     queueUsed = true;

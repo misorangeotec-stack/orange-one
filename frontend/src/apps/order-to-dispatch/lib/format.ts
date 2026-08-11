@@ -9,6 +9,7 @@ import type {
   DispatchOrder,
   DispatchStatus,
   DispatchType,
+  SalesReturnMode,
 } from "../types";
 
 export type Tone = "grey" | "blue" | "orange" | "green" | "red" | "yellow";
@@ -19,6 +20,7 @@ export const STATUS_LABEL: Record<DispatchStatus, string> = {
   awaiting_sales_bill: "Awaiting sales bill",
   awaiting_gate_out: "Awaiting gate out",
   awaiting_dispatch_confirm: "Awaiting delivery",
+  awaiting_sales_return: "Cancellation requested",
   closed: "Closed",
   on_hold: "On hold",
   cancelled: "Cancelled",
@@ -30,9 +32,18 @@ export const STATUS_TONE: Record<DispatchStatus, Tone> = {
   awaiting_sales_bill: "orange",
   awaiting_gate_out: "orange",
   awaiting_dispatch_confirm: "orange",
+  // ⚠ NOT grey. A cancellation whose invoice is still live in Tally is open
+  //   financial exposure; dressing it like a settled `cancelled` is the one
+  //   thing this status exists to stop.
+  awaiting_sales_return: "red",
   closed: "green",
   on_hold: "yellow",
   cancelled: "grey",
+};
+
+export const SALES_RETURN_MODE_LABEL: Record<SalesReturnMode, string> = {
+  invoice_cancelled: "Invoice cancelled",
+  sales_return: "Sales return raised",
 };
 
 export const DISPATCH_TYPE_LABEL: Record<DispatchType, string> = {

@@ -28,8 +28,14 @@ import type { DispatchOrder } from "../types";
  *   but it is kept as its own state rather than folded into `delivered`, because
  *   silently counting a return as a completed delivery overstates what the
  *   customer actually received.
+ *
+ * ⚠ `reversing` IS STILL BILLED, for the same kind of reason. The order has been
+ *   cancelled but its invoice is still live in Tally until somebody unwinds it,
+ *   so the row genuinely belongs in the billed figures — dropping it would delete
+ *   a real invoice from the board. It gets its own state so the board can SAY so
+ *   rather than presenting it as a clean sale.
  */
-export type ConsignmentState = "billed" | "dispatched" | "delivered" | "returned";
+export type ConsignmentState = "billed" | "dispatched" | "delivered" | "returned" | "reversing";
 
 export interface Consignment {
   /** Unique per ROUND — an order contributes one of these per consignment. */
@@ -58,12 +64,16 @@ export interface Consignment {
   state: ConsignmentState;
 }
 
-const stateOf = (v: {
-  goActualDate: string | null;
-  dcStatus: string | null;
-}): ConsignmentState => {
+const stateOf = (
+  v: { goActualDate: string | null; dcStatus: string | null },
+  /** The order this round belongs to — only its cancellation state is read. */
+  o: Pick<DispatchOrder, "status">,
+): ConsignmentState => {
   if (v.dcStatus === "returned") return "returned";
   if (v.dcStatus === "delivered") return "delivered";
+  // Outranks billed/dispatched: what matters about this row is that its invoice
+  // is on its way out, not which shelf the goods are on.
+  if (o.status === "awaiting_sales_return") return "reversing";
   return v.goActualDate ? "dispatched" : "billed";
 };
 
@@ -106,7 +116,7 @@ export function consignmentsOf(orders: DispatchOrder[]): Consignment[] {
         gpNo: v.gpNo,
         gateOutIso: v.goActualDate,
         qtyByUnit,
-        state: stateOf(v),
+        state: stateOf(v, o),
       });
     }
   }

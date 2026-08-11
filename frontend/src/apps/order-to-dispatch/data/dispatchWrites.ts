@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_dispatch_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { DispatchMasterType, DispatchType } from "../types";
+import type { DispatchMasterType, DispatchType, SalesReturnMode } from "../types";
 import { isNameless } from "../lib/masterFields";
 import type { QueueStep } from "../lib/queues";
 
@@ -169,8 +169,57 @@ export async function holdOrder(orderId: string, hold: boolean, reason: string):
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Cancel an order — the RAISER may do this, at any open stage, as well as a
+ * coordinator or admin.
+ *
+ * ⚠ ONE CALL, TWO OUTCOMES, AND THE SERVER PICKS. If no sales bill has been
+ *   raised the order is cancelled outright. If one HAS, the order does not
+ *   cancel: it moves to `awaiting_sales_return` and the Sales Return owners are
+ *   told to unwind the invoice in Tally. Callers must not branch on this — read
+ *   the status back off the refreshed order.
+ */
 export async function cancelOrder(orderId: string, reason: string): Promise<void> {
   const { error } = await db.rpc("fms_dispatch_cancel_order", { p_order: orderId, p_reason: reason });
+  if (error) throw new Error(error.message);
+}
+
+export interface SalesReturnPayload {
+  sr_mode?: SalesReturnMode;
+  sr_reference_no?: string;
+  sr_actual_date?: string;
+  sr_remarks?: string;
+  /** ⚠ OMIT on an edit to keep the stored file; "" clears it. See uploadStepDocument. */
+  sr_attachment_path?: string;
+  sr_attachment_name?: string;
+}
+
+/**
+ * Record how a cancelled order's invoice was unwound, which is what finally
+ * cancels it. `sr_mode` is the person's choice between cancelling the bill in
+ * Tally and raising a sales return against it; the server requires a reference
+ * number and a document for the latter.
+ */
+export async function recordSalesReturn(orderId: string, payload: SalesReturnPayload): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_record_sales_return", { p_order: orderId, p: payload });
+  if (error) throw new Error(error.message);
+}
+
+/** Correct a recorded sales return. The server deliberately leaves `sr_mode` alone. */
+export async function updateSalesReturn(orderId: string, payload: SalesReturnPayload): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_update_sales_return", { p_order: orderId, p: payload });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Take back a cancellation that is still waiting on its sales return. The order
+ * returns to the step it was on — the server derives that from the step
+ * timestamps, which still stand because the round was never archived.
+ */
+export async function withdrawCancelRequest(orderId: string, reason: string): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_withdraw_cancel_request", {
+    p_order: orderId, p_reason: reason,
+  });
   if (error) throw new Error(error.message);
 }
 

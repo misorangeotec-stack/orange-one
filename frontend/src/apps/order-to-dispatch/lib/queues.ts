@@ -198,14 +198,26 @@ export function lockReasonFor(step: QueueStep, o: DispatchOrder): string | null 
   const { open, what, nextWhat } = LOCK[step];
   if (o.status === "on_hold") return `This order is on hold — take it off hold before editing its ${what}.`;
   if (o.status === "cancelled") return `This order was cancelled — its ${what} can no longer be changed.`;
+  /*
+    ⚠ THIS ARM MUST STAY ABOVE THE dispatch_confirm EARLY RETURN BELOW, which is
+      unconditionally `null`. Without it, the delivery-confirmation row of an
+      order that is mid-cancellation stays EDITABLE for any dispatch_confirm
+      owner at that site — on an order whose invoice is being reversed.
+
+      And it has to be its own arm rather than falling through to the generic
+      branch, which would say "The gate outward entry has already been recorded"
+      on an order where the gate entry may never have happened. The lock would be
+      right and the reason a lie.
+  */
+  if (o.status === "awaiting_sales_return") {
+    return `This order's cancellation is pending — its ${what} cannot be changed until the sales bill is unwound in Tally.`;
+  }
   if (step === "credit_check" && o.status === "awaiting_credit_check") {
     return "This credit decision is still open — record it from the Pending tab instead.";
   }
   // Delivery confirmation is the last step of a round; nothing downstream locks
   // it while the round is still live.
-  if (step === "dispatch_confirm") {
-    return o.status === "closed" ? null : null;
-  }
+  if (step === "dispatch_confirm") return null;
   if (o.status !== open) {
     return `${nextWhat[0].toUpperCase()}${nextWhat.slice(1)} has already been recorded — the ${what} can no longer be changed.`;
   }

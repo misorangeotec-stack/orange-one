@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { DispatchStoreProvider, useDispatchStore } from "./store";
-import type { QueueStep } from "./lib/queues";
+import type { OwnerStepKey } from "./lib/steps";
 import OrderToDispatchLayout from "./OrderToDispatchLayout";
 import Dashboard from "./pages/Dashboard";
 import NewOrder from "./pages/orders/NewOrder";
@@ -15,6 +15,7 @@ import MaterialStatusQueue from "./pages/queues/MaterialStatusQueue";
 import SalesBillQueue from "./pages/queues/SalesBillQueue";
 import GateOutQueue from "./pages/queues/GateOutQueue";
 import DispatchConfirmQueue from "./pages/queues/DispatchConfirmQueue";
+import SalesReturnQueue from "./pages/queues/SalesReturnQueue";
 import OrderRegister from "./pages/reports/OrderRegister";
 import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
@@ -51,7 +52,7 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
  *   real boundary; this is so the page says so instead of opening on work that is
  *   none of the reader's business.
  */
-function RequireQueue({ step, children }: { step: QueueStep; children: ReactNode }) {
+function RequireQueue({ step, children }: { step: OwnerStepKey; children: ReactNode }) {
   const { canSeeQueue } = useDispatchStore();
   if (!canSeeQueue(step)) return <AccessDenied />;
   return <>{children}</>;
@@ -81,6 +82,9 @@ export default function OrderToDispatchApp() {
           <Route path="queues/sales-bill" element={<RequireQueue step="sales_bill"><SalesBillQueue /></RequireQueue>} />
           <Route path="queues/gate-out" element={<RequireQueue step="gate_out"><GateOutQueue /></RequireQueue>} />
           <Route path="queues/dispatch-confirm" element={<RequireQueue step="dispatch_confirm"><DispatchConfirmQueue /></RequireQueue>} />
+          {/* Off the six-step chain, but gated by the same predicate as the rest,
+              so the sidebar and the router can never disagree about it. */}
+          <Route path="queues/sales-return" element={<RequireQueue step="sales_return"><SalesReturnQueue /></RequireQueue>} />
           <Route path="reports/register" element={<OrderRegister />} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
           <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />

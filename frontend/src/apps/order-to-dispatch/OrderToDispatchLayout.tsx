@@ -6,6 +6,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildDispatchNav, QUEUE_PATH } from "./nav";
 import { useDispatchStore } from "./store";
 import { STEPS } from "./lib/steps";
+import { isCreditHeld } from "./lib/format";
 import type { QueueStep } from "./lib/queues";
 import type { DispatchNotification } from "./types";
 
@@ -47,8 +48,26 @@ export default function OrderToDispatchLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s]);
 
-  const anyQueue = queueSteps.some((step) => queues[step]);
+  /*
+    Sales Return is asked for separately, because `queueSteps` above is derived
+    from STEPS and this step is deliberately not in it — reading it out of that
+    record would give `undefined` and silently hide the link for its own owners.
+  */
+  const canSeeSalesReturn = s.canSeeQueue("sales_return");
+  const salesReturnPending = canSeeSalesReturn ? s.salesReturnPending.length : 0;
+
+  const anyQueue = queueSteps.some((step) => queues[step]) || canSeeSalesReturn;
   const hasOrders = s.orders.length > 0 || s.isProcessCoordinator || anyQueue;
+
+  /*
+    Counted through `myQueue`, not over every order, so the badge promises exactly
+    what the page will show. Ownership is per location — a Vapi credit checker
+    opening the queue sees Vapi's holds, and a badge counting Ahmedabad's too
+    would send them looking for rows that are not there.
+  */
+  const heldCredit = queues.credit_check
+    ? s.myQueue("credit_check").filter((r) => isCreditHeld(r.order)).length
+    : 0;
 
   const nav = useMemo(
     () =>
@@ -59,9 +78,12 @@ export default function OrderToDispatchLayout() {
         hasOrders,
         canRaise: s.canRaise,
         pendingReviews: s.resolvableRequests.length,
+        heldCredit,
         queues,
+        canSeeSalesReturn,
+        salesReturnPending,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, s.resolvableRequests.length, queues],
+    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, s.resolvableRequests.length, heldCredit, queues, canSeeSalesReturn, salesReturnPending],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {
