@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import Combobox from "@/shared/components/ui/Combobox";
 import EmptyState from "@/shared/components/ui/EmptyState";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -10,16 +11,23 @@ import { exportRowsToXlsx, type ExportColumn } from "@/shared/lib/exportXlsx";
 /** Per-column filter behaviour. */
 export type ColumnFilter<T> =
   | { kind: "text"; get: (row: T) => string }
-  | { kind: "select"; get: (row: T) => string; options?: string[] }
   /**
    * Tick any number of values. An empty selection means NO filter (everything),
    * exactly as a cleared text box does.
+   *
+   * ⚠ `select` AND `multiselect` ARE THE SAME CONTROL — a searchable, multi-value
+   *   picker whose search box is always on. `select` was once a native <select>,
+   *   and on a live queue that was unusable: the customer list runs to dozens of
+   *   names and the only way through it was scrolling. Both names survive purely so
+   *   the ~190 columns already declaring `select` did not all have to be edited.
+   *   Prefer `select` in new code, and never assume it is single-choice.
    *
    * `initial` seeds the table on first render — the way to open a screen already
    * excluding a value nobody wants to see by default, without hiding it for good.
    * "Clear filters" still drops back to showing everything, so the excluded rows are
    * always one click away rather than unreachable.
    */
+  | { kind: "select"; get: (row: T) => string; options?: string[]; initial?: string[] }
   | { kind: "multiselect"; get: (row: T) => string; options?: string[]; initial?: string[] }
   | { kind: "number"; get: (row: T) => number }
   | { kind: "date"; get: (row: T) => string }; // row value as ISO (date or datetime)
@@ -221,7 +229,8 @@ export default function QueueTable<T>({
   const [filters, setFilters] = useState<Record<string, FilterVal>>(() => {
     const seed: Record<string, FilterVal> = {};
     for (const c of columns) {
-      if (c.filter?.kind === "multiselect" && c.filter.initial?.length) seed[c.key] = [...c.filter.initial];
+      if ((c.filter?.kind === "select" || c.filter?.kind === "multiselect") && c.filter.initial?.length)
+        seed[c.key] = [...c.filter.initial];
     }
     return seed;
   });
@@ -265,8 +274,8 @@ export default function QueueTable<T>({
   const isActive = (col: QueueColumn<T>): boolean => {
     const f = filters[col.key];
     if (!f || !col.filter) return false;
-    if (col.filter.kind === "text" || col.filter.kind === "select") return (f as string) !== "";
-    if (col.filter.kind === "multiselect") return Array.isArray(f) && f.length > 0;
+    if (col.filter.kind === "text") return (f as string) !== "";
+    if (col.filter.kind === "select" || col.filter.kind === "multiselect") return Array.isArray(f) && f.length > 0;
     if (col.filter.kind === "number") { const v = f as { min: string; max: string }; return v.min !== "" || v.max !== ""; }
     const v = f as { from: string; to: string }; return v.from !== "" || v.to !== "";
   };
@@ -278,7 +287,6 @@ export default function QueueTable<T>({
       case "text":
         return col.filter.get(row).toLowerCase().includes((f as string).trim().toLowerCase());
       case "select":
-        return col.filter.get(row) === (f as string);
       case "multiselect":
         return (f as string[]).includes(col.filter.get(row));
       case "number": {
@@ -431,8 +439,12 @@ export default function QueueTable<T>({
       if (!isActive(col) || !col.filter) continue;
       const f = filters[col.key];
       if (col.filter.kind === "text") out.push(`${col.header} contains "${f as string}"`);
-      else if (col.filter.kind === "select") out.push(`${col.header} is "${f as string}"`);
-      else if (col.filter.kind === "multiselect") out.push(`${col.header} is one of: ${(f as string[]).join(", ")}`);
+      else if (col.filter.kind === "select" || col.filter.kind === "multiselect") {
+        // A single ticked value reads as plain equality — which is what most exports
+        // are — rather than a one-item "is one of:" list.
+        const vals = f as string[];
+        out.push(vals.length === 1 ? `${col.header} is "${vals[0]}"` : `${col.header} is one of: ${vals.join(", ")}`);
+      }
       else if (col.filter.kind === "number") {
         const v = f as { min: string; max: string };
         out.push(`${col.header}: ${v.min || "any"} – ${v.max || "any"}`);
@@ -479,12 +491,6 @@ export default function QueueTable<T>({
           <input value={(f as string) ?? ""} onChange={(e) => setFilter(col.key, e.target.value)} placeholder="Filter…" className={inputBase} />
         );
       case "select":
-        return (
-          <select value={(f as string) ?? ""} onChange={(e) => setFilter(col.key, e.target.value)} className={`${inputBase} pr-6 cursor-pointer`}>
-            <option value="">All</option>
-            {selectOptions[col.key]?.map((o) => <option key={o} value={o}>{o}</option>)}
-          </select>
-        );
       case "multiselect": {
         const v = (Array.isArray(f) ? f : []) as string[];
         return (
@@ -493,6 +499,13 @@ export default function QueueTable<T>({
             onChange={(next) => setFilter(col.key, next)}
             options={(selectOptions[col.key] ?? []).map((o) => ({ value: o, label: o }))}
             placeholder="All"
+            /* Search is forced ON rather than left to MultiSelect's "more than 6
+               options" default. A filter row where some columns can be typed into
+               and others cannot is what sends people back to scrolling; the whole
+               point of this control is that EVERY filter answers to typing. The
+               cost is a redundant search box on a two-option column, which is a far
+               smaller tax than a customer list you can only scroll. */
+            searchable
             triggerClassName={inputBase}
           />
         );
@@ -542,15 +555,21 @@ export default function QueueTable<T>({
     <div className="space-y-3">
       {/* Top bar: group filter + result count */}
       <div className="flex flex-wrap items-center gap-2.5">
+        {/* Single-choice, unlike the column filters: the group is the primary sort
+            and the band headings, so "several at once" has no meaning here. It is
+            still searchable — a company list is exactly as long as a customer one. */}
         {groupBy && (
-          <select
+          <Combobox
             value={group}
-            onChange={(e) => setGroup(e.target.value)}
-            className="h-9 pl-3 pr-8 text-[13px] rounded-lg border border-line bg-white cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange/30 focus:border-orange/50"
-          >
-            <option value="all">{groupBy.allLabel}</option>
-            {groups.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+            onChange={setGroup}
+            options={[
+              { value: "all", label: groupBy.allLabel },
+              ...groups.map((c) => ({ value: c.id, label: c.name })),
+            ]}
+            searchable
+            className="w-auto"
+            triggerClassName="h-9 py-0 rounded-lg text-[13px] whitespace-nowrap"
+          />
         )}
         {/* The OPTIONAL columns only. An `alwaysVisible` column would sit here as a
             permanently-ticked row that does nothing when clicked, which reads as a

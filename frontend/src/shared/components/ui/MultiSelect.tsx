@@ -218,6 +218,20 @@ export default function MultiSelect({
         type="button"
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (disabled) return;
+          // Open with the arrow keys (native Enter/Space already toggles the button).
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+            e.preventDefault();
+            // An arrow key inside a scroll container would otherwise ALSO scroll it:
+            // ScrollableTable claims the arrows and only bails for INPUT/TEXTAREA/SELECT,
+            // never for a button. Without this, ↓ on a queue's filter scrolls the table
+            // instead of opening the menu — which is exactly what a native <select> did
+            // not do. Mirrors the same guard in Combobox.
+            e.stopPropagation();
+            setOpen(true);
+          }
+        }}
         className={cn(
           "w-full flex items-center gap-2 rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-left transition",
           "outline-none focus:border-orange focus:ring-4 focus:ring-orange/10",
