@@ -1,5 +1,7 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import Button from "@/shared/components/ui/Button";
+import PillToggle from "@/shared/components/ui/PillToggle";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import StageRowAction from "@/shared/components/ui/StageRowAction";
 import StageTabs from "@/shared/components/ui/StageTabs";
@@ -13,7 +15,7 @@ import { DISPATCH_TYPE_LABEL, dmy, isCreditHeld, isoFromDmy, qtyTotals } from ".
 import { currentRoundView, type RoundView } from "../lib/rounds";
 import type { QueueStep, StageEntry } from "../lib/queues";
 import StepModal from "./StepModal";
-import StatusPill from "./StatusPill";
+import StatusPill, { OutcomePill } from "./StatusPill";
 import GatePassButton from "./GatePassButton";
 import type { DispatchOrder } from "../types";
 
@@ -42,6 +44,15 @@ interface ActingRow {
 export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
   const s = useDispatchStore();
   const cfg = STEP_CONFIG[stepKey];
+
+  /*
+    HELD ORDERS ARE STILL PENDING WORK, and that is the whole difficulty. A credit
+    hold leaves the order at `awaiting_credit_check` with `cc_at` null, so it sits
+    in this queue looking exactly like an order nobody has touched — same status
+    pill, same due clock. The pill and this filter are what tell the two apart.
+  */
+  const isCredit = stepKey === "credit_check";
+  const [heldOnly, setHeldOnly] = useState(false);
 
   const pending = s.myQueue(stepKey);
   const completedAll = s.completedFor(stepKey);
@@ -77,6 +88,27 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       sortValue: (r) => s.customerName(r.order.customerId),
       filter: { kind: "select", get: (r) => s.customerName(r.order.customerId) },
     },
+    // The credit hold has to be visible where the decision is made, or the remark
+    // the user made compulsory is written into a void. Next to the customer, not
+    // out at the right edge: the reason is read together with who it is about.
+    ...(isCredit
+      ? [{
+          key: "hold",
+          header: "On hold",
+          cell: (r: PendingRow) =>
+            isCreditHeld(r.order) ? (
+              <span className="inline-flex items-center gap-1.5">
+                <OutcomePill label="On hold" tone="yellow" />
+                <span className="text-[12.5px] text-grey">{r.order.ccRemarks}</span>
+              </span>
+            ) : (
+              <span className="text-grey-2">—</span>
+            ),
+          sortValue: (r: PendingRow) => (isCreditHeld(r.order) ? 0 : 1),
+          filter: { kind: "select" as const, get: (r: PendingRow) => (isCreditHeld(r.order) ? "On hold" : "—") },
+          exportValue: (r: PendingRow) => (isCreditHeld(r.order) ? `On hold: ${r.order.ccRemarks ?? ""}` : ""),
+        }]
+      : []),
     // Settled at intake, so they are known on every queue including this step's.
     // QueueTable derives its .xlsx from `columns`, so these export for free.
     //
@@ -135,24 +167,6 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
       },
       sortValue: (r) => qtyTotals(r.order).pending,
     },
-    // The credit hold has to be visible where the decision is made, or the remark
-    // the user made compulsory is written into a void.
-    ...(stepKey === "credit_check"
-      ? [{
-          key: "hold",
-          header: "On hold",
-          cell: (r: PendingRow) =>
-            isCreditHeld(r.order) ? (
-              <span className="text-[12.5px] font-semibold text-yellow">
-                {r.order.ccRemarks ?? "On hold"}
-              </span>
-            ) : (
-              <span className="text-grey-2">—</span>
-            ),
-          sortValue: (r: PendingRow) => (isCreditHeld(r.order) ? 0 : 1),
-          filter: { kind: "select" as const, get: (r: PendingRow) => (isCreditHeld(r.order) ? "On hold" : "—") },
-        }]
-      : []),
     {
       key: "due",
       header: "Due",
@@ -277,6 +291,40 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
 
   const exportStem = `Order_To_Dispatch_${cfg.title.replace(/[^\w]+/g, "_")}`;
 
+  const heldCount = isCredit ? pending.filter((r) => isCreditHeld(r.order)).length : 0;
+  /*
+    ⚠ The TAB COUNT stays `pending.length` whatever this is set to. Narrowing the
+      rows is a lens on the queue, not a change to how much work it holds — a
+      count that moved with the filter would report the backlog as smaller than
+      it is the moment somebody looked at the holds.
+  */
+  const pendingRows = heldOnly ? pending.filter((r) => isCreditHeld(r.order)) : pending;
+
+  /*
+    Rendered into StageTabs' `right` slot rather than as a third tab: StageTabs is
+    shared by every FMS stage screen and only credit has a hold to filter. Hidden
+    when nothing is held, so the control shows up exactly when it means something.
+  */
+  /*
+    A hold outranks the overdue tint. The order is parked on purpose, and painting
+    it red would report a deliberate decision as a failure to act; yellow says
+    "waiting on payment", which is what is actually true of the row.
+  */
+  const pendingRowClass = (r: PendingRow): string =>
+    isCredit && isCreditHeld(r.order) ? "border-l-4 border-l-yellow" : overdueRowClass(r.dueIso);
+
+  const holdFilter =
+    isCredit && !stage.showingCompleted && heldCount > 0 ? (
+      <PillToggle<"all" | "held">
+        value={heldOnly ? "held" : "all"}
+        onChange={(v) => setHeldOnly(v === "held")}
+        options={[
+          { value: "all", label: "All" },
+          { value: "held", label: `On hold · ${heldCount}` },
+        ]}
+      />
+    ) : undefined;
+
   return (
     <div className="space-y-5">
       <div>
@@ -294,6 +342,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         scope={stage.scope}
         onScope={stage.setScope}
         scopeNote="Mine shows entries you recorded yourself."
+        right={holdFilter}
       />
 
       {stage.showingCompleted ? (
@@ -323,7 +372,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
         />
       ) : (
         <QueueTable<PendingRow>
-          rows={pending}
+          rows={pendingRows}
           rowKey={(r) => r.order.id}
           columns={pendingColumns}
           actions={(r) => (
@@ -350,7 +399,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
               )}
             </div>
           )}
-          rowClassName={(r) => overdueRowClass(r.dueIso)}
+          rowClassName={pendingRowClass}
           rowsLabel="orders"
           initialSort={{ key: "due", dir: "asc" }}
           emptyTitle="Nothing waiting here"

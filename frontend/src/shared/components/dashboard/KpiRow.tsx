@@ -11,6 +11,19 @@ export interface KpiTile {
   size?: "sm" | "md" | "lg" | "hero";
   /** When set, the whole tile becomes a link to this route. */
   href?: string;
+  /**
+   * When set, the tile becomes a FILTER for a list on the same page instead of a
+   * doorway to another one — clicking calls this, and `selected` rings the tile.
+   *
+   * Exists because a link is the wrong affordance where the destination is
+   * permission-gated: a step queue hands a non-owner Access Denied, so the tile
+   * that summarises their work cannot be a link to it. Filtering in place shows
+   * the same rows to everyone who may see the order at all.
+   *
+   * Ignored when `href` is also set — a tile is one thing or the other.
+   */
+  onSelect?: () => void;
+  selected?: boolean;
 }
 
 /**
@@ -26,6 +39,7 @@ export default function KpiRow({ tiles }: { tiles: KpiTile[] }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
       {tiles.map((t) => {
+        const interactive = !!t.href || !!t.onSelect;
         const tile = (
           <Kpi
             label={t.label}
@@ -33,20 +47,41 @@ export default function KpiRow({ tiles }: { tiles: KpiTile[] }) {
             hint={t.hint}
             tone={t.tone}
             size={t.size ?? "lg"}
-            className={t.href ? "h-full transition-[box-shadow,border-color,transform] hover:-translate-y-0.5 hover:shadow-card hover:border-orange/40" : undefined}
+            className={[
+              interactive
+                ? "h-full transition-[box-shadow,border-color,transform] hover:-translate-y-0.5 hover:shadow-card hover:border-orange/40"
+                : "",
+              // The ring, not a fill: the number stays the loudest thing on the
+              // tile whether or not it is the one being looked through.
+              t.selected ? "border-orange ring-4 ring-orange/15" : "",
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined}
           />
         );
-        return t.href ? (
-          <Link
-            key={t.key}
-            to={t.href}
-            className="block rounded-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/20"
-          >
-            {tile}
-          </Link>
-        ) : (
-          <div key={t.key}>{tile}</div>
-        );
+        const focusCls =
+          "block w-full text-left rounded-card focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-orange/20";
+        if (t.href) {
+          return (
+            <Link key={t.key} to={t.href} className={focusCls}>
+              {tile}
+            </Link>
+          );
+        }
+        if (t.onSelect) {
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={t.onSelect}
+              aria-pressed={!!t.selected}
+              className={focusCls}
+            >
+              {tile}
+            </button>
+          );
+        }
+        return <div key={t.key}>{tile}</div>;
       })}
     </div>
   );

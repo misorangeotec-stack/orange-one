@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
-import { useDispatchStore } from "../../store";
+import { useDispatchStore, type DispatchStoreValue } from "../../store";
 import { isLineBlank, makeEmptyLine, type OrderLineRow } from "../../components/OrderLinesGrid";
 import type { MasterValues } from "../../lib/masterFields";
 import type { OrderInput } from "../../data/dispatchWrites";
@@ -51,6 +51,27 @@ const emptyState = (): SalesOrderFormState => ({
   orderRemarks: "",
 });
 
+/**
+ * A new order, pre-filled with whatever the person's assignment leaves no choice
+ * about.
+ *
+ * Someone who dispatches from one site should not be asked which site every time
+ * — a question with one possible answer is not a question. Where the assignment
+ * genuinely leaves a choice, nothing is guessed and both fields stay empty.
+ *
+ * ⚠ Runs ONCE, from a lazy `useState`. Both callers now mount this form only
+ *   after `store.isLoading` clears (see NewOrder / EditOrder); mounting it any
+ *   earlier reads empty master lists and seeds nothing, for ever.
+ */
+const seededState = (s: DispatchStoreValue): SalesOrderFormState => {
+  const base = emptyState();
+  const companies = s.assignedCompanies();
+  if (companies.length !== 1) return base;
+  const companyId = companies[0]!.id;
+  const sites = s.assignedLocationsForCompany(companyId);
+  return { ...base, companyId, locationId: sites.length === 1 ? sites[0]!.id : "" };
+};
+
 const stateFromOrder = (o: DispatchOrder): SalesOrderFormState => ({
   dispatchType: o.dispatchType,
   companyId: o.companyId ?? "",
@@ -73,7 +94,7 @@ const linesFromOrder = (o: DispatchOrder): OrderLineRow[] =>
 export function useSalesOrderForm(existing?: DispatchOrder) {
   const s = useDispatchStore();
   const [form, setForm] = useState<SalesOrderFormState>(() =>
-    existing ? stateFromOrder(existing) : emptyState(),
+    existing ? stateFromOrder(existing) : seededState(s),
   );
   const [lines, setLines] = useState<OrderLineRow[]>(() =>
     existing ? [...linesFromOrder(existing), makeEmptyLine()] : [makeEmptyLine()],
@@ -128,7 +149,9 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
    */
   const setCompany = (id: string) => {
     if (id === form.companyId) return;
-    const sites = s.locationsForCompany(id);
+    // The person's OWN sites under that company — the auto-pick has to agree with
+    // the list they are about to be shown, or it fills in a site they cannot see.
+    const sites = s.assignedLocationsForCompany(id, existing?.locationId ?? null);
     patch({ companyId: id, locationId: sites.length === 1 ? sites[0]!.id : "" });
   };
 
@@ -139,7 +162,10 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     if (!form.companyId) return "Choose the company that bills this order.";
     // Compulsory only where the company HAS sites — mirrors fms_dispatch_submit_order.
     // A company nobody has added locations to must not block order entry.
-    if (!form.locationId && s.locationsForCompany(form.companyId).length > 0) {
+    if (
+      !form.locationId &&
+      s.assignedLocationsForCompany(form.companyId, existing?.locationId ?? null).length > 0
+    ) {
       return "Choose the location this order dispatches from.";
     }
     if (!form.customerId) return "Choose a customer.";
@@ -174,6 +200,9 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   });
 
   return {
+    // The order being edited, if any. `SalesOrderFields` needs it to keep a
+    // company / site the editor is not assigned to in its own dropdowns.
+    existing: existing ?? null,
     form, patch, setForm,
     lines, setLines, filledLines,
     setCustomer, setCompany,

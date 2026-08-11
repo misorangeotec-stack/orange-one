@@ -11,11 +11,24 @@ import AccessDenied from "../system/AccessDenied";
 
 export default function NewOrder() {
   const s = useDispatchStore();
+
+  /*
+    ⚠ THE FORM MOUNTS ONLY ONCE THE MASTERS ARE HERE. `useSalesOrderForm` seeds
+      the company and site in a lazy `useState` that runs once; the store renders
+      its children while the query is in flight, so mounting it earlier would seed
+      from empty lists and never retry. Waiting also stops `canRaise` — false
+      until the config lands — flashing Access denied at someone who may raise.
+  */
+  if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
+  if (!s.canRaise) return <AccessDenied />;
+  return <NewOrderForm />;
+}
+
+function NewOrderForm() {
+  const s = useDispatchStore();
   const { user } = useSession();
   const nav = useNavigate();
   const f = useSalesOrderForm();
-
-  if (!s.canRaise) return <AccessDenied />;
 
   const submit = async () => {
     const problem = f.validate();

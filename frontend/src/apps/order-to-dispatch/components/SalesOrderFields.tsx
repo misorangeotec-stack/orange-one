@@ -56,8 +56,27 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
    *   `knownLocations` yet — would leave the field looking empty while the state
    *   held it. Unioning it in is what makes free-typing actually visible.
    */
-  /** OUR sites under the chosen company. Empty until a company is picked. */
-  const siteOptions: ComboOption[] = opts(s.locationsForCompany(f.form.companyId || null));
+  /*
+    WHAT THIS PERSON MAY DISPATCH FROM — not every company and site the group
+    owns. The assignment already exists in Setup → Step Owners, and RLS hides an
+    order from anyone owning no step at its location, so offering a site someone
+    is not assigned to only ever ends in an order they cannot see afterwards.
+
+    `existing` keeps the value an order was RAISED with, whoever is editing it.
+    OUR sites, under the chosen company — empty until a company is picked.
+  */
+  const companyOptions: ComboOption[] = opts(s.assignedCompanies(f.existing?.companyId ?? null));
+  const siteOptions: ComboOption[] = opts(
+    s.assignedLocationsForCompany(f.form.companyId || null, f.existing?.locationId ?? null),
+  );
+  /*
+    Companies EXIST but none is on offer — so this is an assignment gap, and the
+    message can say so. Tested against the full list rather than the empty
+    dropdown alone, because a system with no company master yet is missing data,
+    not permission, and telling that admin to go assign themselves a site would
+    send them to the wrong screen.
+  */
+  const noAssignment = companyOptions.length === 0 && s.activeOf(s.companies).length > 0;
 
   const locationOptions: ComboOption[] = (() => {
     const known = s.knownLocations;
@@ -99,12 +118,20 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
           <Combobox
             value={f.form.companyId}
             onChange={f.setCompany}
-            options={opts(s.activeOf(s.companies))}
-            placeholder="which company bills this order"
+            options={companyOptions}
+            placeholder={
+              noAssignment ? "no dispatch site assigned to you" : "which company bills this order"
+            }
             searchable
             onCreate={(name) => f.setRaise({ mt: "company", prefill: { name }, from: "header" })}
             createLabel={(q) => `Request new company “${q}”`}
           />
+          {noAssignment && (
+            <p className="mt-1 text-[11.5px] text-ryg-red">
+              You are not assigned to a dispatch location. Ask an admin to add you under
+              Setup → Step Owners.
+            </p>
+          )}
         </FieldLabel>
 
         {/* ---- row 2: where it leaves from, and who is buying ---- */}

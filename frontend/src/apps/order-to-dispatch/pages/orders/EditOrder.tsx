@@ -8,6 +8,7 @@ import { useDispatchStore } from "../../store";
 import SalesOrderFields from "../../components/SalesOrderFields";
 import OrderLinesGrid from "../../components/OrderLinesGrid";
 import { useSalesOrderForm } from "./useSalesOrderForm";
+import type { DispatchOrder } from "../../types";
 
 /**
  * Edit the intake, while the order is still at the origin step.
@@ -19,11 +20,19 @@ import { useSalesOrderForm } from "./useSalesOrderForm";
 export default function EditOrder() {
   const { id = "" } = useParams();
   const s = useDispatchStore();
-  const { user } = useSession();
-  const nav = useNavigate();
   const order = s.orderById(id);
-  const f = useSalesOrderForm(order);
 
+  /*
+    ⚠ THE FORM MOUNTS ONLY ONCE THE ORDER IS HERE, and that is why the guards sit
+      in a wrapper rather than above a hook call in one component.
+
+      `useSalesOrderForm` seeds its state in a lazy `useState`, which runs on the
+      FIRST render and never again. The store provider renders its children while
+      the query is still in flight, so calling the hook before these guards handed
+      it `undefined` on a cold load — and the form stayed empty for ever. It only
+      looked fine when arriving from the order page, where the 60s cache means the
+      order is already there on render one.
+  */
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
     return <EmptyState title="Order not found" message="It may have been cancelled, or the link is stale." />;
@@ -36,6 +45,14 @@ export default function EditOrder() {
       />
     );
   }
+  return <EditOrderForm order={order} />;
+}
+
+function EditOrderForm({ order }: { order: DispatchOrder }) {
+  const s = useDispatchStore();
+  const { user } = useSession();
+  const nav = useNavigate();
+  const f = useSalesOrderForm(order);
 
   const submit = async () => {
     const problem = f.validate();
