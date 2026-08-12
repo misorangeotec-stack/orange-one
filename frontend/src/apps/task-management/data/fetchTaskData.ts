@@ -82,7 +82,7 @@ const mapLocation = (r: any): Location => ({
   sortOrder: r.sort_order ?? 0,
 });
 
-const mapTaskLocation = (r: any): TaskLocation => ({
+export const mapTaskLocation = (r: any): TaskLocation => ({
   id: r.id,
   taskId: r.task_id,
   locationId: r.location_id,
@@ -265,6 +265,26 @@ export async function fetchTasksByIds(ids: string[]): Promise<Task[]> {
     locsByTask.set(tl.taskId, list);
   }
   return (taskRes.data ?? []).map(mapTask).map((t) => ({ ...t, locations: locsByTask.get(t.id) ?? [] }));
+}
+
+/**
+ * Re-read JUST the activity rows belonging to the tasks a write touched.
+ *
+ * The activity counterpart of `fetchTasksByIds`, and for the same reason. The
+ * only timeline rows a mutation can add are on the task it wrote — including the
+ * ones the `log_task_activity` trigger inserts server-side ('completed',
+ * 'assigned', 'shifted'), which is why the write path can't just skip the
+ * refresh. Re-paging the whole org's history to collect two new rows is what
+ * made every status change fire a background download of every remark ever
+ * written; this is one indexed read whose cost is bounded by the id list.
+ */
+export async function fetchActivityByTaskIds(ids: string[]): Promise<TaskActivity[]> {
+  const wanted = [...new Set(ids.filter(Boolean))];
+  if (wanted.length === 0) return [];
+
+  const { data, error } = await supabase.from("task_activity").select("*").in("task_id", wanted);
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapActivity);
 }
 
 /**

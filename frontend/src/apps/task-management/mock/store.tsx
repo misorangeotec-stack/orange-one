@@ -8,7 +8,7 @@ import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople, type OrgPerson } from "@/core/platform/orgPeople";
 import { supabase } from "@/core/platform/supabase";
 import { isoWeekOf, weekEndOf, weekStartOf, todayIso } from "@/shared/lib/time";
-import { fetchTaskData, fetchTaskActivity, fetchTasksByIds, type TaskData } from "../data/fetchTaskData";
+import { fetchTaskData, fetchTaskActivity, fetchTasksByIds, fetchActivityByTaskIds, type TaskData, type TaskActivityData } from "../data/fetchTaskData";
 import { useMyNotifications, markReadOptimistic, TASK_NOTIF_KEY } from "../lib/useMyNotifications";
 import {
   insertTask,
@@ -248,6 +248,16 @@ function patchTaskLocation(
 }
 
 /**
+ * Settle optimistically-patched checklist rows onto the rows the DB actually
+ * wrote, returned by the update itself (see `setTaskLocationDone` in taskWrites).
+ * Exact server state — true timestamps and by-ids — for no extra round-trip, and
+ * it cannot race the write it came from.
+ */
+function applyTaskLocationRows(queryClient: QueryClient, rows: TaskLocation[]) {
+  for (const row of rows) patchTaskLocation(queryClient, row.id, () => row);
+}
+
+/**
  * Merge freshly-read tasks into every cached taskData query — replacing the ones
  * already there, appending the ones that are new. Server truth, not a guess, so
  * this can't drift from the database (see `fetchTasksByIds`).
@@ -265,6 +275,71 @@ function upsertTasksInCache(queryClient: QueryClient, fresh: Task[]) {
     for (const t of fresh) if (!prev.tasks.some((p) => p.id === t.id)) tasks.push(t);
     return { ...prev, tasks };
   });
+}
+
+/**
+ * Swap in server truth for the activity rows of the tasks a write touched.
+ *
+ * The activity-side twin of `upsertTasksInCache`, and the reason the write path
+ * no longer needs to re-download the org's whole timeline: a mutation can only
+ * add rows to the task it wrote, so re-reading THAT task's rows (including the
+ * ones `log_task_activity` inserts server-side) is enough.
+ *
+ * Replaces rather than merges — every row for a touched task is dropped and the
+ * fresh set put back — so rows that disappeared server-side can't linger. Order
+ * doesn't matter: `activityFor` sorts.
+ *
+ * No-ops while the deferred activity query is still loading (`prev` undefined);
+ * that first load arrives with these rows already in it.
+ */
+function replaceActivityForTasks(queryClient: QueryClient, taskIds: string[], fresh: TaskActivity[]) {
+  const touched = new Set(taskIds);
+  if (touched.size === 0) return;
+  queryClient.setQueriesData<TaskActivityData>({ queryKey: ["taskData", "activity"] }, (prev) => {
+    if (!prev || !prev.activity) return prev;
+    const kept = prev.activity.filter((a) => !touched.has(a.taskId));
+    if (kept.length === prev.activity.length && fresh.length === 0) return prev;
+    return { ...prev, activity: [...kept, ...fresh] };
+  });
+}
+
+/**
+ * Coalesced whole-dataset reconcile — at most one per RECONCILE_INTERVAL_MS.
+ *
+ * Every mutation used to fire `invalidateQueries(["taskData"])` immediately. That
+ * key is a PREFIX match, so each call refetched BOTH live queries: the core
+ * dataset (7 tables, paged 1000 rows at a time SEQUENTIALLY by `fetchAll` — ~24
+ * requests for an admin) and the org-wide activity timeline. Unawaited, so it
+ * didn't block the button, but ticking five locations and completing a task
+ * queued SIX of those, which is what made this screen crawl: the network stayed
+ * saturated, every arrival rebuilt the ~70-key context value (re-rendering every
+ * consumer), and the persister re-serialised the entire cache to IndexedDB each
+ * time.
+ *
+ * The targeted refreshes above already cover everything the write itself
+ * changed, so this full pass only exists to pick up OTHER people's changes. That
+ * doesn't need to be instant — but it does need to still happen, because the
+ * provider wraps the whole app subtree (TaskManagementApp) and so does not
+ * remount as the user moves between screens, and refetchOnWindowFocus is off. A
+ * long session would otherwise never see anyone else's edits.
+ *
+ * Trailing-edge on purpose: a burst of writes collapses to one reconcile after
+ * the burst, instead of one per write during it.
+ */
+const RECONCILE_INTERVAL_MS = 60_000;
+let reconcileTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleFullReconcile(queryClient: QueryClient) {
+  if (reconcileTimer) return; // one already queued — it will cover this write too
+  // Always a FULL interval out, never "immediately because the budget has
+  // replenished". A rate-limiter would fire this the instant 60s had elapsed
+  // since the last one — i.e. right in the middle of the next click, which is
+  // exactly the moment the old code made unusable. Nothing needs it promptly:
+  // the targeted refresh has already made everything the user just did correct,
+  // and this pass only exists to notice other people's edits.
+  reconcileTimer = setTimeout(() => {
+    reconcileTimer = null;
+    void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+  }, RECONCILE_INTERVAL_MS);
 }
 
 /** Drop a deleted task from every cached taskData query. */
@@ -349,22 +424,33 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
      * entire org. Awaiting TWO indexed reads instead makes the wait independent of
      * how big the org's task history is.
      *
-     * The full invalidate still fires, just not awaited — it reconciles anything
-     * the write changed indirectly (the DB trigger's activity rows, another task's
-     * shifted_to link) while the user is already looking at the result.
+     * The task's ACTIVITY rows are read the same targeted way, in parallel. They
+     * have to be read at all because the interesting ones are written by the DB
+     * trigger, not by us (`log_task_activity` inserts the 'completed'/'shifted'
+     * rows) — but they only ever land on the task we just wrote, so this needs a
+     * `.in(task_id, …)` read, not a re-download of the org's whole timeline.
+     * That re-download is exactly what the unawaited full invalidate used to
+     * start on every single write; it is now coalesced into
+     * `scheduleFullReconcile`, whose only remaining job is picking up OTHER
+     * people's changes.
      */
     const refreshTasks = async (...ids: (string | null | undefined)[]) => {
       const wanted = ids.filter((id): id is string => !!id);
       if (wanted.length === 0) return refreshTaskData();
       try {
-        upsertTasksInCache(queryClient, await fetchTasksByIds(wanted));
+        const [freshTasks, freshActivity] = await Promise.all([
+          fetchTasksByIds(wanted),
+          fetchActivityByTaskIds(wanted),
+        ]);
+        upsertTasksInCache(queryClient, freshTasks);
+        replaceActivityForTasks(queryClient, wanted, freshActivity);
       } catch {
         // A failed targeted read is not a failed write — fall through to the full
         // refresh rather than leaving the caller thinking the mutation broke.
         await refreshTaskData();
         return;
       }
-      void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+      scheduleFullReconcile(queryClient);
     };
 
     // Org-wide id → person map (name + avatar only) so activity actors can be
@@ -452,7 +538,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       deletePersonalTask: async (id) => {
         await deletePersonalTaskWrite(id);
         removeTaskFromCache(queryClient, id);
-        void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        replaceActivityForTasks(queryClient, [id], []); // rows went with it (cascade)
+        scheduleFullReconcile(queryClient);
       },
       updateTask: async (id, patch) => {
         await updateTaskWrite(id, patch);
@@ -461,7 +548,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       deleteTask: async (id) => {
         await deleteTaskWrite(id);
         removeTaskFromCache(queryClient, id);
-        void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+        replaceActivityForTasks(queryClient, [id], []); // rows went with it (cascade)
+        scheduleFullReconcile(queryClient);
       },
       // startTask / completeTask / reviseTask: LIVE (B4). The DB trigger logs the
       // status-change activity (started is logged by the write itself); refetch after.
@@ -470,7 +558,19 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await refreshTasks(id);
       },
       completeTask: async (id, note) => {
-        await completeTaskWrite(id, user.id, note);
+        try {
+          await completeTaskWrite(id, user.id, note);
+        } catch (e) {
+          // The `enforce_task_locations_complete` trigger rejects a completion
+          // whose checklist isn't fully resolved, and the modal renders that
+          // message. But the modal's own "ready to complete" banner is computed
+          // from the cached locations — the very thing the server just said is
+          // wrong — so without this the user is shown a green "Nice work!" and a
+          // red rejection at the same time. Re-read the task so the banner flips
+          // to the real pending count, then let the error through.
+          await refreshTasks(id).catch(() => {});
+          throw e;
+        }
         await refreshTasks(id);
       },
       // reopenTask: LIVE. Reverses a completion (current-week only, gated in the UI):
@@ -530,11 +630,17 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
       // the add_task_remark RPC (notifications has no client INSERT policy), then refetches.
       addRemark: async (id, note, mentionedIds) => {
         await addRemarkWrite(id, note, mentionedIds);
-        // The remark row itself lands in task_activity (background slice); what the
-        // task row needs is its bumped last_remark_at.
+        // Picks up the bumped last_remark_at AND the new remark row itself, since
+        // refreshTasks re-reads this task's activity directly.
         await refreshTasks(id);
-        // Fans out @mention notifications, so refresh the feed's own key too.
-        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
+        // NOT refreshing the notification feed, deliberately. add_task_remark fans
+        // mention notifications out to OTHER people — it skips the author outright
+        // (`v_uid is distinct from v_actor`), and RLS scopes the feed to its owner.
+        // So this write cannot change my own feed, even if I @mention myself. The
+        // awaited invalidate that used to sit here re-downloaded my entire
+        // notification history, paged, before "Posting…" cleared — a full round of
+        // work to observe a change that provably didn't happen. If a row ever does
+        // land for me, the realtime subscription in useMyNotifications catches it.
       },
       // Mark own notifications read (always allowed — RLS scopes to the caller).
       markNotificationsRead: async (ids) => {
@@ -559,7 +665,12 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         if (ids.length === 0) return;
         markReadOptimistic(queryClient, ids);
         await markNotificationsReadWrite(ids);
-        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY] });
+        // Mark stale WITHOUT refetching. This runs on every task open, and the
+        // refetch is a paged walk of the caller's whole notification history —
+        // then the realtime subscription echoes our own UPDATE back and
+        // invalidates a second time. `markReadOptimistic` has already applied the
+        // only change there was (read_at), so opening a task costs one UPDATE.
+        await queryClient.invalidateQueries({ queryKey: [TASK_NOTIF_KEY], refetchType: "none" });
       },
 
       recurringTasks,
@@ -663,9 +774,16 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         task.locations.every((l) => l.completedAt !== null || l.naAt !== null),
       // Location toggles flip the React Query cache OPTIMISTICALLY first, so the
       // tick/N/A renders the instant the user clicks instead of after the Supabase
-      // round-trip + full refetch (which felt like a dead click). The network write
-      // then runs in the background and we invalidate to reconcile timestamps/by-names;
-      // a failed write rolls back by refetching the server truth.
+      // round-trip (which felt like a dead click). The write then SETTLES that
+      // patch onto the row it actually wrote, which it returns — so there is no
+      // reconcile refetch at all. That matters twice over: the old per-tick
+      // `invalidateQueries(["taskData"])` cost ~24 sequential requests EACH (so a
+      // five-location checklist queued five full reloads before the user even
+      // reached Mark complete), and it raced — a reload begun before a later
+      // tick's write landed could resolve after it and stomp the newer state,
+      // leaving a checklist that looked finished while the DB disagreed and the
+      // completion trigger rejected it. A failed write still rolls back to server
+      // truth.
       setTaskLocationDone: async (taskLocationId, done) => {
         patchTaskLocation(queryClient, taskLocationId, (l) => ({
           ...l,
@@ -674,11 +792,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           ...(done ? { naAt: null, naBy: null } : {}),
         }));
         try {
-          await setTaskLocationDoneWrite(taskLocationId, done, user.id);
-          // NOT awaited — same reasoning as setTaskLocationsDone below: the
-          // optimistic patch already shows the final state, so awaiting a full
-          // reload only kept the checkbox disabled for the length of it.
-          void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          applyTaskLocationRows(queryClient, await setTaskLocationDoneWrite(taskLocationId, done, user.id));
+          scheduleFullReconcile(queryClient);
         } catch (e) {
           // Failure path still awaits: the optimistic patch is wrong and must be
           // rolled back to server truth before the caller surfaces the error.
@@ -694,8 +809,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           ...(na ? { completedAt: null, completedBy: null } : {}),
         }));
         try {
-          await setTaskLocationNaWrite(taskLocationId, na, user.id);
-          void queryClient.invalidateQueries({ queryKey: ["taskData"] }); // see above
+          applyTaskLocationRows(queryClient, await setTaskLocationNaWrite(taskLocationId, na, user.id));
+          scheduleFullReconcile(queryClient); // see above
         } catch (e) {
           await refreshTaskData();
           throw e;
@@ -714,12 +829,8 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
           }));
         }
         try {
-          await setTaskLocationsDoneWrite(taskLocationIds, done, user.id);
-          // Deliberately NOT awaited. The optimistic patch above already shows the
-          // final state, so awaiting the ["taskData"] refetch here only kept the
-          // Select all / Clear all buttons disabled for the length of a full
-          // reload. Let the cache reconcile timestamps/by-names in the background.
-          void queryClient.invalidateQueries({ queryKey: ["taskData"] });
+          applyTaskLocationRows(queryClient, await setTaskLocationsDoneWrite(taskLocationIds, done, user.id));
+          scheduleFullReconcile(queryClient); // see above
         } catch (e) {
           // Failure path still awaits: the optimistic patch is wrong and must be
           // rolled back to server truth before the caller surfaces the error.

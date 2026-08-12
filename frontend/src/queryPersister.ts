@@ -27,15 +27,48 @@ export const PERSIST_BUSTER = "v1";
 /** How long a persisted cache is allowed to be restored before it's discarded. */
 export const PERSIST_MAX_AGE = 24 * 60 * 60 * 1000; // 24h
 
+/**
+ * Minimum gap between two writes to IndexedDB.
+ *
+ * Every write structured-clones the WHOLE dehydrated cache — the org's tasks,
+ * the activity history, the receivables payload — off the main thread's budget.
+ * React Query asks us to persist on every cache mutation, so a burst of writes
+ * (ticking a location checklist, say) re-serialised all of it once per click.
+ * None of these datasets need second-granularity durability: the worst case for
+ * dropping the last few seconds is one cold re-fetch on the next page load.
+ */
+const PERSIST_THROTTLE_MS = 5_000;
+
 export function createIDBPersister(idbKey = "orange-one-rq-cache"): Persister {
+  // Trailing-edge throttle: always writes the LATEST client, never an older
+  // snapshot, and never leaves the final state of a burst unwritten.
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let pending: PersistedClient | null = null;
+  let lastWriteAt = 0;
+
+  const flush = () => {
+    timer = null;
+    const client = pending;
+    pending = null;
+    if (!client) return;
+    lastWriteAt = Date.now();
+    void set(idbKey, client);
+  };
+
   return {
-    persistClient: async (client: PersistedClient) => {
-      await set(idbKey, client);
+    persistClient: (client: PersistedClient) => {
+      pending = client;
+      if (timer) return; // a write is already queued; it will pick up this client
+      timer = setTimeout(flush, Math.max(0, PERSIST_THROTTLE_MS - (Date.now() - lastWriteAt)));
     },
     restoreClient: async () => {
       return await get<PersistedClient>(idbKey);
     },
     removeClient: async () => {
+      // Cancel any queued write, or it would resurrect the cache we just cleared.
+      if (timer) clearTimeout(timer);
+      timer = null;
+      pending = null;
       await del(idbKey);
     },
   };

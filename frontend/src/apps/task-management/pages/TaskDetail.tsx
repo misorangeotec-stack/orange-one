@@ -32,11 +32,24 @@ export default function TaskDetail() {
   const [reopening, setReopening] = useState(false);
   const [togglingLoc, setTogglingLoc] = useState<string | null>(null);
   const [bulkLoc, setBulkLoc] = useState(false);
+  // A failed checklist write used to escape as an unhandled rejection: the store
+  // rolled the optimistic tick back but nothing told the user, so a row could
+  // silently revert (or appear done when it wasn't) and then "Mark complete" got
+  // rejected by the server for reasons the screen never showed.
+  const [locError, setLocError] = useState("");
+  const runLocationWrite = async (fn: () => Promise<void>) => {
+    setLocError("");
+    try {
+      await fn();
+    } catch (e) {
+      setLocError((e as Error).message || "Couldn't save that location — please try again.");
+    }
+  };
   const runBulkLocations = async (done: boolean, ids: string[]) => {
     if (ids.length === 0) return;
     setBulkLoc(true);
     try {
-      await setTaskLocationsDone(ids, done);
+      await runLocationWrite(() => setTaskLocationsDone(ids, done));
     } finally {
       setBulkLoc(false);
     }
@@ -391,7 +404,7 @@ export default function TaskDetail() {
                         onClick={async () => {
                           setTogglingLoc(tl.id);
                           try {
-                            await setTaskLocationDone(tl.id, !done);
+                            await runLocationWrite(() => setTaskLocationDone(tl.id, !done));
                           } finally {
                             setTogglingLoc(null);
                           }
@@ -431,7 +444,7 @@ export default function TaskDetail() {
                           onClick={async () => {
                             setTogglingLoc(tl.id);
                             try {
-                              await setTaskLocationNa(tl.id, !na);
+                              await runLocationWrite(() => setTaskLocationNa(tl.id, !na));
                             } finally {
                               setTogglingLoc(null);
                             }
@@ -451,6 +464,7 @@ export default function TaskDetail() {
                   );
                 })}
               </ul>
+              {locError && <p className="mt-3 text-[12px] text-[#d4493f]">{locError}</p>}
               {completeBlocked && !closed && (
                 <p className="mt-3 text-[12px] text-grey-2">
                   Tick off or mark <b className="text-navy font-medium">N/A</b> on every location to enable <b className="text-navy font-medium">Mark complete</b>.

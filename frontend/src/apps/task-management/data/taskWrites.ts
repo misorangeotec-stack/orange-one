@@ -1,6 +1,7 @@
 import { supabase } from "@/core/platform/supabase";
-import type { WorkspaceSettings } from "../types";
+import type { TaskLocation, WorkspaceSettings } from "../types";
 import type { Database } from "@/core/platform/database.types";
+import { mapTaskLocation } from "./fetchTaskData";
 
 type WorkspaceSettingsUpdate = Database["public"]["Tables"]["workspace_settings"]["Update"];
 
@@ -183,21 +184,33 @@ export async function deleteTask(taskId: string): Promise<void> {
  * (done and N/A are mutually exclusive). RLS limits this to people who can act on
  * the parent task. Untick is allowed while the task is still open so a mis-tick
  * can be corrected before completion.
+ *
+ * RETURNS THE WRITTEN ROW (`.select("*")` on the update). That is server truth
+ * for free — same round-trip, no follow-up read — and it is what lets the store
+ * settle its optimistic patch without invalidating anything. The old reconcile
+ * was a full `["taskData"]` refetch per tick, which both cost ~24 sequential
+ * requests and raced: a reload started before a later tick's write landed could
+ * resolve after it and stomp the newer state, leaving the checklist disagreeing
+ * with the DB (and the completion gate rejecting a checklist that looked done).
+ * A response cannot race the write it belongs to. Safe under RLS:
+ * `task_locations_rw` is FOR ALL, so its USING clause covers the RETURNING rows.
  */
 export async function setTaskLocationDone(
   taskLocationId: string,
   done: boolean,
   actorId: string
-): Promise<void> {
-  const { error } = await supabase
+): Promise<TaskLocation[]> {
+  const { data, error } = await supabase
     .from("task_locations")
     .update({
       completed_at: done ? new Date().toISOString() : null,
       completed_by: done ? actorId : null,
       ...(done ? { na_at: null, na_by: null } : {}),
     })
-    .eq("id", taskLocationId);
+    .eq("id", taskLocationId)
+    .select("*");
   if (error) throw new Error(error.message);
+  return (data ?? []).map(mapTaskLocation);
 }
 
 /**
@@ -206,15 +219,16 @@ export async function setTaskLocationDone(
  * ticks each row (clearing any N/A, same as the single-row toggle); `done: false`
  * resets the rows to untouched, clearing BOTH the done and the N/A flags, so
  * "Clear all" leaves a clean checklist rather than a mix of blank and N/A rows.
- * Same task-scoped RLS as setTaskLocationDone.
+ * Same task-scoped RLS as setTaskLocationDone, and it returns the written rows
+ * for the same reason (see above).
  */
 export async function setTaskLocationsDone(
   taskLocationIds: string[],
   done: boolean,
   actorId: string
-): Promise<void> {
-  if (taskLocationIds.length === 0) return;
-  const { error } = await supabase
+): Promise<TaskLocation[]> {
+  if (taskLocationIds.length === 0) return [];
+  const { data, error } = await supabase
     .from("task_locations")
     .update({
       completed_at: done ? new Date().toISOString() : null,
@@ -222,8 +236,10 @@ export async function setTaskLocationsDone(
       na_at: null,
       na_by: null,
     })
-    .in("id", taskLocationIds);
+    .in("id", taskLocationIds)
+    .select("*");
   if (error) throw new Error(error.message);
+  return (data ?? []).map(mapTaskLocation);
 }
 
 /**
@@ -231,22 +247,25 @@ export async function setTaskLocationsDone(
  * location counts as resolved for the completion gate, so a task whose remaining
  * locations are all done-or-N/A can be completed. Marking N/A also clears any
  * done flag on the row (the two are mutually exclusive). Same task-scoped RLS as
- * setTaskLocationDone; reversible while the task is open.
+ * setTaskLocationDone; reversible while the task is open. Returns the written
+ * row for the same reason (see setTaskLocationDone).
  */
 export async function setTaskLocationNa(
   taskLocationId: string,
   na: boolean,
   actorId: string
-): Promise<void> {
-  const { error } = await supabase
+): Promise<TaskLocation[]> {
+  const { data, error } = await supabase
     .from("task_locations")
     .update({
       na_at: na ? new Date().toISOString() : null,
       na_by: na ? actorId : null,
       ...(na ? { completed_at: null, completed_by: null } : {}),
     })
-    .eq("id", taskLocationId);
+    .eq("id", taskLocationId)
+    .select("*");
   if (error) throw new Error(error.message);
+  return (data ?? []).map(mapTaskLocation);
 }
 
 /**
