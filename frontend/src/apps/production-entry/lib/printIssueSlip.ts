@@ -29,10 +29,17 @@ function esc(v: string | number | null | undefined): string {
 
 /** Build the printable HTML document for an issue slip. */
 export function renderIssueSlipHtml(vm: IssueSlipExport): string {
+  // Same rule as the Excel export: the card's own split wins; the normalised
+  // fallback is only for legacy cards. See IssueSlipLine.proportionPct.
   const totalTheo = vm.lines.reduce((a, l) => a + (l.theoreticalKg ?? 0), 0);
   const rows = vm.lines.map((l) => ({
     name: l.productName,
-    prop: totalTheo > 0 && l.theoreticalKg != null ? round2((l.theoreticalKg / totalTheo) * 100) : null,
+    prop:
+      l.proportionPct != null
+        ? round2(l.proportionPct)
+        : totalTheo > 0 && l.theoreticalKg != null
+          ? round2((l.theoreticalKg / totalTheo) * 100)
+          : null,
     theo: l.theoreticalKg,
     batch: l.rmBatchNo,
     actual: l.actualIssued,

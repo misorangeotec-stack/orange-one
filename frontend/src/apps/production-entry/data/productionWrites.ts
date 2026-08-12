@@ -19,10 +19,16 @@ export interface RequestLineInput {
   rawMaterialId: string;
   qty: string;
   unitId: string | null;
+  /** This line's share of the FG quantity. Carried for traceability + exact
+   *  rehydration on edit, and read by the printed slip's Proportion Dosage. */
+  pct: string | null;
+  /** The BOM master row this line came from, or null when typed by hand. */
+  bomId: string | null;
 }
 
 export interface RequestInput {
-  /** FG total quantity to produce; the RM line quantities must sum to this. */
+  /** FG total quantity to produce. The RM line quantities are shown against this
+   *  but are NOT required to sum to it — see useJobCardForm's sumWarning. */
   fgTotalQty: string;
   bomLines: RequestLineInput[];
   fgItemId: string;
@@ -30,16 +36,23 @@ export interface RequestInput {
   requesterName: string;
 }
 
+/** The bom_lines element shape both intake RPCs store. The extra pct/bom_id keys
+ *  need no migration: `select jsonb_agg(l) from jsonb_array_elements(...) l`
+ *  re-aggregates whole elements, so unknown keys ride through untouched. */
+const bomLinePayload = (l: RequestLineInput) => ({
+  raw_material_id: l.rawMaterialId,
+  required_qty: l.qty ?? "",
+  unit_id: l.unitId ?? "",
+  pct: l.pct ?? "",
+  bom_id: l.bomId ?? "",
+});
+
 /** Raise a job card. The Lot/Batch number is auto-generated server-side. */
 export async function submitRequest(input: RequestInput): Promise<string> {
   const { data, error } = await db.rpc("fms_production_submit_request", {
     p: {
       fg_qty: input.fgTotalQty ?? "",
-      bom_lines: input.bomLines.map((l) => ({
-        raw_material_id: l.rawMaterialId,
-        required_qty: l.qty ?? "",
-        unit_id: l.unitId ?? "",
-      })),
+      bom_lines: input.bomLines.map(bomLinePayload),
       fg_item_id: input.fgItemId,
       issue_remarks: input.issueRemarks ?? "",
       requester_name: input.requesterName,
@@ -56,11 +69,7 @@ export async function updateRequest(requestId: string, input: RequestInput): Pro
     p_req: requestId,
     p: {
       fg_qty: input.fgTotalQty ?? "",
-      bom_lines: input.bomLines.map((l) => ({
-        raw_material_id: l.rawMaterialId,
-        required_qty: l.qty ?? "",
-        unit_id: l.unitId ?? "",
-      })),
+      bom_lines: input.bomLines.map(bomLinePayload),
       fg_item_id: input.fgItemId,
       issue_remarks: input.issueRemarks ?? "",
     },
@@ -206,6 +215,10 @@ const MASTER_TABLE: Record<ProductionMasterType, string> = {
   packaging_item: "fms_production_packaging_items",
   fg_item: "fms_production_fg_items",
   unit: "fms_production_units",
+  // Present so this record stays exhaustive over ProductionMasterType, but BOMs
+  // are NOT written through insertMaster/updateMaster — a header plus its
+  // component list has to move in one transaction, so it goes via saveBom below.
+  bom: "fms_production_boms",
 };
 
 export interface MasterInput {
@@ -232,6 +245,87 @@ export async function insertMaster(mt: ProductionMasterType, input: MasterInput)
 export async function updateMaster(mt: ProductionMasterType, id: string, input: MasterInput): Promise<void> {
   const { error } = await db.from(MASTER_TABLE[mt]).update(masterRow(input)).eq("id", id);
   if (error) throw new Error(error.message);
+}
+
+/* ---------------------------------- BOMs ---------------------------------- */
+
+export interface BomComponentInput {
+  rawMaterialId: string;
+  /** Share of the FG quantity, as a percentage. Never a quantity. */
+  pct: string;
+}
+
+export interface BomInput {
+  id: string | null;
+  fgItemId: string;
+  name: string;
+  isDefault: boolean;
+  active: boolean;
+  sortOrder: number;
+  components: BomComponentInput[];
+}
+
+/**
+ * Save one BOM — header plus its COMPLETE component list, which replaces
+ * whatever was there. Goes through an RPC rather than a direct table write
+ * because two things here must be atomic: clearing the FG's previous default
+ * before setting this one (a partial unique index permits exactly one), and the
+ * delete-then-insert of the components (split across two supabase-js calls, a
+ * failed insert would leave the BOM empty).
+ */
+export async function saveBom(input: BomInput): Promise<string> {
+  const { data, error } = await db.rpc("fms_production_save_bom", {
+    p: {
+      id: input.id ?? "",
+      fg_item_id: input.fgItemId,
+      name: input.name,
+      is_default: input.isDefault,
+      active: input.active,
+      sort_order: input.sortOrder,
+      components: input.components.map((c, i) => ({
+        raw_material_id: c.rawMaterialId,
+        pct: c.pct ?? "0",
+        sort_order: i,
+      })),
+    },
+  });
+  if (error) throw new Error(error.message);
+  return data as string;
+}
+
+/** One parsed BOM block from the spreadsheet — names, not ids. */
+export interface BomImportBlock {
+  fgItem: string;
+  bomName: string;
+  components: { rawMaterial: string; pct: number }[];
+}
+
+export interface BomImportResult {
+  boms_added: number;
+  boms_updated: number;
+  components: number;
+  fg_items_created: number;
+  raw_materials_created: number;
+}
+
+/**
+ * Apply a parsed spreadsheet. The RPC matches FG items and raw materials by name
+ * (case-insensitively) and CREATES any that are missing — which is why it runs
+ * SECURITY DEFINER: those two masters' RLS policies would otherwise reject a BOM
+ * owner who doesn't also own them, halfway through the import.
+ */
+export async function importBoms(blocks: BomImportBlock[]): Promise<BomImportResult> {
+  const { data, error } = await db.rpc("fms_production_import_boms", {
+    p: {
+      boms: blocks.map((b) => ({
+        fg_item: b.fgItem,
+        bom_name: b.bomName,
+        components: b.components.map((c) => ({ raw_material: c.rawMaterial, pct: c.pct })),
+      })),
+    },
+  });
+  if (error) throw new Error(error.message);
+  return data as BomImportResult;
 }
 
 /* ============================ MASTER GOVERNANCE ========================== */

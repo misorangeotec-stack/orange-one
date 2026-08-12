@@ -10,6 +10,7 @@ import {
   announce as announceWrite,
   cancelRequest as cancelRequestWrite,
   holdRequest as holdRequestWrite,
+  importBoms as importBomsWrite,
   insertMaster as insertMasterWrite,
   markNotificationsRead as markNotificationsReadWrite,
   markReadyToDispatch as markReadyToDispatchWrite,
@@ -18,6 +19,7 @@ import {
   recordStep as recordStepWrite,
   requestNewMaster as requestNewMasterWrite,
   resolveMasterRequest as resolveMasterRequestWrite,
+  saveBom as saveBomWrite,
   setConfig as setConfigWrite,
   setMasterManagers as setMasterManagersWrite,
   setStepOwner as setStepOwnerWrite,
@@ -26,6 +28,9 @@ import {
   updateMaster as updateMasterWrite,
   updateStep as updateStepWrite,
   uploadStepDocument as uploadStepDocumentWrite,
+  type BomImportBlock,
+  type BomImportResult,
+  type BomInput,
   type MasterInput,
   type RequestInput,
   type StepOwnerInput,
@@ -47,6 +52,8 @@ import { masterTypeLabel } from "./lib/masterFields";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { StepKey } from "./lib/steps";
 import type {
+  Bom,
+  BomComponent,
   Category,
   Designation,
   FgItem,
@@ -93,6 +100,18 @@ interface ProductionStoreValue {
   fgItemById: (id: string | null) => FgItem | undefined;
   unitById: (id: string | null) => Unit | undefined;
   masterList: (mt: ProductionMasterType) => NamedMaster[];
+
+  // BOM master
+  boms: Bom[];
+  activeBoms: Bom[];
+  bomById: (id: string | null) => Bom | undefined;
+  /** That FG's active BOMs, default first. Empty when the FG has none — in which
+   *  case the job card simply falls back to manual entry. */
+  bomsForFg: (fgItemId: string | null) => Bom[];
+  /** The BOM a job card should reach for when this FG is picked, if any. */
+  defaultBomForFg: (fgItemId: string | null) => Bom | undefined;
+  /** A BOM's components in display order. */
+  bomComponentsFor: (bomId: string | null) => BomComponent[];
 
   // config
   stepOwners: StepOwner[];
@@ -178,6 +197,8 @@ interface ProductionStoreValue {
   // master writes
   insertMaster: (mt: ProductionMasterType, input: MasterInput) => Promise<void>;
   updateMaster: (mt: ProductionMasterType, id: string, input: MasterInput) => Promise<void>;
+  saveBom: (input: BomInput) => Promise<void>;
+  importBoms: (blocks: BomImportBlock[]) => Promise<BomImportResult>;
 }
 
 const Ctx = createContext<ProductionStoreValue | null>(null);
@@ -210,6 +231,8 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
   const packagingItems = data?.packagingItems ?? [];
   const fgItems = data?.fgItems ?? [];
   const units = data?.units ?? [];
+  const boms = data?.boms ?? [];
+  const bomComponents = data?.bomComponents ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const requests = data?.requests ?? [];
@@ -276,6 +299,33 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       packaging_item: packagingItems,
       fg_item: fgItems,
       unit: units,
+      bom: boms,
+    };
+
+    /* ------------------------------ BOM master ------------------------------ */
+
+    const componentsByBom = new Map<string, BomComponent[]>();
+    for (const c of bomComponents) {
+      const list = componentsByBom.get(c.bomId);
+      if (list) list.push(c);
+      else componentsByBom.set(c.bomId, [c]);
+    }
+    for (const list of componentsByBom.values()) list.sort((a, b) => a.sortOrder - b.sortOrder);
+
+    const activeBoms = byOrder(boms);
+    // Default first so a picker's first entry is the one a job card would use.
+    const bomsForFg = (fgItemId: string | null): Bom[] =>
+      fgItemId
+        ? activeBoms
+            .filter((b) => b.fgItemId === fgItemId)
+            .sort((a, b) => Number(b.isDefault) - Number(a.isDefault) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+        : [];
+    // Auto-apply only when the choice is unambiguous: an explicitly flagged
+    // default, or a lone BOM. Several BOMs and none flagged means the user picks
+    // — quietly loading one of three recipes is how a wrong batch gets made.
+    const defaultBomForFg = (fgItemId: string | null): Bom | undefined => {
+      const list = bomsForFg(fgItemId);
+      return list.find((b) => b.isDefault) ?? (list.length === 1 ? list[0] : undefined);
     };
 
     /* --------------------------- master governance --------------------------- */
@@ -361,6 +411,13 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       fgItemById: (id) => idById(fgItems, id),
       unitById: (id) => idById(units, id),
       masterList: (mt) => MASTER_LIST[mt],
+
+      boms,
+      activeBoms,
+      bomById: (id) => idById(boms, id),
+      bomsForFg,
+      defaultBomForFg,
+      bomComponentsFor: (bomId) => (bomId ? componentsByBom.get(bomId) ?? [] : []),
 
       stepOwners,
       stepOwnerFor,
@@ -514,9 +571,21 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
         await updateMasterWrite(mt, id, input);
         await invalidate();
       },
+      saveBom: async (input) => {
+        await saveBomWrite(input);
+        await invalidate();
+      },
+      importBoms: async (blocks) => {
+        const result = await importBomsWrite(blocks);
+        await invalidate();
+        return result;
+      },
     };
+    // ⚠ Hand-maintained. Every list read above must appear here — omit one and the
+    // store keeps serving the previous snapshot after an invalidate, silently.
   }, [
     isLoading, error, dir, userId, isAdmin, designations, categories, rawMaterials, packagingItems, fgItems, units,
+    boms, bomComponents,
     masterManagers, masterRequests, requests, activity, notifications, stepOwners, processCoordinatorIds,
     stepSla, batchSeqStart, batchNoPreview, queryClient, session.user, orgPeople,
   ]);

@@ -46,11 +46,48 @@ export interface FgItem extends NamedMaster {
 }
 export type Unit = NamedMaster;
 
-/** One raw-material line of a job card's BOM (intake-only reference data). */
+/**
+ * BOM MASTER — one named formulation of one FG item. An FG may have several
+ * (alternate recipes); the one flagged `isDefault` is what a job card auto-loads.
+ * `name` may legitimately equal the FG item's own name — never assume otherwise.
+ */
+export interface Bom extends NamedMaster {
+  fgItemId: string | null;
+  isDefault: boolean;
+}
+
+/**
+ * One raw material of a BOM, as a PERCENTAGE of the FG quantity.
+ *
+ * ⚠ `pct` is the stored source of truth. Quantities are always derived as
+ * `fgQty * pct / 100`, never the reverse — and a job card editing its own line
+ * quantities must NEVER write a recomputed pct back here (one card's typo would
+ * silently rewrite the formulation for every future card). No unit: it belongs
+ * to the raw material's own master. Components are not required to total 100%.
+ */
+export interface BomComponent {
+  id: string;
+  bomId: string;
+  rawMaterialId: string;
+  pct: number;
+  sortOrder: number;
+}
+
+/**
+ * One raw-material line of a job card's BOM (intake-only reference data).
+ *
+ * `pct` and `bomId` are carried for traceability — which BOM the card was raised
+ * from and the exact split used — and cost nothing: both intake RPCs normalise
+ * bom_lines with `jsonb_agg(l)` over whole elements, so extra keys persist
+ * without a migration. Null on cards raised before the BOM master existed, where
+ * pct is back-computed from requiredQty/fgQty on hydrate.
+ */
 export interface BomLine {
   rawMaterialId: string | null;
   requiredQty: number | null;
   unitId: string | null;
+  pct: number | null;
+  bomId: string | null;
 }
 
 /** One raw-material line of the material handover: the ACTUAL qty handed over
@@ -282,7 +319,7 @@ export interface ProductionRequest {
 
 /* ------------------------------ master governance ------------------------- */
 
-export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "unit" | "packaging_item";
+export type ProductionMasterType = "category" | "raw_material" | "fg_item" | "unit" | "packaging_item" | "bom";
 
 // Category is retained in the union above (legacy master_requests / managers rows
 // may still reference it) but is intentionally omitted from this registry so it no
@@ -293,6 +330,21 @@ export const PRODUCTION_MASTER_TYPES: { value: ProductionMasterType; label: stri
   { value: "packaging_item", label: "Packaging Item", plural: "Packaging Items" },
   { value: "fg_item", label: "FG Item", plural: "FG Items" },
   { value: "unit", label: "Unit", plural: "Units" },
+];
+
+/**
+ * The master types that can have an OWNER assigned (Setup → Master Owners).
+ *
+ * ⚠ This is deliberately WIDER than PRODUCTION_MASTER_TYPES. 'bom' is kept out
+ * of that registry because a header-plus-lines record does not fit the
+ * single-payload "request a new master" modal or the flat MasterCrud tabs — but
+ * its RLS write policy is `is_admin OR is_master_manager('bom', …)`, so without
+ * a row here that owner branch would be unreachable and BOMs would be
+ * admin-only forever. Used ONLY by MasterOwnersSection.
+ */
+export const PRODUCTION_OWNABLE_MASTER_TYPES: { value: ProductionMasterType; label: string; plural: string }[] = [
+  ...PRODUCTION_MASTER_TYPES,
+  { value: "bom", label: "BOM", plural: "BOMs" },
 ];
 
 export interface ProductionMasterManager {

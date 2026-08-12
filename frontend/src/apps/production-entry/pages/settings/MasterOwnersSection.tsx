@@ -4,7 +4,7 @@ import Button from "@/shared/components/ui/Button";
 import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { useProductionStore } from "../../store";
-import { PRODUCTION_MASTER_TYPES, type ProductionMasterType } from "../../types";
+import { PRODUCTION_OWNABLE_MASTER_TYPES, type ProductionMasterType } from "../../types";
 
 /**
  * Master Owners (admin only). Each master's owner(s) may add and edit that master
@@ -56,7 +56,7 @@ export default function MasterOwnersSection() {
           </tr>
         </thead>
         <tbody>
-          {PRODUCTION_MASTER_TYPES.map((mt) => {
+          {PRODUCTION_OWNABLE_MASTER_TYPES.map((mt) => {
             const ids = s.managerIdsFor(mt.value);
             const names = ids.map((id) => s.profileById(id)?.name ?? "Unknown");
             return (
@@ -77,8 +77,12 @@ export default function MasterOwnersSection() {
       <Modal
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title={`Owners — ${PRODUCTION_MASTER_TYPES.find((m) => m.value === editing)?.plural ?? ""}`}
-        subtitle="They can add and edit this master, and approve requests for it."
+        title={`Owners — ${PRODUCTION_OWNABLE_MASTER_TYPES.find((m) => m.value === editing)?.plural ?? ""}`}
+        subtitle={
+          editing === "bom"
+            ? "They can add, edit and import BOMs. (BOMs are built on their own screen, so there are no requests to approve.)"
+            : "They can add and edit this master, and approve requests for it."
+        }
         footer={
           <>
             <Button variant="ghost" size="sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</Button>

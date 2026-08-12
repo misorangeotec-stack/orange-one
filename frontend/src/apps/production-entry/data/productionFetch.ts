@@ -4,6 +4,8 @@ import { supabase } from "@/core/platform/supabase";
 const db = supabase as any;
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
+  Bom,
+  BomComponent,
   Category,
   Designation,
   FgItem,
@@ -38,6 +40,8 @@ type Tbl =
   | "fms_production_packaging_items"
   | "fms_production_fg_items"
   | "fms_production_units"
+  | "fms_production_boms"
+  | "fms_production_bom_components"
   | "fms_production_master_managers"
   | "fms_production_master_requests"
   | "fms_production_requests"
@@ -81,6 +85,8 @@ export interface ProductionData {
   packagingItems: PackagingItem[];
   fgItems: FgItem[];
   units: Unit[];
+  boms: Bom[];
+  bomComponents: BomComponent[];
   masterManagers: ProductionMasterManager[];
   masterRequests: ProductionMasterRequest[];
   requests: ProductionRequest[];
@@ -93,6 +99,20 @@ export interface ProductionData {
 const num = (v: any): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
 
 const mapMaster = (r: any): NamedMaster => ({ id: r.id, name: r.name, active: r.active, sortOrder: r.sort_order ?? 0 });
+
+const mapBom = (r: any): Bom => ({
+  ...mapMaster(r),
+  fgItemId: r.fg_item_id ?? null,
+  isDefault: !!r.is_default,
+});
+
+const mapBomComponent = (r: any): BomComponent => ({
+  id: r.id,
+  bomId: r.bom_id,
+  rawMaterialId: r.raw_material_id,
+  pct: Number(r.pct ?? 0),
+  sortOrder: r.sort_order ?? 0,
+});
 
 const mapMasterManager = (r: any): ProductionMasterManager => ({
   id: r.id,
@@ -120,11 +140,15 @@ const mapRequest = (r: any): ProductionRequest => ({
   rawMaterialId: r.raw_material_id ?? null,
   requiredQty: num(r.required_qty),
   unitId: r.unit_id ?? null,
+  // pct/bomId are absent on cards raised before the BOM master existed; the edit
+  // form back-computes pct from requiredQty/fgQty in that case.
   bomLines: Array.isArray(r.bom_lines)
     ? r.bom_lines.map((l: any) => ({
         rawMaterialId: l.raw_material_id ?? null,
         requiredQty: num(l.required_qty),
         unitId: l.unit_id ?? null,
+        pct: num(l.pct),
+        bomId: l.bom_id || null,
       }))
     : [],
   fgItemId: r.fg_item_id ?? null,
@@ -346,6 +370,7 @@ const mapNotification = (r: any): ProductionNotification => ({
 export async function fetchProductionData(): Promise<ProductionData> {
   const [
     stepOwners, configRows, designations, categories, rawMaterials, packagingItems, fgItems, units,
+    boms, bomComponents,
     masterManagers, masterRequests, requests, activity, notifications,
   ] = await Promise.all([
     fetchAll("fms_production_step_owners"),
@@ -356,6 +381,8 @@ export async function fetchProductionData(): Promise<ProductionData> {
     fetchAll("fms_production_packaging_items"),
     fetchAll("fms_production_fg_items"),
     fetchAll("fms_production_units"),
+    fetchAll("fms_production_boms"),
+    fetchAll("fms_production_bom_components"),
     fetchAll("fms_production_master_managers"),
     fetchAll("fms_production_master_requests"),
     fetchAll("fms_production_requests", "submitted_at"),
@@ -382,6 +409,8 @@ export async function fetchProductionData(): Promise<ProductionData> {
     packagingItems: packagingItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     fgItems: fgItems.map((r) => ({ ...mapMaster(r), unitId: r.unit_id ?? null })),
     units: units.map(mapMaster),
+    boms: boms.map(mapBom),
+    bomComponents: bomComponents.map(mapBomComponent),
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),
     requests: requests.map(mapRequest),

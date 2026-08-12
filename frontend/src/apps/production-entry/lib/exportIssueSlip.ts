@@ -25,6 +25,17 @@ export interface IssueSlipLine {
   productName: string;
   /** Theoretical weighing = the BOM line's required quantity. */
   theoreticalKg: number | null;
+  /**
+   * The line's own split percentage, straight from the card.
+   *
+   * ⚠ Load-bearing. The fallback below re-derives a percentage by normalising the
+   * theoretical weights to their own total, which only equals the real split when
+   * the lines happen to sum to the FG quantity. They no longer have to: a
+   * formulation totalling 33.3% would otherwise print as 59.5% and still show a
+   * confident 100% total — the paper form disagreeing with the BOM master.
+   * Null only on cards raised before the BOM master existed.
+   */
+  proportionPct: number | null;
   /** RM batch/lot no. from Material Handover, or "" if not yet handed over. */
   rmBatchNo: string;
   /** Actual issued qty from Material Handover, or null if not yet handed over. */
@@ -98,11 +109,18 @@ function styleSpan(ws: XLSX.WorkSheet, r: number, c0: number, c1: number, s: obj
 }
 
 export function exportIssueSlipXlsx(input: IssueSlipExport): void {
-  // Derive proportion % from the theoretical weights so the column ties to 100.
+  // Prefer the split the card actually carries. Legacy cards (no stored pct) fall
+  // back to normalising the theoretical weights — correct for them, because the
+  // old form required the lines to sum to the FG quantity.
   const totalTheo = input.lines.reduce((a, l) => a + (l.theoreticalKg ?? 0), 0);
   const rows = input.lines.map((l) => ({
     name: l.productName,
-    prop: totalTheo > 0 && l.theoreticalKg != null ? round2((l.theoreticalKg / totalTheo) * 100) : null,
+    prop:
+      l.proportionPct != null
+        ? round2(l.proportionPct)
+        : totalTheo > 0 && l.theoreticalKg != null
+          ? round2((l.theoreticalKg / totalTheo) * 100)
+          : null,
     theo: l.theoreticalKg,
     batch: l.rmBatchNo,
     actual: l.actualIssued,

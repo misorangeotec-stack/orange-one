@@ -58,12 +58,30 @@ export function buildBatchCardExport(
 ): BatchCardExport {
   const totalTheo = r.tsBomLines.reduce((a, l) => a + (l.requestedQty ?? 0), 0);
   const aisAdditional = r.aisRounds.reduce((a, rd) => a + (rd.aisQty ?? 0), 0);
+  const productionQty = r.fgQty != null ? r.fgQty + aisAdditional : null;
+
+  /**
+   * ⚠ Proportion is a share of the BATCH, not of the line total.
+   *
+   * This used to normalise the requested quantities to their own sum, which
+   * matched the real split only while the intake form forced the lines to add up
+   * to the FG quantity. They no longer have to — a formulation totalling a third
+   * of the batch is legitimate — and normalising would inflate every line and
+   * still print a confident 100%, disagreeing with both the BOM master and the
+   * issue slip. Falls back to the old behaviour only when the batch quantity is
+   * unknown (there is nothing better to divide by).
+   */
+  const proportionOf = (qty: number | null): number | null => {
+    if (qty == null) return null;
+    const base = productionQty && productionQty > 0 ? productionQty : totalTheo;
+    return base > 0 ? Math.round((qty / base) * 10000) / 100 : null;
+  };
 
   return {
     productName: lookups.fgItemName(r.fgItemId),
     lotNo: r.jobcardNo,
     batchNumber: r.batchCardNo ?? "",
-    productionQty: r.fgQty != null ? r.fgQty + aisAdditional : null,
+    productionQty,
     dateStart: dmy(r.mhActualDate ?? r.submittedAt),
     dateEnd: dmy(r.tsActualDate ?? r.tsAt),
     lines: r.tsBomLines.map((l) => {
@@ -71,8 +89,7 @@ export function buildBatchCardExport(
       const use = l.actualUse;
       return {
         itemName: l.rawMaterialName || lookups.rawMaterialName(l.rawMaterialId),
-        proportionPct:
-          totalTheo > 0 && l.requestedQty != null ? Math.round((l.requestedQty / totalTheo) * 10000) / 100 : null,
+        proportionPct: proportionOf(l.requestedQty),
         theoreticalKg: l.requestedQty,
         actualTransfer: transfer,
         actualUse: use,

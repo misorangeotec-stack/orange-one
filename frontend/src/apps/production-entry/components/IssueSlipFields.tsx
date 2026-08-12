@@ -37,8 +37,10 @@ export default function IssueSlipFields({
           ref={api.focusRef as (el: ComboboxHandle | null) => void}
           value={row.rawMaterialId}
           onChange={(v) => {
-            // The unit follows the raw material's own master unit; default qty to 1.
-            api.patch({ rawMaterialId: v, unitId: f.unitForRawMaterial(v), qty: row.qty || "1" });
+            // The unit follows the raw material's own master unit; default qty to 1
+            // (and let its share follow, so the row rescales like any other).
+            const qty = row.qty || "1";
+            api.patch({ rawMaterialId: v, unitId: f.unitForRawMaterial(v), ...f.patchLineQty(qty) });
             api.advance();
           }}
           options={f.rawMaterialOptionsFor(row)}
@@ -52,6 +54,23 @@ export default function IssueSlipFields({
       ),
     },
     {
+      // Editing either of the next two columns re-derives the other, so a line
+      // typed by hand still rescales when the FG quantity changes.
+      key: "pct",
+      header: <span className="block text-right">Split %</span>,
+      className: "w-28 min-w-[5.5rem]",
+      cell: (row, api) => (
+        <TextInput
+          ref={api.focusRef as (el: HTMLInputElement | null) => void}
+          type="number"
+          className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums"
+          value={row.pct}
+          onChange={(e) => api.patch(f.patchLinePct(e.target.value))}
+          onKeyDown={api.keyHandler}
+        />
+      ),
+    },
+    {
       key: "qty",
       header: <span className="block text-right">Qty</span>,
       className: "w-36 min-w-[7rem]",
@@ -61,7 +80,7 @@ export default function IssueSlipFields({
           type="number"
           className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums"
           value={row.qty}
-          onChange={(e) => api.patch({ qty: e.target.value })}
+          onChange={(e) => api.patch(f.patchLineQty(e.target.value))}
           onKeyDown={api.keyHandler}
         />
       ),
@@ -103,7 +122,7 @@ export default function IssueSlipFields({
               autoAdvance
             />
           </FieldLabel>
-          <FieldLabel label="FG Total Quantity" required hint="the raw materials below must add up to this">
+          <FieldLabel label="FG Total Quantity" required hint="each raw material below is scaled to this">
             <TextInput
               type="number"
               className="text-right tabular-nums"
@@ -113,6 +132,49 @@ export default function IssueSlipFields({
             />
           </FieldLabel>
         </div>
+
+        {/* The BOM picker only appears once the chosen FG actually has one — an FG
+            without a BOM is simply typed out by hand, exactly as it always was. */}
+        {f.fgHasBoms && (
+          <FieldLabel
+            label="BOM"
+            hint="loads this formulation's raw materials, scaled to the quantity above"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <Combobox
+                  value={f.bomId}
+                  onChange={(v) => {
+                    // Loading another BOM replaces the grid, so don't throw away
+                    // hand-edited lines without asking. Picking "enter manually"
+                    // keeps whatever is there as a starting point, so it's safe.
+                    if (v && f.bomDirty && !window.confirm("Load this BOM? The raw materials you've changed will be replaced.")) return;
+                    f.applyBom(v);
+                  }}
+                  options={f.bomOptions}
+                  placeholder="No BOM — enter manually"
+                  searchable
+                />
+              </div>
+              {f.bomId && f.bomDirty && (
+                <button
+                  type="button"
+                  onClick={() => f.applyBom(f.bomId)}
+                  className="shrink-0 text-[12.5px] font-semibold text-orange hover:underline"
+                >
+                  Reset to BOM
+                </button>
+              )}
+            </div>
+          </FieldLabel>
+        )}
+
+        {f.skipped > 0 && (
+          <p className="text-[12.5px] text-ryg-amber">
+            {f.skipped} component{f.skipped === 1 ? "" : "s"} skipped — the raw material is no longer active. Add
+            {f.skipped === 1 ? " it" : " them"} by hand, or reactivate in Masters.
+          </p>
+        )}
 
         <div className="space-y-2">
           <span className="block text-[13px] font-medium text-navy">
@@ -132,6 +194,9 @@ export default function IssueSlipFields({
                       <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">
                         {i === 0 ? "Total Qty" : ""}
                       </td>
+                      <td className="px-2.5 py-2 text-right tabular-nums text-[13px] text-grey-2">
+                        {i === 0 ? `${f.pctTotal}%` : ""}
+                      </td>
                       <td className="px-2.5 py-2 text-right tabular-nums font-semibold text-[13.5px]">{t.qty}</td>
                       <td className="px-2.5 py-2 text-[12.5px] text-grey-2">{t.unit}</td>
                       <td />
@@ -140,6 +205,7 @@ export default function IssueSlipFields({
                   {multiUnit && (
                     <tr className="bg-page/70 text-navy border-t border-line">
                       <td className="px-3 py-2 text-right text-[12px] font-semibold uppercase tracking-wide text-grey-2">Grand Total</td>
+                      <td />
                       <td className="px-2.5 py-2 text-right tabular-nums font-bold text-[13.5px]">{grandTotal}</td>
                       <td className="px-2.5 py-2 text-[12px] text-grey-2">all units</td>
                       <td />
@@ -150,17 +216,28 @@ export default function IssueSlipFields({
             }
           />
           <p className="text-[12px] text-grey-2">
-            List every raw material that goes into this FG item, each with its own quantity and unit. Press Tab or Enter at
-            the end of a row to start the next one. Missing one? Type its name to request it.
+            List every raw material that goes into this FG item. Type a quantity or a split % — each fills in the other, and
+            both follow the FG quantity above. Press Tab or Enter at the end of a row to start the next one. Missing one?
+            Type its name to request it.
           </p>
           {f.requested && (
             <p className="text-[12px] text-teal">Requested {f.requested} — selectable once the master's owner approves it.</p>
           )}
+          {/* Informational only. Formulations legitimately fall short of the FG
+              quantity, so this reports the gap and never blocks the save. */}
           {filledLines.length > 0 && (
-            <div className={`text-[12.5px] font-medium ${f.sumMatches ? "text-ryg-green" : "text-ryg-red"}`}>
+            <div className={`text-[12.5px] font-medium ${f.sumMatches ? "text-ryg-green" : "text-grey"}`}>
               Raw-material total: <span className="tabular-nums">{f.rmSum}</span>
-              {f.fgTotal > 0 && <> / FG total <span className="tabular-nums">{f.fgTotal}</span></>}
-              {f.fgTotal > 0 && !f.sumMatches && " — must match to save"}
+              {f.fgTotal > 0 && (
+                <>
+                  {" / FG total "}
+                  <span className="tabular-nums">{f.fgTotal}</span>
+                  {" ("}
+                  <span className="tabular-nums">{f.pctTotal}%</span>
+                  {")"}
+                  {!f.sumMatches && <span className="text-grey-2"> — doesn't add up to the FG quantity, which is fine</span>}
+                </>
+              )}
             </div>
           )}
         </div>

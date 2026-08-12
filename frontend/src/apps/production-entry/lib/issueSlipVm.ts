@@ -32,9 +32,9 @@ export function buildIssueSlipExport(
 ): IssueSlipExport {
   const baseLines =
     r.bomLines.length > 0
-      ? r.bomLines.map((l) => ({ rawMaterialId: l.rawMaterialId, requiredQty: l.requiredQty }))
+      ? r.bomLines.map((l) => ({ rawMaterialId: l.rawMaterialId, requiredQty: l.requiredQty, pct: l.pct }))
       : r.rawMaterialId || r.requiredQty != null
-        ? [{ rawMaterialId: r.rawMaterialId, requiredQty: r.requiredQty }]
+        ? [{ rawMaterialId: r.rawMaterialId, requiredQty: r.requiredQty, pct: null }]
         : [];
 
   const handoverFor = handoverMatcher(r.mhBomLines, baseLines.length);
@@ -50,6 +50,7 @@ export function buildIssueSlipExport(
       return {
         productName: lookups.rawMaterialName(l.rawMaterialId),
         theoreticalKg: l.requiredQty,
+        proportionPct: l.pct,
         rmBatchNo: h?.lotNo ?? "",
         actualIssued: h?.qty ?? null,
       };
@@ -84,6 +85,9 @@ export function buildAisIssueSlipExport(
       return {
         productName: lookups.rawMaterialName(l.rawMaterialId),
         theoreticalKg: l.qty,
+        // An additional issue slip is a top-up typed against that round's own
+        // quantity, not a BOM, so it keeps the normalised derivation.
+        proportionPct: null,
         rmBatchNo: h?.lotNo ?? "",
         actualIssued: h?.qty ?? null,
       };

@@ -5,6 +5,7 @@ import Button from "@/shared/components/ui/Button";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { newUid } from "@/shared/components/ui/LineGrid";
 import { useProductionStore } from "../../store";
+import { pctFromQty } from "../../lib/bomMath";
 import { useJobCardForm, type JobCardFormInit, type RmLine } from "./useJobCardForm";
 import IssueSlipFields from "../../components/IssueSlipFields";
 
@@ -32,19 +33,28 @@ export default function EditRequest() {
           fgTotalQty: request.fgQty != null ? String(request.fgQty) : "",
           fgItemId: request.fgItemId ?? "",
           issueRemarks: request.issueRemarks ?? "",
+          // The BOM this card was raised from, when it was raised from one.
+          bomId: request.bomLines.find((l) => l.bomId)?.bomId ?? "",
           lines: (request.bomLines.length > 0
             ? request.bomLines
             : request.rawMaterialId || request.requiredQty != null
-              ? [{ rawMaterialId: request.rawMaterialId, requiredQty: request.requiredQty, unitId: request.unitId }]
+              ? [{ rawMaterialId: request.rawMaterialId, requiredQty: request.requiredQty, unitId: request.unitId, pct: null, bomId: null }]
               : []
-          ).map(
-            (l): RmLine => ({
+          ).map((l): RmLine => {
+            const qty = l.requiredQty ?? 0;
+            // Cards raised before the BOM master stored no pct. Back-computing it
+            // from this card's own quantities is exact for this card, so the grid
+            // rescales correctly either way.
+            const pct = l.pct ?? (request.fgQty ? pctFromQty(request.fgQty, qty) : 0);
+            return {
               uid: newUid(),
               rawMaterialId: l.rawMaterialId ?? "",
               qty: l.requiredQty != null ? String(l.requiredQty) : "",
               unitId: l.unitId ?? "",
-            }),
-          ),
+              pct: pct ? String(pct) : "",
+              fromBom: !!l.bomId,
+            };
+          }),
         }
       : null;
 
@@ -114,7 +124,7 @@ export default function EditRequest() {
       >
         <div className="flex justify-end gap-2 pt-1">
           <Button size="sm" variant="ghost" onClick={() => navigate(`/production-entry/requests/${request.id}`)} disabled={busy}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={busy || !f.sumMatches}>{busy ? "Saving…" : "Save changes"}</Button>
+          <Button size="sm" onClick={save} disabled={busy}>{busy ? "Saving…" : "Save changes"}</Button>
         </div>
       </IssueSlipFields>
     </div>

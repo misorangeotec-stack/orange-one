@@ -19,11 +19,15 @@ export const carriesUnit = (mt: ProductionMasterType) => HAS_UNIT.includes(mt);
  * here without adding it to that RPC's insert chain silently drops it on approve.
  */
 export function masterFields(mt: ProductionMasterType, ctx: MasterFieldCtx): MasterFieldDef[] {
+  // 'bom' never reaches here — BOMs are built on their own screen, not through
+  // MasterCrud or the request modal — but name it explicitly so the fallthrough
+  // can't quietly label a future caller's field "Unit name".
   const label =
     mt === "category" ? "Category name"
     : mt === "raw_material" ? "Raw material name"
     : mt === "packaging_item" ? "Packaging item name"
     : mt === "fg_item" ? "FG item name"
+    : mt === "bom" ? "BOM name"
     : "Unit name";
   const placeholder =
     mt === "unit" ? "e.g. KGS, LTR, PCS"

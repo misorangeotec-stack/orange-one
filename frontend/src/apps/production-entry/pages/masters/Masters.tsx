@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Tabs from "@/shared/components/ui/Tabs";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
+import BomMaster from "./BomMaster";
 import { useProductionStore } from "../../store";
 import { carriesUnit, masterFields } from "../../lib/masterFields";
 import { useMasterFieldCtx } from "../../lib/useMasterFieldCtx";
@@ -19,7 +20,14 @@ export default function Masters() {
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<ProductionMasterType>("raw_material");
 
-  const tabs = PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length }));
+  // BOMs are appended rather than living in PRODUCTION_MASTER_TYPES: they are a
+  // header plus a component list, so they get their own surface below instead of
+  // a MasterCrud tab — and staying out of that registry is what keeps them out of
+  // the "request a new master" modal, where they would not fit.
+  const tabs = [
+    ...PRODUCTION_MASTER_TYPES.map((m) => ({ key: m.value, label: m.plural, count: s.masterList(m.value).length })),
+    { key: "bom", label: "BOMs", count: s.boms.length },
+  ];
 
   // Raw materials, packaging items AND FG items each carry their own unit. The
   // Unit field itself lives in the shared schema (so the request + approve modals
@@ -49,6 +57,9 @@ export default function Masters() {
 
       <Tabs tabs={tabs} active={tab} onChange={(k) => setTab(k as ProductionMasterType)} />
 
+      {tab === "bom" ? (
+        <BomMaster />
+      ) : (
       <MasterCrud<NamedMaster>
         key={tab}
         singular={singular}
@@ -82,6 +93,7 @@ export default function Masters() {
           })
         }
       />
+      )}
     </div>
   );
 }

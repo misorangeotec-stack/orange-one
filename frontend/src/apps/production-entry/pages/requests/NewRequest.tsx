@@ -69,7 +69,7 @@ export default function NewRequest() {
         }
       >
         <div className="flex justify-end pt-1">
-          <Button size="sm" onClick={submit} disabled={busy || !f.sumMatches}>{busy ? "Submitting…" : "Raise job card"}</Button>
+          <Button size="sm" onClick={submit} disabled={busy}>{busy ? "Submitting…" : "Raise job card"}</Button>
         </div>
       </IssueSlipFields>
     </div>
