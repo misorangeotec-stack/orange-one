@@ -37,11 +37,13 @@
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { formatDateDMY } from "./utils";
+import { saleTypeLabel } from "./salesReport";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import {
   NEVER_PAID, NEVER_SOLD,
   type ZCColumn, type ZCMetrics,
 } from "./collections";
+import type { InvoiceDrillRow } from "../components/InvoiceDrilldownDialog";
 import type { GroupNode } from "./groupTree";
 
 /** INR cell number format (whole rupees, "₹" prefixed, dash for zero). */
@@ -49,7 +51,56 @@ const INR_FMT = '_-"₹"* #,##0_-;-"₹"* #,##0_-;_-"₹"* "-"_-;_-@_-';
 
 /** A literal "%" suffix — the cell holds 12.3, not 0.123, so it stays readable AND numeric.
  *  (Excel's native `0.0%` would multiply by 100 and render 1230.0%.) */
-const PCT_FMT = '0.0"%";-0.0"%";"—"';
+const PCT_FMT = '0.0"%";-0.0"%";"-"';
+
+/** How an empty cell reads. A plain hyphen: the report's copy carries no em dashes. */
+const NIL = "-";
+
+// ── Column widths ───────────────────────────────────────────────────────────────────
+
+/**
+ * Widths are MEASURED from the cells, not guessed at a flat 34/26/16.
+ *
+ * The fixed widths were set for the worst case and paid for it on every sheet: a Salesperson
+ * column holding "NAKUL JI" was 34 characters wide, so the reader scrolled past a screenful of
+ * whitespace before reaching a number. Measuring means a column is exactly as wide as its widest
+ * value and no wider.
+ *
+ * THE PREAMBLE IS EXCLUDED FROM THE MEASUREMENT, and that is the whole trick. Row 2 holds the
+ * report's one-line description and row 3 the period label, both in column A; measured, either
+ * would pin the first column to the cap on its own. Excel spills a long string across the empty
+ * cells to its right anyway, so the preamble stays perfectly readable at any width.
+ */
+const MIN_WCH = 9;
+const MAX_WCH = 38;
+
+/** Rendered width of one cell. Money is measured as it DISPLAYS (grouped digits + the symbol),
+ *  not as the raw number, or every money column comes out several characters too narrow. */
+function cellWidth(v: string | number | undefined, isMoney: boolean): number {
+  if (v === undefined || v === null || v === "") return 0;
+  if (typeof v === "number") {
+    const digits = Math.round(Math.abs(v)).toLocaleString("en-IN").length;
+    return digits + (isMoney ? 3 : 0) + (v < 0 ? 1 : 0);
+  }
+  return v.length;
+}
+
+/** `!cols` sized to the widest cell in each column, clamped both ways. */
+function autoWidths(
+  rows: ReadonlyArray<ReadonlyArray<string | number>>,
+  ncols: number,
+  moneyCols: ReadonlySet<number>,
+  pad = 2,
+): XLSX.ColInfo[] {
+  const widest = new Array<number>(ncols).fill(0);
+  for (const row of rows) {
+    for (let c = 0; c < ncols; c++) {
+      const w = cellWidth(row[c], moneyCols.has(c));
+      if (w > widest[c]) widest[c] = w;
+    }
+  }
+  return widest.map((w) => ({ wch: Math.min(MAX_WCH, Math.max(MIN_WCH, w + pad)) }));
+}
 
 // TOTAL_STYLE (light green) marks the one subtotal row per top-level group; GRAND_TOTAL_STYLE
 // (strong green) stays reserved for the single row at the bottom, so the two never read alike.
@@ -74,16 +125,16 @@ export interface ZCExportMeta {
 
 /** Days-since-receipt renders as a number, except the never-paid sentinel. */
 const daysCell = (v: number): string | number =>
-  v === NEVER_PAID ? "Never" : v < 0 ? "—" : v;
+  v === NEVER_PAID ? "Never" : v < 0 ? NIL : v;
 
 /** Months-since-sale renders as a number, except the never-sold sentinel. "None", not "Never":
  *  it can only ever mean "nothing billed inside the data horizon" — see CollectionFacts. */
 const monthsCell = (v: number): string | number =>
-  v === NEVER_SOLD ? "None" : v < 0 ? "—" : v;
+  v === NEVER_SOLD ? "None" : v < 0 ? NIL : v;
 
 /** A null percentage (no denominator) must render as a dash, never as 0%. */
 const pctCell = (v: number | null): string | number =>
-  v === null ? "—" : Math.round(v * 10) / 10;
+  v === null ? NIL : Math.round(v * 10) / 10;
 
 /** Last-receipt cell: the yyyymmdd ordinal → dd-mm-yyyy, 0 (no receipt) → "Never". */
 const dateCell = (v: number): string => {
@@ -95,9 +146,9 @@ const dateCell = (v: number): string => {
 /** One column's value for one node, ready to drop into a cell. `isLeaf` blanks the leaf-only
  *  columns (last receipt date/amount) on group and grand-total rows. */
 const cellFor = (col: ZCColumn, m: ZCMetrics, isLeaf: boolean): string | number => {
-  if (col.leafOnly && !isLeaf) return "—";
+  if (col.leafOnly && !isLeaf) return NIL;
   const v = col.value(m);
-  if (v === null) return "—";
+  if (v === null) return NIL;
   if (col.kind === "pct") return pctCell(v);
   if (col.kind === "days") return daysCell(v);
   if (col.kind === "date") return dateCell(v);
@@ -124,12 +175,18 @@ interface FlatRow {
  * looks like it would do the job and doesn't: it carries bucket VALUES, and for Sale Type the
  * value is the raw key ("spare_parts") where the screen shows "Spare Parts". Walking the tree
  * and collecting `label` keeps Excel and the screen reading identically.
+ *
+ * `n.sub` IS DROPPED. For a customer it is the trading company and branch, so every name came out
+ * as "ACME LTD (Enterprise / Colorix · Surat)": it roughly doubled the width of the widest column
+ * on the sheet to append internal structure the reader cannot act on, and the parenthesis made the
+ * customer count beside it read as though it belonged to the company rather than the customer.
+ * Company and branch are still on the Overdue Bill Details tab, per bill, in their own columns.
  */
 function flatten(nodes: GroupNode<ZCMetrics>[]): FlatRow[] {
   const out: FlatRow[] = [];
   const walk = (list: GroupNode<ZCMetrics>[], ancestors: string[]) => {
     for (const n of list) {
-      const labels = [...ancestors, n.sub ? `${n.label} (${n.sub})` : n.label];
+      const labels = [...ancestors, n.label];
       out.push({ labels, depth: n.depth, metrics: n.metrics, isLeaf: n.children.length === 0 });
       if (n.children.length) walk(n.children, labels);
     }
@@ -248,7 +305,12 @@ function buildRollupSheet(
    * money, and re-sorting the sheet in Excel moves the total rows away from their blocks. Sum
    * within a block, or read the GRAND TOTAL at the top.
    */
-  const emitted: FlatRow[] = [];
+  // `null` is a blank spacer row closing a top-level block. Without it the sheet is one unbroken
+  // column of names and the eye cannot find where one salesperson ends and the next begins; the
+  // green total row heading the next block is the only cue, and it scrolls off. The bill sheet
+  // below has always separated its blocks this way, so the two now read alike.
+  type EmitRow = FlatRow | null;
+  const emitted: EmitRow[] = [];
   for (const root of roots) {
     // flatten() is pre-order, so the root is always first and its subtree follows.
     const [self, ...rest] = flatten([root]);
@@ -259,14 +321,19 @@ function buildRollupSheet(
     // and a salesperson's figure is on screen the moment you reach their name.
     emitted.push({ ...self, isSubtotal: true });
     emitted.push(...rest.filter((r) => r.isLeaf));
+    emitted.push(null);
   }
+  // A spacer at the very end is just a blank final row, which drags the autofilter range one row
+  // past the data for no benefit.
+  if (emitted.length && emitted[emitted.length - 1] === null) emitted.pop();
 
   for (const r of emitted) {
+    if (!r) { aoa.push([]); continue; }
     // A subtotal names its group in the FIRST column and leaves the levels it is summing over
     // blank — those are precisely what it collapsed.
     const dimCells: (string | number)[] = Array.from({ length: nDims }, (_, i) =>
       r.isSubtotal
-        ? (i === 0 ? `${r.labels[0]} — TOTAL` : "")
+        ? (i === 0 ? `${r.labels[0]} - TOTAL` : "")
         : (r.labels[i] ?? ""),
     );
     aoa.push([...dimCells, ...metricCols.map((c) => cellForRow(c, r))]);
@@ -276,11 +343,13 @@ function buildRollupSheet(
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const ncols = header.length;
-  ws["!cols"] = [
-    // The first level is usually the widest (customer names run long); the rest are narrower.
-    ...dimLabels.map((_, i) => ({ wch: i === 0 ? 34 : 26 })),
-    ...metricCols.map(() => ({ wch: 16 })),
-  ];
+  // Measured from the header row down, so the preamble's long sentences cannot set column A's
+  // width. See autoWidths.
+  ws["!cols"] = autoWidths(
+    aoa.slice(headerRow0),
+    ncols,
+    new Set(metricCols.map((c, i) => (c.kind === "money" ? i + nDims : -1)).filter((i) => i >= 0)),
+  );
 
   // Metric columns now start after the dimension block, not after a single label column. The
   // formatted span starts at the GRAND TOTAL row, which now leads the block, and runs to the end.
@@ -295,7 +364,7 @@ function buildRollupSheet(
   styleRow(ws, grandRow0, ncols, GRAND_TOTAL_STYLE);
   // The only hierarchy left to signal: one total row heading each top-level group.
   emitted.forEach((r, i) => {
-    if (r.isSubtotal) styleRow(ws, firstData0 + i, ncols, TOTAL_STYLE);
+    if (r?.isSubtotal) styleRow(ws, firstData0 + i, ncols, TOTAL_STYLE);
   });
 
   // Freeze the dimension block (so the grouping columns stay put when scrolling right) AND the
@@ -311,6 +380,10 @@ function buildRollupSheet(
   // filter treats the total rows as data and may hide them. Frozen panes keep the grand total
   // visible regardless; a group total that vanishes under a filter is the accepted cost of having
   // it lead its block.
+  //
+  // The blank row between salespersons is inside the range too, so Excel's filter dropdowns will
+  // offer "(Blanks)". Accepted knowingly: the sheet is read far more often than it is filtered,
+  // and the spacing is what makes it readable.
   ws["!autofilter"] = {
     ref: XLSX.utils.encode_range(
       { r: headerRow0, c: 0 },
@@ -323,30 +396,199 @@ function buildRollupSheet(
 
 
 /**
- * ONE sheet, not two.
+ * Sheet 2 — the bills behind the Overdue column.
  *
- * There used to be a second "Customers" tab: flat, one row per customer, every column whether or
- * not it was ticked on screen. It existed because the roll-up sheet put the whole hierarchy in a
- * single indented column, which Excel cannot filter or pivot — so finance needed somewhere to
- * slice the data. Now that each grouping level has its own real column and the sheet carries an
- * autofilter, that need is gone and a second tab is just a thing to explain.
+ * WHY IT EXISTS
+ *   The roll-up sheet states what a customer owes; this one states WHICH BILLS make it up, so a
+ *   collector can work the phone from the file instead of clicking each figure on screen.
+ *
+ * THE SHAPE IS DELIBERATELY NOT A DATABASE TABLE
+ *   Bills are blocked per customer, each block closed by its own TOTAL and separated by a blank
+ *   row. That is the explicit ask: this sheet is meant to be READ, and a solid 4,000-row grid is
+ *   not readable. Know the cost, which is the same one the roll-up sheet documents at the top of
+ *   this file: a SUM down the whole Pending column double-counts, and re-sorting scatters the
+ *   totals away from their blocks. There is deliberately NO autofilter here — a filter over
+ *   interleaved spacer and total rows produces nonsense, and this sheet is for reading, not
+ *   slicing. Slice on sheet 1.
+ *
+ * WHY THE ON ACCOUNT LINE IS HERE
+ *   `buildDrillRows` emits a negative On Account line per ledger that carries one. The bills are
+ *   GROSS; the report's Overdue is net of On Account. Without that line a customer's block sums
+ *   to more than the Overdue column says and looks like a data error — which is exactly the
+ *   defect commit f3adec4 fixed on screen. Keeping one builder for both is what keeps them equal.
  */
-export function exportCollectionsXlsx(
-  roots: GroupNode<ZCMetrics>[],
-  total: ZCMetrics,
-  columns: ZCColumn[],
-  meta: ZCExportMeta,
-): void {
+function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XLSX.WorkSheet {
+  const aoa: Array<Array<string | number>> = [];
+
+  aoa.push([meta.title]);
+  aoa.push(["Overdue bill details: the open past-due bills behind the Overdue column."]);
+  aoa.push(["Period", meta.periodLabel]);
+  aoa.push([]);
+
+  const header = [
+    "Salesperson", "Customer", "Company", "Location",
+    "Bill No", "Bill Ref", "Bill Date", "Due Date", "Overdue Days", "Sale Type",
+    "Bill Amount", "Received", "Pending",
+  ];
+  const headerRow0 = aoa.length;
+  aoa.push(header);
+
+  // Bucket by salesperson → customer, preserving one block per customer.
+  const SEP = "|||";
+  const blocks = new Map<string, InvoiceDrillRow[]>();
+  for (const r of rows) {
+    const key = `${r.salesperson ?? "Others"}${SEP}${r.customerName}${SEP}${r.company}${SEP}${r.location}`;
+    const list = blocks.get(key);
+    if (list) list.push(r); else blocks.set(key, [r]);
+  }
+
+  const pendingOf = (list: InvoiceDrillRow[]) => list.reduce((s, r) => s + r.pending, 0);
+
+  // Heaviest salesperson first, and inside them the heaviest customer — the file opens on the
+  // money that matters rather than on whoever sorts first alphabetically.
+  const bySalesperson = new Map<string, string[]>();
+  for (const key of blocks.keys()) {
+    const sp = key.split(SEP)[0];
+    const list = bySalesperson.get(sp);
+    if (list) list.push(key); else bySalesperson.set(sp, [key]);
+  }
+  const spWeight = (sp: string) =>
+    (bySalesperson.get(sp) ?? []).reduce((s, k) => s + pendingOf(blocks.get(k) ?? []), 0);
+  const orderedKeys = [...bySalesperson.keys()]
+    .sort((a, b) => spWeight(b) - spWeight(a))
+    .flatMap((sp) =>
+      (bySalesperson.get(sp) ?? []).sort(
+        (a, b) => pendingOf(blocks.get(b) ?? []) - pendingOf(blocks.get(a) ?? []),
+      ),
+    );
+
+  const grand = { amount: 0, received: 0, pending: 0 };
+  for (const r of rows) {
+    grand.amount += r.amount;
+    grand.received += r.received;
+    grand.pending += r.pending;
+  }
+
+  // Grand total under the header and frozen with it, matching the roll-up sheet: the headline
+  // figure is on screen however far you scroll.
+  const grandRow0 = aoa.length;
+  aoa.push([
+    "GRAND TOTAL", "", "", "", "", "", "", "", "", "",
+    Math.round(grand.amount), Math.round(grand.received), Math.round(grand.pending),
+  ]);
+
+  const totalRows: number[] = [];
+
+  for (const key of orderedKeys) {
+    const list = blocks.get(key) ?? [];
+    const [sp, customer, company, location] = key.split(SEP);
+    // Oldest debt first inside a block; the On Account credit sinks to the bottom, where it reads
+    // as the deduction that reconciles the block rather than as another bill.
+    const sorted = [...list].sort((a, b) => {
+      if (!!a.isOnAccount !== !!b.isOnAccount) return a.isOnAccount ? 1 : -1;
+      return b.overdueDays - a.overdueDays;
+    });
+
+    for (const r of sorted) {
+      aoa.push([
+        sp, customer, company, location,
+        r.isOnAccount ? (r.onAccountLabel ?? "On Account") : r.number,
+        r.billRefName,
+        r.date ? (formatDateDMY(r.date) || "") : "",
+        r.dueDate ? (formatDateDMY(r.dueDate) || "") : "",
+        r.isOnAccount ? "" : r.overdueDays,
+        r.isOnAccount ? "" : saleTypeLabel(r.voucherType),
+        Math.round(r.amount), Math.round(r.received), Math.round(r.pending),
+      ]);
+    }
+
+    totalRows.push(aoa.length);
+    aoa.push([
+      "", `${customer} - TOTAL`, "", "", "", "", "", "", "", "",
+      Math.round(sorted.reduce((s, r) => s + r.amount, 0)),
+      Math.round(sorted.reduce((s, r) => s + r.received, 0)),
+      Math.round(pendingOf(sorted)),
+    ]);
+    aoa.push([]); // the readable gap between two customers
+  }
+
+  const lastRow0 = aoa.length - 1;
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const ncols = header.length;
+
+  // Measured, not fixed — same reasoning as the roll-up sheet, and the preamble is excluded for
+  // the same reason. Bill numbers and references vary wildly in length between companies, so a
+  // guessed width is either wasteful or truncating on any given export.
+  ws["!cols"] = autoWidths(aoa.slice(headerRow0), ncols, new Set([10, 11, 12]));
+
+  formatCells(ws, grandRow0, lastRow0 - grandRow0 + 1, [10, 11, 12], INR_FMT);
+
+  styleRow(ws, 0, ncols, HEADER_STYLE);
+  styleRow(ws, headerRow0, ncols, HEADER_STYLE);
+  styleRow(ws, grandRow0, ncols, GRAND_TOTAL_STYLE);
+  for (const r of totalRows) styleRow(ws, r, ncols, TOTAL_STYLE);
+
+  // ⚠ INERT WITH THIS WRITER, KEPT DELIBERATELY. `xlsx-js-style` has no freeze-pane writer — the
+  //   string "pane" appears in its bundle only inside the legacy SpreadsheetML *reader*, and the
+  //   generated xl/worksheets/sheetN.xml carries an empty <sheetViews> with no <pane> element.
+  //   So this line (and the identical one on the roll-up sheet above, which predates it) does
+  //   nothing today. It stays because it is the correct declaration the moment the writer gains
+  //   support, and because dropping it would quietly lose the intent. Do NOT write a comment
+  //   claiming a row "stays on screen while you scroll" on the strength of it — it does not.
+  ws["!freeze"] = { xSplit: 2, ySplit: grandRow0 + 1 };
+  // No autofilter, on purpose — see the block comment above.
+
+  return ws;
+}
+
+/** Everything the workbook needs. `overdueRows` comes from `buildDrillRows(..., "overdue")`. */
+export interface ZCWorkbookInput {
+  roots: GroupNode<ZCMetrics>[];
+  total: ZCMetrics;
+  columns: ZCColumn[];
+  meta: ZCExportMeta;
+  overdueRows: InvoiceDrillRow[];
+}
+
+/**
+ * TWO sheets.
+ *
+ * Sheet 1 is the roll-up, unchanged in shape — but the caller now hands it a tree built at
+ * Salesperson → Customer regardless of how the screen happens to be grouped. The report opens on
+ * Salesperson → Customer Group, and a workbook that stopped at the group level would never name
+ * a customer, which is the one thing the person receiving it needs.
+ *
+ * Sheet 2 is the bills behind Overdue. See buildOverdueBillsSheet.
+ */
+export function buildCollectionsWorkbook(input: ZCWorkbookInput): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   // Excel caps sheet names at 31 chars and rejects most punctuation.
-  const tab = meta.title.replace(/[\\/?*[\]:]/g, "").slice(0, 31) || "Collections";
-  XLSX.utils.book_append_sheet(wb, buildRollupSheet(roots, total, columns, meta), tab);
+  const tab = input.meta.title.replace(/[\\/?*[\]:]/g, "").slice(0, 31) || "Collections";
+  XLSX.utils.book_append_sheet(wb, buildRollupSheet(input.roots, input.total, input.columns, input.meta), tab);
+  if (input.overdueRows.length) {
+    XLSX.utils.book_append_sheet(wb, buildOverdueBillsSheet(input.overdueRows, input.meta), "Overdue Bill Details");
+  }
+  return wb;
+}
 
-  const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-  const stamp = formatDateDMY(meta.asOfDate) || "export";
-  const file = meta.title.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
-  saveAs(
-    new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-    `${file}_${stamp}.xlsx`,
-  );
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+/** The workbook as bytes — so the same file can be downloaded, zipped or emailed without being
+ *  built three times. */
+export function collectionsWorkbookBlob(input: ZCWorkbookInput): Blob {
+  const out = XLSX.write(buildCollectionsWorkbook(input), { bookType: "xlsx", type: "array" });
+  return new Blob([out], { type: XLSX_MIME });
+}
+
+/** Filename stem shared by the workbook and its PDF sibling, so a pair reads as a pair. */
+export function collectionsFileName(meta: ZCExportMeta, ext: string, suffix?: string): string {
+  const base = meta.title.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "");
+  const who = suffix ? `_${suffix.replace(/[^A-Za-z0-9]+/g, "_").replace(/^_|_$/g, "")}` : "";
+  return `${base}${who}_${formatDateDMY(meta.asOfDate) || "export"}.${ext}`;
+}
+
+export function exportCollectionsXlsx(input: ZCWorkbookInput, suffix?: string): string {
+  const filename = collectionsFileName(input.meta, "xlsx", suffix);
+  saveAs(collectionsWorkbookBlob(input), filename);
+  return filename;
 }

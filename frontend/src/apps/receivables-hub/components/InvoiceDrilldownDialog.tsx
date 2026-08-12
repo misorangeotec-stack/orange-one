@@ -26,6 +26,10 @@ export interface InvoiceDrillRow {
   groupName: string;
   company: string;
   location: string;
+  /** Who owns the account. Not shown in this popup — it is carried for the Excel export, which
+   *  lists the same bills grouped under their salesperson. Optional because the five other
+   *  reports that build these rows have no salesperson in scope. */
+  salesperson?: string;
   number: string;
   billRefName: string;
   date: string;

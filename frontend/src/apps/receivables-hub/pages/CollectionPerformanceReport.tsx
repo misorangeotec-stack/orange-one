@@ -4,7 +4,7 @@ import {
 } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
-  UserX, ChevronRight, ChevronDown, Download, ArrowLeft, Info, Pin, Search, X,
+  UserX, ChevronRight, ChevronDown, ArrowLeft, Info, Pin, Search, X,
   ArrowUpDown, ArrowUp, ArrowDown, SlidersHorizontal, Wallet, TrendingDown,
   CalendarClock, ShoppingCart, Ban, Percent, Target, Undo2, AlertTriangle,
 } from "lucide-react";
@@ -48,6 +48,7 @@ import {
   isZeroCollection, isBelowThreshold, isDormant, dominantSaleTypeOf, bandOf, bandCounts, pctOf,
   makeMetricsOf, addMetrics, emptyMetrics, zcDimValue, monthRange, priorWindow, resolveWindow,
   applyFocus, totalsOf, detailPathFor, defaultColumnsFor, defaultGroupByFor, pickerColumnsFor,
+  buildDrillRows,
   overdueBySaleType, isCriticalSaleType, SALE_TYPE_CARD_ORDER,
   COLLECTIBLE_EPS, DETERIORATION_PP, NEVER_PAID, NEVER_SOLD, ZERO_EPS, SALE_TYPES,
   BAND_LABELS, BAND_ORDER,
@@ -56,7 +57,9 @@ import {
   type ZCDim, type ZCFocus, type ZCMetrics, type ZCRow,
 } from "@hub/lib/collections";
 import { useReportColumnPrefs, REPORT_PREF_IDS } from "@hub/lib/reportPrefs";
-import { exportCollectionsXlsx } from "@hub/lib/exportCollections";
+import type { CollectionsExportContext } from "@hub/lib/collectionsExport";
+import { useHubMenuAccess } from "@hub/lib/menus";
+import { ExportMenu } from "./collections/ExportMenu";
 import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
 
 /**
@@ -697,25 +700,32 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // all follow the active lenses. The KPI cards deliberately do NOT — see `allTotals`.
   const metricsOf = useMemo(() => makeMetricsOf(target), [target]);
 
+  /** The roll-up configuration, lifted out of `tree` so the EXPORT can build the same tree at a
+   *  different grain. The workbook is always Salesperson → Customer whatever the screen shows,
+   *  and re-deriving these callbacks there would be two definitions of "what is a sale type". */
+  const treeOpts = useMemo(
+    () => ({
+      // "Sale Type" is resolved here, not in the shared zcDimValue: the classifier needs the
+      // ledger-scoped outstandingByType map (zcDimValue is also used by Overdue Aging, which
+      // has no such map). Same dominantSaleTypeOf as the filter ⇒ groups and filter agree.
+      dimValue: (r: ZCRow, dim: string) => {
+        if (dim === "saleType") {
+          const st = dominantSaleTypeOf(r.customer, outstandingByType);
+          return { value: st, label: saleTypeLabel(st) };
+        }
+        return zcDimValue(r, dim);
+      },
+      idOf: (r: ZCRow) => r.customer.id,
+      metricsOf,
+      empty: emptyMetrics,
+      add: addMetrics,
+    }),
+    [metricsOf, outstandingByType],
+  );
+
   const tree = useMemo(
-    () =>
-      buildGroupTree<ZCRow, ZCMetrics>(focusedRows, groupBy, {
-        // "Sale Type" is resolved here, not in the shared zcDimValue: the classifier needs the
-        // ledger-scoped outstandingByType map (zcDimValue is also used by Overdue Aging, which
-        // has no such map). Same dominantSaleTypeOf as the filter ⇒ groups and filter agree.
-        dimValue: (r, dim) => {
-          if (dim === "saleType") {
-            const st = dominantSaleTypeOf(r.customer, outstandingByType);
-            return { value: st, label: saleTypeLabel(st) };
-          }
-          return zcDimValue(r, dim);
-        },
-        idOf: (r) => r.customer.id,
-        metricsOf,
-        empty: emptyMetrics,
-        add: addMetrics,
-      }),
-    [focusedRows, groupBy, metricsOf, outstandingByType],
+    () => buildGroupTree<ZCRow, ZCMetrics>(focusedRows, groupBy, treeOpts),
+    [focusedRows, groupBy, treeOpts],
   );
 
   // Percentage columns can be null (no denominator). Nulls sort LAST in both directions —
@@ -1299,21 +1309,60 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
-  // `focusedRows` (not `rows`) feeds the flat Customers sheet: otherwise the roll-up sheet
-  // would be focused while the flat sheet silently listed every customer — a mismatch you'd
-  // only ever discover in Excel.
-  const handleExport = () => {
-    exportCollectionsXlsx(sortedRoots, tree.total, columns, {
-      title,
-      // The same sentence shown under the title on screen — one source, so they can't drift.
-      description: subtitle,
-      viewLabel,
-      // One exported column per grouping level, in the order they're nested on screen.
-      dims: groupBy.map((d) => ({ key: d, label: ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d })),
-      periodLabel,
-      asOfDate,
-    });
-  };
+  // Built from `focusedRows` (not `rows`), so the files follow the active KPI lenses exactly as
+  // the table does. A mismatch between the two is the kind of thing you only discover in Excel.
+  //
+  // Assembled lazily by the menu rather than memoised here: it is only needed at the moment
+  // somebody clicks Export, and building it eagerly would walk every row on each re-render of a
+  // page that already re-derives a lot per keystroke.
+  /**
+   * Cutting the report up per salesperson is a Reports FULL-ACCESS action.
+   *
+   * The data itself is already safe either way — `useReceivablesScope` filters at the useAppData
+   * chokepoint, so a tagged rep's picker can only ever list their own names. The gate is about
+   * the ACTION rather than the data: splitting the book into per-person files is a sales-management
+   * job, and it is the same permission that will gate mailing those files to the reps.
+   */
+  const { hasFullAccess } = useHubMenuAccess();
+  const canExportPerSalesperson = hasFullAccess("reports");
+
+  const exportContext = useCallback(
+    (): CollectionsExportContext => ({
+      meta: {
+        title,
+        // The same sentence shown under the title on screen — one source, so they can't drift.
+        description: subtitle,
+        viewLabel,
+        // The workbook forces Salesperson → Customer; these are overwritten there. Kept so the
+        // meta object still describes the screen it came from.
+        dims: groupBy.map((d) => ({ key: d, label: ZC_DIMENSIONS.find((x) => x.key === d)?.label ?? d })),
+        periodLabel,
+        asOfDate,
+      },
+      columns,
+      kpis: kpiCards.map((c) => ({
+        label: c.label,
+        value: c.value,
+        sub: c.sub,
+        // The card's own alarm styling isn't a field — a card is "bad news" when it is a lens
+        // onto a problem subset rather than a summary of the whole list.
+        alarm: c.focusKey !== null,
+        // The lens key, carried so the PDF can give a card its own appendix page WITHOUT matching
+        // on the printed label. `never` and `over180` get one; the rest are carried and ignored.
+        key: c.focusKey ?? undefined,
+      })),
+      // The cards are measured over every row in the report; the table follows the lens. Say so
+      // on the page when the two can disagree, since a PDF has no tooltip to explain it.
+      kpiScopeNote: focus.size
+        ? `Cards describe all ${rows.length} customers in this report. The table below is narrowed to the active lens (${[...focus].map((f) => ZC_FOCUS_LABELS[f]).join(" + ")}), so its totals are smaller.`
+        : undefined,
+      filterSummary,
+      rows: focusedRows,
+      customerDetail,
+      treeOpts,
+    }),
+    [title, subtitle, viewLabel, groupBy, periodLabel, asOfDate, columns, kpiCards, focus, rows.length, filterSummary, focusedRows, customerDetail, treeOpts],
+  );
 
   // ── Drill-through to Customer / Group Detail ──────────────────────────────────────
   // The route param is the NAME, url-encoded — CustomerDetail matches it against the raw
@@ -1360,65 +1409,15 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const openDrill = (node: GroupNode<ZCMetrics> | null, col: ZCColumn) => {
     if (!col.drill) return;
     const ids = node ? node.ids : tree.totalIds;
-    const drillRows: InvoiceDrillRow[] = [];
-    // Keyed exactly as the popup buckets ledgers: name ||| company ||| location.
-    const ledgerFigures: Record<string, number> = {};
-    const onAcctRows: InvoiceDrillRow[] = [];
-    for (const id of ids) {
-      const r = rowsById.get(id);
-      if (!r) continue;
-      const c = r.customer;
-      const key = `${c.name}|||${c.company}|||${c.location}`;
-      const net =
-        col.drill === "outstanding" ? c.outstanding
-        : col.drill === "overdue" ? c.overdue
-        : (c.agingBuckets?.["180_plus"] ?? 0);
-      ledgerFigures[key] = (ledgerFigures[key] ?? 0) + net;
-
-      const onAccount = c.onAccount ?? 0;
-      if (col.drill === "overdue" && onAccount > 0.5) {
-        onAcctRows.push({
-          customerName: c.name, groupName: r.group, company: c.company, location: c.location,
-          number: "", billRefName: "", date: "",
-          amount: 0, received: 0, pending: -onAccount,
-          dueDate: "", overdueDays: 0, status: "pending", voucherType: "other",
-          isOnAccount: true,
-          onAccountLabel: "On Account (paid, tagged to no bill)",
-        });
-      }
-
-      // A consolidated row's bills live under its constituent LEDGER ids.
-      const ledgerIds = c.constituentIds?.length ? c.constituentIds : [c.id];
-      for (const lid of ledgerIds) {
-        for (const inv of customerDetail[lid]?.invoices ?? []) {
-          if (inv.pending <= 0) continue;
-          if (col.drill === "overdue" && inv.overdueDays <= 0) continue;
-          if (col.drill === "over180" && inv.overdueDays <= 180) continue;
-          drillRows.push({
-            customerName: c.name,
-            groupName: r.group,
-            company: c.company,
-            location: c.location,
-            number: inv.number,
-            billRefName: inv.billRefName,
-            date: inv.date,
-            amount: inv.amount,
-            received: inv.amount - inv.pending,
-            pending: inv.pending,
-            dueDate: inv.dueDate,
-            overdueDays: inv.overdueDays,
-            status: inv.status,
-            voucherType: inv.voucherType,
-          });
-        }
-      }
-    }
-    if (drillRows.length === 0) return;
+    // Shared with the Excel export's "Overdue Bill Details" sheet — see buildDrillRows.
+    const { rows: drillRows, ledgerFigures } = buildDrillRows(ids, rowsById, customerDetail, col.drill);
+    // `rows` carries the On Account credits too, so test for a real BILL before opening.
+    if (!drillRows.some((r) => !r.isOnAccount)) return;
     setDrill({
       open: true,
       title: `${col.label}: open bills`,
       subtitle: node ? (node.sub ? `${node.label} · ${node.sub}` : node.label) : "All rows",
-      rows: [...drillRows, ...onAcctRows],
+      rows: drillRows,
       ledgerFigures,
     });
   };
@@ -1626,14 +1625,11 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
               saving={colPrefs.saving}
               saveError={colPrefs.error}
             />
-            <Button
-              onClick={handleExport}
-              disabled={focusedRows.length === 0}
-              size="sm"
-              className="rounded-button bg-primary hover:bg-primary-hover text-primary-foreground"
-            >
-              <Download className="h-4 w-4 mr-1.5" /> Export
-            </Button>
+            <ExportMenu
+              getContext={exportContext}
+              rowCount={focusedRows.length}
+              canExportPerSalesperson={canExportPerSalesperson}
+            />
           </div>
         </div>
       </div>

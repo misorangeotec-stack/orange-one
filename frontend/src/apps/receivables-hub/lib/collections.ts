@@ -74,6 +74,7 @@
 import { isoToMonthLabel } from "./months";
 import { fmtINRMoney } from "./utils";
 import type { GroupByPreset } from "../components/GroupByBuilder";
+import type { InvoiceDrillRow } from "../components/InvoiceDrilldownDialog";
 import type { ConsolidatedCustomer, Customer, CustomerDetail, SaleType } from "./types";
 
 /** Which backend the current view is reading. Mirrors useReceivablesSource(). */
@@ -1211,6 +1212,101 @@ export function bandCounts(rows: ZCRow[]): Record<CollectionBand, number> {
   };
   for (const r of rows) out[bandOf(r.facts)]++;
   return out;
+}
+
+// ── The bills behind a figure ───────────────────────────────────────────────────────
+
+/** What a drillable column resolves to. Mirrors `ZCColumn.drill`. */
+export type ZCDrill = NonNullable<ZCColumn["drill"]>;
+
+export interface DrillRowsResult {
+  /** Bill lines first, then the On Account credit lines — the order the popup expects. */
+  rows: InvoiceDrillRow[];
+  /** The report's own NET figure per ledger key (`name|||company|||location`), so a consumer
+   *  can strike the reconciliation line that makes gross bills agree with the net column. */
+  ledgerFigures: Record<string, number>;
+}
+
+/**
+ * The bill-level rows behind Outstanding / Overdue / > 180 Days, for a set of consolidated
+ * customer ids.
+ *
+ * ONE builder, two consumers: the on-screen drill-down popup and the Excel export's
+ * "Overdue Bill Details" sheet. They MUST agree — the popup lists GROSS bills while the report's
+ * Overdue column is net of On Account, and reconciling the two is the whole reason the On Account
+ * line exists. Two copies of this logic would drift, and the drift would look like a data bug.
+ *
+ * Only Overdue emits the explicit credit line, because `Customer.onAccount` is defined as the
+ * credit netted off GROSS OVERDUE and capped there. Outstanding is already a net ledger balance
+ * (deducting again would double-count) and the > 180 bucket is bill-based with no per-bucket
+ * allocation, so both are left to the caller's generic reconciliation.
+ */
+export function buildDrillRows(
+  ids: readonly string[],
+  rowsById: ReadonlyMap<string, ZCRow>,
+  customerDetail: Record<string, CustomerDetail>,
+  drill: ZCDrill,
+): DrillRowsResult {
+  const rows: InvoiceDrillRow[] = [];
+  const onAcctRows: InvoiceDrillRow[] = [];
+  // Keyed exactly as the popup buckets ledgers: name ||| company ||| location.
+  const ledgerFigures: Record<string, number> = {};
+
+  for (const id of ids) {
+    const r = rowsById.get(id);
+    if (!r) continue;
+    const c = r.customer;
+    const key = `${c.name}|||${c.company}|||${c.location}`;
+    // Same convention as zcDimValue's "salesperson" bucket, so the Excel export's bill sheet
+    // files a customer under exactly the salesperson the roll-up sheet files them under.
+    const salesperson = (c.salesPersons?.length ? c.salesPersons.join(", ") : c.salesPerson) || "Others";
+    const net =
+      drill === "outstanding" ? c.outstanding
+      : drill === "overdue" ? c.overdue
+      : (c.agingBuckets?.["180_plus"] ?? 0);
+    ledgerFigures[key] = (ledgerFigures[key] ?? 0) + net;
+
+    const onAccount = c.onAccount ?? 0;
+    if (drill === "overdue" && onAccount > 0.5) {
+      onAcctRows.push({
+        customerName: c.name, groupName: r.group, company: c.company, location: c.location, salesperson,
+        number: "", billRefName: "", date: "",
+        amount: 0, received: 0, pending: -onAccount,
+        dueDate: "", overdueDays: 0, status: "pending", voucherType: "other",
+        isOnAccount: true,
+        onAccountLabel: "On Account (paid, tagged to no bill)",
+      });
+    }
+
+    // A consolidated row's bills live under its constituent LEDGER ids.
+    const ledgerIds = c.constituentIds?.length ? c.constituentIds : [c.id];
+    for (const lid of ledgerIds) {
+      for (const inv of customerDetail[lid]?.invoices ?? []) {
+        if (inv.pending <= 0) continue;
+        if (drill === "overdue" && inv.overdueDays <= 0) continue;
+        if (drill === "over180" && inv.overdueDays <= 180) continue;
+        rows.push({
+          customerName: c.name,
+          groupName: r.group,
+          company: c.company,
+          location: c.location,
+          salesperson,
+          number: inv.number,
+          billRefName: inv.billRefName,
+          date: inv.date,
+          amount: inv.amount,
+          received: inv.amount - inv.pending,
+          pending: inv.pending,
+          dueDate: inv.dueDate,
+          overdueDays: inv.overdueDays,
+          status: inv.status,
+          voucherType: inv.voucherType,
+        });
+      }
+    }
+  }
+
+  return { rows: [...rows, ...onAcctRows], ledgerFigures };
 }
 
 // ── Grouping dimensions + the View presets ──────────────────────────────────────────
