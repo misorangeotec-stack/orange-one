@@ -7,6 +7,7 @@ import { ReceivablesScopeProvider } from "@hub/lib/scope";
 import { ReceivablesSourceProvider } from "@hub/lib/sourceContext";
 import { LiveModeProvider, useLiveMode } from "@hub/lib/liveMode";
 import RequireHubMenu from "@hub/components/RequireHubMenu";
+import RequireReportAccess from "@hub/components/RequireReportAccess";
 import UserLayout from "@hub/layouts/UserLayout";
 import CLevelDashboard from "@hub/pages/CLevelDashboard";
 import ExecDashboard from "@hub/pages/ExecDashboard";
@@ -111,92 +112,105 @@ function HubRoutes() {
           <Route path="customer/:id" element={<CustomerDetail />} />
           <Route path="group/:id" element={<CustomerDetail />} />
           <Route path="import" element={<ImportDashboard />} />
+          {/* Alias kept for old bookmarks. Deliberately OUTSIDE RequireReportAccess: it has no
+              catalogue entry of its own, so a fail-closed guard would bounce it to the hub home
+              instead of to the report it names. The target it redirects to is guarded. */}
+          <Route
+            path="reports/zero-collections"
+            element={<Navigate to="/outstanding-dashboard/reports/collections?below=0" replace />}
+          />
           {/* ── Reports ────────────────────────────────────────────────────────────
-              EVERY reports/* route sits inside this guard, not just the landing page. A grant
+              EVERY reports/* route sits inside these guards, not just the landing page. A grant
               that only filtered the sidebar would leave /reports/aging reachable by URL — see
-              components/RequireHubMenu. */}
+              components/RequireHubMenu.
+
+              TWO guards, asking different questions:
+                RequireHubMenu       may this user see the Reports menu at all?
+                RequireReportAccess  may they open THIS report? (profiles.receivables_allowed_reports)
+
+              The inner one resolves the URL against the catalogue rather than wrapping each
+              route, so a newly catalogued report is guarded with no edit here. Don't add a
+              per-route guard alongside it — that is the pattern that let sales-dashboard and
+              purchase-dashboard escape the old `full` wrapper. */}
           <Route element={<RequireHubMenu menu="reports" />}>
-            <Route path="reports" element={<Reports />} />
-            {/* Master Reports. Reads the precomputed rpt_sales_* snapshot of the Tally mirror,
-                so it is source-agnostic — no Live/pipeline gate, same as the financial
-                statements. It carries its own company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/sales" element={<SalesReport />} />
-            {/* Purchase Report — purchase-side twin of the Sales Report, same source-agnostic
-                rpt_purchase_* snapshot, own company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/purchase" element={<PurchaseReport />} />
-            {/* Day Book — single-company single-day dashboard on the rpt_day_book snapshot;
-                source-agnostic, carries its own company + date pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/day-book" element={<DayBook />} />
-            {/* Finance → Receivables — Talligence receivables clone on the rpt_receivables_*
-                snapshot; own company + FY pickers. */}
-            <Route path="reports/finance-receivables" element={<ReceivablesMasterReport />} />
-            {/* Finance → Payables — sign-mirror of Receivables (Sundry Creditors) on the
-                rpt_payables_* snapshot; own company + FY pickers, same as Receivables. */}
-            <Route path="reports/finance-payables" element={<PayablesMasterReport />} />
-            {/* Finance → Income — Talligence income clone on the rpt_income_* P&L-movement snapshot
-                (Sales Accounts + Direct/Indirect Incomes); own company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/finance-income" element={<IncomeMasterReport />} />
-            {/* Finance → Expense — sign-mirror of Income on the rpt_expense_* P&L-movement snapshot
-                (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
-                pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/finance-expense" element={<ExpenseMasterReport />} />
-            {/* Finance → Sales Gain — margin on the sales book, over the rpt_sales_gain_* snapshot.
-                Gain is DERIVED (Tally stores no cost): cost is priced per item from that item's own
-                VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own
-                company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/finance-sales-gain" element={<SalesGainReport />} />
-            {/* Dashboards → Sales Dashboard — the Talligence composite screen. Unlike every master
-                report it spans FOUR spines (sales / income / expense / receivables), so its RPC
-                returns meta.tie_* and the page warns when two separately-crons'd snapshots drift.
-                Own company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/sales-dashboard" element={<SalesDashboard />} />
-            {/* Dashboards → Purchase Dashboard — the purchase-side twin. Rides rpt_purchase_line for
-                KPI / monthly / geography / vendors (ONE spine, so there is no tie_geo to report),
-                plus a new rpt_purchase_dashboard_ap ledger walk for month-end payables — the only
-                precomputed piece, and the month-end AP source Finance → Payables never had.
-                Own company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/purchase-dashboard" element={<PurchaseDashboard />} />
-            {/* Inventory → Stock Analysis — the Talligence inventory clone, and the FIRST report on
-                the inventory spine rather than a ledger one. Rides two new precomputed tables
-                (rpt_stock_analysis_item / _move) because nothing existing could answer "when did this
-                item last move": rpt_sales_item / rpt_purchase_item / rpt_day_book_item each see one
-                family of voucher natures and none sees stock journals, delivery challans, credit
-                notes or rejections. Own company + FY pickers (see FY_PINNED_ROUTES). */}
-            <Route path="reports/stock-analysis" element={<StockAnalysis />} />
-            <Route path="reports/aging" element={<AgingReport />} />
-            {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
-            <Route path="reports/top-exposure" element={<TopExposureReport />} />
-            <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
-            {/* One page, two reports: ?below=0 is "Zero Collections", ?below=30 is "Below 30%".
-                Zero collection is the 0% case, so they share an engine — see lib/collections.ts.
-                The page pins itself to the pipeline source (the Live/Tally toggle can't reach it). */}
-            <Route path="reports/collections" element={<CollectionPerformanceReport />} />
-            {/* The zero report shipped at its own URL first. Keep the bookmark working. */}
-            <Route
-              path="reports/zero-collections"
-              element={<Navigate to="/outstanding-dashboard/reports/collections?below=0" replace />}
-            />
-            {/* Same page, third report: customers who owe money and have STOPPED BUYING. It is the
-                exact complement of the other two reports' "Still Buying" lens, so it reuses their
-                engine — but it asks a sales question, not a collections one, so it has no ?below=
-                threshold and arrives by route instead. Pinned to the pipeline source AND to Both
-                FYs (a 6-month window can't live inside a 3-month-old FY) — see the page header. */}
-            <Route path="reports/dormant" element={<CollectionPerformanceReport variant="dormant" />} />
-            {/* Aged debt: ?over=120 (the card), 90 / 180 / any custom cutoff. Pinned to the pipeline
-                source AND to Both FYs — see the header of pages/OverdueAgingReport.tsx. */}
-            <Route path="reports/overdue" element={<OverdueAgingReport />} />
-            {/* The book pivoted by the A/B/C/D/E tier, plus the tag-hygiene lens. Pinned to the
-                pipeline source AND to Both FYs — see the header of pages/CustomerCategoryReport.tsx. */}
-            <Route path="reports/category" element={<CustomerCategoryReport />} />
-            <Route path="reports/red-mark" element={<RedMarkCustomersReport />} />
-            {/* How long each customer takes to turn a sale into cash: ?over=90 (the card), 60 / 120 /
-                any custom cutoff. A COUNTBACK, not AR/Sales — and a group's DSO is never the average
-                of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
-                a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
-            <Route path="reports/dso" element={<DsoReport />} />
-            {/* Full-access only. These three were pinned to role = admin; they are now behind the
-                per-user "full access to Reports" grant, which an admin still holds implicitly. */}
-            <Route element={<RequireHubMenu menu="reports" full />}>
+            <Route element={<RequireReportAccess />}>
+              <Route path="reports" element={<Reports />} />
+              {/* Master Reports. Reads the precomputed rpt_sales_* snapshot of the Tally mirror,
+                  so it is source-agnostic — no Live/pipeline gate, same as the financial
+                  statements. It carries its own company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/sales" element={<SalesReport />} />
+              {/* Purchase Report — purchase-side twin of the Sales Report, same source-agnostic
+                  rpt_purchase_* snapshot, own company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/purchase" element={<PurchaseReport />} />
+              {/* Day Book — single-company single-day dashboard on the rpt_day_book snapshot;
+                  source-agnostic, carries its own company + date pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/day-book" element={<DayBook />} />
+              {/* Finance → Receivables — Talligence receivables clone on the rpt_receivables_*
+                  snapshot; own company + FY pickers. */}
+              <Route path="reports/finance-receivables" element={<ReceivablesMasterReport />} />
+              {/* Finance → Payables — sign-mirror of Receivables (Sundry Creditors) on the
+                  rpt_payables_* snapshot; own company + FY pickers, same as Receivables. */}
+              <Route path="reports/finance-payables" element={<PayablesMasterReport />} />
+              {/* Finance → Income — Talligence income clone on the rpt_income_* P&L-movement snapshot
+                  (Sales Accounts + Direct/Indirect Incomes); own company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/finance-income" element={<IncomeMasterReport />} />
+              {/* Finance → Expense — sign-mirror of Income on the rpt_expense_* P&L-movement snapshot
+                  (Direct/Indirect Expenses + Purchase Accounts, debit-positive); own company + FY
+                  pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/finance-expense" element={<ExpenseMasterReport />} />
+              {/* Finance → Sales Gain — margin on the sales book, over the rpt_sales_gain_* snapshot.
+                  Gain is DERIVED (Tally stores no cost): cost is priced per item from that item's own
+                  VALUATIONMETHOD, so a configured standard price is never mistaken for a cost. Own
+                  company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/finance-sales-gain" element={<SalesGainReport />} />
+              {/* Dashboards → Sales Dashboard — the Talligence composite screen. Unlike every master
+                  report it spans FOUR spines (sales / income / expense / receivables), so its RPC
+                  returns meta.tie_* and the page warns when two separately-crons'd snapshots drift.
+                  Own company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/sales-dashboard" element={<SalesDashboard />} />
+              {/* Dashboards → Purchase Dashboard — the purchase-side twin. Rides rpt_purchase_line for
+                  KPI / monthly / geography / vendors (ONE spine, so there is no tie_geo to report),
+                  plus a new rpt_purchase_dashboard_ap ledger walk for month-end payables — the only
+                  precomputed piece, and the month-end AP source Finance → Payables never had.
+                  Own company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/purchase-dashboard" element={<PurchaseDashboard />} />
+              {/* Inventory → Stock Analysis — the Talligence inventory clone, and the FIRST report on
+                  the inventory spine rather than a ledger one. Rides two new precomputed tables
+                  (rpt_stock_analysis_item / _move) because nothing existing could answer "when did this
+                  item last move": rpt_sales_item / rpt_purchase_item / rpt_day_book_item each see one
+                  family of voucher natures and none sees stock journals, delivery challans, credit
+                  notes or rejections. Own company + FY pickers (see FY_PINNED_ROUTES). */}
+              <Route path="reports/stock-analysis" element={<StockAnalysis />} />
+              <Route path="reports/aging" element={<AgingReport />} />
+              {/* Live (Tally) only — the page renders a "Not applicable" panel on the default pipeline. */}
+              <Route path="reports/top-exposure" element={<TopExposureReport />} />
+              <Route path="reports/other-payments" element={<OtherPaymentsReport />} />
+              {/* One page, two reports: ?below=0 is "Zero Collections", ?below=30 is "Below 30%".
+                  Zero collection is the 0% case, so they share an engine — see lib/collections.ts.
+                  The page pins itself to the pipeline source (the Live/Tally toggle can't reach it). */}
+              <Route path="reports/collections" element={<CollectionPerformanceReport />} />
+              {/* Same page, third report: customers who owe money and have STOPPED BUYING. It is the
+                  exact complement of the other two reports' "Still Buying" lens, so it reuses their
+                  engine — but it asks a sales question, not a collections one, so it has no ?below=
+                  threshold and arrives by route instead. Pinned to the pipeline source AND to Both
+                  FYs (a 6-month window can't live inside a 3-month-old FY) — see the page header. */}
+              <Route path="reports/dormant" element={<CollectionPerformanceReport variant="dormant" />} />
+              {/* Aged debt: ?over=120 (the card), 90 / 180 / any custom cutoff. Pinned to the pipeline
+                  source AND to Both FYs — see the header of pages/OverdueAgingReport.tsx. */}
+              <Route path="reports/overdue" element={<OverdueAgingReport />} />
+              {/* The book pivoted by the A/B/C/D/E tier, plus the tag-hygiene lens. Pinned to the
+                  pipeline source AND to Both FYs — see the header of pages/CustomerCategoryReport.tsx. */}
+              <Route path="reports/category" element={<CustomerCategoryReport />} />
+              <Route path="reports/red-mark" element={<RedMarkCustomersReport />} />
+              {/* How long each customer takes to turn a sale into cash: ?over=90 (the card), 60 / 120 /
+                  any custom cutoff. A COUNTBACK, not AR/Sales — and a group's DSO is never the average
+                  of its rows. Pinned to the pipeline source AND to Both FYs, the latter load-bearing:
+                  a 12-month lookback cannot be read inside a young FY. See pages/DsoReport.tsx. */}
+              <Route path="reports/dso" element={<DsoReport />} />
+              {/* These three used to sit behind an extra `RequireHubMenu menu="reports" full`
+                  wrapper (and before that, role = admin). Both gates are gone: withholding the
+                  per-report grant IS the restriction now, and it applies to every report rather
+                  than the handful somebody remembered to flag. */}
               {/* The Talligence "Insights → Customer Profile" clone, the first report in
                   the Insights category. Needed a new table (rpt_customer_profile_year): nothing
                   precomputed a per-customer, per-FY sales aggregate, and the lifecycle buckets are a
@@ -206,29 +220,28 @@ function HubRoutes() {
               <Route path="reports/customer-profile" element={<CustomerProfile />} />
               {/* The executive dashboard — the Talligence C-Level clone, 22 panels on the
                   nightly rpt_clevel_dashboard_cache snapshot. Own company + FY pickers (see
-                  FY_PINNED_ROUTES). Guarded here AND hidden from the catalogue/sidebar for
-                  anyone without full Reports access — see reportCatalog.ts adminOnly. */}
+                  FY_PINNED_ROUTES). */}
               <Route path="reports/c-level-dashboard" element={<ExecDashboard />} />
               {/* The 2026-07-23 original, superseded by the route above. Its clevel_pl_monthly /
                   mv_clevel_ledger source has a DISABLED refresh cron, so it reports stale figures;
                   routed only until the replacement is signed off, then deleted along with
                   supabase/clevel-mirror/. */}
               <Route path="reports/c-level" element={<CLevelDashboard />} />
+              <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
+              <Route path="reports/profit-loss" element={<ProfitLossReport />} />
+              <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
+              <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
+              <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
+              {/* Live (Tally) only — the pages render a "Not applicable" panel on the default pipeline. */}
+              <Route path="reports/ledger-voucher" element={<LedgerVoucherList />} />
+              <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
+              {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
+              <Route path="reports/sales-register" element={<SalesRegister />} />
+              {/* Tally Reports → Inventory Books. Reads the precomputed rpt_stock_summary_* snapshot
+                  through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
+                  own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
+              <Route path="reports/stock-summary" element={<StockSummary />} />
             </Route>
-            <Route path="reports/balance-sheet" element={<BalanceSheetReport />} />
-            <Route path="reports/profit-loss" element={<ProfitLossReport />} />
-            <Route path="reports/trial-balance" element={<TrialBalanceReport />} />
-            <Route path="reports/ledger-outstanding" element={<LedgerOutstandingList />} />
-            <Route path="reports/ledger-outstanding/:ledgerId" element={<LedgerOutstandingBills />} />
-            {/* Live (Tally) only — the pages render a "Not applicable" panel on the default pipeline. */}
-            <Route path="reports/ledger-voucher" element={<LedgerVoucherList />} />
-            <Route path="reports/ledger-voucher/:ledgerId" element={<LedgerVoucherStatement />} />
-            {/* Source-agnostic — reads the precomputed rpt_sales_register snapshot, like the Sales Report. */}
-            <Route path="reports/sales-register" element={<SalesRegister />} />
-            {/* Tally Reports → Inventory Books. Reads the precomputed rpt_stock_summary_* snapshot
-                through the rpt_stock_summary_window RPC, so it is source-agnostic too. Carries its
-                own company + FY + period pickers — see FY_PINNED_ROUTES in layouts/UserLayout.tsx. */}
-            <Route path="reports/stock-summary" element={<StockSummary />} />
           </Route>
           {/* Customer Creation FMS.
               Deliberately NOT wrapped in RequireRole: authorization here is

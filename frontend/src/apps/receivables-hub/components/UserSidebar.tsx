@@ -5,6 +5,7 @@ import { NavLink } from "@hub/components/NavLink";
 import { useSession } from "@/core/platform/session";
 import { HOME_LABEL, HOME_PATH } from "@/shared/components/layout/types";
 import { BASE, visibleMenusFor, type ReceivablesMenu } from "@hub/lib/menus";
+import { useReportAccess } from "@hub/lib/reportAccess";
 import { REPORT_CATEGORIES, findReport } from "@hub/lib/reportCatalog";
 import {
   Collapsible,
@@ -109,16 +110,20 @@ export function UserSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { isAdmin, user } = useSession();
+  const { allowedIds } = useReportAccess();
   // Admins see every menu; a non-admin sees everything not in their deny-list
   // (profiles.receivables_hidden_menus, set by an admin in Admin → Users or in
-  // Settings → Menu Permissions). The second list is the full-access allow-list:
-  // it keeps the admin-only Reports sub-categories (Dashboards, Insights) for a user
-  // who was granted full Reports.
-  // Sub-nav children are gated by their PARENT's key — see ReceivablesMenuChild.
+  // Settings → Permissions). The second list is the full-access allow-list, which now only
+  // decides whether Settings is worth showing at all.
+  // Sub-nav children are gated by their PARENT's key — see ReceivablesMenuChild — EXCEPT the
+  // Reports categories, which additionally follow the per-report grants.
   const navItems = visibleMenusFor(
     isAdmin,
     user.receivablesHiddenMenus ?? [],
     user.receivablesAdminMenus ?? [],
+    // Per-report grants shape the Reports sub-nav: a category the user holds nothing in is
+    // dropped, and Reports itself disappears if they hold nothing at all.
+    allowedIds,
   );
   // Admin-only menus are parked in their own "Hidden" section at the bottom so they read as
   // out-of-the-way tools rather than part of the everyday nav. `visibleMenusFor` already drops them

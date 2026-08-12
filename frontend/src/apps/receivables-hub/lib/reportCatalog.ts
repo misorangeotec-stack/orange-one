@@ -58,6 +58,28 @@ export type ReportSource = "pipeline" | "tally";
 /** "soon" = catalogued but not built. No route, no fetcher — the row is inert. */
 export type ReportStatus = "live" | "soon";
 
+/**
+ * How a report honours the viewer's per-salesperson scope
+ * (profiles.receivables_salespersons → lib/scope.tsx → lib/scopeParties.ts).
+ *
+ * REQUIRED on every entry, and deliberately so: a new report cannot be added to this
+ * catalogue without someone deciding what a scoped user sees in it. `tsc` is the gate.
+ *
+ *   "party-server"  the fetcher passes the allowed party names to the server, so the
+ *                   out-of-scope rows never reach the browser at all. Preferred.
+ *   "party-client"  the rows carry a customer/ledger/salesperson, so they are filtered
+ *                   after the fetch. (Everything on useAppData is already this today.)
+ *   "none"          the report cannot be narrowed to a salesperson — either it has no
+ *                   customer dimension (a Balance Sheet is the company's, full stop), it
+ *                   is vendor-side, or its RPC pre-aggregates with no party filter. Per
+ *                   the product rule these still show the FULL company figures, with a
+ *                   banner saying so (components/ScopeBanner) rather than being hidden.
+ *
+ * Flipping "none" → "party-server" is the entire frontend change when an RPC later gains
+ * a p_parties argument; the banner then disappears on its own.
+ */
+export type ReportScoping = "party-server" | "party-client" | "none";
+
 export type ReportCategoryId =
   | "master-reports"
   | "finance"
@@ -75,8 +97,6 @@ export interface ReportCategory {
   title: string;
   blurb: string;
   icon: LucideIcon;
-  /** Admin-only category — hidden from non-admins in the landing rail and the sidebar sub-nav. */
-  adminOnly?: boolean;
 }
 
 export interface ReportSubcategory {
@@ -101,8 +121,24 @@ export interface ReportEntry {
   status: ReportStatus;
   /** Extra words that should match in search but appear in neither title nor purpose. */
   keywords?: string[];
-  /** Admin-only report — route-guarded AND hidden from the catalogue/sidebar for non-admins. */
-  adminOnly?: boolean;
+  /** How this report honours the viewer's salesperson scope. Required — see ReportScoping. */
+  scoping: ReportScoping;
+  /**
+   * Replaces the default ScopeBanner copy when `scoping` is "none". Use it when
+   * "cannot be filtered to your salespeople" would be the wrong explanation — a vendor-side
+   * report isn't unfilterable, the concept simply doesn't apply to it.
+   */
+  scopeNote?: string;
+  /**
+   * This report is NOT gated by the per-report grants — it is gated by the named menu key
+   * (lib/menus.tsx) because it lives OUTSIDE /reports with its own top-level sidebar entry.
+   *
+   * Only the two Sales & Team reports. They are catalogued so this list stays the complete
+   * picture of every report in the app, but putting them behind a report grant as well would
+   * mean two gates fighting over one screen — and filtering the landing page by grants alone
+   * would make them vanish for users who can perfectly well open them from the sidebar.
+   */
+  governedByMenu?: string;
 }
 
 export const REPORT_CATEGORIES: ReportCategory[] = [
@@ -133,17 +169,20 @@ export const REPORT_CATEGORIES: ReportCategory[] = [
     title: "Dashboards",
     blurb: "At-a-glance executive scoreboards built from the live Tally books.",
     icon: LayoutDashboard,
-    adminOnly: true,
   },
   // Talligence files Customer Profile under its own top-level "Insights" nav, not under Report —
   // these read the book to describe the customer BASE (who is new, who left, who is growing)
-  // rather than to state a balance. Admin-only, like Dashboards.
+  // rather than to state a balance.
+  //
+  // Dashboards and Insights were `adminOnly: true` until per-report grants shipped. That flag was
+  // a second gate saying the same thing the grants now say directly — and a worse one, since an
+  // admin could tick "C-Level Dashboard" for a user and have it silently do nothing. Withholding
+  // the grant IS the restriction now.
   {
     id: "insights",
     title: "Insights",
     blurb: "How the customer base is moving — who is new, who is returning, who has gone quiet.",
     icon: Sparkles,
-    adminOnly: true,
   },
   {
     id: "receivables",
@@ -191,6 +230,8 @@ export const REPORTS: ReportEntry[] = [
   // ── Master Reports ─────────────────────────────────────────────────────────
   {
     id: "sales-report",
+    // rpt_sales_report already takes p_parties — the scope goes to the server.
+    scoping: "party-server",
     title: "Sales Report",
     purpose: "The full sales picture — year, quarter, month, week, geography, product and customer.",
     category: "master-reports",
@@ -202,6 +243,11 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "purchase-report",
+    // Vendor-keyed. rpt_purchase_report DOES take p_parties, but its parties are SUPPLIERS and
+    // ext_ledger_tags tags customers — filtering vendors against a customer tag list would
+    // silently empty the report rather than scope it.
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
     title: "Purchase Report",
     purpose: "The full purchase picture — year, quarter, month, week, geography, product and vendor.",
     category: "master-reports",
@@ -213,6 +259,10 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "day-book-dashboard",
+    // rpt_day_book takes (p_tenant, p_date) only — no party filter, and its KPI / income /
+    // expense / product panels carry no party column to re-aggregate from. Needs a p_parties
+    // argument on the RPC before it can be scoped.
+    scoping: "none",
     title: "Day Book",
     purpose: "One day at a glance — sales, purchases, income & expense, products and vouchers.",
     category: "master-reports",
@@ -226,6 +276,7 @@ export const REPORTS: ReportEntry[] = [
   // ── Finance ────────────────────────────────────────────────────────────────
   {
     id: "finance-receivables",
+    scoping: "party-server",
     title: "Receivables",
     purpose: "Outstanding, overdue, on-account and advances per customer — the Talligence receivables view.",
     category: "finance",
@@ -237,6 +288,8 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "finance-payables",
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
     title: "Payables",
     purpose: "What we owe each supplier — outstanding, overdue, on-account and advances, by bill.",
     category: "finance",
@@ -248,6 +301,9 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "finance-income",
+    // Posted to NOMINAL accounts — the "ledger" on every row is an income head, not a customer.
+    // There is no customer dimension to narrow.
+    scoping: "none",
     title: "Income",
     purpose: "Income by group, sub-group and ledger — year, quarter and month, straight from the Tally books.",
     category: "finance",
@@ -259,6 +315,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "finance-expense",
+    scoping: "none",
     title: "Expense",
     purpose: "Expense by group, sub-group and ledger — year, quarter and month, straight from the Tally books.",
     category: "finance",
@@ -270,6 +327,10 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "finance-sales-gain",
+    // rpt_sales_gain_report has NO p_parties despite rpt_sales_gain_voucher carrying both party
+    // and a native salesperson column, and its KPI / geography / product panels are company
+    // totals. Easiest of the four to fix server-side — see the Phase 3 note in the plan.
+    scoping: "none",
     title: "Sales Gain Report",
     purpose: "Gain and margin on the sales book — by state, salesperson, customer and item.",
     category: "finance",
@@ -283,6 +344,8 @@ export const REPORTS: ReportEntry[] = [
   // ── Inventory ──────────────────────────────────────────────────────────────
   {
     id: "stock-analysis",
+    // Item grain — no party dimension anywhere on the inventory spine.
+    scoping: "none",
     title: "Stock Analysis",
     purpose: "Stock value by category and group, monthly inward/outward, and what has stopped moving.",
     category: "inventory",
@@ -298,6 +361,9 @@ export const REPORTS: ReportEntry[] = [
   // ── Insights ───────────────────────────────────────────────────────────────
   {
     id: "customer-profile",
+    // rpt_customer_profile returns the whole roster (one row per customer-year) and each row
+    // already carries `salesperson`, so this filters in the browser with no join at all.
+    scoping: "party-client",
     title: "Customer Profile",
     purpose: "How the customer base is moving — new, returning, gone quiet — and the money behind each group.",
     category: "insights",
@@ -305,7 +371,6 @@ export const REPORTS: ReportEntry[] = [
     icon: Users,
     source: "tally",
     status: "live",
-    adminOnly: true,
     keywords: ["customer", "customers", "new customers", "existing customers", "non active", "dormant",
                "churn", "segment", "segmental", "small", "medium", "large", "journey", "lifecycle",
                "customer base", "insights", "contribution", "average sales"],
@@ -314,6 +379,10 @@ export const REPORTS: ReportEntry[] = [
   // ── Dashboards ─────────────────────────────────────────────────────────────
   {
     id: "sales-dashboard",
+    // rpt_sales_dashboard takes no filter arrays at all and every panel (kpi, monthly, income,
+    // expense, geography, products, ar) arrives company-aggregated. Its `salespersons` panel
+    // names everyone, which is exactly what a scoped user should not see — Phase 3.
+    scoping: "none",
     title: "Sales Dashboard",
     purpose:
       "Sales, income, expense and receivables on one screen — with geography, products, customers and salespersons.",
@@ -327,6 +396,8 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "purchase-dashboard",
+    scoping: "none",
+    scopeNote: "Vendor-side report — salesperson scope does not apply.",
     title: "Purchase Dashboard",
     purpose:
       "Purchase, income, expense and payables on one screen — with geography, vendors and top products.",
@@ -341,6 +412,10 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "exec-dashboard",
+    // rpt_clevel_dashboard reads a frozen ~69 KB jsonb blob per (tenant, FY) — the customer is
+    // already dissolved before the RPC is called, so this one cannot be scoped by adding a
+    // parameter. It would need a scoped rebuild path, or to stay company-wide permanently.
+    scoping: "none",
     title: "C-Level Dashboard",
     purpose:
       "The whole company on one screen — sales, profitability, ratios, funds, parties, stock and taxes.",
@@ -349,7 +424,6 @@ export const REPORTS: ReportEntry[] = [
     icon: LayoutDashboard,
     source: "tally",
     status: "live",
-    adminOnly: true,
     keywords: ["executive", "c-level", "ceo", "cfo", "board", "kpi", "ratios", "gross profit",
                "net profit", "current ratio", "quick ratio", "return on equity", "debt to equity",
                "operating expense", "available funds", "bank", "duties", "taxes", "stock groups",
@@ -359,6 +433,7 @@ export const REPORTS: ReportEntry[] = [
   // can be compared side by side before it is deleted; see clevel-dashboard-reconciliation.md.
   {
     id: "c-level-dashboard",
+    scoping: "none",
     title: "C-Level Dashboard (old)",
     purpose:
       "The whole company on one screen — sales, profit, ratios, funds, top parties, duties and stock, per company.",
@@ -367,13 +442,16 @@ export const REPORTS: ReportEntry[] = [
     icon: LayoutDashboard,
     source: "tally",
     status: "live",
-    adminOnly: true,
     keywords: ["executive", "c-level", "ceo", "cfo", "board", "kpi", "ratios", "gross profit", "net profit"],
   },
 
   // ── Receivables ────────────────────────────────────────────────────────────
   {
     id: "aging",
+    // Rides useAppData, whose SCOPE CHOKEPOINT already filters allCustomers by the viewer's
+    // salespeople — so this (and every other "party-client" entry marked the same way below)
+    // has been scoped since long before per-report grants existed. Nothing to add.
+    scoping: "party-client",
     title: "Aging Report",
     purpose:
       "Outstanding split by invoice age and days past due, grouped by sale type, customer or salesperson.",
@@ -386,6 +464,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "overdue-aging",
+    scoping: "party-client",
     title: "Customers Overdue Over 120 Days",
     purpose:
       "Money stuck on bills more than 120 days past due, split into debt brought forward vs billed since.",
@@ -398,6 +477,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "top-exposure",
+    scoping: "party-client",
     title: "Top 50 Credit Exposure & Overdue Accounts",
     purpose:
       "The biggest exposure / most-overdue customers as a ranked call-list, with credit limit, utilisation and terms.",
@@ -410,6 +490,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "dso",
+    scoping: "party-client",
     title: "Customers with Average DSO over 90 Days",
     purpose:
       "How long each customer really takes to turn a sale into cash, against their own credit terms.",
@@ -424,6 +505,7 @@ export const REPORTS: ReportEntry[] = [
   // ── Collections ────────────────────────────────────────────────────────────
   {
     id: "zero-collections",
+    scoping: "party-client",
     title: "Customers with Zero Collections",
     purpose: "Customers who owe money and paid nothing in the period, flagged when we are still billing them.",
     category: "collections",
@@ -435,6 +517,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "low-collections",
+    scoping: "party-client",
     title: "Customers Below 30% Collection",
     purpose:
       "Customers who collected less than 30% of what we could have collected, with the shortfall in rupees.",
@@ -447,6 +530,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "other-payments",
+    scoping: "party-client",
     title: "Other Payments Report",
     purpose:
       "Manual, non-Tally payments applied against invoices or booked on account, by salesperson or customer.",
@@ -461,6 +545,7 @@ export const REPORTS: ReportEntry[] = [
   // ── Customers ──────────────────────────────────────────────────────────────
   {
     id: "customer-category",
+    scoping: "party-client",
     title: "Customer Category Report (A/B/C/D/E)",
     purpose:
       "The whole book pivoted by customer tier, plus a tag-hygiene lens that flags mis-graded customers.",
@@ -475,6 +560,7 @@ export const REPORTS: ReportEntry[] = [
     // Filed under Customers, not Collections: this asks a SALES question — who has stopped
     // buying and still owes us — not a payment one. See ReceivablesHubApp.tsx's route comment.
     id: "dormant-debtors",
+    scoping: "party-client",
     title: "Customers with Dues but No Sales",
     purpose: "Dormant accounts — they owe money but have billed nothing in the period.",
     category: "customers",
@@ -486,6 +572,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "red-mark-customers",
+    scoping: "party-client",
     title: "Red Mark Customers",
     purpose: "The hand-flagged Red Mark list (managed in Masters), with live outstanding and overdue.",
     category: "customers",
@@ -501,6 +588,8 @@ export const REPORTS: ReportEntry[] = [
   // catalogued anyway so this list is the complete picture of every report in the app.
   {
     id: "salesperson-analysis",
+    scoping: "party-client",
+    governedByMenu: "salesperson-analysis",
     title: "Salesperson Risk Analysis",
     purpose: "The book read per salesperson, ranked by the risk sitting in their accounts.",
     category: "sales-team",
@@ -512,6 +601,8 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "salesperson-collection",
+    scoping: "party-client",
+    governedByMenu: "salesperson-collection",
     title: "Salesperson Collection Report",
     purpose: "Opening, due, collected and target per salesperson for the month.",
     category: "sales-team",
@@ -525,6 +616,9 @@ export const REPORTS: ReportEntry[] = [
   // ── Tally Reports ──────────────────────────────────────────────────────────
   {
     id: "balance-sheet",
+    // A company's balance sheet is the company's. There is no per-salesperson version of it,
+    // so a scoped viewer sees the full statement with the ScopeBanner above it.
+    scoping: "none",
     title: "Balance Sheet",
     purpose: "What each company owns and owes, exactly as Tally states it.",
     category: "tally",
@@ -537,6 +631,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "profit-loss",
+    scoping: "none",
     title: "Profit & Loss",
     purpose: "The trading and profit & loss account per company, down to Gross and Nett Profit.",
     category: "tally",
@@ -549,6 +644,10 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "trial-balance",
+    // v_ledger_detail IS per-ledger, so this is technically filterable — but a trial balance
+    // with only some debtor ledgers in it does not balance, which makes it a worse answer than
+    // the honest company-wide one. Left whole, with the banner.
+    scoping: "none",
     title: "Trial Balance",
     purpose: "Every group's closing balance, Debit and Credit side by side, drillable to the ledger.",
     category: "tally",
@@ -561,6 +660,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "day-book",
+    scoping: "none",
     title: "Day Book",
     purpose: "Every voucher entered in a date range, in Tally's own order.",
     category: "tally",
@@ -572,6 +672,10 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "ledger-voucher",
+    // The list comes from v_ledger_detail (one row per ledger) and the statement is already
+    // pinned to a single ledger by route param — so both the list and the /:ledgerId detail
+    // can be narrowed to the viewer's customers.
+    scoping: "party-client",
     title: "Ledger Voucher",
     purpose: "One ledger's full statement — every voucher against it, with a running balance.",
     category: "tally",
@@ -584,6 +688,9 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "sales-register",
+    // Read straight off rpt_sales_register through PostgREST rather than an RPC, so the scope
+    // goes on the query as .in("party", …) — no server change needed.
+    scoping: "party-server",
     title: "Sales Register",
     purpose: "Every sales & daybook voucher line — party, particulars, qty, rate and revenue, as booked.",
     category: "tally",
@@ -596,6 +703,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "group-summary",
+    scoping: "none",
     title: "Group Summary",
     purpose: "Any Tally group rolled up, drillable down to its sub-groups and ledgers.",
     category: "tally",
@@ -607,6 +715,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "stock-summary",
+    scoping: "none",
     title: "Stock Summary",
     purpose: "Every item's opening, inward, outward and closing — quantity, rate and value, as Tally prints it.",
     category: "tally",
@@ -623,6 +732,7 @@ export const REPORTS: ReportEntry[] = [
   },
   {
     id: "ledger-outstanding",
+    scoping: "party-client",
     title: "Ledger Outstandings",
     purpose: "Every ledger's pending bills — opening, pending, due date and overdue days, exactly as Tally shows them.",
     category: "tally",
@@ -669,20 +779,44 @@ export function searchReports(q: string): ReportEntry[] {
 }
 
 /**
- * Elevated visibility. Reports/categories flagged `adminOnly` are dropped unless the viewer
- * has FULL ACCESS to the Reports menu, so a board-level dashboard never even appears in the
- * list for an everyday user. The route is guarded separately (see ReceivablesHubApp.tsx) —
- * hiding a row is not an access control on its own.
+ * The reports a viewer may see, given the set of report ids they hold.
  *
- * `fullAccess` used to be `isAdmin`. It is now "admin OR granted `reports` in
- * profiles.receivables_admin_menus" — an admin still passes, so nothing changed for them,
- * but the gate is no longer welded to the role. Callers get it from useHubMenuAccess().
+ * Deliberately takes a plain id SET rather than a user, a role or a boolean: this module is a
+ * catalogue, and keeping it free of session/permission imports is what lets lib/menus.tsx
+ * import REPORT_CATEGORIES from here without a cycle. Who ends up in that set — grants,
+ * admin bypass, the menu-governed Sales & Team pair — is decided in lib/reportAccess.ts,
+ * which is the only place that knows about users.
+ *
+ * These replaced a `fullAccess: boolean` pair that dropped rows flagged `adminOnly`. That flag
+ * is gone: per-report grants say the same thing directly, and say it for every report rather
+ * than the four somebody remembered to flag.
  */
-export function reportCategoriesFor(fullAccess: boolean): ReportCategory[] {
-  return REPORT_CATEGORIES.filter((c) => fullAccess || !c.adminOnly);
+export function visibleReports(allowed: ReadonlySet<string>): ReportEntry[] {
+  return REPORTS.filter((r) => allowed.has(r.id));
 }
-export function visibleReports(fullAccess: boolean): ReportEntry[] {
-  return REPORTS.filter((r) => fullAccess || !r.adminOnly);
+
+/**
+ * Categories worth showing — those holding at least one report this viewer may see.
+ *
+ * An empty result is a legitimate state (a user granted nothing yet), so every caller must
+ * handle it; pages/Reports.tsx would otherwise index cats[0] on a user's first ever visit.
+ */
+export function reportCategoriesFor(allowed: ReadonlySet<string>): ReportCategory[] {
+  return REPORT_CATEGORIES.filter((c) => REPORTS.some((r) => r.category === c.id && allowed.has(r.id)));
+}
+
+/**
+ * Every entry sharing a path, ignoring the query string.
+ *
+ * Two reports live at `reports/collections` and differ only by `?below=`, so a bare URL with no
+ * query is genuinely ambiguous — `findReport` resolves it to whichever is declared first, which
+ * for a permission check is a coin toss that can deny a user their own report. The route guard
+ * uses this to ask "does the viewer hold ANY report at this path?" instead.
+ */
+export function reportsAtPath(pathname: string): ReportEntry[] {
+  const rel = pathname.startsWith(`${BASE}/`) ? pathname.slice(BASE.length + 1) : null;
+  if (!rel) return [];
+  return REPORTS.filter((r) => r.path && r.path.split("?")[0] === rel);
 }
 
 /**

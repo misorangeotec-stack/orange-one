@@ -27,6 +27,7 @@ import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
 import { loadLedgerList, loadLedgerMeta, type LedgerListRow } from "@hub/lib/ledgerOutstanding";
 import { loadLedgerVouchers, buildLedgerStatement, periodLabelFor } from "@hub/lib/ledgerVouchers";
+import { filterByScope, useScopedParties } from "@hub/lib/scopeParties";
 import { exportLedgerVouchersMultiXlsx, type LedgerBlock } from "@hub/lib/exportFinancialStatements";
 
 const BASE = "/outstanding-dashboard";
@@ -57,14 +58,22 @@ export default function LedgerVoucherList() {
   const { companies } = useFinancialStatements();
   const guids = useMemo(() => companies.map((c) => c.companyGuid).sort(), [companies]);
 
-  const { data: ledgers, isLoading, error } = useQuery<LedgerListRow[]>({
+  const { data: ledgers, isLoading: ledgersLoading, error } = useQuery<LedgerListRow[]>({
     queryKey: ["ledgerList", "v1", guids],
     queryFn: () => loadLedgerList(guids),
     enabled: live && guids.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
-  const all = ledgers ?? [];
+  // Per-salesperson scope, applied before anything derives from the list — so the filters, the
+  // "select all" set and the multi-ledger export all operate on the viewer's own customers.
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const all = useMemo(
+    () => (scopeLoading ? [] : filterByScope(ledgers ?? [], scope, (l) => l.ledger)),
+    [ledgers, scope, scopeLoading],
+  );
+  // Until the scope lands `all` is deliberately empty — report that as loading, not as "no rows".
+  const isLoading = ledgersLoading || scopeLoading;
 
   // Friendly company name per guid, for display and the company filter.
   const companyName = useMemo(() => {

@@ -13,6 +13,7 @@ import type { AppRole } from "@/core/platform/types";
 import {
   PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@/apps/receivables-hub/lib/menus";
+import ReportAccessTree from "@/apps/receivables-hub/components/ReportAccessTree";
 import ShareLoginModal from "./ShareLoginModal";
 
 const RECEIVABLES_APP_ID = "outstanding-dashboard";
@@ -50,7 +51,7 @@ function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string
  */
 const MENU_LEVEL_LABEL: Record<MenuAccessLevel, string> = {
   hidden: "Hidden",
-  standard: "Standard",
+  standard: "Visible",
   full: "Full access",
 };
 
@@ -82,6 +83,9 @@ export default function UserForm() {
   // hidden = deny-list ("may not see"), admin = allow-list ("may use at admin depth").
   const [receivablesHiddenMenus, setReceivablesHiddenMenus] = useState<string[]>(editing?.receivablesHiddenMenus ?? []);
   const [receivablesAdminMenus, setReceivablesAdminMenus] = useState<string[]>(editing?.receivablesAdminMenus ?? []);
+  // Per-report grants (profiles.receivables_allowed_reports). An ALLOW-list — empty means the
+  // user can open no report at all, which is the correct default for a new user.
+  const [receivablesAllowedReports, setReceivablesAllowedReports] = useState<string[]>(editing?.receivablesAllowedReports ?? []);
   const [spNames, setSpNames] = useState<string[]>([]);
   const [spLoading, setSpLoading] = useState(false);
   const [spError, setSpError] = useState("");
@@ -154,6 +158,7 @@ export default function UserForm() {
       receivablesSalespersons: showSalespersonScope ? receivablesSalespersons : [],
       receivablesHiddenMenus: showSalespersonScope ? receivablesHiddenMenus : [],
       receivablesAdminMenus: showSalespersonScope ? receivablesAdminMenus : [],
+      receivablesAllowedReports: showSalespersonScope ? receivablesAllowedReports : [],
     };
     setBusy(true);
     setError("");
@@ -364,11 +369,13 @@ export default function UserForm() {
               hint="which left-nav menus this user gets, and how much of each"
             >
               <p className="text-[12px] text-grey-2 mb-2.5">
-                Menus start at <span className="font-medium text-navy">Standard</span> unless you
+                Menus start at <span className="font-medium text-navy">Visible</span> unless you
                 change them. <span className="font-medium text-navy">Full access</span> appears
                 only where a menu has an admin-level tier, and gives the user that tier — the same
                 depth an admin sees. <span className="font-medium text-navy">Settings</span> has no
-                standard tier: it is Hidden until you grant it.
+                standard tier: it is Hidden until you grant it. Which reports the{" "}
+                <span className="font-medium text-navy">Reports</span> menu then shows is set
+                separately below — the menu alone grants nothing.
               </p>
               <div className="rounded-xl border border-line divide-y divide-line">
                 {PERMISSION_MENUS.map((m) => {
@@ -408,6 +415,24 @@ export default function UserForm() {
                   );
                 })}
               </div>
+            </FieldLabel>
+          )}
+
+          {showSalespersonScope && (
+            <FieldLabel
+              label="Outstanding Dashboard — report access"
+              hint="which individual reports this user can open; nothing is granted by default"
+            >
+              <p className="text-[12px] text-grey-2 mb-2.5">
+                Reports are granted one at a time, so a newly added report reaches nobody until you
+                tick it here. Ticking a category is a shortcut for ticking everything inside it —
+                it is not saved as a category, so a report added to that category later will
+                <span className="font-medium text-navy"> not</span> be granted automatically.
+              </p>
+              <ReportAccessTree
+                value={receivablesAllowedReports}
+                onChange={setReceivablesAllowedReports}
+              />
             </FieldLabel>
           )}
 

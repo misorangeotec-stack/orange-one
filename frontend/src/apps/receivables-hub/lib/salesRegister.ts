@@ -1,3 +1,5 @@
+import { SCOPE_ALL, isEmptyScope, type PartyScope } from "@hub/lib/scopeParties";
+
 /**
  * salesRegister.ts — data layer for Tally Reports → Books & Registers → Sales Register.
  *
@@ -129,8 +131,19 @@ export const registerCompanyLabel = (company: string, location: string) =>
  * (anon-safe) and filtered to winning (tenant, fy) books so FY-split overlap can't double-count.
  * Each row's company/location are resolved from ext_company_map (see the header note), falling back
  * to the table's own columns for a book nobody has tagged yet.
+ *
+ * `scope` is the viewer's per-salesperson restriction (lib/scopeParties.ts). It is taken as the
+ * PartyScope union rather than a `string[]` on purpose: this table is read through PostgREST, so
+ * the filter is `.in("party", …)`, and a plain empty array would be indistinguishable from "the
+ * caller had no filter" at a glance while meaning the opposite. `{ kind: "only", parties: [] }`
+ * short-circuits to no rows, which is what a viewer scoped to nobody must see.
  */
-export async function loadSalesRegister(from: string, to: string): Promise<RegisterRow[]> {
+export async function loadSalesRegister(
+  from: string,
+  to: string,
+  scope: PartyScope = SCOPE_ALL,
+): Promise<RegisterRow[]> {
+  if (isEmptyScope(scope)) return [];
   const books = await winningBooks(fysInRange(from, to));
   if (!books.length) return [];
   const tenants = [...new Set(books.map((b) => b.tenant_id))];
@@ -140,13 +153,17 @@ export async function loadSalesRegister(from: string, to: string): Promise<Regis
   const resolve = makeCompanyResolver(await fetchCompanyMap());
   const PAGE = 1000;
   const out: RawRegisterRow[] = [];
+  const scopedParties = scope.kind === "only" ? scope.parties : null;
   for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await cw
+    let q = cw
       .from("rpt_sales_register")
       .select(SELECT_COLS)
       .in("tenant_id", tenants)
       .gte("vch_date", from)
-      .lte("vch_date", to)
+      .lte("vch_date", to);
+    // Narrowed on the SERVER — out-of-scope lines never reach the browser.
+    if (scopedParties) q = q.in("party", scopedParties);
+    const { data, error } = await q
       .order("vch_date", { ascending: true })
       .order("tenant_id", { ascending: true })
       .order("voucher_no", { ascending: true })

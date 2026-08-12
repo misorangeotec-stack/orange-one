@@ -8,11 +8,14 @@
 //   POST  body { action: "create", name, email, phone, designation?, role,
 //                departmentId?, hodIds?: string[], moduleAccess?: string[],
 //                receivablesSalespersons?: string[], receivablesHiddenMenus?: string[],
-//                receivablesAdminMenus?: string[] }  -> { id }
+//                receivablesAdminMenus?: string[], receivablesAllowedReports?: string[] }
+//                                                                          -> { id }
 //                  (phone = mobile number; used as the initial login password;
-//                   receivablesSalespersons = Outstanding Dashboard scope tags;
-//                   receivablesHiddenMenus = menus that user may NOT see;
-//                   receivablesAdminMenus  = menus they may use with admin depth)
+//                   receivablesSalespersons  = Outstanding Dashboard scope tags;
+//                   receivablesHiddenMenus   = menus that user may NOT see;
+//                   receivablesAdminMenus    = menus they may use with admin depth;
+//                   receivablesAllowedReports = the individual reports they may open —
+//                     an ALLOW-list, so omitting it means NO reports, not all of them)
 //   POST  body { action: "set-password", userId, password }       -> { ok: true }
 //   POST  body { action: "delete", userId }                       -> { ok: true }
 //
@@ -112,6 +115,10 @@ Deno.serve(async (req) => {
     // admin's choices only took effect when they re-opened and saved the user a second time.
     const receivablesHiddenMenus = Array.isArray(body.receivablesHiddenMenus) ? (body.receivablesHiddenMenus as string[]) : [];
     const receivablesAdminMenus = Array.isArray(body.receivablesAdminMenus) ? (body.receivablesAdminMenus as string[]) : [];
+    // Per-report grants. [] is the correct default here and is NOT the same shape of default
+    // as the two above: this one is an allow-list, so an omitted value means "no reports",
+    // which is exactly what a brand-new user should start with.
+    const receivablesAllowedReports = Array.isArray(body.receivablesAllowedReports) ? (body.receivablesAllowedReports as string[]) : [];
 
     // Create the auth user with the mobile number as the initial password (email
     // pre-confirmed). The on_auth_user_created trigger inserts the profile + an
@@ -136,6 +143,7 @@ Deno.serve(async (req) => {
         receivables_salespersons: receivablesSalespersons,
         receivables_hidden_menus: receivablesHiddenMenus,
         receivables_admin_menus: receivablesAdminMenus,
+        receivables_allowed_reports: receivablesAllowedReports,
       })
       .eq("id", id);
     if (profErr) return json(400, { error: profErr.message });

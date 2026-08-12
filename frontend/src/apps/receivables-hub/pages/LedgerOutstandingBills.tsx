@@ -36,6 +36,8 @@ import {
   type LedgerBillRow,
 } from "@hub/lib/ledgerOutstanding";
 import { exportLedgerOutstandingXlsx } from "@hub/lib/exportFinancialStatements";
+import { isPartyInScope, useScopedParties } from "@hub/lib/scopeParties";
+import NothingInScope from "@hub/components/NothingInScope";
 
 /** yyyymmdd → dd-mm-yyyy (formatDateDMY wants dashes). Blank for the On Account row. */
 function tallyDate(yyyymmdd: string | null): string {
@@ -191,9 +193,21 @@ export default function LedgerOutstandingBills() {
     staleTime: 5 * 60 * 1000,
   });
 
+  /**
+   * Per-salesperson scope for a SINGLE ledger reached by GUID in the URL.
+   *
+   * Filtering the list this page is linked from is not enough — a bookmarked or guessed
+   * /reports/ledger-outstanding/<guid> would otherwise open any customer's bills. The check
+   * needs the ledger's NAME, which only arrives with `meta`, so it is tri-state: `null` while
+   * that is still loading, and the bills query stays disabled until it resolves true.
+   */
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const inScope = meta ? isPartyInScope(scope, meta.ledger) : null;
+
   const { data: bills, isLoading, error } = useQuery<LedgerBillRow[]>({
     queryKey: ["ledgerBills", tenantId, ledgerId, asOn],
     queryFn: () => loadLedgerBills(tenantId, ledgerId, asOn),
+    enabled: !scopeLoading && inScope === true,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -257,6 +271,10 @@ export default function LedgerOutstandingBills() {
     setRefQ(""); setDateFrom(""); setDateTo(""); setDueFrom(""); setDueTo("");
     setOpenMin(""); setOpenMax(""); setPendMin(""); setPendMax(""); setOdMin(""); setOdMax("");
   };
+
+  // This ledger belongs to someone else's salesperson. No bills were fetched (the query stayed
+  // disabled), so refuse the page rather than render an empty one that looks like "no dues".
+  if (inScope === false) return <NothingInScope label="ledger" />;
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">

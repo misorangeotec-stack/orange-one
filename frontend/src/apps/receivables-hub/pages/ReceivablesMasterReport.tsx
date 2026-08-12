@@ -17,6 +17,8 @@ import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
+import { composePartyFilter, useScopedParties } from "@hub/lib/scopeParties";
+import NothingInScope from "@hub/components/NothingInScope";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -176,10 +178,21 @@ export default function ReceivablesMasterReport() {
   const [billTo, setBillTo] = useState(toInputDate(period.asOn));
   useEffect(() => { setBillFrom(toInputDate(period.from)); setBillTo(toInputDate(period.asOn)); }, [period.from, period.asOn]);
 
+  // Per-salesperson scope, applied SERVER-side via rpt_receivables_report's p_parties.
+  // `scoped.visible === false` gates `enabled` and not just the render: an empty parties array
+  // would pass through the fetcher's arr() helper as p_parties: null, which means "no filter"
+  // — i.e. every debtor in the company. See lib/scopeParties.ts.
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const scoped = useMemo(() => composePartyFilter(scope, filters.parties), [scope, filters.parties]);
+  const scopedFilters = useMemo<ReceivablesFilters>(
+    () => ({ ...filters, parties: scoped.visible ? scoped.parties : [] }),
+    [filters, scoped],
+  );
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["receivablesReport", "v1", companyGuid, fy, filters],
-    queryFn: () => loadReceivablesReport(companyGuid, fy, filters),
-    enabled: !!companyGuid,
+    queryKey: ["receivablesReport", "v1", companyGuid, fy, scopedFilters],
+    queryFn: () => loadReceivablesReport(companyGuid, fy, scopedFilters),
+    enabled: !!companyGuid && !scopeLoading && scoped.visible,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -284,7 +297,7 @@ export default function ReceivablesMasterReport() {
   const opts = (xs: string[] | undefined) => (xs ?? []).map((v) => ({ value: v, label: v }));
   const anyFilter = !!(filters.parties?.length || filters.groups?.length);
   const errText = error instanceof Error ? error.message : coError;
-  const heroLoading = isLoading || coLoading;
+  const heroLoading = isLoading || coLoading || scopeLoading;
 
   const heroSummary: React.ReactNode = heroLoading
     ? "Gathering the receivables book…"
@@ -330,6 +343,12 @@ export default function ReceivablesMasterReport() {
   );
 
   /* ------------------------------------------------------------------ view */
+
+  // Scoped viewer whose salespeople own no customers: nothing was fetched, so there is nothing
+  // to render. Bail before the hero rather than painting zeroes that read as "nobody owes us".
+  // `scopeLoading` is part of the condition because useScopedParties fails closed while the tag
+  // map loads — without it this panel would flash on every visit.
+  if (!scopeLoading && !scoped.visible) return <NothingInScope label="report" />;
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto space-y-3">

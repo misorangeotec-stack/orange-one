@@ -32,14 +32,16 @@ export default function Settings() {
       <div>
         <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {isAdmin ? "Manage masters and menu access" : "Manage masters"}
+          {isAdmin ? "Manage masters and user access" : "Manage masters"}
         </p>
       </div>
 
       <Tabs defaultValue="masters">
         <TabsList>
           <TabsTrigger value="masters">Masters</TabsTrigger>
-          {isAdmin && <TabsTrigger value="menu">Menu Permissions</TabsTrigger>}
+          {/* "Menu Permissions" until per-report grants shipped — it now sets menus AND the
+              individual reports a user may open, so the narrower name had stopped being true. */}
+          {isAdmin && <TabsTrigger value="menu">Permissions</TabsTrigger>}
         </TabsList>
 
         {/* ── Masters (admins + anyone granted full Settings access) ─────────── */}
@@ -47,9 +49,9 @@ export default function Settings() {
           <MusterPanel />
         </TabsContent>
 
-        {/* ── Menu Permissions (admin only) ─────────────────────────────────── */}
+        {/* ── Permissions (admin only) ──────────────────────────────────────── */}
         {isAdmin && (
-          <TabsContent value="menu" className="mt-4 max-w-5xl">
+          <TabsContent value="menu" className="mt-4 max-w-6xl">
             <MenuPermissions />
           </TabsContent>
         )}

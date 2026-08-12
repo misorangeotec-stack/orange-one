@@ -22,6 +22,7 @@ import { fmtAmount } from "@hub/components/StatementTree";
 import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
 import { loadLedgerList, type LedgerListRow } from "@hub/lib/ledgerOutstanding";
+import { filterByScope, useScopedParties } from "@hub/lib/scopeParties";
 
 const BASE = "/outstanding-dashboard";
 const PAGE_SIZE = 25;
@@ -48,14 +49,30 @@ export default function LedgerOutstandingList() {
   const { companies } = useFinancialStatements();
   const guids = useMemo(() => companies.map((c) => c.companyGuid).sort(), [companies]);
 
-  const { data: ledgers, isLoading, error } = useQuery<LedgerListRow[]>({
+  const { data: ledgers, isLoading: ledgersLoading, error } = useQuery<LedgerListRow[]>({
     queryKey: ["ledgerList", "v1", guids],
     queryFn: () => loadLedgerList(guids),
     enabled: guids.length > 0,
     staleTime: 5 * 60 * 1000,
   });
 
-  const all = ledgers ?? [];
+  /**
+   * Per-salesperson scope. v_ledger_detail is one row per LEDGER, so the narrowing is a plain
+   * name filter — but it happens here, before `all`, so every downstream filter, the group
+   * options and the totals all see the scoped set rather than the whole chart of accounts.
+   *
+   * Non-customer ledgers (banks, tax heads, expenses) carry no salesperson tag and so drop out
+   * for a scoped viewer. That is the intended reading of this screen for a salesperson: their
+   * customers' outstandings, not the company's ledger book.
+   */
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const all = useMemo(
+    () => (scopeLoading ? [] : filterByScope(ledgers ?? [], scope, (l) => l.ledger)),
+    [ledgers, scope, scopeLoading],
+  );
+  // The scope is part of loading: until it lands, `all` is deliberately empty, and reporting that
+  // as "loaded" would paint "No ledgers match" for a moment on every visit.
+  const isLoading = ledgersLoading || scopeLoading;
 
   // Friendly company name per guid, for display and the company filter.
   const companyName = useMemo(() => {

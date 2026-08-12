@@ -14,7 +14,7 @@ import {
   type ReportCategoryId,
   type ReportEntry,
 } from "@hub/lib/reportCatalog";
-import { useHubMenuAccess } from "@hub/lib/menus";
+import { useReportAccess } from "@hub/lib/reportAccess";
 
 /**
  * The report catalogue.
@@ -104,16 +104,22 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
 export default function Reports() {
   const [params, setParams] = useSearchParams();
   const [query, setQuery] = useState("");
-  // Elevated categories/reports (Dashboards, Insights) appear only for a viewer with FULL
-  // access to the Reports menu — an admin, or a user an admin granted it (see lib/menus).
-  const fullAccess = useHubMenuAccess().hasFullAccess("reports");
+  // Which reports this viewer holds (profiles.receivables_allowed_reports; admins hold all).
+  // The SAME set the route guard uses, so a row that is listed is a row that will open — and,
+  // just as importantly, a report that is not granted cannot be reached from the search box
+  // either. Search used to bypass the old category-level gate entirely.
+  const { allowedIds } = useReportAccess();
 
-  const cats = useMemo(() => reportCategoriesFor(fullAccess), [fullAccess]);
-  const visible = useMemo(() => new Set(visibleReports(fullAccess).map((r) => r.id)), [fullAccess]);
+  const cats = useMemo(() => reportCategoriesFor(allowedIds), [allowedIds]);
+  const visible = useMemo(() => new Set(visibleReports(allowedIds).map((r) => r.id)), [allowedIds]);
 
   const requested = categoryById(params.get("cat") ?? "");
-  const selected: ReportCategoryId =
-    requested && cats.some((c) => c.id === requested.id) ? requested.id : cats[0].id;
+  // `cats` is EMPTY for a user who has been granted nothing — the normal state for everyone the
+  // day per-report grants ship, since there is no backfill. Everything below this point assumed
+  // at least one category existed and read cats[0] unguarded, so this is a crash, not a cosmetic
+  // gap. Bail to the empty state before touching it.
+  const selected: ReportCategoryId | null =
+    requested && cats.some((c) => c.id === requested.id) ? requested.id : (cats[0]?.id ?? null);
 
   const searching = query.trim().length > 0;
   const matches = useMemo(() => searchReports(query).filter((r) => visible.has(r.id)), [query, visible]);
@@ -122,6 +128,23 @@ export default function Reports() {
     setQuery("");
     setParams({ cat: id });
   };
+
+  if (!selected) {
+    return (
+      <div className="p-6 max-w-[1400px] mx-auto">
+        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <FileText className="h-6 w-6 text-primary" /> Reports
+        </h1>
+        <div className="mt-5 rounded-lg border border-border bg-surface px-4 py-10 text-center">
+          <p className="text-sm font-medium text-foreground">No reports have been assigned to you yet.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Reports are granted one at a time. Ask an administrator to give you access to the ones
+            you need.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   const category = categoryById(selected)!;
   const rows = reportsInCategory(selected).filter((r) => visible.has(r.id));
@@ -169,7 +192,11 @@ export default function Reports() {
                     >
                       <c.icon className={`h-4 w-4 shrink-0 ${active ? "text-primary" : "text-muted-foreground"}`} />
                       <span className="flex-1 truncate">{c.title}</span>
-                      <span className="text-xs text-muted-foreground">{reportsInCategory(c.id).length}</span>
+                      {/* Count what the viewer can actually open, not what exists — otherwise a
+                          user granted one Tally report reads "9" and finds one row. */}
+                      <span className="text-xs text-muted-foreground">
+                        {reportsInCategory(c.id).filter((r) => visible.has(r.id)).length}
+                      </span>
                     </button>
                   </li>
                 );

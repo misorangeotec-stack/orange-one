@@ -19,6 +19,8 @@ import SalesPanel from "@hub/components/masterreports/SalesPanel";
 import { MultiSelectFilter } from "@hub/components/MultiSelectFilter";
 import { companyLabel } from "@hub/components/TallyReportFrame";
 import { useFinancialStatements } from "@hub/lib/useFinancialStatements";
+import { composePartyFilter, useScopedParties } from "@hub/lib/scopeParties";
+import NothingInScope from "@hub/components/NothingInScope";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { usePagination } from "@/shared/lib/usePagination";
 import Pagination from "@/shared/components/ui/Pagination";
@@ -312,10 +314,23 @@ export default function SalesReport() {
 
   const period = useMemo(() => salesPeriod(fy), [fy]);
 
+  // Per-salesperson scope. rpt_sales_report takes p_parties, so the narrowing happens on the
+  // SERVER — out-of-scope customers never reach the browser at all.
+  //
+  // ⚠ `scoped.visible === false` must gate `enabled`, not merely the render: passing an empty
+  //   parties array into the fetcher would hit `arr()`, come out as p_parties: null, and mean
+  //   "no filter" — i.e. the whole company. See lib/scopeParties.ts.
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const scoped = useMemo(() => composePartyFilter(scope, filters.parties), [scope, filters.parties]);
+  const scopedFilters = useMemo<SalesFilters>(
+    () => ({ ...filters, parties: scoped.visible ? scoped.parties : [] }),
+    [filters, scoped],
+  );
+
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["salesReport", "v2", guidKey, fy, filters],
-    queryFn: () => loadSalesReportMulti(refs, fy, filters),
-    enabled: refs.length > 0,
+    queryKey: ["salesReport", "v2", guidKey, fy, scopedFilters],
+    queryFn: () => loadSalesReportMulti(refs, fy, scopedFilters),
+    enabled: refs.length > 0 && !scopeLoading && scoped.visible,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -490,7 +505,7 @@ export default function SalesReport() {
 
   /* ------------------------------------------------------------- hero bits */
 
-  const heroLoading = isLoading || coLoading;
+  const heroLoading = isLoading || coLoading || scopeLoading;
   const growthPct = data ? pctChange(data.kpi.ytd, data.kpi.pytd) : null;
 
   const heroSummary: React.ReactNode = heroLoading
@@ -562,6 +577,15 @@ export default function SalesReport() {
   );
 
   /* ------------------------------------------------------------------ view */
+
+  // The viewer is scoped, but none of their salespeople owns a customer — so there is genuinely
+  // nothing to report. Bail before the hero: every figure below is derived from `data`, which
+  // was deliberately never fetched (see the `enabled` guard above).
+  //
+  // `scopeLoading` has to be checked too. `useScopedParties` reports an EMPTY scope while the tag
+  // map is still in flight — it fails closed on purpose — so without this a scoped user would see
+  // "no customers assigned to you" flash on every visit before their real scope resolved.
+  if (!scopeLoading && !scoped.visible) return <NothingInScope label="report" />;
 
   return (
     <div className="p-4 lg:p-6 max-w-[1600px] mx-auto space-y-3">

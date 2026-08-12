@@ -11,7 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { appBasePath } from "@/apps/appInfo";
-import { REPORT_CATEGORIES, categoryHref } from "@hub/lib/reportCatalog";
+import { REPORT_CATEGORIES, REPORTS, categoryHref, type ReportCategoryId } from "@hub/lib/reportCatalog";
 import { useSession } from "@/core/platform/session";
 
 /**
@@ -56,8 +56,12 @@ export interface ReceivablesMenuChild {
   title: string;
   url: string;
   icon?: LucideIcon;
-  /** Admin-only sub-nav entry (e.g. the Dashboards category). Hidden from non-admins. */
-  adminOnly?: boolean;
+  /**
+   * Report category this child stands for, when the parent menu's sub-nav is built from the
+   * report catalogue. `visibleMenusFor` drops a category the viewer holds no report in, so the
+   * sub-nav follows the per-report grants without this file knowing anything about them.
+   */
+  categoryId?: ReportCategoryId;
 }
 
 export interface ReceivablesMenu {
@@ -123,14 +127,18 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
     key: "reports",
     title: "Reports",
     url: `${BASE}/reports`,
+    // No `fullAccessNote`: Reports is a two-state menu again. Its "Full access" tier existed
+    // only to unlock the Dashboards + Insights categories, which per-report grants
+    // (profiles.receivables_allowed_reports, lib/reportAccess.ts) now express directly and per
+    // report. Keeping both would mean an admin could tick "C-Level Dashboard" for a user and
+    // have it silently do nothing.
     icon: FileText,
-    fullAccessNote: "adds the Dashboards and Insights categories (C-Level Dashboard, Customer Profile)",
     children: REPORT_CATEGORIES.map((c) => ({
       key: `reports:${c.id}`,
       title: c.title,
       url: categoryHref(c.id),
       icon: c.icon,
-      adminOnly: c.adminOnly,
+      categoryId: c.id,
     })),
   },
   {
@@ -148,17 +156,41 @@ export const RECEIVABLES_MENUS: ReceivablesMenu[] = [
  * Menus a given user may see. Admins see all; a non-admin sees every non-admin-only menu
  * not in their deny-list. Pure helper so the sidebar and the route guard share one rule.
  *
- * `adminKeys` is the full-access allow-list: it does NOT make a hidden menu appear (that is
- * the deny-list's job, and a menu you cannot see is one you cannot use), but it does keep
- * the admin-only sub-nav children of a menu you were granted — so a user with full Reports
- * gets Dashboards and Insights in the sidebar the way an admin does.
+ * `adminKeys` is the full-access allow-list. It does NOT make a hidden menu appear (that is
+ * the deny-list's job, and a menu you cannot see is one you cannot use) — it only decides
+ * whether a full-access-only menu (Settings) is worth showing at all.
+ *
+ * `allowedReportIds` is the per-report grant set (lib/reportAccess.ts). It shapes the Reports
+ * menu in two ways, and both matter:
+ *   - a sub-nav CATEGORY the viewer holds no report in is dropped, so the sidebar never offers
+ *     a category that opens on an empty list;
+ *   - the Reports menu itself disappears when the viewer holds nothing at all, rather than
+ *     inviting them into a page that can only tell them they have no reports.
+ * Passing `null` means "don't apply report grants" — used by the permission screens, which
+ * need the complete menu list to render their matrix.
  */
 export function visibleMenusFor(
   isAdmin: boolean,
   hiddenKeys: string[],
   adminKeys: string[] = [],
+  allowedReportIds: ReadonlySet<string> | null = null,
 ): ReceivablesMenu[] {
-  if (isAdmin) return RECEIVABLES_MENUS;
+  const shapeReports = (m: ReceivablesMenu): ReceivablesMenu => {
+    if (m.key !== "reports" || !m.children || !allowedReportIds) return m;
+    return {
+      ...m,
+      children: m.children.filter(
+        (c) =>
+          !c.categoryId ||
+          REPORTS.some((r) => r.category === c.categoryId && allowedReportIds.has(r.id)),
+      ),
+    };
+  };
+
+  // Admins bypass the deny-list and the full-access tier, but still get the sub-nav shaped —
+  // for them `allowedReportIds` holds every report, so nothing is actually dropped.
+  if (isAdmin) return RECEIVABLES_MENUS.map(shapeReports);
+
   const hidden = new Set(hiddenKeys);
   const elevated = new Set(adminKeys);
   return RECEIVABLES_MENUS.filter(
@@ -167,14 +199,10 @@ export function visibleMenusFor(
       !hidden.has(m.key) &&
       // A full-access-only menu (Settings) has nothing to show without the grant, so it is
       // not merely thinner for an ungranted user — it is absent.
-      (!m.fullAccessOnly || elevated.has(m.key)),
-  ).map((m) =>
-    // Drop admin-only sub-nav children (e.g. the Dashboards category) unless this user
-    // holds full access to the parent menu.
-    m.children && !elevated.has(m.key)
-      ? { ...m, children: m.children.filter((c) => !c.adminOnly) }
-      : m,
-  );
+      (!m.fullAccessOnly || elevated.has(m.key)) &&
+      // Same reasoning for Reports with no grants: an empty catalogue is not a menu.
+      (m.key !== "reports" || !allowedReportIds || REPORTS.some((r) => allowedReportIds.has(r.id) && !r.governedByMenu)),
+  ).map(shapeReports);
 }
 
 /** May this user open the menu at all? Admins always can. */

@@ -26,6 +26,7 @@ import {
   type CustomerRow, type Segment, type SegmentConfig,
 } from "@hub/lib/customerProfile";
 import { exportCustomerProfileXlsx } from "@hub/lib/exportCustomerProfile";
+import { useReceivablesScope } from "@hub/lib/scope";
 
 /**
  * Reports → Insights → Customer Profile.
@@ -310,7 +311,24 @@ export default function CustomerProfile() {
   /* ------------------------------------------------------------ derivations */
 
   const company = companies.find((c) => c.companyGuid === companyGuid);
-  const rows: CustomerRow[] = useMemo(() => data?.customers ?? [], [data]);
+
+  /**
+   * Per-salesperson scope, applied to the row list — which is the page's single chokepoint:
+   * the bands, both Journey panels and every table below derive from `rows`.
+   *
+   * This is the one report that needs no ext_ledger_tags lookup: rpt_customer_profile already
+   * resolves the salesperson per row (via rpt_ledger_master.guid → ext_ledger_tags.ledger_id,
+   * server-side and by GUID), so the tag is right here on the row. `restrictToSalespersons`
+   * is null for an admin and `[]` for an untagged non-admin — and `[]` must mean NOTHING, so
+   * the null check has to come first.
+   */
+  const { restrictToSalespersons } = useReceivablesScope();
+  const rows: CustomerRow[] = useMemo(() => {
+    const all = data?.customers ?? [];
+    if (restrictToSalespersons === null) return all;
+    const allowed = new Set(restrictToSalespersons);
+    return all.filter((r) => r.salesperson != null && allowed.has(r.salesperson));
+  }, [data, restrictToSalespersons]);
 
   const bands = useMemo(() => bandTotals(rows, cfg), [rows, cfg]);
   const journey = useMemo(() => journeys(rows, cfg), [rows, cfg]);
@@ -340,8 +358,34 @@ export default function CustomerProfile() {
 
   const errText = error instanceof Error ? error.message : coError;
   const heroLoading = isLoading || coLoading;
-  const kpi = data?.kpi;
+  /**
+   * The hero counts.
+   *
+   * `data.kpi` arrives pre-aggregated over the WHOLE company, so for a scoped viewer it would
+   * announce a customer count that the tables underneath then contradict — and leak the company
+   * roster size while doing it. Recompute the four counts from the scoped rows instead, using
+   * the same definitions as the RPC (roster = this year's buyers = new + existing; see the
+   * header note on `New` being a residual).
+   *
+   * Only the counts are recomputed. `cy_share` / `py_share` on each row stay as the RPC set
+   * them — a share OF THE COMPANY is the useful reading, and re-basing it on one salesperson's
+   * subset would silently redefine what the Segment bands mean.
+   */
   const meta = data?.meta;
+  const kpi = useMemo(() => {
+    const full = data?.kpi;
+    if (!full || restrictToSalespersons === null) return full;
+    const count = (l: CustomerRow["lifecycle"]) => rows.filter((r) => r.lifecycle === l).length;
+    const new_count = count("new");
+    const existing_count = count("existing");
+    return {
+      ...full,
+      roster: new_count + existing_count,
+      new_count,
+      existing_count,
+      nonactive_count: count("nonactive"),
+    };
+  }, [data, rows, restrictToSalespersons]);
 
   const heroSummary: React.ReactNode = heroLoading
     ? "Reading the customer base…"

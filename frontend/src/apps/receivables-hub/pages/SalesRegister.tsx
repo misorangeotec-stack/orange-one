@@ -30,6 +30,7 @@ import {
   defaultRange, ymdToIso, isoToYmd, type RegisterRow,
 } from "@hub/lib/salesRegister";
 import { exportSalesRegisterXlsx } from "@hub/lib/exportSalesRegister";
+import { useScopedParties } from "@hub/lib/scopeParties";
 
 const BASE = "/outstanding-dashboard";
 
@@ -47,10 +48,16 @@ export default function SalesRegister() {
   const to = isoToYmd(toIso);
   const validRange = !!from && !!to && from <= to;
 
+  // Per-salesperson scope. This table is read straight through PostgREST, so the narrowing is a
+  // .in("party", …) on the query itself — out-of-scope lines never leave the server. Waiting for
+  // `scopeLoading` matters: firing on the first render would read the whole register unfiltered.
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const scopeKey = scope.kind === "all" ? "all" : scope.parties.join("|");
+
   const { data: rows, isLoading, error } = useQuery<RegisterRow[]>({
-    queryKey: ["salesRegister", "v1", from, to],
-    queryFn: () => loadSalesRegister(from, to),
-    enabled: validRange,
+    queryKey: ["salesRegister", "v1", from, to, scopeKey],
+    queryFn: () => loadSalesRegister(from, to, scope),
+    enabled: validRange && !scopeLoading,
     staleTime: 5 * 60 * 1000,
   });
   const all = useMemo(() => rows ?? [], [rows]);

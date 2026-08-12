@@ -33,6 +33,8 @@ import { formatDateDMY } from "@hub/lib/utils";
 import { companyGuidOfLedger, loadLedgerMeta, tenantOfLedger } from "@hub/lib/ledgerOutstanding";
 import { loadLedgerVouchers, buildLedgerStatement, periodLabelFor, type LedgerVoucherRow } from "@hub/lib/ledgerVouchers";
 import { exportLedgerVouchersXlsx } from "@hub/lib/exportFinancialStatements";
+import { isPartyInScope, useScopedParties } from "@hub/lib/scopeParties";
+import NothingInScope from "@hub/components/NothingInScope";
 
 const BASE = "/outstanding-dashboard";
 const PAGE_SIZE = 25;
@@ -97,10 +99,19 @@ export default function LedgerVoucherStatement() {
     staleTime: 5 * 60 * 1000,
   });
 
+  /**
+   * Per-salesperson scope for a ledger addressed by GUID in the URL — the same hole the bills
+   * screen has: filtering the list that links here does not stop a typed or bookmarked link.
+   * Tri-state because the ledger's NAME only arrives with `meta`; the voucher query stays
+   * disabled until it resolves true.
+   */
+  const { scope, loading: scopeLoading } = useScopedParties();
+  const inScope = meta ? isPartyInScope(scope, meta.ledger) : null;
+
   const { data: vouchers, isLoading, error } = useQuery<LedgerVoucherRow[]>({
     queryKey: ["ledgerVouchers", tenantId, ledgerId],
     queryFn: () => loadLedgerVouchers(tenantId, ledgerId),
-    enabled: live,
+    enabled: live && !scopeLoading && inScope === true,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -160,6 +171,9 @@ export default function LedgerVoucherStatement() {
       </div>
     );
   }
+
+  // Someone else's customer. Nothing was fetched; refuse rather than show an empty statement.
+  if (inScope === false) return <NothingInScope label="ledger" />;
 
   return (
     <div className="p-6 space-y-5 max-w-[1400px] mx-auto">

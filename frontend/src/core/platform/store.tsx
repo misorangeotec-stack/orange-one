@@ -51,8 +51,8 @@ export interface DirectoryValue {
   addDepartment: (input: { name: string; description?: string }) => Promise<string>;
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => Promise<void>;
   deleteDepartment: (id: string) => Promise<void>;
-  addUser: (input: { name: string; email?: string; mobile: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[]; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[] }) => Promise<string>;
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowPipeline">>) => Promise<void>;
+  addUser: (input: { name: string; email?: string; mobile: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[]; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[] }) => Promise<string>;
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
   setUserModules: (id: string, appIds: string[]) => Promise<void>;
 }
@@ -159,6 +159,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           receivablesSalespersons: input.receivablesSalespersons ?? [],
           receivablesHiddenMenus: input.receivablesHiddenMenus ?? [],
           receivablesAdminMenus: input.receivablesAdminMenus ?? [],
+          receivablesAllowedReports: input.receivablesAllowedReports ?? [],
         });
         await refresh();
         return id;
@@ -174,6 +175,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           receivablesSalespersons: patch.receivablesSalespersons,
           receivablesHiddenMenus: patch.receivablesHiddenMenus,
           receivablesAdminMenus: patch.receivablesAdminMenus,
+          receivablesAllowedReports: patch.receivablesAllowedReports,
           receivablesAllowPipeline: patch.receivablesAllowPipeline,
         });
         if (patch.role !== undefined) await setUserRoleWrite(id, patch.role);

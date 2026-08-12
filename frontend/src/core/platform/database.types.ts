@@ -6554,6 +6554,7 @@ export type Database = {
           phone: string | null
           receivables_admin_menus: string[] | null
           receivables_allow_pipeline: boolean | null
+          receivables_allowed_reports: string[] | null
           receivables_hidden_menus: string[] | null
           receivables_report_prefs: Json | null
           receivables_salespersons: string[] | null
@@ -6571,6 +6572,7 @@ export type Database = {
           phone?: string | null
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
+          receivables_allowed_reports?: string[] | null
           receivables_hidden_menus?: string[] | null
           receivables_report_prefs?: Json | null
           receivables_salespersons?: string[] | null
@@ -6588,6 +6590,7 @@ export type Database = {
           phone?: string | null
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
+          receivables_allowed_reports?: string[] | null
           receivables_hidden_menus?: string[] | null
           receivables_report_prefs?: Json | null
           receivables_salespersons?: string[] | null

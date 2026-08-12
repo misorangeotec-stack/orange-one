@@ -63,6 +63,19 @@ export interface Profile {
    */
   receivablesAdminMenus: string[];
   /**
+   * Outstanding Dashboard per-report grants (profiles.receivables_allowed_reports): the
+   * report ids (lib/reportCatalog.ts REPORTS[].id) this user may open.
+   *
+   * An ALLOW-list, the opposite polarity to `receivablesHiddenMenus`, and unlike the
+   * menu deny-list it has NO safe default: an empty list means NO reports, not all of
+   * them. A newly shipped report therefore reaches nobody until an admin grants it.
+   * Admins ignore this and see every report.
+   *
+   * Category ids are never stored here — the admin UI expands a category tick into the
+   * report ids underneath it, so adding a report to a category never grants it silently.
+   */
+  receivablesAllowedReports: string[];
+  /**
    * Receivables Hub legacy-source access (profiles.receivables_allow_pipeline). The hub
    * defaults everyone to the Live (Tally) source; when true, this non-admin also gets the
    * topbar toggle to view the legacy pipeline source. Admins ignore this (always allowed).

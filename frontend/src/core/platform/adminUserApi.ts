@@ -24,6 +24,8 @@ export interface CreateUserInput {
   receivablesHiddenMenus?: string[];
   /** Outstanding Dashboard full-access allow-list — menus used with admin-level depth. */
   receivablesAdminMenus?: string[];
+  /** Outstanding Dashboard per-report grants — report ids this user may open (empty = none). */
+  receivablesAllowedReports?: string[];
 }
 
 /**
