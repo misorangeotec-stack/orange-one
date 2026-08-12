@@ -8,7 +8,7 @@ import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
   CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, DispatchRound, Item,
-  MasterManager, NamedMaster, OrderLine, RoundItem, StepOwner,
+  MasterManager, NamedMaster, OrderLine, RoundItem, StepDoc, StepOwner,
 } from "../types";
 
 /**
@@ -123,6 +123,24 @@ export interface DispatchData {
 const num = (v: any): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
 const str = (v: any): string | null => (v === null || v === undefined || v === "" ? null : String(v));
 
+/**
+ * The receiver copy's extra pages (`dc_attachment_pages`), normalised to an
+ * array so nothing downstream tests for two spellings of "nothing".
+ *
+ * The column is nullable jsonb and holds NULL — not `[]` — when there are no
+ * extra pages, which is also what every row written before the column existed
+ * holds. Entries without a usable `path` are dropped rather than rendered as a
+ * link to nowhere; PostgREST hands jsonb back already parsed, but the defensive
+ * shape check costs nothing and this is the one field the server does not
+ * type-check per element.
+ */
+const docs = (v: any): StepDoc[] =>
+  Array.isArray(v)
+    ? v
+        .filter((d) => d && typeof d.path === "string" && d.path !== "")
+        .map((d) => ({ path: String(d.path), name: String(d.name ?? d.path) }))
+    : [];
+
 const mapMaster = (r: any): NamedMaster => ({
   id: r.id, name: r.name, active: r.active, sortOrder: r.sort_order ?? 0,
 });
@@ -218,6 +236,7 @@ const mapRound = (r: any): DispatchRound => ({
   dcStatus: r.dc_status ?? null,
   dcAttachmentPath: str(r.dc_attachment_path),
   dcAttachmentName: str(r.dc_attachment_name),
+  dcAttachmentPages: docs(r.dc_attachment_pages),
   dcRemarks: str(r.dc_remarks),
   dcAt: r.dc_at ?? null,
   dcBy: r.dc_by ?? null,
@@ -294,6 +313,7 @@ const mapOrder = (r: any): DispatchOrder => ({
   dcStatus: r.dc_status ?? null,
   dcAttachmentPath: str(r.dc_attachment_path),
   dcAttachmentName: str(r.dc_attachment_name),
+  dcAttachmentPages: docs(r.dc_attachment_pages),
   dcRemarks: str(r.dc_remarks),
   dcAt: r.dc_at ?? null,
   dcBy: r.dc_by ?? null,

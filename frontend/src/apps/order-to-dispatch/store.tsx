@@ -56,7 +56,7 @@ import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
 import type {
   Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepOwner, } from "./types";
+  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, Item, MasterManager, NamedMaster, StepDoc, StepOwner, } from "./types";
 
 const QK = DISPATCH_QK;
 
@@ -220,7 +220,8 @@ export interface DispatchStoreValue {
   withdrawCancelRequest: (orderId: string, reason: string) => Promise<void>;
   closeOrder: (orderId: string, reason: string) => Promise<void>;
   materialNothingAvailable: (orderId: string, remarks: string) => Promise<void>;
-  amendRound: (roundId: string, input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[] }) => Promise<void>;
+  /** `receiver` OMITTED keeps the round's stored paperwork — see amendRound. */
+  amendRound: (roundId: string, input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[]; receiver?: { path: string; name: string; pages: StepDoc[] } }) => Promise<void>;
   uploadStepDocument: (orderId: string, folder: string, file: File, roundNo?: number) => Promise<{ path: string; name: string }>;
   stepDocumentUrl: (path: string) => Promise<string>;
   /** `locationId: null` writes the fallback (all-locations) owner-set. */

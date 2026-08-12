@@ -66,7 +66,7 @@ const archivedFallback = (o: DispatchOrder): RoundView => {
         sbRemarks: null, sbAt: null, sbBy: null, gpNo: null,
         goActualDate: null, goOutwardNo: null, goRemarks: null, goAt: null, goBy: null,
         dcActualDate: null, dcStatus: null, dcAttachmentPath: null, dcAttachmentName: null,
-        dcRemarks: null, dcAt: null, dcBy: null,
+        dcAttachmentPages: [], dcRemarks: null, dcAt: null, dcBy: null,
         editedAt: null, editedBy: null, amendedAt: null, amendReason: null, items: [],
       };
 };

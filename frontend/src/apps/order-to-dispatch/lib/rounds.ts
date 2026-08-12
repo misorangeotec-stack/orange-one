@@ -20,7 +20,7 @@
  * This module stays PURE — no React, no store import.
  */
 import type {
-  CreditStatus, DeliveryStatus, DispatchOrder, DispatchRound, OrderLine, RoundItem,
+  CreditStatus, DeliveryStatus, DispatchOrder, DispatchRound, OrderLine, RoundItem, StepDoc,
 } from "../types";
 
 export interface RoundView {
@@ -95,6 +95,8 @@ export interface RoundView {
   dcStatus: DeliveryStatus | null;
   dcAttachmentPath: string | null;
   dcAttachmentName: string | null;
+  /** Pages 2..N of the receiver copy. Page one is the pair above, not in here. */
+  dcAttachmentPages: StepDoc[];
   dcRemarks: string | null;
   dcAt: string | null;
   dcBy: string | null;
@@ -227,6 +229,7 @@ export function currentRoundView(order: DispatchOrder): RoundView | null {
     dcStatus: order.dcStatus,
     dcAttachmentPath: order.dcAttachmentPath,
     dcAttachmentName: order.dcAttachmentName,
+    dcAttachmentPages: order.dcAttachmentPages,
     dcRemarks: order.dcRemarks,
     dcAt: order.dcAt,
     dcBy: order.dcBy,
@@ -284,6 +287,7 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     dcStatus: r.dcStatus,
     dcAttachmentPath: r.dcAttachmentPath,
     dcAttachmentName: r.dcAttachmentName,
+    dcAttachmentPages: r.dcAttachmentPages,
     dcRemarks: r.dcRemarks,
     dcAt: r.dcAt,
     dcBy: r.dcBy,

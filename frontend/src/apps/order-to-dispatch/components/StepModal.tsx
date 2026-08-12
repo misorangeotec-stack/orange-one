@@ -16,7 +16,28 @@ import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
 import ShipLinesGrid, { shipLinesFrom, type ShipLineValue } from "./ShipLinesGrid";
 import StepDocLink from "./StepDocLink";
 import GatePassButton from "./GatePassButton";
+import ReceiverCopyCapture, { type ReceiverPage } from "./ReceiverCopyCapture";
+import { uploadReceiverPages } from "../lib/receiverPages";
 import type { DispatchOrder } from "../types";
+import type { StepAttachment } from "../lib/stepConfig";
+
+/**
+ * The pages already stored against this round, as the capture grid wants them:
+ * the primary first, then the extras.
+ *
+ * ⚠ THE PRIMARY IS PREPENDED, NOT STORED IN THE LIST. `dc_attachment_pages`
+ *   holds pages 2..N only — the server strips anything matching the primary —
+ *   so reading them back means putting page one at the front here.
+ */
+function storedPagesOf(a: StepAttachment, v: RoundView | null): ReceiverPage[] {
+  if (!v) return [];
+  const first = a.getPath(v);
+  const rest = a.photos ? a.photos.getPages(v) : [];
+  return [
+    ...(first ? [{ kind: "stored" as const, path: first, name: a.getName(v) ?? "Receiver copy" }] : []),
+    ...rest.map((d) => ({ kind: "stored" as const, path: d.path, name: d.name })),
+  ];
+}
 
 /**
  * THE step modal. One component records (and edits) every one of the five queue
@@ -72,7 +93,17 @@ export default function StepModal({
   const [approvedQty, setApprovedQty] = useState("");
   /** The file chosen for each attachment slot, keyed by its `pathKey`. */
   const [files, setFiles] = useState<Record<string, File | null>>({});
+  /**
+   * The ordered page list for a MULTI-PAGE slot, keyed by its `pathKey`.
+   *
+   * Separate state from `files` because the shape is genuinely different: one
+   * ordered list mixing already-stored pages with newly-picked ones, where
+   * position 0 is the primary. See ReceiverCopyCapture.
+   */
+  const [pages, setPages] = useState<Record<string, ReceiverPage[]>>({});
   const [busy, setBusy] = useState(false);
+  /** "Uploading 2 of 4…" — the only progress surface this app has. */
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Re-seed whenever the modal opens on a different row, a different ROUND, or
@@ -102,6 +133,16 @@ export default function StepModal({
         : "",
     );
     setFiles({});
+    // Seeded from the round so an already-attached set is what the grid shows,
+    // and so a save that omits the slot still sends what is actually there.
+    setPages(
+      Object.fromEntries(
+        (cfg.attachments ?? [])
+          .filter((a) => a.photos)
+          .map((a) => [a.pathKey, storedPagesOf(a, view)]),
+      ),
+    );
+    setProgress(null);
     setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, order?.id, view?.roundNo, view?.isArchived, editing, cfg.stepKey]);
@@ -216,6 +257,8 @@ export default function StepModal({
     spec: a,
     stored: view ? { path: a.getPath(view), name: a.getName(view) } : null,
     file: files[a.pathKey] ?? null,
+    /** Multi-page slots only; empty for the ordinary single-file ones. */
+    pages: a.photos ? (pages[a.pathKey] ?? []) : [],
   }));
 
   const save = async () => {
@@ -223,8 +266,11 @@ export default function StepModal({
     const miss = missingRequired(cfg, values, order);
     if (miss) { setError(miss); return; }
     // Per slot, because required-ness is per slot: the invoice must be there,
-    // the e-way bill need not be.
-    const missingDoc = slots.find((sl) => sl.spec.required && !sl.file && !sl.stored?.path);
+    // the e-way bill need not be. A multi-page slot is satisfied by anything in
+    // its list — the server's gate is on the PRIMARY, which is position 0.
+    const missingDoc = slots.find((sl) =>
+      sl.spec.required && (sl.spec.photos ? sl.pages.length === 0 : !sl.file && !sl.stored?.path),
+    );
     if (missingDoc) {
       setError(`${missingDoc.spec.label} is required.`);
       return;
@@ -261,7 +307,25 @@ export default function StepModal({
       if (showApprovedQty) payload.cc_approved_qty = approvedQty.trim();
 
       for (const sl of slots) {
-        if (sl.file) {
+        if (sl.spec.photos) {
+          // ── MULTI-PAGE SLOT ──────────────────────────────────────────────
+          // Upload what is new, in list order, then split: position 0 is the
+          // primary, the rest are the extra pages.
+          //
+          // ⚠ ALL THREE KEYS MOVE TOGETHER, ALWAYS. Sending a new primary while
+          //   omitting the pages key would leave the old page one orphaned
+          //   instead of demoted. The server deliberately does not enforce this
+          //   — a guard there would break the plain single-file path — so it is
+          //   this loop's job.
+          const resolved = await uploadReceiverPages(
+            order.id, sl.spec.folder, order.roundNo, sl.pages,
+            (done, total) => setProgress(`Uploading ${done} of ${total}…`),
+          );
+          setProgress(null);
+          payload[sl.spec.pathKey] = resolved[0]?.path ?? "";
+          payload[sl.spec.nameKey] = resolved[0]?.name ?? "";
+          payload[sl.spec.photos.pagesKey] = resolved.slice(1);
+        } else if (sl.file) {
           const up = await s.uploadStepDocument(order.id, sl.spec.folder, sl.file, order.roundNo);
           payload[sl.spec.pathKey] = up.path;
           payload[sl.spec.nameKey] = up.name;
@@ -281,6 +345,10 @@ export default function StepModal({
       setError(e instanceof Error ? e.message : "Could not save.");
     } finally {
       setBusy(false);
+      // ⚠ CLEARED HERE, NOT JUST ON THE HAPPY PATH. An upload that dies halfway
+      //   leaves the modal open for a retry, and a Save button still reading
+      //   "Uploading 2 of 4…" next to an error message is unreadable.
+      setProgress(null);
     }
   };
 
@@ -330,6 +398,8 @@ export default function StepModal({
         lot of white.
       */
       size={cfg.lines === "ship" || cfg.context?.showLines || cfg.context?.showOrderLines ? "xl" : "lg"}
+      /* Steps filled in on a phone open as a bottom sheet under `sm`. */
+      mobileFull={cfg.mobileFirst}
       readOnly={locked}
       /*
         ⚠ This slot renders OUTSIDE Modal's disabled <fieldset>, and it is the only
@@ -370,14 +440,27 @@ export default function StepModal({
                 Nothing available yet
               </Button>
             )}
+            {/* `progress` outranks "Saving…" — uploading four photographs over
+                mobile data is the slow part, and a button that says nothing for
+                thirty seconds gets pressed again. */}
             <Button onClick={save} disabled={busy || !!blocked}>
-              {busy ? "Saving…" : cfg.actionLabel}
+              {progress ?? (busy ? "Saving…" : cfg.actionLabel)}
             </Button>
           </>
         )
       }
     >
-      <div className="space-y-5">
+      {/*
+        ⚠ 16px INPUTS ON THE MOBILE-FIRST STEPS. iOS zooms the viewport whenever
+          a focused field's text is under 16px, and the shared field token is
+          14px — so tapping Remarks at a customer's gate scrolled the form
+          sideways and left the person pinching to get back. Scoped to this
+          dialog rather than fixed in Form.tsx, which every screen in the portal
+          renders through.
+      */}
+      <div className={cfg.mobileFirst
+        ? "space-y-5 [&_input]:text-[16px] [&_textarea]:text-[16px] sm:[&_input]:text-[14px] sm:[&_textarea]:text-[14px]"
+        : "space-y-5"}>
         {cfg.context && (
           <OrderRefPanel
             order={order}
@@ -460,6 +543,27 @@ export default function StepModal({
           and the save was refused by something already off screen.
         */}
         {slots.map((sl) => (
+          sl.spec.photos ? (
+            /*
+              A MULTI-PAGE SLOT. Rendered from the descriptor, not from a test on
+              stepKey, so every other step keeps the plain input below by
+              construction. Only ever reached when the form is live: the whole
+              block sits inside `{!locked && …}` at the call site of the plain
+              input too, and a locked round shows its documents through
+              OrderRefDocs in Modal's readOnlyHeader instead — the one place
+              outside the disabled fieldset where a button still works.
+            */
+            !locked && (
+              <ReceiverCopyCapture
+                key={sl.spec.pathKey}
+                label={sl.spec.label}
+                required={sl.spec.required}
+                value={sl.pages}
+                onChange={(next) => setPages((p) => ({ ...p, [sl.spec.pathKey]: next }))}
+                onError={setError}
+              />
+            )
+          ) : (
           <section key={sl.spec.pathKey} className="space-y-2">
             <SectionHeading>
               {sl.spec.label}
@@ -488,6 +592,7 @@ export default function StepModal({
               />
             )}
           </section>
+          )
         ))}
 
         {longFields.length > 0 && (

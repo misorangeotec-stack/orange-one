@@ -23,7 +23,7 @@
  *
  * This module stays PURE — no React, no store import.
  */
-import type { DispatchMasterType, DispatchOrder } from "../types";
+import type { DispatchMasterType, DispatchOrder, StepDoc } from "../types";
 import type { RoundView } from "./rounds";
 import type { QueueStep } from "./queues";
 import { CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, dmy, numOrDash } from "./format";
@@ -92,6 +92,25 @@ export interface StepAttachment {
   /** Read off the ROUND, so a Completed row shows its own file. */
   getPath: (v: RoundView) => string | null;
   getName: (v: RoundView) => string | null;
+  /**
+   * Present ⇒ this slot takes SEVERAL pages, and StepModal renders the mobile
+   * photo capture for it instead of a plain file input.
+   *
+   * ⚠ THE SLOT IS STILL ONE PRIMARY PLUS EXTRAS, not a bag of files. Page one
+   *   keeps going to `pathKey`/`nameKey` — which the register export, the
+   *   documents strip and every archived round already read — and pages 2..N go
+   *   to `pagesKey`. That asymmetry is the whole reason the change stayed
+   *   additive; do not "tidy" it into a single array.
+   *
+   * Declaring it here rather than testing `stepKey === "dispatch_confirm"` in
+   * the modal is deliberate: every other step keeps the single-file input
+   * BY CONSTRUCTION, not by a conditional that someone can later get wrong.
+   */
+  photos?: {
+    /** jsonb payload key for pages 2..N. */
+    pagesKey: string;
+    getPages: (v: RoundView) => StepDoc[];
+  };
 }
 
 export interface CapturedColumn {
@@ -157,6 +176,15 @@ export interface StepConfig {
    * in a single-key descriptor.
    */
   approvedQty?: boolean;
+  /**
+   * This step is filled in ON A PHONE, in the field, and its dialog opts into
+   * the mobile treatment: a bottom sheet under `sm`, and 16px inputs so iOS
+   * stops zooming the viewport on focus.
+   *
+   * Opt-in per step rather than global, because it is not free — a bottom sheet
+   * is the wrong shape for the wide item grids the desk-bound steps carry.
+   */
+  mobileFirst?: boolean;
   /** The one column the Completed tab shows. */
   captured: CapturedColumn;
 }
@@ -343,11 +371,17 @@ export const STEP_CONFIG: Record<QueueStep, StepConfig> = {
       },
       { key: "dc_remarks", label: "Remarks", kind: "textarea", get: (_o, v) => s(v.dcRemarks) },
     ],
+    // Recorded at the customer's gate, on a phone — see `mobileFirst` and the
+    // photo capture the attachment slot below opts into.
+    mobileFirst: true,
     attachments: [
       {
         label: "Receiver copy / LR", folder: "receiver",
         pathKey: "dc_attachment_path", nameKey: "dc_attachment_name", required: true,
         getPath: (v) => v.dcAttachmentPath, getName: (v) => v.dcAttachmentName,
+        // The LR's back carries the signature and the stamp, so one file was
+        // never enough. Page one stays in the pair above; the rest go here.
+        photos: { pagesKey: "dc_attachment_pages", getPages: (v) => v.dcAttachmentPages },
       },
     ],
     captured: {

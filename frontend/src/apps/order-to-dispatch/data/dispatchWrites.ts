@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_dispatch_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { DispatchMasterType, DispatchType, SalesReturnMode } from "../types";
+import type { DispatchMasterType, DispatchType, SalesReturnMode, StepDoc } from "../types";
 import { isNameless } from "../lib/masterFields";
 import type { QueueStep } from "../lib/queues";
 
@@ -148,10 +148,28 @@ export interface AmendRoundLine {
  * recorded (mark the round Returned, then set what the customer actually kept)
  * and the only way back from a mis-tapped outcome. The RPC recalculates the
  * delivered totals and re-opens the order if the correction leaves a balance.
+ *
+ * It is ALSO the only route to a wrong receiver copy. Nothing else can rewrite
+ * one: record_dispatch_confirm writes it once, update_dispatch_confirm is
+ * unreachable, and direct table writes are admin-only under RLS. A photograph
+ * taken at a gate can be blurred, thumbed or of the wrong sheet, and this door
+ * is where that gets fixed — with a reason, by a coordinator, on the record.
  */
 export async function amendRound(
   roundId: string,
-  input: { dcStatus?: "delivered" | "returned"; reason: string; lines?: AmendRoundLine[] },
+  input: {
+    dcStatus?: "delivered" | "returned";
+    reason: string;
+    lines?: AmendRoundLine[];
+    /**
+     * A replacement receiver copy: page one plus its extras.
+     *
+     * ⚠ OMITTED MEANS KEEP. A quantity-only correction must leave this out
+     *   entirely — the RPC presence-tests each key, so sending it would replace
+     *   the paperwork on a correction that never meant to touch it.
+     */
+    receiver?: { path: string; name: string; pages: StepDoc[] };
+  },
 ): Promise<void> {
   const payload: Record<string, unknown> = { amend_reason: input.reason };
   if (input.dcStatus) payload.dc_status = input.dcStatus;
@@ -159,6 +177,13 @@ export async function amendRound(
     payload.lines = input.lines.map((l) => ({
       id: l.id, ship_qty: l.shipQty, lot_no: l.lotNo ?? "",
     }));
+  }
+  // All three keys travel together or none of them do — a new primary sent
+  // without its pages would orphan the old page one instead of demoting it.
+  if (input.receiver) {
+    payload.dc_attachment_path = input.receiver.path;
+    payload.dc_attachment_name = input.receiver.name;
+    payload.dc_attachment_pages = input.receiver.pages;
   }
   const { error } = await db.rpc("fms_dispatch_amend_round", { p_round: roundId, p: payload });
   if (error) throw new Error(error.message);
@@ -251,7 +276,14 @@ export async function uploadStepDocument(
   roundNo = 1,
 ): Promise<{ path: string; name: string }> {
   const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-  const path = `${orderId}/r${roundNo}/${folder}/${Date.now()}-${safeName}`;
+  // ⚠ THE RANDOM SUFFIX IS NOT DECORATION. A receiver copy is now several pages
+  //   uploaded in one loop, and a phone camera names every shot the same thing
+  //   ("image.jpg"). Two of them landing inside the same millisecond collide,
+  //   and `upsert: false` below turns a collision into a hard error mid-save.
+  //   Only the FOURTH path segment changes — the storage policies parse the
+  //   first (the order) and the third (the folder), so they are unaffected.
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const path = `${orderId}/r${roundNo}/${folder}/${stamp}-${safeName}`;
   const { error } = await supabase.storage
     .from(DOCS_BUCKET)
     .upload(path, file, { cacheControl: "3600", upsert: false, contentType: file.type || undefined });

@@ -15,6 +15,9 @@ import StepDocLink from "../../components/StepDocLink";
 import GatePassButton from "../../components/GatePassButton";
 import StatusPill, { OutcomePill } from "../../components/StatusPill";
 import SalesReturnModal from "../../components/SalesReturnModal";
+import ReceiverCopyCapture, { type ReceiverPage } from "../../components/ReceiverCopyCapture";
+import { uploadReceiverPages } from "../../lib/receiverPages";
+import type { StepDoc } from "../../types";
 import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
 import {
@@ -399,15 +402,30 @@ export default function OrderDetail() {
                           <StepDocLink path={v.sbEwayPath} name={v.sbEwayName ?? "E-way bill"} />
                         )}
                         {v.dcAttachmentPath && (
-                          <StepDocLink path={v.dcAttachmentPath} name={v.dcAttachmentName ?? "Receiver copy"} />
+                          <StepDocLink
+                            path={v.dcAttachmentPath}
+                            name={v.dcAttachmentPages.length > 0
+                              ? "Receiver copy — front"
+                              : (v.dcAttachmentName ?? "Receiver copy")}
+                          />
                         )}
+                        {/* The back of the LR carries the signature and the stamp;
+                            this cell is where people come to retrieve it. */}
+                        {v.dcAttachmentPages.map((d, i) => (
+                          <StepDocLink
+                            key={d.path}
+                            path={d.path}
+                            name={i === 0 ? "Receiver copy — back" : `Receiver copy — page ${i + 2}`}
+                          />
+                        ))}
                         {/* The round's third document. Unlike the other two it is
                             generated rather than uploaded, but it belongs to the
                             same round and is what people come back here to
                             reprint. An archived round keeps its own number, so
                             this is always the identical slip. */}
                         {v.gpNo && <GatePassButton order={order} view={v} />}
-                        {!v.sbAttachmentPath && !v.dcAttachmentPath && !v.gpNo && (
+                        {!v.sbAttachmentPath && !v.dcAttachmentPath && !v.gpNo
+                          && v.dcAttachmentPages.length === 0 && (
                           <span className="text-grey-2">—</span>
                         )}
                       </div>
@@ -603,6 +621,7 @@ export default function OrderDetail() {
       {amendRound && (
         <AmendRoundModal
           round={amendRound}
+          orderId={order.id}
           orderNo={order.orderNo}
           onClose={() => setAmendRound(null)}
         />
@@ -612,41 +631,85 @@ export default function OrderDetail() {
 }
 
 /**
+ * The round's receiver copy as the capture grid wants it — page one first, then
+ * its extras. Seeded so a coordinator replacing the paperwork starts from what
+ * is actually stored and can swap a single bad page instead of re-shooting all
+ * of them.
+ */
+const storedReceiverPages = (v: RoundView): ReceiverPage[] => [
+  ...(v.dcAttachmentPath
+    ? [{ kind: "stored" as const, path: v.dcAttachmentPath, name: v.dcAttachmentName ?? "Receiver copy" }]
+    : []),
+  ...v.dcAttachmentPages.map((d) => ({ kind: "stored" as const, path: d.path, name: d.name })),
+];
+
+/**
  * Correct a finished round — the coordinator's remedy for a part return ("60 went
  * out, the customer kept 40") and for a mis-tapped outcome. The server
  * recalculates the delivered totals from the archive and re-opens the order if
  * the correction leaves a balance, so nothing has to be adjusted by hand.
+ *
+ * It is also the ONLY route to a wrong receiver copy — see the replace block
+ * below and the note on `amendRound` in dispatchWrites.
  */
 function AmendRoundModal({
-  round, orderNo, onClose,
-}: { round: RoundView; orderNo: string; onClose: () => void }) {
+  round, orderId, orderNo, onClose,
+}: { round: RoundView; orderId: string; orderNo: string; onClose: () => void }) {
   const s = useDispatchStore();
   const [outcome, setOutcome] = useState<string>(round.dcStatus ?? "delivered");
   const [qty, setQty] = useState<Record<string, string>>(
     () => Object.fromEntries(round.items.map((i) => [i.id, String(i.shipQty)])),
   );
   const [reason, setReason] = useState("");
+  /**
+   * Off by default, and that default is load-bearing: a quantity-only
+   * correction must send NO attachment keys at all, or the presence-tested RPC
+   * rewrites paperwork the coordinator never meant to touch.
+   */
+  const [replaceDocs, setReplaceDocs] = useState(false);
+  const [pages, setPages] = useState<ReceiverPage[]>(() => storedReceiverPages(round));
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const save = async () => {
     if (!round.roundId || busy) return;
     if (!reason.trim()) { setError("A reason is required."); return; }
+    // The server refuses this too, but bouncing off a round trip to be told so
+    // after four photographs have already uploaded is a poor way to find out.
+    if (replaceDocs && pages.length === 0) {
+      setError("Attach the replacement receiver copy, or switch off Replace the receiver copy.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
+      let receiver: { path: string; name: string; pages: StepDoc[] } | undefined;
+      if (replaceDocs) {
+        // ⚠ round.roundNo, NOT the order's current round. This is the archived
+        //   round's paperwork, and the number goes into the storage path — filing
+        //   it under the live round would put one round's proof inside another's.
+        const resolved = await uploadReceiverPages(
+          orderId, "receiver", round.roundNo, pages,
+          (done, total) => setProgress(`Uploading ${done} of ${total}…`),
+        );
+        setProgress(null);
+        receiver = { path: resolved[0].path, name: resolved[0].name, pages: resolved.slice(1) };
+      }
       await s.amendRound(round.roundId, {
         dcStatus: outcome === "returned" ? "returned" : "delivered",
         reason: reason.trim(),
         lines: round.items
           .filter((i) => qty[i.id] !== String(i.shipQty))
           .map((i) => ({ id: i.id, shipQty: qty[i.id] })),
+        receiver,
       });
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save the correction.");
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
@@ -660,7 +723,7 @@ function AmendRoundModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={save} disabled={busy}>{busy ? "Saving…" : "Save correction"}</Button>
+          <Button onClick={save} disabled={busy}>{progress ?? (busy ? "Saving…" : "Save correction")}</Button>
         </>
       }
     >
@@ -710,6 +773,46 @@ function AmendRoundModal({
             </tbody>
           </table>
         </ScrollableTable>
+
+        {/*
+          THE ONLY WAY TO FIX A WRONG RECEIVER COPY. Nothing else in the product
+          can rewrite one — record_dispatch_confirm writes it once and archives
+          the round in the same breath. A photograph taken at a gate can be
+          blurred, thumbed, or of the wrong sheet, so this door exists; it is
+          coordinator-only, needs the reason above, and is announced.
+
+          ⚠ OFF BY DEFAULT. Switched off, no attachment key is sent at all and
+            the round's stored paperwork is left exactly alone.
+        */}
+        <div className="rounded-xl border border-line p-3.5 space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={replaceDocs}
+              disabled={busy}
+              onChange={(e) => { setReplaceDocs(e.target.checked); setError(null); }}
+              className="mt-0.5 w-4 h-4 accent-orange"
+            />
+            <span>
+              <span className="block text-[13.5px] font-medium text-navy">Replace the receiver copy</span>
+              <span className="block text-[11.5px] leading-snug text-grey-2 mt-0.5">
+                Leave this off unless the stored paperwork is wrong — correcting quantities
+                does not touch it. The pages it replaces are kept, not deleted.
+              </span>
+            </span>
+          </label>
+
+          {replaceDocs && (
+            <ReceiverCopyCapture
+              label="Receiver copy / LR"
+              required
+              value={pages}
+              onChange={setPages}
+              onError={setError}
+              disabled={busy}
+            />
+          )}
+        </div>
 
         <FieldLabel label="Reason" required>
           <TextArea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}

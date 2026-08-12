@@ -272,12 +272,30 @@ export function OrderRefDocs({
   // many consignments that need no e-way bill at all.
   const eway = showInvoice && round.sbEwayPath ? round.sbEwayPath : null;
   const receiver = showReceiver && round.dcAttachmentPath ? round.dcAttachmentPath : null;
-  if (!invoice && !eway && !receiver) return null;
+  /*
+    ⚠ THE EXTRA PAGES MUST APPEAR HERE OR THEY ARE UNREACHABLE. Once a delivery
+      is confirmed the round is archived, so every later view of it is read-only
+      — and a read-only StepModal renders no file control at all, only this
+      strip. If pages 2..N are not listed here, the back of the LR is uploaded,
+      stored, and can never be opened by anyone again.
+  */
+  const pages = showReceiver ? round.dcAttachmentPages : [];
+  if (!invoice && !eway && !receiver && pages.length === 0) return null;
   return (
     <div className="flex flex-wrap items-center gap-4">
       {invoice && <StepDocLink path={invoice} name={round.sbAttachmentName ?? "Sales invoice"} />}
       {eway && <StepDocLink path={eway} name={round.sbEwayName ?? "E-way bill"} />}
-      {receiver && <StepDocLink path={receiver} name={round.dcAttachmentName ?? "Receiver copy / LR"} />}
+      {receiver && (
+        <StepDocLink
+          path={receiver}
+          // Numbered only when there is more than one, so a single-page LR is
+          // not labelled "1 of 1" for the sake of consistency.
+          name={pages.length > 0 ? "Receiver copy — front" : (round.dcAttachmentName ?? "Receiver copy / LR")}
+        />
+      )}
+      {pages.map((d, i) => (
+        <StepDocLink key={d.path} path={d.path} name={i === 0 ? "Receiver copy — back" : `Receiver copy — page ${i + 2}`} />
+      ))}
     </div>
   );
 }

@@ -9,6 +9,18 @@
  *   `lib/rounds.ts`, never off the order.
  */
 
+/**
+ * One stored file in the `fms-dispatch-docs` bucket.
+ *
+ * `path` is the storage object path — never a URL. The bucket is private, so a
+ * link is minted on demand with a short-lived signature (`stepDocumentUrl`);
+ * `name` is the original filename, kept only so the link has something to say.
+ */
+export interface StepDoc {
+  path: string;
+  name: string;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Masters — five of them, after the 2026-08 reshape                          */
 /* -------------------------------------------------------------------------- */
@@ -381,6 +393,8 @@ export interface DispatchRound {
   dcStatus: DeliveryStatus | null;
   dcAttachmentPath: string | null;
   dcAttachmentName: string | null;
+  /** Pages 2..N of the receiver copy — see the note on `DispatchOrder`. */
+  dcAttachmentPages: StepDoc[];
   dcRemarks: string | null;
   dcAt: string | null;
   dcBy: string | null;
@@ -517,6 +531,16 @@ export interface DispatchOrder {
   dcStatus: DeliveryStatus | null;
   dcAttachmentPath: string | null;
   dcAttachmentName: string | null;
+  /**
+   * Pages 2..N of the receiver copy — the back of the LR, a second sheet, a
+   * photo of the stamp.
+   *
+   * ⚠ PAGE ONE IS NOT IN HERE. It stays in dcAttachmentPath/dcAttachmentName,
+   *   which the register export and the documents strip already read. Empty
+   *   array, never null: the column is nullable server-side and the fetch layer
+   *   normalises it, so nothing downstream has to test for two empty forms.
+   */
+  dcAttachmentPages: StepDoc[];
   dcRemarks: string | null;
   dcAt: string | null;
   dcBy: string | null;

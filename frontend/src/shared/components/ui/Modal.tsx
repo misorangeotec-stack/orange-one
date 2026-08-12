@@ -15,6 +15,7 @@ export default function Modal({
   stacked = false,
   readOnly = false,
   readOnlyHeader,
+  mobileFull = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -59,6 +60,20 @@ export default function Modal({
    * attached file is usually the point of viewing the entry at all.
    */
   readOnlyHeader?: ReactNode;
+  /**
+   * Under `sm`, render as a bottom sheet instead of a centred card: flush to
+   * the bottom edge, full width, rounded only along the top.
+   *
+   * ⚠ OPT-IN, AND IT MUST STAY OPT-IN. This file otherwise carries NO
+   *   responsive classes at all, and every FMS app in the portal renders
+   *   through it — procurement, import, hr-*, order-to-dispatch. Defaulting
+   *   this on would restyle every dialog in the product to fix one screen.
+   *
+   * Used by the steps recorded on a phone in the field (`StepConfig.mobileFirst`),
+   * where a sheet puts the controls under the thumb and gives the form the
+   * full height of the screen rather than the middle two-thirds of it.
+   */
+  mobileFull?: boolean;
 }) {
   useEffect(() => {
     if (!open) return;
@@ -82,13 +97,50 @@ export default function Modal({
   if (!open) return null;
   const width = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-3xl", "3xl": "max-w-4xl", "2xl": "max-w-6xl" }[size];
 
+  /*
+    ⚠ FIXED BOTTOM PADDING ON THE SHEET, NOT `env(safe-area-inset-bottom)`.
+      index.html declares the viewport WITHOUT `viewport-fit=cover`, so the inset
+      resolves to 0 and a safe-area class would be a silent no-op that looks
+      correct in review. Adding `viewport-fit=cover` would shift layout on every
+      page in the portal, which is not this change's business — so the sheet
+      simply reserves enough room for an iPhone's home indicator.
+  */
+  const footerClass = cn(
+    "flex items-center justify-end gap-2.5 p-5 pt-4 shrink-0 border-t border-line/60",
+    mobileFull && "pb-8 sm:pb-5",
+  );
+
   return (
-    <div className={cn("fixed inset-0 flex items-center justify-center p-4", stacked ? "z-[65]" : "z-[60]")}>
+    <div
+      /*
+        ⚠ THE PADDING IS SET IN ONE BRANCH OR THE OTHER, NEVER BOTH. Writing
+          `p-4` in the base and `p-0` in the sheet branch looks like an override
+          and is not one: Tailwind emits both rules at equal specificity, so the
+          winner is decided by their order in the generated stylesheet, not by
+          the order they appear in this string. The sheet would then keep a 1rem
+          gap under it and never sit flush to the bottom edge.
+      */
+      className={cn(
+        "fixed inset-0 flex justify-center",
+        mobileFull ? "items-end sm:items-center sm:p-4" : "items-center p-4",
+        stacked ? "z-[65]" : "z-[60]",
+      )}
+    >
       <div className="absolute inset-0 bg-navy/45 backdrop-blur-[2px] animate-[fade-up_.2s_ease]" onClick={onClose} />
       {/* Flex column capped to the viewport: header + footer stay put, the body
           scrolls when its content grows (e.g. adding quotation rows) instead of
           pushing the dialog off-screen. */}
-      <div role="dialog" aria-modal="true" className={cn("relative w-full bg-white rounded-card-lg shadow-card border border-line animate-fade-up flex flex-col max-h-[calc(100dvh-2rem)]", width)}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        className={cn(
+          "relative w-full bg-white shadow-card border border-line animate-fade-up flex flex-col",
+          mobileFull
+            ? "rounded-t-3xl rounded-b-none max-h-[92dvh] sm:rounded-card-lg sm:max-h-[calc(100dvh-2rem)]"
+            : "rounded-card-lg max-h-[calc(100dvh-2rem)]",
+          width,
+        )}
+      >
         <div className="flex items-start justify-between p-5 pb-3 shrink-0">
           <div>
             <h2 className="text-[18px] font-bold text-navy">
@@ -131,13 +183,13 @@ export default function Modal({
           )}
         </div>
         {readOnly ? (
-          <div className="flex items-center justify-end gap-2.5 p-5 pt-4 shrink-0 border-t border-line/60">
+          <div className={footerClass}>
             <Button variant="ghost" size="sm" onClick={onClose}>
               Close
             </Button>
           </div>
         ) : (
-          footer && <div className="flex items-center justify-end gap-2.5 p-5 pt-4 shrink-0 border-t border-line/60">{footer}</div>
+          footer && <div className={footerClass}>{footer}</div>
         )}
       </div>
     </div>

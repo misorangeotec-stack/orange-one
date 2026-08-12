@@ -117,7 +117,14 @@ export function exportOrderRegister(
     // below the threshold has no e-way bill to attach.
     { header: "E-Way Bill Attached", width: 14, value: (r) => (r.view.sbEwayPath ? "Yes" : "No") },
     { header: "Gate Outward No.", width: 18, value: (r) => r.view.goOutwardNo ?? "" },
+    // Deliberately still Yes/No off the PRIMARY page, so a filter someone
+    // already built on this column keeps meaning what it meant. The page count
+    // is the new column beside it, not a change of answer in this one.
     { header: "Receiver Copy Attached", width: 14, value: (r) => (r.view.dcAttachmentPath ? "Yes" : "No") },
+    {
+      header: "Receiver Copy Pages", width: 14,
+      value: (r) => (r.view.dcAttachmentPath ? String(1 + r.view.dcAttachmentPages.length) : ""),
+    },
     { header: "Round Corrected", width: 26, value: (r) => r.view.amendReason ?? "" },
     { header: "Order Status", width: 20, value: (r) => STATUS_LABEL[r.order.status] },
     { header: "Closed Early", width: 26, value: (r) => r.order.closedReason ?? "" },
