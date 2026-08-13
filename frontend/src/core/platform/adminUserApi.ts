@@ -74,3 +74,13 @@ export async function deleteUserViaFunction(userId: string): Promise<void> {
 export async function setUserPasswordViaFunction(userId: string, password: string): Promise<void> {
   await invokeAdminUsers({ action: "set-password", userId, password });
 }
+
+/**
+ * Change a user's LOGIN email (admin only). `profiles.email` is a read-model copy;
+ * the address the login form checks lives in auth.users and needs the auth admin
+ * API, hence the Edge Function. Call this whenever the email field changes —
+ * writing the profile alone leaves the user signing in with their old address.
+ */
+export async function setUserEmailViaFunction(userId: string, email: string): Promise<void> {
+  await invokeAdminUsers({ action: "set-email", userId, email });
+}

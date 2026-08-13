@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
@@ -111,6 +111,30 @@ export default function UserForm() {
     setReceivablesHiddenMenus(next.hidden);
     setReceivablesAdminMenus(next.admin);
   };
+
+  // The email is a free-text username and nothing validates it, so a slip in the DOMAIN
+  // creates an account that reads correctly on every screen but rejects the address its
+  // owner believes is theirs — one user sat on "@orangotec.com" (missing the 'e') for a
+  // month, signing in only because a live session spared him from ever typing it.
+  //
+  // Derived from the directory rather than hard-coded: the workspace domain is whatever
+  // the other users are on, so this can't rot if the company ever moves domains. Needs a
+  // few accounts to agree before it claims to know one, and it WARNS rather than blocks —
+  // an external address (a gmail contractor, a shared vendor mailbox) is legitimate.
+  const workspaceDomain = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const p of profiles) {
+      const d = p.email?.split("@")[1]?.trim().toLowerCase();
+      if (d) counts.set(d, (counts.get(d) ?? 0) + 1);
+    }
+    let best = "";
+    let bestN = 0;
+    for (const [d, n] of counts) if (n > bestN) { best = d; bestN = n; }
+    return bestN >= 3 ? best : "";
+  }, [profiles]);
+
+  const typedDomain = email.trim().split("@")[1]?.toLowerCase() ?? "";
+  const domainWarning = workspaceDomain && typedDomain && typedDomain !== workspaceDomain;
 
   // The salesperson-scope picker and the menu-access picker are only relevant to non-admins
   // who can open the Outstanding Dashboard (admins always see all of it, at full depth).
@@ -225,7 +249,17 @@ export default function UserForm() {
         <form onSubmit={submit} className="space-y-4">
           <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Full name" required><TextInput value={name} onChange={(e) => { setName(e.target.value); setError(""); }} placeholder="e.g. Priya Sharma" autoFocus /></FieldLabel>
-            <FieldLabel label="Email / username"><TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@orangeotec.com" /></FieldLabel>
+            <FieldLabel label="Email / username" hint={editing ? "this is what they log in with" : undefined}>
+              <TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={workspaceDomain ? `name@${workspaceDomain}` : "name@orangeotec.com"} />
+              {domainWarning && (
+                <p className="mt-1.5 flex items-start gap-1.5 text-[12.5px] leading-snug text-[#B26B00]">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="mt-px shrink-0"><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+                  <span>
+                    <span className="font-medium">@{typedDomain}</span> isn't the usual <span className="font-medium">@{workspaceDomain}</span> — check for a typo. This is the exact address they'll have to type to log in.
+                  </span>
+                </p>
+              )}
+            </FieldLabel>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Mobile number" required hint={editing ? "saving resets the login password to this" : "the user's initial password"}>

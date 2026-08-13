@@ -21,7 +21,7 @@ export default function Account() {
   const me = profileById(user.id) ?? user;
 
   const [name, setName] = useState(me.name);
-  const [email, setEmail] = useState(me.email ?? "");
+  const email = me.email ?? ""; // display only — see the field below
   const [designation, setDesignation] = useState(me.designation ?? "");
   const [savedProfile, setSavedProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -97,7 +97,11 @@ export default function Account() {
             <form onSubmit={saveProfile} className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
                 <FieldLabel label="Full name"><TextInput value={name} onChange={(e) => setName(e.target.value)} /></FieldLabel>
-                <FieldLabel label="Email / username"><TextInput type="email" value={email} onChange={(e) => setEmail(e.target.value)} /></FieldLabel>
+                {/* Read-only on purpose. This is the username the login form checks, and the
+                    real value lives in auth.users — which only the admin Edge Function can
+                    write. Left editable, a user could rename the copy on this screen and lock
+                    themselves out of an account that still expects the old address. */}
+                <FieldLabel label="Email / username" hint="set by admin"><TextInput type="email" value={email} disabled /></FieldLabel>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
                 <FieldLabel label="Designation"><TextInput value={designation} onChange={(e) => setDesignation(e.target.value)} /></FieldLabel>

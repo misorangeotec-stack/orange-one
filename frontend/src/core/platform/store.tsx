@@ -13,7 +13,7 @@ import {
   setUserHods as setUserHodsWrite,
   setUserModules as setUserModulesWrite,
 } from "./directoryWrites";
-import { createUserViaFunction, deleteUserViaFunction, setUserPasswordViaFunction } from "./adminUserApi";
+import { createUserViaFunction, deleteUserViaFunction, setUserEmailViaFunction, setUserPasswordViaFunction } from "./adminUserApi";
 
 /**
  * Portal directory (Stage B). Loads the workspace people + departments live from
@@ -165,6 +165,18 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         return id;
       },
       updateUser: async (id, patch) => {
+        // The login email lives in auth.users; `profiles.email` is only the copy the
+        // Users list, the user form, the export and the Account page all read. Move
+        // the auth one FIRST and let a failure (e.g. "already registered") abort the
+        // save: writing the profile first would leave every screen showing an address
+        // that can't sign in, which is exactly how a corrected typo used to lock a
+        // user out with no visible cause. Fires only on an actual change, so ordinary
+        // saves don't call the admin function for an untouched field.
+        const emailNext = patch.email?.trim();
+        const emailPrev = profiles.find((p) => p.id === id)?.email?.trim();
+        if (emailNext && emailNext.toLowerCase() !== (emailPrev ?? "").toLowerCase()) {
+          await setUserEmailViaFunction(id, emailNext);
+        }
         await updateUserProfileWrite(id, {
           name: patch.name,
           email: patch.email,

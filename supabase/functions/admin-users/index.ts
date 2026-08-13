@@ -17,6 +17,7 @@
 //                   receivablesAllowedReports = the individual reports they may open —
 //                     an ALLOW-list, so omitting it means NO reports, not all of them)
 //   POST  body { action: "set-password", userId, password }       -> { ok: true }
+//   POST  body { action: "set-email", userId, email }             -> { ok: true }
 //   POST  body { action: "delete", userId }                       -> { ok: true }
 //
 // Deploy:  supabase functions deploy admin-users --project-ref <ref>
@@ -90,6 +91,30 @@ Deno.serve(async (req) => {
     if (error) return json(400, { error: error.message });
     // Keep the profiles read-model in sync so the Users screen shows the number.
     await admin.from("profiles").update({ phone: password }).eq("id", userId);
+    return json(200, { ok: true });
+  }
+
+  // ---- set-email ----
+  // Change a user's LOGIN email. `profiles.email` is only a read-model copy — the
+  // address the login form actually checks lives in auth.users, which the browser
+  // can't touch. Editing the email in the admin form used to write the profile row
+  // alone, so a corrected address showed up on every screen while the user was
+  // still expected to sign in with the old one, and got "Invalid login credentials"
+  // with nothing on screen to explain why. Both rows are written here, together.
+  //
+  // email_confirm marks the new address confirmed on the spot: without it GoTrue
+  // parks the change in `email_change` pending a click in a confirmation mail, and
+  // the login email would silently stay on the old value — the very bug this fixes.
+  if (body.action === "set-email") {
+    const userId = String(body.userId ?? "");
+    const email = String(body.email ?? "").trim();
+    if (!userId) return json(400, { error: "userId required" });
+    if (!email) return json(400, { error: "email required" });
+    const { error } = await admin.auth.admin.updateUserById(userId, { email, email_confirm: true });
+    if (error) return json(400, { error: error.message });
+    // Keep the profiles read-model in step (the caller writes it too; same value).
+    const { error: profErr } = await admin.from("profiles").update({ email }).eq("id", userId);
+    if (profErr) return json(400, { error: profErr.message });
     return json(200, { ok: true });
   }
 
