@@ -9,7 +9,6 @@ import { outwardSourceOf } from "../lib/format";
 import {
   isSampleBlank,
   makeEmptySample,
-  NO_COLLECTION_LABEL,
   type SampleRequestFormApi,
   type SampleRow,
 } from "../pages/requests/useSampleRequestForm";
@@ -294,19 +293,17 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                   autoAdvance
                 />
               </FieldLabel>
-              {/* OPTIONAL. The list is led by "No collection needed", which is what
-                  an untouched form already shows — leaving it there submits a null
-                  collector and the request skips the collect step entirely. */}
-              <FieldLabel
-                label="Who will collect the sample"
-                hint="optional — skipping goes straight to the next step"
-              >
+              {/* OPTIONAL — and silent about it: no asterisk, no hint. Left blank
+                  (the default), it submits a null collector and the request skips
+                  the collect step entirely; `clearable` is the way back to blank. */}
+              <FieldLabel label="Who will collect the sample">
                 <Combobox
                   value={collectorId}
                   onChange={setCollectorId}
                   options={collectorOptions}
-                  placeholder={NO_COLLECTION_LABEL}
+                  placeholder="Select a collector"
                   searchable
+                  clearable
                 />
               </FieldLabel>
               {/* Asked on BOTH inward branches now: on the no-lab path this person

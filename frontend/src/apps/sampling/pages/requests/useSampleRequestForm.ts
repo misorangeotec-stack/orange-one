@@ -19,14 +19,6 @@ export const isSampleBlank = (r: SampleRow): boolean => !r.colour.trim() && !r.q
 export type LabChoice = "" | "true" | "false";
 
 /**
- * The synthetic first row of the collector list, whose value is "" — i.e. no
- * collector, which is what tells fms_sampling_submit_request to skip the collect
- * step. `collectorId` initialises to "", so this is what an untouched inward form
- * already reads: skipping is the visible default, not a hidden one.
- */
-export const NO_COLLECTION_LABEL = "No collection needed — skip this step";
-
-/**
  * The intake form's state + derivation for a new sampling request.
  *
  * DIRECTION IS THE FIRST BRANCH, and it drives the sample source: inward is
@@ -49,12 +41,12 @@ export const NO_COLLECTION_LABEL = "No collection needed — skip this step";
  * longer feeds this field. The option value stays the USER id, which is what
  * fms_sampling_can_act compares `sender_id` against.
  *
- * THE COLLECTOR IS OPTIONAL, and leaving it unset SKIPS the collect step: the
+ * THE COLLECTOR IS OPTIONAL, and leaving it BLANK skips the collect step: the
  * request is submitted straight into sample_to_lab / sample_received (see the
- * inward arm of fms_sampling_submit_request, 20260903120000). "No collection
- * needed" is a real first option rather than an empty box because Combobox has no
- * clear affordance — a blank-means-skip design could not be undone once a
- * collector was picked.
+ * inward arm of fms_sampling_submit_request, 20260903120000). The field simply
+ * starts empty and says nothing about it — the list once carried a synthetic "No
+ * collection needed" first row, which only existed because Combobox had no way
+ * back to blank; the field now renders `clearable` instead.
  */
 export function useSampleRequestForm() {
   const s = useSamplingStore();
@@ -83,16 +75,10 @@ export function useSampleRequestForm() {
   const [err, setErr] = useState<string | null>(null);
 
   const companyOptions: ComboOption[] = s.activeCompanies.map((c) => ({ value: c.id, label: c.name }));
-  // Collectors come from the curated master (each maps to an app user), led by a
-  // SYNTHETIC "no collection needed" row that submits a null collector and skips
-  // the collect step. It is an option and not just an empty box on purpose:
-  // Combobox has no clear button (`selected = options.find(o => o.value === value)`),
-  // so without this row a mis-picked collector could never be un-picked. Same
-  // shape as the synthetic "Self (me)" row on recipients below.
-  const collectorOptions: ComboOption[] = [
-    { value: "", label: NO_COLLECTION_LABEL },
-    ...s.activeCollectors.map((c) => ({ value: c.userId, label: c.name })),
-  ];
+  // Collectors come from the curated master (each maps to an app user) — real
+  // people only. Blank is the "nobody collects" state and needs no row of its own:
+  // the field is `clearable`, so a mis-picked collector can be un-picked.
+  const collectorOptions: ComboOption[] = s.activeCollectors.map((c) => ({ value: c.userId, label: c.name }));
   // Recipients = Self + the curated recipient master (deduped against Self).
   const recipientOptions: ComboOption[] = [
     ...(selfId ? [{ value: selfId, label: "Self (me)" }] : []),

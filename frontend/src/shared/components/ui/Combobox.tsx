@@ -29,6 +29,12 @@ export interface ComboboxProps {
   disabled?: boolean;
   /** Force search box on/off; default: show when > 6 options. */
   searchable?: boolean;
+  /**
+   * Show an ✕ that resets the value to "". Opt-in, for OPTIONAL fields where blank
+   * is a meaningful state — without it a picked option can never be un-picked, so
+   * such a field otherwise needs a synthetic "none" row to climb back out of.
+   */
+  clearable?: boolean;
   className?: string;
   /** Extra classes on the trigger button — used to slim it down inside a grid cell. */
   triggerClassName?: string;
@@ -62,6 +68,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
   placeholder = "Select…",
   disabled,
   searchable,
+  clearable = false,
   className,
   triggerClassName,
   align = "left",
@@ -83,6 +90,7 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
 
   const showSearch = searchable ?? (!!onCreate || options.length > 6);
   const selected = options.find((o) => o.value === value);
+  const showClear = clearable && !!value && !disabled;
 
   /*
    * Position the portalled menu against the trigger using fixed coords, so it
@@ -244,6 +252,8 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
           "outline-none focus:border-orange focus:ring-4 focus:ring-orange/10",
           disabled ? "bg-page text-grey-2 cursor-not-allowed" : "text-ink hover:border-[#d9e2f0] cursor-pointer",
           open && "border-orange ring-4 ring-orange/10",
+          // Keep a long label from running underneath the clear button.
+          showClear && "pr-10",
           triggerClassName
         )}
       >
@@ -253,6 +263,24 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
+
+      {/* A SIBLING of the trigger, never a child: the trigger is itself a <button>,
+          and nesting one inside it is invalid. As a sibling the click never reaches
+          the trigger, so it needs no stopPropagation — but it IS inside the
+          outside-click container, so closing the menu has to be explicit. */}
+      {showClear && (
+        <button
+          type="button"
+          onClick={() => { onChange(""); setOpen(false); }}
+          aria-label="Clear"
+          title="Clear"
+          className="absolute right-9 top-1/2 -translate-y-1/2 text-grey-2 hover:text-ink"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M18 6L6 18M6 6l12 12" />
+          </svg>
+        </button>
+      )}
 
       {open && pos && createPortal(
         <div
