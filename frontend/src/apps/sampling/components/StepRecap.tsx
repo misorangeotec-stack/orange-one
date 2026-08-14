@@ -106,7 +106,12 @@ export default function StepRecap({ request: r }: { request: SamplingRequest }) 
             <>
               <FieldRow label="Party" value={r.partyName} />
               <FieldRow label="Requirement" value={requirementTypeLabel(r.requirementType)} />
-              <FieldRow label="Collector" value={r.collectorId ? s.personName(r.collectorId) : r.collectorName} />
+              {/* "Not required" — the collect step was skipped at raise, which is
+                  a different fact from a collector simply not being recorded. */}
+              <FieldRow
+                label="Collector"
+                value={r.collectSkipped ? "Not required" : r.collectorId ? s.personName(r.collectorId) : r.collectorName}
+              />
               <FieldRow
                 label="Hand to"
                 value={

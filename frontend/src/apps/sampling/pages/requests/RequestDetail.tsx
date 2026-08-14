@@ -60,6 +60,17 @@ export default function RequestDetail() {
   // the old testing → result → handover tail, so it reads on the legacy arm below.
   // receive_sample was retired 08-08-2026, so `receivedAt` is the only marker left.
   const isLegacyInward = !!r.receivedAt;
+  /**
+   * The "Sample collect & handover" readout, shared by the no-lab and lab arms
+   * below — one expression, so the two can never drift apart. Three states, and
+   * the third is the point: "Not required" says the step was skipped at raise,
+   * which the bare em-dash (still to be done) would have hidden.
+   */
+  const collectHandoverValue = r.collectedAt
+    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"}${r.collectNote ? ` · ${r.collectNote}` : ""} · ${name(r.collectedBy)}`
+    : r.collectSkipped
+      ? "Not required"
+      : "—";
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
   const totalQty = totalSampleQty(r);
   const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
@@ -198,7 +209,12 @@ export default function RequestDetail() {
           {r.direction === "inward" && (
             <>
               <Field label="Lab testing" value={labTestingLabel(r.labTestingRequired)} />
-              <Field label="Collector" value={r.collectorId ? name(r.collectorId) : r.collectorName} />
+              {/* "Not required" is a DIFFERENT fact from the em-dash: the collect
+                  step was deliberately skipped at raise, not merely unfilled. */}
+              <Field
+                label="Collector"
+                value={r.collectSkipped ? "Not required" : r.collectorId ? name(r.collectorId) : r.collectorName}
+              />
               {r.labTestingRequired === false && (
                 <Field
                   label="Hand to"
@@ -231,11 +247,7 @@ export default function RequestDetail() {
             <>
               <Field
                 label="Sample collect & handover"
-                value={
-                  r.collectedAt
-                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"}${r.collectNote ? ` · ${r.collectNote}` : ""} · ${name(r.collectedBy)}`
-                    : "—"
-                }
+                value={collectHandoverValue}
                 className="col-span-1 sm:col-span-2"
               />
               <Field
@@ -252,11 +264,7 @@ export default function RequestDetail() {
             <>
               <Field
                 label="Sample collect & handover"
-                value={
-                  r.collectedAt
-                    ? `${r.collectedDate ? dmy(r.collectedDate) : formatDate(r.collectedAt)} · to ${r.handoverRecipientId ? name(r.handoverRecipientId) : r.handoverRecipientName ?? "—"}${r.collectNote ? ` · ${r.collectNote}` : ""} · ${name(r.collectedBy)}`
-                    : "—"
-                }
+                value={collectHandoverValue}
                 className="col-span-1 sm:col-span-2"
               />
               <Field

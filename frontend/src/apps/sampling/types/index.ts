@@ -78,8 +78,15 @@ export interface SamplingRequest {
   productDesc: string | null;
   colourQty: string | null;             // legacy single value (old rows)
   sampleItems: SampleItem[];            // the colour/quantity samples (all directions/types)
-  collectorId: string | null;           // the chosen collector (auth.users id)
+  collectorId: string | null;           // the chosen collector (auth.users id) — OPTIONAL
   collectorName: string | null;         // legacy free-text collector name
+  /**
+   * Inward only: raised with no collector, so `sample_collect` never ran and the
+   * request entered at the step after it (sample_to_lab / sample_received).
+   * FALSE on every row raised before 20260903120000 and on every outward row —
+   * which is why it can be a plain boolean rather than a tri-state.
+   */
+  collectSkipped: boolean;
   handoverName: string | null;          // legacy free-text "hand to" name (old rows)
   /** Inward only: true → receive/testing/result flow; false → the short collect→received branch; null on outward. */
   labTestingRequired: boolean | null;

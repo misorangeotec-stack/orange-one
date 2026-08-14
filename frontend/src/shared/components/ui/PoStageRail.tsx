@@ -26,6 +26,20 @@ export interface PoStageRailNode {
    * Import rails don't pass it and render exactly as before.
    */
   note?: string;
+  /**
+   * This stage DOES NOT APPLY to this record — it was deliberately bypassed, not
+   * performed and not pending. Renders grey with a dash and captions itself
+   * "Not required".
+   *
+   * ⚠ No existing prop can say this. `done` is positional (`i < activeIndex`), so
+   *   a bypassed stage sitting behind the active one would otherwise tick GREEN
+   *   and claim work that never happened. `stopped` is the opposite case (the
+   *   record died here), and dropping the stage from the array entirely loses the
+   *   fact that it was consciously skipped.
+   *
+   * Optional and off by default — the other FMS rails render unchanged.
+   */
+  skipped?: boolean;
 }
 
 /**
@@ -100,9 +114,13 @@ export default function PoStageRail({
     // need every circle to stay on one line.
     <div className={cn("flex items-start py-1", !fit && "overflow-x-auto")}>
       {nodes.map((n, i) => {
-        const done = i < activeIndex || (finished && i === activeIndex);
-        const halted = stopped && i === activeIndex && !finished;
-        const current = i === activeIndex && !finished && !halted;
+        // `skipped` outranks every other state: a bypassed stage is neither done
+        // nor current nor pending, and letting the positional `done` win would
+        // tick it green for work that never happened.
+        const isSkipped = !!n.skipped;
+        const done = !isSkipped && (i < activeIndex || (finished && i === activeIndex));
+        const halted = !isSkipped && stopped && i === activeIndex && !finished;
+        const current = !isSkipped && i === activeIndex && !finished && !halted;
 
         const shown = n.people.slice(0, MAX_NAMES);
         const extraPeople = n.people.length - shown.length;
@@ -144,13 +162,16 @@ export default function PoStageRail({
                 done && "bg-ryg-green border-ryg-green text-white",
                 current && "bg-orange border-orange text-white",
                 halted && "bg-ryg-red border-ryg-red text-white",
-                !done && !current && !halted && "bg-white border-line text-grey-2"
+                isSkipped && "bg-page border-line text-grey-2/70",
+                !done && !current && !halted && !isSkipped && "bg-white border-line text-grey-2"
               )}
             >
               {done ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
               ) : halted ? (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              ) : isSkipped ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><path d="M5 12h14" /></svg>
               ) : (
                 i + 1
               )}
@@ -162,20 +183,21 @@ export default function PoStageRail({
                 "mt-1 w-full truncate text-center text-[10.5px]",
                 current && "text-orange font-semibold",
                 halted && "text-ryg-red font-semibold",
-                !current && !halted && "text-grey-2"
+                isSkipped && "text-grey-2/70",
+                !current && !halted && !isSkipped && "text-grey-2"
               )}
             >
               {n.label}
             </span>
 
-            {n.note && (
+            {(n.note || isSkipped) && (
               <span
                 className={cn(
                   "w-full truncate text-center text-[10px] tabular-nums",
                   done ? "font-medium text-grey-2" : "text-grey-2/60"
                 )}
               >
-                {n.note}
+                {isSkipped ? "Not required" : n.note}
               </span>
             )}
 

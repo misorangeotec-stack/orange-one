@@ -3,10 +3,13 @@ import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
 import { SECTION_HEADING_CLASS } from "@/shared/components/ui/Readout";
+import { SAMPLING_SOURCE_LABEL } from "../types";
 import type { Direction, ReceiveVia, RequirementType, TransportBorne } from "../types";
+import { outwardSourceOf } from "../lib/format";
 import {
   isSampleBlank,
   makeEmptySample,
+  NO_COLLECTION_LABEL,
   type SampleRequestFormApi,
   type SampleRow,
 } from "../pages/requests/useSampleRequestForm";
@@ -139,6 +142,7 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
     additionalInfo, setAdditionalInfo,
     err,
     companyOptions, collectorOptions, recipientOptions, senderOptions,
+    senderSourceReady,
     isInward, isOutward, isCompetitor,
   } = form;
 
@@ -235,12 +239,23 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                   placeholder="Mobile number"
                 />
               </FieldLabel>
-              <FieldLabel label="Who will send the sample" required>
+              {/* The list is the SAMPLE SENT owners from Setup → Step Owners for
+                  this request's source, so it cannot be built until Sample source
+                  is chosen — hence the disabled state, mirroring how Sample source
+                  itself waits on Direction above. */}
+              <FieldLabel label="Who will send the sample" required hint="from Setup → Step Owners">
                 <Combobox
                   value={senderId}
                   onChange={setSenderId}
                   options={senderOptions}
-                  placeholder={senderOptions.length ? "Select a sender" : "Add senders in Masters first"}
+                  placeholder={
+                    !senderSourceReady
+                      ? "Choose the sample source first"
+                      : senderOptions.length
+                        ? "Select a sender"
+                        : `No Sample Sent owners set up for ${SAMPLING_SOURCE_LABEL[outwardSourceOf(receiveVia as ReceiveVia)]} — set them in Setup → Step Owners`
+                  }
+                  disabled={!senderSourceReady}
                   searchable
                 />
               </FieldLabel>
@@ -279,12 +294,18 @@ export default function SampleRequestFields({ form }: { form: SampleRequestFormA
                   autoAdvance
                 />
               </FieldLabel>
-              <FieldLabel label="Who will collect the sample" required>
+              {/* OPTIONAL. The list is led by "No collection needed", which is what
+                  an untouched form already shows — leaving it there submits a null
+                  collector and the request skips the collect step entirely. */}
+              <FieldLabel
+                label="Who will collect the sample"
+                hint="optional — skipping goes straight to the next step"
+              >
                 <Combobox
                   value={collectorId}
                   onChange={setCollectorId}
                   options={collectorOptions}
-                  placeholder={collectorOptions.length ? "Select a collector" : "Add collectors in Masters first"}
+                  placeholder={NO_COLLECTION_LABEL}
                   searchable
                 />
               </FieldLabel>

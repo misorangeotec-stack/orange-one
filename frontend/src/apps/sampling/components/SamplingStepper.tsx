@@ -90,6 +90,12 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
         if (n.key === "request" || n.key === "closed" || n.key === "receive_sample") {
           return { key: n.key, label: n.label, departments: [], people: [], hasStep: false };
         }
+        // Raised with no collector: collect never ran and never will. It KEEPS its
+        // place on the rail — the point is to say "not required" out loud — but
+        // carries no owner caption, because nobody owns a step that doesn't apply.
+        if (n.key === "sample_collect" && request.collectSkipped) {
+          return { key: n.key, label: n.label, departments: [], people: [], hasStep: false, skipped: true };
+        }
         // Resolved THROUGH THE REQUEST: the three outward steps are owned per
         // source, so a flat step lookup would caption an Export dispatch's rail
         // with the Domestic owners.
@@ -131,7 +137,8 @@ export default function SamplingStepper({ request }: { request: SamplingRequest 
     // `receiveVia` is load-bearing: ownersFor resolves the three outward steps
     // through the request's source bucket, so without it the rail keeps whichever
     // source's owners it first rendered.
-    [flow, s, request, request.receiveVia, request.collectorId, request.handoverRecipientId,
+    [flow, s, request, request.receiveVia, request.collectorId, request.collectSkipped,
+     request.handoverRecipientId,
      request.handoverRecipientName, request.labResultToId, request.labResultToName,
      request.resultHandoverToId, request.resultHandoverToName],
   );

@@ -163,6 +163,9 @@ const mapRequest = (r: any): SamplingRequest => ({
   sampleItems: Array.isArray(r.sample_items) ? r.sample_items : [],
   collectorId: r.collector_id ?? null,
   collectorName: r.collector_name ?? null,
+  // `?? false` covers the deploy window only: the column is NOT NULL with a
+  // default, so a row can never actually answer null once the migration is in.
+  collectSkipped: r.collect_skipped ?? false,
   handoverName: r.handover_name ?? null,
   labTestingRequired: r.lab_testing_required ?? null,
   handoverRecipientId: r.handover_recipient_id ?? null,
