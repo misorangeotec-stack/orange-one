@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, Fragment, type ReactNode, type Dispatch, type SetStateAction, type CSSProperties } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, Fragment, type ReactNode, type CSSProperties } from "react";
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "@hub/lib/xlsxStyle";
@@ -6,7 +6,7 @@ import { isAgainstInvoice } from "@hub/lib/allocation";
 import {
   HandCoins, RefreshCw, AlertTriangle, ChevronRight, ChevronDown,
   ArrowUpDown, ArrowUp, ArrowDown, Wallet, CalendarClock, Coins,
-  TrendingDown, Percent, Download, BarChart3, X, Search, Plus, Minus, Pin, Target, PhoneCall,
+  TrendingDown, Percent, Download, BarChart3, X, Search, Pin, Target, Plus, Minus,
 } from "lucide-react";
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
@@ -30,6 +30,12 @@ import {
   Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@hub/components/ui/dialog";
 import { FilterChips, type FilterChip } from "@hub/components/FilterChips";
+import { ColumnPicker, type ColumnOption } from "@hub/components/ColumnPicker";
+import { useReportColumnPrefs, REPORT_PREF_IDS } from "@hub/lib/reportPrefs";
+// Aliased: `Tooltip` in this file is already recharts', on the monthly chart.
+import {
+  Tooltip as HelpTooltip, TooltipTrigger as HelpTooltipTrigger, TooltipContent as HelpTooltipContent,
+} from "@hub/components/ui/tooltip";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useAppData, groupEntryOf, groupNameOf } from "@hub/lib/useAppData";
 import { useReceivablesSource } from "@hub/lib/sourceContext";
@@ -45,7 +51,7 @@ import { CollectionPlanModal } from "@hub/components/CollectionPlanModal";
 import { FollowupModal } from "@hub/components/FollowupModal";
 import { FollowupRowAction } from "@hub/components/FollowupRowAction";
 import { NextFollowupCell } from "@hub/components/NextFollowupCell";
-import { entityKey, type FollowupEntityType } from "@hub/lib/followupTypes";
+import { entityKey, type FollowupEntityType, type Followup } from "@hub/lib/followupTypes";
 import { formatDateDMY } from "@hub/lib/utils";
 import type { Customer, SaleType } from "@hub/lib/types";
 
@@ -102,6 +108,86 @@ function formatDateLong(iso: string): string {
 // the sort comparator must branch on it BEFORE its `a.metrics.m[sortKey]` fallback.
 type SortKey = "salesperson" | "sales" | "salesPrev" | "outstandingNow" | "outstandingDebit" | "outstandingCredit" | "due" | "planned" | "gap" | "receivedOnAccount" | "receivedAgainst" | "received" | "pendingGross" | "onAccount" | "pending" | "collectionPct" | "collectionPctPrev";
 type SortDir = "asc" | "desc";
+
+/* ── Columns ──────────────────────────────────────────────────────────────────
+   Every column the picker offers. This is DELIBERATELY a superset of SortKey and must stay
+   separate from it: the sort comparator ends in `a.metrics.m[sortKey]`, so a key that is not a
+   field on Metrics cannot be a SortKey. Four columns here aren't sortable for exactly that reason
+   (the two follow-up columns are text, and `pendingOverdue` is derived), and they simply omit the
+   `sort` field on their definition. */
+type ColKey =
+  | Exclude<SortKey, "salesperson">
+  | "nextFollowup" | "lastRemark" | "pendingOverdue" | "dueSoon";
+
+/** The shape the report has always opened on. A saved layout replaces this; nothing else does. */
+const DEFAULT_COLS: ColKey[] = [
+  "sales", "salesPrev", "due", "planned", "gap",
+  "received", "outstandingNow", "pending", "collectionPct", "collectionPctPrev",
+];
+
+/**
+ * Every key the report defines, for validating a saved layout.
+ *
+ * Deliberately the FULL set and not "whatever is legal right now": useReportColumnPrefs drops
+ * saved keys outside this list, so handing it the legal subset would quietly forget a user's
+ * Planned column the first time they opened the report with a Sale Type filter on. Legality is
+ * applied when rendering instead. Module-level so its identity is stable across renders.
+ */
+const ALL_COL_KEYS: ColKey[] = [
+  "nextFollowup", "lastRemark", "sales", "salesPrev", "due", "planned", "gap",
+  "receivedOnAccount", "receivedAgainst", "received",
+  "outstandingDebit", "outstandingCredit", "outstandingNow",
+  "pendingGross", "onAccount", "pendingOverdue", "dueSoon", "pending",
+  "collectionPct", "collectionPctPrev",
+];
+
+/** A banner groups a total with its breakup. Sub-columns of one section must be ADJACENT here. */
+type ColSection = "received" | "outstanding" | "pending";
+
+interface SPCol {
+  key: ColKey;
+  /** Full name — the picker, a flat (un-bannered) header, and the export header all use this. */
+  label: string;
+  /** Header text when the column sits UNDER its section's banner ("Total", "Gross", …). */
+  short?: string;
+  /** One line on what the column means. Shown in the picker and on hover over the header. */
+  help: string;
+  section?: ColSection;
+  /** A breakup OF the section's total rather than the total itself. */
+  sub?: boolean;
+  /** Omitted ⇒ the header is not clickable. */
+  sort?: SortKey;
+  width?: string;
+  wrap?: boolean;
+  /** false ⇒ greyed out in the picker (with `why`), and absent from the table and the export. */
+  legal: boolean;
+  /** Why it is unavailable. Replaces `help` in the picker while illegal. */
+  why?: string;
+  /** The body cell. `strong` bolds the figure (Grand Total + depth-0 rows). */
+  cell: (c: CellCtx) => ReactNode;
+  /** The Excel value. Omitted on "text" columns, whose value comes from the follow-up log. */
+  xlsx?: (m: Metrics, mPrev: Metrics) => number | string;
+  /** Which block of the sheet the column belongs to — the ₹ and % number formats are applied by
+   *  contiguous range, so text / money / percent must stay grouped in that order. */
+  xlsxKind: "money" | "pct" | "text";
+}
+
+/** Everything a column's body cell can need, so `cell` stays a one-liner. */
+interface CellCtx {
+  m: Metrics;
+  mPrev: Metrics;
+  /** Ledger ids behind the row — the invoice drill-down needs them. */
+  ids: string[];
+  label: string;
+  strong: boolean;
+  /** Customer name when the row IS exactly one customer (plans are editable only there). */
+  planName: string | null;
+  /** The chaseable entity, or null on a roll-up / the Grand Total. */
+  entity: { type: FollowupEntityType; name: string } | null;
+  latest: Followup | undefined;
+  /** Left rule marking the first visible column of a section. */
+  edge: string;
+}
 
 /** All sale-type keys (mirrors SaleTypeMultiSelect); used for residual projection. */
 const ALL_SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
@@ -259,18 +345,28 @@ export default function SalespersonCollectionReport() {
   // Aging-style group-by: an ordered list of dimensions rolled up with subtotals at
   // every level. Default mirrors the old Salesperson → Customer view.
   const [groupBy, setGroupBy] = useState<CDim[]>(["salesperson", "customer"]);
-  // Collapsed by default: the Received / Total Pending columns show only their Total; expanding
-  // reveals the breakup sub-columns (On Account / Against Invoices, and As-on-today / Till-month-end).
-  const [receivedExpanded, setReceivedExpanded] = useState<boolean>(false);
-  const [pendingExpanded, setPendingExpanded] = useState<boolean>(false);
-  // Outstanding (Today) collapsed by default → Total only; expanding reveals Net Debit / Net Credit.
-  const [outstandingExpanded, setOutstandingExpanded] = useState<boolean>(false);
-  // Follow-up columns (Next Follow-up / Last Remark). COLLAPSED by default: they cost two wide
-  // columns on an already-wide table to show what the row's own phone icon already carries — it
-  // is colour-coded by urgency and its tooltip gives the next date AND the full remark. Expand
-  // them when you want to scan, sort or export the log rather than glance at it. The log button
-  // in the label cell is NOT gated by this and is always available.
-  const [followupCols, setFollowupCols] = useState<boolean>(false);
+  // Which columns are on. ONE control now owns every column, including the Received / Outstanding
+  // / Due Pending breakups and the two follow-up columns — all of which used to hide behind
+  // unlabelled +/− buttons in the table header. DEFAULT_COLS is deliberately the shape the report
+  // has always opened on, so nobody's table changes underneath them.
+  const [visibleCols, setVisibleCols] = useState<ColKey[]>(DEFAULT_COLS);
+  // Groups folded shut on the table, by their +/− heading button. A passing reading aid layered
+  // OVER the picks above — never a substitute for them — so it starts empty and is not saved: a
+  // reopened report shows every column you chose, which is the only honest reading of a saved
+  // layout. See `cols`.
+  const [folded, setFolded] = useState<Set<ColSection>>(new Set());
+  // This user's own saved layout, read from profiles.receivables_report_prefs — so it follows them
+  // to any browser rather than living in one machine's localStorage. Fails soft: while it loads,
+  // and forever if the column isn't there, the report simply uses DEFAULT_COLS.
+  const colPrefs = useReportColumnPrefs(REPORT_PREF_IDS.salespersonCollection, ALL_COL_KEYS);
+  // ONE-SHOT. Without the ref, every hand-toggle would be overwritten by the saved set on the
+  // next render and the picker would be unusable.
+  const appliedPref = useRef(false);
+  useEffect(() => {
+    if (colPrefs.loading || appliedPref.current) return;
+    appliedPref.current = true;
+    if (colPrefs.saved) setVisibleCols(colPrefs.saved as ColKey[]);
+  }, [colPrefs.loading, colPrefs.saved]);
   const [followupTarget, setFollowupTarget] = useState<{ type: FollowupEntityType; name: string } | null>(null);
   // Customer whose plan is being edited (customer level only — a plan must roll up unambiguously).
   const [planTarget, setPlanTarget] = useState<string | null>(null);
@@ -293,7 +389,9 @@ export default function SalespersonCollectionReport() {
   // groups the credits sit in, and 80+ ledger rows bury that.
   const [creditDrill, setCreditDrill] = useState(false);
   const [creditOpenGroups, setCreditOpenGroups] = useState<Set<string>>(new Set());
-  const [sortKey, setSortKey] = useState<SortKey>("pending");
+  // `rawSortKey` is what the user last clicked; the EFFECTIVE sort key is derived below, once the
+  // column list is known, so a column the picker has since hidden can't go on ordering the table.
+  const [rawSortKey, setSortKey] = useState<SortKey>("pending");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   // Month-wise panel: null = consolidated (all filtered rows), else a clicked top-level node.
   const [selectedNode, setSelectedNode] = useState<{ label: string; ids: string[] } | null>(null);
@@ -306,6 +404,7 @@ export default function SalespersonCollectionReport() {
 
   const selectedMonth = months.includes(monthState) ? monthState : asOfMonth;
   const isCurrentMonth = selectedMonth === asOfMonth;
+
 
   // Calendar-previous month (months is FY-ordered); null when selected month is the FY's first.
   const prevMonth = useMemo(() => {
@@ -342,6 +441,26 @@ export default function SalespersonCollectionReport() {
    *  of the subtraction on different bases. The current-month gate lives in metricsForMonth,
    *  since only that branch has a bill list. */
   const netOnAccount = isLive && !saleTypeActive;
+
+  /* ── Which columns are even AVAILABLE right now ──────────────────────────────
+     Two pairs of columns are meaningless in some contexts, and were dropped outright before the
+     picker existed. They are still dropped from the table and the file — but the picker now lists
+     them greyed out with the reason, because a column that simply vanishes reads as a bug.
+     Computed up here, ahead of the column list itself, because the sort guard needs them. */
+  /** A plan is a WHOLE-CUSTOMER commitment with no sale-type dimension, while `received` IS
+   *  filtered — so "Gap to plan" under a Sale Type filter would compare a full-customer plan
+   *  against (say) ink-only receipts and read as a shortfall that doesn't exist. Rather than show
+   *  one of the pair, drop both: a plan figure with no comparable actual beside it invites exactly
+   *  that bad subtraction. */
+  const showPlanCols = !saleTypeActive;
+  /** The Gross / On Account bridge sub-columns only carry meaning where the netting is actually
+   *  applied — on the legacy feed, a past month or under a sale-type filter Gross == Total and
+   *  On Account is always 0, so showing them would be two columns of noise. */
+  const showOnAccountCols = netOnAccount && isCurrentMonth;
+  const legalKey = (k: ColKey): boolean =>
+    (k === "planned" || k === "gap") ? showPlanCols
+    : (k === "pendingGross" || k === "onAccount") ? showOnAccountCols
+    : true;
 
   /** Fraction of a customer's activity belonging to the selected sale types
    *  (by full-year sales mix). Customers with no sales mix put their whole
@@ -815,22 +934,6 @@ export default function SalespersonCollectionReport() {
     [activeRows, groupBy, dimValue, customerMetrics, customerMetricsPrev],
   );
 
-  // Re-sort every level by the active column (Total Pending desc by default).
-  const sortedRoots = useMemo(() => {
-    const dir = sortDir === "asc" ? 1 : -1;
-    const cmp = (a: GroupNode<CM>, b: GroupNode<CM>): number => {
-      if (sortKey === "salesperson")       return dir * a.label.localeCompare(b.label);
-      if (sortKey === "sales")              return dir * (a.metrics.m.sales - b.metrics.m.sales);
-      if (sortKey === "salesPrev")          return dir * (a.metrics.mPrev.sales - b.metrics.mPrev.sales);
-      if (sortKey === "outstandingNow")     return dir * (a.metrics.m.outstanding - b.metrics.m.outstanding);
-      if (sortKey === "collectionPct")      return dir * ((collectionPct(a.metrics.m) ?? -1) - (collectionPct(b.metrics.m) ?? -1));
-      if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
-      // Derived, not stored — must be handled before the Metrics-key fallback below.
-      if (sortKey === "gap")                return dir * (planGap(a.metrics.m) - planGap(b.metrics.m));
-      return dir * (a.metrics.m[sortKey] - b.metrics.m[sortKey]);
-    };
-    return sortTree(tree.roots, cmp);
-  }, [tree, sortKey, sortDir]);
 
   const totals = useMemo<Metrics>(() => {
     const t = emptyMetrics();
@@ -1123,12 +1226,6 @@ export default function SalespersonCollectionReport() {
 
   const dueLabel = `Due by ${selectedMonth ? monthEndLong(selectedMonth) : "—"}`;
   const plannedLabel = `Planned (${selectedMonth || "—"})`;
-  /** The plan columns are dropped under a Sale Type filter.
-   *  `Planned` is a WHOLE-CUSTOMER commitment with no sale-type dimension, while `received` IS
-   *  filtered — so "Gap to plan" would be comparing a full-customer plan against (say) ink-only
-   *  receipts and read as a shortfall that doesn't exist. Rather than show one of the pair, drop
-   *  both: a plan figure with no comparable actual beside it invites exactly that bad subtraction. */
-  const showPlanCols = !saleTypeActive;
   // Sales raised in the selected month and the month before it. Both respect the Sale Type
   // filter exactly (via trend.salesByType), the same way Outstanding/Received do.
   const salesLabel = `Sales (${selectedMonth || "—"})`;
@@ -1158,6 +1255,371 @@ export default function SalespersonCollectionReport() {
   // the remaining difference = bills coming due between today and month-end.
   const pendingNowLabel = `As on ${formatDateLong(asOfDate)}`;
   const pendingTillLabel = `Till ${selectedMonth ? monthEndLong(selectedMonth) : "month-end"}`;
+
+  const sz = (strong: boolean) => (strong ? "text-sm " : "");
+  const bd = (strong: boolean) => (strong ? "font-semibold " : "");
+  const money = "text-right font-mono";
+
+  /* ── The one column list ────────────────────────────────────────────────────────
+     The header, the body cells, the Excel export and the empty-state colSpan are ALL derived
+     from this array. They used to be four hand-maintained lists kept in positional lockstep, and
+     the risk was never theoretical: one extra cell and every money figure sits under the wrong
+     heading, silently, for everyone. Add a column here and it appears in all four.
+
+     Order here is the order on screen, in the picker and in the file. Sub-columns of a section
+     must stay adjacent to their total — the banner and the picker heading both assume it. */
+  const ALL_COLS: SPCol[] = [
+    {
+      key: "nextFollowup", label: "Next Follow-up",
+      help: "The date the next chase is due, from the follow-up log.",
+      legal: true, xlsxKind: "text",
+      cell: (c) => (
+        // stopPropagation: the row's own onClick expands the node and scopes the Monthly panel.
+        <TableCell onClick={(e) => e.stopPropagation()}>
+          {c.entity
+            ? <NextFollowupCell latest={c.latest} onLog={() => setFollowupTarget(c.entity!)} />
+            : <span className="text-[10px] text-muted-foreground">—</span>}
+        </TableCell>
+      ),
+    },
+    {
+      key: "lastRemark", label: "Last Remark",
+      help: "What was said the last time this customer was chased.",
+      legal: true, xlsxKind: "text",
+      cell: (c) => (
+        <TableCell className="text-[11px] text-muted-foreground max-w-[220px] truncate" title={c.latest?.remarks || ""}>
+          {c.latest?.remarks || "—"}
+        </TableCell>
+      ),
+    },
+    {
+      key: "sales", label: salesLabel, sort: "sales", wrap: true, width: "w-[110px]",
+      help: "What we billed them during the month, GST included.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.sales,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} ${bd(c.strong)}${c.edge}`}>{fmt(c.m.sales)}</TableCell>,
+    },
+    {
+      key: "salesPrev", label: salesPrevLabel, sort: "salesPrev", wrap: true, width: "w-[110px]",
+      help: "The same figure for the month before — where a slowdown shows first.",
+      legal: true, xlsxKind: "money", xlsx: (_m, mPrev) => mPrev.sales,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money}${c.edge}`}>{fmt(c.mPrev.sales)}</TableCell>,
+    },
+    {
+      key: "due", label: dueLabel, sort: "due", wrap: true, width: "w-[110px]",
+      help: "Everything collectable this month: what was already pending, plus what falls due by month-end. The denominator of Collection %.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.due,
+      cell: (c) => drillCell(c.ids, "due", c.label, `${sz(c.strong)}${money}${c.edge}`, fmt(c.m.due)),
+    },
+    {
+      key: "planned", label: plannedLabel, sort: "planned", wrap: true, width: "w-[110px]",
+      help: "What the team committed to collect this month, typed in against a customer. Rolls up.",
+      legal: showPlanCols,
+      why: "Hidden while a Sale Type filter is on. A plan is a whole-customer figure with no sale-type split, so it cannot be read against a sale-type-filtered actual.",
+      xlsxKind: "money", xlsx: (m) => m.planned,
+      cell: (c) => plannedCell(c),
+    },
+    {
+      key: "gap", label: "Gap to plan", sort: "gap", wrap: true, width: "w-[100px]",
+      help: "Planned minus Received. Positive means the commitment has not been met yet.",
+      legal: showPlanCols,
+      why: "Hidden while a Sale Type filter is on — it is Planned minus Received, and Planned has no sale-type split.",
+      xlsxKind: "money", xlsx: (m) => planGap(m),
+      cell: (c) => {
+        const gap = planGap(c.m);
+        return (
+          <TableCell className={`${sz(c.strong)}${money} ${c.m.planned > 0 && gap > 0 ? "text-destructive" : c.m.planned > 0 ? "text-emerald-600" : "text-muted-foreground"}${c.edge}`}>
+            {c.m.planned > 0 ? fmt(gap) : "—"}
+          </TableCell>
+        );
+      },
+    },
+
+    /* ── Received ── */
+    {
+      key: "receivedOnAccount", label: "Received — On Account", short: "On Account",
+      section: "received", sub: true, sort: "receivedOnAccount",
+      help: "The part of the month's receipts settling no specific bill: advances and untagged money.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.receivedOnAccount,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.receivedOnAccount)}</TableCell>,
+    },
+    {
+      key: "receivedAgainst", label: "Received — Against Invoices", short: "Against Invoices",
+      section: "received", sub: true, sort: "receivedAgainst",
+      help: "The part of the month's receipts applied to a named bill.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.receivedAgainst,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.receivedAgainst)}</TableCell>,
+    },
+    {
+      key: "received", label: receivedLabel, short: "Total",
+      section: "received", sort: "received", wrap: true, width: "w-[110px]",
+      help: "Cash that actually came in during the month, including payments made outside Tally.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.received,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money}${c.edge}`}>{fmt(c.m.received)}</TableCell>,
+    },
+
+    /* ── Outstanding ── */
+    {
+      key: "outstandingDebit", label: "Outstanding — Net Debit", short: "Net Debit",
+      section: "outstanding", sub: true, sort: "outstandingDebit",
+      help: "The part of Outstanding held by parties who actually owe us.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.outstandingDebit,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.outstandingDebit)}</TableCell>,
+    },
+    {
+      key: "outstandingCredit", label: "Outstanding — Net Credit", short: "Net Credit",
+      section: "outstanding", sub: true, sort: "outstandingCredit",
+      help: "The part held by parties sitting in advance, shown as a positive figure. Outstanding = Net Debit − Net Credit.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.outstandingCredit,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.outstandingCredit)}</TableCell>,
+    },
+    {
+      key: "outstandingNow", label: outstandingNowLabel, short: "Total",
+      section: "outstanding", sort: "outstandingNow", wrap: true, width: "w-[110px]",
+      help: "The live net ledger balance as on today. A negative figure just means that customer is sitting in advance.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.outstanding,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} ${bd(c.strong)}${c.edge}`}>{fmt(c.m.outstanding)}</TableCell>,
+    },
+
+    /* ── Due Pending ── */
+    {
+      key: "pendingGross", label: "Due Pending — Gross", short: "Gross",
+      section: "pending", sub: true, sort: "pendingGross",
+      help: "Due Pending before On Account is set off: the straight sum of the unpaid bills.",
+      legal: showOnAccountCols,
+      why: "Only shown on the live current month. On the older feed, a past month or under a sale-type filter the netting is not applied — Gross equals the Total, so the column would say nothing.",
+      xlsxKind: "money", xlsx: (m) => m.pendingGross,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.pendingGross)}</TableCell>,
+    },
+    {
+      key: "onAccount", label: "Due Pending — less On Account", short: "On Account",
+      section: "pending", sub: true, sort: "onAccount",
+      help: "Money already banked but tagged to no bill. Deducted from Gross to give Due Pending.",
+      legal: showOnAccountCols,
+      why: "Only shown on the live current month — elsewhere nothing is netted off, so this is always zero.",
+      xlsxKind: "money", xlsx: (m) => m.onAccount,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{c.m.onAccount > 0 ? `−${fmt(c.m.onAccount)}` : fmt(0)}</TableCell>,
+    },
+    {
+      key: "pendingOverdue", label: `Due Pending — ${pendingNowLabel}`, short: pendingNowLabel,
+      section: "pending", sub: true,
+      help: "The overdue slice — bills already past their due date. Matches the dashboard.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.pending - m.dueSoon,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.pending - c.m.dueSoon)}</TableCell>,
+    },
+    {
+      key: "dueSoon", label: `Due Pending — ${pendingTillLabel}`, short: pendingTillLabel,
+      section: "pending", sub: true,
+      help: "Bills that are not overdue yet, but fall due before month-end.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.dueSoon,
+      cell: (c) => <TableCell className={`${sz(c.strong)}${money} text-muted-foreground${c.edge}`}>{fmt(c.m.dueSoon)}</TableCell>,
+    },
+    {
+      key: "pending", label: "Due Pending", short: "Total",
+      section: "pending", sort: "pending", wrap: true, width: "w-[95px]",
+      help: "Still unpaid after this month's collections: Due minus Received, net of On Account.",
+      legal: true, xlsxKind: "money", xlsx: (m) => m.pending,
+      cell: (c) => drillCell(
+        c.ids, "pending", c.label,
+        `${sz(c.strong)}${money} ${bd(c.strong)}${c.m.pending > 0 ? "text-destructive" : ""}${c.edge}`,
+        <>
+          {fmt(c.m.pending)}
+          {/* Money already banked but tagged to no invoice — shown under the figure it was taken
+              off, so the row explains itself without needing the breakup columns on. */}
+          {c.m.onAccount > 0 && (
+            <span className="block text-[10px] font-normal leading-tight text-muted-foreground whitespace-nowrap">
+              less On Account {fmt(c.m.onAccount)}
+            </span>
+          )}
+        </>,
+      ),
+    },
+
+    {
+      key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %",
+      sort: "collectionPct", width: "w-[95px]", wrap: true,
+      help: "Received ÷ Due — how much of what was collectable actually came in.",
+      legal: true, xlsxKind: "pct",
+      xlsx: (m) => { const p = collectionPct(m); return p === null ? "" : Math.round(p * 10) / 10; },
+      cell: (c) => {
+        const pct = collectionPct(c.m);
+        return <TableCell className={`${sz(c.strong)}${money} ${pctStyle(pct)}${c.edge}`}>{pct === null ? "—" : `${pct.toFixed(1)}%`}</TableCell>;
+      },
+    },
+    {
+      key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)",
+      sort: "collectionPctPrev", width: "w-[95px]", wrap: true,
+      help: "The same ratio for the month before, so a slide is visible.",
+      legal: true, xlsxKind: "pct",
+      xlsx: (_m, mPrev) => { const p = collectionPct(mPrev); return p === null ? "" : Math.round(p * 10) / 10; },
+      cell: (c) => {
+        const pct = collectionPct(c.mPrev);
+        return <TableCell className={`${sz(c.strong)}${money} ${pctStyle(pct)}${c.edge}`}>{prevMonth == null || pct === null ? "—" : `${pct.toFixed(1)}%`}</TableCell>;
+      },
+    },
+  ];
+
+  /** The user's picks for one section, minus anything unavailable right now. */
+  const picked = (s: ColSection) =>
+    ALL_COLS.filter((c) => c.section === s && c.legal && visibleCols.includes(c.key));
+  /**
+   * Whether a group can be folded at all.
+   *
+   * Needs the Total (there has to be something to fold INTO) and at least one breakup beside it
+   * (there has to be something to fold AWAY). A group showing only its Total therefore carries no
+   * button: offering one there would promise columns the user never asked for.
+   */
+  const canFold = (s: ColSection) => {
+    const p = picked(s);
+    return p.length >= 2 && p.some((c) => !c.sub);
+  };
+  const isFolded = (s: ColSection) => folded.has(s) && canFold(s);
+
+  /**
+   * The columns actually rendered: the user's picks, minus anything unavailable, minus the
+   * breakups of any group they have folded shut.
+   *
+   * The fold is deliberately NOT the same thing as the pick. The picker says which columns you
+   * want; the fold just tucks a breakup out of sight while you read, and puts it back exactly as
+   * you left it. Folding therefore never invents a column you didn't choose, and unfolding never
+   * shows one either — which is the whole difference from the first cut of this control.
+   */
+  const cols = ALL_COLS.filter(
+    (c) => c.legal && visibleCols.includes(c.key)
+      && !(c.sub && c.section && isFolded(c.section)),
+  );
+  const shown = (k: ColKey) => cols.some((c) => c.key === k);
+  /** How many of a section's columns survived. 0 = gone, 1 = flat column, ≥2 = bannered. */
+  const sectionCount = (s: ColSection) => cols.filter((c) => c.section === s).length;
+  const isBannered = (s: ColSection) => sectionCount(s) >= 2;
+  const anyBanner = isBannered("received") || isBannered("outstanding") || isBannered("pending");
+  /** A left rule marks where a section starts — on whichever of its columns survived first. */
+  const edgeFor = (col: SPCol) =>
+    col.section && cols.find((c) => c.section === col.section)?.key === col.key
+      ? " border-l border-border"
+      : "";
+
+  // Re-sort every level by the active column (Total Pending desc by default).
+  //
+  // A column that is not ON SCREEN must never be the one the table is ordered by: a saved layout
+  // that drops Due Pending, or a group folded shut over the column you were sorting by, would
+  // otherwise leave the report ordered by a figure nobody can see, with no header arrow anywhere
+  // to explain the order. Falling back to the shipped default is the honest answer.
+  //
+  // The test is against `cols` — what is rendered — and NOT against `visibleCols`, which now also
+  // contains the picks currently tucked behind a fold. That distinction is why this block sits
+  // below the column list rather than up with the rest of the sort state.
+  // Every sortable ColKey is spelled the same as its SortKey, so the lookup is direct.
+  const sortable = (k: SortKey) => k === "salesperson" || shown(k as ColKey);
+  const sortKey: SortKey =
+    sortable(rawSortKey) ? rawSortKey
+    // Due Pending is the shipped default — but it can itself be hidden, so fall through to the
+    // group name rather than order the table by a column that is nowhere on screen.
+    : sortable("pending") ? "pending"
+    : "salesperson";
+  const sortedRoots = useMemo(() => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    const cmp = (a: GroupNode<CM>, b: GroupNode<CM>): number => {
+      if (sortKey === "salesperson")       return dir * a.label.localeCompare(b.label);
+      if (sortKey === "sales")              return dir * (a.metrics.m.sales - b.metrics.m.sales);
+      if (sortKey === "salesPrev")          return dir * (a.metrics.mPrev.sales - b.metrics.mPrev.sales);
+      if (sortKey === "outstandingNow")     return dir * (a.metrics.m.outstanding - b.metrics.m.outstanding);
+      if (sortKey === "collectionPct")      return dir * ((collectionPct(a.metrics.m) ?? -1) - (collectionPct(b.metrics.m) ?? -1));
+      if (sortKey === "collectionPctPrev")  return dir * ((collectionPct(a.metrics.mPrev) ?? -1) - (collectionPct(b.metrics.mPrev) ?? -1));
+      // Derived, not stored — must be handled before the Metrics-key fallback below.
+      if (sortKey === "gap")                return dir * (planGap(a.metrics.m) - planGap(b.metrics.m));
+      return dir * (a.metrics.m[sortKey] - b.metrics.m[sortKey]);
+    };
+    return sortTree(tree.roots, cmp);
+  }, [tree, sortKey, sortDir]);
+
+  /** The banner name is the SECTION's, not the total column's — the total can itself be hidden. */
+  const SECTION_TITLE: Record<ColSection, string> = {
+    received: receivedLabel,
+    outstanding: outstandingNowLabel,
+    pending: "Due Pending",
+  };
+
+  /** The +/− on a group's heading. Absent unless the group has a breakup to fold. */
+  const sectionToggle = (s: ColSection): ReactNode => {
+    if (!canFold(s)) return null;
+    const open = !isFolded(s);
+    const what = `the ${SECTION_TITLE[s]} breakup`;
+    return (
+      <button
+        type="button"
+        // The heading is click-to-sort; without this, folding a group would re-sort the table.
+        onClick={(e) => {
+          e.stopPropagation();
+          setFolded((prev) => {
+            const next = new Set(prev);
+            if (next.has(s)) next.delete(s); else next.add(s);
+            return next;
+          });
+        }}
+        className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded border border-border/70 text-foreground/60 hover:bg-muted hover:text-foreground shrink-0"
+        title={open ? `Hide ${what}` : `Show ${what}`}
+        aria-label={open ? `Hide ${what}` : `Show ${what}`}
+        aria-expanded={open}
+      >
+        {open ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+      </button>
+    );
+  };
+
+  /**
+   * The header, one entry per cell of the TOP row: either a plain column (which spans both header
+   * rows) or a banner spanning its section's surviving columns (which are re-emitted underneath).
+   * Derived from `cols`, so a colSpan can never fall out of step with the cells below it.
+   */
+  type HeadGroup =
+    | { kind: "col"; col: SPCol }
+    | { kind: "banner"; section: ColSection; cols: SPCol[] };
+  const headGroups: HeadGroup[] = [];
+  for (const col of cols) {
+    if (col.section && isBannered(col.section)) {
+      const open = headGroups[headGroups.length - 1];
+      if (open?.kind === "banner" && open.section === col.section) open.cols.push(col);
+      else headGroups.push({ kind: "banner", section: col.section, cols: [col] });
+    } else {
+      headGroups.push({ kind: "col", col });
+    }
+  }
+
+  /* ── The picker ─────────────────────────────────────────────────────────────
+     An unavailable column is LISTED, greyed, with the reason where `help` normally goes — see
+     ColumnOption.disabled. It is dropped from the table and the file all the same, but the user's
+     tick survives in `visibleCols`, so clearing (say) the Sale Type filter brings Planned and Gap
+     to plan straight back rather than making them re-pick it. */
+  const pickerOptions: ColumnOption[] = ALL_COLS.map((c) => ({
+    key: c.key,
+    label: c.label,
+    help: c.legal ? c.help : (c.why ?? c.help),
+    section: c.section ? SECTION_TITLE[c.section] : undefined,
+    sub: c.sub,
+    disabled: !c.legal,
+  }));
+  const legalVisible = visibleCols.filter(legalKey);
+  /** Take the picker's answer for the legal columns and keep the rest of the user's intent. */
+  const mergeVisible = (next: string[]) => {
+    // Ticking a column in the picker must SHOW it. If its group happened to be folded shut, the
+    // column would land behind the fold and the tick would look like it did nothing — so a fresh
+    // tick opens its group. (Unticking leaves the fold alone; nothing is being hidden by surprise.)
+    const added = (next as ColKey[]).filter((k) => !visibleCols.includes(k));
+    const opens = new Set(
+      added.map((k) => ALL_COLS.find((c) => c.key === k)?.section).filter(Boolean) as ColSection[],
+    );
+    if (opens.size) setFolded((prev) => new Set([...prev].filter((s) => !opens.has(s))));
+    setVisibleCols([...(next as ColKey[]), ...visibleCols.filter((k) => !legalKey(k))]);
+  };
+
+  /* ── The Monthly analysis panel's own breakups ───────────────────────────────
+     The panel follows the main table's Received / Due Pending choices, but works out its OWN
+     two-row header from them. It used to take `anyExpanded` from the main table while only ever
+     rendering received/pending sub-heads, so turning on just the Outstanding breakup gave it a
+     second header row with nothing in it. The panel has no Outstanding breakup at all. */
+  const panelReceived = shown("receivedOnAccount") && shown("receivedAgainst");
+  const panelPending = shown("pendingOverdue") && shown("dueSoon");
+  const panelBanner = panelReceived || panelPending;
 
   /* ── Export ── */
   const handleExport = () => {
@@ -1194,36 +1656,37 @@ export default function SalespersonCollectionReport() {
     const wantCompany = perLedgerDim && !groupBy.includes("company");
     const wantLocation = perLedgerDim && !groupBy.includes("location");
 
+    /* The file now shows exactly what the screen shows.
+       It used to write every column regardless of the on-screen collapse state, on the reasoning
+       that a spreadsheet should carry everything. That was defensible while the only way to hide
+       a column was four unlabelled +/− buttons nobody found. Now that choosing columns is an
+       explicit, saved act, a file that ignores the choice is the surprising one — and the same
+       report elsewhere in the hub already exports what it displays. */
+    const followupCols = cols.filter((c) => c.xlsxKind === "text");
+    const moneyCols = cols.filter((c) => c.xlsxKind === "money");
+    const pctCols = cols.filter((c) => c.xlsxKind === "pct");
+
     const leadHeaders: string[] = [
       "Level",
       ...dimCols,
       ...(wantCompany ? ["Company"] : []),
       ...(wantLocation ? ["Location"] : []),
-      // ALWAYS exported, even when the on-screen columns are collapsed — same rule the money
-      // breakups already follow (the file is wider than the default view). A spreadsheet is
-      // exactly where the remark text is wanted, and a hidden screen column silently dropping
-      // out of the export is the kind of gap nobody notices until the data is missing.
-      "Next Follow-up", "Last Remark",
+      ...followupCols.map((c) => c.label),
     ];
-    const moneyHeaders: string[] = [
-      salesLabel, salesPrevLabel, dueLabel,
-      ...(showPlanCols ? [plannedLabel, "Gap to plan"] : []),
-      "On Account", "Against Invoices", receivedLabel,
-      "Net Debit", "Net Credit", outstandingNowLabel,
-      "Due Pending (Gross)", "Less On Account",
-      `Pending ${pendingNowLabel}`, `Pending ${pendingTillLabel}`, "Due Pending",
-    ];
+    const moneyHeaders = moneyCols.map((c) => c.label);
     // Percent + free-text plan fields sit AFTER the money block so the ₹ format can be applied
     // to one contiguous range.
     const tailHeaders: string[] = [
-      "Collection %",
-      ...(showPlanCols ? ["Expected Date", "Plan Note"] : []),
+      ...pctCols.map((c) => c.label),
+      ...(showPlanCols && shown("planned") ? ["Expected Date", "Plan Note"] : []),
     ];
     aoa.push([...leadHeaders, ...moneyHeaders, ...tailHeaders]);
     const headerRow = aoa.length;            // 1-indexed row of the column header, derived not guessed
     const nLead = leadHeaders.length;
     const nMoney = moneyHeaders.length;
+    const nPct = pctCols.length;
     const nCols = nLead + nMoney + tailHeaders.length;
+    const wantPlanText = showPlanCols && shown("planned");
 
     // Pre-order flatten, carrying the ANCESTOR LABEL CHAIN rather than an indent string.
     // mPrev is carried so the previous-month Sales column can be exported per row.
@@ -1244,18 +1707,16 @@ export default function SalespersonCollectionReport() {
     };
     walk(sortedRoots, []);
 
-    /** The money + tail cells for one row. Shared with the Grand Total so the two can't drift. */
-    const figuresOf = (m: Metrics, mPrev: Metrics): (string | number)[] => {
-      const pct = collectionPct(m);
-      return [
-        m.sales, mPrev.sales, m.due,
-        ...(showPlanCols ? [m.planned, planGap(m)] : []),
-        m.receivedOnAccount, m.receivedAgainst, m.received,
-        m.outstandingDebit, m.outstandingCredit, m.outstanding,
-        m.pendingGross, m.onAccount, m.pending - m.dueSoon, m.dueSoon, m.pending,
-        pct === null ? "" : Math.round(pct * 10) / 10,
-      ];
-    };
+    /** The money + percent cells for one row. Shared with the Grand Total so the two can't drift. */
+    const figuresOf = (m: Metrics, mPrev: Metrics): (string | number)[] =>
+      [...moneyCols, ...pctCols].map((c) => c.xlsx!(m, mPrev));
+    /** The follow-up cells, which come from the follow-up log rather than from Metrics. */
+    const followupsOf = (fu: Followup | undefined): string[] =>
+      followupCols.map((c) =>
+        c.key === "nextFollowup"
+          ? (fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "")
+          : (fu?.remarks ?? ""),
+      );
 
     for (const d of flat) {
       // Ancestors repeated, trailing levels blank — that is what makes autofilter work.
@@ -1264,7 +1725,7 @@ export default function SalespersonCollectionReport() {
       const [subCompany = "", subLocation = ""] = (d.sub ?? "").split(" · ");
       // Follow-ups / plan detail only mean anything where the row IS exactly one entity.
       const fu = d.entity ? latestByEntity.get(entityKey(d.entity.type, d.entity.name)) : undefined;
-      const plan = d.entity && showPlanCols
+      const plan = d.entity && wantPlanText
         ? plans.planFor(selectedMonth, d.entity.type, d.entity.name)
         : undefined;
       aoa.push([
@@ -1272,10 +1733,9 @@ export default function SalespersonCollectionReport() {
         ...dims,
         ...(wantCompany ? [subCompany] : []),
         ...(wantLocation ? [subLocation] : []),
-        fu?.nextFollowupDate ? formatDateDMY(fu.nextFollowupDate) : "",
-        fu?.remarks ?? "",
+        ...followupsOf(fu),
         ...figuresOf(d.m, d.mPrev),
-        ...(showPlanCols ? [plan?.expectedDate ? formatDateDMY(plan.expectedDate) : "", plan?.note ?? ""] : []),
+        ...(wantPlanText ? [plan?.expectedDate ? formatDateDMY(plan.expectedDate) : "", plan?.note ?? ""] : []),
       ]);
     }
     // Built by index, not by spreading a computed-length filler: with no group-by dimensions at
@@ -1286,7 +1746,7 @@ export default function SalespersonCollectionReport() {
     aoa.push([
       ...grandLead,
       ...figuresOf(totals, totalsPrev),
-      ...(showPlanCols ? ["", ""] : []),
+      ...(wantPlanText ? ["", ""] : []),
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -1295,10 +1755,10 @@ export default function SalespersonCollectionReport() {
       ...dimCols.map(() => ({ wch: 28 })),
       ...(wantCompany ? [{ wch: 18 }] : []),
       ...(wantLocation ? [{ wch: 16 }] : []),
-      { wch: 15 }, { wch: 40 },                              // Next Follow-up, Last Remark
+      ...followupCols.map((c) => ({ wch: c.key === "lastRemark" ? 40 : 15 })),
       ...moneyHeaders.map(() => ({ wch: 18 })),
-      { wch: 13 },                                           // Collection %
-      ...(showPlanCols ? [{ wch: 15 }, { wch: 40 }] : []),
+      ...pctCols.map(() => ({ wch: 13 })),
+      ...(wantPlanText ? [{ wch: 15 }, { wch: 40 }] : []),
     ];
     ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: nCols - 1 } }];
     // Open filter-ready — the entire point of splitting the levels into columns.
@@ -1314,8 +1774,12 @@ export default function SalespersonCollectionReport() {
         const cell = ws[XLSX.utils.encode_cell({ r, c })];
         if (cell && typeof cell.v === "number") cell.z = INR;
       }
-      const pctCell = ws[XLSX.utils.encode_cell({ r, c: nLead + nMoney })];
-      if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
+      // A loop, not a single cell: the screen carries Collection % for this month AND the last,
+      // and the picker decides how many of them (0, 1 or 2) reach the file.
+      for (let c = nLead + nMoney; c < nLead + nMoney + nPct; c++) {
+        const pctCell = ws[XLSX.utils.encode_cell({ r, c })];
+        if (pctCell && typeof pctCell.v === "number") pctCell.z = '0.0"%"';
+      }
     }
     // Styling: title + column header black/white/bold; grand total stronger green.
     styleRow(ws, 0, nCols, HEADER_STYLE);                        // title banner
@@ -1439,63 +1903,50 @@ export default function SalespersonCollectionReport() {
     }] : []),
   ];
 
-  const COLS: { key: SortKey; label: string; align?: "right"; width?: string; wrap?: boolean }[] = [
-    { key: "salesperson",   label: "Salesperson", wrap: true, width: "w-[110px]" },
-    { key: "sales",         label: salesLabel,          align: "right", wrap: true, width: "w-[110px]" },
-    { key: "salesPrev",     label: salesPrevLabel,      align: "right", wrap: true, width: "w-[110px]" },
-    { key: "due",           label: dueLabel,            align: "right", wrap: true, width: "w-[110px]" },
-    { key: "planned",       label: plannedLabel,        align: "right", wrap: true, width: "w-[110px]" },
-    { key: "gap",           label: "Gap to plan",       align: "right", wrap: true, width: "w-[100px]" },
-    { key: "outstandingNow", label: outstandingNowLabel, align: "right", wrap: true, width: "w-[110px]" },
-    { key: "outstandingDebit",  label: "Net Debit",         align: "right" },
-    { key: "outstandingCredit", label: "Net Credit",        align: "right" },
-    { key: "receivedOnAccount", label: "On Account",        align: "right" },
-    { key: "receivedAgainst",   label: "Against Invoices",  align: "right" },
-    { key: "received",          label: "Total",             align: "right" },
-    { key: "pendingGross",  label: "Gross",             align: "right" },
-    { key: "onAccount",     label: "On Account",        align: "right" },
-    { key: "pending",       label: "Due Pending",       align: "right" },
-    { key: "collectionPct", label: prevMonth ? `Collection % (${selectedMonth})` : "Collection %", align: "right", width: "w-[95px]", wrap: true },
-    { key: "collectionPctPrev", label: prevMonth ? `Collection % (${prevMonth})` : "Collection % (prev)", align: "right", width: "w-[95px]", wrap: true },
-  ];
-  type Col = (typeof COLS)[number];
-  const anyExpanded = receivedExpanded || pendingExpanded || outstandingExpanded;
-  const leadingCols    = COLS.filter((c) => ["salesperson", "sales", "salesPrev", "due"].includes(c.key));
-  const collectionCols = COLS.filter((c) => ["collectionPct", "collectionPctPrev"].includes(c.key));
-  const debitCol     = COLS.find((c) => c.key === "outstandingDebit")!;
-  const creditCol    = COLS.find((c) => c.key === "outstandingCredit")!;
-  const onAccountCol = COLS.find((c) => c.key === "receivedOnAccount")!;
-  const againstCol   = COLS.find((c) => c.key === "receivedAgainst")!;
-  const totalCol     = COLS.find((c) => c.key === "received")!;
-  const pendingCol      = COLS.find((c) => c.key === "pending")!;
-  const pendingGrossCol = COLS.find((c) => c.key === "pendingGross")!;
-  const onAccountCol2   = COLS.find((c) => c.key === "onAccount")!;
-  /** The Gross / On Account bridge sub-columns only carry meaning where the netting is actually
-   *  applied — on the legacy feed, a past month or under a sale-type filter Gross == Total and
-   *  On Account is always 0, so showing them would be two columns of noise. */
-  const showOnAccountCols = netOnAccount && isCurrentMonth;
-  const pendingSubCols = showOnAccountCols ? 5 : 3;
 
-  /** A sortable column header cell (used for every non-grouped column). */
-  const sortHead = (
-    col: Col, rowSpan?: number,
-    opts?: { headRef?: React.Ref<HTMLTableCellElement>; extra?: ReactNode; freeze?: FreezeStick },
-  ) => (
-    <TableHead
-      key={col.key}
-      ref={opts?.headRef}
-      rowSpan={rowSpan}
-      style={opts?.freeze?.style}
-      className={`text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none ${col.wrap ? "" : "whitespace-nowrap"} ${col.width ?? ""} ${col.align === "right" ? "text-right" : ""} ${opts?.freeze?.className ?? ""}`}
-      onClick={() => toggleSort(col.key)}
-    >
-      <span className={`inline-flex items-center gap-1 ${col.align === "right" ? "justify-end w-full" : ""}`}>
-        {col.label}
-        {sortIcon(col.key)}
-        {opts?.extra}
-      </span>
-    </TableHead>
-  );
+  /**
+   * A column header cell. The NAME carries the hover definition, and the cell carries the sort —
+   * a four-word header on a management report is a headline, not a definition, and a column
+   * nobody can define gets quoted wrong in a meeting. The tooltip sits on the label rather than
+   * the whole cell so it doesn't fight click-to-sort.
+   *
+   * `banded` = this head sits in the second header row, under its section's banner, so it prints
+   * the short name and drops the width/wrap rules meant for a top-level column.
+   */
+  const colHead = (col: SPCol, opts?: { rowSpan?: number; banded?: boolean; trailing?: ReactNode }) => {
+    const sortable = col.sort !== undefined;
+    const text = opts?.banded ? (col.short ?? col.label) : col.label;
+    return (
+      <TableHead
+        rowSpan={opts?.rowSpan}
+        className={[
+          opts?.banded
+            ? "text-xs font-medium text-foreground/60 whitespace-nowrap text-right"
+            : `text-xs font-semibold text-foreground/70 leading-tight align-middle text-right ${col.wrap ? "" : "whitespace-nowrap"} ${col.width ?? ""}`,
+          sortable ? "cursor-pointer select-none" : "",
+          // Bannered or flat, the rule belongs on the first surviving column of the section.
+          edgeFor(col),
+        ].join(" ")}
+        onClick={sortable ? () => toggleSort(col.sort!) : undefined}
+      >
+        <span className="inline-flex items-center gap-1 justify-end w-full">
+          <HelpTooltip delayDuration={200}>
+            <HelpTooltipTrigger asChild>
+              <span className="cursor-help underline decoration-dotted decoration-foreground/25 underline-offset-4">
+                {text}
+              </span>
+            </HelpTooltipTrigger>
+            <HelpTooltipContent side="bottom" align="end" className="max-w-[280px] p-2.5 text-[11px] leading-relaxed font-normal text-left">
+              <p className="font-semibold text-[12px] mb-1">{col.label}</p>
+              <p>{col.help}</p>
+            </HelpTooltipContent>
+          </HelpTooltip>
+          {sortable && sortIcon(col.sort!)}
+          {opts?.trailing}
+        </span>
+      </TableHead>
+    );
+  };
 
   /* ── Frozen column (freeze pane) ───────────────────────────────────────────
      Excel-style: freeze the leading chevron + group-label column so the group name
@@ -1527,28 +1978,11 @@ export default function SalespersonCollectionReport() {
     );
   };
 
-  /** Small +/− button toggling a column's breakup sub-columns. */
-  const makeToggle = (expanded: boolean, set: Dispatch<SetStateAction<boolean>>, hint: string) => (
-    <button
-      type="button"
-      onClick={(e) => { e.stopPropagation(); set((v) => !v); }}
-      className="ml-1 inline-flex items-center justify-center h-4 w-4 rounded border border-border/70 text-foreground/60 hover:bg-muted hover:text-foreground shrink-0"
-      title={expanded ? `Hide ${hint}` : `Show ${hint}`}
-    >
-      {expanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-    </button>
-  );
-  const receivedToggle = makeToggle(receivedExpanded, setReceivedExpanded, "On Account / Against Invoices breakup");
-  const pendingToggle  = makeToggle(pendingExpanded, setPendingExpanded, "As-on-today / Till-month-end breakup");
-  const outstandingToggle = makeToggle(outstandingExpanded, setOutstandingExpanded, "Net Debit / Net Credit breakup");
-  const followupToggle = makeToggle(followupCols, setFollowupCols, "Next Follow-up / Last Remark columns");
-
-  /** The Planned + Gap cells. Planned is EDITABLE only where the row IS one customer — every
-   *  other row is a roll-up of other people's plans, so a figure there is a subtotal, not a
-   *  thing you can set. `planName` is null on those (and on the Grand Total). */
-  const planCells = (m: Metrics, planName: string | null, sz: string, bold: string): ReactNode => {
-    if (!showPlanCols) return null;
-    const gap = planGap(m);
+  /** The Planned cell. EDITABLE only where the row IS one customer — every other row is a
+   *  roll-up of other people's plans, so a figure there is a subtotal, not a thing you can set.
+   *  `planName` is null on those (and on the Grand Total). */
+  const plannedCell = (c: CellCtx): ReactNode => {
+    const { m, planName } = c;
     const editable = planName !== null && plans.canEdit();
     // A name that spans several ledgers is planned once, on the CARRIER row; its siblings show
     // "planned elsewhere" instead of an empty "Set", so the blank explains itself rather than
@@ -1562,117 +1996,47 @@ export default function SalespersonCollectionReport() {
       && m.planned === 0
       && plans.plannedFor(selectedMonth, "customer", planName) > 0;
     return (
-      <>
-        <TableCell
-          onClick={editable ? (e) => { e.stopPropagation(); setPlanTarget(planName); } : undefined}
-          className={`${sz}text-right font-mono ${bold}border-l border-border ${editable ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
-          title={
-            carrierElsewhere
-              ? `${planName} is planned once, on its main ledger row. Click to see or change that plan.`
-              : editable
-                ? `Set the planned collection for ${planName} in ${selectedMonth}`
-                : "Rolled up from the customers below"
-          }
-        >
-          {m.planned > 0
-            ? fmt(m.planned)
-            // A sibling ledger of a planned customer must NOT read "Set": the customer is
-            // already planned, just carried on another row, and offering "Set" here reads as
-            // "unplanned" and invites a second, duplicate figure.
-            : carrierElsewhere
-              ? <span className="text-[10px] font-normal opacity-50">planned elsewhere</span>
-              : editable
-                ? <span className="opacity-40">Set</span>
-                : "—"}
-          {/* Σ marks a figure you cannot edit here, so a read-only roll-up never looks like a
-              cell someone forgot to fill in. */}
-          {!editable && m.planned > 0 && <span className="ml-1 text-[10px] opacity-50">Σ</span>}
-        </TableCell>
-        <TableCell className={`${sz}text-right font-mono ${m.planned > 0 && gap > 0 ? "text-destructive" : m.planned > 0 ? "text-emerald-600" : "text-muted-foreground"}`}>
-          {m.planned > 0 ? fmt(gap) : "—"}
-        </TableCell>
-      </>
+      <TableCell
+        onClick={editable ? (e) => { e.stopPropagation(); setPlanTarget(planName); } : undefined}
+        className={`${sz(c.strong)}${money} ${bd(c.strong)}border-l border-border ${editable ? "cursor-pointer hover:underline hover:text-primary" : ""}`}
+        title={
+          carrierElsewhere
+            ? `${planName} is planned once, on its main ledger row. Click to see or change that plan.`
+            : editable
+              ? `Set the planned collection for ${planName} in ${selectedMonth}`
+              : "Rolled up from the customers below"
+        }
+      >
+        {m.planned > 0
+          ? fmt(m.planned)
+          // A sibling ledger of a planned customer must NOT read "Set": the customer is
+          // already planned, just carried on another row, and offering "Set" here reads as
+          // "unplanned" and invites a second, duplicate figure.
+          : carrierElsewhere
+            ? <span className="text-[10px] font-normal opacity-50">planned elsewhere</span>
+            : editable
+              ? <span className="opacity-40">Set</span>
+              : "—"}
+        {/* Σ marks a figure you cannot edit here, so a read-only roll-up never looks like a
+            cell someone forgot to fill in. */}
+        {!editable && m.planned > 0 && <span className="ml-1 text-[10px] opacity-50">Σ</span>}
+      </TableCell>
     );
   };
 
-  /** The metric cells for one row (grand total or any roll-up node), in column order.
-   *  `strong` bolds the figures (grand total + depth-0 nodes). */
-  const metricCells = (
-    m: Metrics, mPrev: Metrics, ids: string[], label: string, strong: boolean, planName: string | null = null,
-  ): ReactNode => {
-    const pct = collectionPct(m);
-    const pctPrev = collectionPct(mPrev);
-    const sz = strong ? "text-sm " : "";
-    const bold = strong ? "font-semibold " : "";
-    return (
-      <>
-        <TableCell className={`${sz}text-right font-mono ${bold}`}>{fmt(m.sales)}</TableCell>
-        <TableCell className={`${sz}text-right font-mono`}>{fmt(mPrev.sales)}</TableCell>
-        {drillCell(ids, "due", label, `${sz}text-right font-mono`, fmt(m.due))}
-        {planCells(m, planName, sz, bold)}
-        {receivedExpanded && <>
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.receivedOnAccount)}</TableCell>
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.receivedAgainst)}</TableCell>
-        </>}
-        <TableCell className={`${sz}text-right font-mono`}>{fmt(m.received)}</TableCell>
-        {outstandingExpanded && <>
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border`}>{fmt(m.outstandingDebit)}</TableCell>
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.outstandingCredit)}</TableCell>
-        </>}
-        <TableCell className={`${sz}text-right font-mono ${bold}${outstandingExpanded ? "" : "border-l border-border"}`}>{fmt(m.outstanding)}</TableCell>
-        {pendingExpanded && <>
-          {showOnAccountCols && <>
-            <TableCell className={`${sz}text-right font-mono text-muted-foreground border-l border-border/60`}>{fmt(m.pendingGross)}</TableCell>
-            <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{m.onAccount > 0 ? `−${fmt(m.onAccount)}` : fmt(0)}</TableCell>
-          </>}
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground ${showOnAccountCols ? "" : "border-l border-border/60"}`}>{fmt(m.pending - m.dueSoon)}</TableCell>
-          <TableCell className={`${sz}text-right font-mono text-muted-foreground`}>{fmt(m.dueSoon)}</TableCell>
-        </>}
-        {drillCell(ids, "pending", label, `${sz}text-right font-mono ${bold}${m.pending > 0 ? "text-destructive" : ""}`, (
-          <>
-            {fmt(m.pending)}
-            {/* Money already banked but tagged to no invoice — shown under the figure it was taken
-                off, so the row explains itself without needing the + breakup opened. */}
-            {m.onAccount > 0 && (
-              <span className="block text-[10px] font-normal leading-tight text-muted-foreground whitespace-nowrap">
-                less On Account {fmt(m.onAccount)}
-              </span>
-            )}
-          </>
-        ))}
-        <TableCell className={`${sz}text-right font-mono ${pctStyle(pct)}`}>{pct === null ? "—" : `${pct.toFixed(1)}%`}</TableCell>
-        <TableCell className={`${sz}text-right font-mono ${pctStyle(pctPrev)}`}>{prevMonth == null || pctPrev === null ? "—" : `${pctPrev.toFixed(1)}%`}</TableCell>
-      </>
-    );
-  };
-
-  /** The follow-up cells for one row, in column order.
-   *  ONE function for the body rows AND the Grand Total, because the two must always emit the
-   *  same number of cells — a mismatch silently shifts every money figure one column left of
-   *  its header. `entity` is null on a row that isn't chaseable (and on the Grand Total). */
-  const followupCells = (
-    entity: { type: FollowupEntityType; name: string } | null,
-    latest: ReturnType<typeof latestByEntity.get>,
-  ): ReactNode => {
-    // Collapsed: one narrow cell that still carries the toggle, so the columns are never
-    // unreachable once hidden.
-    if (!followupCols) return <TableCell className="w-8" />;
-    return (
-      <>
-        {/* stopPropagation: the row's own onClick expands the node and scopes the Monthly panel. */}
-        <TableCell onClick={(e) => e.stopPropagation()}>
-          {entity ? (
-            <NextFollowupCell latest={latest} onLog={() => setFollowupTarget(entity)} />
-          ) : (
-            <span className="text-[10px] text-muted-foreground">—</span>
-          )}
-        </TableCell>
-        <TableCell className="text-[11px] text-muted-foreground max-w-[220px] truncate" title={latest?.remarks || ""}>
-          {latest?.remarks || "—"}
-        </TableCell>
-      </>
-    );
-  };
+  /**
+   * Every cell for one row — the Grand Total and any roll-up node alike, straight off `cols`.
+   *
+   * That the two share this function is the whole point: they must emit the same number of cells
+   * in the same order as the header, and when those were three hand-written lists a single stray
+   * cell put every money figure one column left of its own heading, silently.
+   */
+  const rowCells = (
+    ctx: Omit<CellCtx, "edge">,
+  ): ReactNode =>
+    cols.map((col) => (
+      <Fragment key={col.key}>{col.cell({ ...ctx, edge: edgeFor(col) })}</Fragment>
+    ));
 
   /** Recursive roll-up rows; pagination/scope is whole-tree. depth-0 click also scopes the panel. */
   const renderNodes = (nodes: GroupNode<CM>[]): ReactNode =>
@@ -1721,25 +2085,22 @@ export default function SalespersonCollectionReport() {
                 </div>
               </TableCell>
             ); })()}
-            {followupCells(entity, latest)}
             {/* Plans are recorded at CUSTOMER level only, so only a customer node is editable —
                 a group / salesperson / category row shows the roll-up of its customers' plans. */}
-            {metricCells(
-              n.metrics.m, n.metrics.mPrev, n.ids, n.label, n.depth === 0,
-              entity?.type === "customer" ? entity.name : null,
-            )}
+            {rowCells({
+              m: n.metrics.m, mPrev: n.metrics.mPrev, ids: n.ids, label: n.label,
+              strong: n.depth === 0,
+              planName: entity?.type === "customer" ? entity.name : null,
+              entity, latest,
+            })}
           </TableRow>
           {isOpen && hasChildren && renderNodes(n.children)}
         </Fragment>
       );
     });
 
-  // Total column count (for empty-state colSpan): chevron + label + follow-up + metric columns.
-  // Metric columns: sales, salesPrev, due, planned, gap, received, outstandingNow, pending,
-  // collectionPct, collectionPctPrev = 10 (planned/gap drop out under a sale-type filter).
-  const metricColCount = (showPlanCols ? 10 : 8) + (receivedExpanded ? 2 : 0) + (outstandingExpanded ? 2 : 0) + (pendingExpanded ? pendingSubCols - 1 : 0);
-  // Follow-up block is 2 columns when shown, 1 narrow toggle cell when collapsed.
-  const totalColCount = 2 + (followupCols ? 2 : 1) + metricColCount;
+  // Empty-state colSpan: the chevron + the frozen label column, plus whatever the picker left on.
+  const totalColCount = 2 + cols.length;
   // Noun for the top-level row count (the first group-by dimension, e.g. "salesperson").
   const groupByLabel = (C_DIMENSIONS.find((x) => x.key === groupBy[0])?.label ?? "group").toLowerCase();
 
@@ -1768,10 +2129,25 @@ export default function SalespersonCollectionReport() {
             </p>
           </div>
         </div>
-        <Button variant="outline" size="sm" className="rounded-button border-border" onClick={handleExport}>
-          <Download className="h-4 w-4 mr-2" />
-          Export Excel
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* "Save my view" writes the layout to the user's profile, so the report opens on it
+              next time — on any browser. See lib/reportPrefs.ts. */}
+          <ColumnPicker
+            columns={pickerOptions}
+            visible={legalVisible}
+            onChange={mergeVisible}
+            onSave={() => colPrefs.save(visibleCols)}
+            onResetSaved={async () => { await colPrefs.clear(); setVisibleCols(DEFAULT_COLS); }}
+            hasSaved={colPrefs.saved !== null}
+            saving={colPrefs.saving}
+            saveError={colPrefs.error}
+            triggerClassName="h-9 text-sm"
+          />
+          <Button variant="outline" size="sm" className="rounded-button border-border h-9" onClick={handleExport}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
+        </div>
       </div>
 
       {/* Group-by builder */}
@@ -1945,7 +2321,7 @@ export default function SalespersonCollectionReport() {
                 : " on this data source — it is already netted upstream."}
             </li>
           )}
-          <li>Use the +/− toggles to show or hide each breakup.</li>
+          <li>Use <span className="font-medium">Columns</span> at the top to choose what this table shows and to save that choice for yourself. Where you have picked a breakup under Received, Outstanding or Due Pending, the group's heading also carries a <span className="font-medium">+</span> / <span className="font-medium">−</span> that folds just that breakup out of the way while you read — it never adds or removes a column you didn't choose, and a reopened report shows everything you picked. Hover any column heading for a one-line definition. The Excel export follows whatever is on screen.</li>
         </ul>
       </details>
 
@@ -1955,23 +2331,24 @@ export default function SalespersonCollectionReport() {
           <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             {sortedRoots.length} {groupByLabel}{sortedRoots.length !== 1 ? "s" : ""}
           </span>
-          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a row to expand; the top level also scopes the Monthly analysis. Use the <Pin className="h-3 w-3 inline" /> on the group column to freeze it while scrolling</span>
+          <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1">Click a row to expand; the top level also scopes the Monthly analysis. <Plus className="h-3 w-3 inline" />/<Minus className="h-3 w-3 inline" /> on a group heading folds its breakup; the <Pin className="h-3 w-3 inline" /> on the group column freezes it while scrolling</span>
         </div>
         <ScrollableTable>
           <Table>
             <TableHeader>
-              {/* Received and Total Pending are each collapsed by default (Total only, with a +
-                  toggle). When expanded, a two-row header groups their breakup under the banner. */}
+              {/* Received, Outstanding and Due Pending each band their breakup under a banner —
+                  but only while TWO or more of that section's columns are on. Leave one and it
+                  renders as an ordinary column, which is exactly how the report looks by default. */}
               <TableRow className="bg-muted/50">
                 <TableHead
                   ref={chevRef}
-                  rowSpan={anyExpanded ? 2 : 1}
+                  rowSpan={anyBanner ? 2 : 1}
                   style={freezeStick("chevron", { header: true }).style}
                   className={`w-8 ${freezeStick("chevron", { header: true }).className}`}
                 />
                 <TableHead
                   ref={spHeadRef}
-                  rowSpan={anyExpanded ? 2 : 1}
+                  rowSpan={anyBanner ? 2 : 1}
                   style={freezeStick("label", { header: true }).style}
                   className={`text-xs font-semibold text-foreground/70 align-bottom pb-2 cursor-pointer select-none ${freezeStick("label", { header: true }).className}`}
                   onClick={() => toggleSort("salesperson")}
@@ -1985,140 +2362,37 @@ export default function SalespersonCollectionReport() {
                     <span className="shrink-0 inline-flex items-center">{freezePin()}</span>
                   </span>
                 </TableHead>
-                {/* Follow-up block. rowSpan is load-bearing: when a breakup below is expanded the
-                    header becomes two rows, and a head without it would let every money column
-                    slide one cell left of its label. */}
-                {followupCols ? (
-                  <>
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 leading-tight align-middle whitespace-nowrap">
-                      <span className="inline-flex items-center gap-1">
-                        Next Follow-up
-                        {followupToggle}
+                {/* The +/− lives on the GROUP, once — on the banner while it is open, and on the
+                    lone surviving column while it is shut. Never on the banded sub-heads below:
+                    three buttons to fold one thing is noise. */}
+                {headGroups.map((g) =>
+                  g.kind === "banner" ? (
+                    <TableHead
+                      key={`banner:${g.section}`}
+                      colSpan={g.cols.length}
+                      className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border"
+                    >
+                      <span className="inline-flex items-center justify-center">
+                        {SECTION_TITLE[g.section]}
+                        {sectionToggle(g.section)}
                       </span>
                     </TableHead>
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 leading-tight align-middle whitespace-nowrap">
-                      Last Remark
-                    </TableHead>
-                  </>
-                ) : (
-                  // Collapsed: a phone icon rather than a bare +, so the column reads as
-                  // "follow-ups, hidden" instead of an unexplained toggle.
-                  <TableHead
-                    rowSpan={anyExpanded ? 2 : 1}
-                    className="w-9 align-middle text-foreground/50"
-                    title="Follow-up columns are hidden — the phone icon on each row already shows its next date and last remark on hover. Click + to show them as sortable columns."
-                  >
-                    <span className="inline-flex items-center">
-                      <PhoneCall className="h-3.5 w-3.5" />
-                      {followupToggle}
-                    </span>
-                  </TableHead>
-                )}
-                {sortHead(COLS.find((c) => c.key === "sales")!, anyExpanded ? 2 : 1)}
-                {sortHead(COLS.find((c) => c.key === "salesPrev")!, anyExpanded ? 2 : 1)}
-                {sortHead(COLS.find((c) => c.key === "due")!, anyExpanded ? 2 : 1)}
-                {showPlanCols && sortHead(COLS.find((c) => c.key === "planned")!, anyExpanded ? 2 : 1, {
-                  extra: (
-                    <span
-                      className="ml-1 text-[10px] font-normal opacity-60"
-                      title="A plan is a whole-customer figure — it is not split by sale type. Filter by Sale Type and these two columns are hidden rather than shown against a partial actual."
-                    >
-                      ⓘ
-                    </span>
+                  ) : (
+                    <Fragment key={g.col.key}>
+                      {colHead(g.col, {
+                        rowSpan: anyBanner ? 2 : 1,
+                        trailing: g.col.section ? sectionToggle(g.col.section) : undefined,
+                      })}
+                    </Fragment>
                   ),
-                })}
-                {showPlanCols && sortHead(COLS.find((c) => c.key === "gap")!, anyExpanded ? 2 : 1)}
-                {receivedExpanded ? (
-                  <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
-                    <span className="inline-flex items-center justify-center">{receivedLabel}{receivedToggle}</span>
-                  </TableHead>
-                ) : (
-                  <TableHead
-                    rowSpan={anyExpanded ? 2 : 1}
-                    className="text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none w-[110px] text-right border-l border-border"
-                    onClick={() => toggleSort("received")}
-                  >
-                    <span className="inline-flex items-center gap-1 justify-end w-full">{receivedLabel}{sortIcon("received")}{receivedToggle}</span>
-                  </TableHead>
                 )}
-                {outstandingExpanded ? (
-                  <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
-                    <span className="inline-flex items-center justify-center">{outstandingNowLabel}{outstandingToggle}</span>
-                  </TableHead>
-                ) : (
-                  <TableHead
-                    rowSpan={anyExpanded ? 2 : 1}
-                    className="text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none w-[110px] text-right border-l border-border"
-                    onClick={() => toggleSort("outstandingNow")}
-                  >
-                    <span className="inline-flex items-center gap-1 justify-end w-full">{outstandingNowLabel}{sortIcon("outstandingNow")}{outstandingToggle}</span>
-                  </TableHead>
-                )}
-                {pendingExpanded ? (
-                  <TableHead colSpan={pendingSubCols} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
-                    <span className="inline-flex items-center justify-center">{pendingCol.label}{pendingToggle}</span>
-                  </TableHead>
-                ) : (
-                  <TableHead
-                    rowSpan={anyExpanded ? 2 : 1}
-                    className="text-xs font-semibold text-foreground/70 leading-tight align-middle cursor-pointer select-none w-[95px] text-right border-l border-border"
-                    onClick={() => toggleSort("pending")}
-                  >
-                    <span className="inline-flex items-center gap-1 justify-end w-full">{pendingCol.label}{sortIcon("pending")}{pendingToggle}</span>
-                  </TableHead>
-                )}
-                {collectionCols.map((col) => sortHead(col, anyExpanded ? 2 : 1))}
               </TableRow>
-              {anyExpanded && (
+              {anyBanner && (
                 <TableRow className="bg-muted/50">
-                  {receivedExpanded && [onAccountCol, againstCol, totalCol].map((col) => (
-                    <TableHead
-                      key={col.key}
-                      className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "receivedOnAccount" ? "border-l border-border" : ""}`}
-                      onClick={() => toggleSort(col.key)}
-                    >
-                      <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
-                    </TableHead>
-                  ))}
-                  {outstandingExpanded && (
-                    <>
-                      {[debitCol, creditCol].map((col) => (
-                        <TableHead
-                          key={col.key}
-                          className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "outstandingDebit" ? "border-l border-border" : ""}`}
-                          onClick={() => toggleSort(col.key)}
-                        >
-                          <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
-                        </TableHead>
-                      ))}
-                      <TableHead
-                        className="text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right"
-                        onClick={() => toggleSort("outstandingNow")}
-                      >
-                        <span className="inline-flex items-center gap-1 justify-end w-full">Total{sortIcon("outstandingNow")}</span>
-                      </TableHead>
-                    </>
-                  )}
-                  {pendingExpanded && (
-                    <>
-                      {showOnAccountCols && [pendingGrossCol, onAccountCol2].map((col) => (
-                        <TableHead
-                          key={col.key}
-                          className={`text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right ${col.key === "pendingGross" ? "border-l border-border" : ""}`}
-                          onClick={() => toggleSort(col.key)}
-                        >
-                          <span className="inline-flex items-center gap-1 justify-end w-full">{col.label}{sortIcon(col.key)}</span>
-                        </TableHead>
-                      ))}
-                      <TableHead className={`text-xs font-medium text-foreground/60 whitespace-nowrap text-right ${showOnAccountCols ? "" : "border-l border-border"}`}>{pendingNowLabel}</TableHead>
-                      <TableHead className="text-xs font-medium text-foreground/60 whitespace-nowrap text-right">{pendingTillLabel}</TableHead>
-                      <TableHead
-                        className="text-xs font-medium text-foreground/60 cursor-pointer select-none whitespace-nowrap text-right"
-                        onClick={() => toggleSort("pending")}
-                      >
-                        <span className="inline-flex items-center gap-1 justify-end w-full">Total{sortIcon("pending")}</span>
-                      </TableHead>
-                    </>
+                  {headGroups.map((g) =>
+                    g.kind === "banner"
+                      ? g.cols.map((col) => <Fragment key={col.key}>{colHead(col, { banded: true })}</Fragment>)
+                      : null,
                   )}
                 </TableRow>
               )}
@@ -2136,8 +2410,10 @@ export default function SalespersonCollectionReport() {
                   <TableRow className="bg-muted/60 border-b-2 border-border/60 font-semibold">
                     <TableCell style={freezeStick("chevron", { bg: "bg-muted" }).style} className={freezeStick("chevron", { bg: "bg-muted" }).className} />
                     <TableCell style={freezeStick("label", { bg: "bg-muted" }).style} className={`text-sm whitespace-nowrap uppercase tracking-wide text-foreground/80 ${freezeStick("label", { bg: "bg-muted" }).className}`}>Grand Total</TableCell>
-                    {followupCells(null, undefined)}
-                    {metricCells(totals, totalsPrev, allCustomerIds, "Grand Total", true)}
+                    {rowCells({
+                      m: totals, mPrev: totalsPrev, ids: allCustomerIds, label: "Grand Total",
+                      strong: true, planName: null, entity: null, latest: undefined,
+                    })}
                   </TableRow>
                   {renderNodes(sortedRoots)}
                 </>
@@ -2231,40 +2507,41 @@ export default function SalespersonCollectionReport() {
             <ScrollableTable>
               <Table>
                 <TableHeader>
-                  {/* Received and Pending are each collapsed by default; the + toggle reveals the breakup. */}
+                  {/* This panel follows the main table's Received / Due Pending breakups — turn
+                      them on with Columns above and they band here too. */}
                   <TableRow className="bg-muted/50">
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Opening</TableHead>
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Closing</TableHead>
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
-                    {receivedExpanded ? (
+                    <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 whitespace-nowrap">Month</TableHead>
+                    <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Opening</TableHead>
+                    <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Closing</TableHead>
+                    <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Due</TableHead>
+                    {panelReceived ? (
                       <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
-                        <span className="inline-flex items-center justify-center">Received{receivedToggle}</span>
+                        Received
                       </TableHead>
                     ) : (
-                      <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap border-l border-border">
-                        <span className="inline-flex items-center gap-1 justify-end w-full">Received{receivedToggle}</span>
+                      <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap border-l border-border">
+                        Received
                       </TableHead>
                     )}
-                    {pendingExpanded ? (
+                    {panelPending ? (
                       <TableHead colSpan={3} className="text-xs font-semibold text-foreground/70 text-center whitespace-nowrap border-l border-border">
-                        <span className="inline-flex items-center justify-center">Pending{pendingToggle}</span>
+                        Pending
                       </TableHead>
                     ) : (
-                      <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap border-l border-border">
-                        <span className="inline-flex items-center gap-1 justify-end w-full">Pending{pendingToggle}</span>
+                      <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap border-l border-border">
+                        Pending
                       </TableHead>
                     )}
-                    <TableHead rowSpan={anyExpanded ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
+                    <TableHead rowSpan={panelBanner ? 2 : 1} className="text-xs font-semibold text-foreground/70 text-right whitespace-nowrap">Collection %</TableHead>
                   </TableRow>
-                  {anyExpanded && (
+                  {panelBanner && (
                     <TableRow className="bg-muted/50">
-                      {receivedExpanded && <>
+                      {panelReceived && <>
                         <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">On Account</TableHead>
                         <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Against Invoices</TableHead>
                         <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
                       </>}
-                      {pendingExpanded && <>
+                      {panelPending && <>
                         <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap border-l border-border">{pendingNowLabel}</TableHead>
                         <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">{pendingTillLabel}</TableHead>
                         <TableHead className="text-xs font-medium text-foreground/60 text-right whitespace-nowrap">Total</TableHead>
@@ -2281,12 +2558,12 @@ export default function SalespersonCollectionReport() {
                         <TableCell className="text-sm text-right font-mono">{fmt(startMonthOutstanding(d))}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(d.outstanding)}</TableCell>
                         <TableCell className="text-sm text-right font-mono">{fmt(d.due)}</TableCell>
-                        {receivedExpanded && <>
+                        {panelReceived && <>
                           <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(d.receivedOnAccount)}</TableCell>
                           <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.receivedAgainst)}</TableCell>
                         </>}
                         <TableCell className="text-sm text-right font-mono">{fmt(d.received)}</TableCell>
-                        {pendingExpanded && <>
+                        {panelPending && <>
                           <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(d.pending - d.dueSoon)}</TableCell>
                           <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(d.dueSoon)}</TableCell>
                         </>}
@@ -2303,12 +2580,12 @@ export default function SalespersonCollectionReport() {
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(startMonthOutstanding(latest)) : "—"}</TableCell>
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(latest.outstanding) : "—"}</TableCell>
                       <TableCell className="text-sm text-right font-mono">{latest ? fmt(latest.due) : "—"}</TableCell>
-                      {receivedExpanded && <>
+                      {panelReceived && <>
                         <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt(sumOnAccount)}</TableCell>
                         <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(sumAgainst)}</TableCell>
                       </>}
                       <TableCell className="text-sm text-right font-mono">{fmt(sumReceived)}</TableCell>
-                      {pendingExpanded && <>
+                      {panelPending && <>
                         <TableCell className="text-sm text-right font-mono text-muted-foreground border-l border-border/60">{fmt((latest?.pending ?? 0) - (latest?.dueSoon ?? 0))}</TableCell>
                         <TableCell className="text-sm text-right font-mono text-muted-foreground">{fmt(latest?.dueSoon ?? 0)}</TableCell>
                       </>}

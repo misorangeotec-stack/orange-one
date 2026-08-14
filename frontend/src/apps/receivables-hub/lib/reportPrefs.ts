@@ -35,6 +35,7 @@ export const REPORT_PREF_IDS = {
   collectionsZero: "collections:zero",
   collectionsThreshold: "collections:threshold",
   collectionsDormant: "collections:dormant",
+  salespersonCollection: "collections:salesperson",
 } as const;
 
 interface ReportPrefEntry {
