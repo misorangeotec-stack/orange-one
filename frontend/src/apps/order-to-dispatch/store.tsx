@@ -484,7 +484,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       companyId: string | null,
       includeId?: string | null,
     ): CompanyLocation[] => {
-      const all = !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId);
+      const all = !companyId
+        ? []
+        : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId));
       if (!myLocationIds) return all;
       return all.filter((l) => myLocationIds.includes(l.id) || l.id === includeId);
     };
@@ -493,8 +495,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const assignedCompanies = (includeId?: string | null): Company[] => {
       const all = activeOf(companies);
       if (!myLocationIds) return all;
+      // A site now names several companies, so this flattens rather than maps —
+      // an owner assigned to SURAT-HOJIWALA can bill under either firm that
+      // dispatches from it, which is what was already true in practice.
       const allowed = new Set(
-        companyLocations.filter((l) => myLocationIds.includes(l.id)).map((l) => l.companyId),
+        companyLocations.filter((l) => myLocationIds.includes(l.id)).flatMap((l) => l.companyIds),
       );
       return all.filter((c) => allowed.has(c.id) || c.id === includeId);
     };
@@ -624,7 +629,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         return activeOf(items).filter((i) => allowed.has(i.id));
       },
       locationsForCompany: (companyId) =>
-        !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId),
+        !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId)),
       assignedCompanies,
       assignedLocationsForCompany,
       knownLocations,

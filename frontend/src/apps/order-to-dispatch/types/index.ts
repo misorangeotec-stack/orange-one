@@ -47,15 +47,23 @@ export interface Company extends NamedMaster {
 }
 
 /**
- * One of OUR sites, under a selling company — the place a consignment leaves from.
+ * One of OUR sites — the place a consignment leaves from.
  *
  * ⚠ NOT `Customer.location`, and the two must not be conflated. That one is free
  *   text describing where the CUSTOMER takes delivery, deliberately un-mastered
  *   so a rename cannot rewrite where a past consignment went. This is a real
  *   master with a real FK on the order, because it decides who sees the work.
+ *
+ * ⚠ `companyIds`, PLURAL, and it used to be a single `companyId`. A site is a
+ *   shed with a gate; more than one of our companies dispatches from it. The old
+ *   shape forced one row per (company, site) — NOIDA stored twice, SURAT-HOJIWALA
+ *   twice, SURAT-SACHIN twice. That duplication was never load-bearing: every
+ *   step's owners were identical across both copies of a site. It did mean each
+ *   new company added three more rows to retype, which is the opposite of what a
+ *   shared master is for.
  */
 export interface CompanyLocation extends NamedMaster {
-  companyId: string;
+  companyIds: string[];
 }
 
 export interface Customer extends NamedMaster {
@@ -154,8 +162,17 @@ export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
  * ⚠ Kept as its own export (not an alias) because it is the picker's list: a
  *   master that should never be requestable is removed HERE, not from
  *   DISPATCH_MASTER_TYPES, which is the Masters-tab order.
+ *
+ * ⚠ COMPANY IS THE ONE EXCLUSION, and it is not a policy choice — approving one
+ *   is now impossible. Companies come from Tally: each is a company BOOK, and
+ *   every customer, item and ledger hangs off it. A company typed in here would
+ *   arrive with no book, no ledgers and no items, and the next sync would not
+ *   adopt it. `fms_dispatch_resolve_master_request` refuses the type outright,
+ *   so leaving it in the picker would only offer a request nobody can approve.
+ *   The real route is to open the company in Tally; it appears within 15 minutes.
  */
-export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] = [...DISPATCH_MASTER_TYPES];
+export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] =
+  DISPATCH_MASTER_TYPES.filter((t) => t.value !== "company");
 
 export interface MasterManager {
   id: string;

@@ -32,8 +32,9 @@ const PAGE = 1000;
 type Tbl =
   | "fms_dispatch_step_owners"
   | "fms_dispatch_config"
-  | "fms_dispatch_companies"
-  | "fms_dispatch_company_locations"
+  | "mst_companies"
+  | "mst_locations"
+  | "mst_company_locations"
   | "mst_parties"
   | "mst_items"
   | "mst_units"
@@ -418,10 +419,10 @@ const mapNotification = (r: any): DispatchNotification => ({
 });
 
 export async function fetchDispatchData(): Promise<DispatchData> {
-  // 16 names, 16 calls. Keep them in step.
+  // 18 names, 18 calls. Keep them in step.
   const [
     stepOwners, configRows, designations,
-    companies, companyLocations, customerItems, customers, items, units,
+    companies, locations, companySites, customerItems, customers, items, units,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
     activity, notifications,
@@ -429,8 +430,13 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchAll("fms_dispatch_step_owners"),
     fetchAll("fms_dispatch_config", "key"),
     fetchAll("designations"),
-    fetchAll("fms_dispatch_companies"),
-    fetchAll("fms_dispatch_company_locations"),
+    // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
+    // items, where Tally holds thousands and the tick is the only thing making
+    // a picker usable, there are five companies. A new one should appear on its
+    // own rather than waiting for somebody to remember to tick it.
+    fetchAll("mst_companies"),
+    fetchAll("mst_locations"),
+    fetchAll("mst_company_locations"),
     // The catalogue carries no `modules` of its own — a pair is scoped by the
     // customer and item it points at, so it is filtered below rather than here.
     fetchAll("mst_party_items"),
@@ -504,13 +510,46 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     designations: designations.map(mapDesignation),
     config,
 
+    /**
+     * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name.
+     *   `name` is Tally's book name — "ORANGE O TEC PRIVATE LIMITED
+     *   (01-04-25TO31-03-27)" — which the sync rewrites and which is re-minted
+     *   every April. It reaches a driver at the gate: printGatePass puts the
+     *   billing company in the masthead. `alias` is the human's label and no
+     *   sync touches it.
+     *
+     *   The city is appended because Tally keeps a separate book per site, so
+     *   "O-tec" alone names two of the five rows and the picker would show the
+     *   same word twice with no way to tell them apart.
+     */
     companies: companies.map((r): Company => ({
-      ...mapMaster(r), gstin: str(r.gstin), address: str(r.address),
+      ...mapMaster(r),
+      name: [str(r.alias) || r.name, str(r.location)].filter(Boolean).join(" — "),
+      gstin: str(r.gstin), address: str(r.address),
       gatePassPrefix: str(r.gate_pass_prefix),
     })),
-    companyLocations: companyLocations.map((r): CompanyLocation => ({
-      ...mapMaster(r), companyId: r.company_id,
-    })),
+    /**
+     * A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.
+     *
+     * It used to be one row per (company, site) — NOIDA twice, SURAT-HOJIWALA
+     * twice, SURAT-SACHIN twice — so a single `companyId` was enough. The
+     * duplication carried no information (every step's owners were identical
+     * across both copies) and it meant a new company added three rows to retype.
+     * Now there are three sites and a separate list of who dispatches from each,
+     * so this carries `companyIds`.
+     */
+    companyLocations: (() => {
+      const byLocation = new Map<string, string[]>();
+      for (const cs of companySites as any[]) {
+        if (cs.active === false) continue;
+        const arr = byLocation.get(cs.location_id);
+        if (arr) arr.push(cs.company_id);
+        else byLocation.set(cs.location_id, [cs.company_id]);
+      }
+      return locations.map((r): CompanyLocation => ({
+        ...mapMaster(r), companyIds: byLocation.get(r.id) ?? [],
+      }));
+    })(),
     /**
      * ⚠ `companyId` IS DELIBERATELY DROPPED. In Dispatch it meant "which of our
      *   companies bills this customer" and was filled on 1 of 327 rows. On

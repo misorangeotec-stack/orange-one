@@ -373,17 +373,20 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
  * ⚠ CUSTOMERS, ITEMS AND THEIR MAPPING NOW LIVE IN THE CENTRAL MASTERS.
  *
  * They are shared with every other module, so a row written here is a row every
- * module can be given. Companies and locations stay Dispatch's own for now:
- * Dispatch models a site as company x location, while Tally models it as a
- * separate company book, and the two do not map one to one (see
- * supabase/phase1/01_cutover.sql).
+ * module can be given. Companies and locations followed in phase 2 (see
+ * supabase/phase2/01_cutover.sql): a company is now a Tally company BOOK, and a
+ * site is a shared place with a separate list of who dispatches from it.
  *
  * ⚠ The column names differ on the mapping: mst_party_items uses party_id, not
  *   customer_id. lib/masterFields.ts and the request RPC must agree with this.
+ *
+ * ⚠ `company` IS UNREACHABLE and stays only because the Record is exhaustive.
+ *   Companies come from Tally; nothing in this app may create one, and the
+ *   request RPC refuses the type. It is not in REQUESTABLE_DISPATCH_MASTER_TYPES.
  */
 const MASTER_TABLE: Record<DispatchMasterType, string> = {
-  company: "fms_dispatch_companies",
-  company_location: "fms_dispatch_company_locations",
+  company: "mst_companies",
+  company_location: "mst_locations",
   customer: "mst_parties",
   item: "mst_items",
   customer_item: "mst_party_items",

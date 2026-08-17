@@ -3577,7 +3577,8 @@ async function fetchDispatchData() {
     configRows,
     designations,
     companies,
-    companyLocations,
+    locations,
+    companySites,
     customerItems,
     customers,
     items,
@@ -3594,8 +3595,13 @@ async function fetchDispatchData() {
     fetchAll9("fms_dispatch_step_owners"),
     fetchAll9("fms_dispatch_config", "key"),
     fetchAll9("designations"),
-    fetchAll9("fms_dispatch_companies"),
-    fetchAll9("fms_dispatch_company_locations"),
+    // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
+    // items, where Tally holds thousands and the tick is the only thing making
+    // a picker usable, there are five companies. A new one should appear on its
+    // own rather than waiting for somebody to remember to tick it.
+    fetchAll9("mst_companies"),
+    fetchAll9("mst_locations"),
+    fetchAll9("mst_company_locations"),
     // The catalogue carries no `modules` of its own — a pair is scoped by the
     // customer and item it points at, so it is filtered below rather than here.
     fetchAll9("mst_party_items"),
@@ -3655,16 +3661,48 @@ async function fetchDispatchData() {
     stepOwners: stepOwners.map(mapStepOwner8),
     designations: designations.map(mapDesignation8),
     config,
+    /**
+     * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name.
+     *   `name` is Tally's book name — "ORANGE O TEC PRIVATE LIMITED
+     *   (01-04-25TO31-03-27)" — which the sync rewrites and which is re-minted
+     *   every April. It reaches a driver at the gate: printGatePass puts the
+     *   billing company in the masthead. `alias` is the human's label and no
+     *   sync touches it.
+     *
+     *   The city is appended because Tally keeps a separate book per site, so
+     *   "O-tec" alone names two of the five rows and the picker would show the
+     *   same word twice with no way to tell them apart.
+     */
     companies: companies.map((r) => ({
       ...mapMaster4(r),
+      name: [str(r.alias) || r.name, str(r.location)].filter(Boolean).join(" \u2014 "),
       gstin: str(r.gstin),
       address: str(r.address),
       gatePassPrefix: str(r.gate_pass_prefix)
     })),
-    companyLocations: companyLocations.map((r) => ({
-      ...mapMaster4(r),
-      companyId: r.company_id
-    })),
+    /**
+     * A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.
+     *
+     * It used to be one row per (company, site) — NOIDA twice, SURAT-HOJIWALA
+     * twice, SURAT-SACHIN twice — so a single `companyId` was enough. The
+     * duplication carried no information (every step's owners were identical
+     * across both copies) and it meant a new company added three rows to retype.
+     * Now there are three sites and a separate list of who dispatches from each,
+     * so this carries `companyIds`.
+     */
+    companyLocations: (() => {
+      const byLocation = /* @__PURE__ */ new Map();
+      for (const cs of companySites) {
+        if (cs.active === false) continue;
+        const arr2 = byLocation.get(cs.location_id);
+        if (arr2) arr2.push(cs.company_id);
+        else byLocation.set(cs.location_id, [cs.company_id]);
+      }
+      return locations.map((r) => ({
+        ...mapMaster4(r),
+        companyIds: byLocation.get(r.id) ?? []
+      }));
+    })(),
     /**
      * ⚠ `companyId` IS DELIBERATELY DROPPED. In Dispatch it meant "which of our
      *   companies bills this customer" and was filled on 1 of 327 rows. On

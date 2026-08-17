@@ -103,12 +103,18 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
       ];
 
     case "company_location":
-      // OUR site, under one of our companies. The company is required because a
-      // location that belongs to nobody cannot be offered on any order — the
-      // intake picker filters strictly by the company already chosen.
+      // OUR site, and the company that dispatches from it. The company is
+      // required because a site nobody dispatches from cannot be offered on any
+      // order — the intake picker filters strictly by the company already chosen.
+      //
+      // ⚠ Approving this creates a site AND the pair that ties it to that
+      //   company. If a site of the same name already exists it is REUSED rather
+      //   than duplicated, because a site is a place and several of our
+      //   companies dispatch from it — see the company_location arm of
+      //   fms_dispatch_resolve_master_request.
       return [
         { key: "name", label: "Location name", type: "text", required: true, placeholder: "e.g. Ahmedabad, Unit 2" },
-        { key: "company_id", label: "Company", type: "select", required: true, options: ctx.companyOptions, placeholder: "Select company" },
+        { key: "company_id", label: "Dispatched by", type: "select", required: true, options: ctx.companyOptions, placeholder: "Select company" },
         sortField,
       ];
 
