@@ -24,13 +24,17 @@ phase is not finished until this file says so.
 
 **Immediately outstanding**
 
-1. **Redeploy the `work-snapshot` Edge Function.** Its bundle
-   (`supabase/functions/_shared/workSnapshot.bundle.js`) is regenerated and
-   committed, but the *deployed* version is still v13 and still reads the old
-   master tables. Those tables are frozen and complete, so today's digest is
-   correct; only masters created after the cutover would render blank. Fires
-   daily at 03:30 UTC via `user-snapshot-daily`. Deploy with
-   `supabase functions deploy work-snapshot --project-ref icutjkrqkbzwvmnfbzpr`.
+1. ✅ **`work-snapshot` redeployed — v13 → v14, 2026-08-18.** The rebuilt bundle
+   (`supabase/functions/_shared/workSnapshot.bundle.js`) is live; the deployed
+   copy no longer reads the retired master tables. Verified by signing in and
+   running a real snapshot through the function, not just by the version number.
+   Fires daily at 03:30 UTC via `user-snapshot-daily`.
+
+   ⚠ **`npx supabase …` fails in PowerShell here** — the execution policy blocks
+   `npx.ps1` with `UnauthorizedAccess`. Use **`npx.cmd`**, which bypasses the
+   `.ps1` wrapper entirely. `npx.cmd supabase login`, then
+   `npx.cmd supabase functions deploy work-snapshot --project-ref icutjkrqkbzwvmnfbzpr --no-verify-jwt`.
+   The "Docker is not running" warning is noise; the deploy does not need it.
 2. ⚠ **The `service_role` key was pasted into a chat transcript on 2026-08-14.**
    The user has explicitly decided not to rotate it. Do not raise this again
    unless asked.
