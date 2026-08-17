@@ -17,7 +17,7 @@ import {
   type MasterParty, type MasterPartyItem,
 } from "@/core/platform/liveMasters";
 import {
-  insertMaster, runMastersSync, setMasterActive, updateMaster,
+  fetchMyMasterManagerTypes, insertMaster, runMastersSync, setMasterActive, updateMaster,
   type CentralMasterType,
 } from "@/core/platform/masterWrites";
 
@@ -180,7 +180,7 @@ const itemTypeCol = <T extends { itemType: ItemType | null }>(): MasterColumn<T>
 });
 
 export default function Masters() {
-  const { isAdmin } = useSession();
+  const { isAdmin, user } = useSession();
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabKey>("company");
   const [syncing, setSyncing] = useState(false);
@@ -207,6 +207,22 @@ export default function Masters() {
   const partyItems = useQuery({ queryKey: ["masters", "party_items"], queryFn: fetchMasterPartyItems, ...opts,
     enabled: enabled("party_item") });
   const runs = useQuery({ queryKey: ["masters", "sync-runs"], queryFn: () => fetchMasterSyncRuns(1), staleTime: 60_000 });
+
+  /**
+   * Master managers manage their own master type here, not only admins.
+   *
+   * The RLS on every mst_* table has always read
+   * `is_admin(uid) OR mst_is_master_manager('<type>', uid)` — this screen was
+   * simply stricter than the database, so a manager could approve a request for
+   * their master type but not touch the master itself.
+   */
+  const myManaged = useQuery({
+    queryKey: ["masters", "my-manager-types", user?.id],
+    queryFn: () => fetchMyMasterManagerTypes(user?.id ?? null),
+    staleTime: 5 * 60 * 1000,
+  });
+  const mayManage = (type: CentralMasterType) =>
+    isAdmin || (myManaged.data ?? []).includes(type);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["masters"] });
 
@@ -344,7 +360,7 @@ export default function Masters() {
         <MasterCrud<MasterCompany>
           singular="Company"
           rows={companies.data ?? []}
-          canManage={isAdmin}
+          canManage={mayManage("company")}
           searchText={(r) => `${r.alias ?? ""} ${r.name} ${r.location ?? ""} ${r.gstin ?? ""}`}
           columns={[
             /* The Tally book name first — this tab is where an admin asks
@@ -389,7 +405,7 @@ export default function Masters() {
         <MasterCrud<MasterParty>
           singular={tab === "customer" ? "Customer" : "Vendor"}
           rows={(parties.data ?? []).filter((p) => (tab === "customer" ? p.isCustomer : p.isVendor))}
-          canManage={isAdmin}
+          canManage={mayManage("party")}
           searchText={(r) => `${r.name} ${r.code ?? ""} ${r.gstin ?? ""} ${r.subGroup ?? ""} ${r.location ?? ""}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
@@ -428,6 +444,40 @@ export default function Masters() {
             modulesField(),
             sortField,
           ]}
+          /**
+           * ⚠ A SEPARATE FORM FOR CREATING, and it is not a nicety.
+           *
+           *   The edit form locks Name and GSTIN because Tally owns them on a
+           *   synced row and the next pull would overwrite anything typed here.
+           *   That reasoning does not hold for a row being created: it has no
+           *   Tally record behind it yet, so there is nothing to be overwritten
+           *   BY. Without this the Add dialog opened with a greyed-out, required
+           *   Name — a form that could not be filled in and could not be
+           *   submitted, which is how "you can add a customer here" was true of
+           *   the button and false of the screen.
+           *
+           *   A row created here is born source='portal'. If the same firm later
+           *   turns up in Tally you get two rows, and Reconcile is what merges
+           *   them — keeping this row's id, so orders are unaffected.
+           */
+          createFields={[
+            { key: "name", label: "Name", type: "text", required: true,
+              hint: "If this firm is already in Tally, prefer waiting for the sync — a name typed here becomes a second row until someone reconciles the two." },
+            { key: "gstin", label: "GSTIN", type: "text" },
+            { key: "code", label: "Code", type: "text", placeholder: "your own reference" },
+            ...(tab === "customer"
+              ? [{ key: "location", label: "Delivery location", type: "text" as const,
+                   hint: "Where the CUSTOMER takes delivery — not one of our sites." }]
+              : []),
+            { key: "contactName", label: "Contact person", type: "text" },
+            { key: "phone", label: "Phone", type: "text" },
+            { key: "email", label: "Email", type: "text" },
+            /* ⚠ See the note on the item form: an untick here is a row that
+               saves and then appears nowhere. */
+            { ...modulesField(), required: true,
+              hint: `Tick where this should appear. Leave it empty and the ${tab} saves but shows up in NO module's dropdown — it will look like the save failed.` },
+            sortField,
+          ]}
           emptyValues={{
             name: "", gstin: "", creditPeriod: "", code: "", location: "",
             contactName: "", phone: "", email: "", modules: "", sortOrder: "0",
@@ -439,6 +489,11 @@ export default function Masters() {
           })}
           onSubmit={submitFor("party", (v) => ({
             name: v.name.trim(), code: v.code.trim() || null,
+            /* Sent on every save, kept only where it is ours: updateMaster drops
+               Tally-owned columns when the row's source is 'tally', so this
+               reaches the database on a portal row being created and is
+               discarded on an edit to a synced one. */
+            gstin: v.gstin.trim() || null,
             // Uppercased, as the Dispatch master has always stored it.
             location: v.location.trim().toUpperCase() || null,
             contact_name: v.contactName.trim() || null, phone: v.phone.trim() || null,
@@ -454,7 +509,7 @@ export default function Masters() {
         <MasterCrud<MasterItem>
           singular="Item"
           rows={items.data ?? []}
-          canManage={isAdmin}
+          canManage={mayManage("item")}
           searchText={(r) => `${r.name} ${r.code ?? ""} ${r.hsnCode ?? ""} ${itemTypeLabel(r.itemType)}`}
           columns={[
             { header: "Item", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
@@ -497,6 +552,36 @@ export default function Masters() {
             modulesField(),
             sortField,
           ]}
+          /**
+           * Create-mode: everything Tally would own is EDITABLE here, because a
+           * row being created has no Tally record behind it to be overwritten by.
+           *
+           * Company matters more on items than on parties: an item cannot move
+           * between Tally companies, so choosing the wrong one at creation cannot
+           * be corrected later by editing — it would have to be deactivated and
+           * re-added. Hence required, rather than a quietly-null default.
+           */
+          createFields={[
+            { key: "name", label: "Item name", type: "text", required: true,
+              hint: "If Tally already stocks this item, prefer waiting for the sync — a name typed here becomes a second row until someone reconciles the two." },
+            { key: "companyId", label: "Company", type: "select", required: true, options: companyOptions,
+              hint: "An item cannot move between Tally companies later — this one is worth getting right now." },
+            { key: "groupId", label: "Item group", type: "select", options: groupOptions },
+            { key: "unitId", label: "Unit", type: "select", options: unitOptions,
+              hint: "Read onto every order line. Leave it blank and the gate pass prints a quantity with no unit." },
+            { key: "itemType", label: "Item type", type: "select",
+              options: ITEM_TYPES.map((t) => ({ value: t.value, label: t.label })) },
+            { key: "code", label: "Code", type: "text" },
+            { key: "hsnCode", label: "HSN code", type: "text" },
+            /* ⚠ TICK A MODULE OR THE ROW ARRIVES INVISIBLE. The default is an
+               empty list, and every module's picker filters on it — so the save
+               succeeds, the toast says saved, and the item never appears where
+               it was wanted. That exact failure stranded a customer earlier
+               today, so on the CREATE form it is said plainly. */
+            { ...modulesField(), required: true,
+              hint: "Tick where this should appear. Leave it empty and the item saves but shows up in NO module's dropdown — it will look like the save failed." },
+            sortField,
+          ]}
           emptyValues={{
             name: "", companyId: "", groupId: "", unitId: "", itemType: "", code: "", hsnCode: "", modules: "", sortOrder: "0",
           }}
@@ -521,7 +606,7 @@ export default function Masters() {
         <MasterCrud<MasterPartyItem>
           singular="Customer item"
           rows={partyItems.data ?? []}
-          canManage={isAdmin}
+          canManage={mayManage("party_item")}
           // Adding a pair by hand is deliberately off: this master is EVIDENCE,
           // built from what was actually sold. A hand-added row would assert a
           // customer buys something the sales register has never seen.
@@ -582,7 +667,7 @@ export default function Masters() {
         <MasterCrud<MasterLookup>
           singular={tab === "item_group" ? "Item group" : "Unit"}
           rows={(tab === "item_group" ? groups.data : units.data) ?? []}
-          canManage={isAdmin}
+          canManage={mayManage(tab === "item_group" ? "item_group" : "unit")}
           searchText={(r) => `${r.name} ${r.companyId ? companyLabel.get(r.companyId) ?? "" : ""}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
@@ -633,7 +718,7 @@ export default function Masters() {
         <MasterCrud<MasterLocation>
           singular="Location"
           rows={locations.data ?? []}
-          canManage={isAdmin}
+          canManage={mayManage("location")}
           searchText={(r) => `${r.name} ${companyLabel.get(r.companyId) ?? ""}`}
           columns={[
             { header: "Location", render: (r) => <span className="font-medium text-navy">{r.name}</span> },

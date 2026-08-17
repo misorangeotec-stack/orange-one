@@ -25,6 +25,30 @@ const db = supabase as any;
 export type CentralMasterType =
   | "company" | "party" | "item" | "item_group" | "unit" | "location" | "party_item";
 
+/**
+ * The master types this user may manage directly, beyond being an admin.
+ *
+ * ⚠ THIS IS A MIRROR OF RLS, NOT THE RULE ITSELF. The rule lives in the
+ *   `mst_*_write` policies, each of which is
+ *   `is_admin(uid) OR mst_is_master_manager('<type>', uid)`. Reading the table
+ *   here only decides whether to SHOW the Add and Edit controls; a request that
+ *   slipped past the UI would still be refused by the database. Keeping the two
+ *   in step is the point — a screen that offers a button the server will reject
+ *   is worse than one that hides it.
+ *
+ * mst_master_managers is world-readable to signed-in users (its own SELECT
+ * policy is `true`), so this needs no elevated call.
+ */
+export async function fetchMyMasterManagerTypes(userId: string | null): Promise<CentralMasterType[]> {
+  if (!userId) return [];
+  const { data, error } = await db
+    .from("mst_master_managers")
+    .select("master_type")
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as { master_type: CentralMasterType }[]).map((r) => r.master_type);
+}
+
 export const MASTER_TABLE: Record<CentralMasterType, string> = {
   company: "mst_companies",
   party: "mst_parties",
