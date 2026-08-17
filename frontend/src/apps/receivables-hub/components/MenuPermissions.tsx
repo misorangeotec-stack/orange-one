@@ -9,6 +9,7 @@ import {
   PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@hub/lib/menus";
 import ReportAccessTree from "@hub/components/ReportAccessTree";
+import ReportEmailSettings from "@hub/components/ReportEmailSettings";
 import { useDirectory } from "@/core/platform/store";
 import type { Profile } from "@/core/platform/types";
 
@@ -143,7 +144,13 @@ export function MenuPermissions() {
           Admins always see everything.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-5">
+        {/* GLOBAL, not per-user, and above the picker so it is never mistaken for part of the
+            selected user's settings. Same screen because "who may open this report" and "may this
+            report be emailed at all" are the same question one step apart — and it stays useful
+            when there are no non-admin users to list, which is why it sits outside the branch. */}
+        <ReportEmailSettings />
+
         {users.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No non-admin users have access to this dashboard yet. Grant a user the Outstanding

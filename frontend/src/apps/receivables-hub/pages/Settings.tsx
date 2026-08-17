@@ -42,6 +42,11 @@ export default function Settings() {
           {/* "Menu Permissions" until per-report grants shipped — it now sets menus AND the
               individual reports a user may open, so the narrower name had stopped being true. */}
           {isAdmin && <TabsTrigger value="menu">Permissions</TabsTrigger>}
+          {/* NO "Notifications" tab. Emailing is a per-REPORT switch and lives inside Permissions
+              beside the per-report access grants, so an admin sets both in one place — see
+              components/ReportEmailSettings.tsx. A module-wide tab briefly existed here and was
+              removed on 14-Aug-2026: one switch over a catalogue of ~30 reports would arm every
+              future report the day its send path landed. */}
         </TabsList>
 
         {/* ── Masters (admins + anyone granted full Settings access) ─────────── */}

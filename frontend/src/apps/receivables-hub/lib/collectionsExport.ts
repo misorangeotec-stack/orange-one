@@ -31,7 +31,9 @@ import {
 import {
   buildCollectionsPdf, pdfFileName,
   type PdfKpi, type PdfSalespersonBlock, type PdfCustomerRow, type PdfSaleTypeStat,
+  type PdfBillRow,
 } from "./exportCollectionsPdf";
+import { saleTypeLabel } from "./salesReport";
 import { formatDateDMY, fmtINRMoney } from "./utils";
 import type { CustomerDetail } from "./types";
 
@@ -68,8 +70,17 @@ export interface CollectionsExportContext {
   meta: ZCExportMeta;
   /** The columns ticked on screen — the roll-up sheet stays WYSIWYG. */
   columns: ZCColumn[];
-  /** The report's own KPI cards, already projected to plain data. */
+  /** The report's own KPI cards for the whole report, already projected to plain data. */
   kpis: PdfKpi[];
+  /**
+   * The same cards recomputed for one salesperson's rows.
+   *
+   * Supplied by the page, because the card set, their wording and their denominators are defined
+   * there and must not be reimplemented here — a second copy would drift the moment a card is
+   * reworded. Passing the name (not just the rows) lets the page scope the eligible POOL too, so
+   * "of N who owe money" counts that rep's debtors rather than the company's.
+   */
+  kpisFor: (rows: ZCRow[], salesperson: string) => PdfKpi[];
   /** Set when a KPI lens is active — see `kpiScopeNote` on the PDF input. */
   kpiScopeNote?: string;
   filterSummary: string[];
@@ -92,16 +103,24 @@ export interface SalespersonOption {
  * "A, B" is one bucket on screen but two people to send a file to, so the picker lists A and B
  * separately and each of their counts includes the shared customer.
  */
+/**
+ * The INDIVIDUAL salesperson names on a customer, with the "Others" fallback used everywhere.
+ *
+ * One definition, because three different places need to agree on what "this rep's customers"
+ * means: the picker, the row split, and the eligible pool behind the scoped KPI cards. If they
+ * disagreed, a rep's card denominator would be drawn from a different set than their table.
+ */
+export function salespersonNamesOf(
+  c: { salesPersons?: string[] | null; salesPerson?: string | null },
+): string[] {
+  const list = c.salesPersons?.length ? c.salesPersons : [c.salesPerson || "Others"];
+  return list.map((n) => n.trim() || "Others");
+}
+
 export function salespersonOptions(rows: ZCRow[]): SalespersonOption[] {
   const counts = new Map<string, number>();
   for (const r of rows) {
-    const names = r.customer.salesPersons?.length
-      ? r.customer.salesPersons
-      : [r.customer.salesPerson || "Others"];
-    for (const raw of names) {
-      const n = raw.trim() || "Others";
-      counts.set(n, (counts.get(n) ?? 0) + 1);
-    }
+    for (const n of salespersonNamesOf(r.customer)) counts.set(n, (counts.get(n) ?? 0) + 1);
   }
   return [...counts.entries()]
     .map(([name, customers]) => ({ name, customers }))
@@ -110,12 +129,7 @@ export function salespersonOptions(rows: ZCRow[]): SalespersonOption[] {
 
 /** The rows one salesperson owns — by membership, so shared customers are in both reps' files. */
 export function rowsForSalesperson(rows: ZCRow[], name: string): ZCRow[] {
-  return rows.filter((r) => {
-    const list = r.customer.salesPersons?.length
-      ? r.customer.salesPersons
-      : [r.customer.salesPerson || "Others"];
-    return list.some((n) => (n.trim() || "Others") === name);
-  });
+  return rows.filter((r) => salespersonNamesOf(r.customer).includes(name));
 }
 
 // ── Formatting shared with the roll-up sheet ────────────────────────────────────────
@@ -135,7 +149,10 @@ function lastReceiptText(ordinal: number): string {
  * list, and appending it to every name made the widest column twice as wide and pushed real names
  * into an ellipsis. It survives per bill on the workbook's Overdue Bill Details tab.
  */
-function customerRowsOf(nodes: GroupNode<ZCMetrics>[]): PdfCustomerRow[] {
+function customerRowsOf(
+  nodes: GroupNode<ZCMetrics>[],
+  bills: (node: GroupNode<ZCMetrics>) => PdfBillRow[],
+): PdfCustomerRow[] {
   return nodes.map((n) => ({
     name: n.label,
     outstanding: n.metrics.outstanding,
@@ -144,6 +161,41 @@ function customerRowsOf(nodes: GroupNode<ZCMetrics>[]): PdfCustomerRow[] {
     lastReceiptAmount: n.metrics.lastReceiptAmount ? fmtINRMoney(n.metrics.lastReceiptAmount) : "-",
     neverPaid: n.metrics.neverPaid > 0,
     over180: n.metrics.over180,
+    bills: bills(n),
+  }));
+}
+
+/**
+ * The open past-due bills behind one customer's Overdue figure.
+ *
+ * Built with the SAME `buildDrillRows` the on-screen popup and the workbook's bill tab use, which
+ * is what keeps three renderings of the same money in agreement. That includes the negative On
+ * Account line: the bills are gross, the report's Overdue is net, and without that line a
+ * customer's page sums to more than the figure that sent the reader to it.
+ */
+function billsFor(
+  node: GroupNode<ZCMetrics>,
+  rowsById: ReadonlyMap<string, ZCRow>,
+  ctx: CollectionsExportContext,
+): PdfBillRow[] {
+  const { rows } = buildDrillRows(node.ids, rowsById, ctx.customerDetail, "overdue");
+  return rows.map((r) => ({
+    // Just "On Account", not the workbook's fuller "On Account (paid, tagged to no bill)": that
+    // label is 36 characters and would be ellipsized into meaninglessness in a Bill No column
+    // sized for bill numbers. The PDF explains it in a line under the table instead.
+    number: r.isOnAccount ? "On Account" : r.number,
+    date: r.date ? (formatDateDMY(r.date) || "") : "",
+    // The raw ISO date alongside the printed one, purely so the renderer can order the page by
+    // bill date. `formatDateDMY` is one-way for sorting purposes: it falls back to echoing an
+    // unrecognised input verbatim, so a renderer parsing dd-mm-yyyy back out would be guessing.
+    sortDate: r.date || "",
+    dueDate: r.dueDate ? (formatDateDMY(r.dueDate) || "") : "",
+    overdueDays: r.isOnAccount ? null : r.overdueDays,
+    saleType: r.isOnAccount ? "" : saleTypeLabel(r.voucherType),
+    amount: r.amount,
+    received: r.received,
+    pending: r.pending,
+    isOnAccount: !!r.isOnAccount,
   }));
 }
 
@@ -204,7 +256,11 @@ export function buildXlsx(ctx: CollectionsExportContext, scope: ExportScope): { 
     description:
       scope.kind === "all"
         ? ctx.meta.description
-        : `${ctx.meta.description} Salesperson: ${scope.name}. ${OVERLAP_NOTE}`,
+        // The overlap caveat is NOT printed on the artefact. It answers a question nobody reading
+        // one rep's file is asking ("why don't these add up to the consolidated report?"), and on
+        // the page it just reads as a warning about the file you are holding. It is said where it
+        // is actionable instead: in the picker, before the files are generated.
+        : `${ctx.meta.description} Salesperson: ${scope.name}.`,
   };
 
   return {
@@ -230,6 +286,9 @@ export async function buildPdf(
     stillBuying: m.stillBuying,
   });
 
+  const rowsById = new Map(rows.map((r) => [r.customer.id, r]));
+  const bills = (node: GroupNode<ZCMetrics>) => billsFor(node, rowsById, ctx);
+
   let blocks: PdfSalespersonBlock[];
   let total: ReturnType<typeof totalsOf>;
 
@@ -242,7 +301,7 @@ export async function buildPdf(
       overdue: root.metrics.overdue,
       maxOverdueDays: root.metrics.maxOverdueDays,
       neverPaid: root.metrics.neverPaid,
-      rows: customerRowsOf(root.children),
+      rows: customerRowsOf(root.children, bills),
     }));
     total = totalsOf(tree.total);
   } else {
@@ -257,28 +316,30 @@ export async function buildPdf(
       overdue: total.overdue,
       maxOverdueDays: tree.total.maxOverdueDays,
       neverPaid: tree.total.neverPaid,
-      rows: customerRowsOf(tree.roots),
+      rows: customerRowsOf(tree.roots, bills),
     }];
   }
 
   const blob = await buildCollectionsPdf({
+    layout: scope.kind === "all" ? "book" : "salesperson",
     title: ctx.meta.title,
-    subtitle:
-      scope.kind === "all"
-        ? ctx.meta.description
-        : `${ctx.meta.description} Salesperson: ${scope.name}.`,
+    subtitle: ctx.meta.description,
+    // On a rep extract the header line names them; the league table that used to do it is gone,
+    // because a "By salesperson" table with one row is scaffolding, not information.
+    scopeName: scope.kind === "all" ? undefined : scope.name,
     asOfDate: ctx.meta.asOfDate,
     periodLabel: ctx.meta.periodLabel,
     filterSummary: ctx.filterSummary,
-    kpis: ctx.kpis,
+    // Scoped cards for a scoped document. See `kpisFor`.
+    kpis: scope.kind === "all" ? ctx.kpis : ctx.kpisFor(rows, scope.name),
     saleTypes: saleTypeStatsOf(rows, ctx),
     kpiScopeNote: ctx.kpiScopeNote,
-    // The cards may only link to the appendix lists when they describe the same customers: the
-    // whole book, with no KPI lens narrowing the tables underneath them. See `cardsMatchRows`.
-    cardsMatchRows: scope.kind === "all" && !ctx.kpiScopeNote,
+    // The cards may link to the appendix lists whenever they describe the same customers this
+    // document lists. That now holds for a rep extract too, since their cards are rebuilt from
+    // their own rows; a KPI lens is still the one case where the two populations differ.
+    cardsMatchRows: !ctx.kpiScopeNote,
     salespersons: blocks,
     total,
-    overlapNote: scope.kind === "all" ? undefined : OVERLAP_NOTE,
   });
 
   return { blob, filename: pdfFileName(ctx.meta.title, ctx.meta.asOfDate, scopeSuffix(scope)) };

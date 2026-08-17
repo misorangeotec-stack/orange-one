@@ -482,11 +482,27 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
   for (const key of orderedKeys) {
     const list = blocks.get(key) ?? [];
     const [sp, customer, company, location] = key.split(SEP);
-    // Oldest debt first inside a block; the On Account credit sinks to the bottom, where it reads
-    // as the deduction that reconciles the block rather than as another bill.
+    /**
+     * BILL DATE, OLDEST FIRST. The On Account credit sinks to the bottom, where it reads as the
+     * deduction that reconciles the block rather than as another bill.
+     *
+     * This used to rank on Overdue Days, which LOOKS like the same order and is not: due days are
+     * measured from the DUE date, so a bill sold in March on 90-day terms sits below one sold in
+     * June on 7-day terms. The block then reads as an unordered pile, which is exactly how it was
+     * reported. Bill date is the sequence a ledger is actually worked in.
+     *
+     * `date` is the raw ISO `yyyy-mm-dd` off the invoice row (never the dd-mm-yyyy the cell
+     * displays), so a plain string comparison is a date comparison. An undated row sinks rather
+     * than leading the block on an empty string.
+     */
     const sorted = [...list].sort((a, b) => {
       if (!!a.isOnAccount !== !!b.isOnAccount) return a.isOnAccount ? 1 : -1;
-      return b.overdueDays - a.overdueDays;
+      if (a.date !== b.date) {
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return a.date < b.date ? -1 : 1;
+      }
+      return b.overdueDays - a.overdueDays || a.number.localeCompare(b.number);
     });
 
     for (const r of sorted) {

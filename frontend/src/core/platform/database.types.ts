@@ -7170,6 +7170,297 @@ export type Database = {
         }
         Relationships: []
       }
+      // Hand-added for migration 20260903120400 (applied). When a report goes out and who to.
+      // NOTHING READS EITHER TABLE YET — there is no scheduler; see the migration header.
+      report_email_schedule: {
+        Row: {
+          day_of_month: number | null
+          day_of_week: number | null
+          frequency: string
+          hour_ist: number
+          minute_ist: number
+          report_key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          day_of_month?: number | null
+          day_of_week?: number | null
+          frequency?: string
+          hour_ist?: number
+          minute_ist?: number
+          report_key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          day_of_month?: number | null
+          day_of_week?: number | null
+          frequency?: string
+          hour_ist?: number
+          minute_ist?: number
+          report_key?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      report_email_recipients: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          email: string | null
+          enabled: boolean
+          id: string
+          name: string | null
+          report_key: string
+          salesperson: string | null
+          scope: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          enabled?: boolean
+          id?: string
+          name?: string | null
+          report_key: string
+          salesperson?: string | null
+          scope: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          enabled?: boolean
+          id?: string
+          name?: string | null
+          report_key?: string
+          salesperson?: string | null
+          scope?: string
+        }
+        Relationships: []
+      }
+      // Hand-added for migration 20260903120300 (applied). One row per report that may be
+      // emailed; report_key is the reportCatalog id. No row means off.
+      report_email_settings: {
+        Row: {
+          enabled: boolean
+          report_key: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          report_key: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          report_key?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      master_report_modules: {
+        Row: {
+          activity_table: string | null
+          actor_column: string | null
+          app_id: string
+          closed_statuses: string[]
+          created_at: string
+          created_column: string
+          detail_path: string | null
+          due_column: string | null
+          enabled: boolean
+          extra_filter: string | null
+          system_filter: string | null
+          usage_from_visits: boolean
+          head_table: string
+          label: string
+          sort_order: number
+          status_column: string | null
+          updated_at: string
+        }
+        Insert: {
+          activity_table?: string | null
+          actor_column?: string | null
+          app_id: string
+          closed_statuses?: string[]
+          created_at?: string
+          created_column?: string
+          detail_path?: string | null
+          due_column?: string | null
+          enabled?: boolean
+          extra_filter?: string | null
+          system_filter?: string | null
+          usage_from_visits?: boolean
+          head_table: string
+          label: string
+          sort_order?: number
+          status_column?: string | null
+          updated_at?: string
+        }
+        Update: {
+          activity_table?: string | null
+          actor_column?: string | null
+          app_id?: string
+          closed_statuses?: string[]
+          created_at?: string
+          created_column?: string
+          detail_path?: string | null
+          due_column?: string | null
+          enabled?: boolean
+          extra_filter?: string | null
+          system_filter?: string | null
+          usage_from_visits?: boolean
+          head_table?: string
+          label?: string
+          sort_order?: number
+          status_column?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      master_report_recipients: {
+        Row: {
+          user_id: string | null
+          created_at: string
+          email: string
+          enabled: boolean
+          id: string
+          name: string | null
+        }
+        Insert: {
+          user_id?: string | null
+          created_at?: string
+          email: string
+          enabled?: boolean
+          id?: string
+          name?: string | null
+        }
+        Update: {
+          user_id?: string | null
+          created_at?: string
+          email?: string
+          enabled?: boolean
+          id?: string
+          name?: string | null
+        }
+        Relationships: []
+      }
+      master_report_send_log: {
+        Row: {
+          recipient_count: number
+          sent_at: string
+          sent_for_date: string
+        }
+        Insert: {
+          recipient_count?: number
+          sent_at?: string
+          sent_for_date: string
+        }
+        Update: {
+          recipient_count?: number
+          sent_at?: string
+          sent_for_date?: string
+        }
+        Relationships: []
+      }
+      // Hand-added (20260830121000 / 20260831120000). Singleton config for the
+      // personal daily snapshot mail; writes go through set_user_snapshot_settings.
+      user_snapshot_settings: {
+        Row: {
+          enabled: boolean
+          id: boolean
+          include_users: string[] | null
+          send_hour_ist: number
+          skip_when_empty: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          id?: boolean
+          include_users?: string[] | null
+          send_hour_ist?: number
+          skip_when_empty?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          id?: boolean
+          include_users?: string[] | null
+          send_hour_ist?: number
+          skip_when_empty?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      master_report_settings: {
+        Row: {
+          dormant_after_days: number
+          enabled: boolean
+          id: boolean
+          include_modules: string[] | null
+          send_hour_ist: number
+          updated_at: string
+          updated_by: string | null
+          visits_since: string | null
+        }
+        Insert: {
+          dormant_after_days?: number
+          enabled?: boolean
+          id?: boolean
+          include_modules?: string[] | null
+          send_hour_ist?: number
+          updated_at?: string
+          updated_by?: string | null
+          visits_since?: string | null
+        }
+        Update: {
+          dormant_after_days?: number
+          enabled?: boolean
+          id?: boolean
+          include_modules?: string[] | null
+          send_hour_ist?: number
+          updated_at?: string
+          updated_by?: string | null
+          visits_since?: string | null
+        }
+        Relationships: []
+      }
+      module_visits: {
+        Row: {
+          app_id: string
+          first_at: string
+          hits: number
+          last_at: string
+          user_id: string
+          visited_on: string
+        }
+        Insert: {
+          app_id: string
+          first_at?: string
+          hits?: number
+          last_at?: string
+          user_id: string
+          visited_on: string
+        }
+        Update: {
+          app_id?: string
+          first_at?: string
+          hits?: number
+          last_at?: string
+          user_id?: string
+          visited_on?: string
+        }
+        Relationships: []
+      }
       workspace_settings: {
         Row: {
           id: boolean
@@ -7210,6 +7501,79 @@ export type Database = {
       }
       set_receivables_report_prefs: {
         Args: { p_columns?: string[] | null; p_report_id: string }
+        Returns: undefined
+      }
+      // Hand-added for migrations 20260829120000 and 20260903120300, both applied. Regenerate
+      // this file (supabase gen types) at the next convenient point and these three entries will
+      // simply be reproduced.
+      //
+      // p_report_key is not optional: emailing is switched on per report, and the 6-argument form
+      // without it was dropped precisely so a caller cannot fall back to an ungated overload.
+      queue_report_email: {
+        Args: {
+          p_attachments?: Json
+          p_body: string
+          p_headline: string
+          p_report_key: string
+          p_subject: string
+          p_to_email: string
+          p_to_name?: string | null
+        }
+        Returns: string
+      }
+      report_email_enabled: {
+        Args: { p_report_key: string }
+        Returns: boolean
+      }
+      set_report_email_enabled: {
+        Args: { p_enabled: boolean; p_report_key: string }
+        Returns: undefined
+      }
+      set_report_email_schedule: {
+        Args: {
+          p_day_of_month?: number | null
+          p_day_of_week?: number | null
+          p_frequency: string
+          p_hour_ist?: number
+          p_minute_ist?: number
+          p_report_key: string
+        }
+        Returns: undefined
+      }
+      set_report_email_recipients: {
+        Args: { p_recipients?: Json; p_report_key: string }
+        Returns: number
+      }
+      master_report_snapshot: {
+        Args: { p_days?: number }
+        Returns: Json
+      }
+      master_report_access_matrix: {
+        Args: Record<PropertyKey, never>
+        Returns: Json
+      }
+      queue_master_report_email: {
+        Args: {
+          p_attachments?: Json
+          p_body?: string | null
+          p_subject?: string | null
+          p_to_email: string
+          p_to_name?: string | null
+        }
+        Returns: string
+      }
+      set_master_report_settings: {
+        Args: {
+          p_clear_include?: boolean
+          p_dormant_after_days?: number | null
+          p_enabled?: boolean | null
+          p_include_modules?: string[] | null
+          p_send_hour_ist?: number | null
+        }
+        Returns: undefined
+      }
+      set_master_report_recipients: {
+        Args: { p_recipients: Json }
         Returns: undefined
       }
       app_mobile_has_access: { Args: never; Returns: boolean }
@@ -8516,7 +8880,27 @@ export type Database = {
         Args: { p_new_due_date: string; p_task_id: string }
         Returns: string
       }
+      master_report_apply_schedule: { Args: never; Returns: string }
+      master_report_schedule_info: { Args: never; Returns: Json }
       touch_last_active: { Args: never; Returns: undefined }
+      touch_module_visit: { Args: { p_app_id: string }; Returns: undefined }
+      // Hand-added (20260831120000) — the personal daily snapshot.
+      user_snapshot: { Args: { p_user_id: string }; Returns: Json }
+      user_snapshot_schedule_info: { Args: never; Returns: Json }
+      set_user_snapshot_settings: {
+        Args: {
+          p_enabled?: boolean | null
+          p_send_hour_ist?: number | null
+          p_skip_when_empty?: boolean | null
+          p_include_users?: string[] | null
+          p_clear_include?: boolean | null
+        }
+        Returns: undefined
+      }
+      queue_user_snapshot_email: {
+        Args: { p_user_id: string; p_to_email?: string | null }
+        Returns: number
+      }
     }
     Enums: {
       activity_type:

@@ -121,6 +121,23 @@ export interface ReportEntry {
   status: ReportStatus;
   /** Extra words that should match in search but appear in neither title nor purpose. */
   keywords?: string[];
+  /**
+   * This report can be MAILED OUT, not just opened.
+   *
+   * It means the report has an Email action wired to `queue_report_email` AND that what it mails
+   * has been reviewed. Only reports marked here get a switch on the admin screen, because a switch
+   * over a report nobody has checked the output of is worse than no switch: an admin turns it on
+   * and the first person to see what goes out is the recipient.
+   *
+   * ⚠ THE COLLECTION REPORTS SHARE ONE SCREEN AND ONE EXPORT MENU, SO ALL THREE *COULD* MAIL.
+   *   Only `zero-collections` is marked, deliberately: it is the one whose PDF and workbook have
+   *   been gone through page by page. `low-collections` and `dormant-debtors` reach the same code
+   *   and would very likely be fine, but "very likely fine" is not a thing to discover in
+   *   somebody's inbox. Mark them when their output has actually been read.
+   *
+   * Set it in the SAME commit that wires the report's Email action, never ahead of it.
+   */
+  emailable?: boolean;
   /** How this report honours the viewer's salesperson scope. Required — see ReportScoping. */
   scoping: ReportScoping;
   /**
@@ -505,6 +522,7 @@ export const REPORTS: ReportEntry[] = [
   // ── Collections ────────────────────────────────────────────────────────────
   {
     id: "zero-collections",
+    emailable: true,
     scoping: "party-client",
     title: "Customers with Zero Collections",
     purpose: "Customers who owe money and paid nothing in the period, flagged when we are still billing them.",

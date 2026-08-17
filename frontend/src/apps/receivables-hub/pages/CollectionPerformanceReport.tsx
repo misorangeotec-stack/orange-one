@@ -57,7 +57,7 @@ import {
   type ZCDim, type ZCFocus, type ZCMetrics, type ZCRow,
 } from "@hub/lib/collections";
 import { useReportColumnPrefs, REPORT_PREF_IDS } from "@hub/lib/reportPrefs";
-import type { CollectionsExportContext } from "@hub/lib/collectionsExport";
+import { salespersonNamesOf, type CollectionsExportContext } from "@hub/lib/collectionsExport";
 import { useHubMenuAccess } from "@hub/lib/menus";
 import { ExportMenu } from "./collections/ExportMenu";
 import type { ConsolidatedCustomer, SaleType } from "@hub/lib/types";
@@ -193,6 +193,17 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   const isDormantMode = mode === "dormant";
   const setThreshold = (t: number) =>
     setParams((p) => { p.set("below", String(t)); return p; }, { replace: true });
+
+  /**
+   * Which catalogue report this screen currently IS (lib/reportCatalog.ts).
+   *
+   * One component serves three catalogue entries, so the id has to be derived from `mode` rather
+   * than read off the route. It is what gates emailing — `report_email_settings` is keyed on it,
+   * the same id that decides who may open the report — so the three are switched on separately.
+   * Below-30% is `low-collections`; the title says "Below N%" because the threshold is tunable,
+   * but the catalogue entry is the one fixed thing about it.
+   */
+  const reportKey = isDormantMode ? "dormant-debtors" : mode === "zero" ? "zero-collections" : "low-collections";
 
   const title = isDormantMode
     ? "Customers with Dues but No Sales"
@@ -758,28 +769,34 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // the active focus, clicking "Still Buying" (94) would silently drop "Never Paid" from 38
   // to "never-paid AND still-buying": the number printed on a card would stop matching what
   // clicking it shows, and the second click of a combination would be unreadable.
-  const allTotals = useMemo(() => totalsOf(rows, target), [rows, target]);
-
-  const kpis = useMemo(() => {
-    const t = allTotals;
-    const eligibleOutstanding = sumOutstanding(eligible);
-    const neverPaidOutstanding = rows
+  /**
+   * The KPI numbers for an arbitrary row set.
+   *
+   * A FUNCTION rather than a memo body, because the per-salesperson PDF has to state that
+   * salesperson's position, not the company's. Handing a rep a file whose cards read "219
+   * customers, ₹21.06 Cr" above a table of their own 59 is not a scoped report, it is a
+   * mislabelled one. The screen still calls this once with the full row set (`allKpis`).
+   */
+  const computeKpis = useCallback((src: ZCRow[], pool: ConsolidatedCustomer[]) => {
+    const t = totalsOf(src, target);
+    const eligibleOutstanding = sumOutstanding(pool);
+    const neverPaidOutstanding = src
       .filter((r) => r.facts.lastReceiptDate === null)
       .reduce((s, r) => s + r.customer.outstanding, 0);
     // The dormant report's damning subset: stopped buying AND stopped paying. The money on
     // these is what "dead and stuck" actually costs.
-    const paidNothingOutstanding = rows
+    const paidNothingOutstanding = src
       .filter((r) => r.facts.collected < ZERO_EPS)
       .reduce((s, r) => s + r.customer.outstanding, 0);
-    const wentQuietOutstanding = rows
+    const wentQuietOutstanding = src
       .filter((r) => r.facts.salesInPrior > 0.5 && r.facts.salesInWindow <= 0.5)
       .reduce((s, r) => s + r.customer.outstanding, 0);
-    const neverSoldOutstanding = rows
+    const neverSoldOutstanding = src
       .filter((r) => r.facts.lastSaleMonth === null)
       .reduce((s, r) => s + r.customer.outstanding, 0);
     return {
-      count: rows.length,
-      eligibleCount: eligible.length,
+      count: src.length,
+      eligibleCount: pool.length,
       outstanding: t.outstanding,
       sharePct: eligibleOutstanding > 0 ? (t.outstanding / eligibleOutstanding) * 100 : 0,
       overdue: t.overdue,
@@ -808,7 +825,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       neverSold: t.neverSold,
       neverSoldOutstanding,
     };
-  }, [allTotals, rows, eligible]);
+  }, [target]);
+
+  /** The screen's numbers: every row in the report, before any lens. See the note above. */
+  const allKpis = useMemo(() => computeKpis(rows, eligible), [computeKpis, rows, eligible]);
 
   /** A KPI card. `focusKey: null` = a summary card describing the WHOLE list (clicking it
    *  clears every lens rather than pretending to filter). `count` drives the inert state. */
@@ -832,6 +852,16 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
 
   const money = (n: number) => fmtINRMoney(n);
 
+  /**
+   * The mode's cards, for a given set of KPI numbers.
+   *
+   * ⚠ THE PARAMETER IS NAMED `kpis` ON PURPOSE. It shadows the outer `allKpis`-fed binding these
+   *   card definitions used to read, so ~400 lines of card copy needed no edit to become
+   *   scope-aware, and there is exactly ONE definition of each card rather than a screen version
+   *   and a drifting PDF version. Call it with `allKpis` for the screen, or with a salesperson's
+   *   own numbers for their extract.
+   */
+  const cardsFor = (kpis: ReturnType<typeof computeKpis>): KpiCard[] => {
   const zeroCards: KpiCard[] = [
     {
       label: "Zero-Collection Customers", icon: UserX, focusKey: null,
@@ -1232,7 +1262,23 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     },
   ];
 
-  const kpiCards = isDormantMode ? dormantCards : mode === "zero" ? zeroCards : thresholdCards;
+    return isDormantMode ? dormantCards : mode === "zero" ? zeroCards : thresholdCards;
+  };
+
+  const kpiCards = cardsFor(allKpis);
+
+  /** A screen card, projected to the plain data the PDF renderer understands. */
+  const toPdfKpi = (c: KpiCard) => ({
+    label: c.label,
+    value: c.value,
+    sub: c.sub,
+    // The card's own alarm styling isn't a field — a card is "bad news" when it is a lens onto a
+    // problem subset rather than a summary of the whole list.
+    alarm: c.focusKey !== null,
+    // The lens key, carried so the PDF can give a card its own appendix page WITHOUT matching on
+    // the printed label. `never` and `over180` get one; the rest are carried and ignored.
+    key: c.focusKey ?? undefined,
+  });
   const kpiGridClass = mode === "threshold"
     ? "grid grid-cols-2 sm:grid-cols-4 gap-2"
     : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2";
@@ -1316,15 +1362,17 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // somebody clicks Export, and building it eagerly would walk every row on each re-render of a
   // page that already re-derives a lot per keystroke.
   /**
-   * Cutting the report up per salesperson is a Reports FULL-ACCESS action.
+   * Handing the book to somebody else is a Reports FULL-ACCESS action.
    *
    * The data itself is already safe either way — `useReceivablesScope` filters at the useAppData
    * chokepoint, so a tagged rep's picker can only ever list their own names. The gate is about
-   * the ACTION rather than the data: splitting the book into per-person files is a sales-management
-   * job, and it is the same permission that will gate mailing those files to the reps.
+   * the ACTION rather than the data: splitting the book into per-person files, and mailing those
+   * files out, are both sales-management jobs. One permission covers both, and
+   * `queue_report_email` re-checks it server-side so it is an access control rather than a hidden
+   * button.
    */
   const { hasFullAccess } = useHubMenuAccess();
-  const canExportPerSalesperson = hasFullAccess("reports");
+  const canDistribute = hasFullAccess("reports");
 
   const exportContext = useCallback(
     (): CollectionsExportContext => ({
@@ -1340,17 +1388,14 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
         asOfDate,
       },
       columns,
-      kpis: kpiCards.map((c) => ({
-        label: c.label,
-        value: c.value,
-        sub: c.sub,
-        // The card's own alarm styling isn't a field — a card is "bad news" when it is a lens
-        // onto a problem subset rather than a summary of the whole list.
-        alarm: c.focusKey !== null,
-        // The lens key, carried so the PDF can give a card its own appendix page WITHOUT matching
-        // on the printed label. `never` and `over180` get one; the rest are carried and ignored.
-        key: c.focusKey ?? undefined,
-      })),
+      kpis: kpiCards.map(toPdfKpi),
+      // Rebuilt per salesperson from the SAME card definitions, so a rep's extract states the
+      // rep's position. Their eligible pool is scoped too, or the "of N who owe money"
+      // denominator would still be the company's.
+      kpisFor: (subset: ZCRow[], salesperson: string) =>
+        cardsFor(
+          computeKpis(subset, eligible.filter((c) => salespersonNamesOf(c).includes(salesperson))),
+        ).map(toPdfKpi),
       // The cards are measured over every row in the report; the table follows the lens. Say so
       // on the page when the two can disagree, since a PDF has no tooltip to explain it.
       kpiScopeNote: focus.size
@@ -1361,7 +1406,10 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       customerDetail,
       treeOpts,
     }),
-    [title, subtitle, viewLabel, groupBy, periodLabel, asOfDate, columns, kpiCards, focus, rows.length, filterSummary, focusedRows, customerDetail, treeOpts],
+    // `kpisFor` closes over cardsFor/computeKpis/eligible, so everything those read has to be
+    // listed or a rep's extract could be built from a previous mode's card set.
+    [title, subtitle, viewLabel, groupBy, periodLabel, asOfDate, columns, kpiCards, focus, rows.length, filterSummary, focusedRows, customerDetail, treeOpts,
+     eligible, computeKpis, mode, isDormantMode, threshold, target],
   );
 
   // ── Drill-through to Customer / Group Detail ──────────────────────────────────────
@@ -1628,7 +1676,8 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
             <ExportMenu
               getContext={exportContext}
               rowCount={focusedRows.length}
-              canExportPerSalesperson={canExportPerSalesperson}
+              canDistribute={canDistribute}
+              reportKey={reportKey}
             />
           </div>
         </div>

@@ -81,6 +81,37 @@ export interface PdfCustomerRow {
   neverPaid?: boolean;
   /** Money on bills more than 180 days past due. Feeds the Over 180 Days appendix. */
   over180?: number;
+  /**
+   * The open past-due bills behind this customer's Overdue, including the On Account credit.
+   *
+   * Present ⇒ the customer's name becomes a link to a page of their own. Absent or empty ⇒ the
+   * name is plain text, which is the honest rendering: a link that opens a page saying nothing
+   * is worse than no link.
+   */
+  bills?: PdfBillRow[];
+}
+
+/** One line on a customer's bill page. `overdueDays` is null on the On Account credit line. */
+export interface PdfBillRow {
+  number: string;
+  date: string;
+  /**
+   * The same bill date as a raw ISO `yyyy-mm-dd`, for ORDERING only, never printed.
+   *
+   * `date` arrives pre-formatted as dd-mm-yyyy because that is what the page shows, and a
+   * formatted date cannot be sorted: string order would put every 01- before every 02- regardless
+   * of year. Optional so a caller that has no ISO form still renders; the page then falls back to
+   * reading the printed date, which works for our own formatter's output and simply keeps the
+   * bill's arrival order for anything it cannot parse.
+   */
+  sortDate?: string;
+  dueDate: string;
+  overdueDays: number | null;
+  saleType: string;
+  amount: number;
+  received: number;
+  pending: number;
+  isOnAccount: boolean;
 }
 
 export interface PdfSalespersonBlock {
@@ -103,9 +134,23 @@ export interface PdfSaleTypeStat {
   overdue: number;
 }
 
+/**
+ * Which document to draw.
+ *
+ * "book"        — the whole report. Contents page, then one page per salesperson.
+ * "salesperson" — ONE rep's extract. There is no league table (a "By salesperson" table with a
+ *                 single row is scaffolding, not information) and no separate rep page, so their
+ *                 customers move up onto page 1 and the top of the page is compressed to fit
+ *                 them. The header band already names the report, so page 1 does not repeat it.
+ */
+export type PdfLayout = "book" | "salesperson";
+
 export interface CollectionsPdfInput {
+  layout?: PdfLayout;
   title: string;
   subtitle: string;
+  /** The salesperson this document covers, on a "salesperson" layout. */
+  scopeName?: string;
   /** ISO date the report is stated as on. */
   asOfDate: string;
   periodLabel: string;
@@ -152,12 +197,6 @@ export interface CollectionsPdfInput {
     neverPaid?: number;
     stillBuying?: number;
   };
-  /**
-   * Printed under the contents title on a per-salesperson export. A customer owned by two reps
-   * belongs to both files, so a set of per-rep exports sums to more than the consolidated one —
-   * which a reader comparing two files must be told rather than left to discover.
-   */
-  overlapNote?: string;
 }
 
 /**
@@ -170,6 +209,29 @@ export interface CollectionsPdfInput {
 const TOP_SHARE = 0.2;
 const MIN_ROWS = 5;
 const MAX_ROWS = 25;
+
+/**
+ * Below this, an appendix row is not worth its own line.
+ *
+ * The Over 180 Days and Never Paid lists run to hundreds of customers, and their tails are ledgers
+ * carrying one or four thousand rupees: nobody is going to make that call, and printing them
+ * pushes the accounts that DO matter onto page four. They are folded into a single line that keeps
+ * the count and the money, so the page still totals to the figure on the card that linked to it.
+ *
+ * The fold is on the figure each list is RANKED by, not always on overdue, or the folded rows
+ * would not be the bottom of the list and the cut would appear at random points down the page.
+ */
+const SMALL_BALANCE = 10000;
+
+/**
+ * The threshold as the fold line states it: exact rupees, grouped Indian-style.
+ *
+ * NOT `money()`, which is the lakh/crore scale used for every figure in this document and renders
+ * ten thousand rupees as "₹0.10 L". That is correct as a magnitude and useless as a rule: a reader
+ * asked to accept that some customers were folded away needs to see the test that was applied, and
+ * "each under ₹0.10 L" is a test nobody can check at a glance.
+ */
+const SMALL_BALANCE_TEXT = `₹${SMALL_BALANCE.toLocaleString("en-IN")}`;
 
 /** An empty cell. A plain hyphen, never an em dash — see the file header. */
 const NIL = "-";
@@ -185,6 +247,37 @@ export function topCount(n: number): number {
 }
 
 const money = (n: number) => fmtINRMoney(n);
+
+/**
+ * A bill's date as something sortable: the caller's ISO form, or the printed dd-mm-yyyy read back.
+ *
+ * Empty for anything neither shape covers, which sinks the line to the bottom of the block rather
+ * than floating it to the top on a blank string.
+ */
+function billDateKey(b: PdfBillRow): string {
+  if (b.sortDate) return b.sortDate;
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(b.date);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
+/**
+ * Bill date, oldest first — the sequence a ledger is worked in.
+ *
+ * NOT days-past-due, which looks like the same order and is not: due days count from the DUE date,
+ * so a March bill on 90-day terms lands below a June bill on 7-day terms and the list reads as
+ * shuffled. Ties fall to the older debt, then to the bill number, so two exports of the same data
+ * come out identical.
+ */
+function byBillDate(a: PdfBillRow, b: PdfBillRow): number {
+  const ka = billDateKey(a);
+  const kb = billDateKey(b);
+  if (ka !== kb) {
+    if (!ka) return 1;
+    if (!kb) return -1;
+    return ka < kb ? -1 : 1;
+  }
+  return (b.overdueDays ?? 0) - (a.overdueDays ?? 0) || a.number.localeCompare(b.number);
+}
 
 /**
  * How many of these values (largest first) it takes to reach `target`.
@@ -281,15 +374,28 @@ function repInsights(
   rank: number,
   repCount: number,
   bookOverdue: number,
+  /** On a rep extract the read-out shares page 1 with the whole customer table, so it is cut to
+   *  the two lines that are actually about THEM plus the action line. */
+  brief = false,
 ): string[] {
   if (rep.overdue <= 0.5) {
     return [`${rep.name} has no overdue in this period. The outstanding above is not yet due.`];
   }
 
-  const out: string[] = [
-    `Ranked ${rank} of ${repCount} by overdue, holding ${pctText(rep.overdue, bookOverdue)} of the company's ` +
-    `overdue across ${rep.customers} customers.`,
-  ];
+  const out: string[] = [];
+
+  // Only when there is a field to be ranked against. On a rep extract this document holds exactly
+  // one salesperson, so the line came out as "Ranked 1 of 1 by overdue, holding 100.0% of the
+  // company's overdue" — a placing against nobody, and a share of a total that is the rep's own,
+  // not the company's. Two sentences of scaffolding stated as fact.
+  if (repCount > 1) {
+    out.push(
+      `Ranked ${rank} of ${repCount} by overdue, holding ${pctText(rep.overdue, bookOverdue)} of the company's ` +
+      `overdue across ${rep.customers} customers.`,
+    );
+  } else {
+    out.push(`${money(rep.overdue)} overdue across ${rep.customers} customers.`);
+  }
 
   if (sorted.length > 1) {
     const k = paretoCount(sorted.map((r) => r.overdue), rep.overdue * 0.5);
@@ -326,7 +432,7 @@ function repInsights(
   // The action line is appended AFTER the cap, never inside it. It is the only bullet that tells
   // the reader what to do next, so it must not be the one squeezed out when a book happens to
   // trip every other observation.
-  const capped = out.slice(0, 4);
+  const capped = out.slice(0, brief ? 2 : 4);
   const calls = shown.slice(0, 3).map((r) => r.name);
   if (calls.length) capped.push(`Start with: ${calls.join(", ")}.`);
   return capped;
@@ -387,6 +493,15 @@ interface Appendix {
 
 /** Link key for an appendix page. Prefixed so it can never collide with a salesperson's name. */
 const appendixKey = (a: Appendix): string => `__appendix_${a.cardKey}__`;
+
+/**
+ * Link key for one customer's bill page.
+ *
+ * Scoped by salesperson as well as name: `pageOf` is a single flat map that also holds the
+ * salesperson pages, and a customer worked by two reps appears under both. Keying on the name
+ * alone would send both reps' readers to whichever page happened to be written last.
+ */
+const custKey = (rep: string, customer: string): string => `__cust_${rep}|||${customer}__`;
 
 /** The appendix pages this document carries, in page order. Empty lists get no page. */
 function appendicesOf(reps: readonly PdfSalespersonBlock[]): Appendix[] {
@@ -487,26 +602,34 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     input.cardsMatchRows ? appendices.map((a) => [a.cardKey, a] as const) : [],
   );
 
-  // ── Contents page ─────────────────────────────────────────────────────────────────
+  const isRep = (input.layout ?? "book") === "salesperson";
+
+  // ── Page 1 ────────────────────────────────────────────────────────────────────────
   pageWash(pdf);
-  let y = headerBand(ctx, { tag: input.title }) + 22;
+  let y = headerBand(ctx, { tag: input.title }) + (isRep ? 18 : 22);
 
-  // THE HEADLINE BLOCK: the title, what the report actually means, then the two facts that make
-  // every figure below it legible (as on, period) raised into their own card. Those two used to
-  // sit inside a run-on grey line alongside the filter list, where they were skipped.
-  text(pdf, input.title, MARGIN, y, { size: 19, bold: true });
-  y += 20;
+  // THE HEADLINE BLOCK.
+  //
+  // On the book it is the report's title and what the report means. On a rep extract the header
+  // band above already carries the report name, so repeating it costs a line and says nothing;
+  // the headline is the SALESPERSON, which is the one thing that identifies this file among a
+  // dozen otherwise identical ones. Everything here is tightened on a rep extract because their
+  // whole customer table has to fit underneath it.
+  text(pdf, isRep ? (input.scopeName ?? input.title) : input.title, MARGIN, y, {
+    size: isRep ? 17 : 19, bold: true,
+  });
+  y += isRep ? 15 : 20;
 
-  for (const line of wrapText(pdf, input.subtitle, CONTENT_W, 9.5)) {
-    text(pdf, line, MARGIN, y, { size: 9.5, color: BRAND.grey });
-    y += 12;
+  for (const line of wrapText(pdf, input.subtitle, CONTENT_W, isRep ? 8.4 : 9.5)) {
+    text(pdf, line, MARGIN, y, { size: isRep ? 8.4 : 9.5, color: BRAND.grey });
+    y += isRep ? 11 : 12;
   }
-  y += 6;
+  y += isRep ? 4 : 6;
 
   y = metaStrip(pdf, MARGIN, y, CONTENT_W, [
     { label: "As on", value: formatDateDMY(input.asOfDate) },
     { label: "Period", value: input.periodLabel },
-  ]) + 13;
+  ]) + (isRep ? 11 : 13);
 
   // The filters, demoted to one quiet line. They must be RECORDED (the workbook drops them, so
   // without this a mailed copy cannot be traced back to the screen that produced it) but they are
@@ -522,14 +645,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   );
   y += 9;
 
-  if (input.overlapNote) {
-    for (const line of wrapText(pdf, input.overlapNote, CONTENT_W, 7.2)) {
-      text(pdf, line, MARGIN, y, { size: 7.2, color: BRAND.orange });
-      y += 9;
-    }
-  }
-
-  y = divider(pdf, MARGIN, y + 5, CONTENT_W) + 14;
+  y = divider(pdf, MARGIN, y + 5, CONTENT_W) + (isRep ? 11 : 14);
 
   // ── At a glance ───────────────────────────────────────────────────────────────────
   if (input.kpis.length) {
@@ -542,9 +658,11 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       y += 3;
     }
     const perRow = 3;
-    const gap = 10;
+    const gap = isRep ? 8 : 10;
     const cardW = (CONTENT_W - gap * (perRow - 1)) / perRow;
-    const cardH = 54;
+    // Shorter cards on a rep extract: the customer table moved onto this page, and six full-size
+    // cards plus a table does not fit. statCard re-lays itself out below ~50pt.
+    const cardH = isRep ? 44 : 54;
     input.kpis.forEach((k, i) => {
       const cx = MARGIN + (i % perRow) * (cardW + gap);
       const cy = y + Math.floor(i / perRow) * (cardH + gap);
@@ -591,7 +709,134 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     y += Math.ceil(types.length / perRow) * (MINI_CARD_H + gap) - gap;
   }
 
-  y = divider(pdf, MARGIN, y + 15, CONTENT_W) + 15;
+  y = divider(pdf, MARGIN, y + (isRep ? 11 : 15), CONTENT_W) + (isRep ? 11 : 15);
+
+  const pageOf = new Map<string, number>();
+
+  /**
+   * One salesperson's figures, customer table and read-out.
+   *
+   * Shared by both layouts: on the book it fills a rep's own page, on a rep extract it fills the
+   * bottom of page 1. One renderer, so the two can never drift into showing different columns for
+   * the same thing.
+   *
+   * BOTH LAYOUTS PRINT THE TOP SLICE, not the whole book. A rep extract briefly printed every one
+   * of their customers, on the reasoning that it is THEIR list to work; in practice that is a
+   * hundred-odd lines in which the twenty that hold the money are indistinguishable from the tail.
+   * The cut is the point of the page, and the folded "Remaining N" line keeps it honest.
+   */
+  const drawRepBody = (
+    rep: PdfSalespersonBlock,
+    startY: number,
+    opts: { rank: number; compact: boolean },
+  ): number => {
+    let ry = startY;
+
+    const sorted = [...rep.rows].sort((a, b) => b.overdue - a.overdue);
+    const take = topCount(sorted.length);
+    const shown = sorted.slice(0, take);
+    const rest = sorted.slice(take);
+
+    // Suppressed on a rep extract: the document IS their book, so every share reads "100.0% of
+    // book", and the three figures are already on the cards directly above. On the book layout it
+    // is the line that places this rep against the company.
+    if (!opts.compact) {
+      text(
+        pdf,
+        `${rep.customers} customers · Outstanding ${money(rep.outstanding)} (${pctText(rep.outstanding, input.total.outstanding)} of book) · Overdue ${money(rep.overdue)} (${pctText(rep.overdue, input.total.overdue)} of book)`,
+        MARGIN, ry, { size: 8, color: BRAND.grey, maxWidth: CONTENT_W },
+      );
+      ry += 24;
+    }
+
+    ry = sectionHeading(
+      pdf, MARGIN, ry,
+      take >= sorted.length
+        ? `All ${sorted.length} customers, ranked by overdue`
+        : `Top ${take} of ${sorted.length} customers by overdue`,
+    ) + 7;
+
+    interface CustRow {
+      label: string;
+      /** Set only on customer rows that have a bill page to jump to. */
+      linkKey?: string;
+      outstanding: number; overdue: number;
+      lastReceipt: string; lastReceiptAmount: string;
+      kind: "normal" | "muted" | "total";
+    }
+    const custRows: CustRow[] = shown.map((r) => ({
+      label: r.name,
+      // Only NAMED customers get a link, and only when there are bills behind the name. The
+      // "Remaining N" bucket deliberately gets none: it is not a customer, and a link that lands
+      // on a page about nobody is worse than plain text.
+      linkKey: r.bills?.length ? custKey(rep.name, r.name) : undefined,
+      outstanding: r.outstanding, overdue: r.overdue,
+      lastReceipt: r.lastReceipt, lastReceiptAmount: r.lastReceiptAmount,
+      kind: "normal" as const,
+    }));
+    if (rest.length) {
+      custRows.push({
+        label: `Remaining ${rest.length} customer${rest.length === 1 ? "" : "s"}`,
+        outstanding: rest.reduce((s, r) => s + r.outstanding, 0),
+        overdue: rest.reduce((s, r) => s + r.overdue, 0),
+        lastReceipt: NIL, lastReceiptAmount: NIL, kind: "muted",
+      });
+    }
+    custRows.push({
+      label: "TOTAL", outstanding: rep.outstanding, overdue: rep.overdue,
+      lastReceipt: NIL, lastReceiptAmount: NIL, kind: "total",
+    });
+
+    // Widths are ratios. Customer takes the most because ledger names run long, and anything it
+    // cannot fit is ellipsized — a truncated customer name is the one thing on this page a reader
+    // cannot reconstruct. It got wider once the company/branch suffix came off the name.
+    const custCols: PdfColumn<CustRow>[] = [
+      { header: "Customer", width: 38, value: (r) => r.label, linkKey: (r) => r.linkKey },
+      { header: "Outstanding", width: 13, align: "right", value: (r) => money(r.outstanding) },
+      {
+        header: "Overdue", width: 13, align: "right", value: (r) => money(r.overdue),
+        color: (r) => (r.kind === "normal" && r.overdue > 0.5 ? BRAND.red : undefined),
+      },
+      { header: "% of Overdue", width: 12, align: "right", value: (r) => (r.kind === "total" ? "100.0%" : pctText(r.overdue, rep.overdue)) },
+      { header: "Last Receipt", width: 12, align: "right", value: (r) => r.lastReceipt },
+      { header: "Last Receipt ₹", width: 12, align: "right", value: (r) => r.lastReceiptAmount },
+    ];
+
+    ry = drawTable<CustRow>(pdf, {
+      x: MARGIN, y: ry, width: CONTENT_W,
+      columns: custCols,
+      rows: custRows,
+      rowKind: (r) => (r.kind === "total" ? "total" : r.kind),
+      rowH: 14,
+      maxY: FLOOR,
+      linkSink: links,
+      onNewPage: newPage,
+    });
+
+    // ── The rep's read-out ──────────────────────────────────────────────────────────
+    //
+    // This replaced a twenty-bar "Overdue distribution" strip. The bars restated the "% of
+    // Overdue" column immediately above them and nothing else, so they spent a third of the page
+    // saying what the table had already said. The read-out uses that space to say what the
+    // figures MEAN, which the table cannot.
+    const lines = repInsights(
+      rep, sorted, shown, opts.rank, reps.length, input.total.overdue, opts.compact,
+    );
+    if (lines.length) {
+      ry += opts.compact ? 16 : 20;
+      ry = ensureRoom(ry, noteBlockHeight(pdf, CONTENT_W, lines));
+      ry = noteBlock(pdf, { x: MARGIN, y: ry, width: CONTENT_W, title: "Analysis", lines });
+    }
+    return ry;
+  };
+
+  if (isRep) {
+    // No league table: with one salesperson it would be a header, one row and a grand total
+    // repeating it. Their customers take the space instead.
+    drawRepBody(reps[0] ?? {
+      name: input.scopeName ?? "", customers: 0, outstanding: 0, overdue: 0, rows: [],
+    }, y, { rank: 1, compact: true });
+  } else {
 
   // ── League table ──────────────────────────────────────────────────────────────────
   y = sectionHeading(pdf, MARGIN, y, "By salesperson", "Ranked by overdue") + 6;
@@ -656,98 +901,21 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   }
 
   // ── One page per salesperson ──────────────────────────────────────────────────────
-  const pageOf = new Map<string, number>();
-
   reps.forEach((rep, idx) => {
     pdf.addPage();
     pageWash(pdf);
     pageOf.set(rep.name, pdf.getNumberOfPages());
 
     let ry = headerBand(ctx, { tag: input.title, compact: true }) + 20;
-
     ry = homeLink(pdf, ry) + 26;
 
     text(pdf, ellipsize(pdf, rep.name, CONTENT_W, 16, true), MARGIN, ry, { size: 16, bold: true });
     ry += 20;
 
-    const sorted = [...rep.rows].sort((a, b) => b.overdue - a.overdue);
-    const take = topCount(sorted.length);
-    const shown = sorted.slice(0, take);
-    const rest = sorted.slice(take);
-    const restOutstanding = rest.reduce((s, r) => s + r.outstanding, 0);
-    const restOverdue = rest.reduce((s, r) => s + r.overdue, 0);
-
-    text(
-      pdf,
-      `${rep.customers} customers · Outstanding ${money(rep.outstanding)} (${pctText(rep.outstanding, input.total.outstanding)} of book) · Overdue ${money(rep.overdue)} (${pctText(rep.overdue, input.total.overdue)} of book)`,
-      MARGIN, ry, { size: 8, color: BRAND.grey, maxWidth: CONTENT_W },
-    );
-    ry += 24;
-
-    ry = sectionHeading(pdf, MARGIN, ry, `Top ${take} of ${sorted.length} customers by overdue`) + 7;
-
-    interface CustRow {
-      label: string;
-      outstanding: number; overdue: number;
-      lastReceipt: string; lastReceiptAmount: string;
-      kind: "normal" | "muted" | "total";
-    }
-    const custRows: CustRow[] = shown.map((r) => ({
-      label: r.name,
-      outstanding: r.outstanding, overdue: r.overdue,
-      lastReceipt: r.lastReceipt, lastReceiptAmount: r.lastReceiptAmount,
-      kind: "normal" as const,
-    }));
-    if (rest.length) {
-      custRows.push({
-        label: `Remaining ${rest.length} customer${rest.length === 1 ? "" : "s"}`,
-        outstanding: restOutstanding, overdue: restOverdue,
-        lastReceipt: NIL, lastReceiptAmount: NIL, kind: "muted",
-      });
-    }
-    custRows.push({
-      label: "TOTAL", outstanding: rep.outstanding, overdue: rep.overdue,
-      lastReceipt: NIL, lastReceiptAmount: NIL, kind: "total",
-    });
-
-    // Widths are ratios. Customer takes the most because ledger names run long, and anything it
-    // cannot fit is ellipsized — a truncated customer name is the one thing on this page a reader
-    // cannot reconstruct. It got wider once the company/branch suffix came off the name.
-    const custCols: PdfColumn<CustRow>[] = [
-      { header: "Customer", width: 38, value: (r) => r.label },
-      { header: "Outstanding", width: 13, align: "right", value: (r) => money(r.outstanding) },
-      {
-        header: "Overdue", width: 13, align: "right", value: (r) => money(r.overdue),
-        color: (r) => (r.kind === "normal" && r.overdue > 0.5 ? BRAND.red : undefined),
-      },
-      { header: "% of Overdue", width: 12, align: "right", value: (r) => (r.kind === "total" ? "100.0%" : pctText(r.overdue, rep.overdue)) },
-      { header: "Last Receipt", width: 12, align: "right", value: (r) => r.lastReceipt },
-      { header: "Last Receipt ₹", width: 12, align: "right", value: (r) => r.lastReceiptAmount },
-    ];
-
-    ry = drawTable<CustRow>(pdf, {
-      x: MARGIN, y: ry, width: CONTENT_W,
-      columns: custCols,
-      rows: custRows,
-      rowKind: (r) => (r.kind === "total" ? "total" : r.kind),
-      rowH: 14,
-      maxY: FLOOR,
-      onNewPage: newPage,
-    });
-
-    // ── The rep's read-out ──────────────────────────────────────────────────────────
-    //
-    // This replaced a twenty-bar "Overdue distribution" strip. The bars restated the "% of
-    // Overdue" column immediately above them and nothing else, so they spent a third of the page
-    // saying what the table had already said. The read-out uses that space to say what the
-    // figures MEAN, which the table cannot.
-    const lines = repInsights(rep, sorted, shown, idx + 1, reps.length, input.total.overdue);
-    if (lines.length) {
-      ry += 20;
-      ry = ensureRoom(ry, noteBlockHeight(pdf, CONTENT_W, lines));
-      noteBlock(pdf, { x: MARGIN, y: ry, width: CONTENT_W, title: "Analysis", lines });
-    }
+    drawRepBody(rep, ry, { rank: idx + 1, compact: false });
   });
+
+  } // end of the book layout
 
   // ── Appendix pages ────────────────────────────────────────────────────────────────
   //
@@ -785,46 +953,87 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       `${app.rows.length} customer${app.rows.length === 1 ? "" : "s"} · Outstanding ${money(outstanding)} · Overdue ${money(overdue)}`,
     ) + 11;
 
-    // EVERY row, however many pages that takes. These lists are worked through, not skimmed: a
-    // customer who has never paid does not stop being a credit decision because they rank 90th,
-    // and an appendix that quietly ended at a cut-off would be read as the complete list.
-    interface AppRow { row?: AppendixRow; total?: boolean }
-    const tableRows: AppRow[] = [...app.rows.map((row) => ({ row })), { total: true }];
+    /**
+     * NAMED ROWS FOR THE MONEY THAT MATTERS, ONE FOLDED LINE FOR THE REST.
+     *
+     * Every customer at or above `SMALL_BALANCE` on the list's own ranking figure gets a line,
+     * however many pages that takes: a customer who has never paid does not stop being a credit
+     * decision because they rank 90th, and a list that quietly ended at a cut-off would be read as
+     * the complete list. Below that, the tail is folded into one line that keeps its count and its
+     * money, so the page still totals to the card that linked here.
+     *
+     * The fold is skipped when it would buy nothing (a single small row folds to a line naming
+     * nobody) or cost everything (a list where NOTHING clears the threshold is still that list,
+     * and a page consisting only of a folded line and a total tells the reader nothing at all).
+     */
+    const bigRows = app.rows.filter((r) => app.metric(r) >= SMALL_BALANCE);
+    const smallRows = app.rows.filter((r) => app.metric(r) < SMALL_BALANCE);
+    const folding = bigRows.length > 0 && smallRows.length > 1;
+    const listed = folding ? bigRows : app.rows;
+    const folded = folding ? smallRows : [];
 
-    /** A cell that is one figure on a customer row, and the roll-up on the closing TOTAL. */
-    const cell = (of: (r: AppendixRow) => number, grand: number) =>
-      (r: AppRow) => money(r.total ? grand : of(r.row!));
+    /** A table line, with its figures already resolved: a customer, the folded tail, or the total. */
+    interface AppRow {
+      label: string;
+      salesperson: string;
+      lastReceipt: string;
+      outstanding: number;
+      overdue: number;
+      extra: number;
+      metric: number;
+      kind: "normal" | "muted" | "total";
+    }
+    const tableRows: AppRow[] = listed.map((r) => ({
+      label: r.name,
+      salesperson: r.salesperson,
+      lastReceipt: r.lastReceipt,
+      outstanding: r.outstanding,
+      overdue: r.overdue,
+      extra: app.extra ? app.extra.value(r) : 0,
+      metric: app.metric(r),
+      kind: "normal" as const,
+    }));
+    if (folded.length) {
+      tableRows.push({
+        // Says what was folded AND on what test, so the line reads as an editorial decision rather
+        // than as a missing chunk of the report.
+        label: `${folded.length} more customers, each under ${SMALL_BALANCE_TEXT}`,
+        salesperson: "", lastReceipt: NIL,
+        outstanding: sum(folded, (r) => r.outstanding),
+        overdue: sum(folded, (r) => r.overdue),
+        extra: app.extra ? sum(folded, app.extra.value) : 0,
+        metric: sum(folded, app.metric),
+        kind: "muted",
+      });
+    }
+    tableRows.push({
+      label: "TOTAL", salesperson: "", lastReceipt: NIL,
+      outstanding, overdue, extra: extraTotal, metric: metricTotal, kind: "total",
+    });
 
     const cols: PdfColumn<AppRow>[] = [
       // Customer takes the most: a truncated ledger name is the one thing on this page a reader
       // cannot reconstruct, and unlike the salesperson-page tables this one also has to fit a
       // salesperson column.
+      { header: "Customer", width: app.showLastReceipt ? 33 : 36, value: (r) => r.label },
+      { header: "Salesperson", width: app.showLastReceipt ? 11 : 18, value: (r) => r.salesperson },
+      { header: "Outstanding", width: 12, align: "right", value: (r) => money(r.outstanding) },
       {
-        header: "Customer", width: app.showLastReceipt ? 33 : 36,
-        value: (r) => (r.total ? "TOTAL" : r.row!.name),
-      },
-      { header: "Salesperson", width: app.showLastReceipt ? 11 : 18, value: (r) => (r.row ? r.row.salesperson : "") },
-      {
-        header: "Outstanding", width: 12, align: "right",
-        value: cell((r) => r.outstanding, outstanding),
-      },
-      {
-        header: "Overdue", width: 12, align: "right",
-        value: cell((r) => r.overdue, overdue),
-        color: (r) => (r.row && r.row.overdue > 0.5 ? BRAND.red : undefined),
+        header: "Overdue", width: 12, align: "right", value: (r) => money(r.overdue),
+        color: (r) => (r.kind === "normal" && r.overdue > 0.5 ? BRAND.red : undefined),
       },
       ...(app.extra
         ? [{
             header: app.extra.header, width: 12, align: "right" as const,
-            value: cell(app.extra.value, extraTotal),
-            color: (r: AppRow) => (r.row ? BRAND.red : undefined),
+            value: (r: AppRow) => money(r.extra),
+            color: (r: AppRow) => (r.kind === "normal" ? BRAND.red : undefined),
           }]
         : []),
       {
         // Narrowed to 10 to fund Last Receipt below. 10 is the floor: the header "% of > 180" is
         // wider than any value under it, and below this it ellipsizes into "% of > 1…".
         header: app.pctHeader, width: app.showLastReceipt ? 10 : 12, align: "right",
-        value: (r) => (r.total ? "100.0%" : pctText(app.metric(r.row!), metricTotal)),
+        value: (r) => (r.kind === "total" ? "100.0%" : pctText(r.metric, metricTotal)),
       },
       ...(app.showLastReceipt
         ? [{
@@ -834,7 +1043,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
             // reads as data corruption rather than a column that is too tight. Sized off the
             // widest possible dd-mm-yyyy with room to spare, funded from the two columns left.
             header: "Last Receipt", width: 14, align: "right" as const,
-            value: (r: AppRow) => (r.row ? r.row.lastReceipt : NIL),
+            value: (r: AppRow) => r.lastReceipt,
           }]
         : []),
     ];
@@ -843,11 +1052,114 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       x: MARGIN, y: ay, width: CONTENT_W,
       columns: cols,
       rows: tableRows,
-      rowKind: (r) => (r.total ? "total" : "normal"),
+      rowKind: (r) => r.kind,
       rowH: 14,
       maxY: FLOOR,
       onNewPage: newPage,
     });
+  }
+
+  // ── One page per named customer: the bills behind their Overdue ───────────────────
+  //
+  // Only for customers actually LISTED above — the "Remaining N" bucket gets nothing, because it
+  // is a subtotal rather than someone you can ring. The figures are the same `buildDrillRows`
+  // output the on-screen popup and the workbook's bill tab use, so all three agree, including the
+  // On Account credit that reconciles a gross bill list to a net Overdue figure.
+  interface CustPage { rep: PdfSalespersonBlock; cust: PdfCustomerRow }
+  const custPages: CustPage[] = reps.flatMap((rep) => {
+    const sorted = [...rep.rows].sort((a, b) => b.overdue - a.overdue);
+    // The same slice `drawRepBody` printed, on either layout — a bill page nobody can reach from
+    // the table is weight in the file and nothing else.
+    const listed = sorted.slice(0, topCount(sorted.length));
+    return listed.filter((c) => c.bills?.length).map((cust) => ({ rep, cust }));
+  });
+
+  for (const { rep, cust } of custPages) {
+    pdf.addPage();
+    pageWash(pdf);
+    pageOf.set(custKey(rep.name, cust.name), pdf.getNumberOfPages());
+
+    let cy = headerBand(ctx, { tag: input.title, compact: true }) + 20;
+    cy = homeLink(pdf, cy) + 24;
+
+    text(pdf, ellipsize(pdf, cust.name, CONTENT_W, 15, true), MARGIN, cy, { size: 15, bold: true });
+    cy += 15;
+    text(
+      pdf,
+      `${rep.name} · Outstanding ${money(cust.outstanding)} · Overdue ${money(cust.overdue)} · Last receipt ${cust.lastReceipt}`,
+      MARGIN, cy, { size: 7.8, color: BRAND.grey, maxWidth: CONTENT_W },
+    );
+    cy += 20;
+
+    const bills = cust.bills ?? [];
+    const open = bills.filter((b) => !b.isOnAccount);
+    const onAccount = bills.filter((b) => b.isOnAccount);
+    // BILL DATE, OLDEST FIRST, with the On Account credit last: it is the deduction that
+    // reconciles the page, not another bill. Same order as the workbook's block, and for the same
+    // reason — see `billDateKey`.
+    const ordered = [[...open].sort(byBillDate), onAccount].flat();
+
+    cy = sectionHeading(
+      pdf, MARGIN, cy,
+      `${open.length} open past-due bill${open.length === 1 ? "" : "s"}${onAccount.length ? " · plus On Account credit" : ""}`,
+    ) + 7;
+
+    interface BillLine { bill?: PdfBillRow; total?: boolean }
+    const billRows: BillLine[] = [...ordered.map((bill) => ({ bill })), { total: true }];
+    const sum = (of: (b: PdfBillRow) => number) => bills.reduce((s, b) => s + of(b), 0);
+
+    const billCols: PdfColumn<BillLine>[] = [
+      {
+        header: "Bill No", width: 22,
+        value: (r) => (r.total ? "TOTAL" : r.bill!.number),
+        color: (r) => (r.bill?.isOnAccount ? BRAND.green : undefined),
+      },
+      // 13, not 12: a dd-mm-yyyy of all-wide digits needs ~47pt of cell and 12 gives 47 exactly,
+      // so some dates ellipsized and others did not. See the Last Receipt column's note.
+      { header: "Bill Date", width: 13, align: "right", value: (r) => (r.bill ? r.bill.date || NIL : "") },
+      { header: "Due Date", width: 13, align: "right", value: (r) => (r.bill ? r.bill.dueDate || NIL : "") },
+      {
+        header: "Due Days", width: 10, align: "right",
+        value: (r) => (r.bill && r.bill.overdueDays !== null ? String(r.bill.overdueDays) : r.total ? "" : NIL),
+        color: (r) => (r.bill && (r.bill.overdueDays ?? 0) > 180 ? BRAND.red : undefined),
+      },
+      { header: "Sale Type", width: 13, value: (r) => (r.bill ? r.bill.saleType || NIL : "") },
+      { header: "Amount", width: 13, align: "right", value: (r) => money(r.total ? sum((b) => b.amount) : r.bill!.amount) },
+      { header: "Received", width: 13, align: "right", value: (r) => money(r.total ? sum((b) => b.received) : r.bill!.received) },
+      {
+        // The TOTAL of this column IS the customer's Overdue on the table that linked here, which
+        // is the whole point of putting the On Account line in the list rather than in a footnote.
+        header: "Pending", width: 13, align: "right",
+        value: (r) => money(r.total ? sum((b) => b.pending) : r.bill!.pending),
+        color: (r) => (r.bill ? (r.bill.isOnAccount ? BRAND.green : BRAND.red) : undefined),
+      },
+    ];
+
+    cy = drawTable<BillLine>(pdf, {
+      x: MARGIN, y: cy, width: CONTENT_W,
+      columns: billCols,
+      rows: billRows,
+      rowKind: (r) => (r.total ? "total" : r.bill?.isOnAccount ? "muted" : "normal"),
+      rowH: 14,
+      maxY: FLOOR,
+      onNewPage: newPage,
+    });
+
+    // The one thing a reader WILL query: why the bills do not add up to the figure that sent them
+    // here. Stated under the table rather than left as a mystery negative line.
+    if (onAccount.length) {
+      cy = ensureRoom(cy + 12, 20);
+      for (const line of wrapText(
+        pdf,
+        "On Account is money this customer has already paid that settles no specific bill (advances, " +
+        "credit notes, untagged receipts). It is deducted above, which is why Pending totals to the " +
+        "Overdue figure rather than to the sum of the bills.",
+        CONTENT_W, 7.2,
+      )) {
+        text(pdf, line, MARGIN, cy, { size: 7.2, color: BRAND.grey2 });
+        cy += 9.5;
+      }
+    }
   }
 
   // ── Navigation furniture ──────────────────────────────────────────────────────────
@@ -857,9 +1169,18 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   try {
     // Named to match the on-page link, so the sidebar and the page agree on what page 1 is called.
     pdf.outline.add(null, "Home", { pageNumber: 1 });
+    // Customer pages hang UNDER their salesperson on the book layout: a flat sidebar listing
+    // three hundred ledger names is not navigation, it is a second copy of the report.
+    const repNode = new Map<string, unknown>();
     for (const rep of reps) {
       const p = pageOf.get(rep.name);
-      if (p !== undefined) pdf.outline.add(null, rep.name, { pageNumber: p });
+      if (p !== undefined) repNode.set(rep.name, pdf.outline.add(null, rep.name, { pageNumber: p }));
+    }
+    for (const { rep, cust } of custPages) {
+      const p = pageOf.get(custKey(rep.name, cust.name));
+      if (p !== undefined) {
+        pdf.outline.add((repNode.get(rep.name) ?? null) as never, cust.name, { pageNumber: p });
+      }
     }
     for (const app of appendices) {
       const p = pageOf.get(appendixKey(app));
