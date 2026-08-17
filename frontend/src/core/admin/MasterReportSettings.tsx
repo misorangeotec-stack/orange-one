@@ -120,15 +120,24 @@ export default function MasterReportSettings() {
     setSaving(true);
     setError(null);
     try {
+      // Recipients FIRST, deliberately. These are two separate writes with no
+      // transaction spanning them, so one can succeed and the other throw. If the
+      // switch is written first and the recipient write then fails, the report is
+      // left ENABLED with an empty recipient table — live in the database, sending
+      // to nobody, and the banner above reads its count from this component's state
+      // and cheerfully says "live, 1 recipient". That is exactly what happened when
+      // `set_master_report_recipients` was rejected for its bare DELETE.
+      // In this order the failure is the safe one: the recipients are stored and the
+      // switch stays where it was, so nothing is ever on with no one to send to.
+      await saveMasterReportRecipients(
+        recipients.map((r) => ({ email: r.email, name: r.name, enabled: r.enabled, userId: r.userId })),
+      );
       await saveMasterReportSettings({
         enabled,
         sendHourIst: sendHour,
         dormantAfterDays: dormantDays,
         includeModules: included,
       });
-      await saveMasterReportRecipients(
-        recipients.map((r) => ({ email: r.email, name: r.name, enabled: r.enabled, userId: r.userId })),
-      );
       // Re-read the LIVE job rather than assuming the save moved it. The save
       // reschedules in the same transaction, so this should always agree — and
       // reading it back is precisely what would have caught the original bug.
