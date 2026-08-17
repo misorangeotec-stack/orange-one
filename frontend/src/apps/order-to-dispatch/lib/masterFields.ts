@@ -26,8 +26,8 @@ export const EMPTY_MASTER_CTX: MasterFieldCtx = {
  * parents they join.
  *
  * ⚠ The write layer reads this to leave `name` out of the row entirely:
- *   fms_dispatch_customer_items has no name column, so sending one is a
- *   "column does not exist" on every save.
+ *   mst_party_items has no name column, so sending one is a "column does not
+ *   exist" on every save.
  */
 export const NAMELESS_MASTERS: DispatchMasterType[] = ["customer_item"];
 export const isNameless = (mt: DispatchMasterType) => NAMELESS_MASTERS.includes(mt);
@@ -67,9 +67,10 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
       return [
         { key: "name", label: "Item name", type: "text", required: true },
         { key: "code", label: "Code", type: "text", placeholder: "Tally / ERP code" },
-        // Free text, not a picker. The unit belongs to the item; a master would
-        // only let an order line contradict it.
-        { key: "unit", label: "Unit", type: "text", placeholder: "e.g. KGS, LTR, PCS" },
+        // ⚠ NO UNIT FIELD. It used to be free text on fms_dispatch_items; the
+        //   central mst_items points at mst_units instead, and the unit is
+        //   Tally's — it arrives with the item and the sync rewrites it. A text
+        //   box here would write to a column that no longer exists.
         { key: "hsn_code", label: "HSN code", type: "text" },
         sortField,
       ];
@@ -78,8 +79,10 @@ export function masterFields(mt: DispatchMasterType, ctx: MasterFieldCtx): Maste
       // THE CUSTOMER↔ITEM MAPPING. A row is what makes an item selectable on
       // that customer's sales order — the pair IS the record, so there is no
       // name field and no sort order worth setting.
+      // ⚠ `party_id`, not customer_id — the central mst_party_items calls it
+      //   that, and this key is written verbatim as a column name.
       return [
-        { key: "customer_id", label: "Customer", type: "select", required: true, options: ctx.customerOptions, placeholder: "Select customer" },
+        { key: "party_id", label: "Customer", type: "select", required: true, options: ctx.customerOptions, placeholder: "Select customer" },
         { key: "item_id", label: "Item", type: "select", required: true, options: ctx.itemOptions, placeholder: "Select item" },
       ];
 
@@ -137,8 +140,12 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
   switch (mt) {
     case "customer":
       return { ...base, code: "", location: "", contact_name: "", phone: "", email: "", gstin: "" };
+    // ⚠ No `unit`. THIS BAG IS THE WRITE PAYLOAD, not just the form — every key
+    //   is sent as a column. mst_items has unit_id (a foreign key to mst_units),
+    //   not a `unit` text column, so leaving it here fails every item save with
+    //   "column does not exist", including through the Excel import.
     case "item":
-      return { ...base, code: "", unit: "", hsn_code: "" };
+      return { ...base, code: "", hsn_code: "" };
     case "company":
       return { ...base, gstin: "", address: "", gate_pass_prefix: "" };
     case "company_location":
@@ -146,7 +153,7 @@ export function emptyValuesFor(mt: DispatchMasterType): MasterValues {
     // No `name` in the bag — the row has none. Including it would put an empty
     // Name column in the Excel round trip and send `name: null` on every save.
     case "customer_item":
-      return { customer_id: "", item_id: "" };
+      return { party_id: "", item_id: "" };
     default:
       return base;
   }
@@ -212,7 +219,7 @@ export function describePayload(
   },
 ): string {
   if (mt === "customer_item") {
-    const c = lookup?.customerName(String(payload.customer_id ?? "")) ?? "";
+    const c = lookup?.customerName(String(payload.party_id ?? payload.customer_id ?? "")) ?? "";
     const i = lookup?.itemName(String(payload.item_id ?? "")) ?? "";
     // Both names or neither — a half-resolved pair reads worse than the label.
     return c && i ? `${c} — ${i}` : "Customer-item mapping";

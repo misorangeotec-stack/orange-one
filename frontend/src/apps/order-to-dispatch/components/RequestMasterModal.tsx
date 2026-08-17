@@ -72,7 +72,7 @@ export default function RequestMasterModal({
   */
   const existing = isNameless(mt)
     ? s.customerItems.find(
-        (m) => m.customerId === (values.customer_id ?? "") && m.itemId === (values.item_id ?? ""),
+        (m) => m.customerId === (values.party_id ?? "") && m.itemId === (values.item_id ?? ""),
       )
     : findExistingMaster(s.masterList(mt), values.name ?? "");
   /*
@@ -84,7 +84,7 @@ export default function RequestMasterModal({
     if (r.status !== "pending" || r.masterType !== mt) return false;
     if (isNameless(mt)) {
       return (
-        String(r.proposedPayload.customer_id ?? "") === (values.customer_id ?? "") &&
+        String(r.proposedPayload.party_id ?? "") === (values.party_id ?? "") &&
         String(r.proposedPayload.item_id ?? "") === (values.item_id ?? "")
       );
     }

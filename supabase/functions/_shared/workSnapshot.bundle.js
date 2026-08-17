@@ -2512,6 +2512,7 @@ var mapRequest3 = (r) => ({
   quantity: r.quantity,
   reason: r.reason ?? null,
   requiresApproval: !!r.requires_approval,
+  firstApprovalSkipped: !!r.first_approval_skipped,
   status: r.status,
   currentStep: r.current_step,
   submittedAt: r.submitted_at,
@@ -2545,7 +2546,12 @@ var mapStepOwner5 = (r) => ({
   designationId: r.designation_id ?? null,
   employeeIds: r.employee_ids ?? []
 });
-var mapDesignation5 = (r) => ({ id: r.id, name: r.name, active: r.active });
+var mapDesignation5 = (r) => ({
+  id: r.id,
+  name: r.name,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0
+});
 var mapActivity5 = (r) => ({
   id: r.id,
   entityType: r.entity_type,
@@ -2600,6 +2606,8 @@ async function fetchSuppliesData() {
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
+    requesterIds: byKey.get("requesters")?.user_ids ?? [],
+    hodDesignationIds: byKey.get("hod_designations")?.designation_ids ?? [],
     stepSla: resolveStepSla5(byKey.get("step_sla"))
   };
   return {
@@ -3215,7 +3223,11 @@ async function fetchProductionData() {
     masterRequests,
     requests,
     activity,
-    notifications
+    notifications,
+    // The next Lot/Batch number to be issued (preview — does not consume the
+    // counter). In the same Promise.all, not after it: as a sequential call it
+    // added a whole round trip to the critical path of every load.
+    batchPeek
   ] = await Promise.all([
     fetchAll8("fms_production_step_owners"),
     fetchAll8("fms_production_config", "key"),
@@ -3231,7 +3243,8 @@ async function fetchProductionData() {
     fetchAll8("fms_production_master_requests"),
     fetchAll8("fms_production_requests", "submitted_at"),
     fetchAll8("fms_production_activity"),
-    fetchAll8("fms_production_notifications")
+    fetchAll8("fms_production_notifications"),
+    db3.rpc("fms_production_peek_batch_no")
   ]);
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
@@ -3239,7 +3252,6 @@ async function fetchProductionData() {
     stepSla: resolveStepSla7(byKey.get("step_sla")),
     batchSeqStart: Number(byKey.get("batch_seq_start")?.start ?? 1) || 1
   };
-  const { data: batchPeek } = await db3.rpc("fms_production_peek_batch_no");
   return {
     stepOwners: stepOwners.map(mapStepOwner7),
     designations: designations.map(mapDesignation7),
@@ -3256,7 +3268,7 @@ async function fetchProductionData() {
     requests: requests.map(mapRequest5),
     activity: activity.map(mapActivity7),
     notifications: notifications.map(mapNotification7),
-    batchNoPreview: batchPeek ?? ""
+    batchNoPreview: batchPeek.data ?? ""
   };
 }
 
@@ -3295,6 +3307,20 @@ async function fetchAll9(table, orderBy = "created_at") {
   const out = [];
   for (let from = 0; ; from += PAGE8) {
     const { data, error } = await db4.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE8 - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE8) break;
+  }
+  return out;
+}
+var APP_ID = "order-to-dispatch";
+async function fetchForModule(table, extra) {
+  const out = [];
+  for (let from = 0; ; from += PAGE8) {
+    let q = db4.from(table).select("*").contains("modules", [APP_ID]);
+    if (extra) q = extra(q);
+    const { data, error } = await q.order("created_at", { ascending: true }).range(from, from + PAGE8 - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -3555,6 +3581,7 @@ async function fetchDispatchData() {
     customerItems,
     customers,
     items,
+    units,
     masterManagers,
     masterRequests,
     orders,
@@ -3569,9 +3596,12 @@ async function fetchDispatchData() {
     fetchAll9("designations"),
     fetchAll9("fms_dispatch_companies"),
     fetchAll9("fms_dispatch_company_locations"),
-    fetchAll9("fms_dispatch_customer_items"),
-    fetchAll9("fms_dispatch_customers"),
-    fetchAll9("fms_dispatch_items"),
+    // The catalogue carries no `modules` of its own — a pair is scoped by the
+    // customer and item it points at, so it is filtered below rather than here.
+    fetchAll9("mst_party_items"),
+    fetchForModule("mst_parties", (q) => q.eq("is_customer", true)),
+    fetchForModule("mst_items"),
+    fetchAll9("mst_units"),
     fetchAll9("fms_dispatch_master_managers"),
     fetchAll9("fms_dispatch_master_requests"),
     fetchAll9("fms_dispatch_orders", "submitted_at"),
@@ -3581,6 +3611,9 @@ async function fetchDispatchData() {
     fetchRecentActivity(),
     fetchAll9("fms_dispatch_notifications")
   ]);
+  const unitNameById = new Map(units.map((u) => [u.id, u.name]));
+  const customerIds = new Set(customers.map((c) => c.id));
+  const itemIds = new Set(items.map((i) => i.id));
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
@@ -3632,19 +3665,41 @@ async function fetchDispatchData() {
       ...mapMaster4(r),
       companyId: r.company_id
     })),
-    customers: customers.map(mapCustomer),
+    /**
+     * ⚠ `companyId` IS DELIBERATELY DROPPED. In Dispatch it meant "which of our
+     *   companies bills this customer" and was filled on 1 of 327 rows. On
+     *   mst_parties the same column means Tally's company BOOK, which is a
+     *   different set of ids entirely — carrying it through would have the
+     *   Masters grid resolve a Tally company id against Dispatch's 2-row company
+     *   list and render a blank. The order carries the billing company anyway.
+     */
+    customers: customers.map((r) => ({
+      ...mapCustomer(r),
+      companyId: null
+    })),
     items: items.map((r) => ({
       ...mapMaster4(r),
       code: str(r.code),
-      unit: str(r.unit),
+      // mst_items points at mst_units; Dispatch's Item carries the unit's NAME.
+      unit: unitNameById.get(r.unit_id) ?? "",
       hsnCode: str(r.hsn_code)
     })),
-    // The row has no name of its own; the synthetic "Customer - Item" label is
-    // built where it is displayed, from the live master lists.
-    customerItems: customerItems.map((r) => ({
+    /**
+     * The customer-item catalogue, now shared.
+     *
+     * Two sources feed it: the pairs Dispatch maintains by hand, and the pairs
+     * derived from Tally's sales register (what a customer has ACTUALLY bought).
+     * Both live in mst_party_items, so a customer's picker is richer than it was.
+     *
+     * ⚠ Filtered to this module's masters. The table holds every party-item pair
+     *   in the business; a pair whose item is not ticked into Dispatch must not
+     *   appear in a Dispatch picker, and `itemsForCustomer` intersects with the
+     *   item list anyway — this just avoids carrying thousands of dead rows.
+     */
+    customerItems: customerItems.filter((r) => customerIds.has(r.party_id) && itemIds.has(r.item_id)).map((r) => ({
       ...mapMaster4(r),
       name: "",
-      customerId: r.customer_id,
+      customerId: r.party_id,
       itemId: r.item_id
     })),
     masterManagers: masterManagers.map(mapMasterManager6),
@@ -5195,9 +5250,13 @@ var requestHref = (id) => `${B}/requests/${id}`;
 var APPROVAL_STEPS3 = /* @__PURE__ */ new Set(["first_approval", "second_approval"]);
 function officeSuppliesWorkItems(data, uid, isAdmin) {
   const owners = data.stepOwners;
+  const myHodDepartmentIds = new Set(
+    data.departments.filter((d) => d.hodUserId === uid).map((d) => d.id)
+  );
+  const mine = (stepKey, departmentId) => stepKey === "first_approval" ? myHodDepartmentIds.has(departmentId) : isMineByStepOwners(stepKey, uid, owners);
   return buildQueueEntries5(
     supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla })
-  ).filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners)).map((e) => ({
+  ).filter((e) => isAdmin || mine(e.stepKey, e.departmentId)).map((e) => ({
     id: `office-supplies:${e.requestId}:${e.stepKey}`,
     source: "office-supplies",
     sourceLabel: appName("office-supplies"),
@@ -5205,7 +5264,7 @@ function officeSuppliesWorkItems(data, uid, isAdmin) {
     stage: stepByKey5(e.stepKey)?.short,
     dueIso: e.dueIso,
     to: requestHref(e.requestId),
-    assignment: isMineByStepOwners(e.stepKey, uid, owners) ? "direct" : "team",
+    assignment: mine(e.stepKey, e.departmentId) ? "direct" : "team",
     isApproval: APPROVAL_STEPS3.has(e.stepKey)
   }));
 }

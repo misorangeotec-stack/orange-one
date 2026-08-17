@@ -17,7 +17,6 @@ import GateOutQueue from "./pages/queues/GateOutQueue";
 import DispatchConfirmQueue from "./pages/queues/DispatchConfirmQueue";
 import SalesReturnQueue from "./pages/queues/SalesReturnQueue";
 import OrderRegister from "./pages/reports/OrderRegister";
-import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import Setup from "./pages/settings/Setup";
@@ -33,12 +32,6 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 function RequireMonitor({ children }: { children: ReactNode }) {
   const { isProcessCoordinator } = useDispatchStore();
   if (!isProcessCoordinator) return <AccessDenied />;
-  return <>{children}</>;
-}
-
-function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyMasterManager } = useDispatchStore();
-  if (!isAnyMasterManager) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -87,7 +80,15 @@ export default function OrderToDispatchApp() {
           <Route path="queues/sales-return" element={<RequireQueue step="sales_return"><SalesReturnQueue /></RequireQueue>} />
           <Route path="reports/register" element={<OrderRegister />} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
-          <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
+          {/* MASTERS MOVED TO CENTRAL MASTERS (/admin/masters).
+              Customers and items are now shared with every module, so editing
+              them from inside one module would rename them for all of the
+              others — and the next Tally sync would revert it 15 minutes later.
+              Kept as a redirect, not deleted: the old URL is bookmarked, and a
+              404 would read as "broken" rather than "moved".
+              Master Requests stays where it was — raising and approving a new
+              master is still a Dispatch job. */}
+          <Route path="masters" element={<Navigate to="/admin/masters" replace />} />
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
         </Route>

@@ -34,9 +34,10 @@ type Tbl =
   | "fms_dispatch_config"
   | "fms_dispatch_companies"
   | "fms_dispatch_company_locations"
-  | "fms_dispatch_customer_items"
-  | "fms_dispatch_customers"
-  | "fms_dispatch_items"
+  | "mst_parties"
+  | "mst_items"
+  | "mst_units"
+  | "mst_party_items"
   | "fms_dispatch_master_managers"
   | "fms_dispatch_master_requests"
   | "fms_dispatch_orders"
@@ -55,6 +56,32 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
       .select("*")
       .order(orderBy, { ascending: true })
       .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * CENTRAL MASTERS — customers and items now live in mst_*, shared with every
+ * other module, and Dispatch reads only the rows an admin has ticked into it.
+ *
+ * ⚠ THE `modules` FILTER IS NOT OPTIONAL. mst_parties holds ~7,800 ledgers and
+ *   mst_items ~14,200 stock items — every one in Tally. Without
+ *   `.contains("modules", [APP_ID])` this app would pull all of it on every
+ *   load and every customer picker would offer eight thousand names. The tick
+ *   is portal-owned and no sync overwrites it.
+ */
+const APP_ID = "order-to-dispatch";
+
+async function fetchForModule(table: "mst_parties" | "mst_items", extra?: (q: any) => any): Promise<any[]> {
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = db.from(table).select("*").contains("modules", [APP_ID]);
+    if (extra) q = extra(q);
+    const { data, error } = await q.order("created_at", { ascending: true }).range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -394,7 +421,7 @@ export async function fetchDispatchData(): Promise<DispatchData> {
   // 16 names, 16 calls. Keep them in step.
   const [
     stepOwners, configRows, designations,
-    companies, companyLocations, customerItems, customers, items,
+    companies, companyLocations, customerItems, customers, items, units,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
     activity, notifications,
@@ -404,9 +431,12 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchAll("designations"),
     fetchAll("fms_dispatch_companies"),
     fetchAll("fms_dispatch_company_locations"),
-    fetchAll("fms_dispatch_customer_items"),
-    fetchAll("fms_dispatch_customers"),
-    fetchAll("fms_dispatch_items"),
+    // The catalogue carries no `modules` of its own — a pair is scoped by the
+    // customer and item it points at, so it is filtered below rather than here.
+    fetchAll("mst_party_items"),
+    fetchForModule("mst_parties", (q) => q.eq("is_customer", true)),
+    fetchForModule("mst_items"),
+    fetchAll("mst_units"),
     fetchAll("fms_dispatch_master_managers"),
     fetchAll("fms_dispatch_master_requests"),
     fetchAll("fms_dispatch_orders", "submitted_at"),
@@ -416,6 +446,12 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchRecentActivity(),
     fetchAll("fms_dispatch_notifications"),
   ]);
+
+  // Lookups for the central masters: unit ids to names, and the id sets that
+  // scope the shared customer-item catalogue down to this module.
+  const unitNameById = new Map<string, string>(units.map((u: any) => [u.id, u.name]));
+  const customerIds = new Set<string>(customers.map((c: any) => c.id));
+  const itemIds = new Set<string>(items.map((i: any) => i.id));
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: DispatchConfig = {
@@ -475,15 +511,40 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     companyLocations: companyLocations.map((r): CompanyLocation => ({
       ...mapMaster(r), companyId: r.company_id,
     })),
-    customers: customers.map(mapCustomer),
+    /**
+     * ⚠ `companyId` IS DELIBERATELY DROPPED. In Dispatch it meant "which of our
+     *   companies bills this customer" and was filled on 1 of 327 rows. On
+     *   mst_parties the same column means Tally's company BOOK, which is a
+     *   different set of ids entirely — carrying it through would have the
+     *   Masters grid resolve a Tally company id against Dispatch's 2-row company
+     *   list and render a blank. The order carries the billing company anyway.
+     */
+    customers: customers.map((r): Customer => ({
+      ...mapCustomer(r), companyId: null,
+    })),
     items: items.map((r): Item => ({
-      ...mapMaster(r), code: str(r.code), unit: str(r.unit), hsnCode: str(r.hsn_code),
+      ...mapMaster(r), code: str(r.code),
+      // mst_items points at mst_units; Dispatch's Item carries the unit's NAME.
+      unit: unitNameById.get(r.unit_id) ?? "",
+      hsnCode: str(r.hsn_code),
     })),
-    // The row has no name of its own; the synthetic "Customer - Item" label is
-    // built where it is displayed, from the live master lists.
-    customerItems: customerItems.map((r): CustomerItem => ({
-      ...mapMaster(r), name: "", customerId: r.customer_id, itemId: r.item_id,
-    })),
+    /**
+     * The customer-item catalogue, now shared.
+     *
+     * Two sources feed it: the pairs Dispatch maintains by hand, and the pairs
+     * derived from Tally's sales register (what a customer has ACTUALLY bought).
+     * Both live in mst_party_items, so a customer's picker is richer than it was.
+     *
+     * ⚠ Filtered to this module's masters. The table holds every party-item pair
+     *   in the business; a pair whose item is not ticked into Dispatch must not
+     *   appear in a Dispatch picker, and `itemsForCustomer` intersects with the
+     *   item list anyway — this just avoids carrying thousands of dead rows.
+     */
+    customerItems: customerItems
+      .filter((r: any) => customerIds.has(r.party_id) && itemIds.has(r.item_id))
+      .map((r: any): CustomerItem => ({
+        ...mapMaster(r), name: "", customerId: r.party_id, itemId: r.item_id,
+      })),
 
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),

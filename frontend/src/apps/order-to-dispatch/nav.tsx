@@ -130,9 +130,11 @@ export function buildDispatchNav(opts: {
   if (opts.hasOrders) admin("Order Register", `${B}/reports/register`, ic.report);
   if (opts.canMonitor) admin(`${appName("order-to-dispatch")} Control Center`, `${B}/monitoring`, ic.monitor);
   if (opts.canManageMasters) {
-    admin("Masters", `${B}/masters`, ic.masters);
-    // Beside the masters it approves INTO, and carrying the count — raising a
-    // master is now one click from any picker, so this queue fills fast.
+    // ⚠ NO "Masters" ENTRY. Customers and items live in Central Masters
+    //   (/admin/masters) now, shared with every module — editing them from
+    //   inside one module would rename them everywhere, and the next Tally sync
+    //   would undo it. Master Requests stays: raising and approving a new master
+    //   is still a Dispatch job, and the approval writes to the central tables.
     admin("Master Requests", `${B}/master-requests`, ic.requests, opts.pendingReviews || undefined);
   }
   if (opts.isAdmin) admin("Setup", `${B}/settings`, ic.settings);
