@@ -6,8 +6,8 @@ This file is the memory of the operation. It survives sessions: open it, read
 *Where we are*, and carry on. Update it at the end of any working session — a
 phase is not finished until this file says so.
 
-- **Status:** Phase 0 complete. Phase 1 not started, awaiting go-ahead.
-- **Last updated:** 2026-08-14
+- **Status:** Phase 0 and Phase 1 complete and live.
+- **Last updated:** 2026-08-17
 - Plan of record: `C:\Users\Admin\.claude\plans\now-the-thing-is-greedy-orbit.md`
 
 ---
@@ -17,20 +17,66 @@ phase is not finished until this file says so.
 | Phase | What it is | Status |
 |---|---|---|
 | **0** | Build the central store, sync it from Tally, admin screens | ✅ **Done** |
-| **1** | Cut **Order to Dispatch** over to it | ⏸ Not started — needs a ~10 min freeze |
+| **1** | Cut **Order to Dispatch** over to it | ✅ **Done — 2026-08-17, ~16:45 IST** |
 | **2** | Purchase → Import → Production → Assets → Office Supplies, plus `mst_lists` for module-specific masters | ⏸ Not started |
 | **3** | Collapse the 9 duplicated master-request/approval systems into one | ⏸ Not started |
 
 **Immediately outstanding**
 
-1. ⚠ **Rotate the `service_role` key.** It was pasted into a chat transcript on
-   2026-08-14 and must be treated as exposed. Roll it in Dashboard → Project
-   Settings → API, then re-run the `private.masters_sync_config` insert with the
-   new value. Edge Functions pick the new key up automatically; only that one row
-   needs changing.
-2. User's manual testing of `/admin/masters` and `/admin/masters/reconcile`.
-3. Reconcile decisions: 326 Dispatch customers + 246 items are all undecided.
-   Phase 1 reads those decisions, so this is its real prerequisite.
+1. **Redeploy the `work-snapshot` Edge Function.** Its bundle
+   (`supabase/functions/_shared/workSnapshot.bundle.js`) is regenerated and
+   committed, but the *deployed* version is still v13 and still reads the old
+   master tables. Those tables are frozen and complete, so today's digest is
+   correct; only masters created after the cutover would render blank. Fires
+   daily at 03:30 UTC via `user-snapshot-daily`. Deploy with
+   `supabase functions deploy work-snapshot --project-ref icutjkrqkbzwvmnfbzpr`.
+2. ⚠ **The `service_role` key was pasted into a chat transcript on 2026-08-14.**
+   The user has explicitly decided not to rotate it. Do not raise this again
+   unless asked.
+3. 15 Dispatch customers have no Tally ledger and carried over as portal-only.
+   Two are waiting on a ledger being created in Tally — **ARA DIGITAL PRINTS**
+   and **AJANTA DIGITAL INDUSTRIES**. Not blocking anything.
+
+---
+
+## Phase 1 — what actually happened
+
+Run on 2026-08-17 with the user present, in this order. Nothing was skipped.
+
+| Step | Result |
+|---|---|
+| Paused `masters-sync-watch` + `masters-sync-daily-force` | no run in flight |
+| Re-baselined | counts had drifted twice during the window — orders 277 → 284 → 287 |
+| Dry run (whole cutover, aborting) | all assertions passed |
+| **Rehearsal: cutover → rollback → abort** | counts returned to baseline **exactly**; guids back on twins; 6/6 function bodies restored |
+| Cutover for real | one statement, `lock_timeout = 3s`, committed |
+| Frontend | cutover files only, pushed to `master` as `b0f26d6` |
+| Smoke tests (aborting) | `replace_lines` 4 lines / 0 null units; master-request approve → customer, item and mapping all land visible |
+| One forced Tally sync | counts **unchanged** — every absorbed row matched by guid |
+| Cron re-enabled | both jobs active |
+
+**Final state:** parties 7,815 → **7,830** (+15 = exactly the customers with no
+Tally match), items 14,239 → **14,239** (every one absorbed a twin), catalogue
+6,030 → **8,553**. Orders 287, lines 1,100, round items 609 — untouched. Zero
+orphans. Legacy tables intact at 327 / 234 / 3,169 as the rollback.
+
+**The rollback is real and rehearsed.** `private.phase1_cutover()` and
+`private.phase1_rollback()` are installed procedures; `supabase/phase1/*.sql` is
+their source. Backups live in `private.dispatch_cutover_{parties,items,
+party_items,functions}`. Keep all of it, and the old tables, until after a full
+month-end close — the email, gate-pass and receiver-copy paths only exercise on
+a completed round.
+
+**Standing checks, first week**
+
+```sql
+select count(*) from mst_parties where modules @> '{order-to-dispatch}' and not is_customer;  -- 0
+select count(*) from fms_dispatch_order_items where unit is null;                              -- 0
+select count(*) from fms_dispatch_round_items where item_name = 'Item' or unit_name is null;   -- 0
+select count(*) from fms_dispatch_customer_items;                                              -- stays 3169
+```
+
+A drop in that last one means something is eating the rollback snapshot.
 
 ---
 
@@ -180,6 +226,27 @@ the URL and key from `private.masters_sync_config`.
     Source / Modules / Type by declaring `sortValue` + `filter.get` explicitly
     (`sourceCol()`, `modulesCol()`, `itemTypeCol` in `Masters.tsx`). Any new
     column whose cell is a component must do the same.
+19. **A rollback nobody has run is not a rollback.** The first `00_rollback.sql`
+    could not execute at all: it deleted the copied rows `where source='portal'`,
+    but the cutover sets `source='tally'` on every row that absorbed a twin — so
+    it skipped 312 of 327 parties and *all* 234 items, then collided with the
+    UNIQUE `tally_guid` those survivors now held. `on conflict (id)` does not
+    catch a conflict on a *different* index. It was found by rehearsing, not by
+    reading. Rehearse cutover → rollback → abort against live data, and assert
+    the counts return **exactly**, before committing anything.
+20. **Do not spell a retired table's name in a comment.** The standing check
+    greps every function body for `fms_dispatch_(customers|items|customer_items)`
+    to prove nothing still reads the frozen masters — and `pg_get_functiondef`
+    returns comments too. A comment in `fms_dispatch_replace_lines` explaining
+    what it *used* to read tripped the detector and made the guard useless. The
+    function carries a note saying so.
+21. **`pg_net` times out at 5 s; `masters_sync_tick` does not fail.** A forced
+    sync logs `Timeout of 5000 ms reached` in `net._http_response` while the Edge
+    Function runs on for ~35 s and writes its own row into `mst_sync_runs`. Judge
+    a sync by that table, never by the HTTP response.
+22. **The freeze does not stop orders.** Counts drifted twice inside the Phase 1
+    window (orders 277 → 284 → 287, lines 1,058 → 1,089 → 1,100) because only
+    *master writes* were frozen. Never reuse a baseline taken before the window.
 17. **`mst_item_groups` uniqueness is an EXPRESSION index**
     (`coalesce(company_id::text,''), lower(name)`), which PostgREST's `onConflict`
     cannot address. The sync therefore reads what exists and inserts the
@@ -187,7 +254,11 @@ the URL and key from `private.masters_sync_config`.
 
 ---
 
-## Phase 1 — the plan when we resume
+## Phase 1 — the plan as it was written (kept; it is the template for Phase 2)
+
+> ✅ Executed 2026-08-17. See *Phase 1 — what actually happened* above for the
+> outcome. Left here because Phase 2 repeats this shape module by module.
+
 
 Prerequisite: reconcile decisions recorded for all 326 customers and 246 items.
 
