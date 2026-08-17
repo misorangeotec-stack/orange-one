@@ -6,8 +6,9 @@ This file is the memory of the operation. It survives sessions: open it, read
 *Where we are*, and carry on. Update it at the end of any working session — a
 phase is not finished until this file says so.
 
-- **Status:** Phase 0 and Phase 1 complete and live.
-- **Last updated:** 2026-08-17
+- **Status:** Phase 0 and Phase 1 complete and live. Company + dispatch location
+  moved across and the sales order form narrows on them — live 2026-08-18.
+- **Last updated:** 2026-08-18
 - Plan of record: `C:\Users\Admin\.claude\plans\now-the-thing-is-greedy-orbit.md`
 
 ---
@@ -36,6 +37,14 @@ phase is not finished until this file says so.
 3. 15 Dispatch customers have no Tally ledger and carried over as portal-only.
    Two are waiting on a ledger being created in Tally — **ARA DIGITAL PRINTS**
    and **AJANTA DIGITAL INDUSTRIES**. Not blocking anything.
+4. **Six reconcile decisions still open** — AVADH FAB TEX, JINDAL TEXOFAB,
+   N S ENTERPRISES, A N CREATION, TEX INDIA ENTERPRISES, GARTEX. Until they are
+   settled these sit in no company book, which now means they are offered under
+   *every* company on the sales order form. Not wrong, just wider than it needs
+   to be.
+5. **Enterprise — Noida can take no order yet**: it has no customer↔item
+   mappings. Colorix has no dispatch site. Both are filled in on the Central
+   Masters screens, not by a migration.
 
 ---
 
@@ -77,6 +86,75 @@ select count(*) from fms_dispatch_customer_items;                               
 ```
 
 A drop in that last one means something is eating the rollback snapshot.
+
+---
+
+## Company & dispatch location — what actually happened
+
+Run on **2026-08-17 / 18**. Phase 1 moved customers and items; this moved the two
+masters it left behind, and then made the order form narrow on them. Called
+"Phase 2" in `supabase/phase2/*.sql` and in the plan file — **not** the Phase 2
+in the table above, which is the other modules.
+
+**The database (2026-08-17).** `private.phase2_cutover()` / `phase2_rollback()`,
+installed as procedures so the dry run, the rehearsal and the real run were
+byte-identical; the files were verified against the DB by md5 of the
+comment-stripped text. Rehearsed cutover → rollback → abort on live data before
+committing, because Phase 1 taught that a rollback which is only *read* does not
+work (see the list below).
+
+| | |
+|---|---|
+| Dispatch's private 2-row company list | → `mst_companies`, all 5 Tally books |
+| 6 location rows (3 sites × 2 companies) | → 3 sites in `mst_locations` + `mst_company_locations` |
+| Orders / rounds / step owners | repointed; 303 orders, 1,148 lines, 165 rounds **unchanged**, 0 orphans |
+| Step owners | merged 28 → 14 pairs; identical owners asserted first (compare `array_agg(x order by x)`, not the raw array) |
+| 5 functions | repointed by string substitution with asserted hit counts |
+| Gate pass | prints the **alias**, never `mst_companies.name` — that is Tally's FY-suffixed book name, re-minted every April, and it reaches a driver at the gate |
+
+Legacy tables left populated and unread as the rollback.
+
+**The order form (2026-08-18, `550bd72`).** The `modules` tick no longer scopes
+Dispatch. The company does:
+
+- company → its own dispatch sites (`mst_company_locations`)
+- company → its own customers (`mst_parties.company_id` — Tally keeps a separate
+  ledger per book, so this IS the mapping; nothing is maintained by hand)
+- customer → the items that customer buys (`mst_party_items`)
+
+Measured before it was written, because the tick existed to keep the payload
+small: **1,850** customer ledgers, and — since the item picker can only offer
+what a pair names — **1,656** distinct items, not 14,239. All 121 items on the
+303 orders are inside that set. So it still loads up front; `mst_items` is
+fetched **by id from the pairs** instead of by a tick.
+
+⚠ **Items are NOT filtered by the item's own Tally book.** 1,326 of the 8,531
+mappings deliberately cross books (Tally files one stock item under one company
+while both firms sell it). Filtering on `mst_items.company_id` would offer an
+Enterprise order 21 items instead of ~230 and invalidate 589 of its 619 existing
+lines. The customer row is already company-specific; that is what makes the
+mapping the right authority.
+
+⚠ **71 of the 303 existing orders are billed by a company that is not the one on
+their customer's ledger** — the old picker offered one flat list whatever company
+was chosen. They are history. The form always keeps the customer it is showing,
+and `fms_dispatch_update_order` tests the pair **only when the customer is being
+changed**. Never make that check unconditional.
+
+⚠ **A customer with no company book appears under EVERY company.** Nine rows
+today (the open reconcile decisions, two internal Noida entities), plus every
+customer approved through a master request — those are created in the portal and
+reach Tally only after the first invoice. Hiding them would make a newly
+approved customer unorderable at the exact moment somebody needs it.
+
+**Retired without being dropped.** `mst_party_companies` / `mst_item_companies`
+and `mst_refresh_party_companies()` / `mst_refresh_item_companies()` (cron
+`mst-refresh-company-links`, jobid 30) are still installed and populated but
+**nothing reads them**. They were built as lists to maintain by hand; the user
+was right that this defeated the point, since Tally already holds the answer.
+Kept as the documented fallback — deriving from sibling ledgers took
+Enterprise — Surat from 76 items to 168 and Enterprise — Noida from 0 to 79, so
+the "gap" that would have been filled by hand was never a gap.
 
 ---
 
