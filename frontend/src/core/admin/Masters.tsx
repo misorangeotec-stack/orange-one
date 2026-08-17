@@ -53,6 +53,10 @@ type TabKey =
 
 const TABS: { value: TabKey; label: string }[] = [
   { value: "company", label: "Companies" },
+  // Immediately after Companies, because a dispatch location is read as their
+  // child: the two are set up together, and a site with no company attached is
+  // offered on no order at all.
+  { value: "location", label: "Dispatch Locations" },
   { value: "customer", label: "Customers" },
   { value: "vendor", label: "Vendors" },
   { value: "item", label: "Items" },
@@ -64,7 +68,6 @@ const TABS: { value: TabKey; label: string }[] = [
   { value: "item_company", label: "Item Companies" },
   { value: "item_group", label: "Item Groups" },
   { value: "unit", label: "Units" },
-  { value: "location", label: "Dispatch Locations" },
 ];
 
 /** Which mst_* table each tab writes to. Customers and vendors share one. */
