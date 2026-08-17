@@ -165,10 +165,22 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     };
   };
 
+  /**
+   * Load a BOM into the grid — or, with an empty id, take it back out again.
+   *
+   * ⚠ THE EMPTY BRANCH MUST CLEAR THE ROWS. It used to return early, so picking
+   *   "No BOM — enter manually" left every loaded row behind and the user deleted
+   *   them one ✕ at a time. Selecting no BOM is a request for an empty grid, not
+   *   for the last BOM's rows with the label taken off.
+   *
+   * What it clears is deliberately narrow: only a grid the BOM filled in. A grid
+   * the user typed themselves never came from a BOM and is theirs to keep.
+   */
   const applyBom = (id: string, qty: number = fgTotal) => {
     setBomIdRaw(id);
     if (!id) {
       setSkipped(0);
+      setLines((prev) => (prev.some((l) => l.fromBom) ? [makeEmptyRmLine()] : prev));
       return;
     }
     const { rows, skipped: n } = linesFromBom(id, qty);
@@ -176,19 +188,20 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     setLines([...rows, makeEmptyRmLine()]);
   };
 
-  /** Picking an FG loads its default BOM when the choice is unambiguous (an
-   *  explicit default, or a lone BOM); otherwise it clears to manual entry and
-   *  lets the user choose. */
+  /**
+   * Picking an FG loads its default BOM when the choice is unambiguous (an
+   * explicit default, or a lone BOM); otherwise it clears to manual entry and
+   * lets the user choose.
+   *
+   * ⚠ BOTH OUTCOMES GO THROUGH `applyBom`, including "none". This branch used to
+   *   carry its own copy of the clearing logic, and the copy is what let the two
+   *   paths drift: it cleared the grid while the BOM picker's own "No BOM" did
+   *   not, so the same intent gave two different results depending on which
+   *   control you reached for. One path, one behaviour.
+   */
   const setFgItemId = (id: string) => {
     setFgItemIdRaw(id);
-    const preferred = s.defaultBomForFg(id);
-    if (preferred) applyBom(preferred.id);
-    else {
-      setBomIdRaw("");
-      setSkipped(0);
-      // Only wipe rows the previous BOM put there — typed lines are the user's.
-      setLines((prev) => (prev.some((l) => l.fromBom) ? [makeEmptyRmLine()] : prev));
-    }
+    applyBom(s.defaultBomForFg(id)?.id ?? "");
   };
 
   /**

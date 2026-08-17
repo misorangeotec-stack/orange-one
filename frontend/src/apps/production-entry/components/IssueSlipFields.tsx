@@ -153,10 +153,19 @@ export default function IssueSlipFields({
                 <Combobox
                   value={f.bomId}
                   onChange={(v) => {
-                    // Loading another BOM replaces the grid, so don't throw away
-                    // hand-edited lines without asking. Picking "enter manually"
-                    // keeps whatever is there as a starting point, so it's safe.
-                    if (v && f.bomDirty && !window.confirm("Load this BOM? The raw materials you've changed will be replaced.")) return;
+                    // BOTH directions replace the grid — loading another BOM
+                    // overwrites it, and picking "No BOM" empties it — so neither
+                    // may throw away hand-edited lines without asking.
+                    //
+                    // ⚠ `bomDirty` IS READ HERE, BEFORE applyBom RUNS. It returns
+                    //   false the moment bomId is empty (useJobCardForm's bomDirty),
+                    //   so once the call has been made there is no way left to know
+                    //   the grid had been edited. Guarding after it would silently
+                    //   never fire on the clearing path.
+                    const warn = v
+                      ? "Load this BOM? The raw materials you've changed will be replaced."
+                      : "Clear the BOM? The raw materials on this slip will be removed.";
+                    if (f.bomDirty && !window.confirm(warn)) return;
                     f.applyBom(v);
                   }}
                   options={f.bomOptions}
