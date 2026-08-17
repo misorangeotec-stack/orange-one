@@ -1,175 +1,151 @@
-# Scheduled delivery of the Collection reports
+# Emailing the Collection reports — status and what is left
 
-Send the Zero-Collections report on a timer: the consolidated book to the people who run it, and
-one extract per salesperson containing only their own customers.
+**Where it stands (17-Aug-2026): sending BY HAND works and is live. Sending ON A SCHEDULE is not
+built.** Somebody has to press a button. This file is the handover for the half that remains.
 
-Live state verified against project `icutjkrqkbzwvmnfbzpr` on 14-Aug-2026.
-
----
-
-## 1. What already works
-
-More of this is built than expected. The email pipeline is not theoretical — **844 sent, 0 failed,
-last send 14-Aug 16:52 UTC.**
-
-| Piece | State | Evidence |
-|---|---|---|
-| Outbox → Gmail delivery | **working** | 844 sent, 0 failed. The in-repo note saying Gmail has been down since 24-Jul is **stale** and should be deleted (`NotificationsSection.tsx`). |
-| Outbox sweeper | **working** | cron `email-outbox-sweep`, every 3 min |
-| Attachments on email | **working** | `multipart/mixed` in `send-email`, files fetched from Storage with the service role |
-| A report that mails itself daily | **working** | cron `master-report-daily`, 02:30 UTC = 08:00 IST, with a send log that makes a re-run harmless. A pattern to copy, not invent. |
-| Cron → Edge Function | **working** | `masters_sync_tick` over `pg_net`, secret in the `private` schema |
-| Salesperson → person → address | **available** | `profiles.receivables_salespersons` + `profiles.email` |
-| Storage for generated files | **missing** | `report-exports` bucket never created |
-| Email switch for this app | **missing** | every module has a row in `email_module_settings`; `outstanding-dashboard` has none, so a send today is a **silent no-op** with no error anywhere |
-| Building the report with nobody logged in | **missing** | all of the work below |
-
-The first two gaps are in `supabase/migrations/20260829120000_add_report_exports_and_receivables_email.sql`
-— written, deliberately never applied.
+Live state verified against project `icutjkrqkbzwvmnfbzpr`.
 
 ---
 
-## 2. The one real problem
+## 1. What is done and live
 
-**The PDF and workbook are built in the browser, from a Supabase project the scheduler cannot
-reach. At 08:00 there is no browser.**
-
-Scheduling an email is solved twice over in this codebase. Producing the report is not.
-
-And it is not only the attachments. Every figure on that report — each KPI card, each customer's
-overdue, the sale-type split — is computed by the app from raw ledgers and invoices. None of it is
-sitting in a table waiting to be selected. So the report engine has to run server-side no matter how
-much of the report we mail. Only a bare "click here to open the report" link avoids that, and that
-is not what was asked for.
-
-**The renderer itself is not browser-bound** — proven on 14-Aug by bundling `buildCollectionsPdf`
-and `collectionsWorkbookBlob` with esbuild and producing real 59-page PDFs and real `.xlsx` files
-headless under Node, fonts read from disk. What has to move is the layer beneath it: the report's
-*definition*, which currently lives inside the 2,487-line `CollectionPerformanceReport.tsx`.
-
----
-
-## 3. The work, in order
-
-Each phase is gated on the one before. **Phase 1 is worth shipping alone** even if the timer is
-never built — it gives a working "email this to these people now" button.
-
-### Phase 0 — Prove the report can be built on a server *(half a day, throwaway)*
-
-A scratch Edge Function that pulls a slice of receivables data, runs the engine, and writes a PDF
-and an `.xlsx` to Storage. Answers three things:
-
-- does jsPDF run on Supabase's Deno runtime (`npm:` specifier)?
-- can `loadBrandAssets` fetch the Poppins TTFs without a page-relative URL? (needs a base-URL
-  parameter, or the fonts moved into Storage)
-- does a whole book fit inside the function's memory and wall-clock budget?
-
-**If it fails:** fall back to a scheduled job on Vercel — a Node runtime this exact code already ran
-on. Everything from phase 2 onward is unchanged; only the host differs.
-
-**Gate:** a PDF lands in Storage that opens correctly, built by a server, no browser involved.
-
-### Phase 1 — Turn on emailing by hand *(~1 day, mostly already written)*
-
-- Apply `20260829120000`: the `report-exports` bucket (insert-only, own-uid prefix, **no client
-  select** — the sender reads with the service role), `queue_report_email`, and the missing
-  `outstanding-dashboard` module row seeded **off**.
-- Deploy `send-email` — the `receivables_collections_report` branch is already in the working copy.
-- Restore the two menu items in `ExportMenu.tsx` (a comment there records how) and add the
-  Notifications switch to the hub's Settings.
-
-**Gate:** pick three salespeople, hit Email, each receives their own two files and nobody else's.
-
-### Phase 2 — Lift the report's definition out of the screen *(2–3 days, the bulk of the job)*
-
-The page currently holds: who counts as a zero-collection customer, the `eligible` pool, what each
-KPI card means (`computeKpis` / `cardsFor`), and `filterSummary`. The server needs all of it and
-cannot import a React page.
-
-Move it into one plain module both sides call, so the mailed report and the on-screen report cannot
-drift into disagreeing. The engine underneath (`collections.ts`, `groupTree.ts`, `appDataCore.ts`,
-`supabaseFetcher.ts`) is already plain TypeScript and moves as-is.
-
-**Gate:** the screen behaves identically — same numbers, same cards, same exports.
-
-### Phase 3 — The report builder *(2 days)*
-
-One Edge Function: read the receivables project (its URL and key as Edge secrets), apply the saved
-period and filters, build the consolidated report plus one extract per salesperson, upload, and
-enqueue one outbox row per recipient. Manually triggerable — that is how it gets tested and how a
-bad day gets re-sent.
-
-**Gate:** one manual trigger produces the full file set and a queued email per recipient, figures
-matching the screen.
-
-### Phase 4 — The timer and the recipient list *(2 days)*
-
-- Admin screen in the hub: on/off, hour (IST), daily / weekly (day) / monthly (date), the period the
-  report covers, and the recipients.
-- **Capture the filters from the screen** — a "use this view for the scheduled send" action — so
-  what arrives by email is a view someone deliberately set and can be audited against later.
-- Send log keyed on `(report, date)` so a retry or manual catch-up cannot double-send. A run that
-  reaches nobody **deliberately does not log** — otherwise adding the first recipient at 09:00 costs
-  the whole day. (Copied from `master_report_enqueue_daily`.)
-- Three independent switches: schedule enabled / `email_module_enabled('outstanding-dashboard')` /
-  per-recipient enabled.
-- `cron.schedule` is UTC. Convert by hand and state the conversion in the migration.
-
-**Gate:** set it for tomorrow 08:00, walk away, the right mail arrives.
-
-### Phase 5 — Prove it, then leave it running *(1 day)*
-
-- Reconcile one salesperson's mailed PDF against the same salesperson on screen, figure by figure.
-- Confirm a rep's mail contains no customer outside their own book.
-- Watch one full unattended run, then add the cleanup job that clears generated files after 30 days.
-
----
-
-## 4. Who gets what
-
-Two kinds of recipient, kept apart on purpose. A salesperson's report is **built from their rows
-only** (`rowsForSalesperson`), never the whole book filtered at the last moment — so there is no
-state in which the wrong customers could appear in it.
-
-- **The book** — named people (directors, credit control), listed by hand. The consolidated report:
-  every salesperson, the league table, both appendices.
-- **Their own book** — resolved from `profiles.receivables_salespersons`. Tagging a user in the
-  admin screen is what enrols them; nobody maintains a second list.
-
-| Case | Decision |
+| | |
 |---|---|
-| A user tagged with more than one salesperson | One email, one report per name. They run several books; merging them would print a total that appears nowhere else. |
-| A salesperson in the data with no portal user | Listed in the admin screen as **unclaimed**, never skipped quietly. A report with no reader should be visible. |
-| A customer worked by two salespeople | Appears in **both** extracts — a shared customer is the one most likely to be nobody's job. The extracts therefore sum to more than the book, which is why the consolidated report keeps counting them once. See the header of `collectionsExport.ts`. |
-| Could a rep ever receive the whole book? | No. The two paths build from different row sets. Not a permission check that could be got wrong — there is nothing in their file to leak. |
+| Storage for generated files | `report-exports` bucket — private, upload-only, own-uid prefix, **no client read** |
+| The enqueue | `queue_report_email(report_key, …)` — checks Reports full access, the report's own switch, and that every attachment path belongs to the caller |
+| The switch | per REPORT (`report_email_settings`), not per module. Settings → Permissions |
+| Manual send | Export → **Email all…** / **Email salesperson-wise…** |
+| Recipient picking | you choose who receives a salesperson's book; nothing is inferred (see §4) |
+| Isolation | two tripwires; a rep's file refuses to build if anyone else's customer is in it |
+| Progress | a real bar — three phases per artefact × number of salespeople |
+| Schedule + recipient list | **stored** (`report_email_schedule`, `report_email_recipients`) but **nothing reads them** |
+
+Delivery itself has long worked: 844+ mails sent, 0 failed. The repo note claiming Gmail has been
+down since July is stale.
+
+**The switch is OFF** and stays off until an admin flips it. That is the hard stop: with it off
+`queue_report_email` raises before writing anything, so no path leads from a button to an inbox.
 
 ---
 
-## 5. Risks
+## 2. What is PENDING — the automatic send
 
-| Risk | Mitigation |
-|---|---|
-| jsPDF will not run on Supabase's Deno runtime | Most likely single failure. Phase 0 finds out in half a day. Fallback: Vercel, where this code is proven. |
-| The whole book will not fit in one invocation | Every invoice for every customer is a lot to hold. If it does not fit, split per salesperson across invocations — slower, same output. |
-| Files pile up in Storage | A PDF + workbook per recipient per day. Cleanup job goes in during phase 5, not "later". |
-| A big month makes the attachment too large | Over the limit, drop attachments and carry a time-limited signed link instead. Degrade, do not fail. |
-| The send is off and looks like it worked | Exactly what the missing module row causes today. Seed it off, surface it in Settings, and make the manual path **raise** rather than return quietly. |
+Three pieces, in order. None of them exists yet.
+
+### 2.1 The report builder (the real work)
+
+An Edge Function that builds the report with nobody logged in.
+
+**Why it is needed at all:** the PDF and workbook are drawn in the BROWSER, from a *different*
+Supabase project. At 08:00 there is no browser. And it is not only the drawing — every figure on
+the report (each KPI card, each customer's overdue, the sale-type split) is computed by the app
+from raw ledgers; none of it sits in a table waiting to be selected. So the report engine has to
+run server-side however much of the report we mail.
+
+**How:** follow `supabase/worksnapshot/build.mjs`. That is an existing, working precedent for
+running the frontend's own code on Deno: esbuild bundles the real TypeScript, substituting the
+browser Supabase client for a service-role one, and the build FAILS if React, `window`,
+`localStorage` or `import.meta.env` reach the graph. Copy that shape rather than inventing one, and
+copy its guard — it is the only test this repo has.
+
+**What has to move out of the React page** (`CollectionPerformanceReport.tsx`, ~2,500 lines): who
+counts as a zero-collection customer, the `eligible` pool, `computeKpis` / `cardsFor`, and
+`filterSummary`. Into one plain module both the screen and the server call, so the mailed report
+and the on-screen report cannot drift. The engine underneath (`collections.ts`, `groupTree.ts`,
+`appDataCore.ts`, `supabaseFetcher.ts`) is already plain and moves as-is.
+
+### 2.2 The timer
+
+`pg_cron` → the builder over `pg_net`, following `masters_sync_tick` (20260902120400) for the
+call and `master_report_enqueue_daily` (20260830120200) for the shape:
+
+- `cron.schedule` is **UTC**. Convert from the stored IST hour by hand and state the conversion.
+- A send log keyed on `(report, date)` so a retry or manual catch-up cannot double-send.
+- **A run that reaches nobody must NOT log.** Otherwise adding the first recipient at 09:00 costs
+  the whole day.
+- Three switches must all be on: the schedule, the report's email switch, the per-recipient flag.
+
+### 2.3 Housekeeping that ships with it
+
+- **Retention.** A PDF + workbook per recipient per day accumulates in `report-exports`. A cleanup
+  job (30 days) goes in with the cron, not "later".
+- **Attachment size guard.** Over ~10 MB, drop the files and send a time-limited link instead.
+  Degrade, do not fail.
 
 ---
 
-## 6. Deploy order
+## 3. Known open items
 
-The frontend calls things that must already exist. Shipping it first breaks it at runtime.
+- **`ReportDeliveryConfig` resolves recipients the wrong way** (see §4). It stores only the
+  salesperson NAME and would resolve to everyone holding the tag. Nothing reads that table yet, so
+  nothing is sending on it — but it needs the same treatment as the send dialog, plus a column for
+  the chosen **user id** (not the address, so a rep who changes email keeps receiving and one who
+  loses the tag stops).
+- **`supabase/functions/report-spike` is deployed and should be deleted.** It answered its question.
+  There is no delete in the Supabase MCP tools — use the dashboard or
+  `supabase functions delete report-spike --project-ref icutjkrqkbzwvmnfbzpr`.
+- **Size is unmeasured.** The spike proved the runtime with a two-page toy. Whether ~60 pages over
+  a few thousand invoices fits the function's memory and wall clock is the first thing to measure
+  in 2.1. If it does not, fan out per salesperson across invocations.
+- **`send-email/index.ts` is not committed** on some branches. It carries both the receivables
+  branch and the master-report work, tangled. It IS deployed; the source just is not always tracked.
+- Only `zero-collections` is marked `emailable`. `low-collections` and `dormant-debtors` share the
+  same code and would probably work — mark them when their output has actually been read.
 
-1. migration — bucket, `queue_report_email`, module switch (seeded **off**)
-2. deploy `send-email`
-3. deploy the report builder
-4. merge the frontend
-5. switch the module on, add recipients
+---
+
+## 4. The one lesson worth not relearning
+
+**`profiles.receivables_salespersons` is a VISIBILITY SCOPE, not an identity.**
+
+It answers *"whose figures may this person see"*. It does **not** answer *"who is this
+salesperson"*. The live data is unambiguous: three accounts (`PC`, `collection`, `ritesh`) carry
+all thirteen salespeople, `nitesh` carries eight, and `nakul` — a real rep — carries five.
+
+The first version of the send dialog read it as an address book and would have mailed one rep's
+book to five people, four of them oversight accounts. Nor can the right answer be inferred:
+"tagged with exactly this one name" correctly identifies `khurshid` and `umesh` and fails on
+`nakul`.
+
+So recipients are **chosen**, with every candidate shown alongside how many books they can see (1 =
+the rep, 13 = credit control). Anything that later resolves a salesperson to an address — the cron
+job above, especially — must do the same. Do not reintroduce the shortcut.
+
+---
+
+## 5. Two Deno traps the builder will hit
+
+Both libraries ship CJS, and Deno's interop hands back the wrong thing. **Neither fails at import
+time** — they fail on first use, which in a scheduled job means 08:00 in front of nobody.
+
+```ts
+import jsPDF from "npm:jspdf"               // -> "jsPDF is not a constructor"
+import * as XLSX from "npm:xlsx-js-style"    // -> XLSX.utils is undefined
+
+import { jsPDF } from "npm:jspdf@4.2.1";     // named   ✓
+import XLSX from "npm:xlsx-js-style@1.2.0";  // default ✓
+```
+
+Assert both are callable at module load rather than discovering it mid-render.
+
+**Fonts should be INLINED into the server bundle,** not fetched. Built-in Helvetica is WinAnsi and
+has no ₹, so `addFileToVFS` + `Identity-H` is load-bearing for every money cell — and the app's own
+copy is not reliably reachable over https (`portal.orangeotec.com` does not resolve from every
+runtime, and the Vercel build does not serve `/assets/fonts` as a fetchable file; both checked).
+Inlining removes a network call, a base URL and a whole class of failure from the send path.
+
+Proven on the live runtime 17-Aug-2026: Poppins embedded, valid 2-page PDF in 75 ms, and pdfjs read
+`₹ 1.25 L and ₹ 42.19 Cr` back out with both rupee signs intact.
+
+---
+
+## 6. Deploy order, when the time comes
+
+The frontend calls things that must already exist.
+
+1. migration (bucket / functions / switches — seeded **off**)
+2. `send-email`
+3. the report builder
+4. the frontend
+5. switch the report on, add recipients
 6. enable the schedule — **last**, so nothing sends before it has been seen
-
----
-
-Roughly 8–9 working days end to end, with phase 1 usable on its own after the first. Nothing in
-phases 0–2 touches live data or sends anything. The first mail that can reach a real inbox is at the
-end of phase 1, and only after the switch is turned on.
