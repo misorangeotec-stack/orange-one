@@ -233,8 +233,41 @@ const exportOpts = (ctx: CollectionsExportContext): GroupTreeOptions<ZCRow, ZCMe
   sort: byOverdueDesc,
 });
 
-const scopedRows = (ctx: CollectionsExportContext, scope: ExportScope): ZCRow[] =>
-  scope.kind === "all" ? ctx.rows : rowsForSalesperson(ctx.rows, scope.name);
+/**
+ * A salesperson's artefact contains that salesperson's customers and NOBODY ELSE'S. Throws if not.
+ *
+ * ── WHY AN ASSERTION AND NOT JUST A FILTER ──────────────────────────────────────────
+ * The filter is already correct: `rowsForSalesperson` selects by membership, and neither artefact
+ * ever builds the whole book and trims it. So on today's code this can never fire, which is the
+ * point — it is a TRIPWIRE over a property that must not be allowed to stop being true quietly.
+ * The rows reach here through `ctx.rows` (which the page composes from period, threshold, filters
+ * and KPI lenses), the membership test, and two tree builds. Any of those changing could let one
+ * rep's customer into another rep's file, and that mistake is invisible on inspection: the file
+ * still looks like a report, and the first person to notice is the recipient, holding a competitor
+ * colleague's book. A build that dies with a named customer is enormously cheaper.
+ *
+ * ── IT THROWS RATHER THAN FILTERING THE STRAY ROW OUT ───────────────────────────────
+ * Silently dropping it would "fix" the leak and hide the bug, and the figures on the page would
+ * then disagree with the KPI cards for reasons nobody could see. Refusing to produce the file is
+ * the honest failure: nothing is sent, and the message names the customer and who does own them.
+ */
+function assertOnlyTheirs(rows: ZCRow[], name: string): void {
+  const stray = rows.find((r) => !salespersonNamesOf(r.customer).includes(name));
+  if (!stray) return;
+  const owners = salespersonNamesOf(stray.customer).join(", ") || "nobody";
+  throw new Error(
+    `Refusing to build the report for ${name}: it contains ${stray.customer.name}, ` +
+    `who is worked by ${owners}. Nothing has been written or sent. This is a bug in the export, ` +
+    `not a setting you can change.`,
+  );
+}
+
+const scopedRows = (ctx: CollectionsExportContext, scope: ExportScope): ZCRow[] => {
+  if (scope.kind === "all") return ctx.rows;
+  const rows = rowsForSalesperson(ctx.rows, scope.name);
+  assertOnlyTheirs(rows, scope.name);
+  return rows;
+};
 
 const scopeSuffix = (scope: ExportScope): string | undefined =>
   scope.kind === "all" ? undefined : scope.name;
@@ -318,6 +351,27 @@ export async function buildPdf(
       neverPaid: tree.total.neverPaid,
       rows: customerRowsOf(tree.roots, bills),
     }];
+
+    // The second tripwire, over the ASSEMBLED DOCUMENT rather than its input.
+    //
+    // `assertOnlyTheirs` checked the rows going in; this checks the customers actually coming out,
+    // so a roll-up that reached past its own row set (a tree built from the wrong ids, a leaf
+    // pulling from ctx.customerDetail) is caught too. The two are deliberately independent: one
+    // guards the filter, the other guards everything between the filter and the page.
+    const allowed = new Set(rows.map((r) => r.customer.name));
+    const printed = blocks[0].rows.find((r) => !allowed.has(r.name));
+    if (printed) {
+      throw new Error(
+        `Refusing to build the report for ${scope.name}: the customer table lists ${printed.name}, ` +
+        `who is not in their book. Nothing has been written or sent.`,
+      );
+    }
+    if (blocks.length !== 1 || blocks[0].name !== scope.name) {
+      throw new Error(
+        `Refusing to build the report for ${scope.name}: it came out covering ` +
+        `${blocks.length} salespeople. Nothing has been written or sent.`,
+      );
+    }
   }
 
   const blob = await buildCollectionsPdf({
