@@ -169,18 +169,38 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
 
         <div>
           <FieldLabel label="Customer" required>
+            {/* ⚠ THE COMPANY COMES FIRST, and the picker says so rather than
+                listing all 1,850 ledgers. A firm has a separate ledger in every
+                book it trades with, so "ANUPAM" is four rows and picking between
+                them blind is a coin toss — the company is what tells them apart.
+                The order's OWN customer always survives the narrowing (71 of 303
+                existing orders were billed by a company that is not the one on
+                their customer's ledger). */}
             <Combobox
               value={f.form.customerId}
               onChange={f.setCustomer}
-              options={opts(s.activeOf(s.customers))}
-              placeholder="Select customer…"
+              /* Each name carries how many items are mapped to it, BEFORE it is
+                 chosen. Two thirds of the master has no mapping at all, and
+                 finding that out after picking costs the customer, the delivery
+                 location and the item rows all at once. */
+              options={s.customersForCompany(f.form.companyId, f.form.customerId).map((c) => {
+                const n = s.mappedItemCount(c.id);
+                return {
+                  value: c.id,
+                  label: c.name,
+                  sublabel: n === 0 ? "no items mapped yet" : `${n} item${n === 1 ? "" : "s"}`,
+                };
+              })}
+              placeholder={f.form.companyId ? "Select customer…" : "pick the billing company first"}
+              disabled={!f.form.companyId}
               searchable
               onCreate={(name) => f.setRaise({ mt: "customer", prefill: { name }, from: "header" })}
               createLabel={(q) => `Request new customer “${q}”`}
             />
           </FieldLabel>
           <p className="mt-1 text-[11.5px] text-grey-2">
-            Changing the customer resets the item lines and the location.
+            Only the customers this company bills. Changing the customer resets the item lines
+            and the location.
           </p>
         </div>
 

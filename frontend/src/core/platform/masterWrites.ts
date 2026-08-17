@@ -136,6 +136,23 @@ export async function insertMaster(type: CentralMasterType, values: MasterPatch)
 }
 
 /**
+ * Creates SEVERAL master rows in one statement.
+ *
+ * ⚠ ONE STATEMENT, DELIBERATELY. Mapping a customer to twelve items is one act,
+ *   and twelve separate inserts can half-succeed — leaving the operator to work
+ *   out which of the twelve landed before the seventh hit a unique violation.
+ *   A single insert is all-or-nothing, so a failure means the list is exactly as
+ *   it was and the whole selection can simply be corrected and re-sent.
+ */
+export async function insertMasters(type: CentralMasterType, rows: MasterPatch[]): Promise<void> {
+  if (rows.length === 0) return;
+  const { error } = await db
+    .from(MASTER_TABLE[type])
+    .insert(rows.map((r) => ({ ...r, source: "portal" })));
+  fail(error);
+}
+
+/**
  * Removes one link row, matched by the pair rather than by id.
  *
  * ⚠ THE ONLY DELETE ON THIS SCREEN, and it is deliberate. Everywhere else a row

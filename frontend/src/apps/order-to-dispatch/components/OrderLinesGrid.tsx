@@ -62,7 +62,13 @@ export default function OrderLinesGrid({
 }) {
   const s = useDispatchStore();
 
-  const allowedItems = s.itemsForCustomer(customerId);
+  /**
+   * ⚠ The rows' OWN items are passed back in, and it is what keeps this grid
+   *   honest. The Unit column reads the item out of this list; an item whose
+   *   mapping was switched off after the order was raised would otherwise fall
+   *   out of it, and the line would lose its unit and its name on the next edit.
+   */
+  const allowedItems = s.itemsForCustomer(customerId, rows.map((r) => r.itemId).filter(Boolean));
 
   /**
    * WHAT A MISSING ITEM ACTUALLY MEANS HERE, and it is two different things:

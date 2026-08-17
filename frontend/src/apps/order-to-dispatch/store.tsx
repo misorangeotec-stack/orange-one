@@ -135,12 +135,51 @@ export interface DispatchStoreValue {
   assignedCompanies: (includeId?: string | null) => Company[];
   assignedLocationsForCompany: (companyId: string | null, includeId?: string | null) => CompanyLocation[];
   /**
+   * The customers a company may bill — ACTIVE, sorted, narrowed to that
+   * company's own Tally ledgers.
+   *
+   * No company chosen yet returns [], so the form asks for the company first
+   * rather than offering 1,850 names and narrowing them afterwards.
+   *
+   * `includeId` always survives, and it is not a nicety: 71 of the 303 orders
+   * already raised were billed by a company that is not the one on their
+   * customer's ledger. Opening one of those to edit would otherwise find the
+   * customer missing from the list and blank the field — silent data loss.
+   */
+  customersForCompany: (companyId: string | null, includeId?: string | null) => Customer[];
+  /**
    * The items a customer may order — ACTIVE mappings only, sorted by item name.
    * The sales-order picker is built from this, never from the full catalogue.
    * An unmapped customer returns [], which is the honest answer: nothing is
    * offered to them until someone maps it.
+   *
+   * ⚠ THIS IS ALREADY "THAT COMPANY'S ITEMS FOR THAT CUSTOMER", with no second
+   *   filter on the company, and that is the whole subtlety of the rule. The
+   *   customer row IS company-specific — ANUPAM is four rows, one per book — so
+   *   the mappings hanging off the row picked under Enterprise are Enterprise's.
+   *   Filtering again on the ITEM's own book would break it rather than tighten
+   *   it: 1,326 of the 8,531 mappings deliberately cross books, because Tally
+   *   files one stock item under one company while both firms sell it.
+   *
+   * `includeIds` keeps whatever the order already has on it. An item whose
+   *   mapping was switched off after the order was raised must still show, or
+   *   editing the order would drop the line's unit and read as a blank cell.
    */
-  itemsForCustomer: (customerId: string | null) => Item[];
+  itemsForCustomer: (customerId: string | null, includeIds?: readonly string[]) => Item[];
+  /**
+   * How many items `itemsForCustomer` would offer — shown against every name in
+   * the intake form's customer picker.
+   *
+   * ⚠ IT EXISTS TO SAY ZERO. Only 781 of the 1,850 customers have any mapping at
+   *   all, so picking a name and THEN discovering the item box is empty is the
+   *   common case, not the rare one — and at that point the customer, the
+   *   location and the reset are already spent. Read before choosing, it costs
+   *   nothing; read after, it costs the whole form.
+   *
+   * Precomputed into a Map rather than derived per name: the picker asks this
+   * question 1,850 times per render, and `itemsForCustomer` is a scan.
+   */
+  mappedItemCount: (customerId: string | null) => number;
   /**
    * Every delivery location anyone has used — off the customer master AND off
    * orders already raised, so a location typed once on an order is offered to
@@ -527,6 +566,23 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       return [...seen.values()].sort((a, b) => a.localeCompare(b));
     })();
 
+    /**
+     * Mapped-item counts, one pass over the catalogue.
+     *
+     * The test has to be the SAME one `itemsForCustomer` applies — an active
+     * mapping to an item that is itself active and loaded — or the picker would
+     * promise a number the item box then fails to produce.
+     */
+    const mappedItemCounts = (() => {
+      const live = new Set(items.filter((i) => i.active).map((i) => i.id));
+      const counts = new Map<string, number>();
+      for (const m of customerItems) {
+        if (!m.active || !live.has(m.itemId)) continue;
+        counts.set(m.customerId, (counts.get(m.customerId) ?? 0) + 1);
+      }
+      return counts;
+    })();
+
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
       company_location: companyLocations,
@@ -621,12 +677,31 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
       customerName: (id) => nameFrom(customers, id),
       itemName: (id) => nameFrom(items, id),
-      itemsForCustomer: (customerId) => {
-        if (!customerId) return [];
+      customersForCompany: (companyId, includeId) => {
+        if (!companyId) return includeId ? customers.filter((c) => c.id === includeId) : [];
+        return activeOf(customers).filter((c) =>
+          c.companyId === companyId
+          // ⚠ NO COMPANY MEANS EVERY COMPANY, not none. A customer nobody has
+          //   billed yet sits in no Tally book — the nine open reconcile rows,
+          //   and every customer approved through a master request, which is
+          //   created here and reaches Tally only after the first invoice.
+          //   Hiding them would make a newly approved customer unorderable,
+          //   which is the exact moment somebody needs to order from them.
+          || c.companyId === null
+          || c.id === includeId);
+      },
+      mappedItemCount: (customerId) => (customerId ? mappedItemCounts.get(customerId) ?? 0 : 0),
+      itemsForCustomer: (customerId, includeIds) => {
+        const keep = new Set(includeIds ?? []);
+        if (!customerId) return items.filter((i) => keep.has(i.id));
         const allowed = new Set(
           customerItems.filter((m) => m.active && m.customerId === customerId).map((m) => m.itemId),
         );
-        return activeOf(items).filter((i) => allowed.has(i.id));
+        // `items`, not activeOf(items), for the kept ones — an item switched off
+        // after the order was raised is still on the order.
+        return activeOf(items).filter((i) => allowed.has(i.id))
+          .concat(items.filter((i) => keep.has(i.id) && !(allowed.has(i.id) && i.active)))
+          .sort((a, b) => a.name.localeCompare(b.name));
       },
       locationsForCompany: (companyId) =>
         !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId)),

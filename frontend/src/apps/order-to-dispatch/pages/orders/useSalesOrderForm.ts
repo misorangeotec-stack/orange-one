@@ -146,13 +146,31 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
    *   under the previous one is not merely stale — the RPC refuses it outright.
    *   Auto-selecting when there is exactly one site is not a shortcut but the
    *   honest answer: a single-site company has no choice to offer.
+   *
+   * ⚠ AND IT CLEARS THE CUSTOMER — BUT ONLY WHEN THE NEW COMPANY CANNOT BILL
+   *   THEM. The customer picker is now the company's own ledgers, so a customer
+   *   chosen under the previous company may not be in the new list; leaving the
+   *   id behind would submit a name the form has stopped showing.
+   *
+   *   Only when. A blanket reset would wipe a half-typed grid every time
+   *   somebody corrected the company on an order they had nearly finished, and
+   *   the customer is very often billable by both. The check is the same one the
+   *   picker makes, so what survives on screen is exactly what survives here.
    */
   const setCompany = (id: string) => {
     if (id === form.companyId) return;
     // The person's OWN sites under that company — the auto-pick has to agree with
     // the list they are about to be shown, or it fills in a site they cannot see.
     const sites = s.assignedLocationsForCompany(id, existing?.locationId ?? null);
-    patch({ companyId: id, locationId: sites.length === 1 ? sites[0]!.id : "" });
+    const keepsCustomer =
+      !form.customerId ||
+      s.customersForCompany(id, existing?.customerId ?? null).some((c) => c.id === form.customerId);
+    patch({
+      companyId: id,
+      locationId: sites.length === 1 ? sites[0]!.id : "",
+      ...(keepsCustomer ? {} : { customerId: "", customerLocation: "" }),
+    });
+    if (!keepsCustomer) setLines([makeEmptyLine()]);
   };
 
   /** The lines that will actually be submitted — the trailing blank is dropped. */

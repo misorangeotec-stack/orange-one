@@ -68,9 +68,14 @@ export interface CompanyLocation extends NamedMaster {
 
 export interface Customer extends NamedMaster {
   /**
-   * ⚠ LEGACY, and null on all but one row. It was the customer↔company mapping
-   * that `fms_dispatch_submit_order` used to read; 20260811120200 retired it and
-   * the order now carries its own company. Kept only so the column still maps.
+   * WHICH OF OUR COMPANIES MAY BILL THIS CUSTOMER — Tally's company book.
+   *
+   * Not a mapping anybody maintains: a firm has a separate ledger in every book
+   * it trades with, so the same firm is several rows here, one per company, and
+   * the book each row sits in is the answer. The sales order form narrows its
+   * customer picker on exactly this. Null on nine rows (the open reconcile
+   * decisions and two internal Noida entities), which is why the picker treats
+   * "no company" as its own group rather than hiding them.
    */
   companyId: string | null;
   code: string | null;
@@ -89,6 +94,17 @@ export interface Customer extends NamedMaster {
 
 export interface Item extends NamedMaster {
   code: string | null;
+  /**
+   * Which Tally BOOK this stock item is filed under — informational, and
+   * deliberately NOT what narrows the order form's item picker.
+   *
+   * Tally files one stock item per company book, and 209 of the 234 items
+   * Dispatch has ever ordered are filed under the O-tec book while both firms
+   * sell them. Narrowing on this column would offer an Enterprise order 21 items
+   * instead of ~230 and invalidate 589 of its 619 existing lines. The customer's
+   * own mapping is the authority instead — see `itemsForCustomer`.
+   */
+  companyId: string | null;
   /**
    * How the item is measured — plain text (KGS, LTR, PCS). There is no unit
    * master: a unit is one word per item, and a separate list only ever let an
