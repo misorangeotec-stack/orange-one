@@ -111,6 +111,10 @@ interface SuppliesStoreValue {
   stepOwners: StepOwner[];
   stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
   processCoordinatorIds: string[];
+  /** Who may raise a request. EMPTY MEANS NOBODY BUT ADMINS — see SuppliesConfig. */
+  requesterIds: string[];
+  /** Designations that skip the HOD approval — see SuppliesConfig. */
+  hodDesignationIds: string[];
   stepSla: StepSlaMap;
 
   // capabilities
@@ -118,6 +122,8 @@ interface SuppliesStoreValue {
   isProcessCoordinator: boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
   isFulfilmentStaff: boolean;
+  /** May this person raise a request at all? Mirrors fms_supplies_can_raise. */
+  canRaise: boolean;
   /** Departments this user is the HOD of — drives the First Approval queue visibility. */
   hodDepartmentIds: string[];
   canActOn: (stepKey: StepKey, r: SupplyRequest) => boolean;
@@ -200,6 +206,8 @@ interface SuppliesStoreValue {
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setCoordinators: (userIds: string[]) => Promise<void>;
+  setRequesters: (userIds: string[]) => Promise<void>;
+  setHodDesignations: (designationIds: string[]) => Promise<void>;
 
   // master writes
   insertCompany: (input: CompanyInput) => Promise<void>;
@@ -250,6 +258,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
   const activity = data?.activity ?? [];
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
+  const requesterIds = data?.config.requesterIds ?? [];
+  const hodDesignationIds = data?.config.hodDesignationIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
 
   const value = useMemo<SuppliesStoreValue>(() => {
@@ -266,6 +276,14 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       isAdmin || stepOwners.some((o) => FULFILMENT_STEPS.includes(o.stepKey as StepKey) && o.employeeIds.includes(uid));
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
+
+    // Mirrors fms_supplies_can_raise(uid) — the RPC is the gate, this only
+    // decides whether the nav item and the CTAs are worth showing.
+    //
+    // ⚠ An EMPTY list admits NOBODY but admins. Do not "helpfully" fall back to
+    //   letting everyone through when nothing is configured: that is precisely
+    //   the state this feature exists to close, and the strictness was asked for.
+    const canRaise = isAdmin || requesterIds.includes(uid);
 
     const hodDepartmentIds = departments.filter((d) => d.hodUserId === uid).map((d) => d.id);
 
@@ -300,6 +318,10 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      *   would both hide the queue from every HOD and show it to a step owner who may
      *   act on nothing. It belongs to whoever heads a department — `canActOn` then
      *   narrows the rows to that HOD's own department.
+     *
+     * The HOD route changes nothing here. A request raised BY an HOD skips straight
+     * to second_approval, so it never enters this queue — but the queue itself stays
+     * open to every department head, for their team's requests.
      */
     const canSeeQueue = (stepKey: StepKey): boolean => {
       if (isProcessCoordinator) return true;
@@ -422,12 +444,15 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       stepOwners,
       stepOwnerFor,
       processCoordinatorIds,
+      requesterIds,
+      hodDesignationIds,
       stepSla,
 
       isAdmin,
       isProcessCoordinator,
       isStepOwner,
       isFulfilmentStaff,
+      canRaise,
       hodDepartmentIds,
       canActOn,
       canSeeQueue,
@@ -628,6 +653,14 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
         await setConfigWrite("process_coordinators", { user_ids: userIds });
         await invalidate();
       },
+      setRequesters: async (userIds) => {
+        await setConfigWrite("requesters", { user_ids: userIds });
+        await invalidate();
+      },
+      setHodDesignations: async (designationIds) => {
+        await setConfigWrite("hod_designations", { designation_ids: designationIds });
+        await invalidate();
+      },
 
       insertCompany: async (input) => {
         await insertCompanyWrite(input);
@@ -673,7 +706,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
   }, [
     isLoading, error, dir, userId, isAdmin, designations, companies, departments, categories, items,
     serviceTypes, masterManagers, masterRequests, requests, activity, notifications,
-    stepOwners, processCoordinatorIds, stepSla, queryClient,
+    stepOwners, processCoordinatorIds, requesterIds, hodDesignationIds, stepSla, queryClient,
     // Load-bearing, and tsc cannot catch its absence: personName closes over
     // orgPeople, so without this the names stay "Unknown user" until some other
     // dep happens to change.

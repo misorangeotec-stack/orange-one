@@ -99,9 +99,11 @@ export default function Dashboard() {
             Where general purchase requests stand today — stationery, computer &amp; tech accessories, maintenance and services.
           </p>
         </div>
-        <Link to={newRequestHref()}>
-          <Button size="sm">Raise a request</Button>
-        </Link>
+        {s.canRaise && (
+          <Link to={newRequestHref()}>
+            <Button size="sm">Raise a request</Button>
+          </Link>
+        )}
       </div>
 
       <KpiRow tiles={kpiTiles} />

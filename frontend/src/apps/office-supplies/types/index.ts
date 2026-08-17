@@ -82,6 +82,16 @@ export interface SupplyRequest {
   quantity: string;
   reason: string | null;
   requiresApproval: boolean;
+  /**
+   * The request needed approval but bypassed first_approval — its subject holds
+   * an HOD designation, or the department HOD IS the raiser / beneficiary.
+   *
+   * ⚠ `firstApprovedAt` and `firstApproverId` stay null on a skip, exactly as
+   * they are on a request still waiting for its HOD. This flag is the only thing
+   * that tells the two apart, which is why the DB carries it rather than the UI
+   * inferring it from the status.
+   */
+  firstApprovalSkipped: boolean;
   status: RequestStatus;
   currentStep: string;
   submittedAt: string;
@@ -163,6 +173,12 @@ export interface Designation {
   id: string;
   name: string;
   active: boolean;
+  /**
+   * The job LADDER, low to high — so a picker reads Executive → Director
+   * instead of alphabetically. Carries no band meaning (see the org-masters
+   * migration: band is chosen per user and is independent of designation).
+   */
+  sortOrder: number;
 }
 
 /* ------------------------------ activity + bell --------------------------- */

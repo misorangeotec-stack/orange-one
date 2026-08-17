@@ -39,12 +39,14 @@ const ic = {
 };
 
 /**
- * Builds the General Purchase sidebar. Capability-driven, except for the two items every
- * employee always gets ("Raise a Request", "My Requests"). Every item here is routed in
- * SuppliesApp.tsx.
+ * Builds the General Purchase sidebar. Capability-driven, except for "My Requests",
+ * which every employee always gets — raising is now restricted to the requesters an
+ * admin names in Setup, but the people already holding requests must still be able to
+ * reach them. Every item here is routed in SuppliesApp.tsx.
  */
 export function buildSuppliesNav(opts: {
   isAdmin: boolean;
+  canRaise: boolean;
   canManageMasters: boolean;
   pendingReviews: number;
   canFirstApprove: boolean;
@@ -56,8 +58,10 @@ export function buildSuppliesNav(opts: {
   const nav: NavItem[] = [
     { label: "Dashboard", to: B, icon: ic.dashboard, section: "Workspace" },
     ...(opts.hasRequests ? [{ label: "All Requests", to: `${B}/requests`, icon: ic.list }] : []),
-    { label: "Raise a Request", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
-    { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine },
+    ...(opts.canRaise
+      ? [{ label: "Raise a Request", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" }]
+      : []),
+    { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine, section: opts.canRaise ? undefined : "Actions" },
   ];
 
   if (!opts.canManageMasters) {

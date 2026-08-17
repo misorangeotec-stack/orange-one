@@ -5,10 +5,19 @@ import type { StepDefBase } from "@/shared/lib/fmsQueue";
  * `key` is the stable identifier used by fms_supplies_step_owners, the SLA config and
  * the queue logic.
  *
- * The workflow is CONDITIONAL: a request that needs no approval (Stationery / Office
- * Maintenance categories, or any Services/Maintenance request) skips first_approval and
- * second_approval and starts at handover. That is handled by the request's `status`
- * (set at submit) — the queue reads status, so a skipped step simply never appears.
+ * The workflow is CONDITIONAL, in two independent ways. Both are handled by the
+ * request's `status` (set at submit) — the queue reads status, so a skipped step
+ * simply never appears, and neither case needs special-casing here:
+ *
+ *   1. A request that needs no approval (Stationery / Office Maintenance categories,
+ *      or any Services/Maintenance request) skips BOTH approvals and starts at
+ *      handover. Decided by fms_supplies_categories.requires_approval.
+ *   2. A request whose subject is an HOD skips first_approval alone and starts at
+ *      second_approval — approving your own request is not an approval. Decided by
+ *      the requester's designation (Setup → Raising & Routing) plus a safeguard for
+ *      when the department HOD IS the raiser. Flagged on the row as
+ *      `first_approval_skipped`, because a skipped first approval and one still owed
+ *      look identical on the timestamps.
  *
  * Statuses are NOT step keys — on_hold / cancelled / rejected / delivered live in
  * RequestStatus (types/index.ts), never here.

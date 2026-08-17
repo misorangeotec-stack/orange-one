@@ -21,8 +21,8 @@ const linkFor = (n: SupplyNotification): string => {
 
 /**
  * Wires the portal session + purchase store into the shared AppShell. The nav is
- * capability-driven, except for the two items every employee gets (see nav.tsx). The
- * bell renders `n.text` RAW, so every notification we write is a whole sentence.
+ * capability-driven, except for "My Requests", which every employee gets (see nav.tsx).
+ * The bell renders `n.text` RAW, so every notification we write is a whole sentence.
  */
 export default function SuppliesLayout() {
   const { user, role, isAdmin } = useSession();
@@ -43,6 +43,7 @@ export default function SuppliesLayout() {
     () =>
       buildSuppliesNav({
         isAdmin,
+        canRaise: s.canRaise,
         canManageMasters: s.isAnyMasterManager,
         pendingReviews: s.resolvableRequests.length,
         canFirstApprove,
@@ -53,6 +54,7 @@ export default function SuppliesLayout() {
       }),
     [
       isAdmin,
+      s.canRaise,
       s.isAnyMasterManager,
       s.resolvableRequests.length,
       canFirstApprove,
