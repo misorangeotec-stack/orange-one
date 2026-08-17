@@ -23,7 +23,8 @@ const db = supabase as any;
 
 /** Master types, matching mst_master_managers' CHECK and mst_is_master_manager. */
 export type CentralMasterType =
-  | "company" | "party" | "item" | "item_group" | "unit" | "location" | "party_item";
+  | "company" | "party" | "item" | "item_group" | "unit" | "location" | "party_item"
+  | "company_location" | "party_company" | "item_company";
 
 /**
  * The master types this user may manage directly, beyond being an admin.
@@ -57,6 +58,9 @@ export const MASTER_TABLE: Record<CentralMasterType, string> = {
   unit: "mst_units",
   location: "mst_locations",
   party_item: "mst_party_items",
+  company_location: "mst_company_locations",
+  party_company: "mst_party_companies",
+  item_company: "mst_item_companies",
 };
 
 /**
@@ -74,6 +78,14 @@ export const TALLY_OWNED_FIELDS: Record<CentralMasterType, readonly string[]> = 
   unit: ["name"],
   location: [],
   party_item: [],
+  // ⚠ ALL THREE ARE WHOLLY OURS, and that is the point of them rather than an
+  //   oversight. Tally cannot answer "which of our companies sells this item" —
+  //   it files a stock item under one company book, and 209 of Dispatch's 234
+  //   items are filed under one book while both firms sell them. A sync that
+  //   overwrote these would undo exactly the fact they exist to record.
+  company_location: [],
+  party_company: [],
+  item_company: [],
 };
 
 export const isTallyOwned = (type: CentralMasterType, column: string, source: string): boolean =>
@@ -121,6 +133,26 @@ export async function insertMaster(type: CentralMasterType, values: MasterPatch)
     .single();
   fail(error);
   return data.id as string;
+}
+
+/**
+ * Removes one link row, matched by the pair rather than by id.
+ *
+ * ⚠ THE ONLY DELETE ON THIS SCREEN, and it is deliberate. Everywhere else a row
+ *   is deactivated, never removed, because an order may still point at it and
+ *   "deleted" would render as a blank on a document. A link row is different:
+ *   nothing points AT it, it IS the pointer. Untick a company on a site and the
+ *   honest result is that the pair is gone — leaving an inactive row behind
+ *   would make re-ticking it silently fail on the UNIQUE constraint.
+ */
+export async function deleteCompanyLink(
+  table: "mst_company_locations" | "mst_party_companies" | "mst_item_companies",
+  match: Record<string, string>,
+): Promise<void> {
+  let q = db.from(table).delete();
+  for (const [col, val] of Object.entries(match)) q = q.eq(col, val);
+  const { error } = await q;
+  fail(error);
 }
 
 export async function setMasterActive(type: CentralMasterType, id: string, active: boolean): Promise<void> {
