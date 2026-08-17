@@ -23,6 +23,7 @@ import { Card, CardContent } from "@hub/components/ui/card";
 import { useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import RequestStageRail from "@hub/components/customerOnboarding/RequestStageRail";
 import StatusBadge from "@hub/components/customerOnboarding/StatusBadge";
+import CompanyChip from "@hub/components/customerOnboarding/CompanyChip";
 import ActivityTimeline from "@hub/components/customerOnboarding/ActivityTimeline";
 import AssignSalesExecCard from "@hub/components/customerOnboarding/AssignSalesExecCard";
 import HoldCancelMenu from "@hub/components/customerOnboarding/HoldCancelMenu";
@@ -105,6 +106,13 @@ export default function RequestDetail() {
             <Link to={allHref()}><ArrowLeft className="h-4 w-4" /> All requests</Link>
           </Button>
           <h1 className="text-2xl font-bold text-foreground">{requestSubject(r)}</h1>
+          {/* ⚠ IN THE HEADER, not buried in the step-2 card, because this page is
+              where all four decision panels render. Putting it here is what keeps
+              the company on screen at Accounts, Sales Head, Director and Tally
+              without threading it through each of them. */}
+          <p className="text-sm mt-1">
+            <CompanyChip companyId={r.companyId} />
+          </p>
           <p className="text-sm text-muted-foreground mt-0.5">
             {r.reqNo ?? "Draft"}
             {r.raisedByName && <> · raised by {r.raisedByName}</>}
@@ -171,6 +179,10 @@ export default function RequestDetail() {
       <Card><CardContent className="p-5">
         <SectionHeading>Customer information</SectionHeading>
         <FieldGrid>
+          <Field label="Onboarding into" value={s.companyName(r.companyId)} />
+          {/* The same column the Tally step shows further down as "Salesperson
+              in Tally" — one answer, restated where step 1 is recapped. */}
+          <Field label="Salesperson" value={r.assignedSalesExecName} />
           <Field label="Legal company name" value={r.legalName} />
           <Field label="Trade name" value={r.tradeName} />
           <Field label="Customer type" value={customerTypeLabel(r.customerType)} />

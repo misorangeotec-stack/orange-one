@@ -18,7 +18,7 @@ import { useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { detailHref, editHref, newHref } from "@hub/lib/customerOnboarding/routes";
 import { dmy, requestSubject } from "@hub/lib/customerOnboarding/format";
 import {
-  colCustomer, colDue, colGst, colPlace, colRaisedOn, colRef, colRequestedLimit,
+  colCompany, colCustomer, colDue, colGst, colPlace, colRaisedOn, colRef, colRequestedLimit,
   colStatus, colWaitingOn,
 } from "./columns";
 
@@ -118,8 +118,8 @@ export default function MyRequests() {
           <Card><CardContent className="p-5">
             <RequestTable
               rows={inFlight}
-              columns={[colRef, colCustomer, colPlace, colRequestedLimit, colWaitingOn,
-                        colDue(s.dueIsoFor), colRaisedOn, colStatus]}
+              columns={[colRef, colCustomer, colCompany(s.companyName), colPlace, colRequestedLimit,
+                        colWaitingOn, colDue(s.dueIsoFor), colRaisedOn, colStatus]}
               rowHref={(r) => detailHref(r.id)}
               empty="Nothing of yours is in progress."
               searchPlaceholder="Search your requests…"
@@ -131,7 +131,8 @@ export default function MyRequests() {
           <Card><CardContent className="p-5">
             <RequestTable
               rows={done}
-              columns={[colRef, colCustomer, colGst, colPlace, colRaisedOn, colStatus]}
+              columns={[colRef, colCustomer, colCompany(s.companyName), colGst, colPlace,
+                        colRaisedOn, colStatus]}
               rowHref={(r) => detailHref(r.id)}
               empty="Nothing finished yet."
               exportName="My-customers"

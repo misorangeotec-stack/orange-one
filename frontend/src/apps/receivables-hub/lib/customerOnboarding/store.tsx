@@ -16,6 +16,7 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
+import { companyDisplayName, type MasterCompany } from "@/core/platform/liveMasters";
 import {
   CUSTOMER_QK, customerQueryKey, fetchCustomerData, type CustomerSnapshot,
 } from "@hub/data/customerOnboarding/customerFetch";
@@ -33,7 +34,7 @@ import {
 } from "./types";
 
 const EMPTY: CustomerSnapshot = {
-  requests: [], stepOwners: [], gstStates: [], activity: [], notifications: [],
+  requests: [], companies: [], stepOwners: [], gstStates: [], activity: [], notifications: [],
   stepSla: DEFAULT_STEP_SLA, approvalRules: DEFAULT_APPROVAL_RULES, coordinatorIds: [],
 };
 
@@ -43,6 +44,27 @@ interface CustomerStore {
 
   requests: CustomerRequest[];
   requestById: (id: string) => CustomerRequest | undefined;
+
+  /**
+   * OUR Tally companies, ACTIVE ONLY — the options for "which company is this
+   * customer for".
+   *
+   * ⚠ NOT filtered by the `modules` allow-list, on purpose. That allow-list
+   *   exists to keep a 9,200-row party dropdown usable; mst_companies has five
+   *   rows and they are untagged, so filtering on it would ship an empty
+   *   dropdown. See core/platform/liveMasters.ts.
+   */
+  companies: MasterCompany[];
+  /**
+   * A company id → the ALIAS ("Colorix — Surat"), never Tally's book name, which
+   * carries the financial year and is re-minted each April. Falls back to `—`
+   * for null (every request raised before the company question existed) and for
+   * an id that no longer resolves.
+   *
+   * ⚠ Reads the UNFILTERED list, unlike `companies` above: a request onboarded
+   *   into a company since deactivated must still render its name.
+   */
+  companyName: (id: string | null | undefined) => string;
   gstStates: GstState[];
   stepOwners: StepOwner[];
   approvalRules: ApprovalRules;
@@ -115,6 +137,9 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
     const requests = snap.requests;
     const byId = new Map(requests.map((r) => [r.id, r]));
     const ownerByStep = new Map(snap.stepOwners.map((o) => [o.stepKey, o]));
+    // Built from EVERY company, active or not — a request onboarded into a
+    // company that has since been deactivated must still render its name.
+    const companyLabel = new Map(snap.companies.map((c) => [c.id, companyDisplayName(c)]));
     const peopleById = new Map((orgPeople ?? []).map((p: { id: string; name: string }) => [p.id, p.name]));
 
     const isCoordinator = isAdmin || (uid ? snap.coordinatorIds.includes(uid) : false);
@@ -124,7 +149,8 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
     // A 'submission' owner list, when non-empty, restricts who may raise.
     // No list at all = anyone with hub access may raise one.
     const submissionOwners = stepOwnerIds("submission");
-    const canRaise = isCoordinator || submissionOwners.length === 0 || (!!uid && submissionOwners.includes(uid));
+    const canRaise =
+      isCoordinator || submissionOwners.length === 0 || (!!uid && submissionOwners.includes(uid));
 
     /** ⚠ Mirrors public.fms_customer_can_act(step, req, uid). Keep the two in step. */
     const canActOn = (step: StepKey, r: CustomerRequest): boolean => {
@@ -168,6 +194,8 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
 
       requests,
       requestById: (id) => byId.get(id),
+      companies: snap.companies.filter((c) => c.active),
+      companyName: (id) => (id ? companyLabel.get(id) ?? "—" : "—"),
       gstStates: snap.gstStates,
       stepOwners: snap.stepOwners,
       approvalRules: snap.approvalRules,

@@ -20,6 +20,7 @@ import { useToast } from "@hub/hooks/use-toast";
 import {
   CorrectionBar, DecisionBar, PanelField, StepActionPanel, type PanelDecision,
 } from "./StepActionPanel";
+import CompanyChip from "./CompanyChip";
 import GstComplianceCard from "./GstComplianceCard";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { inr, requestSubject } from "@hub/lib/customerOnboarding/format";
@@ -112,6 +113,7 @@ export default function AccountsPanel({
 
   return (
     <StepActionPanel
+      subhead={<CompanyChip companyId={r.companyId} />}
       title={mode === "edit" ? "Correct the accounts verification" : "Accounts verification"}
       blurb={
         mode === "edit"

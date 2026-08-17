@@ -25,10 +25,20 @@ import {
 import { cn } from "@hub/lib/utils";
 
 export function StepActionPanel({
-  title, blurb, badge, children, footer, error,
+  title, blurb, subhead, badge, children, footer, error,
 }: {
   title: string;
   blurb?: string;
+  /**
+   * A standing fact about the request, restated at the point of decision — in
+   * practice the company it is being onboarded into.
+   *
+   * ⚠ ITS OWN SLOT rather than reusing `badge`, which is already spoken for by
+   *   "Waiting on you". A decision about a credit limit is a decision about a
+   *   credit limit IN A PARTICULAR COMPANY, and the detail header alone is a
+   *   scroll away by the time someone reaches this panel.
+   */
+  subhead?: ReactNode;
   /** e.g. "Waiting on you" — the reason this panel is on screen. */
   badge?: ReactNode;
   children: ReactNode;
@@ -42,6 +52,7 @@ export function StepActionPanel({
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-foreground">{title}</h2>
             {blurb && <p className="text-xs text-muted-foreground mt-0.5">{blurb}</p>}
+            {subhead && <div className="text-xs mt-1.5">{subhead}</div>}
           </div>
           {badge}
         </div>

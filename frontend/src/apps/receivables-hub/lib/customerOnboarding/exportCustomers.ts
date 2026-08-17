@@ -32,12 +32,16 @@ const d = (v: string | null | undefined): string => (v ? dmy(v) : "");
 
 export function customerExportColumns(
   personName: (id: string | null | undefined) => string,
+  companyName: (id: string | null | undefined) => string,
 ): ExportColumn<CustomerRequest>[] {
   return [
     { header: "Request No", width: 16, value: (r) => t(r.reqNo) },
     { header: "Customer Code", width: 14, value: (r) => t(r.customerCode) },
     { header: "Status", width: 14, value: (r) => statusLabel(r.status) },
 
+    // The alias, not the uuid — this sheet is read by people and pasted into
+    // Tally, and a 36-character key is neither.
+    { header: "Company", width: 22, value: (r) => (r.companyId ? companyName(r.companyId) : "") },
     { header: "Legal Name", width: 34, value: (r) => t(r.legalName) },
     { header: "Trade Name", width: 26, value: (r) => t(r.tradeName) },
     { header: "Customer Type", width: 15, value: (r) => (r.customerType ? customerTypeLabel(r.customerType) : "") },
@@ -131,19 +135,21 @@ export function customerExportColumns(
 export function exportCompletedCustomers(
   rows: CustomerRequest[],
   personName: (id: string | null | undefined) => string,
+  companyName: (id: string | null | undefined) => string,
   filterLabel: string,
 ): void {
   exportRowsToXlsx<CustomerRequest>({
     fileName: "Customer_Onboarding",
     sheetName: "Customers",
     title: "Customer Onboarding — full record",
-    columns: customerExportColumns(personName),
+    columns: customerExportColumns(personName, companyName),
     rows,
     filters: [filterLabel, `${rows.length} customer${rows.length === 1 ? "" : "s"}`],
     notes: [
       "One row per onboarding request, carrying every step: the details Sales captured, what Accounts verified and recommended, how the sales head graded it, the Director's decision where one was needed, and the Tally record.",
       "Amounts are numbers, so they can be summed. Blank means the field was never filled in — it does not mean zero.",
       "Mobile numbers are stored as ten bare digits with no country code, and are exported as text so Excel cannot drop a leading digit.",
+      "\"Company\" is which of our Tally companies the customer was onboarded into — the books their ledger belongs in. Blank on requests raised before that question was asked.",
       "\"Threshold Applied\" is the Director threshold that was in force when the sales head approved, frozen onto the row. Changing the threshold today does not change it here.",
       "This export is the module's hand-off: nothing is written automatically to Order-to-Dispatch or any other system.",
     ],
