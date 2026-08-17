@@ -122,7 +122,11 @@ export default function RequestDetail() {
     }
   };
 
-  const firstState = r.rejectStage === "first_approval" ? "rejected" : r.firstApprovedAt ? "done" : r.status === "pending_first_approval" ? "current" : !r.requiresApproval ? "skipped" : "pending";
+  // `firstApprovalSkipped` has to be asked BEFORE the pending fallback: a skipped
+  // request has a null firstApprovedAt and a status of pending_second_approval, which
+  // is indistinguishable from "waiting for the HOD" on the timestamps alone — it would
+  // render as a grey stage that never resolves.
+  const firstState = r.rejectStage === "first_approval" ? "rejected" : r.firstApprovedAt ? "done" : r.status === "pending_first_approval" ? "current" : !r.requiresApproval || r.firstApprovalSkipped ? "skipped" : "pending";
   const secondState = r.rejectStage === "second_approval" ? "rejected" : r.secondApprovedAt ? "done" : r.status === "pending_second_approval" ? "current" : !r.requiresApproval ? "skipped" : "pending";
   const handoverState = r.deliveredAt ? "done" : r.status === "pending_handover" ? "current" : r.status === "cancelled" || r.status === "rejected" ? "pending" : "pending";
 
@@ -171,7 +175,13 @@ export default function RequestDetail() {
           <Field label="Item / Service">{r.itemName ?? "—"}</Field>
           <Field label="Quantity">{r.quantity}</Field>
           <Field label="Submitted">{formatDate(r.submittedAt)}</Field>
-          <Field label="Route">{r.requiresApproval ? "Two approvals → handover" : "Straight to handover"}</Field>
+          <Field label="Route">
+            {!r.requiresApproval
+              ? "Straight to handover"
+              : r.firstApprovalSkipped
+                ? "Management approval → handover"
+                : "Two approvals → handover"}
+          </Field>
         </div>
         {r.reason && (
           <div className="mt-4 pt-4 border-t border-line">
@@ -190,7 +200,13 @@ export default function RequestDetail() {
         <h2 className="text-[15px] font-bold text-navy">Progress</h2>
         {r.requiresApproval && (
           <>
-            <Stage title="First approval (HOD)" when={r.firstApprovedAt} by={name(r.firstApproverId)} remarks={r.firstRemarks} state={firstState} />
+            <Stage
+              title={r.firstApprovalSkipped ? "First approval (HOD) — skipped, raised by an HOD" : "First approval (HOD)"}
+              when={r.firstApprovedAt}
+              by={name(r.firstApproverId)}
+              remarks={r.firstRemarks}
+              state={firstState}
+            />
             <Stage title="Second approval (Management)" when={r.secondApprovedAt} by={name(r.secondApproverId)} remarks={r.secondRemarks} state={secondState} />
           </>
         )}

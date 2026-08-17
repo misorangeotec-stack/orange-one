@@ -73,9 +73,11 @@ export default function MyRequests() {
           <h1 className="text-[22px] font-bold text-navy">My Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">Requests you raised, or that were raised for you.</p>
         </div>
-        <Link to={newRequestHref()}>
-          <Button size="sm">Raise a request</Button>
-        </Link>
+        {s.canRaise && (
+          <Link to={newRequestHref()}>
+            <Button size="sm">Raise a request</Button>
+          </Link>
+        )}
       </div>
 
       <QueueTable<SupplyRequest>
@@ -86,7 +88,11 @@ export default function MyRequests() {
         rowsLabel="requests"
         exportName="My_Purchase_Requests"
         emptyTitle="No requests yet"
-        emptyMessage="You haven't raised any purchase requests."
+        emptyMessage={
+          s.canRaise
+            ? "You haven't raised any purchase requests."
+            : "You haven't raised any purchase requests, and you don't have permission to raise one. Ask an admin to add you in Setup → Raising & Routing."
+        }
         actions={(r) => (
           <>
             <Link to={requestHref(r.id)} className="text-[12.5px] font-semibold text-orange hover:underline">Open</Link>

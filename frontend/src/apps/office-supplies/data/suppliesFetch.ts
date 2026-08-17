@@ -59,6 +59,18 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
 
 export interface SuppliesConfig {
   processCoordinatorIds: string[];
+  /**
+   * Who may raise a request. EMPTY MEANS NOBODY BUT ADMINS — the strict default
+   * the business asked for, not a "not configured yet, let everyone through"
+   * state. Mirrors fms_supplies_can_raise().
+   */
+  requesterIds: string[];
+  /**
+   * Designations whose holders skip the HOD approval and go straight to
+   * Management. Mirrors fms_supplies_is_hod_designation(), which reads
+   * profiles.designation_id — so a user with no designation set never matches.
+   */
+  hodDesignationIds: string[];
   stepSla: StepSlaMap;
 }
 
@@ -157,6 +169,7 @@ const mapRequest = (r: any): SupplyRequest => ({
   quantity: r.quantity,
   reason: r.reason ?? null,
   requiresApproval: !!r.requires_approval,
+  firstApprovalSkipped: !!r.first_approval_skipped,
   status: r.status,
   currentStep: r.current_step,
   submittedAt: r.submitted_at,
@@ -192,7 +205,12 @@ const mapStepOwner = (r: any): StepOwner => ({
   employeeIds: (r.employee_ids ?? []) as string[],
 });
 
-const mapDesignation = (r: any): Designation => ({ id: r.id, name: r.name, active: r.active });
+const mapDesignation = (r: any): Designation => ({
+  id: r.id,
+  name: r.name,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0,
+});
 
 const mapActivity = (r: any): SupplyActivity => ({
   id: r.id,
@@ -251,6 +269,8 @@ export async function fetchSuppliesData(): Promise<SuppliesData> {
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: SuppliesConfig = {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
+    requesterIds: (byKey.get("requesters")?.user_ids ?? []) as string[],
+    hodDesignationIds: (byKey.get("hod_designations")?.designation_ids ?? []) as string[],
     stepSla: resolveStepSla(byKey.get("step_sla")),
   };
 

@@ -5,10 +5,12 @@ import MasterOwnersSection from "./MasterOwnersSection";
 import CoordinatorsSection from "./CoordinatorsSection";
 import StepDueDatesSection from "./StepDueDatesSection";
 import EmailNotificationsSection from "./EmailNotificationsSection";
+import RaisingSection from "./RaisingSection";
 
 export default function Setup() {
-  const [tab, setTab] = useState("owners");
+  const [tab, setTab] = useState("raising");
   const tabs = [
+    { key: "raising", label: "Raising & Routing" },
     { key: "owners", label: "Step Owners" },
     { key: "due", label: "Due Dates" },
     { key: "coordinators", label: "Coordinators" },
@@ -20,10 +22,12 @@ export default function Setup() {
       <div>
         <h1 className="text-[22px] font-bold text-navy">Setup</h1>
         <p className="text-[13.5px] text-grey-2 mt-1">
-          Who owns each step, the per-step deadlines, the process coordinators, and who owns each master.
+          Who may raise a request and where it routes first, who owns each step, the per-step deadlines, the process
+          coordinators, and who owns each master.
         </p>
       </div>
       <Tabs tabs={tabs} active={tab} onChange={setTab} />
+      {tab === "raising" && <RaisingSection />}
       {tab === "owners" && <StepOwnersSection />}
       {tab === "due" && <StepDueDatesSection />}
       {tab === "coordinators" && <CoordinatorsSection />}

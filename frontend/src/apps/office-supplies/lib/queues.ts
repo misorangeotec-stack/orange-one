@@ -135,10 +135,19 @@ const heldOrTerminal = (r: SupplyRequest, what: string): string | null => {
   return null;
 };
 
-/** Editable while the request is approved and awaiting the SECOND approval. */
+/**
+ * Editable while the request is approved and awaiting the SECOND approval.
+ *
+ * ⚠ The skip check is not cosmetic. A request raised BY an HOD is born at
+ * `pending_second_approval` with a null `firstApprovedAt`, so the status test
+ * alone would offer its department HOD a "correct the first approval" button
+ * for a decision nobody ever made. Mirrors fms_supplies_first_approval_editable,
+ * which gained the same condition.
+ */
 export function firstApprovalLockReason(r: SupplyRequest): string | null {
   const t = heldOrTerminal(r, "first approval");
   if (t) return t;
+  if (r.firstApprovalSkipped) return "This request skipped first approval — it was raised by an HOD, so there is no decision to change.";
   if (r.status !== "pending_second_approval") return "The second approval has already been decided — the first can no longer be changed.";
   return null;
 }
