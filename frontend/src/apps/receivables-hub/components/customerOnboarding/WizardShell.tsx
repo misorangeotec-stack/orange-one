@@ -74,16 +74,25 @@ export default function WizardShell({
   const [savedId, setSavedId] = useState<string | null>(requestId);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   /**
-   * ⚠ THE GSTIN IS PART OF THE KEY FOR A NEW CUSTOMER, NOT DECORATION.
+   * ⚠ THE COMPANY AND THE GSTIN ARE BOTH PART OF THE KEY FOR A NEW CUSTOMER,
+   *   NOT DECORATION.
    *   The restore below is `{...initialValues, ...saved}` — the crash pad wins
    *   every field. Once the gate started seeding real values, a single shared
    *   "new" key meant a pad abandoned inside the 2.5s debounce for GSTIN X would
    *   silently restore X's name, address and frozen snapshot over a fresh gate
-   *   for GSTIN Y. Keying by GSTIN makes the pad belong to one taxpayer, which is
-   *   the same invariant the SQL enforces when it nulls a snapshot that stops
-   *   matching gst_number.
+   *   for GSTIN Y. Keying by GSTIN made the pad belong to one taxpayer.
+   *
+   *   The company had to join it for the same reason: a request is now identified
+   *   by (company, GSTIN) — the same pair the SQL's unique guard uses — so the
+   *   same customer legitimately gets one request per company. Without the
+   *   company in the key, an abandoned pad for a customer under O-tec would
+   *   restore over a fresh gate for that same customer under Colorix. The
+   *   `"nogst"` bucket makes this sharper still: every companyless start shared
+   *   one key.
    */
-  const crashKey = `hub:custonb:${requestId ?? `new:${initialValues.gst_number || "nogst"}`}`;
+  const crashKey =
+    `hub:custonb:${requestId ??
+      `new:${initialValues.company_id || "nocompany"}:${initialValues.gst_number || "nogst"}`}`;
 
   const form = useForm<CustomerFormValues>({
     resolver: zodResolver(fullSchema),

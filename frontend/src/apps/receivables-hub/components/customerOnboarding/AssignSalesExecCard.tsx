@@ -20,7 +20,7 @@ import {
 import { useToast } from "@hub/hooks/use-toast";
 import { PanelField } from "./StepActionPanel";
 import { PersonSelect, useOrgPeople } from "./PeoplePicker";
-import { useSalespersonNames } from "./TallyPanel";
+import { useSalespersonNames } from "./SalespersonPicker";
 import { SectionHeading } from "./Readout";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import type { CustomerRequest } from "@hub/lib/customerOnboarding/types";

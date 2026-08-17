@@ -16,6 +16,7 @@ import {
   PRINTING_APPLICATION_OPTIONS, SECURITY_OFFERED_OPTIONS,
 } from "@hub/lib/customerOnboarding/types";
 import { inr } from "@hub/lib/customerOnboarding/format";
+import { useCustomerStore } from "@hub/lib/customerOnboarding/store";
 
 const label = (opts: readonly { value: string; label: string }[], v: string | undefined) =>
   v ? (opts.find((o) => o.value === v)?.label ?? v) : "—";
@@ -28,6 +29,8 @@ export default function ReviewStep({
   invalidSteps: Set<number>;
 }) {
   const v = form.getValues();
+  // `store`, not `s` — the Group closure below already binds `s` to a step.
+  const store = useCustomerStore();
 
   const Group = ({ index, children }: { index: number; children: React.ReactNode }) => {
     const step = FORM_STEPS.find((s) => s.index === index)!;
@@ -65,6 +68,8 @@ export default function ReviewStep({
 
       <Group index={1}>
         <FieldGrid>
+          <Field label="Onboarding into" value={store.companyName(v.company_id)} />
+          <Field label="Salesperson" value={v.assigned_sales_exec_name} />
           <Field label="Legal company name" value={v.legal_name} />
           <Field label="Trade name" value={v.trade_name} />
           <Field label="Customer type" value={label(CUSTOMER_TYPE_OPTIONS, v.customer_type)} />

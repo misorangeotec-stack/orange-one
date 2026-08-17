@@ -148,6 +148,17 @@ export interface CustomerRequest {
   reqNo: string | null;
 
   // Step 1
+  /**
+   * Which of OUR Tally companies this customer is being onboarded into — an
+   * `mst_companies.id`, asked at the gate before the GST number.
+   *
+   * ⚠ RESOLVE IT THROUGH `useCustomerStore().companyName(id)`, which renders the
+   *   ALIAS. mst_companies.name carries the financial year and the masters sync
+   *   re-mints it every April; the alias is portal-owned and stable.
+   *
+   * Null on every request raised before this shipped — render "—", never crash.
+   */
+  companyId: string | null;
   legalName: string | null;
   tradeName: string | null;
   customerType: CustomerType | null;

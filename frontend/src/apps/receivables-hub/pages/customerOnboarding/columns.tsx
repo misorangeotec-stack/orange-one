@@ -47,6 +47,31 @@ export const colCustomer: RequestColumn<CustomerRequest> = {
   ),
 };
 
+/**
+ * Which of OUR companies the customer is being onboarded into.
+ *
+ * ⚠ A FACTORY, like colDue, because the id→alias map lives in the store and a
+ *   column is a plain object, not a hook. Pass `s.companyName`.
+ *
+ * The `value` is the resolved label rather than the raw uuid, so sorting groups
+ * the companies as a reader expects, the search box matches "Colorix", and the
+ * Excel export carries the name instead of a 36-character key.
+ */
+export function colCompany(
+  companyName: (id: string | null | undefined) => string,
+): RequestColumn<CustomerRequest> {
+  return {
+    key: "company",
+    header: "Company",
+    value: (r) => (r.companyId ? companyName(r.companyId) : null),
+    cell: (r) => (
+      <span className="whitespace-nowrap">
+        {r.companyId ? companyName(r.companyId) : "—"}
+      </span>
+    ),
+  };
+}
+
 export const colPlace: RequestColumn<CustomerRequest> = {
   key: "place",
   header: "City / State",

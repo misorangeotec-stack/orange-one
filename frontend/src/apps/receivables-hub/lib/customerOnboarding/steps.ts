@@ -99,7 +99,7 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
  * Deliberately separate from STEPS above: these are panes, those are hand-offs.
  */
 export const FORM_STEPS: { index: number; key: string; title: string; blurb: string }[] = [
-  { index: 1, key: "customer",  title: "Customer Information", blurb: "Who they are and what kind of business they run." },
+  { index: 1, key: "customer",  title: "Customer Information", blurb: "Whose customer this is — our company and our salesperson — then who they are and what kind of business they run." },
   { index: 2, key: "kyc",       title: "Business & KYC",       blurb: "GST number fills in the PAN and state automatically." },
   { index: 3, key: "contact",   title: "Contact Information",  blurb: "The person we will actually deal with." },
   { index: 4, key: "ink",       title: "Ink Business Profile", blurb: "What they print and what they use today. All optional." },

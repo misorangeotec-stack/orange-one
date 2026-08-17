@@ -94,7 +94,7 @@ export default function CustomerOnboardingHome() {
                         {requestSubject(e.request)}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {e.ref} · {stepTitle(e.stepKey)}
+                        {s.companyName(e.request.companyId)} · {e.ref} · {stepTitle(e.stepKey)}
                         {e.dueIso && (
                           <span className={e.dueIso < today ? "text-destructive font-medium" : ""}>
                             {" "}· due {dmy(e.dueIso)}
@@ -187,7 +187,8 @@ export default function CustomerOnboardingHome() {
                         {requestSubject(r)}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        Started {dmy(r.createdAt)} · last saved {dmy(r.updatedAt)}
+                        {s.companyName(r.companyId)} · started {dmy(r.createdAt)} · last saved{" "}
+                        {dmy(r.updatedAt)}
                       </div>
                     </div>
                     <StatusBadge status={r.status} />

@@ -13,9 +13,14 @@
  *                          dashboards and per-rep scoping key on
  *   They come from different systems and one does not imply the other. Storing
  *   only the user breaks the rep's dashboard; only the name breaks the bell.
+ *
+ * ⚠ THE TALLY NAME NOW ARRIVES ALREADY ANSWERED. It is asked at the gate, so
+ *   this panel opens with it filled from `assigned_sales_exec_name` rather than
+ *   blank. This step still owns the final say — correcting it here is the last
+ *   word before the ledger is created — but it is no longer where the question
+ *   is first put.
  */
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@hub/components/ui/button";
 import { Checkbox } from "@hub/components/ui/checkbox";
@@ -25,6 +30,8 @@ import {
 } from "@hub/components/ui/select";
 import { useToast } from "@hub/hooks/use-toast";
 import { CorrectionBar, PanelField, StepActionPanel } from "./StepActionPanel";
+import CompanyChip from "./CompanyChip";
+import { useSalespersonNames } from "./SalespersonPicker";
 import { PersonSelect, useOrgPeople } from "./PeoplePicker";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { inr } from "@hub/lib/customerOnboarding/format";
@@ -32,29 +39,6 @@ import { localDateIso } from "@/shared/lib/workingDays";
 import {
   CUSTOMER_LIVE_STATUS_OPTIONS, type CustomerLiveStatus, type CustomerRequest,
 } from "@hub/lib/customerOnboarding/types";
-
-/**
- * The Tally salesperson vocabulary, read straight from the live ConnectWave mirror
- * (ext_ledger_tags.salesperson) — the same column the hub scopes customers on, so a
- * name offered here always matches something.
- *
- * ⚠ IMPORTED DYNAMICALLY. connectwaveFetcher is a code-split chunk — useAppData
- *   import()s it so the hub's receivables machinery is not in the entry bundle.
- *   A static import here would drag the whole fetcher (and its second Supabase
- *   client) back into the main chunk for the sake of one string list. Same
- *   reasoning as lookupGstin's dynamic import of the platform client.
- */
-export function useSalespersonNames(): string[] {
-  const { data } = useQuery({
-    queryKey: ["hub", "salespersonNames"],
-    queryFn: async () => {
-      const { fetchSalespersonNames } = await import("@hub/lib/connectwaveFetcher");
-      return fetchSalespersonNames();
-    },
-    staleTime: 10 * 60 * 1000,
-  });
-  return data ?? [];
-}
 
 export default function TallyPanel({
   request, mode = "decide", onDone,
@@ -151,6 +135,7 @@ export default function TallyPanel({
 
   return (
     <StepActionPanel
+      subhead={<CompanyChip companyId={r.companyId} />}
       title={mode === "edit" ? "Correct the customer record" : "Create the customer in Tally"}
       blurb={
         mode === "edit"
@@ -175,8 +160,15 @@ export default function TallyPanel({
         )
       }
     >
-      {/* The approved terms, restated: this is what should be keyed into Tally. */}
-      <div className="rounded-md border bg-muted/40 p-3 grid gap-3 sm:grid-cols-3 text-sm">
+      {/* The approved terms, restated: this is what should be keyed into Tally.
+          ⚠ THE COMPANY LEADS. Every other cell here is a value to type into a
+            ledger; this one is WHICH LEDGER — the instruction for which company's
+            books to open before any of the rest applies. */}
+      <div className="rounded-md border bg-muted/40 p-3 grid gap-3 sm:grid-cols-4 text-sm">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Create it in</div>
+          <div className="font-medium">{s.companyName(r.companyId)}</div>
+        </div>
         <div>
           <div className="text-[11px] uppercase tracking-wide text-muted-foreground">Approved credit limit</div>
           <div className="font-medium">{inr(r.accRecommendedLimit ?? r.requestedCreditLimit)}</div>

@@ -5,11 +5,12 @@
  * The wizard itself knows nothing about which of the three it is in beyond
  * `mode` — everything else is just initial values.
  *
- * ⚠ A BRAND-NEW CUSTOMER MEETS THE GSTIN GATE FIRST. It is not a wizard step: it
- *   runs before any row exists, so abandoning it mints no draft, and its whole
- *   output is the wizard's initial values. Resuming a draft and editing a rework
- *   both SKIP it — the GSTIN is already answered, and re-asking would either
- *   spend another paid lookup or overwrite what the rep has since corrected.
+ * ⚠ A BRAND-NEW CUSTOMER MEETS THE GATE FIRST — which company, then the GSTIN.
+ *   It is not a wizard step: it runs before any row exists, so abandoning it
+ *   mints no draft, and its whole output is the wizard's initial values.
+ *   Resuming a draft and editing a rework both SKIP it — both questions are
+ *   already answered, and re-asking would either spend another paid lookup or
+ *   overwrite what the rep has since corrected.
  */
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -96,7 +97,7 @@ export default function NewCustomer() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           {onGate
-            ? "Their GST number first — it fills in most of what follows."
+            ? "Whose customer this is, then their GST number — between them they settle most of what follows."
             : "Seven short steps. Everything is saved as you go, so you can stop and come back."}
         </p>
       </div>

@@ -24,7 +24,7 @@ import { STATUS_LABEL } from "@hub/lib/customerOnboarding/format";
 import { exportCompletedCustomers } from "@hub/lib/customerOnboarding/exportCustomers";
 import type { CustomerStatus } from "@hub/lib/customerOnboarding/types";
 import {
-  colCustomer, colCustomerCode, colDue, colGst, colPlace, colRaisedBy, colRaisedOn,
+  colCompany, colCustomer, colCustomerCode, colDue, colGst, colPlace, colRaisedBy, colRaisedOn,
   colRecommendedLimit, colRef, colRequestedLimit, colSalesExec, colStatus, colTerms,
   colType, colWaitingOn,
 } from "./columns";
@@ -56,10 +56,10 @@ export default function AllRequests() {
     : STATUS_LABEL[filter];
 
   const columns = showAsMaster
-    ? [colRef, colCustomer, colCustomerCode, colGst, colPlace, colType, colTerms,
-       colRecommendedLimit, colSalesExec, colRaisedOn, colStatus]
-    : [colRef, colCustomer, colPlace, colType, colTerms, colRequestedLimit,
-       colWaitingOn, colDue(s.dueIsoFor), colRaisedBy, colRaisedOn, colStatus];
+    ? [colRef, colCustomer, colCompany(s.companyName), colCustomerCode, colGst, colPlace, colType,
+       colTerms, colRecommendedLimit, colSalesExec, colRaisedOn, colStatus]
+    : [colRef, colCustomer, colCompany(s.companyName), colPlace, colType, colTerms,
+       colRequestedLimit, colWaitingOn, colDue(s.dueIsoFor), colRaisedBy, colRaisedOn, colStatus];
 
   if (s.loading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   if (s.error) {
@@ -124,7 +124,7 @@ export default function AllRequests() {
                   <Button
                     variant="outline" size="sm" className="gap-2"
                     onClick={() =>
-                      exportCompletedCustomers(rows, s.personName, `Filter: ${filterLabel}`)
+                      exportCompletedCustomers(rows, s.personName, s.companyName, `Filter: ${filterLabel}`)
                     }
                   >
                     <FileSpreadsheet className="h-4 w-4" /> Full export

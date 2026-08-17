@@ -18,8 +18,10 @@ import {
 } from "@hub/components/ui/select";
 import { FieldShell, FormGrid } from "../FormField";
 import GstinField from "../GstinField";
+import SalespersonPicker from "../SalespersonPicker";
 import Documents from "../Documents";
 import { normaliseMobile, type CustomerFormValues } from "@hub/lib/customerOnboarding/schema";
+import { useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import {
   customerTypeFrom, factoryAddressFrom, natureOfBusinessHint, toSnapshot,
 } from "@hub/lib/customerOnboarding/gstin";
@@ -80,12 +82,66 @@ function tidyRegister(form: UseFormReturn<CustomerFormValues>, field: TidyField)
 
 export function Step1CustomerInfo({ form, disabled }: StepProps) {
   const { register, watch, setValue } = form;
+  const s = useCustomerStore();
   // The portal's own words, shown when we would NOT auto-pick a type. Wholesale
   // vs retail is all GST knows; dealer/distributor/trader is the rep's call, and
   // one glance at this beats guessing or opening the certificate.
   const nbaHint = natureOfBusinessHint(watch("gstin_snapshot")?.compliance ?? null);
+  const companyId = watch("company_id") ?? "";
   return (
     <FormGrid>
+      {/**
+        * ⚠ FIRST FIELD, ahead of the customer's own name — it is the framing
+        *   question for the whole request, and the gate asks it first. Seeded
+        *   there and left editable here, exactly like the GST number, so a draft
+        *   or a reworked request can still correct it.
+        */}
+      <FieldShell
+        id="company_id"
+        label="Onboarding into"
+        required
+        error={err(form, "company_id")}
+        hint="The Tally company whose books this customer's ledger will be created in."
+      >
+        <Select
+          value={companyId}
+          disabled={disabled}
+          onValueChange={(v) => setValue("company_id", v, { shouldValidate: true, shouldDirty: true })}
+        >
+          <SelectTrigger id="company_id"><SelectValue placeholder="Choose a company" /></SelectTrigger>
+          <SelectContent>
+            {/* A company since deactivated is not in s.companies, but a request
+                already onboarded into it must still show it rather than render
+                blank and silently re-ask. */}
+            {companyId && !s.companies.some((c) => c.id === companyId) && (
+              <SelectItem value={companyId}>{s.companyName(companyId)}</SelectItem>
+            )}
+            {s.companies.map((c) => (
+              <SelectItem key={c.id} value={c.id}>{s.companyName(c.id)}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </FieldShell>
+
+      {/* The other half of "whose customer is this". Same column the Tally step
+          writes, so there is one salesperson per request and not two. */}
+      <FieldShell
+        id="assigned_sales_exec_name"
+        label="Salesperson"
+        required
+        error={err(form, "assigned_sales_exec_name")}
+        hint="Who owns this customer. Not on the list? Choose “Other” and type the name."
+      >
+        <SalespersonPicker
+          id="assigned_sales_exec_name"
+          value={watch("assigned_sales_exec_name") ?? ""}
+          disabled={disabled}
+          onChange={(v) =>
+            setValue("assigned_sales_exec_name", v, { shouldValidate: true, shouldDirty: true })
+          }
+        />
+      </FieldShell>
+
       <FieldShell id="legal_name" label="Legal Company Name" required error={err(form, "legal_name")}
                   hint="Exactly as it appears on the GST certificate">
         <Input id="legal_name" disabled={disabled} placeholder="Orange Textiles Private Limited"

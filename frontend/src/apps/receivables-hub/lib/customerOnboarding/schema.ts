@@ -57,6 +57,28 @@ const optionalMobile = z
 
 /* ── Step 1 ────────────────────────────────────────────────────────────── */
 export const step1Schema = z.object({
+  /**
+   * Which of OUR Tally companies this customer's ledger will be created in.
+   *
+   * ⚠ FIRST, deliberately — it is the framing question for the whole request,
+   *   asked at the gate before the GSTIN. Held as a uuid (`mst_companies.id`),
+   *   rendered as the alias.
+   *
+   * An empty string fails `.uuid()`, which is what makes it required. RHF runs
+   * `mode: "onTouched"`, so a fresh form is not red on arrival.
+   */
+  company_id: z.string().uuid("Choose the company this customer is for"),
+  /**
+   * The salesperson who owns this customer, asked at the gate beside the company.
+   *
+   * ⚠ THE SAME COLUMN THE TALLY STEP WRITES (`assigned_sales_exec_name`), on
+   *   purpose — one salesperson per request, not a "proposed" and an "actual"
+   *   that can drift. Step 9 opens with it filled and may still correct it.
+   *
+   * Free text, not an enum: the picker offers the Tally vocabulary plus "Other",
+   * and a genuinely new rep must be typeable on the day they join.
+   */
+  assigned_sales_exec_name: z.string().trim().min(2, "Choose or enter the salesperson"),
   legal_name: z.string().trim().min(2, "Enter the legal company name"),
   trade_name: optionalText,
   customer_type: z.enum(
@@ -196,7 +218,7 @@ export type CustomerFormValues = z.infer<typeof fullSchema>;
  *   so its error is invisible and Submit refuses with nothing highlighted.
  */
 export const STEP_FIELDS: (keyof CustomerFormValues)[][] = [
-  ["legal_name", "trade_name", "customer_type", "website"],
+  ["company_id", "assigned_sales_exec_name", "legal_name", "trade_name", "customer_type", "website"],
   ["gst_number", "pan_number", "msme_udyam_no", "registered_address", "city",
    "factory_address", "billing_same_as_registered", "billing_address"],
   ["contact_name", "contact_designation", "contact_mobile", "contact_email"],
@@ -213,6 +235,7 @@ export const OPTIONAL_STEP_INDEXES = [3, 4];
 
 export function emptyFormValues(): CustomerFormValues {
   return {
+    company_id: "", assigned_sales_exec_name: "",
     legal_name: "", trade_name: "", customer_type: undefined as never, website: "",
     gst_number: "", pan_number: "", msme_udyam_no: "", registered_address: "",
     city: "", state_code: "", state_name: "", gstin_snapshot: null, factory_address: "",
@@ -230,6 +253,8 @@ export function emptyFormValues(): CustomerFormValues {
 
 /** An existing request → form values, for Edit and for resuming a draft. */
 export function toFormValues(r: {
+  companyId: string | null;
+  assignedSalesExecName: string | null;
   legalName: string | null; tradeName: string | null; customerType: string | null; website: string | null;
   gstNumber: string | null; panNumber: string | null; msmeUdyamNo: string | null;
   registeredAddress: string | null; city: string | null; stateCode: string | null; stateName: string | null;
@@ -247,6 +272,8 @@ export function toFormValues(r: {
   const s = (v: string | null) => v ?? "";
   const n = (v: number | null) => (v === null ? "" : String(v));
   return {
+    company_id: s(r.companyId),
+    assigned_sales_exec_name: s(r.assignedSalesExecName),
     legal_name: s(r.legalName), trade_name: s(r.tradeName),
     customer_type: (r.customerType ?? undefined) as never, website: s(r.website),
     gst_number: s(r.gstNumber), pan_number: s(r.panNumber), msme_udyam_no: s(r.msmeUdyamNo),
@@ -285,6 +312,11 @@ export function toFormValues(r: {
  */
 export function toRpcPayload(v: Partial<CustomerFormValues>): Record<string, unknown> {
   return {
+    company_id: v.company_id ?? "",
+    // ⚠ Shared with the Tally step, which writes the same column through
+    //   record_tally / assign_sales_exec. Those run later than any path that
+    //   reaches write_form, so they are not raced — see the migration header.
+    assigned_sales_exec_name: v.assigned_sales_exec_name ?? "",
     legal_name: v.legal_name ?? "",
     trade_name: v.trade_name ?? "",
     customer_type: v.customer_type ?? "",

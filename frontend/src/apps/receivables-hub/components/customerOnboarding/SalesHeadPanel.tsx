@@ -28,6 +28,7 @@ import { useToast } from "@hub/hooks/use-toast";
 import {
   CorrectionBar, DecisionBar, PanelField, StepActionPanel, type PanelDecision,
 } from "./StepActionPanel";
+import CompanyChip from "./CompanyChip";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import {
   customerCategoryLabel, customerCategoryMeaning, inr, requestSubject,
@@ -121,6 +122,7 @@ export default function SalesHeadPanel({
 
   return (
     <StepActionPanel
+      subhead={<CompanyChip companyId={r.companyId} />}
       title={mode === "edit" ? "Correct the sales-head approval" : "Sales head approval"}
       blurb={
         mode === "edit"

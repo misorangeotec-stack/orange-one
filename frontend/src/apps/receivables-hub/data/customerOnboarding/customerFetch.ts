@@ -19,6 +19,7 @@
  *   .from("fms_customer_requests") and the whole portal build fails.
  */
 import { supabase } from "@/core/platform/supabase";
+import { fetchMasterCompanies, type MasterCompany } from "@/core/platform/liveMasters";
 import {
   DEFAULT_APPROVAL_RULES,
   type ApprovalRules, type CustomerActivity, type CustomerNotification,
@@ -66,6 +67,7 @@ function mapRequest(r: any): CustomerRequest {
     id: r.id,
     reqNo: str(r.req_no),
 
+    companyId: str(r.company_id),
     legalName: str(r.legal_name),
     tradeName: str(r.trade_name),
     customerType: r.customer_type ?? null,
@@ -208,6 +210,18 @@ const mapNotification = (r: any): CustomerNotification => ({
 
 export interface CustomerSnapshot {
   requests: CustomerRequest[];
+  /**
+   * OUR Tally companies, from Central Masters. The vocabulary behind the "which
+   * company is this customer for" question at the gate.
+   *
+   * ⚠ CARRIED IN THIS SNAPSHOT rather than through the shared
+   *   ["masters","companies"] query key that core/admin/Masters.tsx uses. This
+   *   module deliberately has ONE query and ONE loading state (see the header),
+   *   and the gate page already gates on it; a second key would mean a second
+   *   loading state to handle for five rows. The cost is re-reading those five
+   *   rows on each module invalidation, which is nothing.
+   */
+  companies: MasterCompany[];
   stepOwners: StepOwner[];
   gstStates: GstState[];
   activity: CustomerActivity[];
@@ -226,14 +240,17 @@ export const CUSTOMER_QK = ["customerOnboarding"] as const;
 export const customerQueryKey = (userId: string | null) => [...CUSTOMER_QK, userId] as const;
 
 export async function fetchCustomerData(): Promise<CustomerSnapshot> {
-  const [requests, stepOwners, gstStates, activity, notifications, config] = await Promise.all([
-    fetchAll<any>("fms_customer_requests", "created_at"),
-    fetchAll<any>("fms_customer_step_owners", "step_key"),
-    fetchAll<any>("fms_customer_gst_states", "sort_order"),
-    fetchAll<any>("fms_customer_activity", "created_at"),
-    fetchAll<any>("fms_customer_notifications", "created_at"),
-    fetchAll<any>("fms_customer_config", "key"),
-  ]);
+  const [requests, stepOwners, gstStates, activity, notifications, config, companies] =
+    await Promise.all([
+      fetchAll<any>("fms_customer_requests", "created_at"),
+      fetchAll<any>("fms_customer_step_owners", "step_key"),
+      fetchAll<any>("fms_customer_gst_states", "sort_order"),
+      fetchAll<any>("fms_customer_activity", "created_at"),
+      fetchAll<any>("fms_customer_notifications", "created_at"),
+      fetchAll<any>("fms_customer_config", "key"),
+      // Central Masters, not fms_* — it pages and maps itself.
+      fetchMasterCompanies(),
+    ]);
 
   const byKey = new Map<string, any>(config.map((c: any) => [c.key, c.value ?? {}]));
   const approvalRaw = byKey.get("approval") ?? {};
@@ -248,6 +265,7 @@ export async function fetchCustomerData(): Promise<CustomerSnapshot> {
 
   return {
     requests: requests.map(mapRequest),
+    companies,
     stepOwners: stepOwners.map(mapStepOwner),
     gstStates: gstStates.map(mapGstState),
     activity: activity.map(mapActivity),

@@ -28,7 +28,7 @@ import { correctHref, detailHref, settingsHref } from "@hub/lib/customerOnboardi
 import { stageLockReason } from "@hub/lib/customerOnboarding/queues";
 import type { CustomerRequest } from "@hub/lib/customerOnboarding/types";
 import {
-  colCustomer, colCustomerCode, colDue, colGst, colPlace, colRaisedBy, colRaisedOn,
+  colCompany, colCustomer, colCustomerCode, colDue, colGst, colPlace, colRaisedBy, colRaisedOn,
   colRecommendedLimit, colRef, colRequestedLimit, colSalesExec, colStatus, colTerms,
 } from "./columns";
 
@@ -84,20 +84,25 @@ export default function PendingQueue() {
     },
   };
 
+  // ⚠ Company sits right after the customer in every one of these. An approver
+  //   is deciding a credit limit FOR a particular company of ours, and the queue
+  //   is where they triage before opening anything.
+  const company = colCompany(s.companyName);
+
   const pendingColumns =
     step === "tally_creation"
-      ? [colRef, colCustomer, colGst, colPlace, colTerms, colRecommendedLimit,
+      ? [colRef, colCustomer, company, colGst, colPlace, colTerms, colRecommendedLimit,
          colDue(s.dueIsoFor), colRaisedBy, colStatus]
       : step === "director_approval"
-        ? [colRef, colCustomer, colPlace, colTerms, colRequestedLimit, colRecommendedLimit,
+        ? [colRef, colCustomer, company, colPlace, colTerms, colRequestedLimit, colRecommendedLimit,
            colDue(s.dueIsoFor), colRaisedBy, colStatus]
-        : [colRef, colCustomer, colPlace, colTerms, colRequestedLimit,
+        : [colRef, colCustomer, company, colPlace, colTerms, colRequestedLimit,
            colDue(s.dueIsoFor), colRaisedBy, colRaisedOn, colStatus];
 
   const completedColumns =
     step === "tally_creation"
-      ? [colRef, colCustomer, colCustomerCode, colGst, colSalesExec, colRaisedOn, colStatus, colCorrect]
-      : [colRef, colCustomer, colPlace, colRecommendedLimit, colRaisedBy, colRaisedOn, colStatus, colCorrect];
+      ? [colRef, colCustomer, company, colCustomerCode, colGst, colSalesExec, colRaisedOn, colStatus, colCorrect]
+      : [colRef, colCustomer, company, colPlace, colRecommendedLimit, colRaisedBy, colRaisedOn, colStatus, colCorrect];
 
   if (s.loading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>;
   if (s.error) {

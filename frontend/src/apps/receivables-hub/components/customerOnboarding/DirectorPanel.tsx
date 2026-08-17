@@ -15,6 +15,7 @@ import { useToast } from "@hub/hooks/use-toast";
 import {
   CorrectionBar, DecisionBar, PanelField, StepActionPanel, type PanelDecision,
 } from "./StepActionPanel";
+import CompanyChip from "./CompanyChip";
 import GstComplianceCard from "./GstComplianceCard";
 import { useCustomerAction, useCustomerStore } from "@hub/lib/customerOnboarding/store";
 import { customerCategoryMeaning, customerTypeLabel, inr, paymentTermsLabel, requestSubject, securityLabel } from "@hub/lib/customerOnboarding/format";
@@ -79,6 +80,7 @@ export default function DirectorPanel({
 
   return (
     <StepActionPanel
+      subhead={<CompanyChip companyId={r.companyId} />}
       title={mode === "edit" ? "Correct the director's record" : "Director approval"}
       blurb={
         mode === "edit"
