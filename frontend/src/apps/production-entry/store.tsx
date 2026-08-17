@@ -5,7 +5,13 @@ import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
-import { PRODUCTION_QK, fetchProductionData, productionQueryKey } from "./data/productionFetch";
+import {
+  PRODUCTION_QK,
+  fetchProductionData,
+  fetchProductionWorkflow,
+  productionQueryKey,
+  type ProductionData,
+} from "./data/productionFetch";
 import {
   announce as announceWrite,
   cancelRequest as cancelRequestWrite,
@@ -245,7 +251,34 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<ProductionStoreValue>(() => {
     const uid = userId ?? "";
+    /** Full re-read — for anything that can move a MASTER (items, BOMs, owners,
+     *  config, master requests). Fifteen tables plus the lot-number peek. */
     const invalidate = () => queryClient.invalidateQueries({ queryKey: QK });
+
+    /**
+     * Re-read ONLY what a workflow write can have changed — the cards, the
+     * activity trail, the notifications, the next lot number.
+     *
+     * Every save awaits its refresh before the modal closes, which is right: the
+     * queue behind it must already show the new state, or the person clicks the
+     * button again. What was wrong was WHAT it waited for — a full re-read of a
+     * dozen master tables that recording a step cannot touch. This cuts the wait
+     * to the four calls that can actually differ.
+     *
+     * Falls back to a full invalidate when there is no cached data to merge into
+     * (a save cannot realistically happen then, but a partial write into an empty
+     * cache would leave the app with cards and no items to name them with).
+     */
+    const refreshWorkflow = async () => {
+      const key = productionQueryKey(userId);
+      const prev = queryClient.getQueryData<ProductionData>(key);
+      if (!prev) {
+        await invalidate();
+        return;
+      }
+      const slice = await fetchProductionWorkflow();
+      queryClient.setQueryData<ProductionData>(key, { ...prev, ...slice });
+    };
 
     const stepOwnerFor = (stepKey: StepKey) => stepOwners.find((o) => o.stepKey === stepKey);
 
@@ -503,47 +536,49 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       unreadCount: mine.filter((n) => !n.readAt).length,
       markNotificationsRead: async (ids) => {
         await markNotificationsReadWrite(ids);
-        await invalidate();
+        await refreshWorkflow();
       },
 
       /* ------------------------------ workflow ------------------------------ */
+      // These write CARDS, never masters — so they refresh the workflow slice
+      // rather than re-reading every master table. See `refreshWorkflow`.
 
       submitRequest: async (input) => {
         const id = await submitRequestWrite(input);
-        await invalidate();
+        await refreshWorkflow();
         return id;
       },
       updateRequest: async (requestId, input) => {
         await updateRequestWrite(requestId, input);
-        await invalidate();
+        await refreshWorkflow();
       },
       recordStep: async (stepKey, r, payload) => {
         await recordStepWrite(stepKey, r.id, payload);
-        await invalidate();
+        await refreshWorkflow();
       },
       updateStep: async (stepKey, r, payload) => {
         await updateStepWrite(stepKey, r.id, payload);
-        await invalidate();
+        await refreshWorkflow();
       },
       markReadyToDispatch: async (requestIds) => {
         const moved = await markReadyToDispatchWrite(requestIds);
-        await invalidate();
+        await refreshWorkflow();
         return moved;
       },
       transferFgBulk: async (requestIds, file) => {
         // Upload the shared Tally voucher once, then close every selected card with it.
         const up = await uploadStepDocumentWrite(requestIds[0] ?? "shared", "fgtransfer", file);
         const moved = await recordFgTransferBulkWrite(requestIds, up.path, up.name);
-        await invalidate();
+        await refreshWorkflow();
         return moved;
       },
       holdRequest: async (r, hold, reason) => {
         await holdRequestWrite(r.id, hold, reason);
-        await invalidate();
+        await refreshWorkflow();
       },
       cancelRequest: async (r, reason) => {
         await cancelRequestWrite(r.id, reason);
-        await invalidate();
+        await refreshWorkflow();
       },
 
       qcDocumentUrl: (path) => qualityDocumentUrlWrite(path),

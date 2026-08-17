@@ -84,6 +84,8 @@ export default function LineGrid<T extends LineGridRow>({
   makeEmptyRow,
   isRowBlank,
   footer,
+  mobileCard,
+  mobileFooter,
   onRemove,
   canRemove,
   className,
@@ -96,6 +98,23 @@ export default function LineGrid<T extends LineGridRow>({
   makeEmptyRow: () => T;
   isRowBlank: (row: T) => boolean;
   footer?: ReactNode;
+  /**
+   * OPT-IN narrow-screen layout: render each row as a stacked card below `sm`
+   * and keep the table from `sm` up. Grids that don't pass it are untouched —
+   * they render exactly the single scrolling table they always have.
+   *
+   * The card and the table are BOTH in the DOM, one hidden by CSS. That is fine
+   * because they read and write the same row state, but it is why the card's
+   * `api.focusRef` is a no-op: registering a cell twice would leave the focus
+   * map pointing at whichever copy rendered last, and `focus()` on a
+   * `display:none` input does nothing. Cards are tapped, not tabbed.
+   *
+   * The card body is yours; the surrounding padding, the blank-row tint and the
+   * Remove button are the grid's, so both layouts stay consistent.
+   */
+  mobileCard?: (row: T, api: LineCellApi<T>, index: number) => ReactNode;
+  /** Totals for the card list — the <tfoot> is inside the hidden table. */
+  mobileFooter?: ReactNode;
   /** Optional hook fired after a row is removed (e.g. to clear a row-scoped error). */
   onRemove?: (row: T) => void;
   /** Gate the ✕ per row (default: every non-blank row is removable). Lets a grid
@@ -194,8 +213,8 @@ export default function LineGrid<T extends LineGridRow>({
     if (row) onRemove?.(row);
   };
 
-  return (
-    <div className={cn("rounded-xl border border-line overflow-x-auto", className)}>
+  const table = (
+    <>
       {/* table-fixed, not auto: a long value in one cell (e.g. a wide item name)
           must NOT expand its column and crush the fixed-width ones next to it
           (Qty collapsing to the spinner). With fixed layout the explicit column
@@ -273,6 +292,46 @@ export default function LineGrid<T extends LineGridRow>({
         </tbody>
         {footer}
       </table>
+    </>
+  );
+
+  // No card renderer → exactly the markup this grid has always emitted.
+  if (!mobileCard) {
+    return <div className={cn("rounded-xl border border-line overflow-x-auto", className)}>{table}</div>;
+  }
+
+  return (
+    <div className={cn("rounded-xl border border-line", className)}>
+      <div className="sm:hidden divide-y divide-line/70">
+        {rows.map((row, i) => {
+          const blank = isRowBlank(row);
+          const api: LineCellApi<T> = {
+            rowIndex: i,
+            isLast: i === rows.length - 1,
+            patch: (next) => onRowsChange(rows.map((r, idx) => (idx === i ? { ...r, ...next } : r))),
+            // See `mobileCard`: the table copy owns the focus map.
+            focusRef: () => {},
+            advance: () => {},
+            keyHandler: () => {},
+          };
+          return (
+            <div key={row.uid} className={cn("p-3", blank && "bg-page/20")}>
+              {mobileCard(row, api, i)}
+              {!blank && (canRemove ? canRemove(row) : true) && (
+                <button
+                  type="button"
+                  onClick={() => removeRow(i)}
+                  className="mt-2 inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-2 text-[12.5px] font-semibold text-grey-2 transition hover:text-ryg-red"
+                >
+                  ✕ Remove
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {mobileFooter}
+      </div>
+      <div className="hidden sm:block overflow-x-auto">{table}</div>
     </div>
   );
 }
