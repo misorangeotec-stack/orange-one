@@ -33,7 +33,10 @@ import {
 } from "@hub/components/ui/dialog";
 import { useToast } from "@hub/hooks/use-toast";
 import { useDirectory } from "@/core/platform/store";
-import { buildBoth, type CollectionsExportContext, type SalespersonOption } from "@hub/lib/collectionsExport";
+import {
+  buildBoth, BUILD_STAGE_LABEL,
+  type CollectionsExportContext, type SalespersonOption,
+} from "@hub/lib/collectionsExport";
 import { queueReportEmail } from "@hub/lib/reportEmail";
 import { matchesSearch } from "@/shared/lib/search";
 
@@ -60,11 +63,19 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
   const [to, setTo] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState("");
+  /**
+   * Real progress, counted in steps actually completed.
+   *
+   * `done/total` is not a guess: every send is a known number of phases — draw the PDF, write the
+   * workbook, upload and queue — times the number of salespeople. "Building files…" with a
+   * spinner was indistinguishable from a hang on a book that takes a few seconds per rep, and
+   * gave no clue whether eight reps were nearly done or barely started.
+   */
+  const [progress, setProgress] = useState<{ label: string; done: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setSearch(""); setSelected(new Set()); setRecipients({}); setTo(""); setProgress("");
+    setSearch(""); setSelected(new Set()); setRecipients({}); setTo(""); setProgress(null);
     setMessage(
       scope === "all"
         ? "Please find the current zero-collection position attached: a PDF summary and a detailed workbook."
@@ -149,9 +160,12 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
       const subjectBase = `${ctx.meta.title} — as on ${ctx.meta.asOfDate.slice(0, 10)}`;
 
       if (scope === "all") {
-        setProgress("Building files…");
-        const files = await buildBoth(ctx, { kind: "all" });
-        setProgress("Sending…");
+        // Three real steps: draw, write, send.
+        let step = 0;
+        const total = 3;
+        const files = await buildBoth(ctx, { kind: "all" }, (stage) =>
+          setProgress({ label: BUILD_STAGE_LABEL[stage], done: step++, total }));
+        setProgress({ label: "Uploading and queueing", done: 2, total });
         await queueReportEmail({
           reportKey,
           recipients: parseAddresses(to).map((email) => ({ email })),
@@ -164,10 +178,23 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
       } else {
         // Sequential: each rep needs their own files built AND their own outbox row, and firing
         // them together would lock the tab with no way to say where it had got to.
+        // Three steps per salesperson, so the bar moves inside a rep as well as between them —
+        // on a big book one rep alone is several seconds.
+        const total = chosen.length * 3;
         for (let i = 0; i < chosen.length; i++) {
           const name = chosen[i];
-          setProgress(`${name} (${i + 1}/${chosen.length})`);
-          const files = await buildBoth(ctx, { kind: "salesperson", name });
+          const base = i * 3;
+          const files = await buildBoth(ctx, { kind: "salesperson", name }, (stage) =>
+            setProgress({
+              label: `${BUILD_STAGE_LABEL[stage]} · ${name} (${i + 1} of ${chosen.length})`,
+              done: base + (stage === "pdf" ? 0 : 1),
+              total,
+            }));
+          setProgress({
+            label: `Uploading and queueing · ${name} (${i + 1} of ${chosen.length})`,
+            done: base + 2,
+            total,
+          });
           // The TICKED addresses, never everyone holding the tag. See the header.
           const to = (recipients[name] ?? []).map((email) => {
             const p = (addressBook.get(name) ?? []).find((x) => x.email === email);
@@ -194,7 +221,7 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
       });
     } finally {
       setBusy(false);
-      setProgress("");
+      setProgress(null);
     }
   };
 
@@ -310,18 +337,42 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
           </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" className="rounded-button" onClick={() => onOpenChange(false)} disabled={busy}>
-            Cancel
-          </Button>
-          <Button className="rounded-button" onClick={handleSend} disabled={!canSend || busy}>
-            {busy ? (
-              <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> {progress || "Sending…"}</>
-            ) : (
-              <><Mail className="h-4 w-4 mr-2" /> Send</>
-            )}
-          </Button>
-        </DialogFooter>
+        {/* The bar replaces the footer while working: there is nothing useful to press, and a
+            Cancel that cannot actually stop a synchronous draw would be a lie. */}
+        {busy && progress ? (
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="text-xs text-foreground truncate">{progress.label}</span>
+              <span className="text-[11px] text-muted-foreground tabular-nums whitespace-nowrap">
+                {Math.round((progress.done / progress.total) * 100)}%
+              </span>
+            </div>
+            <div className="h-1.5 w-full overflow-hidden rounded-pill bg-muted">
+              <div
+                className="h-full rounded-pill bg-primary transition-[width] duration-300 ease-out"
+                style={{ width: `${Math.max(4, (progress.done / progress.total) * 100)}%` }}
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {scope === "all"
+                ? "Keep this tab open until it finishes."
+                : "Each salesperson's report is built separately. Keep this tab open."}
+            </p>
+          </div>
+        ) : (
+          <DialogFooter>
+            <Button variant="outline" className="rounded-button" onClick={() => onOpenChange(false)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button className="rounded-button" onClick={handleSend} disabled={!canSend || busy}>
+              {busy ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Working…</>
+              ) : (
+                <><Mail className="h-4 w-4 mr-2" /> Send</>
+              )}
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
