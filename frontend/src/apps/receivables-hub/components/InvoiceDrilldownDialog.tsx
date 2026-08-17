@@ -603,7 +603,8 @@ export function InvoiceDrilldownDialog({ open, onOpenChange, title, subtitle, ro
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const safe = subtitle.replace(/[^\w-]+/g, "_").slice(0, 60);
-    return { blob, filename: `Invoices_${safe}_${asOfDate}.xlsx` };
+    // dd-mm-yyyy like every other export's filename, not the raw ISO `asOfDate`.
+    return { blob, filename: `Invoices_${safe}_${formatDateDMY(asOfDate) || "export"}.xlsx` };
   };
 
   /** Download the styled Excel export. */

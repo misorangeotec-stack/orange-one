@@ -38,6 +38,7 @@ import {
   type CollectionsExportContext, type SalespersonOption,
 } from "@hub/lib/collectionsExport";
 import { queueReportEmail } from "@hub/lib/reportEmail";
+import { formatDateDMY } from "@hub/lib/utils";
 import { matchesSearch } from "@/shared/lib/search";
 
 export type EmailScope = "all" | "salesperson";
@@ -157,7 +158,12 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
     setBusy(true);
     try {
       const ctx = getContext();
-      const subjectBase = `${ctx.meta.title} — as on ${ctx.meta.asOfDate.slice(0, 10)}`;
+      // dd-mm-yyyy, never the raw ISO. `asOfDate` is stored ISO and slicing it printed
+      // "as on 2026-08-17" in the subject line of every mail — the one part of the report a
+      // recipient reads before opening anything. Every other surface (the filenames, the PDF's
+      // header, the workbook's preamble) already goes through formatDateDMY; the subject was the
+      // one place that had been left reading the storage format out loud.
+      const subjectBase = `${ctx.meta.title} — as on ${formatDateDMY(ctx.meta.asOfDate)}`;
 
       if (scope === "all") {
         // Three real steps: draw, write, send.
