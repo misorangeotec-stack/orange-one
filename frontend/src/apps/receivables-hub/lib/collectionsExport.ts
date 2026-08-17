@@ -399,12 +399,41 @@ export async function buildPdf(
   return { blob, filename: pdfFileName(ctx.meta.title, ctx.meta.asOfDate, scopeSuffix(scope)) };
 }
 
-/** Both artefacts for one scope. */
+/**
+ * What `buildBoth` is doing right now, so a caller can show honest progress.
+ *
+ * These are the REAL phases, not a timer pretending to be one. The PDF is by far the longest —
+ * it draws every page by hand, and on a big book that is a few seconds during which a dialog
+ * saying only "Building files…" looks indistinguishable from a hang.
+ */
+export type BuildStage = "pdf" | "workbook";
+
+export const BUILD_STAGE_LABEL: Record<BuildStage, string> = {
+  pdf: "Drawing the PDF",
+  workbook: "Writing the workbook",
+};
+
+/**
+ * Both artefacts for one scope.
+ *
+ * `onStage` fires BEFORE each phase begins, and the yield after it is what makes the callback
+ * worth having: both builders are long synchronous draws, so without handing the event loop back
+ * the browser never repaints and every stage arrives at once, after the work is finished.
+ */
 export async function buildBoth(
   ctx: CollectionsExportContext,
   scope: ExportScope,
+  onStage?: (stage: BuildStage) => void,
 ): Promise<{ blob: Blob; filename: string }[]> {
+  const yieldToPaint = () => new Promise<void>((r) => setTimeout(r, 0));
+
+  onStage?.("pdf");
+  if (onStage) await yieldToPaint();
   const pdf = await buildPdf(ctx, scope);
+
+  onStage?.("workbook");
+  if (onStage) await yieldToPaint();
   const xlsx = buildXlsx(ctx, scope);
+
   return [pdf, xlsx];
 }

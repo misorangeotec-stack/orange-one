@@ -70,21 +70,45 @@ export default function ReportEmailSettings() {
   /** The report currently being written, so only its own switch shows a spinner. */
   const [pending, setPending] = useState<string | null>(null);
 
+  /**
+   * The switch moves on click, before the server answers.
+   *
+   * ⚠ THIS IS A CORRECTNESS FIX, NOT POLISH. Without it the switch kept showing OFF for the whole
+   *   round trip, which reads as "that didn't work" and invites a second click — and a second
+   *   click sends `next: !on` computed from the STALE value, turning the report straight back off.
+   *   It happened in testing on 17-Aug-2026: the report was switched on, clicked again, and the
+   *   next send failed with "emailing is switched off for this report". A control that quietly
+   *   undoes itself is worse than a slow one.
+   *
+   * The optimistic value is rolled back on failure, so a rejected write (a non-admin, a dropped
+   * connection) does not leave the screen claiming a report is armed when it is not.
+   */
   const flip = useMutation({
     mutationFn: ({ key, next }: { key: string; next: boolean }) => setReportEmailEnabled(key, next),
-    onMutate: ({ key }) => setPending(key),
-    onSuccess: async (_v, { key, next }) => {
-      await queryClient.invalidateQueries({ queryKey: QK });
+    onMutate: async ({ key, next }) => {
+      setPending(key);
+      await queryClient.cancelQueries({ queryKey: QK });
+      const previous = queryClient.getQueryData<Record<string, boolean>>(QK);
+      queryClient.setQueryData<Record<string, boolean>>(QK, { ...(previous ?? {}), [key]: next });
+      return { previous };
+    },
+    onSuccess: (_v, { key, next }) => {
       const title = EMAILABLE_REPORTS.find((r) => r.id === key)?.title ?? key;
       toast({ title: next ? `${title} can now be emailed` : `Emailing switched off for ${title}` });
     },
-    onError: (err) =>
+    onError: (err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(QK, context.previous);
       toast({
         title: "Could not change the setting",
         description: err instanceof Error ? err.message : "Unknown error",
         variant: "destructive",
-      }),
-    onSettled: () => setPending(null),
+      });
+    },
+    // Refetch once the dust settles, so the screen ends on the server's word rather than ours.
+    onSettled: () => {
+      setPending(null);
+      void queryClient.invalidateQueries({ queryKey: QK });
+    },
   });
 
   /** Emailable reports grouped by catalogue category, in catalogue order. */
