@@ -13,9 +13,8 @@ import {
   companyDisplayName, itemTypeLabel, ITEM_TYPES,
   fetchMasterCompanies, fetchMasterItems, fetchMasterLocations, fetchMasterLookup,
   fetchMasterParties, fetchMasterPartyItems, fetchMasterSyncRuns,
-  fetchMasterPartyCompanies, fetchMasterItemCompanies,
   type ItemType,
-  type MasterCompany, type MasterCompanyLink, type MasterItem, type MasterLocation,
+  type MasterCompany, type MasterItem, type MasterLocation,
   type MasterLookup, type MasterParty, type MasterPartyItem,
 } from "@/core/platform/liveMasters";
 import {
@@ -48,8 +47,7 @@ import {
  */
 
 type TabKey =
-  | "company" | "customer" | "vendor" | "item" | "item_group" | "unit" | "location" | "party_item"
-  | "party_company" | "item_company";
+  | "company" | "customer" | "vendor" | "item" | "item_group" | "unit" | "location" | "party_item";
 
 const TABS: { value: TabKey; label: string }[] = [
   { value: "company", label: "Companies" },
@@ -61,11 +59,14 @@ const TABS: { value: TabKey; label: string }[] = [
   { value: "vendor", label: "Vendors" },
   { value: "item", label: "Items" },
   { value: "party_item", label: "Customer Items" },
-  // The two "who may bill / who may sell" lists sit next to the masters they
-  // qualify, not at the end: a reader arriving from Customers is asking the
-  // very next question.
-  { value: "party_company", label: "Customer Companies" },
-  { value: "item_company", label: "Item Companies" },
+  // ⚠ NO "Customer Companies" / "Item Companies" TABS, and that was a real
+  //   correction rather than a tidy-up. They were built as lists to maintain by
+  //   hand, which defeated the point of the whole operation: Tally ALREADY
+  //   holds this. A firm has a separate ledger in every book it trades with,
+  //   and a stock item exists in every book that stocks it — that IS the
+  //   company mapping. mst_refresh_party_companies() and its item twin derive
+  //   it, so it belongs as a COLUMN on the master it describes, not as a
+  //   second list somebody has to keep in step.
   { value: "item_group", label: "Item Groups" },
   { value: "unit", label: "Units" },
 ];
@@ -74,7 +75,6 @@ const TABS: { value: TabKey; label: string }[] = [
 const WRITE_TYPE: Record<TabKey, CentralMasterType> = {
   company: "company", customer: "party", vendor: "party", item: "item",
   item_group: "item_group", unit: "unit", location: "location", party_item: "party_item",
-  party_company: "party_company", item_company: "item_company",
 };
 
 // APPS is keyed BY app id — the id is the record key, not a field on AppInfo.
@@ -231,13 +231,12 @@ export default function Masters() {
   const companies = useQuery({ queryKey: ["masters", "companies"], queryFn: fetchMasterCompanies, ...opts,
     // Companies are the parent lookup for parties, items and locations, so they
     // load for those tabs too — 5 rows, not worth a second thought.
-    enabled: enabled(["company", "customer", "vendor", "item", "item_group", "location", "party_item",
-                      "party_company", "item_company"]) });
+    enabled: enabled(["company", "customer", "vendor", "item", "item_group", "location", "party_item"]) });
   // Customer Items needs both lists too, to offer the two pickers on its Add form.
   const parties = useQuery({ queryKey: ["masters", "parties"], queryFn: fetchMasterParties, ...opts,
-    enabled: enabled(["customer", "vendor", "party_item", "party_company"]) });
+    enabled: enabled(["customer", "vendor", "party_item"]) });
   const items = useQuery({ queryKey: ["masters", "items"], queryFn: fetchMasterItems, ...opts,
-    enabled: enabled(["item", "party_item", "item_company"]) });
+    enabled: enabled(["item", "party_item"]) });
   const groups = useQuery({ queryKey: ["masters", "item_groups"], queryFn: () => fetchMasterLookup("mst_item_groups"), ...opts,
     // Customer Items shows the item's GROUP, so it needs this lookup too.
     enabled: enabled(["item", "item_group", "party_item"]) });
@@ -247,10 +246,6 @@ export default function Masters() {
     enabled: enabled("location") });
   const partyItems = useQuery({ queryKey: ["masters", "party_items"], queryFn: fetchMasterPartyItems, ...opts,
     enabled: enabled("party_item") });
-  const partyCompanies = useQuery({ queryKey: ["masters", "party_companies"], queryFn: fetchMasterPartyCompanies, ...opts,
-    enabled: enabled("party_company") });
-  const itemCompanies = useQuery({ queryKey: ["masters", "item_companies"], queryFn: fetchMasterItemCompanies, ...opts,
-    enabled: enabled("item_company") });
   const runs = useQuery({ queryKey: ["masters", "sync-runs"], queryFn: () => fetchMasterSyncRuns(1), staleTime: 60_000 });
 
   /**
@@ -286,12 +281,10 @@ export default function Masters() {
       case "unit": return units.data ?? [];
       case "location": return locations.data ?? [];
       case "party_item": return partyItems.data ?? [];
-      case "party_company": return partyCompanies.data ?? [];
-      case "item_company": return itemCompanies.data ?? [];
       default: return [];
     }
   }, [tab, companies.data, parties.data, items.data, groups.data, units.data, locations.data,
-      partyItems.data, partyCompanies.data, itemCompanies.data]);
+      partyItems.data]);
 
   const addedHereCount = useMemo(
     () => tabRows.filter((r) => r.source === "portal").length,
@@ -313,6 +306,7 @@ export default function Masters() {
   );
   const companyNames = (ids: string[]) =>
     ids.map((id) => companyLabel.get(id) ?? "—").sort().join(", ");
+
   /**
    * Group labels carry their company, because 103 group NAMES are shared across
    * companies — a bare "PAPER ROLL" in a picker would be five different things.
@@ -417,7 +411,7 @@ export default function Masters() {
   // left out of these two lists shows an empty table instead of "loading" and
   // swallows its own failure.
   const allQueries = [companies, parties, items, groups, units, locations,
-                      partyItems, partyCompanies, itemCompanies];
+                      partyItems];
   const loading = allQueries.some((q) => q.isFetching);
   const error = allQueries.find((q) => q.error)?.error as Error | undefined;
 
@@ -558,7 +552,9 @@ export default function Masters() {
           searchText={(r) => `${r.name} ${r.code ?? ""} ${r.gstin ?? ""} ${r.subGroup ?? ""} ${r.location ?? ""}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Company", render: (r) => (
+            /* Tally's filing, one value, rewritten every sync — renamed so it is
+               not read as "who bills them", which is the column beside it. */
+            { header: "In Tally's books", render: (r) => (
               <span className="text-[12px] text-grey">{r.companyId ? companyLabel.get(r.companyId) ?? "—" : "—"}</span>
             ) },
             /* Where the CUSTOMER takes delivery — 33 places, seeded from what the
@@ -668,8 +664,13 @@ export default function Masters() {
             itemTypeCol<MasterItem>(),
             /* Items are managed per company, so this is the first thing anyone
                needs to see — and the filter under it is how you get from 14,000
-               rows to one company's catalogue. */
-            { header: "Company", render: (r) => (
+               rows to one company's catalogue.
+
+               ⚠ ONE BOOK, and it is Tally's filing rather than who sells it. The
+                 Phase 1 reconcile put 209 of Dispatch's 234 items under O-tec
+                 while Enterprise sells them too. "Sold by", beside it, is the
+                 one an order form may narrow on. */
+            { header: "In Tally's books", render: (r) => (
               <span className="text-[12px] text-grey">
                 {r.companyId ? companyLabel.get(r.companyId) ?? "—" : "—"}
               </span>
@@ -989,80 +990,6 @@ export default function Masters() {
         />
       )}
 
-      {/* ------------------------------- who may bill / who may sell ---------- */}
-      {/*
-        NEITHER LIST CAN BE READ OFF TALLY, which is why they are edited here.
-
-        Tally files a stock item under one company BOOK. The Phase 1 reconcile
-        put 209 of Dispatch's 234 items in the O-tec book against 21 in
-        Enterprise — while both firms sell the same physical goods. Measured
-        before this was built: filtering the order form on that column would
-        offer 21 items on an Enterprise order instead of ~230 and invalidate 589
-        of its 619 existing lines. So these lists were seeded from real order
-        history and are maintained by hand from here on. A sync never touches
-        them, and a mapping may be created BEFORE any invoice exists.
-      */}
-      {(tab === "party_company" || tab === "item_company") && (() => {
-        const isParty = tab === "party_company";
-        const type: CentralMasterType = isParty ? "party_company" : "item_company";
-        const rows = (isParty ? partyCompanies.data : itemCompanies.data) ?? [];
-        const targetOptions = isParty ? customerPickOptions : itemPickOptions;
-        const noun = isParty ? "Customer" : "Item";
-        return (
-          <MasterCrud<MasterCompanyLink>
-            key={tab}
-            singular={isParty ? "Customer company" : "Item company"}
-            rows={onlyAddedHere(rows)}
-            canManage={mayManage(type)}
-            searchText={(r) => `${r.targetName} ${companyLabel.get(r.companyId) ?? ""}`}
-            defaultOrder={(r) => r.sortOrder}
-            columns={[
-              { header: noun, render: (r) => <span className="font-medium text-navy">{r.targetName}</span> },
-              { header: "Company", render: (r) => (
-                <span className="text-[12px] text-grey">{companyLabel.get(r.companyId) ?? "—"}</span>
-              ) },
-              sourceCol(),
-            ]}
-            fields={[sortField]}
-            createFields={[
-              { key: "targetId", label: noun, type: "select", required: true, options: targetOptions,
-                placeholder: `Select ${noun.toLowerCase()}` },
-              { key: "companyId", label: "Company", type: "select", required: true, options: companyOptions,
-                placeholder: "Select company" },
-              sortField,
-            ]}
-            emptyValues={{ targetId: "", companyId: "", sortOrder: "0" }}
-            toValues={(r) => ({ targetId: r.targetId, companyId: r.companyId, sortOrder: String(r.sortOrder) })}
-            /**
-             * Same shape as Customer Items, and for the same reason: on EDIT the
-             * two ids are not in the value bag, so a shared patch-builder would
-             * write null over the pair and destroy the row.
-             */
-            onSubmit={async (id, v, active) => {
-              if (id) {
-                await updateMaster(type, id, { active, sort_order: Number(v.sortOrder ?? 0) || 0 });
-              } else {
-                const targetId = (v.targetId ?? "").trim();
-                const companyId = (v.companyId ?? "").trim();
-                if (!targetId || !companyId) throw new Error(`Pick both a ${noun.toLowerCase()} and a company.`);
-                const dup = rows.find((r) => r.targetId === targetId && r.companyId === companyId);
-                if (dup) {
-                  throw new Error(dup.active
-                    ? `${dup.targetName} is already on ${companyLabel.get(companyId) ?? "that company"}.`
-                    : `${dup.targetName} → ${companyLabel.get(companyId) ?? "that company"} already exists but is switched off. Search for it and switch it back on rather than adding it again.`);
-                }
-                await insertMaster(type, {
-                  [isParty ? "party_id" : "item_id"]: targetId,
-                  company_id: companyId,
-                  active, sort_order: Number(v.sortOrder ?? 0) || 0,
-                });
-              }
-              await invalidate();
-            }}
-            onToggleActive={toggle(type)}
-          />
-        );
-      })()}
     </div>
   );
 }
