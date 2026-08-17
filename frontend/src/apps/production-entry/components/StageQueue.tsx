@@ -52,9 +52,17 @@ export default function StageQueue({
   /** When set, a "Download Excel" action is shown on each COMPLETED row (e.g. the
    *  Batch Card .xlsx on the Log Book queue). */
   rowExcel?: (r: ProductionRequest) => void;
-  /** For pure review-and-confirm steps (e.g. PM Transfer) there is nothing to
-   *  change once done, so the COMPLETED row offers only a clean "View" — no Edit. */
-  viewOnlyWhenDone?: boolean;
+  /**
+   * Per ROW, not per step: "this completed entry has nothing to change, so offer
+   * a clean View and no Edit".
+   *
+   * ⚠ IT IS A PREDICATE BECAUSE ONE STEP CAN BE BOTH. PM Transfer is a pure
+   *   review-and-confirm on a production card, but on a REPACKAGING card it is
+   *   also where the production-entry Tally no. is typed — and a number someone
+   *   types is a number someone mistypes. A flat boolean here left the only card
+   *   with an editable field on that step showing View alone.
+   */
+  viewOnlyWhenDone?: (r: ProductionRequest) => boolean;
 }) {
   const s = useProductionStore();
   const session = useSession();
@@ -250,7 +258,7 @@ export default function StageQueue({
           emptyMessage={cfg.completedBlurb}
           actions={(e) => (
             <div className="flex items-center gap-2">
-              {viewOnlyWhenDone ? (
+              {viewOnlyWhenDone?.(e.row) ? (
                 <Button size="sm" variant="ghost" onClick={() => editing.openView(e.row)}>View</Button>
               ) : (
                 <StageRowAction

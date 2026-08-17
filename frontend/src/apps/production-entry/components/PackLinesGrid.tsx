@@ -1,6 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import Combobox, { type ComboboxHandle, type ComboOption } from "@/shared/components/ui/Combobox";
-import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
+import LineGrid, { type LineCellApi, type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useProductionStore } from "../store";
 import { numOrDash, packFinalQty } from "../lib/format";
@@ -148,6 +148,75 @@ export default function PackLinesGrid({
     },
   ];
 
+  /*
+    The phone layout of the same row — see LineGrid's `mobileCard`. Five columns
+    of a packaging line do not fit a handset, and this grid is filled in on the
+    floor beside the log book. 16px inputs so iOS Safari doesn't zoom the page in
+    on focus and leave it there.
+  */
+  const mInput = "w-full px-3 py-2 text-[16px] text-right tabular-nums";
+  const mLabel = "block mb-1 text-[11px] font-semibold uppercase tracking-wide text-grey-2";
+  const packMobileCard = (row: PackRow, api: LineCellApi<PackRow>) => {
+    const pi = s.packagingItemById(row.packagingItemId ?? "");
+    return (
+      <div className="space-y-2.5">
+        <Combobox
+          value={row.packagingItemId ?? ""}
+          onChange={(v) => {
+            const picked = s.packagingItemById(v);
+            const qty = packQtyFromPrefix(picked?.name, packedQty) || row.qty;
+            api.patch({
+              packagingItemId: v,
+              unitId: picked?.unitId ?? null,
+              qty,
+              extra: isCapItem(picked?.name) ? capExtra(qty) : row.extra,
+            });
+          }}
+          options={packOptions}
+          placeholder="Pick a packaging item…"
+          searchable
+          triggerClassName="px-3 py-2 text-[15px]"
+          onCreate={onRaiseMaster ? (name) => onRaiseMaster(name) : undefined}
+          createLabel={(q) => `Request new packaging item “${q}”`}
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <span className={mLabel}>Qty</span>
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              className={mInput}
+              value={row.qty}
+              onChange={(e) => {
+                const qty = e.target.value;
+                api.patch(isCapItem(pi?.name) ? { qty, extra: capExtra(qty) } : { qty });
+              }}
+            />
+          </div>
+          <div>
+            <span className={mLabel}>Extra</span>
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              className={mInput}
+              value={row.extra}
+              onChange={(e) => api.patch({ extra: e.target.value })}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-[12px] text-grey-2">
+          <span>{s.unitById(row.unitId)?.name ?? "—"}</span>
+          <span>
+            Total{" "}
+            <span className="text-[14px] font-bold tabular-nums text-navy">
+              {row.qty || row.extra ? packLineTotal(row.qty, row.extra) : "—"}
+            </span>
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-1.5">
       <span className="block text-[13px] font-medium text-navy">{label}</span>
@@ -189,6 +258,16 @@ export default function PackLinesGrid({
           columns={packColumns}
           makeEmptyRow={makeEmptyPackRow}
           isRowBlank={isPackRowBlank}
+          mobileCard={packMobileCard}
+          mobileFooter={
+            <div className="flex items-center justify-between bg-page/50 px-3 py-2.5 text-[12.5px]">
+              <span className="font-semibold uppercase tracking-wide text-grey-2">Total</span>
+              <span className="tabular-nums font-bold text-navy">
+                {packGsum(rows.map((r) => packLineTotal(r.qty, r.extra)))}
+                <span className="ml-1 font-normal text-grey-2">{unitsList(rows.map((r) => r.unitId))}</span>
+              </span>
+            </div>
+          }
           footer={
             <tfoot>
               <tr className="border-t border-line bg-page/50 text-navy">

@@ -4,7 +4,8 @@ import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
-import LineGrid, { newUid, type LineGridColumn } from "@/shared/components/ui/LineGrid";
+import LineGrid, { newUid, type LineCellApi, type LineGridColumn } from "@/shared/components/ui/LineGrid";
+import FileCapture from "@/shared/components/ui/FileCapture";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import ExportButtons from "./ExportButtons";
 import StepDocLink from "./StepDocLink";
@@ -126,6 +127,22 @@ export default function StepModal({
   const isPmTransfer = stepKey === "pm_transfer";
   const isPacking = stepKey === "packing_entry";
   const isFgTransfer = stepKey === "fg_transfer";
+  /**
+   * A repackaging card bypasses the Production Entry step, so its production-entry
+   * Tally no. has nowhere to be captured — the packing-material transfer takes it
+   * instead. On a production card that field is filled at its own step and stays
+   * READ-ONLY here (the RPC ignores the key for those cards too).
+   */
+  const isRepackCard = request?.cardType === "repackaging";
+  const pmtNeedsTally = isPmTransfer && isRepackCard;
+  /**
+   * A repackaging card has no log book, so its packed quantity was assumed to be
+   * the whole FG quantity at intake. Reality can differ — some of the drums go out
+   * loose — so the packing entry is where the split is actually made: you type
+   * Packed, and Loose is whatever is left of the net quantity. A production card
+   * still carries both figures down from the log book, read-only.
+   */
+  const pkEditsQty = isPacking && isRepackCard;
   // A rejected lot re-issuing an Additional Issue Slip is shown in Quality Check for
   // tracking, but can't be approved/rejected until its top-up raw material has been
   // transferred to production (i.e. it returns to `awaiting_quality`). Block + explain.
@@ -140,6 +157,8 @@ export default function StepModal({
   const [logLab, setLogLab] = useState("");
   const [logPacked, setLogPacked] = useState("");
   const [prodTally, setProdTally] = useState("");
+  /** Packing entry, repackaging only — see `pkEditsQty`. */
+  const [pkPacked, setPkPacked] = useState("");
   // FG transfer: the two Tally-entry confirmations that gate Save.
   const [fgProdTick, setFgProdTick] = useState(false);
   const [fgHojiwalaTick, setFgHojiwalaTick] = useState(false);
@@ -165,7 +184,6 @@ export default function StepModal({
   // inside a read-only Modal's <fieldset disabled> comes up inert.
   const [raise, setRaise] = useState<{ mt: ProductionMasterType; prefill: MasterValues } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const logFileRef = useRef<HTMLInputElement>(null);
 
   /** Seed the log-book rows from the recorded entry when editing, else from the
    *  handover (existing items, locked) with actual use defaulting to handover qty. */
@@ -281,7 +299,10 @@ export default function StepModal({
       setLogLoss(isLogBook && request.tsProductionLoss != null ? String(request.tsProductionLoss) : "");
       setLogLab(isLogBook && request.peLabQty != null ? String(request.peLabQty) : "");
       setLogPacked(isLogBook && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
-      setProdTally(isProduction ? request.peTallyEntry ?? "" : "");
+      // Shared by the production entry step and, on a repackaging card, by the
+      // packing-material transfer that stands in for it.
+      setProdTally(isProduction || isPmTransfer ? request.peTallyEntry ?? "" : "");
+      setPkPacked(isPacking && request.tsPackedQty != null ? String(request.tsPackedQty) : "");
       setFgProdTick(isFgTransfer ? request.fgProdToFg : false);
       setFgHojiwalaTick(isFgTransfer ? request.fgToHojiwala : false);
       // Additional Issue Slip: fresh form when recording, else the last round's top-up.
@@ -315,12 +336,18 @@ export default function StepModal({
       setFile(null);
       setLogFile(null);
       if (fileRef.current) fileRef.current.value = "";
-      if (logFileRef.current) logFileRef.current.value = "";
       setErr(null);
       setBusy(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, request, cfg, isHandover, isLogBook, isProduction, isQuality, isMc, isAis, editing]);
+  }, [open, request, cfg, isHandover, isLogBook, isProduction, isPmTransfer, isPacking, isQuality, isMc, isAis, editing]);
+
+  /** Net quantity available for packing = Actual Output − Lab Testing Qty. */
+  const packNet =
+    request?.actualQty != null ? Math.round((request.actualQty - (request.peLabQty ?? 0)) * 1000) / 1000 : null;
+  const pkPackedNum = Number(pkPacked);
+  const pkPackedValid =
+    pkPacked.trim() !== "" && Number.isFinite(pkPackedNum) && pkPackedNum >= 0 && (packNet == null || pkPackedNum <= packNet);
 
   const setField = (key: string, v: string) => setValues((prev) => ({ ...prev, [key]: v }));
   const setHoField = (idx: number, key: "qty" | "lotNo", v: string) =>
@@ -469,6 +496,19 @@ export default function StepModal({
         payload.pe_tally_entry = prodTally;
       }
 
+      // Repackaging only — the step that stands in for the bypassed production
+      // entry. The RPC ignores this key on a production card, so a stale value
+      // could never overwrite one recorded at the real step.
+      if (pmtNeedsTally) {
+        payload.pe_tally_entry = prodTally;
+      }
+
+      // Repackaging only. Loose is NOT sent — the server derives it as net − packed
+      // from its own figures, so the two can never drift apart.
+      if (pkEditsQty) {
+        payload.ts_packed_qty = pkPacked;
+      }
+
       if (cfg.hasAttachment && file) {
         const up = await uploadQualityDocument(request.id, file);
         payload.qc_attachment_path = up.path;
@@ -604,6 +644,83 @@ export default function StepModal({
     },
   ];
 
+  /*
+    THE PHONE LAYOUT OF THE SAME ROW. The log book is filled in on the floor with
+    the paper book open, so it has to work on a handset — and six columns cannot.
+    Below `sm` each raw material becomes a card: its name as the heading, the
+    numbers it was issued against as a quiet meta line, and only the two things
+    the operator actually types (Actual Use, and the Lot no. on a material they
+    added themselves) as full-width fields.
+
+    ⚠ 16px INPUTS, NOT THE TABLE'S 13px. iOS Safari zooms the whole page in when
+      a focused input's font-size is under 16px and does not zoom back out — so
+      the cheapest way to make a form unusable on an iPhone is to make it neat.
+  */
+  const mInput = "w-full px-3 py-2 text-[16px] tabular-nums";
+  const mLabel = "block mb-1 text-[11px] font-semibold uppercase tracking-wide text-grey-2";
+  const logMobileCard = (row: LogRow, api: LineCellApi<LogRow>) => {
+    const unit = s.unitById(row.unitId)?.name;
+    return (
+      <div className="space-y-2.5">
+        {row.isNew ? (
+          <Combobox
+            value={row.rawMaterialId ?? (row.name ? `free:${row.name}` : "")}
+            onChange={(v) => {
+              if (v.startsWith("free:")) {
+                api.patch({ rawMaterialId: null, name: v.slice(5) });
+              } else {
+                const rm = s.rawMaterialById(v);
+                api.patch({ rawMaterialId: v, name: rm?.name ?? "", unitId: rm?.unitId ?? null });
+              }
+            }}
+            options={rmOptionsFor(row)}
+            placeholder="Pick or type a material…"
+            searchable
+            triggerClassName="px-3 py-2 text-[15px]"
+            onCreate={(name) => api.patch({ rawMaterialId: null, name, unitId: null })}
+            createLabel={(q) => `Use “${q}”`}
+          />
+        ) : (
+          <div className="text-[14px] font-semibold leading-snug text-navy">{row.name}</div>
+        )}
+
+        {!row.isNew && (
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px] text-grey-2">
+            <span>Requested <span className="tabular-nums font-semibold text-navy">{numOrDash(row.requestedQty)}</span></span>
+            <span>Handover <span className="tabular-nums font-semibold text-navy">{numOrDash(row.handoverQty)}</span></span>
+            {unit && <span>{unit}</span>}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <span className={mLabel}>Actual Use{unit ? ` (${unit})` : ""}</span>
+            <TextInput
+              type="number"
+              inputMode="decimal"
+              className={mInput}
+              value={row.actualUse}
+              onChange={(e) => api.patch({ actualUse: e.target.value })}
+            />
+          </div>
+          <div>
+            <span className={mLabel}>Issue Lot No.</span>
+            {row.isNew ? (
+              <TextInput
+                className={mInput}
+                placeholder="Lot no."
+                value={row.lotNo}
+                onChange={(e) => api.patch({ lotNo: e.target.value })}
+              />
+            ) : (
+              <span className="block py-2 text-[14px] text-grey">{row.lotNo || "—"}</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <>
     <Modal
@@ -614,6 +731,11 @@ export default function StepModal({
       // Match the Generate Issue Slip width so multi-column steps (the handover
       // grid especially) show every column without wrapping.
       size="3xl"
+      /* The log book is the one step recorded on the floor, on a phone, with the
+         paper book open — so below `sm` it becomes a full-height bottom sheet
+         with Save under the thumb rather than a card in the middle of the
+         screen. Opt-in per step; every other dialog is unchanged. */
+      mobileFull={isLogBook}
       title={`${titlePrefix} — ${request?.reqNo ?? ""}`}
       // The Lot/Batch Card number is shown ONCE per step, always with a proper
       // label — either the shared header box below (every step) or the 4-col grid
@@ -621,7 +743,7 @@ export default function StepModal({
       footer={
         <>
           <Button variant="ghost" size="sm" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button size="sm" onClick={save} disabled={busy || qcBlocked || (isFgTransfer && !(fgProdTick && fgHojiwalaTick)) || (isAis && !aisMatches) || (isRmTransfer && !(values["rmt_tally_entry"] ?? "").trim()) || (isProduction && !prodTally.trim())}>{busy ? "Saving…" : "Save"}</Button>
+          <Button size="sm" onClick={save} disabled={busy || qcBlocked || (isFgTransfer && !(fgProdTick && fgHojiwalaTick)) || (isAis && !aisMatches) || (isRmTransfer && !(values["rmt_tally_entry"] ?? "").trim()) || ((isProduction || pmtNeedsTally) && !prodTally.trim()) || (pkEditsQty && !pkPackedValid)}>{busy ? "Saving…" : "Save"}</Button>
         </>
       }
     >
@@ -768,6 +890,16 @@ export default function StepModal({
                   makeEmptyRow={makeEmptyLogRow}
                   isRowBlank={isLogRowBlank}
                   canRemove={(r) => r.isNew}
+                  mobileCard={logMobileCard}
+                  mobileFooter={
+                    <div className="flex items-center justify-between bg-page/50 px-3 py-2.5 text-[12.5px]">
+                      <span className="font-semibold uppercase tracking-wide text-grey-2">Total actual use</span>
+                      <span className="tabular-nums font-bold text-navy">
+                        {gsum(logRows.map((r) => Number(r.actualUse) || 0))}
+                        <span className="ml-1 font-normal text-grey-2">{unitsList(logRows.map((r) => r.unitId))}</span>
+                      </span>
+                    </div>
+                  }
                   footer={
                     <tfoot>
                       <tr className="border-t border-line bg-page/50 text-navy">
@@ -827,13 +959,10 @@ export default function StepModal({
               onRaiseMaster={(name) => setRaise({ mt: "packaging_item", prefill: { name } })}
             />
 
-            <FieldLabel label="Attachment" required hint={editing ? "choose a file to replace it" : "required — e.g. the log book page"}>
-              <input
-                ref={logFileRef}
-                type="file"
-                onChange={(e) => setLogFile(e.target.files?.[0] ?? null)}
-                className="block w-full text-[12.5px] text-grey file:mr-3 file:rounded-lg file:border-0 file:bg-page file:px-3 file:py-1.5 file:text-[12.5px] file:font-semibold file:text-navy hover:file:bg-line"
-              />
+            {/* Photograph the log book page, or attach a scan. The entry is made
+                on the floor with the book open, so the camera is the primary path. */}
+            <FieldLabel label="Attachment" required hint={editing ? "photograph or choose a file to replace it" : "required — a photo of the log book page, or a file"}>
+              <FileCapture value={logFile} onChange={setLogFile} disabled={readOnly} />
               {request.tsAttachmentPath && (
                 <div className="mt-1 text-[12px] text-grey-2">
                   Current file: <StepDocLink path={request.tsAttachmentPath} name={request.tsAttachmentName} />
@@ -1198,9 +1327,24 @@ export default function StepModal({
           return (
             <>
               <div className="grid grid-cols-2 gap-3 rounded-xl bg-page px-3.5 py-3">
-                <div><div className={cap}>Production Entry Tally No.</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
+                {/* On a repackaging card the number is ENTERED below, not shown
+                    here — repeating it read-only above its own input reads as two
+                    different fields. */}
+                {!pmtNeedsTally && (
+                  <div><div className={cap}>Production Entry Tally No.</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
+                )}
                 <div><div className={cap}>FG Packed Qty</div><div className="text-[15px] font-bold text-navy tabular-nums">{numOrDash(request.pmhQty)}</div></div>
               </div>
+
+              {pmtNeedsTally && (
+                <FieldLabel
+                  label="Production Entry Tally No."
+                  required
+                  hint="a repackaging card skips the production entry step, so its Tally number is recorded here"
+                >
+                  <TextInput disabled={readOnly} value={prodTally} onChange={(e) => setProdTally(e.target.value)} placeholder="e.g. voucher / entry no." />
+                </FieldLabel>
+              )}
 
               <div className="space-y-1.5">
                 <span className="block text-[13px] font-medium text-navy">Packaging items (from log book)</span>
@@ -1313,18 +1457,55 @@ export default function StepModal({
           const val = "text-[15px] font-bold text-navy tabular-nums";
           const unit = fgUnit ? <span className="text-[11px] font-normal text-grey-2"> {fgUnit}</span> : null;
           const metric = (n: number | null) => (n != null ? <>{n}{unit}</> : "—");
-          // Net qty available for packing = Actual Output − Lab Testing Qty.
-          const net = request.actualQty != null ? Math.round((request.actualQty - (request.peLabQty ?? 0)) * 1000) / 1000 : null;
+          const net = packNet;
           const lines = request.pmhBomLines;
+          // Repackaging: Loose follows the typed Packed figure. Blank input → show
+          // nothing rather than the full net, which would read as a real number.
+          const looseNow =
+            net == null || !pkPackedValid ? null : Math.round((net - pkPackedNum) * 1000) / 1000;
+          // Matches the TextInput's box height (py-1.5 + 14px text + border).
+          const valRow = pkEditsQty ? "min-h-[35px] flex items-center" : "";
           return (
             <>
               {/* Lot/Batch Card + FG item are in the shared header above. */}
+              {/* One value ROW across all four cells, not four differently-sized
+                  boxes. An input is ~34px tall and centres its text; a bare <div>
+                  of text is ~20px and sits at the top of the cell — so next to the
+                  editable Packed Qty the read-only figures read as a line above it.
+                  Giving every value the input's height puts them all on one line.
+                  Only when the input is actually there; a production card keeps the
+                  tighter row it has always had. */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 rounded-xl bg-page px-3.5 py-3">
-                <div><div className={cap}>Net Qty for Packing</div><div className={val}>{metric(net)}</div></div>
-                <div><div className={cap}>Packed Qty</div><div className={val}>{metric(request.tsPackedQty)}</div></div>
-                <div><div className={cap}>Loose Qty</div><div className={val}>{metric(request.tsLooseQty)}</div></div>
-                <div><div className={cap}>Production Tally Entry</div><div className="text-[14px] font-semibold text-navy leading-tight">{request.peTallyEntry || "—"}</div></div>
+                <div><div className={cap}>Net Qty for Packing</div><div className={`${val} ${valRow}`}>{metric(net)}</div></div>
+                <div>
+                  <div className={cap}>Packed Qty{pkEditsQty && <span className="text-orange"> *</span>}</div>
+                  {pkEditsQty ? (
+                    <TextInput
+                      type="number"
+                      inputMode="decimal"
+                      disabled={readOnly}
+                      className="w-full px-2.5 py-1.5 text-[14px] text-right tabular-nums"
+                      value={pkPacked}
+                      onChange={(e) => setPkPacked(e.target.value)}
+                      placeholder="0"
+                    />
+                  ) : (
+                    <div className={`${val} ${valRow}`}>{metric(request.tsPackedQty)}</div>
+                  )}
+                </div>
+                <div>
+                  <div className={cap}>Loose Qty</div>
+                  <div className={`${val} ${valRow}`}>{metric(pkEditsQty ? looseNow : request.tsLooseQty)}</div>
+                </div>
+                <div><div className={cap}>Production Tally Entry</div><div className={`text-[14px] font-semibold text-navy leading-tight ${valRow}`}>{request.peTallyEntry || "—"}</div></div>
               </div>
+
+              {pkEditsQty && (
+                <p className="text-[11.5px] text-grey-2">
+                  Loose Qty = Net Qty for Packing − Packed Qty
+                  {net != null && <> · the packed quantity cannot be more than {net}{fgUnit ? ` ${fgUnit}` : ""}</>}.
+                </p>
+              )}
 
               <div className="space-y-1.5">
                 <span className="block text-[13px] font-medium text-navy">Packaging items (from log book)</span>
@@ -1363,7 +1544,11 @@ export default function StepModal({
                 </div>
               </div>
 
-              <p className="text-[12px] text-grey-2">Review the details above, then Save to log this packing entry in Tally.</p>
+              <p className="text-[12px] text-grey-2">
+                {pkEditsQty
+                  ? "Enter the quantity actually packed, then Save to log this packing entry in Tally."
+                  : "Review the details above, then Save to log this packing entry in Tally."}
+              </p>
             </>
           );
         })()}

@@ -371,11 +371,52 @@ const mapNotification = (r: any): ProductionNotification => ({
   createdAt: r.created_at,
 });
 
+/**
+ * The slice a WORKFLOW write can move: the job cards, the trail they leave, and
+ * the next lot number.
+ *
+ * WHY IT IS SEPARATE. Every save used to await a full re-read of all fifteen
+ * tables before the modal would close — twelve of which hold MASTERS (items,
+ * BOMs, units, step owners, config) that recording a step cannot possibly
+ * change. The person waited on a dozen round trips for data that was already
+ * correct. This is the four calls that can actually differ, so a save now costs
+ * roughly a quarter of the wait.
+ *
+ * Anything that DOES touch a master (raising or approving a master request,
+ * saving a BOM, changing owners or config) still goes through the full
+ * `fetchProductionData` — see the store's `invalidate` vs `refreshWorkflow`.
+ */
+export interface ProductionWorkflowSlice {
+  requests: ProductionRequest[];
+  activity: ProductionActivity[];
+  notifications: ProductionNotification[];
+  batchNoPreview: string;
+}
+
+export async function fetchProductionWorkflow(): Promise<ProductionWorkflowSlice> {
+  const [requests, activity, notifications, batchPeek] = await Promise.all([
+    fetchAll("fms_production_requests", "submitted_at"),
+    fetchAll("fms_production_activity"),
+    fetchAll("fms_production_notifications"),
+    db.rpc("fms_production_peek_batch_no"),
+  ]);
+  return {
+    requests: requests.map(mapRequest),
+    activity: activity.map(mapActivity),
+    notifications: notifications.map(mapNotification),
+    batchNoPreview: (batchPeek.data as string) ?? "",
+  };
+}
+
 export async function fetchProductionData(): Promise<ProductionData> {
   const [
     stepOwners, configRows, designations, categories, rawMaterials, packagingItems, fgItems, units,
     boms, bomComponents,
     masterManagers, masterRequests, requests, activity, notifications,
+    // The next Lot/Batch number to be issued (preview — does not consume the
+    // counter). In the same Promise.all, not after it: as a sequential call it
+    // added a whole round trip to the critical path of every load.
+    batchPeek,
   ] = await Promise.all([
     fetchAll("fms_production_step_owners"),
     fetchAll("fms_production_config", "key"),
@@ -392,6 +433,7 @@ export async function fetchProductionData(): Promise<ProductionData> {
     fetchAll("fms_production_requests", "submitted_at"),
     fetchAll("fms_production_activity"),
     fetchAll("fms_production_notifications"),
+    db.rpc("fms_production_peek_batch_no"),
   ]);
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
@@ -400,9 +442,6 @@ export async function fetchProductionData(): Promise<ProductionData> {
     stepSla: resolveStepSla(byKey.get("step_sla")),
     batchSeqStart: Number(byKey.get("batch_seq_start")?.start ?? 1) || 1,
   };
-
-  // The next Lot/Batch number to be issued (preview — does not consume the counter).
-  const { data: batchPeek } = await db.rpc("fms_production_peek_batch_no");
 
   return {
     stepOwners: stepOwners.map(mapStepOwner),
@@ -420,6 +459,6 @@ export async function fetchProductionData(): Promise<ProductionData> {
     requests: requests.map(mapRequest),
     activity: activity.map(mapActivity),
     notifications: notifications.map(mapNotification),
-    batchNoPreview: (batchPeek as string) ?? "",
+    batchNoPreview: (batchPeek.data as string) ?? "",
   };
 }
