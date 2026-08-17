@@ -2,7 +2,8 @@ import { Link, useSearchParams } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDateTime } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { numOrDash, STATUS_LABEL } from "../../lib/format";
+import { CARD_TYPE_LABEL, dmy, numOrDash, STATUS_LABEL } from "../../lib/format";
+import CardTypePill from "../../components/CardTypePill";
 import { buildIssueSlipExport } from "../../lib/issueSlipVm";
 import { printIssueSlip } from "../../lib/printIssueSlip";
 import { useProductionStore } from "../../store";
@@ -46,6 +47,14 @@ export default function RequestsList() {
       tdClassName: "whitespace-nowrap",
     },
     {
+      key: "cardType",
+      header: "Type",
+      cell: (r) => <CardTypePill cardType={r.cardType} />,
+      sortValue: (r) => CARD_TYPE_LABEL[r.cardType],
+      filter: { kind: "select", get: (r) => CARD_TYPE_LABEL[r.cardType] },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
       key: "fg",
       header: "FG Item",
       cell: (r) => <span className="text-navy">{s.fgItemById(r.fgItemId)?.name ?? "—"}</span>,
@@ -81,6 +90,15 @@ export default function RequestsList() {
         get: (r) => STATUS_LABEL[r.status] ?? r.status,
         initial: initialStatusLabel ? [initialStatusLabel] : undefined,
       },
+    },
+    // The date the job belongs to (back-datable), beside the date it was keyed in.
+    {
+      key: "jobDate",
+      header: "Job Date",
+      cell: (r) => <span className="text-navy">{dmy(r.issueDate ?? r.submittedAt)}</span>,
+      sortValue: (r) => r.issueDate ?? r.submittedAt.slice(0, 10),
+      filter: { kind: "date", get: (r) => r.issueDate ?? r.submittedAt.slice(0, 10) },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "submitted",

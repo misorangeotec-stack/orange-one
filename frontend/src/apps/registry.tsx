@@ -14,6 +14,7 @@ import { customerOnboardingApp } from "./customer-onboarding/meta";
 import { assetMaintenanceApp } from "./asset-maintenance/meta";
 import { leadsDashboardApp } from "./leads-dashboard/meta";
 import { fmsControlCenterApp } from "./fms-control-center/meta";
+import { masterReportApp } from "./master-report/meta";
 import { isUniversalApp } from "./universal";
 import { appCategory, appName } from "./appInfo";
 
@@ -65,6 +66,11 @@ export const apps: AppManifest[] = [
   customerOnboardingApp,
   leadsDashboardApp,
   fmsControlCenterApp,
+  // Master Report — the director's read on module ADOPTION, not on due work.
+  // Sits beside the Control Center in the Control category and answers the
+  // question that one cannot: "is anyone actually using this module?". Counts
+  // come from a single server-side RPC so the page and the 08:00 email agree.
+  masterReportApp,
 ];
 
 export const liveApps = apps.filter((a) => a.status === "live" && a.Component);

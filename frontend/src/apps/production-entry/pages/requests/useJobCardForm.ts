@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { ComboOption } from "@/shared/components/ui/Combobox";
 import { newUid, type LineGridRow } from "@/shared/components/ui/LineGrid";
+import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { useSession } from "@/core/platform/session";
 import { useProductionStore } from "../../store";
 import { pctFromQty, qtyForPct, round3, round6 } from "../../lib/bomMath";
@@ -68,6 +69,8 @@ export interface JobCardFormInit {
   fgItemId: string;
   bomId: string;
   issueRemarks: string;
+  /** yyyy-mm-dd; falls back to today for cards raised before the field existed. */
+  issueDate: string;
   lines: RmLine[];
 }
 
@@ -79,6 +82,10 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
   const [fgItemId, setFgItemIdRaw] = useState("");
   const [bomId, setBomIdRaw] = useState("");
   const [issueRemarks, setIssueRemarks] = useState("");
+  // The job date — today unless the user back-dates it. todayLocalIso (NOT
+  // time.ts's UTC todayIso) because this is a date a person picks off a
+  // calendar: in IST the UTC date reads as yesterday until 05:30.
+  const [issueDate, setIssueDate] = useState(todayLocalIso());
   const [lines, setLines] = useState<RmLine[]>([makeEmptyRmLine()]);
   const [err, setErr] = useState<string | null>(null);
   /** Components the BOM carries that could not be loaded (raw material since
@@ -102,6 +109,7 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
     setFgItemIdRaw(init.fgItemId);
     setBomIdRaw(init.bomId);
     setIssueRemarks(init.issueRemarks);
+    setIssueDate(init.issueDate);
     setLines(init.lines.length ? init.lines : [makeEmptyRmLine()]);
   }
 
@@ -234,6 +242,10 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
 
   const build = (): { input: RequestInput } | { error: string } => {
     if (!fgItemId) return { error: "Finished-good item is required." };
+    // Required, not just capped: the edit RPC coalesces a blank to the stored
+    // value, so without this a cleared field would save silently doing nothing.
+    if (!issueDate) return { error: "The job date is required." };
+    if (issueDate > todayLocalIso()) return { error: "The job date cannot be in the future." };
     if (!(fgTotal > 0)) return { error: "Enter the FG total quantity to produce." };
     const filled = lines.filter((l) => !isRmLineBlank(l));
     if (filled.length === 0) return { error: "Add at least one raw material." };
@@ -252,6 +264,7 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
           bomId: bomId || null,
         })),
         fgItemId,
+        issueDate,
         issueRemarks: issueRemarks.trim() || null,
         requesterName: session.user?.name ?? "Requester",
       },
@@ -261,6 +274,7 @@ export function useJobCardForm(init?: JobCardFormInit | null) {
   return {
     fgTotalQty, setFgTotalQty,
     fgItemId, setFgItemId,
+    issueDate, setIssueDate,
     bomId, applyBom, bomOptions, fgHasBoms, bomDirty, skipped,
     issueRemarks, setIssueRemarks,
     lines, setLines,

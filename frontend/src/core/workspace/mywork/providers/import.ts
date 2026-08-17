@@ -1,19 +1,20 @@
 /**
- * Import Purchase FMS → My Work. The Purchase twin — see `purchase.ts`.
+ * This module → My Work.
  *
- * Import's own owner rule is line-scoped with a single approver per band, unlike
- * Purchase's requisition-scoped multi-approver bands, which is why each app keeps
- * its own `lib/owners.ts` rather than sharing one.
+ * The Purchase twin — shares the import app's cache entry.
+ *
+ * ⚠ THIS FILE HOLDS NO RULES. Which rows are this person's work, and what each one
+ * says, lives in `../items/import.ts` — because the daily snapshot email runs
+ * that same code on the server, where there is no browser to run a hook. Adding a
+ * condition here instead would apply it to the screen and not to the mail, and the
+ * two would start disagreeing about the same person. See ../items/README.md.
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import { fetchImportData, importQueryKey } from "@/apps/import/data/importFetch";
-import { buildQueueEntries } from "@/apps/import/lib/queues";
-import { stepByKey } from "@/apps/import/lib/steps";
-import { ownerResolver } from "@/apps/import/lib/owners";
-import { linkResolver } from "@/apps/import/lib/links";
+import { importWorkItems } from "../items/import";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
 
 function useImportWork(active: boolean): MyWorkResult {
@@ -28,21 +29,7 @@ function useImportWork(active: boolean): MyWorkResult {
 
   const items = useMemo<WorkItem[]>(() => {
     if (!data || !uid) return [];
-    const owners = ownerResolver(data);
-    const linkOf = linkResolver(data.requestItems);
-    return buildQueueEntries(data)
-      .filter((e) => isAdmin || owners.isMine(e, uid))
-      .map((e) => ({
-        id: `import:${e.entityId}:${e.stepKey}`,
-        source: "import",
-        sourceLabel: appName("import"),
-        ref: e.ref,
-        stage: stepByKey(e.stepKey)?.short,
-        dueIso: e.dueIso,
-        to: linkOf(e),
-        assignment: owners.isMine(e, uid) ? ("direct" as const) : ("team" as const),
-        isApproval: e.stepKey === "approval",
-      }));
+    return importWorkItems(data, uid, isAdmin);
   }, [data, uid, isAdmin]);
 
   return { items, isLoading, error };

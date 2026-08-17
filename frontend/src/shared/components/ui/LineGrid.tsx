@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { Dispatch, ReactNode, SetStateAction } from "react";
 import { cn } from "@/shared/lib/cn";
 
 /**
@@ -89,7 +89,9 @@ export default function LineGrid<T extends LineGridRow>({
   className,
 }: {
   rows: T[];
-  onRowsChange: (rows: T[]) => void;
+  /** A `useState` setter. The updater form is REQUIRED (see the trailing-blank
+   *  effect) — passing a handler that ignores the function form will drop rows. */
+  onRowsChange: Dispatch<SetStateAction<T[]>>;
   columns: LineGridColumn<T>[];
   makeEmptyRow: () => T;
   isRowBlank: (row: T) => boolean;
@@ -107,12 +109,26 @@ export default function LineGrid<T extends LineGridRow>({
   const cellKey = (uid: string, colKey: string) => `${uid}:${colKey}`;
   const focusables = useMemo(() => columns.filter((c) => !c.skipFocus), [columns]);
 
-  // The trailing-blank invariant. Runs on every change to `rows`, including the
-  // parent's own edits, so the blank row can never go missing.
+  /**
+   * The trailing-blank invariant. Runs on every change to `rows`, including the
+   * parent's own edits, so the blank row can never go missing.
+   *
+   * ⚠ MUST use the functional updater, never `[...rows, …]`.
+   *
+   * `rows` here is the value captured when this effect was scheduled. A parent
+   * that seeds the grid from its OWN effect writes after this one (child effects
+   * flush before parent effects), so appending to the captured snapshot posts a
+   * one-blank-row array that lands last and silently wipes the seeded rows —
+   * every recorded line vanishes and the form looks empty. React StrictMode's
+   * double-invoked effects make it reproduce every time in dev; a production
+   * build only got away with it by luck of ordering. Reading `prev` takes
+   * whatever the parent last committed, so seeding and appending compose in
+   * either order.
+   */
   useEffect(() => {
-    if (rows.length === 0 || !isRowBlank(rows[rows.length - 1]!)) {
-      onRowsChange([...rows, makeEmptyRow()]);
-    }
+    onRowsChange((prev) =>
+      prev.length === 0 || !isRowBlank(prev[prev.length - 1]!) ? [...prev, makeEmptyRow()] : prev,
+    );
     // isRowBlank/makeEmptyRow are stable-by-convention (defined inline in the
     // parent); depending on them would re-run this on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps

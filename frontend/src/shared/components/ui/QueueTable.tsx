@@ -319,20 +319,47 @@ export default function QueueTable<T>({
     return [...map.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [rows, idOf, groupNameOf]);
 
-  // Distinct option lists for every "select" filter column.
+  /**
+   * Distinct option lists for every "select" filter column.
+   *
+   * ⚠ THE OPTIONS CASCADE: each column offers only values still reachable once
+   *   the OTHER columns' filters are applied. Filter Type to Ink and the Item
+   *   group list drops the groups holding no ink, so no combination a reader can
+   *   assemble from these dropdowns can ever return an empty table. Listing every
+   *   value in the source rows instead means offering choices that are already
+   *   excluded, and the reader finds out by clicking.
+   *
+   *   A column is excluded from its OWN options (`other.key === c.key`) — else
+   *   narrowing to one value would leave that lone value in its list, with no way
+   *   to widen again short of clearing the filter.
+   *
+   *   An author-declared `options` list is left exactly as declared: it is a
+   *   fixed vocabulary (every status a step can hold), not a reading of the data,
+   *   and shrinking it would hide states the screen is meant to name.
+   */
   const selectOptions = useMemo(() => {
     const out: Record<string, string[]> = {};
     for (const c of shownColumns) {
       if (c.filter?.kind === "select" || c.filter?.kind === "multiselect") {
         if (c.filter.options) { out[c.key] = c.filter.options; continue; }
         const set = new Set<string>();
-        for (const row of rows) { const v = c.filter.get(row); if (v) set.add(v); }
+        for (const row of rows) {
+          if (idOf && group !== "all" && idOf(row) !== group) continue;
+          let reachable = true;
+          for (const other of shownColumns) {
+            if (other.key === c.key) continue;
+            if (!matches(other, row)) { reachable = false; break; }
+          }
+          if (!reachable) continue;
+          const v = c.filter.get(row);
+          if (v) set.add(v);
+        }
         out[c.key] = [...set].sort((a, b) => a.localeCompare(b));
       }
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, shownColumns]);
+  }, [rows, shownColumns, filters, group, idOf]);
 
   // Filter → sort (group primary, chosen column secondary).
   const sorted = useMemo(() => {

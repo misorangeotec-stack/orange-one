@@ -9,9 +9,11 @@ import type { ComboOption } from "@/shared/components/ui/Combobox";
 import ExportButtons from "./ExportButtons";
 import StepDocLink from "./StepDocLink";
 import RequestMasterModal from "./RequestMasterModal";
+import PackLinesGrid from "./PackLinesGrid";
 import { useProductionStore } from "../store";
 import { uploadQualityDocument, uploadStepDocument } from "../data/productionWrites";
 import { dmy, numOrDash, packFinalQty } from "../lib/format";
+import { packLinePayload, type PackRow } from "../lib/packLines";
 import type { MasterValues } from "../lib/masterFields";
 import { STATUS_OPTIONS, STEP_CONFIG } from "../lib/stepConfig";
 import { isAisLoopBlocked, type QueueStep } from "../lib/queues";
@@ -44,26 +46,6 @@ interface HandoverRow {
   lotNo: string;
 }
 
-/** One packing-material row (captured at the log book): the picked packaging item
- *  (with its own unit), the base/auto quantity, and an EXTRA quantity (manual for
- *  most items; auto-filled to 7% of qty for CAP items). Line total = qty + extra.
- *  Drives the shared LineGrid. */
-interface PackRow {
-  uid: string;
-  packagingItemId: string | null;
-  unitId: string | null;
-  qty: string;
-  extra: string;
-}
-const makeEmptyPackRow = (): PackRow => ({ uid: newUid(), packagingItemId: null, unitId: null, qty: "", extra: "" });
-// Blank means blank — no default qty here (see LineGrid's trailing-blank invariant).
-const isPackRowBlank = (r: PackRow) => !r.packagingItemId && !(r.qty ?? "").trim() && !(r.extra ?? "").trim();
-/** Line total = base qty + extra (no buffer). */
-const packLineTotal = (qty: string, extra: string) => Math.round(((Number(qty) || 0) + (Number(extra) || 0)) * 1000) / 1000;
-/** CAP items auto-fill Extra as 7% of the qty, ROUNDED to a whole number (never decimals). */
-const isCapItem = (name: string | undefined) => /\bcap\b/i.test(name ?? "");
-const capExtra = (qty: string) => String(Math.round((Number(qty) || 0) * 0.07));
-
 /** One additional-raw-material row on the Generate Additional Issue Slip form. */
 interface AisEditRow {
   uid: string;
@@ -73,18 +55,6 @@ interface AisEditRow {
 }
 const makeEmptyAisRow = (): AisEditRow => ({ uid: newUid(), rawMaterialId: null, qty: "", unitId: null });
 const isAisRowBlank = (r: AisEditRow) => !r.rawMaterialId && !(r.qty ?? "").trim();
-
-/** Suggested packaging qty from the item's numeric name PREFIX (its pack size):
- *  FG packed qty ÷ prefix, rounded. e.g. "10 Kg Can" → fgQty/10; "5 Ltr" → fgQty/5.
- *  Blank when there is no numeric prefix or no FG packed qty yet. The user can override. */
-const packQtyFromPrefix = (name: string | undefined, fgPackedQty: string): string => {
-  const m = (name ?? "").trim().match(/^(\d+)/);
-  const div = m ? Number(m[1]) : 0;
-  const fg = Number(fgPackedQty);
-  if (!div || !fg || !Number.isFinite(fg)) return "";
-  return String(Math.round(fg / div));
-};
-
 
 /** One Log Book Entry row being edited. Existing rows carry the locked requested/
  *  handover/lot from earlier steps with an editable actual use; new rows are added
@@ -447,9 +417,7 @@ export default function StepModal({
         payload.ts_packed_qty = logPacked;
         payload.ts_loose_qty = String(loose);
         // Packing material used (captured here now) — base qty + extra (total = qty + extra).
-        payload.pmh_bom_lines = packRows
-          .filter((r) => r.packagingItemId)
-          .map((r) => ({ packaging_item_id: r.packagingItemId, unit_id: r.unitId, qty: r.qty ?? "", extra: r.extra ?? "" }));
+        payload.pmh_bom_lines = packLinePayload(packRows);
         if (logFile) {
           const up = await uploadStepDocument(request.id, "logbook", logFile);
           payload.ts_attachment_path = up.path;
@@ -850,135 +818,14 @@ export default function StepModal({
             {/* Packing material used — captured at the log book. Base qty auto-fills
                 from the item's pack size ÷ Packed Qty. Extra is manual, except CAP
                 items which auto-fill Extra = 7% of qty (rounded). Total = qty + extra. */}
-            {(() => {
-              const packOptions: ComboOption[] = s.activePackagingItems.map((p) => ({ value: p.id, label: p.name }));
-              const packColumns: LineGridColumn<PackRow>[] = [
-                {
-                  key: "item",
-                  header: "Packaging Item",
-                  className: "min-w-[220px]",
-                  cell: (row, api) => (
-                    <Combobox
-                      ref={api.focusRef as (el: ComboboxHandle | null) => void}
-                      value={row.packagingItemId ?? ""}
-                      onChange={(v) => {
-                        const pi = s.packagingItemById(v);
-                        const qty = packQtyFromPrefix(pi?.name, logPacked) || row.qty;
-                        api.patch({
-                          packagingItemId: v,
-                          unitId: pi?.unitId ?? null,
-                          qty,
-                          // CAP items: Extra auto-fills to 7% of qty (rounded); others stay manual.
-                          extra: isCapItem(pi?.name) ? capExtra(qty) : row.extra,
-                        });
-                        api.advance();
-                      }}
-                      options={packOptions}
-                      placeholder="Pick a packaging item…"
-                      searchable
-                      triggerClassName="px-2.5 py-1.5 text-[13.5px]"
-                      onTriggerKeyDown={api.keyHandler}
-                      onCreate={(name) => setRaise({ mt: "packaging_item", prefill: { name } })}
-                      createLabel={(q) => `Request new packaging item “${q}”`}
-                    />
-                  ),
-                },
-                {
-                  key: "qty",
-                  header: <span className="block text-right">Qty</span>,
-                  className: "w-24 min-w-[6.5rem]",
-                  cell: (row, api) => (
-                    <TextInput ref={api.focusRef as (el: HTMLInputElement | null) => void} type="number" className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums" value={row.qty} onChange={(e) => {
-                      const qty = e.target.value;
-                      // Keep CAP's Extra in sync (7% of qty, rounded) as the qty changes.
-                      api.patch(isCapItem(s.packagingItemById(row.packagingItemId ?? "")?.name) ? { qty, extra: capExtra(qty) } : { qty });
-                    }} onKeyDown={api.keyHandler} />
-                  ),
-                },
-                {
-                  key: "extra",
-                  header: <span className="block text-right">Extra</span>,
-                  className: "w-24",
-                  cell: (row, api) => (
-                    <TextInput ref={api.focusRef as (el: HTMLInputElement | null) => void} type="number" className="w-full px-2.5 py-1.5 text-[13.5px] text-right tabular-nums" value={row.extra} onChange={(e) => api.patch({ extra: e.target.value })} onKeyDown={api.keyHandler} />
-                  ),
-                },
-                {
-                  key: "total",
-                  header: <span className="block text-right">Total</span>,
-                  className: "w-24",
-                  skipFocus: true,
-                  cell: (row) => <span className="block text-right tabular-nums font-semibold text-navy">{row.qty || row.extra ? packLineTotal(row.qty, row.extra) : "—"}</span>,
-                },
-                {
-                  key: "unit",
-                  header: "Unit",
-                  className: "w-20",
-                  skipFocus: true,
-                  cell: (row) => <span className="text-grey">{s.unitById(row.unitId)?.name ?? "—"}</span>,
-                },
-              ];
-              return (
-                <div className="space-y-1.5">
-                  <span className="block text-[13px] font-medium text-navy">Packing material used</span>
-                  {readOnly ? (
-                    <div className="rounded-xl border border-line overflow-x-auto">
-                      <table className="w-full text-[13px]">
-                        <thead>
-                          <tr className="text-left text-grey-2 border-b border-line bg-page/60">
-                            <th className="font-medium px-3 py-2 min-w-[220px]">Packaging Item</th>
-                            <th className="font-medium px-2 py-2 text-right w-20">Qty</th>
-                            <th className="font-medium px-2 py-2 text-right w-20">Extra</th>
-                            <th className="font-medium px-2 py-2 text-right w-20">Total</th>
-                            <th className="font-medium px-2 py-2 w-20">Unit</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {request.pmhBomLines.length === 0 ? (
-                            <tr><td colSpan={5} className="px-3 py-3 text-grey-2">No packaging items were recorded.</td></tr>
-                          ) : (
-                            request.pmhBomLines.map((l, i) => (
-                              <tr key={i} className="border-b border-line/70 last:border-0">
-                                <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
-                                <td className="px-2 py-2 text-right tabular-nums text-navy">{numOrDash(l.qty)}</td>
-                                <td className="px-2 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.extra)}</td>
-                                <td className="px-2 py-2 text-right tabular-nums font-semibold text-navy">{numOrDash(l.total)}</td>
-                                <td className="px-2 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <LineGrid
-                      rows={packRows}
-                      onRowsChange={setPackRows}
-                      columns={packColumns}
-                      makeEmptyRow={makeEmptyPackRow}
-                      isRowBlank={isPackRowBlank}
-                      footer={
-                        <tfoot>
-                          <tr className="border-t border-line bg-page/50 text-navy">
-                            <td className="px-2.5 py-2 text-[12px] font-semibold uppercase tracking-wide text-grey-2">Total</td>
-                            <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(packRows.map((r) => Number(r.qty) || 0))}</td>
-                            <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(packRows.map((r) => Number(r.extra) || 0))}</td>
-                            <td className="px-2.5 py-2 text-right tabular-nums font-semibold">{gsum(packRows.map((r) => packLineTotal(r.qty, r.extra)))}</td>
-                            <td className="px-2.5 py-2 text-[12px] text-grey-2">{unitsList(packRows.map((r) => r.unitId))}</td>
-                            <td />
-                          </tr>
-                        </tfoot>
-                      }
-                    />
-                  )}
-                  {!readOnly && (
-                    <p className="text-[12px] text-grey-2">
-                      Qty auto-fills from the item's pack size (its name prefix ÷ Packed Qty). Enter an Extra quantity as needed; for CAP items the Extra auto-fills to 7% of the qty (rounded). Total = Qty + Extra.
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
+            <PackLinesGrid
+              rows={packRows}
+              onRowsChange={setPackRows}
+              packedQty={logPacked}
+              readOnly={readOnly}
+              lines={request.pmhBomLines}
+              onRaiseMaster={(name) => setRaise({ mt: "packaging_item", prefill: { name } })}
+            />
 
             <FieldLabel label="Attachment" required hint={editing ? "choose a file to replace it" : "required — e.g. the log book page"}>
               <input

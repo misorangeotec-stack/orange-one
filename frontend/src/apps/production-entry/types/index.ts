@@ -159,12 +159,38 @@ export interface LogBookLine {
   isNew: boolean;
 }
 
+/**
+ * What kind of card this is.
+ *
+ * `production` — the full manufacturing chain, and what EVERY card raised before
+ * repackaging existed reads as. `repackaging` — a traded FG that is only
+ * repacked: no BOM, no raw materials, no wastage, so packed qty = FG qty. It is
+ * raised straight into `awaiting_pm_transfer`, bypassing material handover, RM
+ * transfer, quality, log book, production entry and M/C testing.
+ *
+ * ⚠ Nothing DOWNSTREAM of intake branches on this — pm_transfer onwards reads the
+ * same columns either way. It drives the intake form, the rail's skipped nodes
+ * and the detail page only.
+ */
+export type ProductionCardType = "production" | "repackaging";
+
 export interface ProductionRequest {
   id: string;
   reqNo: string;
 
   // issue slip (step 1)
   jobcardNo: string;
+  cardType: ProductionCardType;
+  /**
+   * The date the job BELONGS to — entered by the raiser, defaults to today, may
+   * be back-dated but never post-dated. Drives the Lot/Batch number's month and
+   * the printed slip's date.
+   *
+   * ⚠ Not the same thing as `submittedAt`, which is when the row was actually
+   * created and is what the SLA clock runs from. Null on cards raised before the
+   * field existed — every display falls back to `submittedAt` for those.
+   */
+  issueDate: string | null;
   categoryId: string | null;
   // Legacy single-RM columns — mirror the FIRST bom line (fallback for cards
   // raised before multi-RM intake, and what the downstream steps still read).

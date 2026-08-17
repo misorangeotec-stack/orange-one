@@ -5,11 +5,21 @@
  *   scope "all"          : one mail, to whoever you name, with the consolidated pair attached.
  *   scope "salesperson"  : one mail PER selected salesperson, each carrying only their own pair.
  *
- * WHO GETS THE SALESPERSON-WISE MAIL
- *   A salesperson is a NAME on a customer record, not a portal user, so the two are matched by
- *   `profiles.receivables_salespersons` — the same tag that scopes what a rep can see in this app.
- *   A rep with no matching profile cannot be resolved to an address, so the dialog says so and
- *   lets you type one rather than skipping them silently.
+ * WHO GETS THE SALESPERSON-WISE MAIL — AND WHY IT IS PICKED, NOT DERIVED
+ *   A salesperson is a NAME on a customer record, not a portal user. The obvious bridge is
+ *   `profiles.receivables_salespersons`, and the first version of this dialog mailed every user
+ *   carrying the name. That was wrong, and the live data says so plainly: three accounts are
+ *   tagged with all thirteen salespeople and one rep is tagged with five, because THE TAG IS A
+ *   VISIBILITY SCOPE. It answers "whose figures may this person see", which is not the same
+ *   question as "whose book is this". Sending on it addressed one rep's book to five people, four
+ *   of them oversight accounts.
+ *
+ *   Nor can the right answer be inferred. "Tagged with exactly this one name" identifies some reps
+ *   and not others — a team lead legitimately carries their own name plus four more.
+ *
+ *   So the recipients are CHOSEN. Every user holding the tag is offered, an unambiguous dedicated
+ *   account (tagged with this name and nothing else) is pre-ticked as a sensible default, and
+ *   Send is refused while any selected salesperson has nobody chosen. Nothing is guessed silently.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -45,6 +55,8 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** salesperson name -> the addresses ticked to receive THEIR book. Never derived at send time. */
+  const [recipients, setRecipients] = useState<Record<string, string[]>>({});
   const [to, setTo] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,7 +64,7 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
 
   useEffect(() => {
     if (!open) return;
-    setSearch(""); setSelected(new Set()); setTo(""); setProgress("");
+    setSearch(""); setSelected(new Set()); setRecipients({}); setTo(""); setProgress("");
     setMessage(
       scope === "all"
         ? "Please find the current zero-collection position attached: a PDF summary and a detailed workbook."
@@ -60,20 +72,34 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
     );
   }, [open, scope]);
 
-  /** salesperson name -> the portal users tagged with it. */
+  /**
+   * salesperson name -> the portal users who hold that tag, each with how many names they hold.
+   *
+   * `covers` is what separates a rep from an overseer. Someone tagged with one name is that
+   * salesperson; someone tagged with thirteen is credit control watching everybody, and mailing
+   * them one rep's book is a mistake dressed up as a feature.
+   */
   const addressBook = useMemo(() => {
-    const m = new Map<string, { email: string; name: string }[]>();
+    const m = new Map<string, { email: string; name: string; covers: number }[]>();
     for (const p of profiles) {
-      for (const raw of p.receivablesSalespersons ?? []) {
-        const key = raw.trim();
-        if (!key || !p.email) continue;
+      const tags = (p.receivablesSalespersons ?? []).map((t) => t.trim()).filter(Boolean);
+      for (const key of tags) {
+        if (!p.email) continue;
+        const entry = { email: p.email, name: p.name, covers: tags.length };
         const list = m.get(key);
-        const entry = { email: p.email, name: p.name };
         if (list) list.push(entry); else m.set(key, [entry]);
       }
     }
+    // Dedicated accounts first, then by name, so the person most likely to be the rep leads.
+    for (const list of m.values()) {
+      list.sort((a, b) => a.covers - b.covers || a.name.localeCompare(b.name));
+    }
     return m;
   }, [profiles]);
+
+  /** The unambiguous account for a name: holds this tag and no other. May be none. */
+  const dedicatedFor = (name: string) =>
+    (addressBook.get(name) ?? []).filter((p) => p.covers === 1).map((p) => p.email);
 
   const filtered = useMemo(
     () => (search.trim() ? options.filter((o) => matchesSearch(search, o.name)) : options),
@@ -81,16 +107,32 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
   );
 
   const chosen = useMemo(() => [...selected], [selected]);
-  const unresolved = useMemo(
-    () => chosen.filter((n) => !(addressBook.get(n)?.length)),
-    [chosen, addressBook],
+
+  /** A selected salesperson with nobody ticked to receive it. Blocks Send. */
+  const unaddressed = useMemo(
+    () => chosen.filter((n) => !(recipients[n]?.length)),
+    [chosen, recipients],
   );
 
   const toggle = (name: string) =>
     setSelected((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+        // Pre-tick the dedicated account, if there is exactly one obvious candidate. Where the
+        // tags cannot tell (a team lead carrying several names), nothing is ticked and the admin
+        // has to say — which is the honest behaviour, not a nuisance.
+        setRecipients((r) => (r[name] ? r : { ...r, [name]: dedicatedFor(name) }));
+      }
       return next;
+    });
+
+  const toggleRecipient = (name: string, email: string) =>
+    setRecipients((r) => {
+      const cur = r[name] ?? [];
+      return { ...r, [name]: cur.includes(email) ? cur.filter((e) => e !== email) : [...cur, email] };
     });
 
   const parseAddresses = (raw: string) =>
@@ -98,7 +140,7 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
 
   const canSend = scope === "all"
     ? parseAddresses(to).length > 0
-    : chosen.length > 0 && unresolved.length === 0;
+    : chosen.length > 0 && unaddressed.length === 0;
 
   const handleSend = async () => {
     setBusy(true);
@@ -126,9 +168,15 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
           const name = chosen[i];
           setProgress(`${name} (${i + 1}/${chosen.length})`);
           const files = await buildBoth(ctx, { kind: "salesperson", name });
+          // The TICKED addresses, never everyone holding the tag. See the header.
+          const to = (recipients[name] ?? []).map((email) => {
+            const p = (addressBook.get(name) ?? []).find((x) => x.email === email);
+            return { email, name: p?.name };
+          });
+          if (!to.length) continue;
           await queueReportEmail({
             reportKey,
-            recipients: (addressBook.get(name) ?? []).map((p) => ({ email: p.email, name: p.name })),
+            recipients: to,
             subject: `${subjectBase} — ${name}`,
             headline: `${ctx.meta.title} — ${name}`,
             body: message,
@@ -191,27 +239,60 @@ export function EmailReportDialog({ open, onOpenChange, scope, reportKey, option
                   <div className="p-6 text-center text-xs text-muted-foreground">No salespersons match.</div>
                 ) : filtered.map((opt) => {
                   const people = addressBook.get(opt.name) ?? [];
+                  const on = selected.has(opt.name);
+                  const picked = recipients[opt.name] ?? [];
                   return (
-                    <label key={opt.name} className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/30">
-                      <Checkbox checked={selected.has(opt.name)} onCheckedChange={() => toggle(opt.name)} />
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-sm truncate">{opt.name}</span>
-                        <span className={`block text-[11px] truncate ${people.length ? "text-muted-foreground" : "text-destructive"}`}>
-                          {people.length ? people.map((p) => p.email).join(", ") : "No portal user tagged with this salesperson"}
+                    <div key={opt.name}>
+                      <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-muted/30">
+                        <Checkbox checked={on} onCheckedChange={() => toggle(opt.name)} />
+                        <span className="flex-1 min-w-0">
+                          <span className="block text-sm truncate">{opt.name}</span>
+                          <span className={`block text-[11px] truncate ${people.length ? "text-muted-foreground" : "text-destructive"}`}>
+                            {!people.length
+                              ? "Nobody in the portal can see this salesperson"
+                              : on
+                                ? picked.length
+                                  ? `Sending to ${picked.join(", ")}`
+                                  : "Choose who receives it"
+                                : `${people.length} ${people.length === 1 ? "person" : "people"} can see this book`}
+                          </span>
                         </span>
-                      </span>
-                      <span className="text-[11px] text-muted-foreground whitespace-nowrap">{opt.customers} cust</span>
-                    </label>
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">{opt.customers} cust</span>
+                      </label>
+
+                      {/* The candidates, shown only once this salesperson is selected. Everyone
+                          who CAN see the book is offered; only the ticked ones are mailed it.
+                          "sees N books" is the tell: 1 is the rep, 13 is credit control. */}
+                      {on && people.length > 0 && (
+                        <div className="bg-muted/20 pl-10 pr-3 pb-2 pt-1 space-y-1">
+                          {people.map((p) => (
+                            <label key={p.email} className="flex items-center gap-2 cursor-pointer">
+                              <Checkbox
+                                checked={picked.includes(p.email)}
+                                onCheckedChange={() => toggleRecipient(opt.name, p.email)}
+                              />
+                              <span className="text-[11px] truncate flex-1 min-w-0">
+                                {p.email}
+                                <span className="text-muted-foreground">
+                                  {" "}· sees {p.covers} {p.covers === 1 ? "book" : "books"}
+                                  {p.covers === 1 ? "" : " (not just this one)"}
+                                </span>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
 
-              {unresolved.length > 0 && (
+              {unaddressed.length > 0 && (
                 <div className="flex items-start gap-2 rounded-input border border-destructive/40 bg-destructive/5 p-2.5">
                   <TriangleAlert className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
                   <p className="text-[11px] leading-snug text-destructive">
-                    No address on file for {unresolved.join(", ")}. Tag a portal user with that salesperson
-                    in Admin &rsaquo; Users, or deselect them.
+                    Nobody is set to receive {unaddressed.join(", ")}. Tick a recipient under each
+                    name, or deselect it. Their report will not be built until you do.
                   </p>
                 </div>
               )}

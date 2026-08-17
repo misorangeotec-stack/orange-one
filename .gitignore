@@ -79,3 +79,6 @@ output/
 docs/**/*.doc
 docs/**/*.docx
 docs/**/*.pdf
+
+# Playwright MCP browser console logs — local debugging noise.
+.playwright-mcp/

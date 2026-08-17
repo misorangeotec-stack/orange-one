@@ -1,47 +1,21 @@
 /**
- * Order to Dispatch FMS → My Work.
+ * This module → My Work.
  *
- * Uses `buildQueueEntries(dispatchSnapshotFrom(...))` — the same two calls the
- * dispatch store and the FMS Control Center make, on the same cache entry.
+ * Shares the dispatch store's cache entry.
  *
- * An order sits at exactly one open step (derived from its `status`), so it can
- * never appear twice here. There are NO approval steps in this flow — isApproval
- * is always false.
- *
- * ⚠ OWNERSHIP HERE IS PER LOCATION, so this does NOT use the shared
- *   `isMineByStepOwners`. That helper answers "is this user in the one owner row
- *   for this step", which is exactly right for HR, Exit and Purchase — none of
- *   which have locations — and wrong here twice over: dispatch now has SEVERAL
- *   rows per step, so its `.find()` would silently pick whichever came first,
- *   and owning gate-out at Vapi should not put an Ahmedabad order on your list.
- *   `ownsStepAt` below is the local rule and mirrors `fms_dispatch_is_step_owner`.
+ * ⚠ THIS FILE HOLDS NO RULES. Which rows are this person's work, and what each one
+ * says, lives in `../items/orderToDispatch.ts` — because the daily snapshot email runs
+ * that same code on the server, where there is no browser to run a hook. Adding a
+ * condition here instead would apply it to the screen and not to the mail, and the
+ * two would start disagreeing about the same person. See ../items/README.md.
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import { fetchDispatchData, dispatchQueryKey } from "@/apps/order-to-dispatch/data/dispatchFetch";
-import { buildQueueEntries, dispatchSnapshotFrom } from "@/apps/order-to-dispatch/lib/queues";
-import { stepByKey } from "@/apps/order-to-dispatch/lib/steps";
-import type { StepOwner } from "@/apps/order-to-dispatch/types";
+import { dispatchWorkItems } from "../items/orderToDispatch";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
-
-/**
- * Does `uid` own `stepKey` at `locationId`? A row with a null location is the
- * fallback grant and covers every site.
- */
-const ownsStepAt = (
-  stepKey: string,
-  locationId: string | null,
-  uid: string,
-  owners: StepOwner[],
-): boolean =>
-  owners.some(
-    (o) =>
-      o.stepKey === stepKey &&
-      o.employeeIds.includes(uid) &&
-      (o.locationId === null || o.locationId === locationId),
-  );
 
 function useDispatchWork(active: boolean): MyWorkResult {
   const { user, isAdmin } = useSession();
@@ -55,79 +29,7 @@ function useDispatchWork(active: boolean): MyWorkResult {
 
   const items = useMemo<WorkItem[]>(() => {
     if (!data || !uid) return [];
-    const owners = data.stepOwners;
-    const orderById = new Map(data.orders.map((o) => [o.id, o]));
-    /*
-     * The delivery step used to have an extra arm for the driver named on the
-     * order. It is gone with the Drivers master — delivery confirmation now
-     * needs a configured step owner like every other step.
-     */
-
-    return buildQueueEntries(dispatchSnapshotFrom({ orders: data.orders, stepSla: data.config.stepSla }))
-      .filter((e) => isAdmin || ownsStepAt(e.stepKey, orderById.get(e.orderId)?.locationId ?? null, uid, owners))
-      .map((e) => {
-        const o = orderById.get(e.orderId);
-        return {
-          id: `order-to-dispatch:${e.orderId}:${e.stepKey}`,
-          source: "order-to-dispatch",
-          sourceLabel: appName("order-to-dispatch"),
-          ref: e.ref,
-          detail: o
-            ? [
-                `${o.lines.length} line${o.lines.length === 1 ? "" : "s"}`,
-                o.roundNo > 1 ? `round ${o.roundNo}` : null,
-                // The customer's own reference, which is how they will refer to it.
-                o.customerPoNo ? `PO ${o.customerPoNo}` : null,
-              ].filter(Boolean).join(" · ")
-            : undefined,
-          stage: stepByKey(e.stepKey)?.short,
-          dueIso: e.dueIso,
-          to: `/order-to-dispatch/orders/${e.orderId}`,
-          assignment: ownsStepAt(e.stepKey, o?.locationId ?? null, uid, owners)
-            ? ("direct" as const)
-            : ("team" as const),
-          isApproval: false,
-        };
-      })
-      /*
-        The Sales Return step, appended LOCALLY.
-
-        It is not a `QueueEntry` and must not become one: `buildQueueEntries` is
-        the shared builder this file, the dispatch store and the FMS Control
-        Center all read, and putting a cancelled order through it would make
-        every cancellation count as open work on the six-step scoreboards. So the
-        rule is restated here, over ten lines, rather than widened there.
-
-        No due date — the window belongs to Tally, not to an SLA this app sets.
-      */
-      .concat(
-        data.orders
-          .filter(
-            (o) =>
-              o.status === "awaiting_sales_return" &&
-              o.srAt == null &&
-              (isAdmin || ownsStepAt("sales_return", o.locationId, uid, owners)),
-          )
-          .map((o) => ({
-            id: `order-to-dispatch:${o.id}:sales_return`,
-            source: "order-to-dispatch",
-            sourceLabel: appName("order-to-dispatch"),
-            ref: o.orderNo,
-            detail: [
-              o.srInvoiceNo ? `invoice ${o.srInvoiceNo}` : null,
-              "cancel the bill in Tally or punch a sales return",
-            ]
-              .filter(Boolean)
-              .join(" · "),
-            stage: "Sales Return",
-            dueIso: null,
-            to: `/order-to-dispatch/orders/${o.id}`,
-            assignment: ownsStepAt("sales_return", o.locationId, uid, owners)
-              ? ("direct" as const)
-              : ("team" as const),
-            isApproval: false,
-          })),
-      );
+    return dispatchWorkItems(data, uid, isAdmin);
   }, [data, uid, isAdmin]);
 
   return { items, isLoading, error };

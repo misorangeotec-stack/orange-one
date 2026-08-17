@@ -16,6 +16,7 @@
  * trend is a later iteration, so each customer's `trend` carries a single month row.
  */
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
+import { categorizeRisk } from "./appDataCore";
 import { applyOtherPaymentsToLive } from "./liveOtherPayments";
 import { fetchCompanyMap, makeCompanyResolver, type CompanyIdentity } from "./companyMap";
 import type {
@@ -28,13 +29,8 @@ const PAGE = 1000;
 const LAKH = 100_000;
 const SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
 
-/** Same rule as useAppData.categorizeRisk — keep in sync so Live risk bands match the default source. */
-function categorizeRisk(maxOD: number, util: number): RiskCategory {
-  if (maxOD > 180 || util > 100) return "critical";
-  if (maxOD > 90  || util > 75)  return "high";
-  if (maxOD > 30  || util > 50)  return "medium";
-  return "low";
-}
+// Risk banding is shared with the default source (lib/appDataCore) rather than duplicated
+// here under a "keep in sync" note — Live and pipeline must band a customer identically.
 
 const EMPTY_AGING = (): AgingBuckets => ({ "0_30": 0, "31_60": 0, "61_90": 0, "91_120": 0, "121_180": 0, "180_plus": 0 });
 /** Coerce the snapshot's aging_buckets jsonb into a full AgingBuckets record (rupees). */

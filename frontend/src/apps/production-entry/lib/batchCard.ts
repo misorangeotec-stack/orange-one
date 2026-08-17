@@ -82,7 +82,9 @@ export function buildBatchCardExport(
     lotNo: r.jobcardNo,
     batchNumber: r.batchCardNo ?? "",
     productionQty,
-    dateStart: dmy(r.mhActualDate ?? r.submittedAt),
+    // Handover date if there is one, else the JOB date — same chain as the issue
+    // slip, so a back-dated card doesn't print two different "start" dates.
+    dateStart: dmy(r.mhActualDate ?? r.issueDate ?? r.submittedAt),
     dateEnd: dmy(r.tsActualDate ?? r.tsAt),
     lines: r.tsBomLines.map((l) => {
       const transfer = l.handoverQty;

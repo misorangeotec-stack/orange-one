@@ -1,24 +1,21 @@
 /**
- * Purchase FMS → My Work.
+ * This module → My Work.
  *
- * Reuses `buildQueueEntries` (the exact predicates the queue pages and the FMS
- * Control Center use) on the exact same query key, so this shares one cache entry
- * with the app and cannot report a different set of open work than the app does.
+ * Shares one react-query cache entry with the procurement app, so this list cannot
+ * report a different set of open work than the app does.
  *
- * The one thing it adds is OWNER FILTERING, which `buildQueueEntries` deliberately
- * does not do — a coordinator's Control Center must count everyone's work. The
- * rule lives in `procurement/lib/owners.ts` precisely so this file can apply it
- * without mounting the procurement store.
+ * ⚠ THIS FILE HOLDS NO RULES. Which rows are this person's work, and what each one
+ * says, lives in `../items/purchase.ts` — because the daily snapshot email runs
+ * that same code on the server, where there is no browser to run a hook. Adding a
+ * condition here instead would apply it to the screen and not to the mail, and the
+ * two would start disagreeing about the same person. See ../items/README.md.
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import { fetchProcurementData, procurementQueryKey } from "@/apps/procurement/data/procFetch";
-import { buildQueueEntries } from "@/apps/procurement/lib/queues";
-import { stepByKey } from "@/apps/procurement/lib/steps";
-import { ownerResolver } from "@/apps/procurement/lib/owners";
-import { linkResolver } from "@/apps/procurement/lib/links";
+import { purchaseWorkItems } from "../items/purchase";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
 
 function usePurchaseWork(active: boolean): MyWorkResult {
@@ -33,23 +30,7 @@ function usePurchaseWork(active: boolean): MyWorkResult {
 
   const items = useMemo<WorkItem[]>(() => {
     if (!data || !uid) return [];
-    const owners = ownerResolver(data);
-    const linkOf = linkResolver(data.requestItems);
-    return buildQueueEntries(data)
-      // An admin owns no workflow steps, so a personal filter would show them an
-      // empty screen. They see the whole book instead — matching the Control Center.
-      .filter((e) => isAdmin || owners.isMine(e, uid))
-      .map((e) => ({
-        id: `purchase:${e.entityId}:${e.stepKey}`,
-        source: "purchase",
-        sourceLabel: appName("procurement"),
-        ref: e.ref,
-        stage: stepByKey(e.stepKey)?.short,
-        dueIso: e.dueIso,
-        to: linkOf(e),
-        assignment: owners.isMine(e, uid) ? ("direct" as const) : ("team" as const),
-        isApproval: e.stepKey === "approval",
-      }));
+    return purchaseWorkItems(data, uid, isAdmin);
   }, [data, uid, isAdmin]);
 
   return { items, isLoading, error };

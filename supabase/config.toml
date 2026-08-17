@@ -43,6 +43,15 @@ verify_jwt = true
 [functions.parse-jd]
 verify_jwt = true
 
+# Computes one person's work queue with the app's own logic, and queues the daily
+# personal snapshot mail. Two callers with two credentials: pg_cron posts an
+# `x-dispatch-secret` header (EMAIL_DISPATCH_SECRET) and has no JWT to offer, and
+# the admin screen posts a signed-in user's JWT. So platform verification is OFF
+# and the function checks BOTH itself — the same arrangement as send-email.
+# Deploy with --no-verify-jwt.
+[functions.work-snapshot]
+verify_jwt = false
+
 # AI fit scoring (Claude) for the HR Recruitment FMS. Reads a candidate's CV out of the
 # PRIVATE fms-hr-docs bucket using the CALLER'S OWN JWT — the function holds no
 # service-role key, so every read is gated by the same RLS the CV tab is gated by.

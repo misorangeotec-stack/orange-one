@@ -55,6 +55,31 @@ export const STEPS: StepDef[] = [
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
 
 /**
+ * The steps a REPACKAGING card never runs. A traded FG is imported ready-made and
+ * only repacked, so there is no material to hand over, transfer, test, log or
+ * produce. Such a card is raised straight into `pm_transfer` and runs the tail —
+ * pm_transfer → packing_entry → ready_to_dispatch → fg_transfer — unchanged.
+ *
+ * ⚠ Presentation only. Queue membership is driven by `status`, which the intake
+ * RPC sets to `awaiting_pm_transfer`, so a bypassed step can never hold a
+ * repackaging card regardless of this list. It exists so the rail and the detail
+ * page can SAY the steps don't apply rather than showing them as merely pending.
+ */
+export const REPACK_BYPASSED_STEPS: StepKey[] = [
+  "material_handover",
+  "rm_transfer",
+  "quality_check",
+  "additional_issue_slip",
+  "transfer_slip",
+  "production_entry",
+  "mc_testing",
+];
+
+/** Does this card type run this step? */
+export const stepAppliesTo = (cardType: "production" | "repackaging", key: StepKey): boolean =>
+  cardType !== "repackaging" || !REPACK_BYPASSED_STEPS.includes(key);
+
+/**
  * The stages the scoreboard rolls the ten steps into. Two screens read this — the
  * Control Center strip and the cross-FMS scoreboard row — so it lives here.
  * `issue_slip` is `noQueue`, so it never holds work and is absent.

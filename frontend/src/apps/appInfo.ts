@@ -151,6 +151,11 @@ export const APPS: Record<string, AppInfo> = {
     basePath: "/fms-control-center",
     category: "control",
   },
+  "master-report": {
+    name: "Master Report",
+    basePath: "/master-report",
+    category: "control",
+  },
   // Virtual module: no web app and no route, so no basePath that resolves to a
   // page. It only gates login to the mobile Leads app. `basePath` is a dead
   // string kept so the shape stays uniform; nothing routes to it.

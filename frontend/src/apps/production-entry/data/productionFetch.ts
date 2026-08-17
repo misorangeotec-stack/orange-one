@@ -136,6 +136,10 @@ const mapRequest = (r: any): ProductionRequest => ({
   id: r.id,
   reqNo: r.req_no,
   jobcardNo: r.jobcard_no,
+  // Every card raised before repackaging existed reads as production.
+  cardType: r.card_type === "repackaging" ? "repackaging" : "production",
+  // Null on cards raised before the job date existed — displays fall back to submittedAt.
+  issueDate: r.issue_date ?? null,
   categoryId: r.category_id ?? null,
   rawMaterialId: r.raw_material_id ?? null,
   requiredQty: num(r.required_qty),

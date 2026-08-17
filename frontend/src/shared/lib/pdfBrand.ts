@@ -416,6 +416,16 @@ export function statCard(
   setFill(pdf, BRAND.orange);
   pdf.roundedRect(x, y, 2.5, h, 1.2, 1.2, "F");
 
+  // The card lays itself out from its own height rather than from fixed offsets, so a caller
+  // that needs to fit six cards plus a table on one page can just ask for a shorter card. Below
+  // ~50pt the three lines no longer clear each other at the full sizes.
+  const tight = h < 50;
+  const labelY = tight ? 12 : 14;
+  const valueY = tight ? 28 : 32;
+  const valueSize = tight ? 12.5 : 14;
+  const subY = tight ? 38 : 43;
+  const subSize = tight ? 6.3 : 6.8;
+
   const pad = 9;
   let labelRoom = w - pad * 2;
 
@@ -425,20 +435,20 @@ export function statCard(
     const right = x + w - pad;
     // Right-pointing triangle: Poppins has no arrow or chevron glyph, so the mark is drawn.
     setFill(pdf, BRAND.orange);
-    pdf.triangle(right - 3.4, y + 8.2, right, y + 11, right - 3.4, y + 13.8, "F");
-    text(pdf, hint, right - 5.2, y + 13.4, { size: 5.6, bold: true, color: BRAND.orange, align: "right" });
+    pdf.triangle(right - 3.4, y + labelY - 5.8, right, y + labelY - 3, right - 3.4, y + labelY - 0.2, "F");
+    text(pdf, hint, right - 5.2, y + labelY - 0.6, { size: 5.6, bold: true, color: BRAND.orange, align: "right" });
     labelRoom -= hintW + 12;
   }
 
-  text(pdf, ellipsize(pdf, card.label.toUpperCase(), labelRoom, 6.4, true), x + pad, y + 14, {
+  text(pdf, ellipsize(pdf, card.label.toUpperCase(), labelRoom, 6.4, true), x + pad, y + labelY, {
     size: 6.4, bold: true, color: BRAND.grey2,
   });
-  text(pdf, ellipsize(pdf, card.value, w - pad * 2, 14, true), x + pad, y + 32, {
-    size: 14, bold: true, color: card.alarm ? BRAND.red : BRAND.navy,
+  text(pdf, ellipsize(pdf, card.value, w - pad * 2, valueSize, true), x + pad, y + valueY, {
+    size: valueSize, bold: true, color: card.alarm ? BRAND.red : BRAND.navy,
   });
   if (card.sub) {
-    text(pdf, ellipsize(pdf, card.sub, w - pad * 2, 6.8), x + pad, y + 43, {
-      size: 6.8, color: BRAND.grey,
+    text(pdf, ellipsize(pdf, card.sub, w - pad * 2, subSize), x + pad, y + subY, {
+      size: subSize, color: BRAND.grey,
     });
   }
 }

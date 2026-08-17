@@ -12,13 +12,15 @@ import StepDocLink from "../../components/StepDocLink";
 import ProductionStepper from "../../components/ProductionStepper";
 import ExportButtons from "../../components/ExportButtons";
 import StatusPill from "../../components/StatusPill";
+import CardTypePill from "../../components/CardTypePill";
 import { exportIssueSlipXlsx } from "../../lib/exportIssueSlip";
 import { buildIssueSlipExport, buildAisIssueSlipExport } from "../../lib/issueSlipVm";
 import { printIssueSlip } from "../../lib/printIssueSlip";
+import { buildRepackSlipExport, exportRepackSlipXlsx, printRepackSlip } from "../../lib/repackSlip";
 import { buildBatchCardExport, exportBatchCardXlsx, printBatchCard } from "../../lib/batchCard";
-import { dmy, numOrDash, requestSubject } from "../../lib/format";
+import { dmy, numOrDash, packFinalQty, requestSubject } from "../../lib/format";
 import { openStep, stepDoneAt, stepDoneBy, type QueueStep } from "../../lib/queues";
-import { STEPS } from "../../lib/steps";
+import { STEPS, stepAppliesTo } from "../../lib/steps";
 import { STEP_CONFIG } from "../../lib/stepConfig";
 import { useProductionStore } from "../../store";
 import type { ProductionRequest } from "../../types";
@@ -186,7 +188,9 @@ export default function RequestDetail() {
     finally { setBusy(false); }
   };
 
-  const queueSteps = STEPS.filter((st) => !st.noQueue);
+  // A repackaging card runs only the four tail steps — listing the seven it
+  // bypasses as "pending" would read as work still owed.
+  const queueSteps = STEPS.filter((st) => !st.noQueue && stepAppliesTo(r.cardType, st.key));
   const stateFor = (step: QueueStep): StageState => (stepDoneAt(step, r) ? "done" : cur === step ? "current" : "pending");
 
   const activity = s.activityFor("request", r.id);
@@ -204,6 +208,13 @@ export default function RequestDetail() {
     packagingItemName: (id: string | null) => s.packagingItemById(id)?.name ?? "",
   };
 
+  const repackSlipLookups = {
+    fgItemName: (id: string | null) => s.fgItemById(id)?.name ?? "",
+    packagingItemName: (id: string | null) => s.packagingItemById(id)?.name ?? "",
+    unitName: (id: string | null) => s.unitById(id)?.name ?? "",
+    fgUnitName: (fgItemId: string | null) => s.unitById(s.fgItemById(fgItemId)?.unitId ?? null)?.name ?? "",
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-5">
       <div className="flex items-start justify-between gap-4">
@@ -211,6 +222,7 @@ export default function RequestDetail() {
           <div className="flex items-center gap-3">
             <h1 className="text-[22px] font-bold text-navy">{r.reqNo}</h1>
             <StatusPill status={r.status} />
+            <CardTypePill cardType={r.cardType} />
           </div>
           <p className="text-[13.5px] text-grey-2 mt-1">Lot/Batch Card {requestSubject(r)} · raised by {r.requesterName}</p>
         </div>
@@ -242,12 +254,22 @@ export default function RequestDetail() {
 
       <Card className="p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <SectionHeading>Batch Card</SectionHeading>
-          <ExportButtons
-            label="issue slip"
-            onDownloadExcel={() => exportIssueSlipXlsx(buildIssueSlipExport(r, issueSlipLookups))}
-            onPrint={() => printIssueSlip(buildIssueSlipExport(r, issueSlipLookups))}
-          />
+          <SectionHeading>{r.cardType === "repackaging" ? "Repackaging Slip" : "Batch Card"}</SectionHeading>
+          {/* A repackaging card has no raw material, so it gets its own slip —
+              same form idiom, packaging list where the RM table would be. */}
+          {r.cardType === "repackaging" ? (
+            <ExportButtons
+              label="repackaging slip"
+              onDownloadExcel={() => exportRepackSlipXlsx(buildRepackSlipExport(r, repackSlipLookups))}
+              onPrint={() => printRepackSlip(buildRepackSlipExport(r, repackSlipLookups))}
+            />
+          ) : (
+            <ExportButtons
+              label="issue slip"
+              onDownloadExcel={() => exportIssueSlipXlsx(buildIssueSlipExport(r, issueSlipLookups))}
+              onPrint={() => printIssueSlip(buildIssueSlipExport(r, issueSlipLookups))}
+            />
+          )}
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mt-3">
           <Field
@@ -270,13 +292,61 @@ export default function RequestDetail() {
               value={`${fgQtyLabel(totalFgQty)} (incl. +${Math.round(aisAdditional * 1000) / 1000} additional)`}
             />
           )}
+          {/* Two dates, two meanings: the job date is what the job belongs to
+              (and what the slip prints); "Raised" is when it was actually keyed
+              in. A back-dated card is the whole reason they are shown apart. */}
+          <Field label="Job Date" value={dmy(r.issueDate ?? r.submittedAt)} />
           <Field label="Requester" value={r.requesterName} />
           <Field label="Raised" value={formatDateTime(r.submittedAt)} />
           {r.issueRemarks && <Field label="Remarks" value={r.issueRemarks} className="col-span-2 sm:col-span-3" />}
         </div>
 
-        {/* Raw materials — the BOM. New cards carry a line list; legacy cards
-            (raised before multi-RM intake) fall back to the single-RM triple. */}
+        {/* A repackaging card consumes no raw material at all — it shows the
+            packaging it was raised with instead. The production block below must
+            stay behind this branch WHOLE: its `bomLines.length > 0` fallback
+            renders the legacy single-RM triple, which on a repackaging card would
+            print a row of dashes. */}
+        {r.cardType === "repackaging" ? (
+          <div className="mt-4">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">Packaging Material</div>
+            <div className="rounded-xl border border-line overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="text-left text-grey-2 border-b border-line bg-page/60">
+                    <th className="font-medium px-3 py-2 min-w-[200px]">Packaging Item</th>
+                    <th className="font-medium px-3 py-2 text-right w-24">Qty</th>
+                    <th className="font-medium px-3 py-2 text-right w-24">Extra</th>
+                    <th className="font-medium px-3 py-2 text-right w-24">Total</th>
+                    <th className="font-medium px-3 py-2 w-24">Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.pmhBomLines.length === 0 ? (
+                    <tr><td colSpan={5} className="px-3 py-3 text-grey-2">No packaging items were recorded.</td></tr>
+                  ) : (
+                    r.pmhBomLines.map((l, i) => (
+                      <tr key={i} className="border-b border-line/70 last:border-0">
+                        <td className="px-3 py-2 text-navy">{s.packagingItemById(l.packagingItemId)?.name ?? "—"}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-grey">{numOrDash(l.qty)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-grey-2">{numOrDash(l.extra)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-navy">{numOrDash(packFinalQty(l))}</td>
+                        <td className="px-3 py-2 text-grey">{s.unitById(l.unitId)?.name ?? "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {/* One line, not two: the rail no longer lists the bypassed stages,
+                so there is nothing to cross-reference — just say why there is no
+                raw material and why packed = FG. */}
+            <p className="text-[12px] text-grey-2 mt-2">
+              Repacked, not produced — no raw material and no wastage, so the packed quantity is the FG quantity.
+            </p>
+          </div>
+        ) : (
+        /* Raw materials — the BOM. New cards carry a line list; legacy cards
+            (raised before multi-RM intake) fall back to the single-RM triple. */
         <div className="mt-4">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-grey-2 mb-2">Raw Materials</div>
           {r.bomLines.length > 0 ? (
@@ -339,6 +409,7 @@ export default function RequestDetail() {
             </div>
           )}
         </div>
+        )}
         {/* Additional Issue Slips — QC-reject top-ups. Each carries its own extra
             FG quantity and extra raw material, tagged so they're clearly separate
             from the original issue slip above. */}

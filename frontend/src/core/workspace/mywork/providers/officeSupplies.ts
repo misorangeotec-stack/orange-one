@@ -1,24 +1,21 @@
 /**
- * General Purchase FMS → My Work.
+ * This module → My Work.
  *
- * Uses `buildQueueEntries(supplySnapshotFrom(...))` — the same two calls the
- * purchase store and the FMS Control Center make, on the same cache entry.
+ * Shares the purchase store's cache entry.
  *
- * This is the simplest of the five: a request sits at exactly one open step,
- * derived from its `status` column, so a request can never appear twice here.
+ * ⚠ THIS FILE HOLDS NO RULES. Which rows are this person's work, and what each one
+ * says, lives in `../items/officeSupplies.ts` — because the daily snapshot email runs
+ * that same code on the server, where there is no browser to run a hook. Adding a
+ * condition here instead would apply it to the screen and not to the mail, and the
+ * two would start disagreeing about the same person. See ../items/README.md.
  */
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { appName } from "@/apps/appInfo";
 import { fetchSuppliesData, suppliesQueryKey } from "@/apps/office-supplies/data/suppliesFetch";
-import { buildQueueEntries, supplySnapshotFrom } from "@/apps/office-supplies/lib/queues";
-import { stepByKey } from "@/apps/office-supplies/lib/steps";
-import { requestHref } from "@/apps/office-supplies/lib/routes";
-import { isMineByStepOwners } from "@/shared/lib/fmsOwners";
+import { officeSuppliesWorkItems } from "../items/officeSupplies";
 import type { MyWorkProvider, MyWorkResult, WorkItem } from "../types";
-
-const APPROVAL_STEPS = new Set(["first_approval", "second_approval"]);
 
 function useOfficeSuppliesWork(active: boolean): MyWorkResult {
   const { user, isAdmin } = useSession();
@@ -32,20 +29,7 @@ function useOfficeSuppliesWork(active: boolean): MyWorkResult {
 
   const items = useMemo<WorkItem[]>(() => {
     if (!data || !uid) return [];
-    const owners = data.stepOwners;
-    return buildQueueEntries(supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla }))
-      .filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners))
-      .map((e) => ({
-        id: `office-supplies:${e.requestId}:${e.stepKey}`,
-        source: "office-supplies",
-        sourceLabel: appName("office-supplies"),
-        ref: e.ref,
-        stage: stepByKey(e.stepKey)?.short,
-        dueIso: e.dueIso,
-        to: requestHref(e.requestId),
-        assignment: isMineByStepOwners(e.stepKey, uid, owners) ? ("direct" as const) : ("team" as const),
-        isApproval: APPROVAL_STEPS.has(e.stepKey),
-      }));
+    return officeSuppliesWorkItems(data, uid, isAdmin);
   }, [data, uid, isAdmin]);
 
   return { items, isLoading, error };

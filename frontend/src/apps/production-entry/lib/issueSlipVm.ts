@@ -44,7 +44,9 @@ export function buildIssueSlipExport(
     productName: lookups.fgItemName(r.fgItemId),
     productionQty: r.fgQty,
     requesterName: r.requesterName,
-    submittedAtDMY: dmy(r.submittedAt),
+    // The JOB date, not the moment it was keyed in — the slip is a document about
+    // the job. Falls back to submittedAt for cards raised before the field existed.
+    submittedAtDMY: dmy(r.issueDate ?? r.submittedAt),
     lines: baseLines.map((l, i) => {
       const h = handoverFor(l.rawMaterialId, i);
       return {
@@ -79,7 +81,7 @@ export function buildAisIssueSlipExport(
     productName: lookups.fgItemName(r.fgItemId),
     productionQty: round.aisQty,
     requesterName: r.requesterName,
-    submittedAtDMY: dmy(round.issuedAt ?? r.submittedAt),
+    submittedAtDMY: dmy(round.issuedAt ?? r.issueDate ?? r.submittedAt),
     lines: round.aisBomLines.map((l, i) => {
       const h = handoverFor(l.rawMaterialId, i);
       return {

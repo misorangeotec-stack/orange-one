@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { supabase } from "@/core/platform/supabase";
 import Landing from "@/core/landing/Landing";
 import Login from "@/core/auth/Login";
 import HomeLayout from "@/core/workspace/HomeLayout";
@@ -12,10 +13,45 @@ import { useSession } from "@/core/platform/session";
 import { liveApps } from "@/apps/registry";
 import { appBasePath } from "@/apps/appInfo";
 
-/** Gate a live app behind the current user's module access (admins bypass). */
+/**
+ * Last time each module was stamped, per tab. Survives remounts because it is
+ * module-level, so walking out of an app and back in does not re-ping.
+ */
+const stampedAt = new Map<string, number>();
+const VISIT_THROTTLE_MS = 30 * 60_000;
+
+/**
+ * Gate a live app behind the current user's module access (admins bypass), and
+ * record the visit.
+ *
+ * WHY THE PING LIVES HERE
+ *   Every metric the Master Report had was a row count, which is blind to a
+ *   module people READ rather than write to. The Outstanding Dashboard is one:
+ *   its data lives in a different Supabase project and nobody types into it, so
+ *   it read as Dormant while in daily use. `touch_module_visit` supplies the
+ *   missing signal, and this guard is the one place that wraps every mounted
+ *   app and knows its id — mirroring `touch_last_active()` in auth.tsx, which
+ *   does the same thing portal-wide.
+ *
+ *   Fire-and-forget and throttled: telemetry hanging off a route guard must
+ *   never be able to delay or break navigation.
+ */
 function RequireModule({ appId, children }: { appId: string; children: ReactNode }) {
   const { hasModule } = useSession();
-  if (!hasModule(appId)) return <Navigate to="/home" replace />;
+  const allowed = hasModule(appId);
+
+  useEffect(() => {
+    if (!allowed) return;
+    const now = Date.now();
+    if (now - (stampedAt.get(appId) ?? 0) < VISIT_THROTTLE_MS) return;
+    stampedAt.set(appId, now);
+    void supabase.rpc("touch_module_visit", { p_app_id: appId }).then(
+      () => {},
+      () => {}
+    );
+  }, [appId, allowed]);
+
+  if (!allowed) return <Navigate to="/home" replace />;
   return <>{children}</>;
 }
 

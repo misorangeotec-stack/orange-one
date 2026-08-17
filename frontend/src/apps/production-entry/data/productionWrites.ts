@@ -2,7 +2,7 @@ import { supabase } from "@/core/platform/supabase";
 // fms_production_* tables/RPCs are not in the generated Database types; route
 // through an untyped alias.
 const db = supabase as any;
-import type { ProductionEntityType, ProductionMasterType } from "../types";
+import type { ProductionCardType, ProductionEntityType, ProductionMasterType } from "../types";
 import type { QueueStep } from "../lib/queues";
 
 /**
@@ -26,15 +26,40 @@ export interface RequestLineInput {
   bomId: string | null;
 }
 
+/** One packaging line of a REPACKAGING slip. Same element shape the log book
+ *  sends, so `fms_production_pack_lines()` reads it unchanged. */
+export interface RequestPackLineInput {
+  packagingItemId: string | null;
+  unitId: string | null;
+  qty: string;
+  extra: string;
+}
+
 export interface RequestInput {
   /** FG total quantity to produce. The RM line quantities are shown against this
-   *  but are NOT required to sum to it — see useJobCardForm's sumWarning. */
+   *  but are NOT required to sum to it — see useJobCardForm's sumWarning.
+   *  On a repackaging slip this is the ONE quantity: packed qty = FG qty. */
   fgTotalQty: string;
   bomLines: RequestLineInput[];
   fgItemId: string;
   issueRemarks: string | null;
   requesterName: string;
+  /** The job date (yyyy-mm-dd). Defaults to today server-side when omitted; a
+   *  future date is rejected. Never post-dated, freely back-dated. */
+  issueDate?: string;
+  /** Omitted → "production", so every existing caller keeps working unchanged. */
+  cardType?: ProductionCardType;
+  /** Repackaging only — the packaging material. Ignored for production cards. */
+  packLines?: RequestPackLineInput[];
 }
+
+/** The pmh_bom_lines element shape — server recomputes extra/total from it. */
+const packLinePayload = (l: RequestPackLineInput) => ({
+  packaging_item_id: l.packagingItemId ?? "",
+  unit_id: l.unitId ?? "",
+  qty: l.qty ?? "",
+  extra: l.extra ?? "",
+});
 
 /** The bom_lines element shape both intake RPCs store. The extra pct/bom_id keys
  *  need no migration: `select jsonb_agg(l) from jsonb_array_elements(...) l`
@@ -47,7 +72,8 @@ const bomLinePayload = (l: RequestLineInput) => ({
   bom_id: l.bomId ?? "",
 });
 
-/** Raise a job card. The Lot/Batch number is auto-generated server-side. */
+/** Raise a job card. The Lot/Batch number is auto-generated server-side — from the
+ *  SAME continuous counter for both card types. */
 export async function submitRequest(input: RequestInput): Promise<string> {
   const { data, error } = await db.rpc("fms_production_submit_request", {
     p: {
@@ -56,6 +82,9 @@ export async function submitRequest(input: RequestInput): Promise<string> {
       fg_item_id: input.fgItemId,
       issue_remarks: input.issueRemarks ?? "",
       requester_name: input.requesterName,
+      issue_date: input.issueDate ?? "",
+      card_type: input.cardType ?? "production",
+      pmh_bom_lines: (input.packLines ?? []).map(packLinePayload),
     },
   });
   if (error) throw new Error(error.message);
@@ -72,6 +101,9 @@ export async function updateRequest(requestId: string, input: RequestInput): Pro
       bom_lines: input.bomLines.map(bomLinePayload),
       fg_item_id: input.fgItemId,
       issue_remarks: input.issueRemarks ?? "",
+      // Blank keeps whatever is stored — the RPC coalesces to the current value.
+      issue_date: input.issueDate ?? "",
+      pmh_bom_lines: (input.packLines ?? []).map(packLinePayload),
     },
   });
   if (error) throw new Error(error.message);

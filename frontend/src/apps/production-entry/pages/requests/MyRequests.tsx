@@ -3,7 +3,8 @@ import Button from "@/shared/components/ui/Button";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { formatDateTime } from "@/shared/lib/time";
 import StatusPill from "../../components/StatusPill";
-import { numOrDash } from "../../lib/format";
+import { CARD_TYPE_LABEL, dmy, numOrDash } from "../../lib/format";
+import CardTypePill from "../../components/CardTypePill";
 import { buildIssueSlipExport } from "../../lib/issueSlipVm";
 import { printIssueSlip } from "../../lib/printIssueSlip";
 import { useProductionStore } from "../../store";
@@ -27,6 +28,14 @@ export default function MyRequests() {
       ),
       sortValue: (r) => r.jobcardNo || r.reqNo,
       filter: { kind: "text", get: (r) => `${r.jobcardNo} ${r.reqNo}` },
+      tdClassName: "whitespace-nowrap",
+    },
+    {
+      key: "cardType",
+      header: "Type",
+      cell: (r) => <CardTypePill cardType={r.cardType} />,
+      sortValue: (r) => CARD_TYPE_LABEL[r.cardType],
+      filter: { kind: "select", get: (r) => CARD_TYPE_LABEL[r.cardType] },
       tdClassName: "whitespace-nowrap",
     },
     {
@@ -56,6 +65,15 @@ export default function MyRequests() {
       header: "Status",
       cell: (r) => <StatusPill status={r.status} />,
       filter: { kind: "select", get: (r) => r.status },
+    },
+    // The date the job belongs to (back-datable), beside the date it was keyed in.
+    {
+      key: "jobDate",
+      header: "Job Date",
+      cell: (r) => <span className="text-navy">{dmy(r.issueDate ?? r.submittedAt)}</span>,
+      sortValue: (r) => r.issueDate ?? r.submittedAt.slice(0, 10),
+      filter: { kind: "date", get: (r) => r.issueDate ?? r.submittedAt.slice(0, 10) },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: "submitted",

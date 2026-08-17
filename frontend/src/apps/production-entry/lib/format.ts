@@ -1,4 +1,10 @@
-import type { PackingBomLine, ProductionRequest, ProductionStatus } from "../types";
+import type { PackingBomLine, ProductionCardType, ProductionRequest, ProductionStatus } from "../types";
+
+/** Card type as shown on the badge, the Type column and its filter. */
+export const CARD_TYPE_LABEL: Record<ProductionCardType, string> = {
+  production: "Production",
+  repackaging: "Repackaging",
+};
 
 export const STATUS_LABEL: Record<ProductionStatus, string> = {
   awaiting_material_handover: "Awaiting material handover",

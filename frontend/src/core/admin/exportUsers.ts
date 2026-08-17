@@ -14,9 +14,26 @@ const TICK = "✓";
  * admin has every app, a universal app is granted to everyone implicitly, and
  * otherwise the grant lives in the user's `moduleAccess` list. Exporting a
  * different rule than the screen enforces would be worse than no export.
+ *
+ * EXPORTED because the Master Report's user-access section needs the same
+ * verdict (apps/master-report/lib/accessMatrix.ts). It takes the two fields it
+ * actually reads rather than a whole `Profile`, so a caller holding rows from
+ * `master_report_access_matrix()` — which returns raw grant ids, not Profiles —
+ * can use it without fabricating a Profile object.
+ *
+ * ⚠ The universal-module rule lives HERE and only here. `UNIVERSAL_APP_IDS`
+ *   (apps/universal.ts) is frontend-only and empty today, which is exactly why
+ *   the server-side matrix RPC returns raw grants and leaves the verdict to
+ *   this function — two copies of this rule would drift the first time an app
+ *   was made universal.
  */
-const hasAccess = (u: Profile, m: GrantableModule): boolean =>
-  u.role === "admin" || !!m.universal || u.moduleAccess.includes(m.id);
+export const hasModuleAccess = (
+  u: { role: AppRole; moduleAccess: string[] },
+  m: GrantableModule,
+): boolean => u.role === "admin" || !!m.universal || u.moduleAccess.includes(m.id);
+
+/** Back-compat alias for the local call sites below. */
+const hasAccess = hasModuleAccess;
 
 /**
  * "Users → .xlsx": basic details plus one ✓/blank column per grantable app, so an

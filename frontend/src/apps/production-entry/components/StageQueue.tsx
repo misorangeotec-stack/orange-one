@@ -9,7 +9,8 @@ import StageTabs from "@/shared/components/ui/StageTabs";
 import { useStageMode } from "@/shared/lib/useStageMode";
 import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import { formatDateTime } from "@/shared/lib/time";
-import { dmy, requestSubject, STATUS_LABEL } from "../lib/format";
+import { CARD_TYPE_LABEL, dmy, requestSubject, STATUS_LABEL } from "../lib/format";
+import CardTypePill from "./CardTypePill";
 import { STEP_CONFIG } from "../lib/stepConfig";
 import type { StageEntry, QueueStep } from "../lib/queues";
 import StepModal from "./StepModal";
@@ -106,6 +107,14 @@ export default function StageQueue({
       sortValue: ({ request }) => requestSubject(request),
       filter: { kind: "text", get: ({ request }) => requestSubject(request) },
     },
+    {
+      key: "cardType",
+      header: "Type",
+      cell: ({ request }) => <CardTypePill cardType={request.cardType} />,
+      sortValue: ({ request }) => CARD_TYPE_LABEL[request.cardType],
+      filter: { kind: "select", get: ({ request }) => CARD_TYPE_LABEL[request.cardType] },
+      tdClassName: "whitespace-nowrap",
+    },
     // Status column only when there's a mix (a tracking row present) — otherwise a
     // plain queue's rows all share one status and the column is just noise.
     ...(hasTracking
@@ -156,6 +165,14 @@ export default function StageQueue({
       cell: (e) => <span className="text-navy">{requestSubject(e.row)}</span>,
       sortValue: (e) => requestSubject(e.row),
       filter: { kind: "text", get: (e) => requestSubject(e.row) },
+    },
+    {
+      key: "cardType",
+      header: "Type",
+      cell: (e) => <CardTypePill cardType={e.row.cardType} />,
+      sortValue: (e) => CARD_TYPE_LABEL[e.row.cardType],
+      filter: { kind: "select", get: (e) => CARD_TYPE_LABEL[e.row.cardType] },
+      tdClassName: "whitespace-nowrap",
     },
     {
       key: cfg.captured.key,

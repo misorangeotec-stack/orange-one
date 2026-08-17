@@ -3,6 +3,7 @@ import Card from "@/shared/components/ui/Card";
 import Combobox, { type ComboboxHandle } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn } from "@/shared/components/ui/LineGrid";
 import { FieldLabel, TextInput, TextArea } from "@/shared/components/ui/Form";
+import { todayLocalIso } from "@/shared/lib/dueBuckets";
 import RequestMasterModal from "./RequestMasterModal";
 import { masterTypeLabel } from "../lib/masterFields";
 import { useProductionStore } from "../store";
@@ -110,6 +111,16 @@ export default function IssueSlipFields({
     <>
       <Card className="p-5 space-y-4">
         {batchField}
+        {/* The job date. Capped at today in the picker AND re-checked in build()
+            — a typed date bypasses `max` in several browsers. */}
+        <FieldLabel label="Job Date" required>
+          <TextInput
+            type="date"
+            max={todayLocalIso()}
+            value={f.issueDate}
+            onChange={(e) => f.setIssueDate(e.target.value)}
+          />
+        </FieldLabel>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <FieldLabel label="FG Item Name" required>
             <Combobox
@@ -122,7 +133,7 @@ export default function IssueSlipFields({
               autoAdvance
             />
           </FieldLabel>
-          <FieldLabel label="FG Total Quantity" required hint="each raw material below is scaled to this">
+          <FieldLabel label="FG Total Quantity" required>
             <TextInput
               type="number"
               className="text-right tabular-nums"
@@ -136,10 +147,7 @@ export default function IssueSlipFields({
         {/* The BOM picker only appears once the chosen FG actually has one — an FG
             without a BOM is simply typed out by hand, exactly as it always was. */}
         {f.fgHasBoms && (
-          <FieldLabel
-            label="BOM"
-            hint="loads this formulation's raw materials, scaled to the quantity above"
-          >
+          <FieldLabel label="BOM">
             <div className="flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <Combobox
@@ -215,11 +223,6 @@ export default function IssueSlipFields({
               ) : undefined
             }
           />
-          <p className="text-[12px] text-grey-2">
-            List every raw material that goes into this FG item. Type a quantity or a split % — each fills in the other, and
-            both follow the FG quantity above. Press Tab or Enter at the end of a row to start the next one. Missing one?
-            Type its name to request it.
-          </p>
           {f.requested && (
             <p className="text-[12px] text-teal">Requested {f.requested} — selectable once the master's owner approves it.</p>
           )}

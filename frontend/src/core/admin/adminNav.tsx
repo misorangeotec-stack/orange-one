@@ -21,6 +21,12 @@ const ic = {
   backup: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5" /><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6" /></svg>
   ),
+  report: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /><path d="M14 3v5h5M8 13h3M8 17h6" /></svg>
+  ),
+  masters: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7h18M3 12h18M3 17h10" /><circle cx="18" cy="17" r="3" /></svg>
+  ),
 };
 
 /** Admin area sidebar nav (admin-only area, so no per-item role gating needed). */
@@ -30,5 +36,7 @@ export const adminNav: NavItem[] = [
   { label: "Users", to: `${B}/users`, icon: ic.users },
   { label: "Hierarchy", to: `${B}/hierarchy`, icon: ic.hierarchy },
   { label: "Module Access", to: `${B}/access`, icon: ic.access },
+  { label: "Central Masters", to: `${B}/masters`, icon: ic.masters },
+  { label: "Master Report", to: `${B}/master-report`, icon: ic.report },
   { label: "Backup", to: `${B}/backup`, icon: ic.backup },
 ];

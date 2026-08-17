@@ -1,3 +1,4 @@
+import type { Dispatch, SetStateAction } from "react";
 import Combobox, { type ComboOption, type ComboboxHandle } from "@/shared/components/ui/Combobox";
 import LineGrid, { type LineGridColumn, type LineGridRow, newUid } from "@/shared/components/ui/LineGrid";
 import { TextInput } from "@/shared/components/ui/Form";
@@ -45,7 +46,8 @@ export default function OrderLinesGrid({
   requested,
 }: {
   rows: OrderLineRow[];
-  onRowsChange: (rows: OrderLineRow[]) => void;
+  /** Forwarded straight to LineGrid, so it must keep the updater form. */
+  onRowsChange: Dispatch<SetStateAction<OrderLineRow[]>>;
   /** Scopes the picker to what this customer may order. */
   customerId: string;
   disabled?: boolean;

@@ -275,13 +275,17 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     const canRaise = issueSlipOwners.length === 0 || isAdmin || isProcessCoordinator || issueSlipOwners.includes(uid);
 
     // Mirrors fms_production_request_editable + the RPC authz: the raiser / admin /
-    // coordinator may edit an issue slip while it is still awaiting the FIRST
-    // material handover (mh_at null excludes the AIS re-loop, which re-enters the
-    // same status). The disabled button is a courtesy — the RPC re-checks this.
+    // coordinator may edit an issue slip until its FIRST real step is recorded.
+    // Production: awaiting the first material handover (mh_at null excludes the AIS
+    // re-loop, which re-enters the same status). Repackaging: awaiting the
+    // packing-material transfer, which IS its first step — it has no handover.
+    // ⚠ Both branches must track fms_production_request_editable; the disabled
+    // button is a courtesy, the RPC re-checks this.
     const canEditRequest = (r: ProductionRequest): boolean =>
       (r.raisedBy === uid || isAdmin || isProcessCoordinator) &&
-      r.status === "awaiting_material_handover" &&
-      r.mhAt == null;
+      (r.cardType === "repackaging"
+        ? r.status === "awaiting_pm_transfer" && r.pmtAt == null
+        : r.status === "awaiting_material_handover" && r.mhAt == null);
 
     const personName = (id: string | null): string => {
       if (!id) return "—";

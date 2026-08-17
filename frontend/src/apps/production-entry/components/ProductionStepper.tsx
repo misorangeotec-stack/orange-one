@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import PoStageRail, { type PoStageRailNode } from "@/shared/components/ui/PoStageRail";
 import { useProductionStore } from "../store";
-import type { StepKey } from "../lib/steps";
+import { stepAppliesTo, type StepKey } from "../lib/steps";
 import type { ProductionRequest } from "../types";
 
 /**
@@ -25,14 +25,27 @@ const STAGES: { key: string; label: string; step: StepKey | null }[] = [
   { key: "closed", label: "Closed", step: null },
 ];
 
-/** Which node the card is sitting on. A closed card sits on (and finishes) the
- *  final node; every other status sits on its current step. The additional-issue-
- *  slip branch is a QC-reject state — show it on the Quality node. Generated
- *  (index 0) is always complete for a live card, so the floor is 1. */
-function activeIndex(r: ProductionRequest): number {
-  if (r.status === "closed") return STAGES.length - 1;
+/**
+ * The rail this card actually walks.
+ *
+ * A repackaging card never runs the six manufacturing steps, so they are DROPPED
+ * from its rail rather than shown greyed — a traded FG has no handover or log
+ * book to speak of, and six "Not required" nodes just crowd out the four that
+ * matter. (Contrast the sampling rail, which keeps a skipped collect node
+ * because there the step exists and was deliberately waived.)
+ */
+const flowFor = (r: ProductionRequest) =>
+  STAGES.filter((st) => !st.step || stepAppliesTo(r.cardType, st.step));
+
+/** Which node the card is sitting on, INDEXED INTO ITS OWN FLOW. A closed card
+ *  sits on (and finishes) the final node; every other status sits on its current
+ *  step. The additional-issue-slip branch is a QC-reject state — show it on the
+ *  Quality node. Generated (index 0) is always complete for a live card, so the
+ *  floor is 1. */
+function activeIndex(r: ProductionRequest, flow: typeof STAGES): number {
+  if (r.status === "closed") return flow.length - 1;
   const currentStep = r.currentStep === "additional_issue_slip" ? "quality_check" : r.currentStep;
-  const i = STAGES.findIndex((st) => st.step === currentStep);
+  const i = flow.findIndex((st) => st.step === currentStep);
   return i < 1 ? 1 : i;
 }
 
@@ -45,9 +58,11 @@ function activeIndex(r: ProductionRequest): number {
 export default function ProductionStepper({ request }: { request: ProductionRequest }) {
   const s = useProductionStore();
 
+  const flow = useMemo(() => flowFor(request), [request.cardType]);
+
   const nodes: PoStageRailNode[] = useMemo(() => {
     const deptName = (id: string) => s.orgDepartments.find((d) => d.id === id)?.name;
-    return STAGES.map((st) => {
+    return flow.map((st) => {
       // Generated has no step owner — caption it with who raised the card.
       if (st.key === "generated") {
         return { key: st.key, label: st.label, departments: [], people: [request.requesterName].filter(Boolean), hasStep: true };
@@ -66,7 +81,7 @@ export default function ProductionStepper({ request }: { request: ProductionRequ
         hasStep: true,
       };
     });
-  }, [s, request.requesterName]);
+  }, [s, request.requesterName, flow]);
 
-  return <PoStageRail nodes={nodes} activeIndex={activeIndex(request)} finished={request.status === "closed"} />;
+  return <PoStageRail nodes={nodes} activeIndex={activeIndex(request, flow)} finished={request.status === "closed"} />;
 }
