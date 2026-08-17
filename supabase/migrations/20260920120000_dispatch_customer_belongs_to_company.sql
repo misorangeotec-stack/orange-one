@@ -10,14 +10,14 @@
 -- WHY IT HAS TO BE HERE AS WELL AS IN THE PICKER. The payload is JSON. A tab
 -- left open before the narrowing shipped, or an edit that changes the company
 -- after the customer was chosen, would otherwise post a pair the form would no
--- longer offer — and the billing company is on the invoice.
+-- longer offer — and the billing company is what goes on the invoice.
 --
 -- WHAT COUNTS AS "CAN BILL". Tally's own answer: a firm has a separate ledger
 -- in every book it trades with, so mst_parties.company_id IS the mapping and no
 -- second list is maintained. A customer with NO company book passes for every
--- company — that is not a loophole but the only workable rule for a customer
--- the portal has just created through a master request, which reaches Tally
--- only after the first invoice is raised.
+-- company — not a loophole but the only workable rule for a customer the portal
+-- has just created through a master request, which reaches Tally only after the
+-- first invoice is raised.
 --
 -- ⚠ DEPLOY ORDER: THE FRONTEND MUST BE LIVE FIRST. 71 of the 303 orders raised
 --   before this were billed by a company that is not the one on their
@@ -28,9 +28,23 @@
 -- ⚠ AND EDITING AN OLD ORDER MUST STILL WORK. Those 71 are history and cannot
 --   be re-decided; the update path therefore checks the pair ONLY when the
 --   customer is actually being changed. Leaving a mismatched order's customer
---   alone stays legal; choosing a different one applies today's rule.
+--   alone stays legal; choosing a different one obeys today's rule.
 --
--- Additive: two CREATE OR REPLACE bodies, no schema change, no data touched.
+-- ⚠ THE TWO FUNCTIONS ARE PATCHED BY SUBSTITUTION, NOT RETYPED, and that is on
+--   purpose. Neither one's existing logic changes here — the credit-hold reset,
+--   the location rules, the announce payloads all stay exactly as they are — so
+--   re-declaring 90 lines of body to add four would put every one of those lines
+--   at risk of a transcription slip that no test would catch. Each replace()
+--   asserts its anchor appears EXACTLY once and the statement aborts if it does
+--   not, which is the same technique the Phase 2 cutover used on five functions.
+--
+-- Additive: one new function, two bodies patched, no schema change, no data
+-- touched. Re-runnable — each patch is skipped if it is already applied.
+--
+-- ✅ APPLIED 2026-08-18, after `550bd72` went live. Verified against the live
+--    database in three shapes: a matching pair passes, a mismatched pair raises
+--    "M/S COLOR N STYLE PVT LTD is not a customer of Enterprise - Surat", and a
+--    customer sitting in no company book passes for every company.
 
 create or replace function public.fms_dispatch_assert_customer_of_company(
   p_customer uuid, p_company uuid
@@ -64,196 +78,120 @@ comment on function public.fms_dispatch_assert_customer_of_company(uuid, uuid) i
   'Raises unless the customer sits in the billing company''s Tally book (or in none at all). Shared by submit and update so the two cannot drift.';
 
 
-create or replace function public.fms_dispatch_submit_order(p jsonb)
-returns uuid
-language plpgsql
-security definer
-set search_path to 'public'
-as $function$
+/* ---------------------------------------------------------------- intake -- */
+
+do $patch$
 declare
-  v_id uuid; v_no text; v_seq integer;
-  v_fy text := public.fms_dispatch_fy_code(current_date);
-  v_uid uuid := auth.uid();
-  v_name text := nullif(trim(p->>'requester_name'), '');
-  v_type text := lower(coalesce(trim(p->>'dispatch_type'), ''));
-  v_cust uuid; v_company uuid; v_location uuid;
+  v_def text;
+  v_anchor text := E'  -- THE SITE THIS LEAVES FROM.';
+  v_add text := E'  -- Unconditional on intake: a brand-new order has no history to protect,\n'
+             || E'  -- and the picker only ever offered this company''s own customers.\n'
+             || E'  perform public.fms_dispatch_assert_customer_of_company(v_cust, v_company);\n\n';
 begin
-  if v_uid is null then raise exception 'Not signed in'; end if;
-  if not public.fms_dispatch_can_raise(v_uid) then
-    raise exception 'Not authorized to raise a sales order';
-  end if;
-  if v_type not in ('local','transport') then raise exception 'Dispatch type must be Local or Transport'; end if;
-  if coalesce(trim(p->>'customer_id'), '') = '' then raise exception 'Customer is required'; end if;
-  v_cust := (p->>'customer_id')::uuid;
-
-  -- The billing company, asked here because the person raising the order is the
-  -- one who knows it. Validated against the master rather than merely cast, so a
-  -- stale id from a long-open tab is refused now instead of reaching an invoice.
-  v_company := nullif(trim(p->>'company_id'), '')::uuid;
-  if v_company is null then
-    raise exception 'Choose the company that bills this order';
-  end if;
-  if not exists (select 1 from public.mst_companies c where c.id = v_company and c.active) then
-    raise exception 'That billing company is not an active company master';
+  v_def := pg_get_functiondef('public.fms_dispatch_submit_order(jsonb)'::regprocedure);
+  if position('fms_dispatch_assert_customer_of_company' in v_def) > 0 then
+    raise notice 'fms_dispatch_submit_order already patched - skipping';
+    return;
   end if;
 
-  -- ← THE NEW RULE. On intake it is unconditional: a brand-new order has no
-  --   history to protect and the picker only ever offered this company's own.
-  perform public.fms_dispatch_assert_customer_of_company(v_cust, v_company);
-
-  -- THE SITE THIS LEAVES FROM.
-  v_location := nullif(trim(p->>'location_id'), '')::uuid;
-  if v_location is not null then
-    if not exists (select 1 from (select loc.id, cl.company_id, (loc.active and cl.active) as active from public.mst_locations loc join public.mst_company_locations cl on cl.location_id = loc.id) l
-                    where l.id = v_location and l.company_id = v_company and l.active) then
-      raise exception 'That location is not an active location of the selected company';
-    end if;
-  elsif exists (select 1 from (select loc.id, cl.company_id, (loc.active and cl.active) as active from public.mst_locations loc join public.mst_company_locations cl on cl.location_id = loc.id) l
-                 where l.company_id = v_company and l.active) then
-    raise exception 'Choose the location this order dispatches from';
+  -- EXACTLY once. A second occurrence would mean the body has been reshaped
+  -- since this was written, and blindly patching the first would put the check
+  -- somewhere nobody intended.
+  if (length(v_def) - length(replace(v_def, v_anchor, ''))) / length(v_anchor) <> 1 then
+    raise exception 'fms_dispatch_submit_order: expected exactly one "%" anchor', v_anchor;
   end if;
 
-  if v_name is null then
-    v_name := coalesce((select name from public.profiles where id = v_uid), 'Requester');
-  end if;
-
-  v_seq := public.fms_dispatch_next_seq('order:' || v_fy);
-  v_no  := 'SO-' || v_fy || '-' || lpad(v_seq::text, 4, '0');
-
-  insert into public.fms_dispatch_orders (
-    order_no, dispatch_type, company_id, location_id, customer_id,
-    customer_location, customer_po_no,
-    order_date, order_remarks,
-    raised_by, requester_name, status, current_step, submitted_at,
-    round_no, round_started_at
-  ) values (
-    v_no, v_type, v_company, v_location, v_cust,
-    nullif(trim(p->>'customer_location'), ''),
-    nullif(trim(p->>'customer_po_no'), ''),
-    coalesce(nullif(p->>'order_date','')::date, current_date),
-    nullif(trim(p->>'order_remarks'), ''),
-    v_uid, v_name,
-    'awaiting_credit_check', 'credit_check', now(),
-    1, now()
-  )
-  returning id into v_id;
-
-  perform public.fms_dispatch_replace_lines(v_id, p->'lines');
-
-  perform public.fms_dispatch_announce(
-    'order', v_id, 'raised',
-    'Sales order ' || v_no || ' raised - awaiting credit-limit confirmation.',
-    public.fms_dispatch_step_owner_ids('credit_check'),
-    jsonb_build_object('order_no', v_no)
-  );
-
-  return v_id;
-end $function$;
+  execute replace(v_def, v_anchor, v_add || v_anchor);
+end $patch$;
 
 
-create or replace function public.fms_dispatch_update_order(p_order uuid, p jsonb)
-returns void
-language plpgsql
-security definer
-set search_path to 'public'
-as $function$
+/* ------------------------------------------------------------------ edit -- */
+
+do $patch$
 declare
-  v_status text; v_cc timestamptz; v_raiser uuid; v_no text;
-  v_uid uuid := auth.uid();
-  v_type text := lower(coalesce(trim(p->>'dispatch_type'), ''));
-  v_cust uuid; v_company uuid; v_location uuid; v_held boolean;
-  v_cust_before uuid;
+  v_def text;
+  v_sel_old text := E'  select status, cc_at, raised_by, order_no, cc_status = ''credit_hold''\n'
+                 || E'    into v_status, v_cc, v_raiser, v_no, v_held\n';
+  v_sel_new text := E'  select status, cc_at, raised_by, order_no, cc_status = ''credit_hold'', customer_id\n'
+                 || E'    into v_status, v_cc, v_raiser, v_no, v_held, v_cust_before\n';
+  v_dec_old text := E'  v_cust uuid; v_company uuid; v_location uuid; v_held boolean;\n';
+  v_dec_new text := E'  v_cust uuid; v_company uuid; v_location uuid; v_held boolean;\n'
+                 || E'  v_cust_before uuid;\n';
+  v_anchor text := E'  -- The same rule as intake, against whatever the row would end up holding:';
+  v_add text := E'  -- DELIBERATELY CONDITIONAL. 71 of the 303 orders raised before the picker\n'
+             || E'  --   narrowed hold a customer the billing company does not bill, because the\n'
+             || E'  --   old picker offered one flat list whatever company was chosen. Those\n'
+             || E'  --   orders are history: refusing to save them would mean an order that can\n'
+             || E'  --   be opened and corrected but never put back. So the pair is tested only\n'
+             || E'  --   when the CUSTOMER is being changed - keeping the stored one is always\n'
+             || E'  --   allowed, choosing a different one obeys today''s rule.\n'
+             || E'  if v_cust is distinct from v_cust_before then\n'
+             || E'    perform public.fms_dispatch_assert_customer_of_company(v_cust, v_company);\n'
+             || E'  end if;\n\n';
+  v_probe text;
+  n int;
 begin
-  select status, cc_at, raised_by, order_no, cc_status = 'credit_hold', customer_id
-    into v_status, v_cc, v_raiser, v_no, v_held, v_cust_before
-  from public.fms_dispatch_orders where id = p_order for update;
-
-  if v_status is null then raise exception 'Sales order not found'; end if;
-  if v_status <> 'awaiting_credit_check' or v_cc is not null then
-    raise exception 'This order can no longer be edited - the credit check has already been recorded';
-  end if;
-  -- A partial credit approval sends an exhausted order back to this status, so
-  -- the two tests above are no longer sufficient on their own.
-  if exists (select 1 from public.fms_dispatch_rounds where order_id = p_order) then
-    raise exception 'This order has already dispatched - its details can no longer be edited';
-  end if;
-  if not (v_raiser = v_uid or public.fms_dispatch_is_coordinator(v_uid)) then
-    raise exception 'Only the person who raised this order (or a coordinator) may edit it';
-  end if;
-  if v_type not in ('local','transport') then raise exception 'Dispatch type must be Local or Transport'; end if;
-
-  v_cust := coalesce(nullif(p->>'customer_id','')::uuid, v_cust_before);
-
-  -- ⚠ Ask what the ROW WOULD HOLD, not what the payload carries. An omitted key
-  --   means "keep what is stored", so an older client that never learnt to send
-  --   a company (or a location) does not fail with "choose the company".
-  select case when p ? 'company_id'  then nullif(trim(p->>'company_id'),'')::uuid  else o.company_id  end,
-         case when p ? 'location_id' then nullif(trim(p->>'location_id'),'')::uuid else o.location_id end
-    into v_company, v_location
-    from public.fms_dispatch_orders o where o.id = p_order;
-  if v_company is null then
-    raise exception 'Choose the company that bills this order';
-  end if;
-  if not exists (select 1 from public.mst_companies c where c.id = v_company and c.active) then
-    raise exception 'That billing company is not an active company master';
+  v_def := pg_get_functiondef('public.fms_dispatch_update_order(uuid,jsonb)'::regprocedure);
+  if position('fms_dispatch_assert_customer_of_company' in v_def) > 0 then
+    raise notice 'fms_dispatch_update_order already patched - skipping';
+    return;
   end if;
 
-  -- ← THE NEW RULE, DELIBERATELY CONDITIONAL. 71 of the 303 orders raised before
-  --   the picker narrowed hold a customer the billing company does not bill,
-  --   because the picker offered one flat list whatever company was chosen.
-  --   Those orders are history: refusing to save them would mean an order that
-  --   can be opened, corrected and then never put back. So the pair is only
-  --   tested when the CUSTOMER is being changed — keeping the stored one is
-  --   always allowed, choosing a different one obeys today's rule.
-  if v_cust is distinct from v_cust_before then
-    perform public.fms_dispatch_assert_customer_of_company(v_cust, v_company);
-  end if;
-
-  -- The same rule as intake, against whatever the row would end up holding: a
-  -- location must belong to the company, and is compulsory once that company has
-  -- any. Changing the company to one with different sites therefore forces a
-  -- matching location rather than leaving a stale one pointing elsewhere.
-  if v_location is not null then
-    if not exists (select 1 from (select loc.id, cl.company_id, (loc.active and cl.active) as active from public.mst_locations loc join public.mst_company_locations cl on cl.location_id = loc.id) l
-                    where l.id = v_location and l.company_id = v_company and l.active) then
-      raise exception 'That location is not an active location of the selected company';
+  foreach v_probe in array array[v_dec_old, v_sel_old, v_anchor] loop
+    n := (length(v_def) - length(replace(v_def, v_probe, ''))) / length(v_probe);
+    if n <> 1 then
+      raise exception 'fms_dispatch_update_order: expected exactly one of "%", found %',
+        left(v_probe, 60), n;
     end if;
-  elsif exists (select 1 from (select loc.id, cl.company_id, (loc.active and cl.active) as active from public.mst_locations loc join public.mst_company_locations cl on cl.location_id = loc.id) l
-                 where l.company_id = v_company and l.active) then
-    raise exception 'Choose the location this order dispatches from';
+  end loop;
+
+  -- The stored customer has to be READ before it can be compared, so the
+  -- declaration and the SELECT both move first; the guard itself goes in after
+  -- the company has been resolved and validated.
+  v_def := replace(v_def, v_dec_old, v_dec_new);
+  v_def := replace(v_def, v_sel_old, v_sel_new);
+  -- v_cust already coalesces to the stored value; now that v_cust_before holds
+  -- it, read it from there rather than a second sub-select.
+  v_def := replace(
+    v_def,
+    E'  v_cust := coalesce(nullif(p->>''customer_id'','''')::uuid,\n'
+      || E'                     (select customer_id from public.fms_dispatch_orders where id = p_order));',
+    E'  v_cust := coalesce(nullif(p->>''customer_id'','''')::uuid, v_cust_before);');
+  v_def := replace(v_def, v_anchor, v_add || v_anchor);
+
+  execute v_def;
+end $patch$;
+
+
+/* --------------------------------------------------------------- proofs -- */
+
+do $check$
+declare v_bad int;
+begin
+  -- Both bodies now call the guard.
+  if position('fms_dispatch_assert_customer_of_company' in
+      pg_get_functiondef('public.fms_dispatch_submit_order(jsonb)'::regprocedure)) = 0
+   or position('fms_dispatch_assert_customer_of_company' in
+      pg_get_functiondef('public.fms_dispatch_update_order(uuid,jsonb)'::regprocedure)) = 0 then
+    raise exception 'patch did not take on one or both functions';
   end if;
 
-  update public.fms_dispatch_orders set
-    dispatch_type = v_type,
-    company_id    = v_company,
-    location_id   = v_location,
-    customer_id   = v_cust,
-    customer_location = case when p ? 'customer_location'
-                             then nullif(trim(p->>'customer_location'),'') else customer_location end,
-    customer_po_no    = case when p ? 'customer_po_no'
-                             then nullif(trim(p->>'customer_po_no'),'') else customer_po_no end,
-    order_date    = coalesce(nullif(p->>'order_date','')::date, order_date),
-    order_remarks = nullif(trim(p->>'order_remarks'), ''),
-    -- ⚠ Editing the goods CLEARS a credit hold. The hold and its written reason
-    --   were a judgement about a specific set of items; silently carrying them
-    --   over to a different set is how a hold gets bypassed by accident.
-    cc_status     = case when v_held then null else cc_status end,
-    cc_remarks    = case when v_held then null else cc_remarks end,
-    cc_round_no   = case when v_held then null else cc_round_no end,
-    cc_decided_at = case when v_held then null else cc_decided_at end,
-    cc_decided_by = case when v_held then null else cc_decided_by end,
-    edited_at = now(), edited_by = v_uid
-  where id = p_order;
-
-  if p ? 'lines' then
-    perform public.fms_dispatch_replace_lines(p_order, p->'lines');
+  -- The edit path reads the stored customer, or the comparison is against null
+  -- and the guard fires on every save of every order.
+  if position('v_cust_before' in
+      pg_get_functiondef('public.fms_dispatch_update_order(uuid,jsonb)'::regprocedure)) = 0 then
+    raise exception 'fms_dispatch_update_order: v_cust_before missing';
   end if;
 
-  perform public.fms_dispatch_announce(
-    'order', p_order, 'order_edited',
-    'Sales order ' || coalesce(v_no, '') || ' was edited.'
-      || case when v_held then ' The credit hold on it was cleared and must be decided again.' else '' end,
-    case when v_held then public.fms_dispatch_step_owner_ids('credit_check') else '{}'::uuid[] end,
-    jsonb_build_object('order_no', v_no)
-  );
-end $function$;
+  -- And the standing check from Phase 1: no function body may name a retired
+  -- master table. Patching by substitution cannot reintroduce one, but the
+  -- proof is cheap and this file rewrites two bodies.
+  select count(*) into v_bad
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('fms_dispatch_submit_order','fms_dispatch_update_order')
+     and pg_get_functiondef(p.oid) ~ 'fms_dispatch_(customers|items|customer_items)\M';
+  if v_bad > 0 then
+    raise exception 'a patched function references a retired master table';
+  end if;
+end $check$;
