@@ -173,6 +173,13 @@ export interface DispatchStoreValue {
    * `includeIds` keeps whatever the order already has on it. An item whose
    *   mapping was switched off after the order was raised must still show, or
    *   editing the order would drop the line's unit and read as a blank cell.
+   *
+   * ⚠ AND THE RESULT IS ONE ROW PER PRODUCT NAME. Tally files a separate stock
+   *   item in every company book that stocks it, so the same ink reached the
+   *   intake picker twice with nothing on screen to choose between. Broken by
+   *   the customer's own book — see the implementation, where the measurement
+   *   that makes that exact rather than a guess is written down. Anything
+   *   already on the order wins outright.
    */
   itemsForCustomer: (customerId: string | null, includeIds?: readonly string[]) => Item[];
   /**
@@ -588,13 +595,20 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * promise a number the item box then fails to produce.
      */
     const mappedItemCounts = (() => {
-      const live = new Set(items.filter((i) => i.active).map((i) => i.id));
-      const counts = new Map<string, number>();
+      // ⚠ DISTINCT NAMES, not mappings. The picker collapses a product filed in
+      //   several Tally books to one row, so counting rows here would promise 12
+      //   and then show 7 - and the number exists precisely to be trusted before
+      //   the customer is chosen.
+      const liveName = new Map(items.filter((i) => i.active).map((i) => [i.id, i.name.trim().toUpperCase()]));
+      const seen = new Map<string, Set<string>>();
       for (const m of customerItems) {
-        if (!m.active || !live.has(m.itemId)) continue;
-        counts.set(m.customerId, (counts.get(m.customerId) ?? 0) + 1);
+        const nm = m.active ? liveName.get(m.itemId) : undefined;
+        if (!nm) continue;
+        const set = seen.get(m.customerId);
+        if (set) set.add(nm);
+        else seen.set(m.customerId, new Set([nm]));
       }
-      return counts;
+      return new Map([...seen].map(([id, set]) => [id, set.size]));
     })();
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
@@ -716,9 +730,44 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         );
         // `items`, not activeOf(items), for the kept ones — an item switched off
         // after the order was raised is still on the order.
-        return activeOf(items).filter((i) => allowed.has(i.id))
-          .concat(items.filter((i) => keep.has(i.id) && !(allowed.has(i.id) && i.active)))
-          .sort((a, b) => a.name.localeCompare(b.name));
+        const pool = activeOf(items).filter((i) => allowed.has(i.id))
+          .concat(items.filter((i) => keep.has(i.id) && !(allowed.has(i.id) && i.active)));
+
+        /**
+         * ONE ROW PER PRODUCT NAME, and this is not cosmetic tidying.
+         *
+         * Tally files a separate stock item in every company book that stocks it,
+         * so "EPN SUBLIMATION INK BLACK" is several rows. 1,582 of the mappings
+         * carried over from Dispatch point a customer in one book at an item in
+         * another - Dispatch matched its customer to one ledger and its item to a
+         * different book's twin. That reached the intake form as the same name
+         * twice with nothing on screen to choose between: a coin toss for whoever
+         * is punching the order, on 107 of the 783 mapped customers.
+         *
+         * The tie is broken by the CUSTOMER'S OWN BOOK, which is exact rather than
+         * a heuristic. Measured across all 684 affected groups: every one has
+         * EXACTLY ONE copy in the customer's own book - never none, never two -
+         * and no group's twins differ on unit or HSN. So the survivor is
+         * determined, and nothing that reaches the order, the gate pass or the
+         * invoice is lost by dropping the other.
+         */
+        const book = customers.find((c) => c.id === customerId)?.companyId ?? null;
+        const nameOf = (i: Item) => i.name.trim().toUpperCase();
+
+        // WHATEVER IS ALREADY ON THE ORDER SURVIVES FIRST, unconditionally. 757
+        // lines across 202 of the 303 orders sit on the twin from the OTHER book;
+        // deduping to the "right" one would take the line's item out of its own
+        // picker and blank the row on the next edit. Only names that nothing on
+        // the order already covers go through the tie-break.
+        const out = pool.filter((i) => keep.has(i.id));
+        const covered = new Set(out.map(nameOf));
+        const best = new Map<string, Item>();
+        for (const i of pool) {
+          if (keep.has(i.id) || covered.has(nameOf(i))) continue;
+          const cur = best.get(nameOf(i));
+          if (!cur || (i.companyId === book && cur.companyId !== book)) best.set(nameOf(i), i);
+        }
+        return out.concat([...best.values()]).sort((a, b) => a.name.localeCompare(b.name));
       },
       locationsForCompany: (companyId) =>
         !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId)),
