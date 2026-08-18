@@ -52,6 +52,7 @@ export default function ImportLayout() {
     () =>
       buildImportNav({
         canManageMasters: isAnyManager,
+        canEdit: store.canEdit,
         isAdmin,
         canSource,
         isApprover,

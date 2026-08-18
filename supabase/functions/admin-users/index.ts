@@ -5,12 +5,17 @@
 // function instead. The function verifies the CALLER is an admin before doing
 // anything with the service-role key.
 //
-//   POST  body { action: "create", name, email, phone, designation?, role,
-//                departmentId?, hodIds?: string[], moduleAccess?: string[],
+//   POST  body { action: "create", name, email, phone, designation?, designationId?,
+//                role, departmentId?, subDepartmentId?, bandId?, employeeCode?,
+//                hodIds?: string[],
+//                moduleLevels?: Record<string, "view" | "edit">, moduleAccess?: string[],
 //                receivablesSalespersons?: string[], receivablesHiddenMenus?: string[],
 //                receivablesAdminMenus?: string[], receivablesAllowedReports?: string[] }
 //                                                                          -> { id }
 //                  (phone = mobile number; used as the initial login password;
+//                   moduleLevels = the granted apps AND how much of each: its keys
+//                     are the grants. moduleAccess is the pre-level shape, still
+//                     accepted from an older bundle and read as full access;
 //                   receivablesSalespersons  = Outstanding Dashboard scope tags;
 //                   receivablesHiddenMenus   = menus that user may NOT see;
 //                   receivablesAdminMenus    = menus they may use with admin depth;
@@ -130,9 +135,30 @@ Deno.serve(async (req) => {
     if (phone.length < 6) return json(400, { error: "phone (mobile) required, min 6 characters — it is the initial password" });
     const role = (body.role as AppRole) ?? "employee";
     const departmentId = (body.departmentId as string | null) ?? null;
+    // The four organisation fields. `designation` (text) is the legacy mirror
+    // list_org_people() returns for @mention pickers; `designationId` is the
+    // source of truth. Both are written, always together.
     const designation = (body.designation as string | null) ?? null;
+    const designationId = (body.designationId as string | null) ?? null;
+    const subDepartmentId = (body.subDepartmentId as string | null) ?? null;
+    const bandId = (body.bandId as string | null) ?? null;
+    const employeeCode = (String(body.employeeCode ?? "").trim() || null) as string | null;
     const hodIds = Array.isArray(body.hodIds) ? (body.hodIds as string[]) : [];
-    const moduleAccess = Array.isArray(body.moduleAccess) ? (body.moduleAccess as string[]) : [];
+    // Module grants arrive as { appId: 'view' | 'edit' } — the keys are the granted
+    // apps, so there is no separate id list that could disagree with the levels.
+    //
+    // ⚠ `moduleAccess` (a bare string[]) is still accepted for one reason: an
+    //   older frontend bundle in an open tab still sends it. Those ids default to
+    //   'edit', which is what they meant before the level existed. Anything not
+    //   recognised as 'view' is likewise 'edit' — the level must never be
+    //   restricted by accident, only ever by an explicit choice.
+    const rawLevels = (body.moduleLevels ?? null) as Record<string, unknown> | null;
+    const legacyIds = Array.isArray(body.moduleAccess) ? (body.moduleAccess as string[]) : [];
+    const moduleLevels: Record<string, "view" | "edit"> = {};
+    for (const app_id of legacyIds) moduleLevels[app_id] = "edit";
+    if (rawLevels && typeof rawLevels === "object") {
+      for (const [app_id, level] of Object.entries(rawLevels)) moduleLevels[app_id] = level === "view" ? "view" : "edit";
+    }
     const receivablesSalespersons = Array.isArray(body.receivablesSalespersons) ? (body.receivablesSalespersons as string[]) : [];
     // Outstanding Dashboard menu access, set on the SAME form as everything above. Both
     // used to be dropped on create (only the update path wrote them), so a brand-new user
@@ -163,7 +189,11 @@ Deno.serve(async (req) => {
       .update({
         name,
         designation,
+        designation_id: designationId,
         department_id: departmentId,
+        sub_department_id: subDepartmentId,
+        band_id: bandId,
+        employee_code: employeeCode,
         phone,
         receivables_salespersons: receivablesSalespersons,
         receivables_hidden_menus: receivablesHiddenMenus,
@@ -182,8 +212,14 @@ Deno.serve(async (req) => {
       const { error } = await admin.from("user_hods").insert(hodIds.map((hod_id) => ({ employee_id: id, hod_id })));
       if (error) return json(400, { error: error.message });
     }
-    if (moduleAccess.length) {
-      const { error } = await admin.from("app_access").insert(moduleAccess.map((app_id) => ({ user_id: id, app_id })));
+    // The level goes in on CREATE, not only on the later update — the comment on
+    // receivablesHiddenMenus above records what happens when a new per-user
+    // setting is wired into one path and forgotten in the other.
+    const grantedApps = Object.keys(moduleLevels);
+    if (grantedApps.length) {
+      const { error } = await admin
+        .from("app_access")
+        .insert(grantedApps.map((app_id) => ({ user_id: id, app_id, access_level: moduleLevels[app_id] })));
       if (error) return json(400, { error: error.message });
     }
 

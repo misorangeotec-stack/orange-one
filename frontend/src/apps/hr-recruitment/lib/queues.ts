@@ -121,8 +121,7 @@ export const seatsJoined = (requisitionId: string, onboardings: Onboarding[]): n
  */
 export const STAGE_PENDING_STEP: Record<CandidateStage, StepKey | null> = {
   resume_uploaded: "hr_shortlist",       // HR must screen this CV
-  hr_shortlisted: "hod_share",           // HR must send it to the HOD
-  shared_with_hod: "hod_shortlist",      // the HOD must decide
+  hr_shortlisted: "hod_shortlist",       // shortlisting IS the handover — the HOD must decide
   hod_shortlisted: "telephonic_screening", // next up is the telephonic screen (default; rounds are skippable)
   telephonic: "telephonic_screening",    // the screening call must be conducted
   interview_1: "interview_1",            // Round 1 must be conducted
@@ -181,8 +180,6 @@ export function candidateStepCompletedIso(
       return c.uploadedAt;
     case "hr_shortlist":
       return c.hrShortlistedAt;
-    case "hod_share":
-      return c.sharedToHodAt;
     case "hod_shortlist":
       return c.hodDecidedAt;
     case "telephonic_screening":
@@ -236,7 +233,6 @@ function lastCompletedStageIso(c: Candidate): string | null {
     c.interview1At ??
     c.telephonicAt ??
     c.hodDecidedAt ??
-    c.sharedToHodAt ??
     c.hrShortlistedAt ??
     null
   );
@@ -440,7 +436,6 @@ export function daysInStage(c: Candidate): number {
   const map: Record<CandidateStage, string | null> = {
     resume_uploaded: c.uploadedAt,
     hr_shortlisted: c.hrShortlistedAt,
-    shared_with_hod: c.sharedToHodAt,
     hod_shortlisted: c.hodDecidedAt,
     telephonic: c.hodDecidedAt,
     interview_1: c.telephonicAt ?? c.hodDecidedAt,

@@ -18,7 +18,8 @@ export interface BoardAccess {
 export const canSeeBoard = (s: BoardAccess): boolean =>
   s.isStepOwner("resume_upload") ||
   s.isStepOwner("hr_shortlist") ||
-  s.isStepOwner("hod_share") ||
+  // `hod_shortlist` is absent on purpose: it is a HOD step with no global owner
+  // list, so whoever owes it reaches the board through `myRequisitions` below.
   s.isStepOwner("telephonic_screening") ||
   s.isStepOwner("interview_1") ||
   s.isStepOwner("interview_2") ||

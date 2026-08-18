@@ -26,6 +26,12 @@ const B = "/hr-recruitment";
  * card yourself. `candidateOf` resolves an interview notification the extra hop.
  */
 const linkFor = (n: HrNotification, candidateOf: (entityId: string) => string | null): string => {
+  // Keyed on TYPE, ahead of the entity switch. This one is a requisition-scoped
+  // notification whose whole point is a pile of CVs, so it wants the board — the MRF
+  // page every other requisition notification lands on would show the HOD a stepper
+  // and make them navigate to the work they were just told about.
+  if (n.type === "hod_shortlist_pending") return `${B}/positions/${n.entityId}`;
+
   switch (n.entityType) {
     case "requisition":
       return `${B}/requisitions/${n.entityId}`;

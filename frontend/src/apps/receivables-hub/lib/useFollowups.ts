@@ -43,7 +43,10 @@ export interface DueItem {
 
 export function useFollowups() {
   const queryClient = useQueryClient();
-  const { user, isAdmin } = useSession();
+  const { user, isAdmin, canEditModule } = useSession();
+  // Module-level write ceiling. A view-only grant reads the whole follow-up log
+  // and logs nothing — see useHubMenuAccess().canEdit.
+  const canEdit = canEditModule("outstanding-dashboard");
   // Unfiltered customer set for the current user — already salesperson-scoped by useAppData.
   const { allCustomers, consolidatedCustomers, groupedCustomers, customerGroupMap } = useAppData({});
 
@@ -200,8 +203,8 @@ export function useFollowups() {
 
   /** May the signed-in user edit/delete this entry? Own rows, or anything if admin. */
   const canModify = useCallback(
-    (f: Followup) => isAdmin || f.createdBy === user.id,
-    [isAdmin, user.id],
+    (f: Followup) => canEdit && (isAdmin || f.createdBy === user.id),
+    [canEdit, isAdmin, user.id],
   );
 
   return {
@@ -216,6 +219,8 @@ export function useFollowups() {
     personName,
     statsFor,
     canModify,
+    /** False on a view-only module grant — hides "Log follow-up" everywhere. */
+    canEdit,
     add,
     edit,
     remove,

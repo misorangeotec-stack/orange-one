@@ -238,6 +238,16 @@ interface ImportStoreValue {
   isApprover: boolean;
   processCoordinatorIds: string[];
   isProcessCoordinator: boolean;
+  /**
+   * Does this person's grant on Purchase RM Import allow CHANGING anything?
+   * False only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away, so
+   *   it is ANDed into the write predicates and into each button site.
+   *   Deliberately kept OUT of `canActOn` / `canSeeQueue` / `isProcessCoordinator`
+   *   / `isStepOwner`, which decide what a person can SEE.
+   */
+  canEdit: boolean;
   /** Per-step due-date rules (anchor step + working days), merged over the defaults. */
   stepSla: StepSlaMap;
   /** The due date for a request line sitting in `step` (never null). */
@@ -617,8 +627,15 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
     const managerIdsFor = (masterType: MasterType) =>
       masterManagers.filter((m) => m.masterType === masterType).map((m) => m.managerUserId);
 
+    // Module-level write ceiling. From the REAL `session`, never useEffectiveIdentity
+    // — a demo persona must not step around the real user's view-only grant.
+    const canEdit = session.canEditModule("import");
+
+    // Pure write gate (MasterCrud Add + Actions column), so the ceiling folds in.
+    // isAnyManager is left alone: it guards the Masters ROUTE, and a view-only
+    // master manager should still read what they look after.
     const canManage = (masterType: MasterType) =>
-      isAdmin || managerIdsFor(masterType).includes(user.id);
+      canEdit && (isAdmin || managerIdsFor(masterType).includes(user.id));
 
     const isAnyManager = isAdmin || masterManagers.some((m) => m.managerUserId === user.id);
 
@@ -655,7 +672,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
 
     const isActiveApprover = approvalBands.some((b) => b.active && b.approverUserId === user.id);
 
-    const canApproveLine = (_line: RequestItem): boolean => isAdmin || isActiveApprover;
+    const canApproveLine = (_line: RequestItem): boolean => canEdit && (isAdmin || isActiveApprover);
 
     // Request-scoped approval, no value banding: ANY active approver may decide a
     // requisition (mirrors the RPC's fms_import_is_approver check). The basis is
@@ -669,7 +686,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       const pending = lines.filter(lineInApproval);
       const basis = pending.length > 0 ? pending : lines.filter(lineInPoDesk);
       if (basis.length === 0) return false;
-      return isAdmin || isActiveApprover;
+      return canEdit && (isAdmin || isActiveApprover);
     };
 
     /**
@@ -690,7 +707,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       return ls.length > 0 && ls.every((l) => l.status === "approval" || l.status === "on_hold");
     };
     const canEditRequest = (r: PurchaseRequest): boolean =>
-      (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
+      canEdit && (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
 
     // ---- PO cancellation helpers (approver-only, vendor-requested) ----
     const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
@@ -709,7 +726,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       isOpenPo(po) && !grns.some((g) => g.poId === po.id) && !tallyBookings.some((t) => t.poId === po.id);
     const pendingCancelRequestForPo = (poId: string): PoCancelRequest | undefined =>
       poCancelRequests.find((r) => r.poId === poId && r.status === "pending");
-    const isPoApprover = (po: PurchaseOrder): boolean => isAdmin || poApproverIds(po).includes(user.id);
+    const isPoApprover = (po: PurchaseOrder): boolean => canEdit && (isAdmin || poApproverIds(po).includes(user.id));
 
     const itemsByGroupId = new Map<string, RequestItem[]>();
     for (const ri of requestItems) {
@@ -815,7 +832,11 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       isApprover: isAdmin || isActiveApprover,
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
-      canConfigure: isAdmin,
+      canEdit,
+      // Settings sit behind an admins-only route guard and a level never applies to
+      // an admin, so this needs no ceiling — but ANDing it in keeps "every write
+      // gate carries canEdit" true with no exceptions to learn.
+      canConfigure: canEdit && isAdmin,
 
       // ---- workflow data + selectors (Stages 1–4) ----
       requests,
@@ -1309,7 +1330,7 @@ export function ImportStoreProvider({ children }: { children: ReactNode }) {
       updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
       updateApprovalRequest: async (input) => { await updateApprovalRequestWrite(input); await invalidate(); },
       updatePoDetails: async (input) => { await updatePoDetailsWrite(input); await invalidate(); },
-      canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(importIndex, po) === null,
+      canEditSharePo: (po) => canEdit && isStepOwner("share_po") && poShareLockReason(importIndex, po) === null,
 
       // ---- activity + notifications (Phase 5) ----
       activity,

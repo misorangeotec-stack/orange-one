@@ -22,9 +22,11 @@ export default function RequestsList() {
           <h1 className="text-[22px] font-bold text-navy">Purchase Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">Every request and where its items are in the pipeline.</p>
         </div>
-        <Link to="/import/requests/new">
-          <Button size="sm">+ New Request</Button>
-        </Link>
+        {s.canEdit && (
+          <Link to="/import/requests/new">
+            <Button size="sm">+ New Request</Button>
+          </Link>
+        )}
       </div>
 
       <Card className="p-4">

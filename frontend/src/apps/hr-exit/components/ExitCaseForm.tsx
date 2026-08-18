@@ -52,7 +52,7 @@ export default function ExitCaseForm({
   const me = s.profileById(user.id);
 
   /** HR / coordinator / admin may raise for anyone. Everyone else needs to manage them. */
-  const canRaiseOnBehalf = s.isAdmin || s.isProcessCoordinator || s.isExitStaff;
+  const canRaiseOnBehalf = s.canEdit && (s.isAdmin || s.isProcessCoordinator || s.isExitStaff);
 
   const [forSelf, setForSelf] = useState(existing ? existing.employeeUserId === user.id : true);
 

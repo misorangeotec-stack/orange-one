@@ -76,21 +76,24 @@ export default function ExitDetail() {
   const skips = s.skipsFor(c.id);
 
   // What this person may do, at this step, on THIS case.
-  const canReview = c.status === "manager_review" && s.canActOn("manager_review", c);
-  const canVerify = c.status === "hr_review" && s.canActOn("hr_verification", c);
-  const canDecide = c.status === "head_approval" && s.canActOn("hr_head_approval", c);
+  // A view-only grant removes every action on this page while the case stays fully
+  // readable. ANDed in per site because canActOn also decides queue membership.
+  const canReview = s.canEdit && c.status === "manager_review" && s.canActOn("manager_review", c);
+  const canVerify = s.canEdit && c.status === "hr_review" && s.canActOn("hr_verification", c);
+  const canDecide = s.canEdit && c.status === "head_approval" && s.canActOn("hr_head_approval", c);
   // The LWD is confirmable once the HR Head has approved, and RE-confirmable for as
   // long as the case is still in its clearance phase — HR agrees a date, and then it
   // changes. Moving it re-dates everything and rebuilds nothing (the RPC's seed is
   // guarded by `if count = 0`), which is exactly why it stays available.
-  const canConfirmLwd = c.status === "clearance" && s.canActOn("lwd_confirm", c);
-  const canHold = s.isProcessCoordinator;
+  const canConfirmLwd = s.canEdit && c.status === "clearance" && s.canActOn("lwd_confirm", c);
+  const canHold = s.canEdit && s.isProcessCoordinator;
   // Skipping a step is the HR Head's / a coordinator's call — the same rule the RPC uses.
-  const canSkip = s.isProcessCoordinator || s.isStepOwner("hr_head_approval");
+  const canSkip = s.canEdit && (s.isProcessCoordinator || s.isStepOwner("hr_head_approval"));
   // Mirrors fms_exit_withdraw_case: the employee, the raiser, or HR / a coordinator /
   // an admin — and only while the money has not moved. The reporting manager is
   // deliberately NOT on that list: it is not their resignation to retract.
   const canWithdraw =
+    s.canEdit &&
     !c.fnfPaidAt &&
     !c.archivedAt &&
     !["withdrawn", "rejected", "archived"].includes(c.status) &&

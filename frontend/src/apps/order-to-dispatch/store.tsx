@@ -68,6 +68,15 @@ export interface DispatchStoreValue {
   userId: string;
   isAdmin: boolean;
   isProcessCoordinator: boolean;
+  /**
+   * Does this person's grant on Order to Dispatch allow CHANGING anything? False
+   * only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away. Kept
+   *   OUT of canActOn / canSeeQueue / isProcessCoordinator, which decide what a
+   *   person can SEE.
+   */
+  canEdit: boolean;
   canRaise: boolean;
   canMonitor: boolean;
   /**
@@ -412,7 +421,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const salesOrderOwners = [
       ...new Set(stepOwners.filter((o) => o.stepKey === "sales_order").flatMap((o) => o.employeeIds)),
     ];
-    const canRaise = salesOrderOwners.length === 0 || isAdmin || isProcessCoordinator || salesOrderOwners.includes(uid);
+    // Module-level write ceiling. From the REAL `session`, never a demo persona.
+    const canEdit = session.canEditModule("order-to-dispatch");
+    const canRaise =
+      canEdit && (salesOrderOwners.length === 0 || isAdmin || isProcessCoordinator || salesOrderOwners.includes(uid));
 
     /**
      * Mirrors fms_dispatch_update_order's authz: the raiser / admin / coordinator,
@@ -427,6 +439,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   what stops the button appearing in the first place.
      */
     const canEditOrder = (o: DispatchOrder): boolean =>
+      canEdit &&
       (o.raisedBy === uid || isAdmin || isProcessCoordinator) &&
       o.status === "awaiting_credit_check" &&
       o.ccAt == null &&
@@ -454,6 +467,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   idempotent as a backstop; this is what stops the button appearing.
      */
     const canCancelOrder = (o: DispatchOrder): boolean =>
+      canEdit &&
       (o.raisedBy === uid || isProcessCoordinator) &&
       o.status !== "cancelled" &&
       o.status !== "closed" &&
@@ -461,7 +475,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       o.goAt == null;
 
     const canWithdrawCancel = (o: DispatchOrder): boolean =>
-      (o.raisedBy === uid || isProcessCoordinator) && isSalesReturnPending(o);
+      canEdit && (o.raisedBy === uid || isProcessCoordinator) && isSalesReturnPending(o);
 
     /**
      * The people who own a step, named. With a location, the set that actually
@@ -602,7 +616,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     const managerIdsFor = (mt: DispatchMasterType) =>
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
-    const canManage = (mt: DispatchMasterType) => isAdmin || managerIdsFor(mt).includes(uid);
+    // Pure write gate (MasterCrud Add + Actions column). isAnyMasterManager is
+    // left alone — it guards the Masters ROUTE, which a view-only manager may read.
+    const canManage = (mt: DispatchMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
 
     const resolvableRequests = masterRequests
@@ -652,6 +668,7 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
       userId: uid,
       isAdmin,
+      canEdit,
       isProcessCoordinator,
       canRaise,
       canMonitor: isProcessCoordinator,

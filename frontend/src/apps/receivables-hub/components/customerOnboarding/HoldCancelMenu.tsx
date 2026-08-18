@@ -74,7 +74,7 @@ export default function HoldCancelMenu({ request }: { request: CustomerRequest }
   const closed = isTerminal(r.status);
   // canActOn('submission') is exactly "the raiser, or a coordinator" — the same
   // pair fms_customer_cancel_request accepts. Don't re-derive it a second way.
-  const canWithdraw = s.canActOn("submission", r);
+  const canWithdraw = s.canEdit && s.canActOn("submission", r);
 
   const items: Action[] = [];
   if (s.isCoordinator && !held && !closed) items.push("hold");

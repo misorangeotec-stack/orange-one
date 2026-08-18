@@ -119,6 +119,21 @@ interface SuppliesStoreValue {
 
   // capabilities
   isAdmin: boolean;
+  /**
+   * Does this person's grant on General Purchase allow CHANGING anything? False
+   * only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission. It grants nothing — a person still has to be
+   *   a named requester, a step owner, a coordinator or a master manager exactly
+   *   as before. It only takes away, so it is ANDed into the write predicates and
+   *   the button sites and is deliberately kept OUT of `canActOn`, `canSeeQueue`
+   *   and `isProcessCoordinator`, which decide what a person can SEE.
+   *
+   * ⚠ Combines WITH the `requesters` list, it does not replace it (see
+   *   20260905120000_add_fms_supplies_raise_gate_and_hod_routing.sql) — a
+   *   view-only person on the requester list still may not raise.
+   */
+  canEdit: boolean;
   isProcessCoordinator: boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
   isFulfilmentStaff: boolean;
@@ -283,7 +298,10 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     // ⚠ An EMPTY list admits NOBODY but admins. Do not "helpfully" fall back to
     //   letting everyone through when nothing is configured: that is precisely
     //   the state this feature exists to close, and the strictness was asked for.
-    const canRaise = isAdmin || requesterIds.includes(uid);
+    // The module-level write ceiling — see the doc on canEdit. From `session`,
+    // never a demo persona, so a persona cannot step around a real view-only grant.
+    const canEdit = session.canEditModule("office-supplies");
+    const canRaise = canEdit && (isAdmin || requesterIds.includes(uid));
 
     const hodDepartmentIds = departments.filter((d) => d.hodUserId === uid).map((d) => d.id);
 
@@ -341,7 +359,10 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
     const managerIdsFor = (mt: SupplyMasterType) =>
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
-    const canManage = (mt: SupplyMasterType) => isAdmin || managerIdsFor(mt).includes(uid);
+    // Pure write gate (MasterCrud's Add button + Actions column), so the ceiling
+    // folds in. isAnyMasterManager is left alone: it guards the Masters ROUTE, and
+    // a view-only master manager should still read the masters they look after.
+    const canManage = (mt: SupplyMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
     const resolvableRequests = masterRequests.filter((r) => r.status === "pending").filter((r) => canManage(r.masterType));
     const adminIds = () => dir.profiles.filter((p) => p.role === "admin").map((p) => p.id);
@@ -449,6 +470,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       stepSla,
 
       isAdmin,
+      canEdit,
       isProcessCoordinator,
       isStepOwner,
       isFulfilmentStaff,

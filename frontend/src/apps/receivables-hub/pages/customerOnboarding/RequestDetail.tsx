@@ -70,7 +70,7 @@ export default function RequestDetail() {
 
   const activity = s.activityFor(r.id);
   // Editable = the form is still unlocked AND this viewer is the one who may touch it.
-  const editable = formLockReason(r) === null && (s.canActOn("submission", r) || s.isCoordinator);
+  const editable = s.canEdit && formLockReason(r) === null && (s.canActOn("submission", r) || s.isCoordinator);
   const openStepKey = s.openStepOf(r);
 
   // The step whose ALREADY-RECORDED decision is being corrected, if any. Every

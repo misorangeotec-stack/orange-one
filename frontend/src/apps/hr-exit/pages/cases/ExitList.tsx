@@ -128,9 +128,11 @@ export default function ExitList() {
             Every exit you can see, and where each one has got to.
           </p>
         </div>
-        <Link to="/hr-exit/exits/new">
-          <Button size="sm">Raise an exit</Button>
-        </Link>
+        {s.canEdit && (
+          <Link to="/hr-exit/exits/new">
+            <Button size="sm">Raise an exit</Button>
+          </Link>
+        )}
       </div>
 
       <QueueTable<ExitCase>

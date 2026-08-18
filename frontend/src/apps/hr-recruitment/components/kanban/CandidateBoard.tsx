@@ -46,15 +46,16 @@ export default function CandidateBoard({
   /** The onboarding dialog, reachable straight from a Made Offer / Hired card. */
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  // No busy/error state here any more. It belonged to the Share-with-HOD action,
+  // which this bar no longer has; the HOD decision runs inside HodDecisionModal and
+  // carries its own. Keeping them would have left a spinner that can never spin.
 
   const candidates = s.candidatesFor(requisition.id);
 
   // Uploading CVs belongs to the BOARD, not to one screen that happens to host it.
   // The board is rendered both from the requisition and from the position's own
   // page, and "where do I add resumes?" must have the same answer in both places.
-  const canAddCvs = requisition.status === "sourcing" && s.canActOn("resume_upload", requisition);
+  const canAddCvs = s.canEdit && requisition.status === "sourcing" && s.canActOn("resume_upload", requisition);
 
   /**
    * Cards, grouped by the COLUMN they are drawn in — not by their raw stage.
@@ -99,30 +100,13 @@ export default function CandidateBoard({
 
   /**
    * Bulk actions key off the ticked card's own STAGE, never off the column it is
-   * drawn in. "Shortlisted by HR" holds both `hr_shortlisted` and `shared_with_hod`,
-   * and those two owe opposite actions — one is waiting for HR to send it, the other
-   * for the HOD to decide. Selecting by column would offer "share with the HOD" for
-   * cards already with the HOD, and would never offer the HOD anything at all.
+   * drawn in. There used to be two actions here — HR sending a batch on, then the
+   * HOD deciding — because "Shortlisted by HR" held two stages. Sharing is gone
+   * (20260903130000): a shortlisted CV is already the HOD's, so the only bulk
+   * action this column offers is theirs.
    */
   const ticked = useMemo(() => candidates.filter((c) => selected.has(c.id)), [candidates, selected]);
-  const shareIds = ticked.filter((c) => c.stage === "hr_shortlisted").map((c) => c.id);
-  const hodIds = ticked.filter((c) => c.stage === "shared_with_hod").map((c) => c.id);
-  const belowMin = shareIds.length > 0 && shareIds.length < s.minCvsToShare;
-
-  /** Bulk: send the ticked CVs to the HOD in one action. */
-  const shareSelected = async () => {
-    if (!shareIds.length) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      await s.shareCandidatesWithHod(shareIds);
-      clearSelection();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const hodIds = ticked.filter((c) => c.stage === "hr_shortlisted").map((c) => c.id);
 
   /**
    * CVs older than the fetch window aren't loaded (see data/hrFetch.ts). For a
@@ -151,7 +135,6 @@ export default function CandidateBoard({
         { header: "Due", width: 12, value: (c) => formatDateDMY(s.candidateDueIso(c)) },
         { header: "CV received", width: 13, value: (c) => formatDateDMY(c.uploadedAt) },
         { header: "Shortlisted by HR", width: 15, value: (c) => formatDateDMY(c.hrShortlistedAt) },
-        { header: "Shared with HOD", width: 15, value: (c) => formatDateDMY(c.sharedToHodAt) },
         { header: "HOD decided", width: 13, value: (c) => formatDateDMY(c.hodDecidedAt) },
         { header: "Round 1 held", width: 13, value: (c) => formatDateDMY(c.interview1At) },
         { header: "Round 2 held", width: 13, value: (c) => formatDateDMY(c.interview2At) },
@@ -187,45 +170,23 @@ export default function CandidateBoard({
       )}
 
       {/* ---- Bulk action bar ---- */}
-      {(shareIds.length > 0 || hodIds.length > 0) && (
+      {/* Belt and braces: the tick that fills these lists is already gated on the
+          card, but this bar is hand-built rather than QueueTable's, so it does not
+          inherit the shared readOnly prop. */}
+      {s.canEdit && hodIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-orange/40 bg-orange/5 px-4 py-2.5">
-          <span className="text-[13px] font-medium text-navy">
-            {shareIds.length + hodIds.length} selected
-          </span>
+          <span className="text-[13px] font-medium text-navy">{hodIds.length} selected</span>
 
-          {shareIds.length > 0 && (
-            <>
-              <Button size="sm" onClick={shareSelected} disabled={busy}>
-                {busy ? "Sharing…" : `Share ${shareIds.length} CV${shareIds.length === 1 ? "" : "s"} with the HOD`}
-              </Button>
-              {belowMin && (
-                <span className="text-[12px] text-yellow">
-                  Fewer than the {s.minCvsToShare} CVs you usually send. You can still go ahead.
-                </span>
-              )}
-            </>
-          )}
-
-          {hodIds.length > 0 && (
-            <>
-              <Button size="sm" onClick={() => setHodDecision({ ids: hodIds, selected: true })} disabled={busy}>
-                Shortlist {hodIds.length}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setHodDecision({ ids: hodIds, selected: false })}
-                disabled={busy}
-              >
-                Drop {hodIds.length}
-              </Button>
-            </>
-          )}
+          <Button size="sm" onClick={() => setHodDecision({ ids: hodIds, selected: true })}>
+            Shortlist {hodIds.length}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setHodDecision({ ids: hodIds, selected: false })}>
+            Drop {hodIds.length}
+          </Button>
 
           <button onClick={clearSelection} className="ml-auto text-[12.5px] font-semibold text-grey-2 hover:text-navy">
             Clear
           </button>
-          {err && <span className="text-[12.5px] text-ryg-red">{err}</span>}
         </div>
       )}
 
@@ -277,7 +238,7 @@ export default function CandidateBoard({
                   candidate={c}
                   // Ticking a card only means something where a bulk action exists,
                   // and that is a property of the CARD's stage, not of the column.
-                  selectable={c.stage === "hr_shortlisted" || c.stage === "shared_with_hod"}
+                  selectable={c.stage === "hr_shortlisted"}
                   selected={selected.has(c.id)}
                   onToggleSelect={toggleSelect}
                   onMoveTo={(cand, to) => setMove({ c: cand, to })}

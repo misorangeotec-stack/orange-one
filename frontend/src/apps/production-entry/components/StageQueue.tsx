@@ -264,7 +264,7 @@ export default function StageQueue({
                 <StageRowAction
                   as="button"
                   lockReason={e.lockReason}
-                  canEdit={s.canActOn(stepKey, e.row)}
+                  canEdit={s.canEdit && s.canActOn(stepKey, e.row)}
                   permissionReason="Only an owner of this step can edit the entry."
                   onEdit={() => editing.openEdit(e.row)}
                   onView={() => editing.openView(e.row)}
@@ -288,6 +288,9 @@ export default function StageQueue({
           rowsLabel="job cards"
           emptyTitle="Nothing waiting on you"
           emptyMessage="Job cards needing your action will appear here."
+          // The pending action is a pure write; on a view-only grant the column
+          // goes and the queue itself stays fully readable.
+          readOnly={!s.canEdit}
           actions={({ request, tracking }) => (
             // Tracking rows (a rejected lot mid-top-up loop) open the same step modal
             // but it blocks approve/reject/save with a message until the additional RM

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import Breadcrumbs from "./Breadcrumbs";
 import NotificationsBell from "./NotificationsBell";
 import UserMenu from "./UserMenu";
+import ViewOnlyBadge from "./ViewOnlyBadge";
 import type { NotificationItem, ShellUser } from "./types";
 
 /** Application top bar: breadcrumb trail, dev role switcher, notifications, user menu. */
@@ -44,6 +45,7 @@ export default function Topbar({
         <Breadcrumbs pageLabel={pageLabel} />
 
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <ViewOnlyBadge />
           {roleSwitcher}
           <NotificationsBell items={notifications} onMarkRead={onMarkRead} />
           <UserMenu user={user} />

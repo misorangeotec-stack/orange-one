@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
-import type { AppRole, Profile } from "./types";
+import type { AppRole, ModuleLevel, Profile } from "./types";
 import { useAuth } from "./auth";
 import { useDirectory } from "./store";
 import { isUniversalApp } from "@/apps/universal";
@@ -20,6 +20,22 @@ interface SessionValue {
   isEmployee: boolean;
   moduleAccess: string[];
   hasModule: (appId: string) => boolean;
+  /**
+   * How much of an app this user gets: "none" | "view" | "edit".
+   * Admins are always "edit"; so is a universal app, which carries no grant row.
+   */
+  moduleLevel: (appId: string) => ModuleLevel | "none";
+  /**
+   * May this user CHANGE anything in this app? The one question every write
+   * affordance should ask.
+   *
+   * ⚠ This is NOT the opposite of hasModule, and it must never be used to decide
+   *   whether to show the app, its menu, or its queues. A view-only user opens
+   *   the app normally and reads every screen in it — they simply have no
+   *   buttons. If an app card vanishes from the launcher or a queue starts
+   *   returning Access Denied, this verdict has leaked into a read gate.
+   */
+  canEditModule: (appId: string) => boolean;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -46,6 +62,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       // opt-in per user, and admins bypass.
       hasModule: (appId: string) =>
         isAdmin || isUniversalApp(appId) || (user?.moduleAccess.includes(appId) ?? false),
+      // Admins hold no app_access rows at all, so they can't be read from the map —
+      // they are "edit" by definition, which is also why a view-only grant can
+      // never land on one. A universal app has no row either and stays fully
+      // writable, exactly as it behaved before levels existed.
+      moduleLevel: (appId: string) => {
+        if (isAdmin || isUniversalApp(appId)) return "edit";
+        return user?.moduleLevels[appId] ?? "none";
+      },
+      canEditModule: (appId: string) =>
+        isAdmin || isUniversalApp(appId) || user?.moduleLevels[appId] === "edit",
     };
   }, [authId, profiles]);
 

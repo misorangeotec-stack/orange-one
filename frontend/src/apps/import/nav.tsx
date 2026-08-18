@@ -58,6 +58,8 @@ const ic = {
  * "Masters" itself stays gated on `canManageMasters`.
  */
 export function buildImportNav(opts: {
+  /** False on a view-only grant — "New Request" then has nothing behind it. */
+  canEdit: boolean;
   canManageMasters: boolean;
   isAdmin: boolean;
   canSource: boolean;
@@ -84,7 +86,11 @@ export function buildImportNav(opts: {
     // just sees the empty state.
     { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine },
     { label: "Purchase Orders", to: `${B}/pos`, icon: ic.orders },
-    { label: "New Request", to: `${B}/requests/new`, icon: ic.newRequest, section: "Actions" },
+    // Dropped on a view-only grant: the route now refuses, so the link would only
+    // lead to Access Denied.
+    ...(opts.canEdit
+      ? [{ label: "New Request", to: `${B}/requests/new`, icon: ic.newRequest, section: "Actions" }]
+      : []),
   ];
 
   // Non-owners get Master Requests as a personal worklist, alongside New Request.

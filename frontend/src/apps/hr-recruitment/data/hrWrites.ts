@@ -614,12 +614,6 @@ export async function moveCandidate(id: string, toStage: string, payload: MovePa
   if (error) throw new Error(error.message);
 }
 
-/** Bulk — the sheet's own instruction is "share a minimum of 5–10 CVs with the HOD". */
-export async function shareCandidatesWithHod(ids: string[]): Promise<void> {
-  const { error } = await supabase.rpc("fms_hr_share_candidates_with_hod", { p_ids: ids });
-  if (error) throw new Error(error.message);
-}
-
 /** Bulk — the HOD returns their picks (and drops the rest with a reason). */
 export async function hodDecide(
   ids: string[],
@@ -887,6 +881,23 @@ export async function announce(input: {
     p_text: input.text,
     p_user_ids: input.recipients ?? [],
     p_meta: (input.meta ?? {}) as unknown as Json,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Refresh the HOD's rolling "N CVs awaiting your shortlist" digest for one
+ * requisition.
+ *
+ * Deliberately NOT an `announce`. Announce always inserts, and also writes an
+ * immutable activity row — so using it here would either spam a ping per CV or
+ * rewrite an audit trail to keep a counter current. The RPC updates its own unread
+ * digest in place instead, counts server-side so the number cannot drift from the
+ * board, and marks the digest read once the count reaches zero.
+ */
+export async function notifyHodPending(requisitionId: string): Promise<void> {
+  const { error } = await supabase.rpc("fms_hr_notify_hod_pending", {
+    p_requisition: requisitionId,
   });
   if (error) throw new Error(error.message);
 }

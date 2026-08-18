@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import AdminLayout from "./AdminLayout";
 import Onboarding from "./Onboarding";
-import Departments from "./Departments";
+import Organisation from "./Organisation";
 import Users from "./Users";
 import UserForm from "./UserForm";
 import Hierarchy from "./Hierarchy";
@@ -21,7 +21,10 @@ export default function AdminApp() {
     <Routes>
       <Route element={<AdminLayout />}>
         <Route index element={<Onboarding />} />
-        <Route path="departments" element={<Departments />} />
+        <Route path="organisation" element={<Organisation />} />
+        {/* The departments screen became the first tab of Organisation. Kept so
+            bookmarks and any link still pointing here land in the right place. */}
+        <Route path="departments" element={<Navigate to="/admin/organisation" replace />} />
         <Route path="users" element={<Users />} />
         <Route path="users/new" element={<UserForm />} />
         <Route path="users/:id/edit" element={<UserForm />} />

@@ -226,13 +226,18 @@ export default function TasksList() {
           <p className="text-grey text-[13px] mt-1">Everything assigned to you or created by you.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setPersonalOpen(true)}
-            className="inline-flex items-center gap-2 bg-white text-navy font-semibold text-sm px-4 py-2.5 rounded-xl border border-line hover:border-orange hover:text-orange transition"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            Add other task
-          </button>
+          {/* A personal ("other") task is still a row in `tasks`, not a private
+              browser note, so a view-only grant removes it too — unlike Receivables'
+              Saved Views, which are localStorage and stay available. */}
+          {canCreateTask && (
+            <button
+              onClick={() => setPersonalOpen(true)}
+              className="inline-flex items-center gap-2 bg-white text-navy font-semibold text-sm px-4 py-2.5 rounded-xl border border-line hover:border-orange hover:text-orange transition"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              Add other task
+            </button>
+          )}
           {canCreate && (
             <Link
               to="/task-management/tasks/new"

@@ -356,8 +356,14 @@ export interface RequisitionPlatform {
  */
 export type CandidateStage =
   | "resume_uploaded"
+  /**
+   * Shortlisted by HR — and, since 20260903130000, THE HANDOVER ITSELF. A card
+   * here is owed a decision by the HOD; there is no `shared_with_hod` between the
+   * two any more (that stage was reachable only by pressing a Share button, which
+   * granted nothing the hiring manager did not already have, and behind which 27
+   * CVs had silently piled up).
+   */
   | "hr_shortlisted"
-  | "shared_with_hod"
   | "hod_shortlisted"
   | "telephonic"
   | "interview_1"
@@ -404,8 +410,8 @@ export interface Candidate {
   uploadedAt: string;
   hrShortlistedAt: string | null;
   hrShortlistedBy: string | null;
-  sharedToHodAt: string | null;
-  sharedToHodBy: string | null;
+  // No sharedToHodAt / sharedToHodBy. The columns still exist in Postgres and keep
+  // whatever they hold, but nothing produces them and nothing reads them.
   hodDecidedAt: string | null;
   hodDecidedBy: string | null;
   /** When the telephonic screening (round 0) was HELD. Null if skipped. */

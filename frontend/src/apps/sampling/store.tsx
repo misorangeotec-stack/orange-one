@@ -155,6 +155,23 @@ interface SamplingStoreValue {
 
   // capabilities
   isAdmin: boolean;
+  /**
+   * Does this person's grant on the Sampling module allow CHANGING anything?
+   * False for a view-only grant (Admin → Module Access); true for everyone else,
+   * including every admin.
+   *
+   * ⚠ Read it from the REAL session, never a demo persona — a persona must not
+   *   be able to escape the real user's view-only grant.
+   *
+   * ⚠ This is a CEILING, not a permission. It never grants anything: a person
+   *   still needs to be a step owner, a coordinator or a master manager as
+   *   before. It only takes away. So it is ANDed into the write predicates and
+   *   into the button sites, and is deliberately NOT folded into `canActOn`,
+   *   `canSeeQueue` or `isProcessCoordinator` — those three decide which QUEUES
+   *   and ROWS a person sees, and blanking them would hand a view-only user an
+   *   empty app or an Access Denied instead of a readable one.
+   */
+  canEdit: boolean;
   isProcessCoordinator: boolean;
   /** ANY source. NAV VISIBILITY ONLY — never authorization; use canActOn for that. */
   isStepOwner: (stepKey: StepKey) => boolean;
@@ -315,6 +332,11 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
+    // The module-level write ceiling — see the doc on SamplingStoreValue.canEdit.
+    // From `session`, never `useEffectiveIdentity`: a demo persona must not be
+    // able to step around the real user's view-only grant.
+    const canEdit = session.canEditModule("sampling");
+
     // Mirrors fms_sampling_can_act(step, req, uid): admin / coordinator / the
     // step's owner FOR THIS REQUEST — PLUS the per-request assignees. Keep this
     // list and the SQL in step.
@@ -351,7 +373,11 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
 
     const managerIdsFor = (mt: SamplingMasterType) =>
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
-    const canManage = (mt: SamplingMasterType) => isAdmin || managerIdsFor(mt).includes(uid);
+    // canManage is a pure WRITE gate (it drives MasterCrud's Add button and its
+    // Actions column), so the ceiling folds straight into it. isAnyMasterManager
+    // is NOT gated: it is the Masters *route* guard, and a view-only master
+    // manager should still be able to read the masters they look after.
+    const canManage = (mt: SamplingMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
 
     /* --------------------------------- indexes ------------------------------- */
@@ -492,6 +518,7 @@ export function SamplingStoreProvider({ children }: { children: ReactNode }) {
       stepSla,
 
       isAdmin,
+      canEdit,
       isProcessCoordinator,
       isStepOwner,
       canActOn,

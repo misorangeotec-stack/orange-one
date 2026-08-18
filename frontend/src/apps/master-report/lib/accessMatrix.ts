@@ -24,8 +24,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/core/platform/supabase";
 import { grantableModules, type GrantableModule } from "@/apps/registry";
 import { groupByCategory } from "@/apps/categories";
-import { hasModuleAccess } from "@/core/admin/exportUsers";
-import type { AppRole } from "@/core/platform/types";
+import { moduleAccessLevel } from "@/core/admin/exportUsers";
+import type { AppRole, ModuleLevel } from "@/core/platform/types";
 
 export interface AccessRow {
   userId: string;
@@ -38,6 +38,13 @@ export interface AccessRow {
   isAdmin: boolean;
   /** Keyed by module id, AFTER the admin / universal overlay. */
   access: Record<string, boolean>;
+  /**
+   * How much of each module, AFTER the same overlay: "none" | "view" | "edit".
+   * A superset of `access` — `access[id]` is `level[id] !== "none"` — kept
+   * alongside it rather than replacing it because most readers only ask the
+   * yes/no question and rewriting them all would have been churn for nothing.
+   */
+  level: Record<string, ModuleLevel | "none">;
   /** Counts what they can actually open, so an admin reports the full set. */
   grantedCount: number;
   /**
@@ -95,13 +102,24 @@ export function buildAccessMatrix(raw: unknown): AccessMatrix {
   const rows: AccessRow[] = users.map((u) => {
     const role = asRole(u.role);
     const granted = Array.isArray(u.app_ids) ? (u.app_ids as unknown[]).map(String) : [];
-    const probe = { role, moduleAccess: granted };
+    // app_levels is {app_id: 'view'|'edit'} and arrived AFTER app_ids, so it may be
+    // absent from a cached payload. Missing means every grant is full — the state
+    // the world was in before levels existed.
+    const rawLevels = (u.app_levels ?? null) as Record<string, unknown> | null;
+    const moduleLevels: Record<string, ModuleLevel> = {};
+    if (rawLevels && typeof rawLevels === "object") {
+      for (const [id, l] of Object.entries(rawLevels)) moduleLevels[id] = l === "view" ? "view" : "edit";
+    }
+    const probe = { role, moduleAccess: granted, moduleLevels };
 
     const access: Record<string, boolean> = {};
+    const level: Record<string, ModuleLevel | "none"> = {};
     let grantedCount = 0;
     let explicitCount = 0;
     for (const m of modules) {
-      const on = hasModuleAccess(probe, m);
+      const lvl = moduleAccessLevel(probe, m);
+      const on = lvl !== "none";
+      level[m.id] = lvl;
       access[m.id] = on;
       if (on) grantedCount += 1;
       // Counted against the module list, so a stale grant for an app id no
@@ -118,6 +136,7 @@ export function buildAccessMatrix(raw: unknown): AccessMatrix {
       role,
       isAdmin: role === "admin",
       access,
+      level,
       grantedCount,
       explicitCount,
       lastActiveAt: str(u.last_active_at) || null,

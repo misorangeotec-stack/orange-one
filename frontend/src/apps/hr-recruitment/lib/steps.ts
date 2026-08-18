@@ -1,7 +1,7 @@
 import type { StepDefBase } from "@/shared/lib/fmsQueue";
 
 /**
- * The 18 canonical HR Recruitment steps (code-defined, 1-based display index).
+ * The 19 canonical HR Recruitment steps (code-defined, 1-based display index).
  * `key` is the stable identifier used by fms_hr_step_owners, the SLA config and
  * the queue logic.
  *
@@ -34,7 +34,15 @@ export type StepKey =
   | "job_posting"
   | "resume_upload"
   | "hr_shortlist"
-  | "hod_share"
+  /**
+   * NOTE there is no `hod_share`. "Share CVs with HOD" was a step whose entire
+   * content was pressing a button: no form, no fields, no attachment — and not
+   * even a privacy gate, since fms_hr_can_read_requisition() grants per
+   * REQUISITION, so the hiring manager could already see every CV on their own
+   * vacancy from upload. It granted nothing and only asked for attention, which
+   * is what a notification is for. Shortlisting by HR is now the handover, and
+   * fms_hr_notify_hod_pending() sends the ping. Removed in 20260903130000.
+   */
   | "hod_shortlist"
   | "telephonic_screening"
   | "interview_1"
@@ -71,22 +79,21 @@ export const STEPS: StepDef[] = [
   { key: "job_posting",         index: 5,  title: "Job Posting",                  short: "Posting",       scope: "requisition" },
   { key: "resume_upload",       index: 6,  title: "Collect Resumes",              short: "Resumes",       scope: "requisition" },
   { key: "hr_shortlist",        index: 7,  title: "Shortlist by HR",              short: "HR Shortlist",  scope: "candidate" },
-  { key: "hod_share",           index: 8,  title: "Share CVs with HOD",           short: "Share to HOD",  scope: "candidate" },
-  { key: "hod_shortlist",       index: 9,  title: "Shortlist by HOD",             short: "HOD Shortlist", scope: "candidate" },
-  { key: "telephonic_screening",index: 10, title: "Telephonic Screening",         short: "Telephonic",    scope: "candidate" },
-  { key: "interview_1",         index: 11, title: "Interview Round 1 — HR",       short: "Round 1",       scope: "candidate" },
-  { key: "interview_2",         index: 12, title: "Interview Round 2 — HOD",      short: "Round 2",       scope: "candidate" },
-  { key: "interview_3",         index: 13, title: "Interview Round 3 — Director", short: "Round 3",       scope: "candidate" },
+  { key: "hod_shortlist",       index: 8,  title: "Shortlist by HOD",             short: "HOD Shortlist", scope: "candidate" },
+  { key: "telephonic_screening",index: 9,  title: "Telephonic Screening",         short: "Telephonic",    scope: "candidate" },
+  { key: "interview_1",         index: 10, title: "Interview Round 1 — HR",       short: "Round 1",       scope: "candidate" },
+  { key: "interview_2",         index: 11, title: "Interview Round 2 — HOD",      short: "Round 2",       scope: "candidate" },
+  { key: "interview_3",         index: 12, title: "Interview Round 3 — Director", short: "Round 3",       scope: "candidate" },
   // The step is the PERMISSION to make an offer (configured in Setup → Step Owners),
   // which outlived the "Awaiting Decision" board column it was named after. Key kept:
   // it is stored as free text on every historical row.
-  { key: "final_decision",      index: 14, title: "Make the Offer",               short: "Offer",         scope: "candidate" },
-  { key: "onboarding",          index: 15, title: "Onboarding",                   short: "Onboarding",    scope: "hire" },
-  { key: "probation_m1",        index: 16, title: "Month-1 Review (HOD)",         short: "Review M1",     scope: "hire" },
-  { key: "probation_m2",        index: 17, title: "Month-2 Review (HOD)",         short: "Review M2",     scope: "hire" },
-  { key: "probation_m3",        index: 18, title: "Month-3 Review (HOD)",         short: "Review M3",     scope: "hire" },
-  { key: "probation_final",     index: 19, title: "Probation Decision",           short: "Confirm",       scope: "hire" },
-  { key: "probation_extension", index: 20, title: "Extended Review (Month 4)",    short: "Extension",     scope: "hire" },
+  { key: "final_decision",      index: 13, title: "Make the Offer",               short: "Offer",         scope: "candidate" },
+  { key: "onboarding",          index: 14, title: "Onboarding",                   short: "Onboarding",    scope: "hire" },
+  { key: "probation_m1",        index: 15, title: "Month-1 Review (HOD)",         short: "Review M1",     scope: "hire" },
+  { key: "probation_m2",        index: 16, title: "Month-2 Review (HOD)",         short: "Review M2",     scope: "hire" },
+  { key: "probation_m3",        index: 17, title: "Month-3 Review (HOD)",         short: "Review M3",     scope: "hire" },
+  { key: "probation_final",     index: 18, title: "Probation Decision",           short: "Confirm",       scope: "hire" },
+  { key: "probation_extension", index: 19, title: "Extended Review (Month 4)",    short: "Extension",     scope: "hire" },
 ];
 
 export const stepByKey = (key: string): StepDef | undefined => STEPS.find((s) => s.key === key);
@@ -112,7 +119,6 @@ export const STAGES: { label: string; keys: StepKey[] }[] = [
     label: "Pipeline",
     keys: [
       "hr_shortlist",
-      "hod_share",
       "hod_shortlist",
       "telephonic_screening",
       "interview_1",

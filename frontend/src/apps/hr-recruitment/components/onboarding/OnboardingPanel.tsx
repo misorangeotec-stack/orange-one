@@ -359,7 +359,7 @@ export default function OnboardingPanel({
   const c = s.candidateById(o.candidateId);
   const r = s.requisitionById(o.requisitionId);
   const checks = s.checksFor(o.id);
-  const mayAct = s.canActOnOnboarding(o);
+  const mayAct = s.canEdit && s.canActOnOnboarding(o);
 
   const [joiningDate, setJoiningDate] = useState(o.joiningDate ?? todayIso());
   const [empCode, setEmpCode] = useState(o.employeeCode ?? "");

@@ -109,3 +109,25 @@ export const grantableModules: GrantableModule[] = [
   // login to the mobile Leads app. Categorised so it isn't stranded in "Other".
   { id: "mobile-app", name: appName("mobile-app"), status: "live", category: appCategory("mobile-app"), order: 10 },
 ];
+
+/**
+ * Modules that cannot be granted VIEW-ONLY, so the permission screens offer only
+ * "No access" and "Full access" for them.
+ *
+ * `mobile-app` is here because view-only would be a LIE there, not merely
+ * unimplemented. The phone app writes — it creates and edits leads and uploads
+ * media — its login gate asks `app_mobile_has_access()` as a plain yes/no, and
+ * RLS on the lead tables checks only "is this your own row", never app_access.
+ * On top of that it is offline-first: an edit made with the buttons hidden would
+ * still be replayed by the sync queue once the phone came back online. Hiding
+ * buttons cannot enforce anything there, and offering a switch that does nothing
+ * is worse than not offering it.
+ *
+ * Remove an id from here once that app's writes actually consult
+ * `public.module_level()` (see 20260906120000_add_app_access_level.sql).
+ */
+export const NO_VIEW_ONLY_APP_IDS = new Set<string>(["mobile-app"]);
+
+/** The access levels a module offers, in display order. */
+export const levelsForModule = (appId: string): ("view" | "edit")[] =>
+  NO_VIEW_ONLY_APP_IDS.has(appId) ? ["edit"] : ["view", "edit"];

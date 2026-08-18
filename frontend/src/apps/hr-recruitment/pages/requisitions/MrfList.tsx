@@ -133,7 +133,7 @@ export default function MrfList() {
             Every vacancy you can see, and where each one has got to.
           </p>
         </div>
-        {s.isStepOwner("mrf") && (
+        {s.canEdit && s.isStepOwner("mrf") && (
           <Link to="/hr-recruitment/requisitions/new">
             <Button size="sm">Raise a requisition</Button>
           </Link>

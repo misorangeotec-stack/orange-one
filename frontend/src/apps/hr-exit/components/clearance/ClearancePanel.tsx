@@ -39,7 +39,7 @@ function CheckRow({ case: c, check, readOnly }: { case: ExitCase; check: Clearan
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  const mayAct = !readOnly && s.canTickCheck(check);
+  const mayAct = s.canEdit && !readOnly && s.canTickCheck(check);
   const settled = check.done || check.notApplicable;
 
   // "A file OR a link" has to actually mean it — the same bug 20260712190000 fixed in

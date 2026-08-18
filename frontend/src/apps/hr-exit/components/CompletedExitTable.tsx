@@ -125,7 +125,7 @@ export default function CompletedExitTable({
       actions={(e) => (
         <StageRowAction
           lockReason={e.lockReason}
-          canEdit={s.canActOn(e.stepKey, e.row)}
+          canEdit={s.canEdit && s.canActOn(e.stepKey, e.row)}
           permissionReason="Only an owner of this step can edit the entry."
           onEdit={() => onEdit(e)}
           onView={() => onView(e)}

@@ -69,9 +69,14 @@ export default function OrderDetail() {
   // Closing early is only legal BETWEEN rounds — mid-round the goods may already
   // be through the gate. The server enforces it; this keeps the button honest.
   const betweenRounds = order.status === "awaiting_material_status" || order.status === "on_hold";
+  // A view-only grant removes every action on this page while the order stays
+  // fully readable — including the "Correct" amend editor, which rewrites
+  // delivered quantities and can replace the receiver copy.
   const canClose =
+    s.canEdit &&
     s.isProcessCoordinator && betweenRounds && order.status !== "closed" && order.status !== "cancelled";
   const canHold =
+    s.canEdit &&
     s.isProcessCoordinator && order.status !== "cancelled" && order.status !== "closed" && !awaitingReturn;
 
   const act = async (fn: () => Promise<void>, close: () => void) => {
@@ -226,7 +231,7 @@ export default function OrderDetail() {
                   name={order.srAttachmentName ?? "Sales return document"}
                 />
               )}
-              {!awaitingReturn && s.canActOn("sales_return", order) && (
+              {s.canEdit && !awaitingReturn && s.canActOn("sales_return", order) && (
                 <Button variant="ghost" size="sm" onClick={() => setSalesReturnOpen(true)}>
                   Correct
                 </Button>
@@ -347,7 +352,7 @@ export default function OrderDetail() {
                   <th className="py-2 pr-3 font-semibold">Outcome</th>
                   <th className="py-2 pr-3 font-semibold">Confirmed</th>
                   <th className="py-2 pr-3 font-semibold">Documents</th>
-                  {s.isProcessCoordinator && <th className="py-2 pr-3 font-semibold" />}
+                  {s.canEdit && s.isProcessCoordinator && <th className="py-2 pr-3 font-semibold" />}
                 </tr>
               </thead>
               <tbody>
@@ -430,7 +435,7 @@ export default function OrderDetail() {
                         )}
                       </div>
                     </td>
-                    {s.isProcessCoordinator && (
+                    {s.canEdit && s.isProcessCoordinator && (
                       <td className="py-2 pr-3">
                         {/* Not while the order is mid-cancellation: correcting a
                             round recalculates the delivered totals, and the RPC

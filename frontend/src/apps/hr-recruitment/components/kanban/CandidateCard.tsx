@@ -62,7 +62,9 @@ export default function CandidateCard({
     return () => document.removeEventListener("mousedown", onDoc);
   }, [menu]);
 
-  const mine = s.canActOnCandidate(c);
+  // Drives the drag handle, the bulk-select tick AND every per-card menu, so the
+  // view-only ceiling folds in here once rather than at three separate sites.
+  const mine = s.canEdit && s.canActOnCandidate(c);
   const due = s.candidateDueIso(c);
   const overdue = due ? dueState(new Date(due)).overdue : false;
   const days = s.daysInStage(c);
@@ -145,24 +147,14 @@ export default function CandidateCard({
         <Avatar name={c.name} color={tintFor(c.id)} size={30} className="mt-0.5" />
 
         <button onClick={() => onOpen(c)} className="min-w-0 flex-1 text-left">
+          {/*
+            No "sent to the HOD" tick any more. It marked the second of two stages
+            this column used to hold, and existed because sharing moved a card
+            nowhere a person could see. Shortlisting IS the handover now, so every
+            card in this column is equally the HOD's and the tick would say nothing.
+          */}
           <div className="flex items-center gap-1">
             <span className="truncate text-[13px] font-semibold text-navy">{c.name}</span>
-            {/* The HOD has it — the reason this card does not need its own column. */}
-            {c.stage === "shared_with_hod" && (
-              <svg
-                viewBox="0 0 24 24"
-                className="h-3.5 w-3.5 shrink-0 text-ryg-green"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-label="Sent to the HOD"
-              >
-                <title>Sent to the HOD</title>
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            )}
           </div>
           {subtitle && <div className="truncate text-[11.5px] text-grey-2">{subtitle}</div>}
         </button>

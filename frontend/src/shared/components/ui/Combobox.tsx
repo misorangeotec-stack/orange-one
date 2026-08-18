@@ -48,8 +48,13 @@ export interface ComboboxProps {
    * When provided, an "Add …" row appears for a search term that doesn't exactly
    * match an existing option. Should create the option and return its value so it
    * can be selected immediately.
+   *
+   * Creating is almost always an async write, so a PROMISE of the new value works
+   * too and is the usual shape. Returning nothing still creates the row but leaves
+   * the field unselected — which is a real trap: `onCreate={(n) => { void add(n); }}`
+   * type-checks, creates the department, and silently leaves the picker empty.
    */
-  onCreate?: (label: string) => string | void;
+  onCreate?: (label: string) => string | void | Promise<string | void>;
   /** Render text for the create row; defaults to `Add “<query>”`. */
   createLabel?: (q: string) => string;
   /** Fires on the trigger button. LineGrid uses it for Enter / Tab cell chaining. */
@@ -151,7 +156,14 @@ const Combobox = forwardRef<ComboboxHandle, ComboboxProps>(function Combobox({
   const create = () => {
     if (!onCreate) return;
     const created = onCreate(trimmed);
+    // Close immediately either way; an async create resolves into the selection
+    // a moment later, once the row (and its id) actually exists.
     if (typeof created === "string") onChange(created);
+    else if (created && typeof (created as Promise<string | void>).then === "function") {
+      void (created as Promise<string | void>).then((v) => {
+        if (typeof v === "string") onChange(v);
+      });
+    }
     setOpen(false);
     setQ("");
   };

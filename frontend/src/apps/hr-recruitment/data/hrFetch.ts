@@ -177,8 +177,6 @@ export interface HrConfig {
   processCoordinatorIds: string[];
   /** Per-step due-date rules (anchor + days), merged over the code defaults. */
   stepSla: StepSlaMap;
-  /** The sheet's "share a minimum of 5–10 CVs with the HOD" rule. */
-  minCvsToShare: number;
   /**
    * Who may see the OFFERED salary (not the requisition range, which stays public).
    * Admins and the person who finalizes always see it; this widens the audience to
@@ -436,7 +434,6 @@ export async function fetchHrData(): Promise<HrData> {
     processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
     // Unset or partially-stored rules fall back to the code defaults.
     stepSla: resolveStepSla(byKey.get("step_sla")),
-    minCvsToShare: Number(byKey.get("min_cvs_to_share")?.value ?? 5),
     salaryViewers: {
       departmentIds: (byKey.get("salary_viewers")?.department_ids ?? []) as string[],
       personIds: (byKey.get("salary_viewers")?.person_ids ?? []) as string[],

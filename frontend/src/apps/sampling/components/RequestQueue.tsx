@@ -221,12 +221,20 @@ export default function RequestQueue({
           rowsLabel="requests"
           emptyTitle="Nothing here yet"
           emptyMessage={completedBlurb}
+          // Deliberately NOT readOnly: StageRowAction already degrades to a lock
+          // that still OPENS the entry read-only, which is strictly better for a
+          // view-only user than dropping the column and leaving them no way to
+          // look at a completed entry at all.
           actions={(e) => (
             <StageRowAction
               as="button"
               lockReason={e.lockReason}
-              canEdit={s.canActOn(stepKey, e.row)}
-              permissionReason="Only an owner of this step can edit the entry."
+              canEdit={s.canEdit && s.canActOn(stepKey, e.row)}
+              permissionReason={
+                s.canEdit
+                  ? "Only an owner of this step can edit the entry."
+                  : "You have view-only access to Sampling."
+              }
               onEdit={() => editing.openEdit(e.row)}
               onView={() => editing.openView(e.row)}
             />
@@ -241,6 +249,10 @@ export default function RequestQueue({
           rowsLabel="requests"
           emptyTitle="Nothing waiting on you"
           emptyMessage="Requests needing your action will appear here."
+          // The pending action is a pure write ("Collect", "Send", "Record
+          // result"), so on a view-only grant the column goes entirely — the
+          // queue itself, its rows, sorting, filters and export all stay.
+          readOnly={!s.canEdit}
           actions={({ request }) => (
             <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
               {pendingActionLabel ? pendingActionLabel(request) : actionLabel}

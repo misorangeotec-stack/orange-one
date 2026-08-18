@@ -292,7 +292,11 @@ export interface FunnelStage {
 export function pipelineFunnel(candidates: Candidate[]): FunnelStage[] {
   const cvs = candidates.length;
   const shortlisted = candidates.filter((c) => !!c.hrShortlistedAt).length;
-  const shared = candidates.filter((c) => !!c.sharedToHodAt).length;
+  // The HOD's own decision, not the old "was it sent to them" tick. `hod_decided_at`
+  // is stamped only on a move to `hod_shortlisted` — the disqualify branch of
+  // `fms_hr_move_candidate` leaves it null — so a CV the HOD dropped correctly
+  // falls out of the funnel here rather than counting as progress.
+  const hodShortlisted = candidates.filter((c) => !!c.hodDecidedAt).length;
   // "Screened/interviewed" = any screen or round actually held. Telephonic counts too,
   // and because rounds are now optional a candidate can be offered the job without an
   // interview — so this stage may hold FEWER than the one after it (that is real, not a bug).
@@ -305,7 +309,7 @@ export function pipelineFunnel(candidates: Candidate[]): FunnelStage[] {
   const raw: Array<{ key: string; label: string; count: number }> = [
     { key: "cvs", label: "CVs received", count: cvs },
     { key: "hr_shortlist", label: "Shortlisted by HR", count: shortlisted },
-    { key: "hod_share", label: "Shared with HOD", count: shared },
+    { key: "hod_shortlist", label: "Shortlisted by HOD", count: hodShortlisted },
     { key: "interviewed", label: "Interviewed", count: interviewed },
     { key: "finalized", label: "Made Offer", count: finalized },
     { key: "joined", label: "Actually joined", count: joined },

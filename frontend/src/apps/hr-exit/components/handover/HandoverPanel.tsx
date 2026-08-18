@@ -64,7 +64,7 @@ export default function HandoverPanel({ case: c }: { case: ExitCase }) {
   // configured step owners, the coordinators and admins. The RPC is the real gate.
   // `lwd` is in the list because the RPC refuses without one — the handover is dated
   // from the last working day, so there is nothing to act on before it exists.
-  const mayAct = !closed && !skip && !!c.lwd && s.canActOn("handover", c);
+  const mayAct = s.canEdit && !closed && !skip && !!c.lwd && s.canActOn("handover", c);
   // Recording is over the moment HR confirms — the RPC refuses it, and so must this.
   const canRecord = mayAct && !hrConfirmed;
 

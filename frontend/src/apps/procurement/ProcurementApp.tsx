@@ -32,6 +32,17 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Gate to anything that CREATES or CHANGES something. A view-only grant hides the
+ * links, but a hidden link is not a guard — `requests/new` was reachable by typing
+ * the URL and rendered a full form with a working Submit.
+ */
+function RequireEdit({ children }: { children: ReactNode }) {
+  const { canEdit } = useProcurementStore();
+  if (!canEdit) return <AccessDenied />;
+  return <>{children}</>;
+}
+
 /** Gate to admins only (Setup) — persona-aware so "acting as" a non-admin hides it. */
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { isAdmin } = useEffectiveIdentity();
@@ -107,9 +118,9 @@ export default function ProcurementApp() {
             <Route path="requests" element={<RequestsList />} />
             {/* Distinct segment, so it never shadows requests/new or requests/:id. */}
             <Route path="my-requests" element={<MyRequests />} />
-            <Route path="requests/new" element={<NewRequest />} />
+            <Route path="requests/new" element={<RequireEdit><NewRequest /></RequireEdit>} />
             <Route path="requests/:id" element={<RequestDetail />} />
-            <Route path="requests/:id/edit" element={<EditRequest />} />
+            <Route path="requests/:id/edit" element={<RequireEdit><EditRequest /></RequireEdit>} />
             {/* Each queue is gated on its own capability flag — see ProcurementQueueRoutes. */}
             <Route path="queues/*" element={<ProcurementQueueRoutes />} />
             {/* ⚠ DELIBERATELY UNGATED, unlike the queues above. The workbench has a

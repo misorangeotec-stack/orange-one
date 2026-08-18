@@ -54,6 +54,7 @@ export default function ProcurementLayout() {
       buildProcurementNav({
         canManageMasters: isAnyManager,
         isAdmin,
+        canEdit: store.canEdit,
         canSource,
         isApprover,
         canGeneratePo,
@@ -72,7 +73,7 @@ export default function ProcurementLayout() {
         // count for item requests they can't resolve.
         pendingReviews: resolvableRequests.length,
       }),
-    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, canQc, canPurchaseReturn, canGateOutward, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
+    [isAnyManager, isAdmin, store.canEdit, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canAdvancePayment, canFollowup, canInward, canTally, canQc, canPurchaseReturn, canGateOutward, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
   );
 
   // Resolve the deep-link for a notification's entity.

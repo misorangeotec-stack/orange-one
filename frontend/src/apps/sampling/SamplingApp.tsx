@@ -47,6 +47,17 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Gate to anything that CREATES or CHANGES something. A view-only grant hides the
+ * links, but a hidden link is not a guard — `requests/new` was reachable by typing
+ * the URL, and it renders a full form with a working Submit.
+ */
+function RequireEdit({ children }: { children: ReactNode }) {
+  const { canEdit } = useSamplingStore();
+  if (!canEdit) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Gate to one step's queue. `canSeeQueue` carries the whole rule — step owners,
  * coordinators, and the per-request assignees who own no step — so this enforces
  * exactly what SamplingLayout offers in the sidebar.
@@ -69,7 +80,7 @@ export default function SamplingApp() {
         <Route element={<SamplingLayout />}>
           <Route index element={<Dashboard />} />
           {/* "new" must come before ":id" or "new" would be read as an id. */}
-          <Route path="requests/new" element={<NewRequest />} />
+          <Route path="requests/new" element={<RequireEdit><NewRequest /></RequireEdit>} />
           <Route path="my-requests" element={<MyRequests />} />
           {/* The branch lists sit OUTSIDE /requests on purpose: nested under it they
               would keep the "All Requests" link highlighted alongside their own. */}

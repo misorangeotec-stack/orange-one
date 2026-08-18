@@ -25,7 +25,6 @@ const STAGE_OPTIONS: string[] = (
   [
     "resume_uploaded",
     "hr_shortlisted",
-    "shared_with_hod",
     "hod_shortlisted",
     "telephonic",
     "interview_1",

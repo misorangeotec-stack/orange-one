@@ -95,7 +95,7 @@ export default function ExitInterviewPanel({ case: c }: { case: ExitCase }) {
   // manager branch of can_act never fires for it — this is the step's configured owner,
   // a coordinator, or an admin. `lwd` is in the list because the RPC refuses without
   // one: the interview is dated from the last working day (and held before it).
-  const mayAct = !closed && !skip && !!c.lwd && s.canActOn("exit_interview", c);
+  const mayAct = s.canEdit && !closed && !skip && !!c.lwd && s.canActOn("exit_interview", c);
 
   const person = (uid: string | null) => (uid ? (s.profileById(uid)?.name ?? "Unknown") : "—");
   const reasonName = s.reasons.find((r) => r.id === i?.primaryReasonId)?.name ?? null;

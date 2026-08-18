@@ -79,6 +79,8 @@ export function buildSamplingNav(opts: {
   canResult: boolean;
   canHandover: boolean;
   canMonitor: boolean;
+  /** False on a view-only grant — "Raise a Request" then has nothing behind it. */
+  canEdit: boolean;
   hasRequests: boolean;
 }): NavItem[] {
   const nav: NavItem[] = [
@@ -86,8 +88,13 @@ export function buildSamplingNav(opts: {
     ...(opts.hasRequests ? [{ label: "All Requests", to: `${B}/requests`, icon: ic.list }] : []),
     // Raising and tracking your own request is the one thing EVERY granted user
     // does, so it sits above the branch blocks, which most people only need one of.
-    { label: "Raise a Request", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" },
-    { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine },
+    // "Every granted user" now means every user granted the module at FULL access;
+    // a view-only grant keeps My Requests (their history is still theirs to read)
+    // but loses the raise link, which would only lead to Access Denied.
+    ...(opts.canEdit
+      ? [{ label: "Raise a Request", to: `${B}/requests/new`, icon: ic.raise, section: "Actions" }]
+      : []),
+    { label: "My Requests", to: `${B}/my-requests`, icon: ic.mine, section: opts.canEdit ? undefined : "Actions" },
   ];
 
   /** Push into a branch block, heading the block on its first surviving item. */

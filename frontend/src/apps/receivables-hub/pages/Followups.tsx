@@ -158,7 +158,7 @@ function EntityLink({ type, name }: { type: FollowupEntityType; name: string }) 
 export default function FollowupsPage() {
   const { user, isAdmin } = useSession();
   const {
-    loading, error, all, due, brokenPromises, promisedTotal, personName, canModify, remove,
+    loading, error, all, due, brokenPromises, promisedTotal, personName, canModify, canEdit, remove,
   } = useFollowups();
   const { toast } = useToast();
 
@@ -298,10 +298,12 @@ export default function FollowupsPage() {
             Your payment-chase worklist, and the running history with every client.
           </p>
         </div>
-        <Button size="sm" className="ml-auto" onClick={() => setPickerOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Log follow-up
-        </Button>
+        {canEdit && (
+          <Button size="sm" className="ml-auto" onClick={() => setPickerOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Log follow-up
+          </Button>
+        )}
       </div>
 
       {/* KPI strip */}
@@ -362,10 +364,12 @@ export default function FollowupsPage() {
                       ? "You haven't logged any follow-ups yourself. Switch to \"All\" to see the team's."
                       : "No follow-up dates are set yet."}
                   </p>
-                  <Button size="sm" className="mt-4" onClick={() => setPickerOpen(true)}>
-                    <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    Log follow-up
-                  </Button>
+                  {canEdit && (
+                    <Button size="sm" className="mt-4" onClick={() => setPickerOpen(true)}>
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
+                      Log follow-up
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <ScrollableTable>
@@ -408,15 +412,17 @@ export default function FollowupsPage() {
                             {personName(i.followup.createdBy)}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-[11px]"
-                              onClick={() => setModal({ type: i.entityType, name: i.entityName })}
-                            >
-                              <Plus className="mr-1 h-3 w-3" />
-                              Log
-                            </Button>
+                            {canEdit && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-[11px]"
+                                onClick={() => setModal({ type: i.entityType, name: i.entityName })}
+                              >
+                                <Plus className="mr-1 h-3 w-3" />
+                                Log
+                              </Button>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}

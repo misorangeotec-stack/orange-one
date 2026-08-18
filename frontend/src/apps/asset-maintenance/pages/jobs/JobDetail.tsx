@@ -76,14 +76,14 @@ export default function JobDetail() {
               {step === "schedule" ? "Schedule" : step === "service_done" ? "Record service" : "Verify & close"}
             </Button>
           )}
-          {s.isProcessCoordinator && job.status === "on_hold" && (
+          {s.canEdit && s.isProcessCoordinator && job.status === "on_hold" && (
             <Button variant="ghost" size="sm" disabled={busy} onClick={async () => {
               setBusy(true);
               try { await s.resumeJob(job.id); } catch (e) { setError(e instanceof Error ? e.message : "Failed"); }
               finally { setBusy(false); }
             }}>Resume</Button>
           )}
-          {s.isProcessCoordinator && !!step && (
+          {s.canEdit && s.isProcessCoordinator && !!step && (
             <>
               <Button variant="ghost" size="sm" onClick={() => setExitOpen("hold")}>Hold</Button>
               <Button variant="ghost" size="sm" onClick={() => setExitOpen("skip")}>Skip</Button>

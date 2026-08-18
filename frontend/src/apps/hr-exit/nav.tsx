@@ -73,6 +73,8 @@ const ic = {
  * page that was built and unreachable, which is the same bug from the other end.
  */
 export function buildExitNav(opts: {
+  /** False on a view-only grant — the raise link then has nothing behind it. */
+  canEdit: boolean;
   isAdmin: boolean;
   /**
    * Admin, or the owner of at least one master → sees the Masters page.
@@ -148,7 +150,11 @@ export function buildExitNav(opts: {
     // record sees no list link — an empty table is not a feature.
     ...(opts.hasCases ? [{ label: "Exit Cases", to: `${B}/exits`, icon: ic.cases }] : []),
     // The ungated items. Every signed-in user gets these, always.
-    { label: "Raise an Exit / Resign", to: `${B}/exits/new`, icon: ic.resign, section: "Actions" },
+    // Dropped on a view-only grant: the route now refuses, so the link would only
+    // lead to Access Denied.
+    ...(opts.canEdit
+      ? [{ label: "Raise an Exit / Resign", to: `${B}/exits/new`, icon: ic.resign, section: "Actions" }]
+      : []),
     { label: "My Resignation", to: `${B}/my-exit`, icon: ic.myExit },
   ];
 

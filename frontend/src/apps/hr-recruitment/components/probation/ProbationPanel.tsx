@@ -233,7 +233,7 @@ export default function ProbationPanel({
   const r = s.requisitionById(p.requisitionId);
   const reviews = s.reviewsFor(p.id);
   const pendingStep = s.probationPendingStep(p);
-  const mayAct = s.canActOnProbation(p);
+  const mayAct = s.canEdit && s.canActOnProbation(p);
 
   const extended = p.outcome === "extended";
   const decided = !!p.finalStatus;

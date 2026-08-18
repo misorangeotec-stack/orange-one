@@ -358,7 +358,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
               <StageRowAction
                 as="button"
                 lockReason={e.lockReason}
-                canEdit={s.canActOn(stepKey, e.row)}
+                canEdit={s.canEdit && s.canActOn(stepKey, e.row)}
                 permissionReason="Only an owner of this step can edit the entry."
                 onEdit={() => acting.openEdit({ order: e.row, view: e.view })}
                 onView={() => acting.openView({ order: e.row, view: e.view })}
@@ -385,7 +385,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
               {stepKey === "gate_out" && (
                 <GatePassButton order={r.order} view={currentRoundView(r.order)} />
               )}
-              {s.canActOn(stepKey, r.order) ? (
+              {s.canEdit && s.canActOn(stepKey, r.order) ? (
                 <Button size="sm" onClick={() => acting.openEdit({ order: r.order, view: currentRoundView(r.order) })}>
                   {cfg.actionLabel}
                 </Button>

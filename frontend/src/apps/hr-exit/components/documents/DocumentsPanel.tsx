@@ -326,7 +326,7 @@ export default function DocumentsPanel({ case: c }: { case: ExitCase }) {
   const done = (k: StepKey) => stepDone(c, k, skipped);
 
   const closed = !s.isOpenCase(c) && c.status !== "on_hold";
-  const may = (k: StepKey) => !closed && !skipOf(k) && !!c.lwd && s.canActOn(k, c);
+  const may = (k: StepKey) => s.canEdit && !closed && !skipOf(k) && !!c.lwd && s.canActOn(k, c);
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
