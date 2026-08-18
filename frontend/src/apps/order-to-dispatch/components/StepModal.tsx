@@ -10,6 +10,7 @@ import {
   STEP_CONFIG, isRequiredNow, missingRequired, visibleFields, type StepField,
 } from "../lib/stepConfig";
 import type { QueueStep } from "../lib/queues";
+import { isBillHeld } from "../lib/format";
 import { creditHeadroomOf, currentRoundView, type RoundView } from "../lib/rounds";
 import OrderRefPanel, { OrderRefDocs } from "./OrderRefPanel";
 import CreditApprovalPanel, { approvedQtyError } from "./CreditApprovalPanel";
@@ -200,6 +201,14 @@ export default function StepModal({
   const gatePass =
     stepKey === "gate_out" && order ? <GatePassButton order={order} view={view} /> : null;
 
+  /**
+   * Is this bill parked right now?
+   *
+   * ⚠ READ THE ORDER, NOT THE ROUND VIEW. The hold is a live decision about the
+   *   invoice that has not been raised; an archived round's copy is history.
+   */
+  const billHeld = stepKey === "sales_bill" && !!order && isBillHeld(order);
+
   // Editing clears the last refusal. Without this, filling in the very field the
   // error named leaves "Delivery outcome is required." sitting under a filled-in
   // Delivery outcome until the next save attempt.
@@ -370,6 +379,47 @@ export default function StepModal({
     }
   };
 
+  /**
+   * The billing clerk's other legal answer: the invoice must NOT be raised yet.
+   *
+   * ⚠ IT REUSES THE REMARKS BOX ON PURPOSE, exactly as "Nothing available yet"
+   *   reuses its own. Remarks could only ever reach the database as part of
+   *   Record sales bill — the very act being avoided — so the reason for not
+   *   billing had nowhere to go. Typing it here and pressing this saves it
+   *   without raising anything.
+   *
+   * The text lands in `sb_hold_reason`, NOT in `sb_remarks`: recording the bill
+   * overwrites sb_remarks outright, which would erase the reason at exactly the
+   * moment somebody wants to know why the invoice was late.
+   */
+  const holdBill = async (next: boolean) => {
+    if (!order || busy || locked) return;
+    const reason = (values.sb_remarks ?? "").trim();
+    // Checked here as well as in the RPC — nobody should learn a compulsory
+    // field by round-trip, with the box already filled in front of them.
+    if (next && !reason) {
+      // The Remarks box opens EMPTY on a held bill, because it shows sb_remarks
+      // and the reason lives in sb_hold_reason. Saying so is kinder than
+      // repeating the rule at somebody who can see the old reason on screen.
+      setError(
+        billHeld
+          ? "Type the new reason in Remarks, then press Update hold."
+          : "A remark is required when a bill is put on hold.",
+      );
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await s.holdSalesBill(order.id, next, next ? reason : "");
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!order || !view) return null;
 
   const title = editing ? `Edit — ${cfg.title}` : cfg.title;
@@ -440,6 +490,17 @@ export default function StepModal({
                 Nothing available yet
               </Button>
             )}
+            {/*
+              The billing clerk's other legal answer, and the same argument: an
+              order that must not be billed yet otherwise has no action at all,
+              because Record sales bill demands an invoice number and the PDF.
+              Releasing lives in the banner at the top, beside the reason.
+            */}
+            {cfg.stepKey === "sales_bill" && !editing && (
+              <Button variant="ghost" onClick={() => holdBill(true)} disabled={busy}>
+                {billHeld ? "Update hold" : "Put on hold"}
+              </Button>
+            )}
             {/* `progress` outranks "Saving…" — uploading four photographs over
                 mobile data is the slow part, and a button that says nothing for
                 thirty seconds gets pressed again. */}
@@ -461,6 +522,35 @@ export default function StepModal({
       <div className={cfg.mobileFirst
         ? "space-y-5 [&_input]:text-[16px] [&_textarea]:text-[16px] sm:[&_input]:text-[14px] sm:[&_textarea]:text-[14px]"
         : "space-y-5"}>
+        {/*
+          Why this bill has not been raised, on the screen where it would be.
+          The reason is compulsory, so it is never an empty yellow box — and
+          "held since" is the first hold, not the last edit of the wording.
+
+          RELEASING LIVES HERE, not in the footer: the footer holds and re-words,
+          which reads as one action on the Remarks box; letting the bill go is a
+          different decision and belongs next to the reason it undoes.
+        */}
+        {billHeld && !editing && (
+          <div className="rounded-lg border-l-4 border-l-yellow bg-[#FFF7E6] px-3.5 py-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-[13px] text-navy">
+                  <span className="font-semibold">This bill is on hold.</span> {order.sbHoldReason}
+                </p>
+                <p className="text-[12.5px] text-grey-2 mt-0.5">
+                  {s.personName(order.sbHoldBy)}
+                  {order.sbHoldAt ? ` · held since ${formatDateTime(order.sbHoldAt)}` : ""} · it stays
+                  in this queue until the invoice is raised or the hold is lifted.
+                </p>
+              </div>
+              <Button variant="ghost" onClick={() => holdBill(false)} disabled={busy}>
+                Take off hold
+              </Button>
+            </div>
+          </div>
+        )}
+
         {cfg.context && (
           <OrderRefPanel
             order={order}

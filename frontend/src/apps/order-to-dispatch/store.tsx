@@ -12,6 +12,7 @@ import {
   cancelOrder as cancelOrderWrite,
   closeOrder as closeOrderWrite,
   holdOrder as holdOrderWrite,
+  holdSalesBill as holdSalesBillWrite,
   insertMaster as insertMasterWrite,
   insertMasters as insertMastersWrite,
   markNotificationsRead as markNotificationsReadWrite,
@@ -264,6 +265,12 @@ export interface DispatchStoreValue {
   recordStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   updateStep: (step: QueueStep, orderId: string, payload: StepPayload) => Promise<void>;
   holdOrder: (orderId: string, hold: boolean, reason: string) => Promise<void>;
+  /**
+   * ⚠ THE STEP HOLD, NOT THE ORDER HOLD. The order keeps its status and its
+   *   place in the Generate Sales Bill queue; only the `sb_hold_` stamps move.
+   *   A reason is compulsory when holding.
+   */
+  holdSalesBill: (orderId: string, hold: boolean, reason: string) => Promise<void>;
   /**
    * ⚠ ONE CALL, TWO OUTCOMES. With no sales bill raised the order is cancelled
    *   outright; with one, it moves to `awaiting_sales_return` instead and the
@@ -849,6 +856,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       holdOrder: async (orderId, hold, reason) => {
         await holdOrderWrite(orderId, hold, reason);
+        await invalidate();
+      },
+      holdSalesBill: async (orderId, hold, reason) => {
+        await holdSalesBillWrite(orderId, hold, reason);
         await invalidate();
       },
       cancelOrder: async (orderId, reason) => {

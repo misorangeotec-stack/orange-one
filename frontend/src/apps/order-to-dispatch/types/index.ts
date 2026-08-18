@@ -413,6 +413,13 @@ export interface DispatchRound {
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
+  /**
+   * Was this round's invoice ever parked, and for how long? Recording the bill
+   * leaves the stamps in place, so a finished round still says so.
+   */
+  sbHoldAt: string | null;
+  sbHoldReason: string | null;
+  sbHoldBy: string | null;
   /** The gate pass issued for THIS round's invoice. One pass per invoice. */
   gpNo: string | null;
 
@@ -543,6 +550,19 @@ export interface DispatchOrder {
   sbRemarks: string | null;
   sbAt: string | null;
   sbBy: string | null;
+  /**
+   * The bill is parked — payment not cleared, the customer has asked us to
+   * wait, a document missing — and this is why, since when and by whom.
+   *
+   * ⚠ LIVE ONLY WHILE `sbAt` IS NULL. Recording the bill leaves all three
+   *   standing as history, so read `isBillHeld`, never `sbHoldAt` alone.
+   *
+   * ⚠ NOT `holdAt` / `holdReason`. Those are the ORDER-level hold, which pulls
+   *   the order out of every queue; this one leaves it exactly where it is.
+   */
+  sbHoldAt: string | null;
+  sbHoldReason: string | null;
+  sbHoldBy: string | null;
   /**
    * Gate pass number for the round in progress, e.g. `OTEC-2608-001`.
    *

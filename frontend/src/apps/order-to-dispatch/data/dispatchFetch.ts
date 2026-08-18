@@ -285,6 +285,9 @@ const mapRound = (r: any): DispatchRound => ({
   sbRemarks: str(r.sb_remarks),
   sbAt: r.sb_at ?? null,
   sbBy: r.sb_by ?? null,
+  sbHoldAt: r.sb_hold_at ?? null,
+  sbHoldReason: str(r.sb_hold_reason),
+  sbHoldBy: r.sb_hold_by ?? null,
   gpNo: str(r.gp_no),
 
   goActualDate: r.go_actual_date ?? null,
@@ -362,6 +365,9 @@ const mapOrder = (r: any): DispatchOrder => ({
   sbRemarks: str(r.sb_remarks),
   sbAt: r.sb_at ?? null,
   sbBy: r.sb_by ?? null,
+  sbHoldAt: r.sb_hold_at ?? null,
+  sbHoldReason: str(r.sb_hold_reason),
+  sbHoldBy: r.sb_hold_by ?? null,
   gpNo: str(r.gp_no),
 
   goActualDate: r.go_actual_date ?? null,

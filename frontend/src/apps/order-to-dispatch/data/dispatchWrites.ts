@@ -137,6 +137,24 @@ export async function materialNothingAvailable(orderId: string, remarks: string)
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Park a sales bill, or let it go again — with the reason on the record.
+ *
+ * ⚠ THIS IS NOT `holdOrder`. That one rewrites `status`, so the order leaves
+ *   every queue, My Work and the daily email until a coordinator resumes it.
+ *   This one touches only the `sb_hold_` columns: the order stays exactly where
+ *   it is, because deciding to release it is the billing desk's own work.
+ *
+ * Holding with a blank reason is refused by the RPC — a hold nobody explained
+ * is indistinguishable from an order nobody has looked at.
+ */
+export async function holdSalesBill(orderId: string, hold: boolean, reason: string): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_hold_sales_bill", {
+    p_order: orderId, p_hold: hold, p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export interface AmendRoundLine {
   id: string;
   shipQty: string;

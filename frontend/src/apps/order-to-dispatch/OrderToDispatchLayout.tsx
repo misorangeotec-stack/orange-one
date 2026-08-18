@@ -6,7 +6,7 @@ import { useOrgPersonById } from "@/core/platform/orgPeople";
 import { buildDispatchNav, QUEUE_PATH } from "./nav";
 import { useDispatchStore } from "./store";
 import { STEPS } from "./lib/steps";
-import { isCreditHeld } from "./lib/format";
+import { STEP_HOLD } from "./lib/format";
 import type { QueueStep } from "./lib/queues";
 import type { DispatchNotification } from "./types";
 
@@ -65,9 +65,17 @@ export default function OrderToDispatchLayout() {
     opening the queue sees Vapi's holds, and a badge counting Ahmedabad's too
     would send them looking for rows that are not there.
   */
-  const heldCredit = queues.credit_check
-    ? s.myQueue("credit_check").filter((r) => isCreditHeld(r.order)).length
-    : 0;
+  const heldByStep = useMemo(() => {
+    const out: Partial<Record<QueueStep, number>> = {};
+    for (const step of queueSteps) {
+      const hold = STEP_HOLD[step];
+      if (!hold || !queues[step]) continue;
+      const n = s.myQueue(step).filter((r) => hold.held(r.order)).length;
+      if (n > 0) out[step] = n;
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [s, queues]);
 
   const nav = useMemo(
     () =>
@@ -78,12 +86,12 @@ export default function OrderToDispatchLayout() {
         hasOrders,
         canRaise: s.canRaise,
         pendingReviews: s.resolvableRequests.length,
-        heldCredit,
+        heldByStep,
         queues,
         canSeeSalesReturn,
         salesReturnPending,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, s.resolvableRequests.length, heldCredit, queues, canSeeSalesReturn, salesReturnPending],
+    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

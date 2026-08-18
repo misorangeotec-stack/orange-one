@@ -11,7 +11,9 @@ import { queueRollup } from "@/shared/lib/fmsDashboard";
 import { useDispatchStore } from "../../store";
 import { STEPS, STAGES, stepByKey, type StepKey } from "../../lib/steps";
 import { stepVariance } from "../../lib/orderVm";
-import { DISPATCH_TYPE_LABEL, dmy, isCreditHeld } from "../../lib/format";
+import {
+  DISPATCH_TYPE_LABEL, dmy, isCreditHeld, isStepHeld, stepHoldLabel, stepHoldReason,
+} from "../../lib/format";
 import type { QueueEntry } from "../../lib/queues";
 
 const B = "/order-to-dispatch";
@@ -38,26 +40,36 @@ export default function ControlCenter() {
   const [selected, setSelected] = useState<StepKey[]>([]);
 
   /**
-   * Orders credit has parked, longest first.
+   * Orders a step has parked, longest first — credit sitting on the order, or
+   * billing sitting on its invoice.
    *
-   * ⚠ Counted here IN ADDITION TO the queue, not instead of it. A credit hold
-   *   leaves the order at `awaiting_credit_check`, so it is still an open
-   *   work-item and still owed by the credit team — unlike a held requisition in
-   *   HR, which leaves its queue entirely. Pulling these out of `queueRollup`
-   *   would quietly shrink the Credit node, the cross-FMS scoreboard and My Work,
-   *   all of which read the same `buildQueueEntries`. This strip only makes them
-   *   findable: without it the hold is a word in one column of one screen.
+   * ⚠ Counted here IN ADDITION TO the queue, not instead of it. A step hold
+   *   leaves the order at `awaiting_credit_check` or `awaiting_sales_bill`, so it
+   *   is still an open work-item and still owed by that team — unlike a held
+   *   requisition in HR, which leaves its queue entirely. Pulling these out of
+   *   `queueRollup` would quietly shrink the Credit or Billing node, the
+   *   cross-FMS scoreboard and My Work, all of which read the same
+   *   `buildQueueEntries`. This strip only makes them findable: without it the
+   *   hold is a word in one column of one screen.
+   *
+   * ⚠ EACH CHIP SAYS WHICH HOLD IT IS. One undifferentiated "on hold" list would
+   *   send whoever is chasing it to the wrong desk.
    */
   const held = useMemo(
     () =>
       s.orders
-        .filter(isCreditHeld)
-        .map((o) => ({
-          o,
-          days: o.ccDecidedAt
-            ? Math.max(0, Math.floor((Date.now() - new Date(o.ccDecidedAt).getTime()) / 86_400_000))
-            : null,
-        }))
+        .filter(isStepHeld)
+        .map((o) => {
+          const at = isCreditHeld(o) ? o.ccDecidedAt : o.sbHoldAt;
+          return {
+            o,
+            what: stepHoldLabel(o) ?? "On hold",
+            why: stepHoldReason(o),
+            days: at
+              ? Math.max(0, Math.floor((Date.now() - new Date(at).getTime()) / 86_400_000))
+              : null,
+          };
+        })
         .sort((a, b) => (b.days ?? 0) - (a.days ?? 0)),
     [s.orders],
   );
@@ -279,20 +291,21 @@ export default function ControlCenter() {
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-grey">On hold</span>
             <span className="text-[12px] text-grey">
-              {held.length} {held.length === 1 ? "order" : "orders"} credit has parked — still counted above,
-              because the decision to release them is the credit team's own work.
+              {held.length} {held.length === 1 ? "order" : "orders"} parked on purpose — still counted
+              above, because the decision to release them is that desk's own work.
             </span>
           </div>
           <div className="mt-2 flex flex-wrap gap-2">
-            {held.map(({ o, days }) => (
+            {held.map(({ o, what, why, days }) => (
               <Link
                 key={o.id}
                 to={`${B}/orders/${o.id}`}
-                title={o.ccRemarks ?? undefined}
+                title={why ?? undefined}
                 className="inline-flex items-center gap-2 rounded-lg border border-line bg-page/60 px-2.5 py-1.5 text-[12px] transition hover:border-orange/40"
               >
                 <span className="font-semibold text-navy">{o.orderNo}</span>
                 <span className="max-w-[180px] truncate text-grey">{s.customerName(o.customerId)}</span>
+                <span className="text-grey-2">{what}</span>
                 {days !== null && <span className="font-semibold text-grey-2">{days}d</span>}
               </Link>
             ))}

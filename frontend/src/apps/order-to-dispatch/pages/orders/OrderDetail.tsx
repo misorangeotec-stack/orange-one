@@ -22,7 +22,7 @@ import { allRoundViews, pendingQtyOf, type RoundView } from "../../lib/rounds";
 import { hasSalesReturn, isSalesReturnPending, salesReturnRound } from "../../lib/salesReturn";
 import {
   CREDIT_STATUS_LABEL, DELIVERY_STATUS_LABEL, DISPATCH_TYPE_LABEL,
-  dmy, dmyTime, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
+  dmy, dmyTime, isBillHeld, isCreditHeld, qtyTotals, SALES_RETURN_MODE_LABEL, sharedUnit,
 } from "../../lib/format";
 
 export default function OrderDetail() {
@@ -50,6 +50,9 @@ export default function OrderDetail() {
   const totals = qtyTotals(order);
   const rounds = allRoundViews(order).filter((v) => v.msAt || v.isArchived);
   const held = isCreditHeld(order);
+  // The step hold one stage further down. Two separate flags, never one: the
+  // wording, the desk that owns it and the queue it waits in all differ.
+  const billHeld = isBillHeld(order);
 
   /*
     Cancelled, but not cancelled YET: the sales bill was already raised, so the
@@ -101,6 +104,7 @@ export default function OrderDetail() {
             <h1 className="text-[22px] font-bold text-navy">{order.orderNo}</h1>
             <StatusPill status={order.status} />
             {held && <OutcomePill label="Credit on hold" tone="yellow" />}
+            {billHeld && <OutcomePill label="Bill on hold" tone="yellow" />}
             {order.rounds.some((r) => r.dcStatus === "returned") && (
               <OutcomePill label="A round was returned" tone="red" />
             )}
@@ -156,6 +160,25 @@ export default function OrderDetail() {
             {s.personName(order.ccDecidedBy)}
             {order.ccDecidedAt ? ` · ${dmyTime(order.ccDecidedAt)}` : ""} · it stays in the Confirm
             Credit Limit queue until someone approves it.
+          </p>
+        </Card>
+      )}
+
+      {/*
+        Same argument as the credit card above, one stage down: the status still
+        reads "Awaiting sales bill", so the reason the invoice is not being
+        raised would otherwise live in one column of one queue screen.
+      */}
+      {billHeld && (
+        <Card className="p-4 border-l-4 border-l-yellow">
+          <p className="text-[13px] text-navy">
+            <span className="font-semibold">The sales bill is on hold.</span>{" "}
+            {order.sbHoldReason}
+          </p>
+          <p className="text-[12.5px] text-grey-2 mt-1">
+            {s.personName(order.sbHoldBy)}
+            {order.sbHoldAt ? ` · ${dmyTime(order.sbHoldAt)}` : ""} · it stays in the Generate Sales
+            Bill queue until the invoice is raised or the hold is lifted.
           </p>
         </Card>
       )}
