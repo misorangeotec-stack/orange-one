@@ -41,7 +41,7 @@ export default function AssignSalesExecCard({ request }: { request: CustomerRequ
 
   // Mirrors fms_customer_assign_sales_exec: coordinator, any back-office step
   // owner, or the person who raised it.
-  const mayAssign = s.isCoordinator || s.isAnyStepOwner || s.canActOn("submission", r);
+  const mayAssign = s.canEdit && (s.isCoordinator || s.isAnyStepOwner || s.canActOn("submission", r));
   if (!mayAssign && !r.assignedSalesExecName && !r.assignedSalesExecId) return null;
 
   const save = async () => {

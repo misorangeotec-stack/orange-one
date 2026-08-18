@@ -313,7 +313,7 @@ export default function AssetPanel({ case: c }: { case: ExitCase }) {
   // configured step owners, the coordinators and admins. The RPC is the real gate.
   // `lwd` is in the list because every asset RPC refuses without one — the asset return
   // is dated from the last working day, so there is nothing to act on before it exists.
-  const mayAct = !closed && !skip && !!c.lwd && s.canActOn("asset_return", c);
+  const mayAct = s.canEdit && !closed && !skip && !!c.lwd && s.canActOn("asset_return", c);
 
   const pending = assets.filter(s.isAssetPending).length;
   // Editing is over the moment HR signs — the RPC refuses it, and so must this.

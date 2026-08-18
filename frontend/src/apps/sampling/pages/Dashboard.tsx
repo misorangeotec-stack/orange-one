@@ -107,9 +107,11 @@ export default function Dashboard() {
             Where ink / raw-material sampling stands today — movement, lab work, result and handover.
           </p>
         </div>
-        <Link to="/sampling/requests/new">
-          <Button size="sm">Raise a request</Button>
-        </Link>
+        {s.canEdit && (
+          <Link to="/sampling/requests/new">
+            <Button size="sm">Raise a request</Button>
+          </Link>
+        )}
       </div>
 
       <KpiRow tiles={kpiTiles} />

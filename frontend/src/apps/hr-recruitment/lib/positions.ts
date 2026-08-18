@@ -43,7 +43,6 @@ export function lastActivityIso(r: Requisition, candidates: Candidate[]): string
     for (const t of [
       c.uploadedAt,
       c.hrShortlistedAt,
-      c.sharedToHodAt,
       c.hodDecidedAt,
       c.telephonicAt,
       c.interview1At,

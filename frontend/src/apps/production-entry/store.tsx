@@ -134,6 +134,15 @@ interface ProductionStoreValue {
   canActOn: (stepKey: QueueStep, r: ProductionRequest) => boolean;
   /** May this person see the step's queue at all — nav link, route, page. */
   canSeeQueue: (stepKey: QueueStep) => boolean;
+  /**
+   * Does this person's grant on Production Entry allow CHANGING anything? False
+   * only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away, so it
+   *   is ANDed into the write predicates and each button site. Kept OUT of
+   *   canActOn / canSeeQueue / isProcessCoordinator, which decide what is SEEN.
+   */
+  canEdit: boolean;
   canRaise: boolean;
 
   // master governance
@@ -305,7 +314,10 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     // Who may raise a job card: open to all module users unless issue_slip has
     // owners configured, then only those owners (or admin / coordinator).
     const issueSlipOwners = stepOwnerFor("issue_slip")?.employeeIds ?? [];
-    const canRaise = issueSlipOwners.length === 0 || isAdmin || isProcessCoordinator || issueSlipOwners.includes(uid);
+    // Module-level write ceiling. From `session`, never a demo persona.
+    const canEdit = session.canEditModule("production-entry");
+    const canRaise =
+      canEdit && (issueSlipOwners.length === 0 || isAdmin || isProcessCoordinator || issueSlipOwners.includes(uid));
 
     // Mirrors fms_production_request_editable + the RPC authz: the raiser / admin /
     // coordinator may edit an issue slip until its FIRST real step is recorded.
@@ -315,6 +327,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
     // ⚠ Both branches must track fms_production_request_editable; the disabled
     // button is a courtesy, the RPC re-checks this.
     const canEditRequest = (r: ProductionRequest): boolean =>
+      canEdit &&
       (r.raisedBy === uid || isAdmin || isProcessCoordinator) &&
       (r.cardType === "repackaging"
         ? r.status === "awaiting_pm_transfer" && r.pmtAt == null
@@ -369,7 +382,9 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
 
     const managerIdsFor = (mt: ProductionMasterType) =>
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
-    const canManage = (mt: ProductionMasterType) => isAdmin || managerIdsFor(mt).includes(uid);
+    // Pure write gate (MasterCrud Add + Actions column). isAnyMasterManager is
+    // left alone — it guards the Masters ROUTE, which a view-only manager may read.
+    const canManage = (mt: ProductionMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
 
     const resolvableRequests = masterRequests.filter((r) => r.status === "pending").filter((r) => canManage(r.masterType));
@@ -464,6 +479,7 @@ export function ProductionStoreProvider({ children }: { children: ReactNode }) {
       batchNoPreview,
 
       isAdmin,
+      canEdit,
       isProcessCoordinator,
       isStepOwner,
       canActOn,

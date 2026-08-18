@@ -96,7 +96,7 @@ export default function SettlementPanel({ case: c }: { case: ExitCase }) {
 
   const closed = !s.isOpenCase(c) && c.status !== "on_hold";
   /** May act on THIS step, on THIS case — mirrors fms_exit_can_act(). */
-  const may = (k: StepKey) => !closed && !skipOf(k) && !!c.lwd && s.canActOn(k, c);
+  const may = (k: StepKey) => s.canEdit && !closed && !skipOf(k) && !!c.lwd && s.canActOn(k, c);
 
   const person = (uid: string | null) => (uid ? (s.profileById(uid)?.name ?? "Unknown") : "—");
 

@@ -8,11 +8,15 @@ import type { Candidate, CandidateStage } from "../types";
  * branch of `fms_hr_move_candidate` (`v_to_rank < 9` and friends) and in the zone
  * bounds below. A shifted rank silently changes which moves are legal and which
  * timestamps get wiped on a move back.
+ *
+ * RANK 3 IS DELIBERATELY VACANT. It belonged to `shared_with_hod`, removed in
+ * 20260903130000 — and closing the gap would mean renumbering, which the paragraph
+ * above forbids. So HR's shortlist (2) sits two ranks below the HOD's (4), and
+ * `canDropOn` spells that skip out explicitly.
  */
 export const STAGE_RANK: Record<CandidateStage, number> = {
   resume_uploaded: 1,
   hr_shortlisted: 2,
-  shared_with_hod: 3,
   hod_shortlisted: 4,
   telephonic: 5,
   interview_1: 6,
@@ -38,14 +42,13 @@ const ZONE_START = 4; // hod_shortlisted
 const ZONE_END = 10; // finalized — "Made Offer"
 
 /**
- * Stage labels. Every stage keeps one, including the two that no longer have a
- * column of their own — the Excel export, the candidate drawer and the activity
- * trail all still render historical stages by name.
+ * Stage labels. Every stage keeps one, including `final_decision`, which no longer
+ * has a column of its own — the Excel export, the candidate drawer and the activity
+ * trail all still render it by name.
  */
 export const STAGE_LABEL: Record<CandidateStage, string> = {
   resume_uploaded: "Resumes Uploaded",
   hr_shortlisted: "Shortlisted by HR",
-  shared_with_hod: "Shared with HOD",
   hod_shortlisted: "Shortlisted by HOD",
   telephonic: "Telephonic Screening",
   interview_1: "Interview R1 — HR",
@@ -68,14 +71,13 @@ export type CandidatePhase = "screening" | "interviewing" | "offer" | "hired" | 
 /**
  * Stage → the phase it belongs to. EXHAUSTIVE over CandidateStage on purpose.
  *
- * Twelve stages is the right resolution for a pipeline and the wrong one for a
- * glance: nobody scanning a list needs "Shared with HOD" and "Shortlisted by HOD"
+ * Eleven stages is the right resolution for a pipeline and the wrong one for a
+ * glance: nobody scanning a list needs "Shortlisted by HR" and "Shortlisted by HOD"
  * to look different. Five phases is what the eye actually sorts on.
  */
 export const PHASE_OF: Record<CandidateStage, CandidatePhase> = {
   resume_uploaded: "screening",
   hr_shortlisted: "screening",
-  shared_with_hod: "screening",
   hod_shortlisted: "screening",
   telephonic: "interviewing",
   interview_1: "interviewing",
@@ -159,16 +161,13 @@ export interface BoardColumnDef {
 /**
  * The columns, left to right.
  *
- * A column is not a stage. Two stages that the process distinguishes but a person
- * does not are shown as one column:
+ * "Shortlisted by HR" used to hold two stages, because sharing a batch with the HOD
+ * was a step that did not move the card anywhere a person would recognise. That step
+ * is gone (20260903130000): shortlisting IS the handover, so the column holds the one
+ * stage it is named after, and a card sitting here is waiting on the HOD.
  *
- *   "Shortlisted by HR" holds `hr_shortlisted` AND `shared_with_hod`. HR sharing a
- *   batch with the HOD is a real step — it fires the notification, starts the HOD's
- *   clock and is audited — but it is not a place a candidate *is*. The card stays
- *   put and grows a "sent to HOD" tick instead.
- *
- * And `final_decision` has no column at all: the decision is now made from the
- * round that produced it (see `columnOf`).
+ * `final_decision` still has no column at all: the decision is made from the round
+ * that produced it (see `columnOf`).
  */
 export const BOARD_COLUMNS: BoardColumnDef[] = [
   { key: "resumes", label: "Resumes Uploaded", icon: "inbox", target: "resume_uploaded", stages: ["resume_uploaded"] },
@@ -177,7 +176,7 @@ export const BOARD_COLUMNS: BoardColumnDef[] = [
     label: "Shortlisted by HR",
     icon: "check",
     target: "hr_shortlisted",
-    stages: ["hr_shortlisted", "shared_with_hod"],
+    stages: ["hr_shortlisted"],
   },
   { key: "hod_shortlist", label: "Shortlisted by HOD", icon: "user-check", target: "hod_shortlisted", stages: ["hod_shortlisted"] },
   { key: "telephonic", label: "Telephonic Screening", icon: "phone", target: "telephonic", stages: ["telephonic"] },
@@ -202,7 +201,6 @@ export function columnOf(c: Candidate): BoardColumnKey {
     case "resume_uploaded":
       return "resumes";
     case "hr_shortlisted":
-    case "shared_with_hod":
       return "hr_shortlist";
     case "hod_shortlisted":
       return "hod_shortlist";
@@ -268,6 +266,9 @@ export function canDropOn(from: CandidateStage, to: CandidateStage): boolean {
   const b = STAGE_RANK[to];
   if (b < a) return true; // backwards: any distance
   if (b === a + 1) return true; // forwards: the next column, anywhere
+  // Shortlisted by HR → Shortlisted by HOD. Adjacent on the board, two apart in
+  // rank, because rank 3 was vacated rather than renumbered (see STAGE_RANK).
+  if (a === 2 && b === 4) return true;
   // Inside the skippable zone, a forward jump of any distance is allowed.
   return a >= ZONE_START && b <= ZONE_END && b > a;
 }
@@ -275,8 +276,8 @@ export function canDropOn(from: CandidateStage, to: CandidateStage): boolean {
 /**
  * The stages a card may legally move to (drives the ⋮ → "Move to" menu).
  *
- * One entry per COLUMN, not per stage — a menu that offered both `hr_shortlisted`
- * and `shared_with_hod` would name two things the board draws as one place.
+ * One entry per COLUMN, not per stage — `final_decision` has no column, so the menu
+ * never offers a destination the board could not then draw the card in.
  */
 export const legalTargets = (from: CandidateStage): CandidateStage[] =>
   BOARD_COLUMNS.map((col) => col.target).filter((to) => canDropOn(from, to));

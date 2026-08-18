@@ -32,6 +32,17 @@ function RequireMasterAccess({ children }: { children: ReactNode }) {
 }
 
 /** Gate to admins only (Setup) — persona-aware so "acting as" a non-admin hides it. */
+/**
+ * Gate to anything that CREATES or CHANGES something. A view-only grant hides the
+ * links, but a hidden link is not a guard — `requests/new` was reachable by typing
+ * the URL and rendered a full form with a working Submit.
+ */
+function RequireEdit({ children }: { children: ReactNode }) {
+  const { canEdit } = useImportStore();
+  if (!canEdit) return <AccessDenied />;
+  return <>{children}</>;
+}
+
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { isAdmin } = useEffectiveIdentity();
   if (!isAdmin) return <AccessDenied />;
@@ -104,9 +115,9 @@ export default function ImportApp() {
             <Route path="requests" element={<RequestsList />} />
             {/* Distinct segment, so it never shadows requests/new or requests/:id. */}
             <Route path="my-requests" element={<MyRequests />} />
-            <Route path="requests/new" element={<NewRequest />} />
+            <Route path="requests/new" element={<RequireEdit><NewRequest /></RequireEdit>} />
             <Route path="requests/:id" element={<RequestDetail />} />
-            <Route path="requests/:id/edit" element={<EditRequest />} />
+            <Route path="requests/:id/edit" element={<RequireEdit><EditRequest /></RequireEdit>} />
             {/* No Sourcing queue in Import — vendors + pricing are fixed masters.
                 Each queue is gated on its own capability flag — see ImportQueueRoutes. */}
             <Route path="queues/*" element={<ImportQueueRoutes />} />

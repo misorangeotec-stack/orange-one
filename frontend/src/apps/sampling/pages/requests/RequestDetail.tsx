@@ -71,14 +71,19 @@ export default function RequestDetail() {
     : r.collectSkipped
       ? "Not required"
       : "—";
+  // A view-only grant on the module removes every action here — the hold, the
+  // cancel and the step action alike — while leaving the whole request readable.
+  // ANDed in at each site rather than folded into isProcessCoordinator or
+  // canActOn, because those two also decide what a person can SEE.
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
   const totalQty = totalSampleQty(r);
-  const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
-  const canCancel = (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
+  const canHold = s.canEdit && isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
+  const canCancel =
+    s.canEdit && (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
 
   // The one action the request's current step offers, if this user owns it.
   const cur = openStep(r);
-  const canActNow = cur ? s.canActOn(cur as StepKey, r) : false;
+  const canActNow = s.canEdit && (cur ? s.canActOn(cur as StepKey, r) : false);
   const action: { label: string; modal: OpenModal } | null =
     !canActNow ? null
     : r.status === "awaiting_collect" ? { label: "Record collection", modal: "collect" }

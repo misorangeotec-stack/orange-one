@@ -67,6 +67,7 @@ export default function MyExit() {
 
   // The employee may always retract — right up until the F&F has actually been paid.
   const canWithdraw =
+    s.canEdit &&
     !c.fnfPaidAt && !c.archivedAt && !["withdrawn", "rejected", "archived"].includes(c.status);
 
   return (

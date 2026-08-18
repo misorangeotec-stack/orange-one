@@ -22,9 +22,11 @@ export default function MyRequests() {
           <h1 className="text-[22px] font-bold text-navy">My Purchase Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">Purchase requests you raised.</p>
         </div>
-        <Link to="/procurement/requests/new">
-          <Button size="sm">+ New Request</Button>
-        </Link>
+        {s.canEdit && (
+          <Link to="/procurement/requests/new">
+            <Button size="sm">+ New Request</Button>
+          </Link>
+        )}
       </div>
 
       <Card className="p-4">

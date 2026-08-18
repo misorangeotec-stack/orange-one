@@ -27,11 +27,14 @@ const ROLE_BADGE: Record<AppRole, string> = {
 const ROLE_LABEL: Record<AppRole, string> = { admin: "Admin", hod: "HOD", sub_hod: "Sub-HOD", employee: "Employee" };
 
 export default function Users() {
-  const { profiles, departments, departmentById, profileById, deleteUser, canAddUser, canDeleteUser } = useDirectory();
+  const { profiles, departments, subDepartments, designations, bands, departmentById, subDepartmentById, designationById, bandById, profileById, deleteUser, canAddUser, canDeleteUser } = useDirectory();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [role, setRole] = useState<AppRole | "all">("all");
   const [dept, setDept] = useState("all");
+  const [subDept, setSubDept] = useState("all");
+  const [desig, setDesig] = useState("all");
+  const [band, setBand] = useState("all");
   const [confirmDel, setConfirmDel] = useState<Profile | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [delErr, setDelErr] = useState("");
@@ -42,13 +45,16 @@ export default function Users() {
       profiles.filter((p) => {
         if (role !== "all" && p.role !== role) return false;
         if (dept !== "all" && p.departmentId !== dept) return false;
-        if (q.trim() && !matchesSearch(q, p.name, p.email, p.phone)) return false;
+        if (subDept !== "all" && p.subDepartmentId !== subDept) return false;
+        if (desig !== "all" && p.designationId !== desig) return false;
+        if (band !== "all" && p.bandId !== band) return false;
+        if (q.trim() && !matchesSearch(q, p.name, p.email, p.phone, p.employeeCode)) return false;
         return true;
       }),
-    [profiles, role, dept, q]
+    [profiles, role, dept, subDept, desig, band, q]
   );
 
-  const pg = usePagination(filtered, { resetKey: `${q}|${role}|${dept}` });
+  const pg = usePagination(filtered, { resetKey: `${q}|${role}|${dept}|${subDept}|${desig}|${band}` });
 
   const activeFilters: ActiveFilter[] = [];
   if (q.trim()) activeFilters.push({ key: "q", label: `Search: “${q.trim()}”`, onClear: () => setQ("") });
@@ -60,16 +66,39 @@ export default function Users() {
       label: `Department: ${departmentById(dept)?.name ?? dept}`,
       onClear: () => setDept("all"),
     });
+  if (subDept !== "all")
+    activeFilters.push({
+      key: "subDept",
+      label: `Sub-department: ${subDepartmentById(subDept)?.name ?? subDept}`,
+      onClear: () => setSubDept("all"),
+    });
+  if (desig !== "all")
+    activeFilters.push({
+      key: "desig",
+      label: `Designation: ${designationById(desig)?.name ?? desig}`,
+      onClear: () => setDesig("all"),
+    });
+  if (band !== "all")
+    activeFilters.push({
+      key: "band",
+      label: `Band: ${bandById(band) ? `Band ${bandById(band)!.bandNo} · ${bandById(band)!.name}` : band}`,
+      onClear: () => setBand("all"),
+    });
   const clearAll = () => {
     setQ("");
     setRole("all");
     setDept("all");
+    setSubDept("all");
+    setDesig("all");
+    setBand("all");
   };
 
   const handleExport = () => {
     exportUsersToXlsx({
       users: filtered,
       deptName: (id) => departmentById(id)?.name ?? "",
+      subDeptName: (id) => subDepartmentById(id)?.name ?? "",
+      bandName: (id) => { const b = bandById(id); return b ? `Band ${b.bandNo} · ${b.name}` : ""; },
       hodNames: (u) => u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", "),
       // Same descriptions as the on-screen chips, so the sheet says what it counted.
       filters: activeFilters.map((f) => f.label),
@@ -99,7 +128,13 @@ export default function Users() {
             <TextInput value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, email or phone…" className="pl-9 py-2 text-[13px]" />
           </div>
           <Combobox value={role} onChange={(v) => setRole(v as AppRole | "all")} className="w-full sm:w-auto sm:min-w-[150px]" options={[{ value: "all", label: "All roles" }, ...(Object.keys(ROLE_LABEL) as AppRole[]).map((r) => ({ value: r, label: ROLE_LABEL[r] }))]} />
-          <Combobox value={dept} onChange={setDept} className="w-full sm:w-auto sm:min-w-[160px]" options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]} />
+          {/* Switched-off masters stay listed HERE, unlike on the user form: users
+              still sitting on a retired department must remain findable, and this
+              filter is exactly how an admin finds them. */}
+          <Combobox value={dept} onChange={setDept} searchable className="w-full sm:w-auto sm:min-w-[160px]" options={[{ value: "all", label: "All departments" }, ...departments.map((d) => ({ value: d.id, label: d.name, sublabel: (d.active ?? true) ? undefined : "switched off" }))]} />
+          <Combobox value={subDept} onChange={setSubDept} searchable className="w-full sm:w-auto sm:min-w-[170px]" options={[{ value: "all", label: "All sub-departments" }, ...subDepartments.map((s) => ({ value: s.id, label: s.name, sublabel: departmentById(s.departmentId)?.name }))]} />
+          <Combobox value={desig} onChange={setDesig} searchable className="w-full sm:w-auto sm:min-w-[160px]" options={[{ value: "all", label: "All designations" }, ...designations.map((d) => ({ value: d.id, label: d.name }))]} />
+          <Combobox value={band} onChange={setBand} searchable className="w-full sm:w-auto sm:min-w-[150px]" options={[{ value: "all", label: "All bands" }, ...bands.map((b) => ({ value: b.id, label: `Band ${b.bandNo} · ${b.name}` }))]} />
         </div>
 
         {activeFilters.length > 0 && (
@@ -124,6 +159,9 @@ export default function Users() {
                   </div>
                   <div className="text-[11.5px] text-grey-2 truncate">
                     {u.designation || "—"} · {departmentById(u.departmentId)?.name ?? "No dept"}
+                    {u.subDepartmentId && ` › ${subDepartmentById(u.subDepartmentId)?.name ?? ""}`}
+                    {u.bandId && bandById(u.bandId) && ` · Band ${bandById(u.bandId)!.bandNo}`}
+                    {u.employeeCode && ` · ${u.employeeCode}`}
                     {u.phone && ` · 📱 ${u.phone}`}
                     {u.email && ` · ✉️ ${u.email}`}
                     {u.hodIds.length > 0 && ` · reports to ${u.hodIds.map((h) => profileById(h)?.name).filter(Boolean).join(", ")}`}

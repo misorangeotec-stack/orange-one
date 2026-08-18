@@ -250,6 +250,18 @@ interface ProcurementStoreValue {
   isApprover: boolean;
   processCoordinatorIds: string[];
   isProcessCoordinator: boolean;
+  /**
+   * Does this person's grant on Purchase RM Domestic allow CHANGING anything?
+   * False only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away, so
+   *   it is ANDed into the write predicates and into each button site.
+   *   Deliberately kept OUT of `canActOn` / `canSeeQueue` / `isProcessCoordinator`
+   *   / `isStepOwner`, which decide what a person can SEE: blanking those would
+   *   hand a view-only user an empty app or an Access Denied instead of a
+   *   readable one.
+   */
+  canEdit: boolean;
   amountBasis: string;
   /** Per-step due-date rules (anchor step + working days), merged over the defaults. */
   stepSla: StepSlaMap;
@@ -638,8 +650,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     const managerIdsFor = (masterType: MasterType) =>
       masterManagers.filter((m) => m.masterType === masterType).map((m) => m.managerUserId);
 
+    // Module-level write ceiling. From the REAL `session`, never
+    // useEffectiveIdentity — a demo persona must not be able to step around the
+    // real user's view-only grant, and personas carry their own moduleAccess.
+    const canEdit = session.canEditModule("procurement");
+
+    // Pure write gate (MasterCrud's Add button + Actions column), so the ceiling
+    // folds straight in. isAnyManager below is left alone — it guards the Masters
+    // ROUTE, and a view-only master manager should still read what they look after.
     const canManage = (masterType: MasterType) =>
-      isAdmin || managerIdsFor(masterType).includes(user.id);
+      canEdit && (isAdmin || managerIdsFor(masterType).includes(user.id));
 
     const isAnyManager = isAdmin || masterManagers.some((m) => m.managerUserId === user.id);
 
@@ -675,7 +695,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     };
 
     const canApproveLine = (line: RequestItem): boolean =>
-      isAdmin || (line.lineValue !== null && approversForAmount(line.lineValue).includes(user.id));
+      canEdit && (isAdmin || (line.lineValue !== null && approversForAmount(line.lineValue).includes(user.id)));
 
     /**
      * May the current user edit / cancel this request? Mirrors the SQL predicate
@@ -694,16 +714,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       return ls.length > 0 && ls.every((l) => l.status === "sourcing" && l.sourcedAt === null);
     };
     const canEditRequest = (r: PurchaseRequest): boolean =>
-      (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
+      canEdit && (session.isAdmin || (!!r.requesterId && r.requesterId === session.user?.id)) && requestEditable(r);
 
     // The requisition total MUST be computed the same way the server does it —
     // sum over lines currently in approval/on_hold — or the client and server
     // land on different bands and an approver sees a row they cannot submit.
     const requestApprovalTotalOf = (requestId: string) => requestApprovalTotal(procIndex, requestId);
     const canApproveRequest = (r: PurchaseRequest): boolean =>
-      isAdmin || approversForAmount(requestApprovalTotalOf(r.id)).includes(user.id);
+      canEdit && (isAdmin || approversForAmount(requestApprovalTotalOf(r.id)).includes(user.id));
     const canApproveAmount = (amount: number): boolean =>
-      isAdmin || approversForAmount(amount).includes(user.id);
+      canEdit && (isAdmin || approversForAmount(amount).includes(user.id));
 
     // ---- PO cancellation helpers (approver-only, vendor-requested) ----
     const poScopeStepKeys = STEPS.filter((s) => s.scope === "po").map((s) => s.key);
@@ -722,7 +742,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       isOpenPo(po) && !grns.some((g) => g.poId === po.id) && !tallyBookings.some((t) => t.poId === po.id);
     const pendingCancelRequestForPo = (poId: string): PoCancelRequest | undefined =>
       poCancelRequests.find((r) => r.poId === poId && r.status === "pending");
-    const isPoApprover = (po: PurchaseOrder): boolean => isAdmin || poApproverIds(po).includes(user.id);
+    const isPoApprover = (po: PurchaseOrder): boolean => canEdit && (isAdmin || poApproverIds(po).includes(user.id));
 
     const itemsByGroupId = new Map<string, RequestItem[]>();
     for (const ri of requestItems) {
@@ -818,8 +838,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       isApprover: isAdmin || approvalBands.some((b) => b.approverUserIds.includes(user.id)),
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
+      canEdit,
       amountBasis,
-      canConfigure: isAdmin,
+      // Settings sit behind an admins-only route guard and a level never applies
+      // to an admin, so this needs no ceiling — but ANDing it in costs nothing and
+      // keeps "every write gate carries canEdit" true with no exceptions to learn.
+      canConfigure: canEdit && isAdmin,
 
       // ---- workflow data + selectors (Stages 1–4) ----
       requests,
@@ -1233,7 +1257,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       updateTally: async (input) => { await updateTallyWrite(input); await invalidate(); },
       updateApproval: async (input) => { await updateApprovalWrite(input); await invalidate(); },
       updatePoDetails: async (input) => { await updatePoDetailsWrite(input); await invalidate(); },
-      canEditSharePo: (po) => isStepOwner("share_po") && poShareLockReason(procIndex, po) === null,
+      canEditSharePo: (po) => canEdit && isStepOwner("share_po") && poShareLockReason(procIndex, po) === null,
       addPi: async (input) => {
         const id = await addPiWrite(input);
         await safeAnnounce({

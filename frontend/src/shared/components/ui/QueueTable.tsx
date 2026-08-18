@@ -121,6 +121,17 @@ interface QueueTableProps<T> {
    */
   selectable?: { renderBulkActions: (selected: T[], clear: () => void) => ReactNode };
   /**
+   * View-only: drop the leading actions column and the whole `selectable`
+   * apparatus (checkbox column, select-all, bulk-action bar). Everything that
+   * only READS — the rows, sorting, the filter row, the group picker, the column
+   * picker and the Excel export — stays exactly as it is.
+   *
+   * The counterpart of `canManage` on MasterCrud. Pass `readOnly={!canEdit}` from
+   * the app's store rather than removing `actions` at the call site, so the
+   * reason a button is missing lives in one place per app.
+   */
+  readOnly?: boolean;
+  /**
    * Hide the in-body group-header rows. The group filter dropdown still works —
    * this only drops the repeated "· N" header bands, e.g. where a Status column
    * already conveys the grouping and the bands are just noise.
@@ -209,7 +220,7 @@ export default function QueueTable<T>({
   rowKey,
   columns,
   groupBy,
-  actions,
+  actions: actionsProp,
   rowClassName,
   rowsLabel = "rows",
   emptyTitle = "Nothing here",
@@ -219,10 +230,19 @@ export default function QueueTable<T>({
   exportName,
   exportTitle,
   exportNotes,
-  selectable,
+  selectable: selectableProp,
+  readOnly,
   hideGroupHeaders,
   columnPicker,
 }: QueueTableProps<T>) {
+  // ⚠ Applied HERE, once, rather than at each of the ~80 `actions={...}` call
+  //   sites. Everything below — the Actions header, the per-row cell, the
+  //   checkbox column, the bulk bar and the colSpan arithmetic — already keys off
+  //   these two being present, so dropping them is the whole change. A view-only
+  //   user keeps the table, its rows, its sorting, its filters and its export;
+  //   only the things that would CHANGE something go away.
+  const actions = readOnly ? undefined : actionsProp;
+  const selectable = readOnly ? undefined : selectableProp;
   // Seeded once from any multiselect column's `initial`, so a screen can open with a
   // sensible default selection. Lazy on purpose: `columns` is usually rebuilt every
   // render, and re-seeding would stamp the default back over the user's choice.

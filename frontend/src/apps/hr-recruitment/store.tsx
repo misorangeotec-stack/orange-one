@@ -22,7 +22,7 @@ import {
   recordInterviewResult as recordInterviewResultWrite,
   recordProbationReview as recordProbationReviewWrite,
   scheduleInterview as scheduleInterviewWrite,
-  shareCandidatesWithHod as shareCandidatesWithHodWrite,
+  notifyHodPending as notifyHodPendingWrite,
   updateCandidate as updateCandidateWrite,
   decideMrf as decideMrfWrite,
   holdRequisition as holdRequisitionWrite,
@@ -184,7 +184,6 @@ interface HrStoreValue {
   stepOwnerFor: (stepKey: StepKey) => StepOwner | undefined;
   processCoordinatorIds: string[];
   stepSla: StepSlaMap;
-  minCvsToShare: number;
   /** Who may see the offered salary (departments + named people). Admin-configured. */
   salaryViewers: { departmentIds: string[]; personIds: string[] };
   /**
@@ -197,6 +196,20 @@ interface HrStoreValue {
 
   // capabilities (derived from the EFFECTIVE identity, so demo personas re-scope)
   isAdmin: boolean;
+  /**
+   * Does this person's grant on New Recruitment allow CHANGING anything? False
+   * only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away.
+   *   Deliberately kept OUT of `canActOn` / `canActOnCandidate`, which also decide
+   *   which cards and queues a person SEES; folding it in there would empty a
+   *   view-only user's board rather than merely freeze it. ANDed in at each
+   *   button, panel, drag handle and bulk bar instead.
+   *
+   * ⚠ Read from the REAL session, not the effective persona — a demo persona must
+   *   not be able to step around the real user's view-only grant.
+   */
+  canEdit: boolean;
   canConfigure: boolean;
   isProcessCoordinator: boolean;
   /**
@@ -388,7 +401,6 @@ interface HrStoreValue {
     },
   ) => Promise<void>;
   moveCandidate: (candidate: Candidate, toStage: CandidateStage, payload?: MovePayload) => Promise<void>;
-  shareCandidatesWithHod: (ids: string[]) => Promise<void>;
   hodDecide: (ids: string[], selected: boolean, reasonId?: string | null, note?: string) => Promise<void>;
   scheduleInterview: (
     id: string,
@@ -437,7 +449,6 @@ interface HrStoreValue {
   setStepOwner: (stepKey: StepKey, input: StepOwnerInput) => Promise<void>;
   setStepSla: (map: StepSlaMap) => Promise<void>;
   setProcessCoordinators: (userIds: string[]) => Promise<void>;
-  setMinCvsToShare: (n: number) => Promise<void>;
   // setSalaryViewers is declared with canViewSalary above.
   insertMaster: (table: HrMasterTable, input: MasterInput) => Promise<void>;
   updateMaster: (table: HrMasterTable, id: string, input: MasterInput) => Promise<void>;
@@ -501,7 +512,6 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   const masterRequests = data?.masterRequests ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
-  const minCvsToShare = data?.config.minCvsToShare ?? 5;
   const salaryViewers = data?.config.salaryViewers ?? { departmentIds: [], personIds: [] };
 
   // The REAL signed-in user, never the impersonated persona. RLS and RPC actor
@@ -580,6 +590,20 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await announceWrite(input);
       } catch {
         // The trail is best-effort. State lives on the domain row, stamped in the RPC.
+      }
+    };
+
+    /**
+     * Refresh the HOD's "N CVs awaiting your shortlist" digest for a requisition.
+     * Swallowed for the same reason as `safeAnnounce`: a card really did move, and a
+     * failed ping must not make it look otherwise. The count is recomputed from the
+     * board on the next call, so a dropped refresh self-heals.
+     */
+    const safeNotifyHodPending = async (requisitionId: string) => {
+      try {
+        await notifyHodPendingWrite(requisitionId);
+      } catch {
+        // Best-effort, exactly like the trail above.
       }
     };
 
@@ -662,6 +686,9 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
      * it is in — a card in "Shared with HOD" is the HOD's work-item even though HR
      * put it there. Getting this wrong is exactly the bug the SQL side had.
      */
+    // Module-level write ceiling — see the doc on HrStoreValue.canEdit.
+    const canEdit = session.canEditModule("hr-recruitment");
+
     const canActOnCandidate = (c: Candidate): boolean => {
       const r = reqById.get(c.requisitionId);
       if (!r) return false;
@@ -1053,10 +1080,20 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         await moveCandidateWrite(c.id, toStage, payload ?? {});
         const nextStep = STAGE_PENDING_STEP[toStage];
         const r = reqById.get(c.requisitionId);
+        // A card landing in `hr_shortlisted` is the HOD's, but it is ONE of a batch
+        // HR is working through — so the per-card ping is suppressed here and the
+        // rolling digest below carries the news instead. Empty recipients still
+        // writes the activity row, so the audit trail is unaffected.
+        const digestOnly = toStage === "hr_shortlisted";
         // Notify whoever now owes this card an action. A HOD step routes to the
         // requisition's OWN hiring manager, not to a global owner list.
-        const recipients =
-          nextStep && r ? (isHodStep(nextStep) ? r.hiringManagerIds : ownerIdsOf(nextStep)) : [];
+        const recipients = digestOnly
+          ? []
+          : nextStep && r
+            ? isHodStep(nextStep)
+              ? r.hiringManagerIds
+              : ownerIdsOf(nextStep)
+            : [];
         await safeAnnounce({
           entityType: "candidate",
           entityId: c.id,
@@ -1064,6 +1101,13 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           text: `${c.name} → ${toStage.replace(/_/g, " ")}`,
           recipients,
         });
+        // Refresh the digest when the move touches `hr_shortlisted` on EITHER side.
+        // Only firing on the way in would leave the count stale behind every
+        // disqualify-from-shortlist and every drag back — the bell would go on
+        // claiming CVs that are no longer waiting.
+        if (digestOnly || c.stage === "hr_shortlisted") {
+          await safeNotifyHodPending(c.requisitionId);
+        }
         // The offer kicks off onboarding — nudge its owners to send the offer
         // confirmation (there is no auto-email; the checklist item is the record).
         if (toStage === "finalized") {
@@ -1077,21 +1121,6 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
         }
         await invalidate();
       },
-      shareCandidatesWithHod: async (ids) => {
-        await shareCandidatesWithHodWrite(ids);
-        const first = canById.get(ids[0]);
-        const r = first ? reqById.get(first.requisitionId) : undefined;
-        // ONE notification for the batch, not one per CV — the sheet's own rule is
-        // to share 5–10 at a time, and ten pings would be noise.
-        await safeAnnounce({
-          entityType: "requisition",
-          entityId: r?.id ?? "",
-          type: "shared_with_hod",
-          text: `${ids.length} CV${ids.length === 1 ? "" : "s"} shared for ${r?.mrfNo ?? "a requisition"}`,
-          recipients: r?.hiringManagerIds ?? [],
-        });
-        await invalidate();
-      },
       hodDecide: async (ids, selected, reasonId, note) => {
         await hodDecideWrite(ids, selected, reasonId ?? null, note ?? "");
         await safeAnnounce({
@@ -1101,6 +1130,10 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
           text: `HOD ${selected ? "shortlisted" : "dropped"} ${ids.length} candidate${ids.length === 1 ? "" : "s"}`,
           recipients: selected ? ownerIdsOf("telephonic_screening") : [],
         });
+        // The batch just left the HOD's plate either way — close their digest out
+        // rather than leaving it announcing work they have already done.
+        const first = canById.get(ids[0]);
+        if (first) await safeNotifyHodPending(first.requisitionId);
         await invalidate();
       },
       scheduleInterview: async (id, round, interviewerIds, interviewerName, scheduledOn) => {
@@ -1266,12 +1299,12 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       stepOwnerFor,
       processCoordinatorIds,
       stepSla,
-      minCvsToShare,
       salaryViewers,
       canViewSalary,
 
       isAdmin,
-      canConfigure: isAdmin,
+      canEdit,
+      canConfigure: canEdit && isAdmin,
       isProcessCoordinator,
       isStepOwner,
       isAnyStepOwner,
@@ -1296,10 +1329,6 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
       },
       setProcessCoordinators: async (userIds) => {
         await setConfigWrite("process_coordinators", { user_ids: userIds });
-        await invalidate();
-      },
-      setMinCvsToShare: async (n) => {
-        await setConfigWrite("min_cvs_to_share", { value: n });
         await invalidate();
       },
       setSalaryViewers: async (departmentIds, personIds) => {
@@ -1370,7 +1399,7 @@ export function HrStoreProvider({ children }: { children: ReactNode }) {
   }, [
     isLoading, error, dir, designations, jobPlatforms, jobTypes, locations, disqualificationReasons,
     onboardingItems, jobTitles, skills, qualifications,
-    stepOwners, processCoordinatorIds, stepSla, minCvsToShare, salaryViewers, activity, candidateScores, notifications,
+    stepOwners, processCoordinatorIds, stepSla, salaryViewers, activity, candidateScores, notifications,
     requisitions, requisitionPlatforms, candidates, interviews, onboardings, onboardingChecks,
     probations, probationReviews, masterManagers, masterRequests, isAdmin, user.id, user.name, realUserId, queryClient,
     // `orgPeople` — personName closes over it; without it the memo would not recompute

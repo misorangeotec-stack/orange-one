@@ -146,18 +146,21 @@ export type Database = {
       }
       app_access: {
         Row: {
+          access_level: string
           app_id: string
           created_at: string
           id: string
           user_id: string
         }
         Insert: {
+          access_level?: string
           app_id: string
           created_at?: string
           id?: string
           user_id: string
         }
         Update: {
+          access_level?: string
           app_id?: string
           created_at?: string
           id?: string

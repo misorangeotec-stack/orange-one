@@ -55,7 +55,10 @@ export interface UseCollectionPlan {
  */
 export function useCollectionPlan(months: string[]): UseCollectionPlan {
   const queryClient = useQueryClient();
-  const { user, isAdmin } = useSession();
+  const { user, isAdmin, canEditModule } = useSession();
+  // Module-level write ceiling. "Any signed-in user may set a plan" was always
+  // scoped to users who hold the module; a view-only grant now reads it instead.
+  const moduleWritable = canEditModule("outstanding-dashboard");
   // The same FY discriminator useAppData keys on (`["appData", fySuffix]`), so the plan cache
   // and the customer cache always turn over together.
   const { suffix: fySuffix } = useFY();
@@ -150,11 +153,11 @@ export function useCollectionPlan(months: string[]): UseCollectionPlan {
   );
 
   /** Any signed-in user may set or revise a plan — see the SHARED CELL note above. */
-  const canEdit = useCallback(() => true, []);
+  const canEdit = useCallback(() => moduleWritable, [moduleWritable]);
   /** Deletion is the only irreversible action, so it keeps the tighter author-or-admin rule. */
   const canDelete = useCallback(
-    (p: CollectionPlan) => isAdmin || p.createdBy === user.id,
-    [isAdmin, user.id],
+    (p: CollectionPlan) => moduleWritable && (isAdmin || p.createdBy === user.id),
+    [moduleWritable, isAdmin, user.id],
   );
 
   return {

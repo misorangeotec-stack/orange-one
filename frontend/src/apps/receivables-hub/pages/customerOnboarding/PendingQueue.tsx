@@ -71,7 +71,7 @@ export default function PendingQueue() {
     key: "correct",
     header: "",
     cell: (r) => {
-      if (!s.canActOn(step, r) || stageLockReason(step, r) !== null) return null;
+      if (!s.canEdit || !s.canActOn(step, r) || stageLockReason(step, r) !== null) return null;
       return (
         <Button
           variant="ghost" size="sm" asChild

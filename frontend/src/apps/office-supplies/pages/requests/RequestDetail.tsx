@@ -96,13 +96,19 @@ export default function RequestDetail() {
   }
 
   const name = (uid: string | null) => (uid ? (s.profileById(uid)?.name ?? "—") : "—");
-  const canFirst = r.status === "pending_first_approval" && s.canActOn("first_approval", r);
-  const canSecond = r.status === "pending_second_approval" && s.canActOn("second_approval", r);
-  const canHandover = r.status === "pending_handover" && s.canActOn("handover", r);
+  // A view-only grant removes every action on this page — the two approvals, the
+  // handover, hold, edit and cancel — while the request itself stays fully
+  // readable. ANDed in per site rather than folded into canActOn or
+  // isProcessCoordinator, which also decide what a person can SEE.
+  const canFirst = s.canEdit && r.status === "pending_first_approval" && s.canActOn("first_approval", r);
+  const canSecond = s.canEdit && r.status === "pending_second_approval" && s.canActOn("second_approval", r);
+  const canHandover = s.canEdit && r.status === "pending_handover" && s.canActOn("handover", r);
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
-  const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
+  const canHold = s.canEdit && isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
   const canCancel =
-    (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
+    s.canEdit &&
+    (r.raisedBy === session.user.id || isCoordinatorish) &&
+    (s.isOpenRequest(r) || r.status === "on_hold");
 
   const runReason = async (fn: (r: SupplyRequest, reason: string) => Promise<void>, close: () => void) => {
     if (!reason.trim()) {
@@ -152,7 +158,7 @@ export default function RequestDetail() {
               {r.status === "on_hold" ? "Resume" : "Hold"}
             </Button>
           )}
-          {s.requestEditable(r) && (
+          {s.canEdit && s.requestEditable(r) && (
             <Link to={editRequestHref(r.id)}>
               <Button size="sm" variant="outline">Edit</Button>
             </Link>

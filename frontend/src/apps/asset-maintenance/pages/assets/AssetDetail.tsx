@@ -97,7 +97,9 @@ export default function AssetDetail() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {asset.active && asset.usageUnitId && (
+          {/* Logging a reading WRITES a meter reading — it had no permission check
+              of any kind before, only "does this asset have a usage unit". */}
+          {asset.active && asset.usageUnitId && s.canRaise && (
             <Button variant="ghost" size="sm" onClick={() => setReadingOpen(true)}>Log reading</Button>
           )}
           {asset.active && s.canRaise && (
@@ -110,7 +112,7 @@ export default function AssetDetail() {
               <Button variant="ghost" size="sm">Edit</Button>
             </Link>
           )}
-          {asset.active && s.isProcessCoordinator && (
+          {asset.active && s.canEdit && s.isProcessCoordinator && (
             <Button variant="ghost" size="sm" onClick={() => setRetireOpen(true)}>Retire</Button>
           )}
         </div>

@@ -352,7 +352,11 @@ function removeTaskFromCache(queryClient: QueryClient, taskId: string) {
 }
 
 export function TaskStoreProvider({ children }: { children: ReactNode }) {
-  const { user, role } = useSession();
+  const { user, role, canEditModule } = useSession();
+  // Module-level write ceiling: false only on a view-only grant of Task
+  // Management (Admin → Module Access). Never grants anything — the per-task
+  // creator / assignee / admin rules below still apply on top.
+  const canEdit = canEditModule("task-management");
   const dir = useDirectory();
   const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
@@ -913,17 +917,24 @@ export function TaskStoreProvider({ children }: { children: ReactNode }) {
         await updateWorkspaceSettingsWrite(patch);
         await refreshTaskData();
       },
-      canManageWorkspace: role === "admin",
+      canManageWorkspace: canEdit && role === "admin",
 
+      // ⚠ EVERY flag below is a pure WRITE flag — none of them decides what a
+      //   person can SEE, which is what makes one blanket gate safe here and not
+      //   in the FMS stores (there, canActOn / canSeeQueue also drive queue
+      //   membership and route guards, so they had to be ANDed in per site).
+      //   A view-only grant leaves every list, task, report and scorecard fully
+      //   readable and removes create, status changes, reschedules, remarks,
+      //   recurring CRUD and weekly plans.
       canWrite: false,
-      canCreateTask: true,
-      canStatusActions: true,
-      canReschedule: true,
-      canRemark: true,
-      canRecurring: true,
-      canWeeklyPlan: true,
+      canCreateTask: canEdit,
+      canStatusActions: canEdit,
+      canReschedule: canEdit,
+      canRemark: canEdit,
+      canRecurring: canEdit,
+      canWeeklyPlan: canEdit,
     };
-  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, orgPeople, dir, user, role, queryClient]);
+  }, [tasks, activity, notifications, recurringTasks, weeklyPlans, workspace, locations, orgPeople, dir, user, role, canEdit, queryClient]);
 
   // The realtime notification subscription used to live here. It now belongs to
   // useMyNotifications (called above) so the portal home screen gets the same

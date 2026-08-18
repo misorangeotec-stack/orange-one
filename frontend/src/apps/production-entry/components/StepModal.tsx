@@ -1123,7 +1123,7 @@ export default function StepModal({
                   <div className="flex flex-wrap gap-2">
                     {btn("approved", "Approve", "border-ryg-green bg-[#E9F8EF] text-ryg-green", "border-line text-grey hover:border-ryg-green/50")}
                     {btn("rejected", "Reject", "border-ryg-red bg-[#FDECEC] text-ryg-red", "border-line text-grey hover:border-ryg-red/50")}
-                    {s.isAdmin && btn("bypassed", "Bypass", "border-orange bg-orange-soft text-orange", "border-line text-grey hover:border-orange/50")}
+                    {s.canEdit && s.isAdmin && btn("bypassed", "Bypass", "border-orange bg-orange-soft text-orange", "border-line text-grey hover:border-orange/50")}
                   </div>
                 )}
                 {!editing && s.isAdmin && (

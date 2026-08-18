@@ -62,7 +62,6 @@ const QUEUE_LINK: Partial<Record<StepKey, string>> = {
   job_posting: "/hr-recruitment/queues/posting",
   resume_upload: "/hr-recruitment/positions",
   hr_shortlist: "/hr-recruitment/positions",
-  hod_share: "/hr-recruitment/positions",
   hod_shortlist: "/hr-recruitment/positions",
   telephonic_screening: "/hr-recruitment/queues/interviews",
   interview_1: "/hr-recruitment/queues/interviews",
@@ -353,8 +352,8 @@ export default function Dashboard() {
           <EmptyState
             title="No requisitions yet"
             message="Time to hire, where the pipeline leaks, which platform actually works, offer-acceptance and probation outcomes all appear here the moment the first requisition is raised."
-            actionLabel={s.isStepOwner("mrf") ? "Raise a requisition" : undefined}
-            actionTo={s.isStepOwner("mrf") ? "/hr-recruitment/requisitions/new" : undefined}
+            actionLabel={s.canEdit && s.isStepOwner("mrf") ? "Raise a requisition" : undefined}
+            actionTo={s.canEdit && s.isStepOwner("mrf") ? "/hr-recruitment/requisitions/new" : undefined}
           />
         </Card>
       ) : (

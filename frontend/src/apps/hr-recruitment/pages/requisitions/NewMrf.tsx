@@ -12,7 +12,8 @@ export default function NewMrf() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  if (!s.isStepOwner("mrf")) return <AccessDenied />;
+  // canEdit first: a view-only grant must not reach the form even by URL.
+  if (!s.canEdit || !s.isStepOwner("mrf")) return <AccessDenied />;
 
   const submit = async (input: MrfInput, jdFile: File | null) => {
     setBusy(true);

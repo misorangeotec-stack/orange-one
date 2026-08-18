@@ -41,18 +41,21 @@ export type Database = {
     Tables: {
       app_access: {
         Row: {
+          access_level: string
           app_id: string
           created_at: string
           id: string
           user_id: string
         }
         Insert: {
+          access_level?: string
           app_id: string
           created_at?: string
           id?: string
           user_id: string
         }
         Update: {
+          access_level?: string
           app_id?: string
           created_at?: string
           id?: string
@@ -152,32 +155,121 @@ export type Database = {
         }
         Relationships: []
       }
-      departments: {
+      bands: {
         Row: {
+          active: boolean
+          band_no: number
           created_at: string
           created_by: string | null
           description: string | null
           id: string
           name: string
+          sort_order: number
           updated_at: string
         }
         Insert: {
+          active?: boolean
+          band_no: number
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
           name: string
+          sort_order?: number
           updated_at?: string
         }
         Update: {
+          active?: boolean
+          band_no?: number
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
           name?: string
+          sort_order?: number
           updated_at?: string
         }
         Relationships: []
+      }
+      departments: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          description: string | null
+          hr_sheet_name: string | null
+          id: string
+          name: string
+          sort_order: number
+          source: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          hr_sheet_name?: string | null
+          id?: string
+          name: string
+          sort_order?: number
+          source?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          hr_sheet_name?: string | null
+          id?: string
+          name?: string
+          sort_order?: number
+          source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sub_departments: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          department_id: string
+          id: string
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          department_id: string
+          id?: string
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          department_id?: string
+          id?: string
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sub_departments_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       designations: {
         Row: {
@@ -6119,6 +6211,7 @@ export type Database = {
           department_id: string
           edited_at: string | null
           edited_by: string | null
+          first_approval_skipped: boolean
           first_approved_at: string | null
           first_approver_id: string | null
           first_remarks: string | null
@@ -6163,6 +6256,7 @@ export type Database = {
           department_id: string
           edited_at?: string | null
           edited_by?: string | null
+          first_approval_skipped?: boolean
           first_approved_at?: string | null
           first_approver_id?: string | null
           first_remarks?: string | null
@@ -6207,6 +6301,7 @@ export type Database = {
           department_id?: string
           edited_at?: string | null
           edited_by?: string | null
+          first_approval_skipped?: boolean
           first_approved_at?: string | null
           first_approver_id?: string | null
           first_remarks?: string | null
@@ -6544,14 +6639,18 @@ export type Database = {
       profiles: {
         Row: {
           avatar_color: string | null
+          band_id: string | null
           created_at: string
           department_id: string | null
           designation: string | null
+          designation_id: string | null
           email: string | null
+          employee_code: string | null
           id: string
           last_active_at: string | null
           name: string
           phone: string | null
+          sub_department_id: string | null
           receivables_admin_menus: string[] | null
           receivables_allow_pipeline: boolean | null
           receivables_allowed_reports: string[] | null
@@ -6562,14 +6661,18 @@ export type Database = {
         }
         Insert: {
           avatar_color?: string | null
+          band_id?: string | null
           created_at?: string
           department_id?: string | null
           designation?: string | null
+          designation_id?: string | null
           email?: string | null
+          employee_code?: string | null
           id: string
           last_active_at?: string | null
           name?: string
           phone?: string | null
+          sub_department_id?: string | null
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
           receivables_allowed_reports?: string[] | null
@@ -6580,14 +6683,18 @@ export type Database = {
         }
         Update: {
           avatar_color?: string | null
+          band_id?: string | null
           created_at?: string
           department_id?: string | null
           designation?: string | null
+          designation_id?: string | null
           email?: string | null
+          employee_code?: string | null
           id?: string
           last_active_at?: string | null
           name?: string
           phone?: string | null
+          sub_department_id?: string | null
           receivables_admin_menus?: string[] | null
           receivables_allow_pipeline?: boolean | null
           receivables_allowed_reports?: string[] | null
@@ -6602,6 +6709,27 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_sub_department_id_fkey"
+            columns: ["sub_department_id"]
+            isOneToOne: false
+            referencedRelation: "sub_departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_designation_id_fkey"
+            columns: ["designation_id"]
+            isOneToOne: false
+            referencedRelation: "designations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_band_id_fkey"
+            columns: ["band_id"]
+            isOneToOne: false
+            referencedRelation: "bands"
             referencedColumns: ["id"]
           },
         ]
@@ -7856,6 +7984,10 @@ export type Database = {
         Returns: undefined
       }
       fms_hr_next_seq: { Args: { p_scope: string }; Returns: number }
+      fms_hr_notify_hod_pending: {
+        Args: { p_requisition: string }
+        Returns: undefined
+      }
       fms_hr_open_probation: { Args: { p_onb: string }; Returns: undefined }
       fms_hr_pending_step: { Args: { p_stage: string }; Returns: string }
       fms_hr_post_comment: {
@@ -7944,10 +8076,6 @@ export type Database = {
       }
       fms_hr_set_requisition_jd: {
         Args: { p_name?: string; p_path?: string; p_req: string }
-        Returns: undefined
-      }
-      fms_hr_share_candidates_with_hod: {
-        Args: { p_ids: string[] }
         Returns: undefined
       }
       fms_hr_stage_rank: { Args: { p_stage: string }; Returns: number }
@@ -8747,6 +8875,7 @@ export type Database = {
         Args: { p_req: string; p_step_key: string; p_uid: string }
         Returns: boolean
       }
+      fms_supplies_can_raise: { Args: { p_uid: string }; Returns: boolean }
       fms_supplies_can_read_request: {
         Args: { p_req: string; p_uid: string }
         Returns: boolean
@@ -8777,6 +8906,10 @@ export type Database = {
         Returns: undefined
       }
       fms_supplies_is_coordinator: { Args: { p_uid: string }; Returns: boolean }
+      fms_supplies_is_hod_designation: {
+        Args: { p_uid: string }
+        Returns: boolean
+      }
       fms_supplies_is_fulfilment_staff: {
         Args: { p_uid: string }
         Returns: boolean

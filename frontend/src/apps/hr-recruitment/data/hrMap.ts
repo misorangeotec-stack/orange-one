@@ -110,6 +110,39 @@ export const mapRequisitionPlatform = (r: any): RequisitionPlatform => ({
   otherNote: r.other_note ?? null,
 });
 
+/**
+ * Postgres stores `stage` as free text behind a CHECK, so reading it is a CAST, not
+ * a check — and a cast will happily type a value the union no longer contains.
+ *
+ * That matters because of one specific value. `shared_with_hod` was removed from
+ * `CandidateStage` when the Share-to-HOD step went (migration 20260903130000); the
+ * CHECK constraint still admits it, deliberately, because loosening constraints on a
+ * live table is a risk not worth taking for a stage nothing can produce any more.
+ * If a row somehow carried it, `STAGE_LABEL[stage]` would render blank and
+ * `columnOf()` would return undefined — and a card with no column DROPS OFF THE
+ * BOARD while still counting as open work in the queues. lib/board.ts is explicit
+ * that this must not happen: "a card that exists must be somewhere you can see it."
+ *
+ * So: anything unrecognised lands on `hr_shortlisted`, the same stage the migration
+ * normalises stragglers to. Visible and actionable beats correct-but-invisible.
+ */
+const KNOWN_STAGES = new Set<CandidateStage>([
+  "resume_uploaded",
+  "hr_shortlisted",
+  "hod_shortlisted",
+  "telephonic",
+  "interview_1",
+  "interview_2",
+  "interview_3",
+  "final_decision",
+  "finalized",
+  "hired",
+  "disqualified",
+]);
+
+const toStage = (raw: unknown): CandidateStage =>
+  KNOWN_STAGES.has(raw as CandidateStage) ? (raw as CandidateStage) : "hr_shortlisted";
+
 export const mapCandidate = (r: any): Candidate => ({
   id: r.id,
   requisitionId: r.requisition_id,
@@ -127,12 +160,10 @@ export const mapCandidate = (r: any): Candidate => ({
   resumeName: r.resume_name ?? null,
   parseStatus: (r.parse_status ?? "manual") as ParseStatus,
   parsedJson: (r.parsed_json ?? {}) as Record<string, unknown>,
-  stage: r.stage as CandidateStage,
+  stage: toStage(r.stage),
   uploadedAt: r.uploaded_at,
   hrShortlistedAt: r.hr_shortlisted_at ?? null,
   hrShortlistedBy: r.hr_shortlisted_by ?? null,
-  sharedToHodAt: r.shared_to_hod_at ?? null,
-  sharedToHodBy: r.shared_to_hod_by ?? null,
   hodDecidedAt: r.hod_decided_at ?? null,
   hodDecidedBy: r.hod_decided_by ?? null,
   telephonicAt: r.telephonic_at ?? null,

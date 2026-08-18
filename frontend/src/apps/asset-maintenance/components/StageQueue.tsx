@@ -190,7 +190,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
             <StageRowAction
               as="button"
               lockReason={e.lockReason}
-              canEdit={s.canActOn(stepKey, e.row)}
+              canEdit={s.canEdit && s.canActOn(stepKey, e.row)}
               permissionReason="Only an owner of this step can edit the entry."
               onEdit={() => acting.openEdit(e.row)}
               onView={() => acting.openView(e.row)}
@@ -207,7 +207,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
           rowKey={(r) => r.job.id}
           columns={pendingColumns}
           actions={(r) =>
-            s.canActOn(stepKey, r.job) ? (
+            s.canEdit && s.canActOn(stepKey, r.job) ? (
               <Button size="sm" onClick={() => acting.openEdit(r.job)}>
                 {cfg.actionLabel}
               </Button>

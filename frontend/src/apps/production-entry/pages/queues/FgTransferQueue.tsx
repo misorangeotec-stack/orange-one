@@ -111,6 +111,9 @@ export default function FgTransferQueue() {
         rowsLabel="job cards"
         emptyTitle="Nothing waiting for transfer"
         emptyMessage="Cards ready for the finished-good transfer will appear here."
+        // Bulk "Transfer to Godown" + its file upload are writes; a view-only
+        // grant drops the checkbox column and the bulk bar, keeping the queue.
+        readOnly={!s.canEdit}
         selectable={{
           renderBulkActions: (selected, clear) => (
             <Button size="sm" onClick={() => openModal(selected, clear)}>Transfer to Godown ({selected.length})</Button>

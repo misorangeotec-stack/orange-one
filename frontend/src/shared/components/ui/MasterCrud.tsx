@@ -135,6 +135,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
   fields,
   createFields,
   searchText,
+  defaultOrder,
   canManage,
   canCreate,
   createHint,
@@ -158,6 +159,13 @@ export default function MasterCrud<T extends { id: string; name: string; active:
    */
   createFields?: MasterFieldDef[];
   searchText: (row: T) => string;
+  /**
+   * The master's OWN order, used only when no column sort is picked. For a
+   * ladder — bands 1..9, designations junior to senior — alphabetical by name is
+   * meaningless. Omit and rows fall back to name, which is right for a plain
+   * list. Never overrides an explicit column sort.
+   */
+  defaultOrder?: (row: T) => number;
   canManage: boolean;
   /**
    * Whether NEW rows may be added. Defaults to `canManage` — pass false for a master
@@ -332,9 +340,18 @@ export default function MasterCrud<T extends { id: string; name: string; active:
       });
     }
 
-    // The default when nobody has picked a sort: live rows first, then by name.
-    return [...list].sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name));
-  }, [narrow, searched, columns, sort, colCache]);
+    // The default when nobody has picked a sort: live rows first, then by name —
+    // unless the master has an inherent order of its own (`defaultOrder`), which
+    // is what a LADDER needs. Bands read 1..9 and designations run junior to
+    // senior; sorting those alphabetically opens the screen on Band 2, Band 3,
+    // Band 8, Band 6, which reads as noise. Live rows still come first either way.
+    return [...list].sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) ||
+        (defaultOrder ? defaultOrder(a) - defaultOrder(b) : 0) ||
+        a.name.localeCompare(b.name),
+    );
+  }, [narrow, searched, columns, sort, colCache, defaultOrder]);
 
   const pg = usePagination(filtered, { resetKey: `${q}|${JSON.stringify(colFilters)}|${sort?.header}${sort?.dir}` });
 

@@ -13,11 +13,26 @@ export interface CreateUserInput {
   email: string;
   /** Mobile number — becomes the user's initial login password. */
   phone: string;
+  /** Designation NAME — the legacy mirror list_org_people() returns. Sent with designationId. */
   designation?: string | null;
+  designationId?: string | null;
   role: AppRole;
   departmentId?: string | null;
+  subDepartmentId?: string | null;
+  /** Independent of designation — see the Band type. */
+  bandId?: string | null;
+  employeeCode?: string | null;
   hodIds?: string[];
-  moduleAccess?: string[];
+  /**
+   * App id → level. The keys ARE the granted apps, so there is no separate
+   * moduleAccess list to disagree with (see directoryWrites.setUserModules).
+   *
+   * ⚠ An older deployed function that doesn't know this field creates the user
+   *   with NO module grants rather than with wrong ones — visible and fixable by
+   *   re-saving. Deploy the function before the frontend anyway; see the plan's
+   *   deploy order.
+   */
+  moduleLevels?: Record<string, "view" | "edit">;
   /** Outstanding Dashboard scope — salesperson names this user may see. */
   receivablesSalespersons?: string[];
   /** Outstanding Dashboard menu deny-list — menu keys this user may NOT see. */

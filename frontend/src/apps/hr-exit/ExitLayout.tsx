@@ -106,6 +106,7 @@ export default function ExitLayout() {
       buildExitNav({
         isAdmin,
         // Owner of ANY master, not just an admin — the Masters page is theirs too.
+        canEdit: s.canEdit,
         canManageMasters: s.isAnyMasterManager,
         // Badge only what THIS user can actually resolve: an Exit Reasons owner must not
         // see a count for payroll-head requests the RPC will refuse them on.

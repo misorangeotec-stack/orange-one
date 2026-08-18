@@ -42,8 +42,9 @@ const OVERRIDES: Partial<Record<StepKey, Partial<StepSla>>> = {
   job_posting: { anchor: "mgmt_approval", days: 1 },
   resume_upload: { anchor: "job_posting", days: 7 },
   hr_shortlist: { anchor: "resume_upload", days: 2 },
-  hod_share: { anchor: "hr_shortlist", days: 1 },
-  hod_shortlist: { anchor: "hod_share", days: 2 },
+  // Anchored on HR's shortlist, because that IS the handover now — the day
+  // `hod_share` used to be allotted was a day spent waiting for a button press.
+  hod_shortlist: { anchor: "hr_shortlist", days: 2 },
   telephonic_screening: { anchor: "hod_shortlist", days: 2 },
   // Anchored on the telephonic screen (the default previous stage). If the screen was
   // skipped its timestamp is null, and candidateDueIso falls back to the last completed

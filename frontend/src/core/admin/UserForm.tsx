@@ -7,9 +7,9 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { FieldLabel, TextInput } from "@/shared/components/ui/Form";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
-import { grantableModules } from "@/apps/registry";
+import { grantableModules, levelsForModule, NO_VIEW_ONLY_APP_IDS } from "@/apps/registry";
 import { groupByCategory } from "@/apps/categories";
-import type { AppRole } from "@/core/platform/types";
+import { MODULE_LEVEL_LABEL, type AppRole, type ModuleLevel } from "@/core/platform/types";
 import {
   PERMISSION_MENUS, menuAccessLevel, setMenuAccessLevel, levelsForMenu, type MenuAccessLevel,
 } from "@/apps/receivables-hub/lib/menus";
@@ -45,6 +45,27 @@ function bySubGroup<T extends { subGroup?: string }>(rows: T[]): { label: string
 }
 
 /**
+ * One choice in a level row. Shared by the module-access block and the
+ * Outstanding Dashboard menu block below it — the two are the same control
+ * answering different questions, and they used to be two copies of this markup.
+ */
+function LevelPill({ on, label, onClick }: { on: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        "rounded-pill border px-2.5 py-1 text-[12px] transition",
+        on ? "border-orange bg-orange-soft text-orange font-semibold" : "border-line text-grey-2 hover:border-orange/40",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+/**
  * Labels for the receivables menu access levels. WHICH of them a given menu offers is decided
  * by `levelsForMenu` in lib/menus, not here — Settings has no standard tier and most menus have
  * no full tier, and offering a level a menu doesn't have would be a lie.
@@ -65,7 +86,7 @@ const ROLES: { value: AppRole; label: string; hint: string }[] = [
 export default function UserForm() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { profiles, departments, profileById, addUser, updateUser, addDepartment, canEditUser, canAddUser } = useDirectory();
+  const { profiles, departments, designations, bands, subDepartmentsFor, subDepartmentById, profileById, addUser, updateUser, addDepartment, canEditUser, canAddUser } = useDirectory();
   const editing = id ? profileById(id) : undefined;
   const canSave = editing ? canEditUser : canAddUser;
   const [busy, setBusy] = useState(false);
@@ -73,11 +94,21 @@ export default function UserForm() {
   const [name, setName] = useState(editing?.name ?? "");
   const [email, setEmail] = useState(editing?.email ?? "");
   const [mobile, setMobile] = useState(editing?.phone ?? "");
-  const [designation, setDesignation] = useState(editing?.designation ?? "");
+  const [designationId, setDesignationId] = useState(editing?.designationId ?? "");
   const [role, setRole] = useState<AppRole>(editing?.role ?? "employee");
   const [departmentId, setDepartmentId] = useState(editing?.departmentId ?? "");
+  const [subDepartmentId, setSubDepartmentId] = useState(editing?.subDepartmentId ?? "");
+  const [bandId, setBandId] = useState(editing?.bandId ?? "");
+  const [employeeCode, setEmployeeCode] = useState(editing?.employeeCode ?? "");
   const [hodIds, setHodIds] = useState<string[]>(editing?.hodIds ?? []);
-  const [moduleAccess, setModuleAccess] = useState<string[]>(editing?.moduleAccess ?? ["task-management"]);
+  // ONE piece of state for both questions "which apps" and "how much of each" —
+  // an id is granted iff it has a key here. Two collections (a granted list plus
+  // a level map) is how the two drift apart, and a save built from a disagreeing
+  // pair is unrecoverable from the UI.
+  const [moduleLevels, setModuleLevels] = useState<Record<string, ModuleLevel>>(
+    editing?.moduleLevels ?? { "task-management": "edit" },
+  );
+  const moduleAccess = Object.keys(moduleLevels);
   const [receivablesSalespersons, setReceivablesSalespersons] = useState<string[]>(editing?.receivablesSalespersons ?? []);
   // Outstanding Dashboard menu access — the two columns behind lib/menus:
   // hidden = deny-list ("may not see"), admin = allow-list ("may use at admin depth").
@@ -96,12 +127,94 @@ export default function UserForm() {
   const [saved, setSaved] = useState<null | { name: string; email: string; password: string }>(null);
   const [shareOpen, setShareOpen] = useState(false);
 
+  /**
+   * Pickers offer ACTIVE master rows only — plus whatever this user is already
+   * on, even if it has since been retired. Without that second half, opening a
+   * user who sits on a switched-off department shows an empty box, and saving
+   * would quietly move them to "no department".
+   */
+  const withCurrent = <T extends { id: string; active?: boolean }>(rows: T[], currentId: string, label: (r: T) => string) =>
+    rows
+      .filter((r) => (r.active ?? true) || r.id === currentId)
+      .map((r) => ({ value: r.id, label: label(r), sublabel: (r.active ?? true) ? undefined : "switched off" }));
+
+  const departmentOptions = withCurrent(departments, departmentId, (d) => d.name);
+  const subDepartmentOptions = withCurrent(
+    // subDepartmentsFor returns active rows under the chosen parent; the user's
+    // own sub-department is added back below even if it has been retired.
+    subDepartmentsFor(departmentId || null),
+    subDepartmentId,
+    (s) => s.name,
+  ).concat(
+    subDepartmentId && !subDepartmentsFor(departmentId || null).some((s) => s.id === subDepartmentId)
+      ? [{ value: subDepartmentId, label: subDepartmentById(subDepartmentId)?.name ?? "(retired)", sublabel: "switched off" }]
+      : [],
+  );
+  const designationOptions = withCurrent(designations, designationId, (d) => d.name);
+  const bandOptions = withCurrent(bands, bandId, (b) => `Band ${b.bandNo} · ${b.name}`);
+
+  /**
+   * The designation text this user carries that no master row matches — e.g.
+   * "Genral Manager", from before the master existed. Shown so an admin can see
+   * what is there; the save keeps it untouched unless they actually pick a row.
+   */
+  const unmappedDesignation = !designationId && editing?.designation ? editing.designation : "";
+
   const candidateHods = profiles.filter((p) => (p.role === "hod" || p.role === "sub_hod") && p.id !== id);
   const toggleHod = (hid: string) => setHodIds((prev) => (prev.includes(hid) ? prev.filter((h) => h !== hid) : [...prev, hid]));
-  const toggleModule = (mid: string) => setModuleAccess((prev) => (prev.includes(mid) ? prev.filter((m) => m !== mid) : [...prev, mid]));
-  /** Grant or revoke a whole category at once — the common "all the FMS apps" case. */
-  const setGroupModules = (ids: string[], on: boolean) =>
-    setModuleAccess((prev) => (on ? [...new Set([...prev, ...ids])] : prev.filter((m) => !ids.includes(m))));
+  /** Set one module's level, or revoke it with `null`. */
+  const setModuleLevel = (mid: string, level: ModuleLevel | null) =>
+    setModuleLevels((prev) => {
+      const next = { ...prev };
+      if (level === null) delete next[mid];
+      else next[mid] = level;
+      return next;
+    });
+  /**
+   * Put a set of modules on one level, or revoke them all with `null`.
+   *
+   * ⚠ Modules with no view-only tier (`NO_VIEW_ONLY_APP_IDS` — the mobile app) are
+   *   SKIPPED by a "View only" bulk action rather than being silently granted at
+   *   full. "Give this person read access to everything" must never hand out a
+   *   writable app as a side effect, and quietly revoking one they already hold
+   *   would be just as surprising. So bulk-view leaves them exactly as they are.
+   */
+  const setLevelFor = (ids: string[], level: ModuleLevel | null) =>
+    setModuleLevels((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        if (level === null) delete next[id];
+        else if (level === "view" && NO_VIEW_ONLY_APP_IDS.has(id)) continue;
+        else next[id] = level;
+      }
+      return next;
+    });
+
+  /** Grant or revoke a whole category at once — the "all the purchase apps" case. */
+  const setGroupModules = (ids: string[], level: ModuleLevel | null) => setLevelFor(ids, level);
+
+  const allModuleIds = grantableModules.map((m) => m.id);
+  const setAllModules = (level: ModuleLevel | null) => setLevelFor(allModuleIds, level);
+
+  /**
+   * The one level every module in `ids` is on, or `undefined` when they differ —
+   * which is what leaves all three bulk pills unhighlighted on a mixed set, rather
+   * than lying that one of them is active.
+   *
+   * Modules with no view-only tier are excluded from the "view" verdict for the
+   * same reason `setLevelFor` skips them: bulk-view never touches them, so their
+   * state must not stop the row reading as "View only".
+   */
+  const uniformLevel = (ids: string[]): ModuleLevel | null | undefined => {
+    if (!ids.length) return undefined;
+    if (ids.every((id) => !moduleLevels[id])) return null;
+    if (ids.every((id) => moduleLevels[id] === "edit")) return "edit";
+    const viewable = ids.filter((id) => !NO_VIEW_ONLY_APP_IDS.has(id));
+    if (viewable.length && viewable.every((id) => moduleLevels[id] === "view")) return "view";
+    return undefined;
+  };
+
+  const allLevel = uniformLevel(allModuleIds);
   const toggleSalesperson = (n: string) =>
     setReceivablesSalespersons((prev) => (prev.includes(n) ? prev.filter((x) => x !== n) : [...prev, n]));
   // One helper for both lists: "hidden" must also drop the full-access grant, or a menu
@@ -170,14 +283,22 @@ export default function UserForm() {
     if (!mobileNorm) return setError("Please enter a mobile number — it's the user's initial password.");
     if (mobileNorm.length < 6) return setError("Mobile number must be at least 6 digits (it's used as the password).");
     if (busy) return;
+    // `designation` (text) is the mirror list_org_people() returns for @mention
+    // pickers, so it travels with designation_id on every save. With nothing
+    // picked, an existing unmapped value is preserved rather than blanked.
+    const pickedDesignation = designations.find((d) => d.id === designationId);
     const base = {
       name: name.trim(),
       email: email.trim() || undefined,
-      designation: designation.trim() || undefined,
+      designation: pickedDesignation ? pickedDesignation.name : (editing?.designation ?? null),
+      designationId: designationId || null,
       role,
       departmentId: departmentId || null,
+      subDepartmentId: subDepartmentId || null,
+      bandId: bandId || null,
+      employeeCode: employeeCode.trim() || null,
       hodIds,
-      moduleAccess,
+      moduleLevels,
       // Only meaningful for a non-admin with the dashboard module; otherwise clear.
       receivablesSalespersons: showSalespersonScope ? receivablesSalespersons : [],
       receivablesHiddenMenus: showSalespersonScope ? receivablesHiddenMenus : [],
@@ -265,18 +386,70 @@ export default function UserForm() {
             <FieldLabel label="Mobile number" required hint={editing ? "saving resets the login password to this" : "the user's initial password"}>
               <TextInput value={mobile} onChange={(e) => { setMobile(e.target.value); setError(""); }} placeholder="e.g. 9876543210" inputMode="tel" />
             </FieldLabel>
-            <FieldLabel label="Designation"><TextInput value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Manager" /></FieldLabel>
+            <FieldLabel label="Employee code" hint="optional">
+              <TextInput value={employeeCode} onChange={(e) => setEmployeeCode(e.target.value)} placeholder="e.g. OTPL-S-10092" />
+            </FieldLabel>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <FieldLabel label="Department">
               <Combobox
                 value={departmentId}
-                onChange={setDepartmentId}
+                onChange={(v) => {
+                  setDepartmentId(v);
+                  // The sub-department belongs to the OLD parent — keeping it would
+                  // save a pairing the master says is impossible.
+                  setSubDepartmentId("");
+                }}
                 placeholder="— None —"
                 searchable
-                options={[{ value: "", label: "— None —" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
-                onCreate={(name) => { void addDepartment({ name }); }}
+                options={[{ value: "", label: "— None —" }, ...departmentOptions]}
+                onCreate={async (name) => await addDepartment({ name })}
                 createLabel={(q) => `Add department “${q}”`}
+              />
+            </FieldLabel>
+            <FieldLabel label="Sub-department" hint={departmentId ? undefined : "pick a department first"}>
+              <Combobox
+                value={subDepartmentId}
+                onChange={setSubDepartmentId}
+                placeholder={
+                  !departmentId ? "pick a department first"
+                    : subDepartmentOptions.length === 0 ? "none set up under this department"
+                    : "— None —"
+                }
+                disabled={!departmentId}
+                searchable
+                options={[{ value: "", label: "— None —" }, ...subDepartmentOptions]}
+              />
+            </FieldLabel>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <FieldLabel
+              label="Designation"
+              hint={unmappedDesignation ? undefined : "from the Organisation master"}
+            >
+              <Combobox
+                value={designationId}
+                onChange={setDesignationId}
+                placeholder="— None —"
+                searchable
+                options={[{ value: "", label: "— None —" }, ...designationOptions]}
+              />
+              {unmappedDesignation && (
+                <p className="mt-1.5 text-[11.5px] text-orange">
+                  Currently recorded as “{unmappedDesignation}”, which isn’t on the designation list yet.
+                  Leave this blank and it is kept as-is; pick one and it replaces it.
+                </p>
+              )}
+            </FieldLabel>
+            {/* Band is picked independently. Nothing about the designation above
+                restricts it, and several designations may share a band. */}
+            <FieldLabel label="Band" hint="independent of designation">
+              <Combobox
+                value={bandId}
+                onChange={setBandId}
+                placeholder="— None —"
+                searchable
+                options={[{ value: "", label: "— None —" }, ...bandOptions]}
               />
             </FieldLabel>
           </div>
@@ -329,7 +502,7 @@ export default function UserForm() {
             </FieldLabel>
           )}
 
-          <FieldLabel label="Module access" hint={role === "admin" ? "admins can open every app" : "which apps this user can open"}>
+          <FieldLabel label="Module access" hint={role === "admin" ? "admins can open every app" : "which apps this user can open, and how much of each"}>
             {role === "admin" ? (
               <p className="text-[12.5px] text-grey-2">Admins have full access to all current and future apps.</p>
             ) : (
@@ -338,22 +511,42 @@ export default function UserForm() {
                  portal is heading for dozens. Per-group select-all is here because
                  "give this person all the FMS apps" is the common admin action. */
               <div className="space-y-4">
+                <p className="text-[12px] text-grey-2">
+                  View only can open the app and read everything in it, but cannot add, edit or
+                  action anything.
+                </p>
+
+                {/* Set EVERY module at once. Setting fifteen modules one pill at a
+                    time was the actual complaint: "give this person read access to
+                    the whole portal" is a single decision, not fifteen. The
+                    per-category row below stays for the narrower "all the purchase
+                    apps" case. */}
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-grey-5/40 px-3 py-2.5">
+                  <span className="text-[12.5px] font-medium text-navy">All modules</span>
+                  <div className="flex shrink-0 gap-1.5">
+                    <LevelPill on={allLevel === null} label="No access" onClick={() => setAllModules(null)} />
+                    <LevelPill on={allLevel === "view"} label="View only" onClick={() => setAllModules("view")} />
+                    <LevelPill on={allLevel === "edit"} label="Full access" onClick={() => setAllModules("edit")} />
+                  </div>
+                </div>
+
                 {groupByCategory(grantableModules).map((group) => {
                   const ids = group.rows.map((a) => a.id);
-                  const allOn = ids.every((id) => moduleAccess.includes(id));
+                  const groupLevel = uniformLevel(ids);
                   return (
                     <div key={group.key}>
-                      <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
                         <span className="text-[11px] font-semibold uppercase tracking-wider text-grey-2">
                           {group.label}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setGroupModules(ids, !allOn)}
-                          className="text-[11.5px] font-medium text-orange hover:underline"
-                        >
-                          {allOn ? "Clear all" : "Select all"}
-                        </button>
+                        {/* Same three choices as a module row, applied to the whole
+                            category — so "all of Purchase, read-only" is one click
+                            rather than three. */}
+                        <div className="flex shrink-0 gap-1.5">
+                          <LevelPill on={groupLevel === null} label="No access" onClick={() => setGroupModules(ids, null)} />
+                          <LevelPill on={groupLevel === "view"} label="View only" onClick={() => setGroupModules(ids, "view")} />
+                          <LevelPill on={groupLevel === "edit"} label="Full access" onClick={() => setGroupModules(ids, "edit")} />
+                        </div>
                       </div>
                       {/* Second level (FMS → Purchase / HR), same split as the menu. */}
                       {bySubGroup(group.rows).map((sub) => (
@@ -363,28 +556,36 @@ export default function UserForm() {
                           {sub.label}
                         </div>
                       )}
-                      <div className="grid sm:grid-cols-2 gap-2">
+                      {/* One row per module, name left and level pills right — the same
+                          shape as the Outstanding Dashboard menu-access block further
+                          down this form, so the two read alike. Single column rather
+                          than the old two: three pills and a name do not fit twice
+                          across at this width. */}
+                      <div className="rounded-xl border border-line divide-y divide-line">
                         {sub.rows.map((a) => {
-                          const on = moduleAccess.includes(a.id);
+                          const level = moduleLevels[a.id];
                           const soon = a.status !== "live";
                           return (
-                            <button
-                              key={a.id}
-                              type="button"
-                              onClick={() => toggleModule(a.id)}
-                              className={cn(
-                                "flex items-center gap-2.5 text-left rounded-xl border px-3 py-2.5 transition",
-                                on ? "border-orange bg-orange-soft/50 ring-2 ring-orange/15" : "border-line hover:border-orange/40"
-                              )}
-                            >
-                              <span className={cn("w-4 h-4 rounded-[5px] border flex items-center justify-center shrink-0", on ? "bg-orange border-orange text-white" : "border-grey-2")}>
-                                {on && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
-                              </span>
-                              <span className="min-w-0">
+                            <div key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+                              <div className="min-w-0">
                                 <span className="block text-[13px] font-medium text-navy truncate">{a.name}</span>
                                 {soon && <span className="block text-[10.5px] text-grey-2">Coming soon</span>}
-                              </span>
-                            </button>
+                                {NO_VIEW_ONLY_APP_IDS.has(a.id) && (
+                                  <span className="block text-[10.5px] text-grey-2">No view-only tier yet</span>
+                                )}
+                              </div>
+                              <div className="flex shrink-0 gap-1.5">
+                                <LevelPill on={!level} label="No access" onClick={() => setModuleLevel(a.id, null)} />
+                                {levelsForModule(a.id).map((l) => (
+                                  <LevelPill
+                                    key={l}
+                                    on={level === l}
+                                    label={MODULE_LEVEL_LABEL[l]}
+                                    onClick={() => setModuleLevel(a.id, l)}
+                                  />
+                                ))}
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
@@ -426,24 +627,14 @@ export default function UserForm() {
                         )}
                       </div>
                       <div className="flex shrink-0 gap-1.5">
-                        {levels.map((l) => {
-                          const on = level === l;
-                          return (
-                            <button
-                              key={l}
-                              type="button"
-                              onClick={() => setMenuLevel(m.key, l)}
-                              className={cn(
-                                "rounded-pill border px-2.5 py-1 text-[12px] transition",
-                                on
-                                  ? "border-orange bg-orange-soft text-orange font-semibold"
-                                  : "border-line text-grey-2 hover:border-orange/40"
-                              )}
-                            >
-                              {MENU_LEVEL_LABEL[l]}
-                            </button>
-                          );
-                        })}
+                        {levels.map((l) => (
+                          <LevelPill
+                            key={l}
+                            on={level === l}
+                            label={MENU_LEVEL_LABEL[l]}
+                            onClick={() => setMenuLevel(m.key, l)}
+                          />
+                        ))}
                       </div>
                     </div>
                   );

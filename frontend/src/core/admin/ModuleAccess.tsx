@@ -5,8 +5,9 @@ import Pagination from "@/shared/components/ui/Pagination";
 import { usePagination } from "@/shared/lib/usePagination";
 import { cn } from "@/shared/lib/cn";
 import { useDirectory } from "@/core/platform/store";
-import { grantableModules } from "@/apps/registry";
+import { grantableModules, NO_VIEW_ONLY_APP_IDS } from "@/apps/registry";
 import { groupByCategory } from "@/apps/categories";
+import type { ModuleLevel } from "@/core/platform/types";
 import { useState } from "react";
 
 /** Category filter pill above the matrix. */
@@ -25,6 +26,16 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
+/** The view-only mark. Small enough to sit in the same 20px cell as the tick. */
+function EyeGlyph() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </svg>
+  );
+}
+
 /**
  * Per-user module access matrix. Each cell grants/revokes one app for one user
  * (→ app_access insert/delete in Stage B). Admins implicitly have every app, so
@@ -33,8 +44,21 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 export default function ModuleAccess() {
   const { profiles, departmentById, setUserModules, canManageModules } = useDirectory();
 
-  const toggle = (userId: string, current: string[], appId: string) =>
-    setUserModules(userId, current.includes(appId) ? current.filter((a) => a !== appId) : [...current, appId]);
+  /**
+   * Click cycles the cell: not granted → view only → full access → not granted.
+   *
+   * A cycling cell rather than the User form's three pills because this table has
+   * ONE COLUMN PER MODULE — three pills in every cell would be unreadable long
+   * before the portal's fifteenth app. The glyph carries the state instead, and
+   * the legend above says what each one means.
+   */
+  const cycle = (userId: string, current: Record<string, ModuleLevel>, appId: string) => {
+    const next = { ...current };
+    if (!next[appId]) next[appId] = NO_VIEW_ONLY_APP_IDS.has(appId) ? "edit" : "view";
+    else if (next[appId] === "view") next[appId] = "edit";
+    else delete next[appId];
+    return setUserModules(userId, next);
+  };
 
   const pg = usePagination(profiles);
 
@@ -50,7 +74,29 @@ export default function ModuleAccess() {
 
   return (
     <div className="space-y-4">
-      <p className="text-[13px] text-grey">Choose which apps each person can open. Admins always have access to every app.</p>
+      <p className="text-[13px] text-grey">
+        Choose which apps each person can open, and how much of each. Clicking a cell cycles it:
+        no access → view only → full access. Admins always have full access to every app.
+      </p>
+
+      {/* The glyphs carry the state in a table this wide, so they have to be
+          spelled out — an outlined eye and a filled tick are not self-evident. */}
+      <div className="flex flex-wrap items-center gap-4 text-[12px] text-grey-2">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-[6px] border border-grey-2 inline-flex items-center justify-center" />
+          No access
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-[6px] border border-orange text-orange inline-flex items-center justify-center"><EyeGlyph /></span>
+          View only — can open and read it, but change nothing
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-5 h-5 rounded-[6px] border border-orange bg-orange text-white inline-flex items-center justify-center">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
+          </span>
+          Full access
+        </span>
+      </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
         <FilterChip label="All" active={activeGroup === "all"} onClick={() => setActiveGroup("all")} />
@@ -110,34 +156,45 @@ export default function ModuleAccess() {
                   {shownModules.map((a) => {
                     // A universal app is granted implicitly (apps/universal.ts), so its cell is
                     // on and locked for everyone — an empty box the user could still open would
-                    // be a lie about who has access.
-                    const on = isAdmin || a.universal || u.moduleAccess.includes(a.id);
+                    // be a lie about who has access. Admins and universal apps are always FULL:
+                    // neither holds an app_access row, so neither can carry a level.
+                    const level: ModuleLevel | undefined =
+                      isAdmin || a.universal ? "edit" : u.moduleLevels[a.id];
                     const locked = isAdmin || !!a.universal || !canManageModules;
                     return (
                       <td key={a.id} className="text-center px-4 py-3">
                         <button
                           type="button"
                           disabled={locked}
-                          onClick={() => toggle(u.id, u.moduleAccess, a.id)}
-                          aria-pressed={on}
+                          onClick={() => cycle(u.id, u.moduleLevels, a.id)}
+                          aria-pressed={!!level}
                           title={
                             isAdmin
-                              ? "Admins always have access"
+                              ? "Admins always have full access"
                               : a.universal
                                 ? "Everyone has access to this app"
                                 : !canManageModules
                                   ? "Read-only preview"
-                                  : on
-                                    ? "Granted — click to revoke"
-                                    : "Not granted — click to grant"
+                                  : level === "edit"
+                                    ? "Full access — click to revoke"
+                                    : level === "view"
+                                      ? "View only — click for full access"
+                                      : NO_VIEW_ONLY_APP_IDS.has(a.id)
+                                        ? "Not granted — click to grant full access (this app has no view-only tier)"
+                                        : "Not granted — click for view only"
                           }
                           className={cn(
                             "w-5 h-5 rounded-[6px] border inline-flex items-center justify-center transition",
-                            on ? "bg-orange border-orange text-white" : "border-grey-2 hover:border-orange",
+                            level === "edit"
+                              ? "bg-orange border-orange text-white"
+                              : level === "view"
+                                ? "border-orange text-orange"
+                                : "border-grey-2 hover:border-orange",
                             locked ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
                           )}
                         >
-                          {on && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+                          {level === "edit" && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>}
+                          {level === "view" && <EyeGlyph />}
                         </button>
                       </td>
                     );

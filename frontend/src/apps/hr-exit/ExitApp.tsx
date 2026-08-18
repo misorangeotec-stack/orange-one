@@ -43,6 +43,17 @@ function RequireRealAdmin({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Gate to anything that CREATES or CHANGES something. `exits/new` was deliberately
+ * ungated so that anyone could resign — but "anyone" meant anyone who can OPEN the
+ * app, and a view-only grant now says they may read it without acting in it.
+ */
+function RequireEdit({ children }: { children: ReactNode }) {
+  const { canEdit } = useExitStore();
+  if (!canEdit) return <AccessDenied />;
+  return <>{children}</>;
+}
+
+/**
  * Gate to admins + process coordinators (the Control Center).
  *
  * ⭐ It is also the gate on the SHEET-PARITY EXPORT, which lives on that page — and that
@@ -95,7 +106,7 @@ export default function ExitApp() {
                 An ordinary employee who owns no step, is nobody's manager and works in
                 no clearance department must still be able to resign. `exits/new` must
                 come BEFORE `exits/:id` or "new" would be read as a case id. */}
-            <Route path="exits/new" element={<NewExit />} />
+            <Route path="exits/new" element={<RequireEdit><NewExit /></RequireEdit>} />
             <Route path="my-exit" element={<MyExit />} />
             {/* Everything below is gated by RLS, not by a route guard: fms_exit_can_read_case()
                 simply returns zero rows to someone with no business here, and the list /

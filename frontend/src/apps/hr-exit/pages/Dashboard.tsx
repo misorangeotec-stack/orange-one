@@ -308,7 +308,7 @@ export default function Dashboard() {
                 ? `Anyone can raise their own resignation here — the standard notice period is ${s.policy.defaultNoticeDays} days. It routes to your reporting manager, then to HR.`
                 : "Self-service resignations are switched off. HR or your reporting manager raises the case on your behalf."}
             </p>
-            {s.policy.allowSelfService && !s.myCase && (
+            {s.canEdit && s.policy.allowSelfService && !s.myCase && (
               <Link
                 to="/hr-exit/exits/new"
                 className="mt-4 inline-block text-[12.5px] font-semibold text-orange hover:underline"

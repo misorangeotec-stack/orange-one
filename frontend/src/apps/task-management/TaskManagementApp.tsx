@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from "react-router-dom";
-import { TaskStoreProvider } from "./mock/store";
+import type { ReactNode } from "react";
+import { TaskStoreProvider, useTaskStore } from "./mock/store";
 import TaskLayout from "./TaskLayout";
 import RequireRole from "./components/RequireRole";
 import Dashboard from "./pages/Dashboard";
@@ -25,6 +26,19 @@ import NotFound from "./pages/system/NotFound";
 const MANAGER = ["admin", "hod", "sub_hod"] as const;
 
 /**
+ * Gate to anything that CREATES or CHANGES something.
+ *
+ * ⚠ `tasks/new` and the recurring form carried NO route guard at all — the links
+ *   were conditional, but typing the URL rendered a working form. A view-only
+ *   grant makes that a real hole rather than a cosmetic one.
+ */
+function RequireEdit({ children }: { children: ReactNode }) {
+  const { canCreateTask } = useTaskStore();
+  if (!canCreateTask) return <Navigate to="/task-management/tasks" replace />;
+  return <>{children}</>;
+}
+
+/**
  * Root of the Task Management app. Owns all routing under /task-management.
  * Session lives in the portal core (app-wide); this only mounts the task store
  * (live mutations) beneath it. The shell wraps every screen; admin/manager
@@ -40,15 +54,15 @@ export default function TaskManagementApp() {
             <Route path="tagged" element={<TaggedTasks />} />
             {/* Not role-guarded — everyone has notifications. */}
             <Route path="notifications" element={<Notifications />} />
-            <Route path="tasks/new" element={<CreateTask />} />
+            <Route path="tasks/new" element={<RequireEdit><CreateTask /></RequireEdit>} />
             <Route path="tasks/:id" element={<TaskDetail />} />
 
             <Route path="team" element={<RequireRole roles={[...MANAGER]}><TeamTasks /></RequireRole>} />
             <Route path="all" element={<RequireRole roles={["admin"]}><AllTasks /></RequireRole>} />
 
             <Route path="recurring" element={<RequireRole roles={[...MANAGER]}><RecurringList /></RequireRole>} />
-            <Route path="recurring/new" element={<RequireRole roles={[...MANAGER]}><RecurringForm /></RequireRole>} />
-            <Route path="recurring/:id/edit" element={<RequireRole roles={[...MANAGER]}><RecurringForm /></RequireRole>} />
+            <Route path="recurring/new" element={<RequireRole roles={[...MANAGER]}><RequireEdit><RecurringForm /></RequireEdit></RequireRole>} />
+            <Route path="recurring/:id/edit" element={<RequireRole roles={[...MANAGER]}><RequireEdit><RecurringForm /></RequireEdit></RequireRole>} />
 
             <Route path="reports" element={<Reports />} />
             <Route path="scorecard" element={<WeeklyScorecard />} />

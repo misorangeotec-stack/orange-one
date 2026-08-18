@@ -8,6 +8,7 @@ import { cn } from "@/shared/lib/cn";
 import { groupByCategory } from "@/apps/categories";
 import { useAccessMatrix, lastSeenLabel } from "../lib/accessMatrix";
 import type { AccessRow } from "../lib/accessMatrix";
+import type { ModuleLevel } from "@/core/platform/types";
 import { exportAccessMatrixToXlsx } from "../lib/exportAccessXlsx";
 
 /**
@@ -43,26 +44,45 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
-/** The access mark. Filled = can open it; hollow = cannot. Never a bare tick
- *  glyph, so it reads the same here as it does in the PDF. */
-function Mark({ on, title }: { on: boolean; title: string }) {
+/** The access mark. Filled tick = full access; outlined eye = view only; hollow =
+ *  no access. Never a bare glyph on its own, so it reads the same here as it does
+ *  in the PDF. Matches Admin → Module Access exactly, so the report and the screen
+ *  an admin acts on cannot say different things. */
+function Mark({ level, title }: { level: ModuleLevel | "none"; title: string }) {
   return (
     <span
       title={title}
       aria-label={title}
       className={cn(
         "inline-flex h-5 w-5 items-center justify-center rounded-[6px] border",
-        on ? "border-orange bg-orange text-white" : "border-line bg-white"
+        level === "edit"
+          ? "border-orange bg-orange text-white"
+          : level === "view"
+            ? "border-orange bg-white text-orange"
+            : "border-line bg-white"
       )}
     >
-      {on && (
+      {level === "edit" && (
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
           <path d="M20 6L9 17l-5-5" />
+        </svg>
+      )}
+      {level === "view" && (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+          <circle cx="12" cy="12" r="2.5" />
         </svg>
       )}
     </span>
   );
 }
+
+/** What a cell's mark means, spelled out in its tooltip. */
+const LEVEL_PHRASE: Record<ModuleLevel | "none", string> = {
+  edit: "full access",
+  view: "view only — can open and read it, but change nothing",
+  none: "no access",
+};
 
 export default function UserAccess() {
   const { data, isLoading, error } = useAccessMatrix();
@@ -224,14 +244,14 @@ export default function UserAccess() {
                       Admin — every module
                     </td>
                   ) : (
-                    shownModules.map((m) => (
-                      <td key={m.id} className="px-4 py-3 text-center">
-                        <Mark
-                          on={u.access[m.id] ?? false}
-                          title={`${u.name} — ${m.name}: ${u.access[m.id] ? "can open" : "no access"}`}
-                        />
-                      </td>
-                    ))
+                    shownModules.map((m) => {
+                      const lvl = u.level[m.id] ?? "none";
+                      return (
+                        <td key={m.id} className="px-4 py-3 text-center">
+                          <Mark level={lvl} title={`${u.name} — ${m.name}: ${LEVEL_PHRASE[lvl]}`} />
+                        </td>
+                      );
+                    })
                   )}
                 </tr>
               ))}

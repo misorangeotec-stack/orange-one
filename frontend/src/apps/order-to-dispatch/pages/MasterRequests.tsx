@@ -150,7 +150,9 @@ export default function MasterRequests() {
             Missing an entry mid-task? Request it here rather than typing something the next step can't use.
           </p>
         </div>
-        <Button onClick={() => setRaising(true)}>Request a new entry</Button>
+        {/* Asking for a new master IS a write — it creates a pending row someone
+            then has to review. Ungated until now, in every FMS. */}
+        {s.canEdit && <Button onClick={() => setRaising(true)}>Request a new entry</Button>}
       </div>
 
       <Tabs

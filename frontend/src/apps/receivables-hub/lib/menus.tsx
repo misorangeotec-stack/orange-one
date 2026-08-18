@@ -278,13 +278,36 @@ export function useHubMenuAccess(): {
   isAdmin: boolean;
   canSee: (key: string) => boolean;
   hasFullAccess: (key: string) => boolean;
+  /**
+   * Does this person's grant on the Outstanding Dashboard allow CHANGING
+   * anything? False only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ An ORTHOGONAL axis to the two above, not a third level of them. `canSee`
+   *   and `hasFullAccess` answer "which menus, and how deep"; this answers "may
+   *   they write at all". A user can perfectly well hold Full access to the
+   *   Follow-ups menu — seeing every column of it — while the module grant says
+   *   view-only, in which case they read it and cannot log a follow-up.
+   *
+   * ⚠ A CEILING, never a permission. It only ever removes.
+   */
+  canEdit: boolean;
 } {
-  const { isAdmin, user } = useSession();
+  const { isAdmin, user, canEditModule } = useSession();
   const hidden = user?.receivablesHiddenMenus ?? [];
   const admin = user?.receivablesAdminMenus ?? [];
   return {
     isAdmin,
     canSee: (key) => canSeeMenu(isAdmin, hidden, key),
     hasFullAccess: (key) => hasMenuFullAccess(isAdmin, admin, key),
+    canEdit: canEditModule(RECEIVABLES_APP_ID),
   };
 }
+
+/**
+ * The portal app id this hub is granted under. Not the folder name — the grant
+ * predates the rename and `receivables-hub/meta.tsx` keeps the old id so existing
+ * grants still work. Customer Onboarding mounts these same pages and is granted
+ * separately, but its write gating rides on this one because the writes are the
+ * same code.
+ */
+const RECEIVABLES_APP_ID = "outstanding-dashboard";

@@ -242,7 +242,7 @@ export default function PositionsList() {
             Every opening that has been posted. Open one to work its pipeline.
           </p>
         </div>
-        {s.isStepOwner("mrf") && (
+        {s.canEdit && s.isStepOwner("mrf") && (
           <Link to="/hr-recruitment/requisitions/new">
             <Button size="sm">+ Raise a Requisition</Button>
           </Link>
@@ -297,7 +297,7 @@ export default function PositionsList() {
             // Same rule the requisition page uses: only a coordinator pauses or
             // abandons a vacancy, and a closed or cancelled one is not reopenable —
             // there is no RPC for it, so no button pretends otherwise.
-            const mayHold = s.isProcessCoordinator;
+            const mayHold = s.canEdit && s.isProcessCoordinator;
             const dead = r.status === "cancelled" || r.status === "closed";
             return (
               <div className="flex items-center gap-2.5 whitespace-nowrap">

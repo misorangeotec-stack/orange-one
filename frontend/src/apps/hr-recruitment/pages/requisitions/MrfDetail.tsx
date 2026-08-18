@@ -131,13 +131,14 @@ export default function MrfDetail() {
     .filter(Boolean) as string[];
 
   // What this user may do, at this step, on THIS requisition.
-  const canDecideHr = r.status === "hr_review" && s.canActOn("hr_head_approval", r);
-  const canDecideMgmt = r.status === "mgmt_review" && s.canActOn("mgmt_approval", r);
-  const canPost = r.status === "posting" && s.canActOn("job_posting", r);
+  // A view-only grant removes every action here while the requisition stays readable.
+  const canDecideHr = s.canEdit && r.status === "hr_review" && s.canActOn("hr_head_approval", r);
+  const canDecideMgmt = s.canEdit && r.status === "mgmt_review" && s.canActOn("mgmt_approval", r);
+  const canPost = s.canEdit && r.status === "posting" && s.canActOn("job_posting", r);
   // Only the person who raised it can fix a sent-back requisition and resubmit.
   const isMine = s.myRequisitions.some((m) => m.id === r.id);
-  const canResubmit = r.status === "sent_back" && (isMine || s.isAdmin);
-  const canHold = s.isProcessCoordinator;
+  const canResubmit = s.canEdit && r.status === "sent_back" && (isMine || s.isAdmin);
+  const canHold = s.canEdit && s.isProcessCoordinator;
 
   const candidates = s.candidatesFor(r.id);
   // "Filled" means someone actually JOINED — not that they were finalized. A

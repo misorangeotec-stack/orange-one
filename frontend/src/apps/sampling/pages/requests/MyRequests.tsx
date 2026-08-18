@@ -74,9 +74,11 @@ export default function MyRequests() {
           <h1 className="text-[22px] font-bold text-navy">My Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">Sampling requests you raised.</p>
         </div>
-        <Link to="/sampling/requests/new">
-          <Button size="sm">Raise a request</Button>
-        </Link>
+        {s.canEdit && (
+          <Link to="/sampling/requests/new">
+            <Button size="sm">Raise a request</Button>
+          </Link>
+        )}
       </div>
 
       <QueueTable<SamplingRequest>

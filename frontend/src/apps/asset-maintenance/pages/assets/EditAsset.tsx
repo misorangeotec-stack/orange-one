@@ -13,6 +13,21 @@ export default function EditAsset() {
   const asset = s.assetById(id);
 
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
+  // ⚠ Self-guard, because the LINK to this page was gated but the page was not —
+  //   it rendered the full form with a working "Save changes" to anyone who typed
+  //   the URL. `canRaise` already carries the view-only ceiling. Worded like
+  //   NewAsset's guard so the two read alike.
+  if (!s.canRaise) {
+    return (
+      <div className="rounded-xl border border-line bg-white p-6">
+        <h1 className="text-[18px] font-bold text-navy">Editing assets is restricted</h1>
+        <p className="mt-1 text-[13.5px] text-grey-2">
+          You can read the register, but changing an asset needs the Service Due owner, a
+          coordinator or an admin.
+        </p>
+      </div>
+    );
+  }
   if (!asset) return <p className="text-[13.5px] text-grey-2">That asset no longer exists.</p>;
 
   const submit = async (v: AssetFormValues) => {

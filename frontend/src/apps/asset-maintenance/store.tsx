@@ -64,6 +64,15 @@ interface AssetStoreValue {
   userId: string;
   isAdmin: boolean;
   isProcessCoordinator: boolean;
+  /**
+   * Does this person's grant on Asset Maintenance allow CHANGING anything? False
+   * only on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away. Kept
+   *   OUT of canActOn / canSeeQueue / isProcessCoordinator, which decide what a
+   *   person can SEE.
+   */
+  canEdit: boolean;
   canRaise: boolean;
   canMonitor: boolean;
   canActOn: (step: QueueStep, job: ServiceJob) => boolean;
@@ -262,7 +271,10 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
      * — see the foundations migration.
      */
     const dueOwners = stepOwnerFor("service_due")?.employeeIds ?? [];
-    const canRaise = dueOwners.length === 0 || isAdmin || isProcessCoordinator || dueOwners.indexOf(uid) !== -1;
+    // Module-level write ceiling. From `session`, never a demo persona.
+    const canEdit = session.canEditModule("asset-maintenance");
+    const canRaise =
+      canEdit && (dueOwners.length === 0 || isAdmin || isProcessCoordinator || dueOwners.indexOf(uid) !== -1);
 
     const ownerNamesFor = (stepKey: StepKey): string[] =>
       (stepOwnerFor(stepKey)?.employeeIds ?? [])
@@ -344,7 +356,9 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
     const isMasterUnassigned = (mt: AssetMasterType) => managerIdsFor(mt).length === 0;
     // Unassigned ⇒ admins only, never nobody.
-    const canManage = (mt: AssetMasterType) => isAdmin || managerIdsFor(mt).indexOf(uid) !== -1;
+    // Pure write gate (MasterCrud Add + Actions column). isAnyMasterManager is
+    // left alone — it guards the Masters ROUTE, which a view-only manager may read.
+    const canManage = (mt: AssetMasterType) => canEdit && (isAdmin || managerIdsFor(mt).indexOf(uid) !== -1);
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
 
     return {
@@ -353,6 +367,7 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
 
       userId: uid,
       isAdmin,
+      canEdit,
       isProcessCoordinator,
       canRaise,
       canMonitor: isProcessCoordinator,

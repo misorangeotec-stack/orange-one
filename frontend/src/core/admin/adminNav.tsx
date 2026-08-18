@@ -32,7 +32,7 @@ const ic = {
 /** Admin area sidebar nav (admin-only area, so no per-item role gating needed). */
 export const adminNav: NavItem[] = [
   { label: "Checklist", to: `${B}`, icon: ic.checklist, section: "Administration" },
-  { label: "Departments", to: `${B}/departments`, icon: ic.departments },
+  { label: "Organisation", to: `${B}/organisation`, icon: ic.departments },
   { label: "Users", to: `${B}/users`, icon: ic.users },
   { label: "Hierarchy", to: `${B}/hierarchy`, icon: ic.hierarchy },
   { label: "Module Access", to: `${B}/access`, icon: ic.access },

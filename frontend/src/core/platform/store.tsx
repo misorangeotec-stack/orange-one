@@ -1,13 +1,19 @@
 import { createContext, useContext, useMemo } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AppRole, Department, Profile } from "./types";
+import type { AppRole, Band, Department, Designation, ModuleLevel, Profile, SubDepartment } from "./types";
 import { useAuth } from "./auth";
 import { fetchDirectory } from "./liveDirectory";
 import {
   insertDepartment as insertDepartmentWrite,
   updateDepartment as updateDepartmentWrite,
-  deleteDepartment as deleteDepartmentWrite,
+  setDepartmentActive as setDepartmentActiveWrite,
+  insertSubDepartment as insertSubDepartmentWrite,
+  updateSubDepartment as updateSubDepartmentWrite,
+  insertDesignation as insertDesignationWrite,
+  updateDesignation as updateDesignationWrite,
+  insertBand as insertBandWrite,
+  updateBand as updateBandWrite,
   updateUserProfile as updateUserProfileWrite,
   setUserRole as setUserRoleWrite,
   setUserHods as setUserHodsWrite,
@@ -27,8 +33,16 @@ import { createUserViaFunction, deleteUserViaFunction, setUserEmailViaFunction, 
 export interface DirectoryValue {
   profiles: Profile[];
   departments: Department[];
+  subDepartments: SubDepartment[];
+  designations: Designation[];
+  bands: Band[];
   profileById: (id: string | null) => Profile | undefined;
   departmentById: (id: string | null) => Department | undefined;
+  subDepartmentById: (id: string | null) => SubDepartment | undefined;
+  designationById: (id: string | null) => Designation | undefined;
+  bandById: (id: string | null) => Band | undefined;
+  /** Active sub-departments under a department, for the dependent picker on the user form. */
+  subDepartmentsFor: (departmentId: string | null) => SubDepartment[];
   directReportIds: (hodId: string) => string[];
   /** Transitive reports (full downline) of `rootId` — used for manager visibility/assignment. */
   downlineIds: (rootId: string) => string[];
@@ -50,11 +64,28 @@ export interface DirectoryValue {
 
   addDepartment: (input: { name: string; description?: string }) => Promise<string>;
   updateDepartment: (id: string, patch: { name?: string; description?: string }) => Promise<void>;
-  deleteDepartment: (id: string) => Promise<void>;
-  addUser: (input: { name: string; email?: string; mobile: string; designation?: string; role: AppRole; departmentId: string | null; hodIds?: string[]; moduleAccess?: string[]; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[] }) => Promise<string>;
-  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "role" | "departmentId" | "hodIds" | "avatarColor" | "moduleAccess" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
+  /**
+   * Switch a department off/on. There is deliberately no delete: `departments` is
+   * the parent of 5k+ tasks and every FMS step-owner list.
+   */
+  setDepartmentActive: (id: string, active: boolean) => Promise<void>;
+
+  addSubDepartment: (input: { departmentId: string; name: string; active?: boolean; sortOrder?: number }) => Promise<string>;
+  updateSubDepartment: (id: string, patch: { departmentId?: string; name?: string; active?: boolean; sortOrder?: number }) => Promise<void>;
+  addDesignation: (input: { name: string; active?: boolean; sortOrder?: number }) => Promise<string>;
+  updateDesignation: (id: string, patch: { name?: string; active?: boolean; sortOrder?: number }) => Promise<void>;
+  addBand: (input: { bandNo: number; name: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<string>;
+  updateBand: (id: string, patch: { bandNo?: number; name?: string; description?: string | null; active?: boolean; sortOrder?: number }) => Promise<void>;
+
+  addUser: (input: { name: string; email?: string; mobile: string; designation?: string | null; designationId?: string | null; role: AppRole; departmentId: string | null; subDepartmentId?: string | null; bandId?: string | null; employeeCode?: string | null; hodIds?: string[]; moduleLevels?: Record<string, ModuleLevel>; receivablesSalespersons?: string[]; receivablesHiddenMenus?: string[]; receivablesAdminMenus?: string[]; receivablesAllowedReports?: string[] }) => Promise<string>;
+  /**
+   * ⚠ `moduleLevels` is the whole grant — the ids in it ARE the granted apps.
+   *   `moduleAccess` is deliberately NOT accepted here: two ways to say the same
+   *   thing is how the id list and the levels drift apart.
+   */
+  updateUser: (id: string, patch: Partial<Pick<Profile, "name" | "email" | "phone" | "designation" | "designationId" | "role" | "departmentId" | "subDepartmentId" | "bandId" | "employeeCode" | "hodIds" | "avatarColor" | "moduleLevels" | "receivablesSalespersons" | "receivablesHiddenMenus" | "receivablesAdminMenus" | "receivablesAllowedReports" | "receivablesAllowPipeline">>) => Promise<void>;
   deleteUser: (id: string) => Promise<void>;
-  setUserModules: (id: string, appIds: string[]) => Promise<void>;
+  setUserModules: (id: string, levels: Record<string, ModuleLevel>) => Promise<void>;
 }
 
 /**
@@ -91,12 +122,20 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
 
   const profiles = data?.profiles ?? [];
   const departments = data?.departments ?? [];
+  const subDepartments = data?.subDepartments ?? [];
+  const designations = data?.designations ?? [];
+  const bands = data?.bands ?? [];
   const uid = session?.user.id ?? "";
 
   const value = useMemo<DirectoryValue>(() => {
     const refresh = () => queryClient.invalidateQueries({ queryKey: ["directory"] });
     const profileById = (id: string | null) => profiles.find((p) => p.id === id);
     const departmentById = (id: string | null) => departments.find((d) => d.id === id);
+    const subDepartmentById = (id: string | null) => subDepartments.find((s) => s.id === id);
+    const designationById = (id: string | null) => designations.find((d) => d.id === id);
+    const bandById = (id: string | null) => bands.find((b) => b.id === id);
+    const subDepartmentsFor = (departmentId: string | null) =>
+      !departmentId ? [] : subDepartments.filter((s) => s.departmentId === departmentId && s.active);
     const directReportIds = (hodId: string) => profiles.filter((p) => p.hodIds.includes(hodId)).map((p) => p.id);
     const downlineIds = (rootId: string) => computeDownlineIds(profiles, rootId);
     // You assign tasks DOWN the hierarchy, never to yourself: admins to anyone,
@@ -113,8 +152,15 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
     return {
       profiles,
       departments,
+      subDepartments,
+      designations,
+      bands,
       profileById,
       departmentById,
+      subDepartmentById,
+      designationById,
+      bandById,
+      subDepartmentsFor,
       directReportIds,
       downlineIds,
       assignableUsers,
@@ -137,8 +183,49 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         await updateDepartmentWrite(id, patch);
         await refresh();
       },
-      deleteDepartment: async (id) => {
-        await deleteDepartmentWrite(id);
+      setDepartmentActive: async (id, active) => {
+        await setDepartmentActiveWrite(id, active);
+        await refresh();
+      },
+
+      addSubDepartment: async (input) => {
+        const id = await insertSubDepartmentWrite({
+          departmentId: input.departmentId,
+          name: input.name,
+          active: input.active ?? true,
+          sortOrder: input.sortOrder ?? 0,
+          createdBy: uid,
+        });
+        await refresh();
+        return id;
+      },
+      updateSubDepartment: async (id, patch) => {
+        await updateSubDepartmentWrite(id, patch);
+        await refresh();
+      },
+      addDesignation: async (input) => {
+        const id = await insertDesignationWrite({ name: input.name, active: input.active ?? true, sortOrder: input.sortOrder ?? 0 });
+        await refresh();
+        return id;
+      },
+      updateDesignation: async (id, patch) => {
+        await updateDesignationWrite(id, patch);
+        await refresh();
+      },
+      addBand: async (input) => {
+        const id = await insertBandWrite({
+          bandNo: input.bandNo,
+          name: input.name,
+          description: input.description ?? null,
+          active: input.active ?? true,
+          sortOrder: input.sortOrder ?? input.bandNo * 10,
+          createdBy: uid,
+        });
+        await refresh();
+        return id;
+      },
+      updateBand: async (id, patch) => {
+        await updateBandWrite(id, patch);
         await refresh();
       },
 
@@ -152,10 +239,14 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           email: input.email ?? "",
           phone: input.mobile,
           designation: input.designation ?? null,
+          designationId: input.designationId ?? null,
           role: input.role,
           departmentId: input.departmentId,
+          subDepartmentId: input.subDepartmentId ?? null,
+          bandId: input.bandId ?? null,
+          employeeCode: input.employeeCode ?? null,
           hodIds: input.hodIds ?? [],
-          moduleAccess: input.moduleAccess ?? [],
+          moduleLevels: input.moduleLevels ?? {},
           receivablesSalespersons: input.receivablesSalespersons ?? [],
           receivablesHiddenMenus: input.receivablesHiddenMenus ?? [],
           receivablesAdminMenus: input.receivablesAdminMenus ?? [],
@@ -182,7 +273,11 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
           email: patch.email,
           phone: patch.phone,
           designation: patch.designation,
+          designationId: patch.designationId,
           departmentId: patch.departmentId,
+          subDepartmentId: patch.subDepartmentId,
+          bandId: patch.bandId,
+          employeeCode: patch.employeeCode,
           avatarColor: patch.avatarColor,
           receivablesSalespersons: patch.receivablesSalespersons,
           receivablesHiddenMenus: patch.receivablesHiddenMenus,
@@ -192,7 +287,7 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         });
         if (patch.role !== undefined) await setUserRoleWrite(id, patch.role);
         if (patch.hodIds !== undefined) await setUserHodsWrite(id, patch.hodIds);
-        if (patch.moduleAccess !== undefined) await setUserModulesWrite(id, patch.moduleAccess);
+        if (patch.moduleLevels !== undefined) await setUserModulesWrite(id, patch.moduleLevels);
         // Per workspace policy, saving the user form re-pins the login password to
         // the current mobile number. Only fires when a phone is supplied (the admin
         // user form always does; self-profile saves don't, so they never reset it).
@@ -203,12 +298,12 @@ export function PlatformDirectoryProvider({ children }: { children: ReactNode })
         await deleteUserViaFunction(id);
         await refresh();
       },
-      setUserModules: async (id, appIds) => {
-        await setUserModulesWrite(id, appIds);
+      setUserModules: async (id, levels) => {
+        await setUserModulesWrite(id, levels);
         await refresh();
       },
     };
-  }, [profiles, departments, uid, queryClient]);
+  }, [profiles, departments, subDepartments, designations, bands, uid, queryClient]);
 
   // Hold render until the directory is loaded for an authed user, so the session
   // and admin screens never see a half-empty directory. Unauthed (Landing/Login)

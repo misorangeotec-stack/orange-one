@@ -165,6 +165,20 @@ interface ExitStoreValue {
 
   // capabilities (derived from the EFFECTIVE identity, so demo personas re-scope)
   isAdmin: boolean;
+  /**
+   * Does this person's grant on Employee Exit allow CHANGING anything? False only
+   * on a view-only grant (Admin → Module Access).
+   *
+   * ⚠ A CEILING, never a permission — it grants nothing and only takes away.
+   *   Deliberately kept OUT of `canActOn`, which in this app ALSO decides queue
+   *   membership (lib/queues.ts): folding it in there would empty a view-only
+   *   user's queues rather than merely freeze them. It is ANDed in at each panel
+   *   and button site instead.
+   *
+   * ⚠ Read from the REAL session, not the effective persona — a demo persona must
+   *   not be able to step around the real user's view-only grant.
+   */
+  canEdit: boolean;
   canConfigure: boolean;
   isProcessCoordinator: boolean;
   /**
@@ -684,6 +698,9 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
      * `handover` needs both confirmations — and a manager who never responds must not
      * be able to wedge the case.
      */
+    // Module-level write ceiling — see the doc on ExitStoreValue.canEdit.
+    const canEdit = session.canEditModule("hr-exit");
+
     const canActOn = (stepKey: StepKey, c: ExitCase): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
       if (isManagerStep(stepKey) && c.reportingManagerIds.includes(user.id)) return true;
@@ -953,7 +970,8 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
       policy,
 
       isAdmin,
-      canConfigure: isAdmin,
+      canEdit,
+      canConfigure: canEdit && isAdmin,
       isProcessCoordinator,
       isStepOwner,
       isExitStaff,

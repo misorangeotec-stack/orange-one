@@ -174,8 +174,10 @@ export default function RequestDetail() {
 
   const name = (uid: string | null) => (uid ? s.personName(uid) : "—");
   const isCoordinatorish = s.isAdmin || s.isProcessCoordinator;
-  const canHold = isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
-  const canCancel = (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
+  // A view-only grant removes every action here while the job card stays readable.
+  const canHold = s.canEdit && isCoordinatorish && (s.isOpenRequest(r) || r.status === "on_hold");
+  const canCancel =
+    s.canEdit && (r.raisedBy === session.user.id || isCoordinatorish) && (s.isOpenRequest(r) || r.status === "on_hold");
 
   const cur = openStep(r);
   const canActNow = cur ? s.canActOn(cur, r) : false;

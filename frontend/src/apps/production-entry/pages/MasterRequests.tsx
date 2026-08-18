@@ -115,7 +115,9 @@ export default function MasterRequests() {
               : "Entries you've asked to add to the production masters. Once the owner approves one, it's selectable on the issue slip."}
           </p>
         </div>
-        <Button size="sm" onClick={() => setRaising(true)}>Request new entry</Button>
+        {/* Asking for a new master IS a write — it creates a pending row someone
+            then has to review. Ungated until now, in every FMS. */}
+        {s.canEdit && <Button size="sm" onClick={() => setRaising(true)}>Request new entry</Button>}
       </div>
 
       {canReview && unassigned.length > 0 && (

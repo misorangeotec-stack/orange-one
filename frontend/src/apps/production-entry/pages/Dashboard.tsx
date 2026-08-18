@@ -91,9 +91,12 @@ export default function Dashboard() {
             Where ink production job cards stand today — handover, production, quality, packing and FG transfer.
           </p>
         </div>
-        <Link to="/production-entry/requests/new">
-          <Button size="sm">Generate issue slip</Button>
-        </Link>
+        {/* MyRequests already checked canRaise here; this one never did. */}
+        {s.canRaise && (
+          <Link to="/production-entry/requests/new">
+            <Button size="sm">Generate issue slip</Button>
+          </Link>
+        )}
       </div>
 
       <KpiRow tiles={kpiTiles} />

@@ -58,10 +58,11 @@ export default function SamplingLayout() {
         canResult,
         canHandover,
         canMonitor,
+        canEdit: s.canEdit,
         hasRequests,
       }),
     [isAdmin, s.isAnyMasterManager, canCollect, canSampleReceived, canSampleToLab, canLabProcess,
-     canResultReceived, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, hasRequests],
+     canResultReceived, canSend, canConfirm, canTest, canResult, canHandover, canMonitor, s.canEdit, hasRequests],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

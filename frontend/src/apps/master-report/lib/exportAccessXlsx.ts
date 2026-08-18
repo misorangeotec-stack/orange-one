@@ -42,7 +42,7 @@ export function exportAccessMatrixToXlsx(matrix: AccessMatrix): void {
     ...matrix.modules.map<ExportColumn<AccessRow>>((m) => ({
       header: m.name,
       width: Math.max(10, Math.min(18, m.name.length + 2)),
-      value: (u) => (u.access[m.id] ? TICK : ""),
+      value: (u) => (u.level[m.id] === "edit" ? TICK : u.level[m.id] === "view" ? "View" : ""),
     })),
   ];
 
@@ -59,8 +59,9 @@ export function exportAccessMatrixToXlsx(matrix: AccessMatrix): void {
     columns,
     rows: matrix.rows,
     notes: [
-      "One row per user, sorted alphabetically. A tick means the person can open that module.",
-      "Admins are ticked for every module: they bypass module checks entirely and hold no explicit grants.",
+      "One row per user, sorted alphabetically. A tick means full access to that module — the person can open it and change things in it.",
+      `"View" means view-only: they can open the module and read every screen in it, but every add, edit, delete and action button is hidden. A blank cell means no access.`,
+      "Admins are ticked for every module: they bypass module checks entirely, hold no explicit grants, and are therefore always full access.",
       `Explicitly granted, per module (admins excluded, since they hold no grants) — ${totalsRow}`,
       `${matrix.neverSignedIn} of ${matrix.rows.length} users have never signed in; ${matrix.grantedButNeverSignedIn} of those already hold module access.`,
       "Granting is done in Admin → Module Access. This export is a snapshot, not a permission record.",

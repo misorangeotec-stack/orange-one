@@ -77,6 +77,15 @@ function matchApp(pathname: string) {
 }
 
 /**
+ * The app id owning this URL, or null on the launcher / admin / account screens.
+ * Exported so the shell can ask "how much access does this person have HERE?"
+ * without every app layout having to pass its own id down.
+ */
+export function currentAppId(pathname: string): string | null {
+  return matchApp(pathname)?.[0] ?? null;
+}
+
+/**
  * Build the trail for a URL.
  *
  * `pageLabel` is the name of the current page, which only the shell knows (it

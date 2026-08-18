@@ -1452,8 +1452,10 @@ function RedMarkMuster({ rows, snap, snapByGuid, companyOptions, locationOptions
  * render decision, not the access control.
  */
 export function MusterPanel() {
-  const { hasFullAccess } = useHubMenuAccess();
-  const canManage = hasFullAccess("settings");
+  const { hasFullAccess, canEdit } = useHubMenuAccess();
+  // Full access to the Settings menu says WHICH depth they get; the module grant
+  // says whether they may write at all. Both must pass.
+  const canManage = canEdit && hasFullAccess("settings");
   const [tags, setTags] = useState<TagRow[] | null>(null);
   const [groups, setGroups] = useState<GroupRow[] | null>(null);
   const [snap, setSnap] = useState<SnapRow[] | null>(null);

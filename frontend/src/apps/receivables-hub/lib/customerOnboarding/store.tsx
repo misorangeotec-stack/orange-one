@@ -75,6 +75,16 @@ interface CustomerStore {
 
   /** Capabilities. ⚠ canActOn MIRRORS the SQL fms_customer_can_act — keep them in step. */
   isAdmin: boolean;
+  /**
+   * Does this person's grant on Customer Onboarding allow CHANGING anything?
+   * False only on a view-only grant.
+   *
+   * ⚠ A CEILING, never a permission. Kept OUT of `canActOn`, which also decides
+   *   which rows land in a person's worklist (pages/customerOnboarding/Home.tsx):
+   *   folding it in there would empty a view-only user's list rather than freeze
+   *   it. ANDed in at each action site instead.
+   */
+  canEdit: boolean;
   isCoordinator: boolean;
   /** The configured list, for the Settings picker. Admins are coordinators implicitly. */
   coordinatorIds: string[];
@@ -107,7 +117,10 @@ interface CustomerStore {
 const Ctx = createContext<CustomerStore | null>(null);
 
 export function CustomerOnboardingProvider({ children }: { children: ReactNode }) {
-  const { user, isAdmin } = useSession();
+  const { user, isAdmin, canEditModule } = useSession();
+  // Module-level write ceiling for Customer Onboarding. Its own grant, not the
+  // hub's — the two are separate modules even though they share these pages.
+  const canEdit = canEditModule("customer-onboarding");
   const queryClient = useQueryClient();
   const uid = user?.id ?? null;
 
@@ -150,7 +163,7 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
     // No list at all = anyone with hub access may raise one.
     const submissionOwners = stepOwnerIds("submission");
     const canRaise =
-      isCoordinator || submissionOwners.length === 0 || (!!uid && submissionOwners.includes(uid));
+      canEdit && (isCoordinator || submissionOwners.length === 0 || (!!uid && submissionOwners.includes(uid)));
 
     /** ⚠ Mirrors public.fms_customer_can_act(step, req, uid). Keep the two in step. */
     const canActOn = (step: StepKey, r: CustomerRequest): boolean => {
@@ -207,6 +220,7 @@ export function CustomerOnboardingProvider({ children }: { children: ReactNode }
           .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
 
       isAdmin,
+      canEdit,
       isCoordinator,
       coordinatorIds: snap.coordinatorIds,
       isStepOwner,
