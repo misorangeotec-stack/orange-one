@@ -162,6 +162,74 @@ the "gap" that would have been filled by hand was never a gap.
 
 ---
 
+## One product, one record — the item swap (2026-08-18)
+
+The narrowing shipped and the intake form *still* offered `EPN SUBLIMATION INK
+BLACK` twice for NIRVANA FAB ART, under a company already chosen. Not a fault in
+the narrowing: the customer's own mapping list held both books' copies of the
+same ink. The company decides which customer you get; it cannot clean what is
+already hanging off them.
+
+**Where they came from.** Tally files a separate stock item in every company book
+that stocks it. When Dispatch's hand-typed customer↔item list moved into Central
+Masters, 1,582 of its pairs landed with the customer matched to one book's ledger
+and the item matched to a *different* book's twin. Tally's own 6,064 pairs never
+cross books — every one of these came from the old list, and not one had ever
+been sold against.
+
+**What was retired, and what was not.**
+
+| | |
+|---|---|
+| 1,582 | cross-book pairs, every one `source = 'portal'`, none with a single sale |
+| **684** | true duplicates — the customer already had the product through its own book's item. **Retired** |
+| **898** | no twin exists. **Kept, and must stay.** They are the only route by which that customer can order that product |
+
+That second row is the whole reason this was not a one-line DELETE. Most of the
+catalogue is filed under one company's book while both firms sell it — which is
+also why the order form does not filter items by the item's own book.
+
+**Run 2026-08-18.** Installed as `private.itemswap_run()` /
+`private.itemswap_rollback()`; source in `supabase/itemswap/00_itemswap.sql`.
+Dry run first, then a full rehearsal — run → undo → abort — on the live data:
+every count came back exactly, with `lines_not_restored` and `pairs_not_restored`
+both 0.
+
+Result: **684 mappings retired, 575 order lines repointed across 159 orders.**
+Orders 334, lines 1,260, rounds 201, round lines 748 and total quantity
+74,040.400 all unchanged; 0 lines lost a unit; `mst_items` untouched at 14,242;
+and **no customer anywhere still sees one product name twice** (was 684 such
+names across 107 customers).
+
+⚠ **THIS IS THE ONLY OPERATION IN CENTRAL MASTERS THAT HAS CHANGED EXISTING
+ROWS.** Everything else has been additive. It was safe only because the swap was
+proved one-to-one *first*, on live data: exactly one target each, zero differing
+on name, unit or HSN, zero with any sales, and no order carrying both twins.
+Authorised explicitly by the user. **Do not treat it as a precedent** — re-prove
+all four before any repeat.
+
+⚠ `fms_dispatch_round_items` was deliberately NOT rewritten. It is the archive of
+what physically went out and carries its own frozen `item_name` / `unit_name`;
+its `item_id` resolves to an item with an identical name and unit, so nothing
+renders differently. Rewriting it would be editing a photograph.
+
+⚠ **The frontend dedupe stays** (`itemsForCustomer` in the Dispatch store, commit
+`1f9b599`). The data is clean today, but nothing stops a new hand-typed
+cross-book pair recreating the duplicate tomorrow, and the intake picker should
+never be the place that discovers it.
+
+⚠ **4 order lines were already unsaveable before this ran, and still are.** The
+customer has no active mapping to the item, so `fms_dispatch_replace_lines`
+refuses them. Pre-existing and unrelated; the swap asserts the number does not
+*rise*. Worth chasing separately.
+
+**Undo, while it lasts.** `private.itemswap_pairs_before` (684 rows) and
+`private.itemswap_lines_before` (575 rows) hold the snapshot;
+`select private.itemswap_rollback();` puts both back and asserts it did. Keep
+until after a full month-end close, like the Phase 1 backups.
+
+---
+
 ## The decisions, and why
 
 Settled with the user; do not silently revisit.
