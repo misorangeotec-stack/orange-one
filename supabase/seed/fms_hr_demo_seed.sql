@@ -146,7 +146,9 @@ begin
     ('job_posting',      array[u_khushi]),
     ('resume_upload',    array[u_khushi, u_dharmi]),
     ('hr_shortlist',     array[u_dharmi]),
-    ('hod_share',        array[u_khushi]),
+    -- No 'hod_share' row: the step was removed in 20260903130000. Shortlisting by HR
+    -- is the handover now, and 'hod_shortlist' is a HOD step with no global owners —
+    -- it routes to the requisition's own hiring managers.
     ('interview_1',      array[u_riya, u_khushi]),
     ('interview_3',      array[u_nakul, u_aayush, u_karan]),
     ('final_decision',   array[u_riya]),
@@ -422,9 +424,8 @@ begin
   perform public.fms_hr_move_candidate(c12, 'hr_shortlisted');
   perform public.fms_hr_move_candidate(c13, 'hr_shortlisted');
 
-  -- HR shares a batch with the HOD (Khushi owns hod_share) — the sheet's "5–10 CVs at a time".
-  perform set_config('request.jwt.claims', json_build_object('sub', u_khushi)::text, true);
-  perform public.fms_hr_share_candidates_with_hod(array[c05, c06, c07, c08, c09, c10, c11, c12, c13]);
+  -- No share step: those thirteen shortlists ARE the handover, and the HOD was
+  -- notified as each one landed (fms_hr_notify_hod_pending, one rolling digest).
 
   -- The HOD (Hariomsharan — he raised this MRF, so the HOD steps are his) decides.
   perform set_config('request.jwt.claims', json_build_object('sub', u_hari)::text, true);
@@ -519,8 +520,6 @@ begin
   -- Divya stays with the HOD — a live backup while Krupa is onboarding.
   perform set_config('request.jwt.claims', json_build_object('sub', u_dharmi)::text, true);
   perform public.fms_hr_move_candidate(c22, 'hr_shortlisted');
-  perform set_config('request.jwt.claims', json_build_object('sub', u_khushi)::text, true);
-  perform public.fms_hr_share_candidates_with_hod(array[c22]);
 
   -- The full path for each of the six, run by that requisition's own owners.
   create temp table _track(cand uuid, hm uuid, ctc numeric) on commit drop;
@@ -538,8 +537,6 @@ begin
     if (select stage from public.fms_hr_candidates where id = rec.cand) = 'resume_uploaded' then
       perform public.fms_hr_move_candidate(rec.cand, 'hr_shortlisted');
     end if;
-    perform set_config('request.jwt.claims', json_build_object('sub', u_khushi)::text, true);
-    perform public.fms_hr_share_candidates_with_hod(array[rec.cand]);
     perform set_config('request.jwt.claims', json_build_object('sub', rec.hm)::text, true);
     perform public.fms_hr_hod_decide(array[rec.cand], true);
 
