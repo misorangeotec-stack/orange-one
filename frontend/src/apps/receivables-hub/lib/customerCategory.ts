@@ -96,6 +96,35 @@ import type { EnrichedBill } from "./agingReport";
 import type { ConsolidatedCustomer, Customer, SaleType } from "./types";
 
 /** Rupee guard, matching enumerateBills' own `Math.abs(pending) < 0.5` drop. */
+/**
+ * The explicit bucket for a blank category. AA = internal.
+ *
+ * Duplicated as a literal rather than imported from `CustomerCategoryMultiSelect`, which is where
+ * it is declared for the dropdown: this module must stay free of React so the scheduled report can
+ * call it on a server. The component re-exports the two helpers below, so nothing has two ways to
+ * ask the same question.
+ */
+const UNCATEGORIZED = "Uncategorized";
+
+/** The category tokens a customer matches against (handles groups + blanks). */
+export function customerCategoryTokens(
+  c: { category?: string; categories?: string[] },
+): string[] {
+  if (c.categories && c.categories.length) return c.categories;
+  if (c.category && c.category !== "Multiple") return [c.category];
+  return [UNCATEGORIZED];
+}
+
+/** True when the customer matches the selected categories ([] = no filter). */
+export function matchesCategory(
+  c: { category?: string; categories?: string[] },
+  selected: string[],
+): boolean {
+  if (!selected.length) return true;
+  const set = new Set(selected);
+  return customerCategoryTokens(c).some((t) => set.has(t));
+}
+
 export const EPS = 0.5;
 
 /* ── The tier spine ──────────────────────────────────────────────────────────────────── */

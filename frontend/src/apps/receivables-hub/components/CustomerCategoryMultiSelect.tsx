@@ -7,6 +7,12 @@ import { ChevronDown } from "lucide-react";
 // AA = internal. UNCATEGORIZED is the explicit bucket for a blank category.
 export const UNCATEGORIZED = "Uncategorized";
 
+// ⚠ THE TWO MATCHING HELPERS MOVED TO `lib/customerCategory.ts`, and are re-exported here so the
+//   ~dozen call sites that import them from this component keep working. They are pure functions
+//   and the scheduled report has to call them on a server, where importing a component would drag
+//   React into the bundle. Import them from the lib in new code.
+export { customerCategoryTokens, matchesCategory } from "@hub/lib/customerCategory";
+
 export const CATEGORY_OPTIONS = [
   { value: "A",  label: "A" },
   { value: "B",  label: "B" },
@@ -16,25 +22,6 @@ export const CATEGORY_OPTIONS = [
   { value: "AA", label: "AA (internal)" },
   { value: UNCATEGORIZED, label: "Uncategorized" },
 ];
-
-/** The category tokens a customer matches against (handles groups + blanks). */
-export function customerCategoryTokens(
-  c: { category?: string; categories?: string[] },
-): string[] {
-  if (c.categories && c.categories.length) return c.categories;
-  if (c.category && c.category !== "Multiple") return [c.category];
-  return [UNCATEGORIZED];
-}
-
-/** True when the customer matches the selected categories ([] = no filter). */
-export function matchesCategory(
-  c: { category?: string; categories?: string[] },
-  selected: string[],
-): boolean {
-  if (!selected.length) return true;
-  const set = new Set(selected);
-  return customerCategoryTokens(c).some((t) => set.has(t));
-}
 
 interface Props {
   value: string[];

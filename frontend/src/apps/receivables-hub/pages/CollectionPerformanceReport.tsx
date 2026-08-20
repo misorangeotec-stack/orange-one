@@ -45,6 +45,12 @@ import {
   cardFactsFor, computeKpis, toPdfKpi,
   type CardContext, type CardFact, type ZCKpis,
 } from "@hub/lib/collectionCards";
+// Who is on the list, and the one-line record of how it was narrowed. Plain TypeScript for the
+// same reason as the cards above.
+import {
+  MIN_OUTSTANDING_OPTIONS, buildFilterSummary, makeSaleTypeScope, selectEligible,
+  type MinOutKey, type Segment, type ZCFilters,
+} from "@hub/lib/collectionScope";
 import { CARD_ICONS, CARD_EXPLAIN } from "./collections/kpiCardCopy";
 import { monthEndLong, monthStartLong, monthStartISO, monthEndISO, isoToMonthLabel } from "@hub/lib/months";
 import { Input } from "@hub/components/ui/input";
@@ -118,15 +124,8 @@ type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
  */
 const HEADER_STICKY = "sticky top-0 z-20 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]";
 
-/** Cut the long tail without a fiddly ₹ input. */
-const MIN_OUTSTANDING_OPTIONS = [
-  { key: "0", label: "All", value: 0 },
-  { key: "1L", label: "≥ ₹1 L", value: 100_000 },
-  { key: "5L", label: "≥ ₹5 L", value: 500_000 },
-] as const;
-type MinOutKey = (typeof MIN_OUTSTANDING_OPTIONS)[number]["key"];
-
-type Segment = "all" | "active" | "no_activity";
+// MIN_OUTSTANDING_OPTIONS, MinOutKey and Segment moved to `lib/collectionScope.ts` — the pool
+// filter reads them and has to run on a server. Imported above.
 
 /**
  * Sale-type default for EVERY variant of this report (zero / threshold / dormant): all types
@@ -568,45 +567,27 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
    * The cards have to be a stable, complete strip you can click between — so they are measured
    * before the filter and the filter is applied after. See `rows`.
    */
-  const eligibleAllTypes = useMemo(() => {
-    let d = consolidatedCustomers.filter((c) => matchesCategory(c, categories));
-    if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => (c.companies ?? [c.company]).some((x) => s.has(x))); }
-    if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => (c.locations ?? [c.location]).some((x) => s.has(x))); }
-    if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => (c.salesPersons?.length ? c.salesPersons : [c.salesPerson]).some((x) => s.has(x))); }
-    if (segment === "active")
-      d = d.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
-    else if (segment === "no_activity")
-      d = d.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0 && (c.otherPayments ?? 0) === 0);
-    if (blockedOnly) d = d.filter((c) => c.blocked === true);
-    // Credit / advance ledgers have OVERPAID us. They are not non-payers, so they're out
-    // by default — the report would otherwise open on a list of people who owe nothing.
-    if (!includeNonDebtors) d = d.filter((c) => c.outstanding > 0);
-    const min = MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.value ?? 0;
-    if (min > 0) d = d.filter((c) => c.outstanding >= min);
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const tokens = q.split(/\s+/).filter(Boolean);
-      d = d.filter((c) => {
-        const text = `${c.name} ${groupOf(c)} ${c.salesPersons?.join(" ") ?? c.salesPerson}`.toLowerCase();
-        return tokens.every((t) => text.includes(t));
-      });
-    }
-    return d;
-  }, [
-    consolidatedCustomers, categories, companies, locations, salespersons,
-    segment, blockedOnly, includeNonDebtors, minOut, search, groupOf,
-  ]);
+  /** Every narrowing the screen offers, as data — the shape `lib/collectionScope.ts` reads. */
+  const zcFilters: ZCFilters = useMemo(
+    () => ({
+      categories, companies, locations, salespersons, saleTypes,
+      segment, blockedOnly, includeNonDebtors, minOut, search,
+    }),
+    [categories, companies, locations, salespersons, saleTypes, segment, blockedOnly, includeNonDebtors, minOut, search],
+  );
+
+  const eligibleAllTypes = useMemo(
+    () => selectEligible(consolidatedCustomers, zcFilters, groupOf),
+    [consolidatedCustomers, zcFilters, groupOf],
+  );
 
   /**
    * Scope by the customer's DOMINANT sale type. Active only on a PROPER subset: empty and full
    * both mean "no filter", the same convention SaleTypeMultiSelect labels ("All Sale Types") and
    * every other multi-select in the app uses. Default excludes Machine (see DEFAULT_SALE_TYPES).
    */
-  const inSaleTypeScope = useCallback(
-    (c: ConsolidatedCustomer) => {
-      if (saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length) return true;
-      return saleTypes.includes(dominantSaleTypeOf(c, outstandingByType));
-    },
+  const inSaleTypeScope = useMemo(
+    () => makeSaleTypeScope(saleTypes, outstandingByType),
     [saleTypes, outstandingByType],
   );
 
@@ -870,30 +851,12 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     setFocus(new Set()); setBands(new Set());
   };
 
-  const filterSummary = useMemo(() => {
-    const s: string[] = [];
-    // Lenses first — they're the most drastic cut, and the exported sheet has to record
-    // them or it's unauditable a week later.
-    for (const f of focus) s.push(`Focus: ${ZC_FOCUS_LABELS[f]}`);
-    for (const b of bands) s.push(`Band: ${BAND_LABELS[b]}`);
-    if (search.trim()) s.push(`Search: ${search.trim()}`);
-    if (salespersons.length) s.push(`Salesperson: ${salespersons.join(", ")}`);
-    if (companies.length) s.push(`Company: ${companies.join(", ")}`);
-    if (locations.length) s.push(`Location: ${locations.join(", ")}`);
-    if (categories.length) s.push(`Category: ${categories.join(", ")}`);
-    // Always record the sale-type scope, INCLUDING the default — every report now excludes Machine
-    // by default, so the sheet has to say so or the totals are unexplainable a week later.
-    s.push(
-      saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length
-        ? "Sale Type: All (incl. Machine)"
-        : `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")} (dominant type; Machine excluded by default)`,
-    );
-    if (minOut !== "0") s.push(`Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`);
-    if (segment !== "all") s.push(`Segment: ${segment === "active" ? "Active" : "No Activity"}`);
-    if (blockedOnly) s.push("Red Mark only");
-    if (includeNonDebtors) s.push("Incl. zero & credit balances");
-    return s;
-  }, [focus, bands, search, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, saleTypes]);
+  // Lenses first — they're the most drastic cut, and the exported sheet has to record them or
+  // it's unauditable a week later. See `buildFilterSummary`.
+  const filterSummary = useMemo(
+    () => buildFilterSummary(zcFilters, focus, bands, BAND_LABELS),
+    [zcFilters, focus, bands],
+  );
 
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
