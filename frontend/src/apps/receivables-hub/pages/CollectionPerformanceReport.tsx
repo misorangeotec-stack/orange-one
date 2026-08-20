@@ -48,7 +48,7 @@ import {
 // Who is on the list, and the one-line record of how it was narrowed. Plain TypeScript for the
 // same reason as the cards above.
 import {
-  MIN_OUTSTANDING_OPTIONS, buildFilterSummary, makeSaleTypeScope, selectEligible,
+  MIN_OUTSTANDING_OPTIONS, buildFilterSummary, listReportRows, makeSaleTypeScope, selectEligible,
   type MinOutKey, type Segment, type ZCFilters,
 } from "@hub/lib/collectionScope";
 import { CARD_ICONS, CARD_EXPLAIN } from "./collections/kpiCardCopy";
@@ -613,25 +613,16 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
    * letting them silently vanish. Threshold-only: the other two predicates have no denominator
    * to be undefined, so they drop nobody.
    */
-  const { allTypeRows, allTypeNoPool } = useMemo(() => {
-    if (!windowMonths.length) return { allTypeRows: [] as ZCRow[], allTypeNoPool: [] as ConsolidatedCustomer[] };
-    const range = usingDateRange ? rangeQuery.data! : null;
-    const out: ZCRow[] = [];
-    const dropped: ConsolidatedCustomer[] = [];
-    for (const c of eligibleAllTypes) {
-      // factsForRange is factsFor's twin — same arithmetic, day-level sources. See its header.
-      const facts = range
-        ? factsForRange(c, range, series, lastDates, balances, months, windowMonths, prevRange !== null, asOfDate, null, countJournalSettlements, lastAmounts)
-        : factsFor(c, series, lastDates, balances, months, windowMonths, prevMonths, asOfDate, countJournalSettlements, lastAmounts);
-      const listed =
-        mode === "dormant" ? isDormant(facts)
-        : mode === "zero"  ? isZeroCollection(facts)
-        : isBelowThreshold(facts, threshold);
-      if (listed) out.push({ customer: c, facts, group: groupOf(c) });
-      else if (mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped.push(c);
-    }
-    return { allTypeRows: out, allTypeNoPool: dropped };
-  }, [eligibleAllTypes, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements, usingDateRange, rangeQuery.data, prevRange]);
+  // The report itself — see `listReportRows`. Sale type is NOT applied here; `rows` below does it,
+  // so the overdue-by-type strip can be measured over the complete set first.
+  const { rows: allTypeRows, noPool: allTypeNoPool } = useMemo(
+    () => listReportRows(eligibleAllTypes, {
+      mode, threshold, months, windowMonths, prevMonths, asOfDate, countJournalSettlements,
+      usingDateRange, range: usingDateRange ? rangeQuery.data! : null, hasPrevRange: prevRange !== null,
+      series, lastDates, lastAmounts, balances,
+    }, groupOf),
+    [eligibleAllTypes, series, lastDates, lastAmounts, balances, months, windowMonths, prevMonths, asOfDate, groupOf, mode, threshold, countJournalSettlements, usingDateRange, rangeQuery.data, prevRange],
+  );
 
   /** The report as filtered — sale type applied last, so the type cards above stay complete. */
   const rows = useMemo(

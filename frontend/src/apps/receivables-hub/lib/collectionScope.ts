@@ -19,7 +19,12 @@
  *   and the filter is applied after.
  */
 
-import { SALE_TYPES, dominantSaleTypeOf, ZC_FOCUS_LABELS, type ZCFocus } from "./collections";
+import {
+  COLLECTIBLE_EPS, SALE_TYPES, ZC_FOCUS_LABELS,
+  dominantSaleTypeOf, factsFor, factsForRange, isBelowThreshold, isDormant, isZeroCollection,
+  type MonthFacts, type RangeFacts, type ZCFocus, type ZCRow,
+} from "./collections";
+import type { ZCMode } from "./collectionCards";
 import { matchesCategory } from "./customerCategory";
 import { saleTypeLabel } from "./salesReport";
 import type { ConsolidatedCustomer, SaleType } from "./types";
@@ -130,4 +135,67 @@ export function buildFilterSummary(
   if (f.blockedOnly) s.push("Red Mark only");
   if (f.includeNonDebtors) s.push("Incl. zero & credit balances");
   return s;
+}
+
+/** Everything the row predicate needs that is not a filter — the period, and the derived series. */
+export interface ReportWindow {
+  mode: ZCMode;
+  /** The threshold report's bar, as a percentage. Ignored by the other two. */
+  threshold: number;
+  months: string[];
+  windowMonths: string[];
+  prevMonths: string[];
+  asOfDate: string;
+  countJournalSettlements: boolean;
+  /** Set only when the period is a custom date range; then `range` must be supplied too. */
+  usingDateRange: boolean;
+  range: Map<string, RangeFacts> | null;
+  hasPrevRange: boolean;
+  series: Map<string, Map<string, MonthFacts>>;
+  lastDates: Map<string, string | null>;
+  lastAmounts: Map<string, number | null>;
+  balances: Map<string, number>;
+}
+
+/**
+ * The report itself: which of the eligible customers are actually listed.
+ *
+ *  - zero mode      : collected nothing at all. Needs no denominator, so it still catches a
+ *                     customer with an empty collectible pool.
+ *  - threshold mode : collected less than `threshold`% of Opening + Sales. Reads the WORSE of the
+ *                     gross and net-of-cheque-return percentages, so a customer whose only
+ *                     "payment" bounced can't hide above the bar.
+ *  - dormant mode   : billed NOTHING in the window. Also needs no denominator — paired with the
+ *                     outstanding > 0 gate in `selectEligible`, that IS the report.
+ *
+ * `noPool` is the count deliberately dropped: nothing was collectible from them in this window, so
+ * their percentage is undefined — NOT 0%. The basis note reports it rather than letting them
+ * silently vanish. Threshold-only: the other two predicates have no denominator to be undefined,
+ * so they drop nobody.
+ *
+ * ⚠ SALE TYPE IS NOT APPLIED HERE. Callers filter the result with `makeSaleTypeScope`, for the
+ *   reason in this file's header — the overdue-by-type strip is measured over these rows first.
+ */
+export function listReportRows(
+  eligibleAllTypes: ConsolidatedCustomer[],
+  w: ReportWindow,
+  groupOf: (c: ConsolidatedCustomer) => string,
+): { rows: ZCRow[]; noPool: ConsolidatedCustomer[] } {
+  if (!w.windowMonths.length) return { rows: [], noPool: [] };
+  const range = w.usingDateRange ? w.range : null;
+  const out: ZCRow[] = [];
+  const dropped: ConsolidatedCustomer[] = [];
+  for (const c of eligibleAllTypes) {
+    // factsForRange is factsFor's twin — same arithmetic, day-level sources. See its header.
+    const facts = range
+      ? factsForRange(c, range, w.series, w.lastDates, w.balances, w.months, w.windowMonths, w.hasPrevRange, w.asOfDate, null, w.countJournalSettlements, w.lastAmounts)
+      : factsFor(c, w.series, w.lastDates, w.balances, w.months, w.windowMonths, w.prevMonths, w.asOfDate, w.countJournalSettlements, w.lastAmounts);
+    const listed =
+      w.mode === "dormant" ? isDormant(facts)
+      : w.mode === "zero"  ? isZeroCollection(facts)
+      : isBelowThreshold(facts, w.threshold);
+    if (listed) out.push({ customer: c, facts, group: groupOf(c) });
+    else if (w.mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped.push(c);
+  }
+  return { rows: out, noPool: dropped };
 }
