@@ -39,6 +39,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | The COA sample PDF + the raw Excel sheet | Factory team | **PE-3** | 2026-08-20 |
 | All the OCPI details | Bushra | **OCPI-1** | 2026-08-20 |
 | Decision: weekly or monthly plan on the Collection Report | Ritesh Bhai | **RC-3** | 2026-08-20 |
+| Decision: does a salesperson's copy go to the rep only, or to everyone who can see that book? | Ritesh Bhai | **RC-5**, and the go-live of **RC-2** | 2026-08-20 |
 | Scope of the internal / related company tag | Bushra | **OD-1** | 2026-08-20 |
 | Call on removing "new customer / new item" from Dispatch | Bushra | **OD-2** | 2026-08-20 |
 | Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
@@ -507,7 +508,8 @@ not throughput.
 
 ## Order to Dispatch
 
-All three below need a conversation with Bushra before any code moves.
+OD-1 to OD-4 need a conversation with Bushra before any code moves. **OD-5 does not** — it is
+decided and can be picked up now.
 
 *(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
 
@@ -551,6 +553,8 @@ than two more values on that one; worth confirming rather than assuming.
 
 ### OD-2 · Stop creating customer and item masters inside Orange One  `[!]`
 *Raised 2026-08-20 · **Blocked:** needs Bushra's call on removing it outright*
+
+*(cross-ref: **OD-5** — if the request stays, the company it is raised for is the missing half)*
 
 On refresh, **Customer Master and Item Master must come from Tally only.** We should never create a
 new customer or item directly in Orange One — it is created in Tally first, and only then appears
@@ -604,6 +608,8 @@ not match.
 ### OD-4 · SO-2627-0413 names the wrong copy of SPECTRUM DIGITAL  `[!]`
 *Raised 2026-08-20 · **Blocked:** needs Bushra's confirmation before the row is touched*
 
+*(cross-ref: **OD-5** — the companyless approved customer is why this pair could form)*
+
 **Left exactly as it is** on purpose — logged here rather than fixed, pending her call.
 
 A customer exists once per Tally book, so SPECTRUM DIGITAL is three rows: Colorix — Surat,
@@ -631,6 +637,68 @@ the time. Re-run any time with the query in
 - [ ] Should an order whose customer row later gains a *different* company be flagged anywhere, or
       is this rare enough to handle one at a time?
 - [ ] The other 66: leave them alone (they are closed or cancelled), or sweep them once?
+
+### OD-5 · A requested customer / item is born with no company  `[ ]`
+*Raised 2026-08-20 · **not blocked** — the behaviour is decided; only the details at the foot are ours to settle*
+
+Whenever a user raises **request a new customer** or **request a new item** from the intake form,
+**no company is picked** — the form never asks, so the request carries none and the approved row
+lands companyless. It should ride along by default: the company the user already chose **at the top
+of the sales order form** is the company the request is raised for.
+
+**It breaks in three places, and all three have to move together.**
+
+1. **The modal is never told.** The customer picker prefills `{ name }` only
+   ([SalesOrderFields.tsx:197](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx#L197)).
+   The pattern already exists twelve lines up — a new *location* prefills
+   `{ name, company_id: f.form.companyId }` ([:158](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx#L158)).
+   The item side is the same omission plus one more step: `raiseFor` prefills `{ name }`
+   ([OrderLinesGrid.tsx:89](frontend/src/apps/order-to-dispatch/components/OrderLinesGrid.tsx#L89))
+   and the grid is handed `customerId` but **not** the company, so the intake form has to pass it in.
+2. **The form has no slot to put it in.** Neither the `customer` nor the `item` arm of
+   [masterFields.ts](frontend/src/apps/order-to-dispatch/lib/masterFields.ts) renders a company
+   field, and neither value bag carries a `company_id` key. ⚠ Those keys **are** the write payload
+   and the Excel round trip (`emptyValuesFor`'s own warning), so a new key means the column must
+   exist on every save path that reads the bag, not just in the modal.
+3. **Approval throws it away.** The live resolver inserts `mst_parties` with **no** `company_id`
+   and then ticks the new party into **every active company** via `mst_party_companies`
+   ([phase2/01_cutover.sql:542](supabase/phase2/01_cutover.sql#L542)); `item` does the same into
+   `mst_item_companies`. So even a company sent from the form would be dropped on the floor today.
+
+**Why it is worth doing — this is the mechanism behind OD-4.**
+With `company_id` null, `customersForCompany()` treats *no company* as *every company*
+([store.tsx:718](frontend/src/apps/order-to-dispatch/store.tsx#L718)), so a freshly approved
+customer appears under all five books and can be ordered under the wrong one. The wrong ledger does
+not stop at the order — it flows into the sales bill and the Tally posting. Stamping the company at
+request time is what removes the guess.
+
+**⚠ It must land on `mst_parties.company_id` — not on `mst_party_companies`.** Migration
+[20260921130000](supabase/migrations/20260921130000_revert_dispatch_gate_to_company_id.sql) reverted
+a widening that read that table as permission to bill: central masters keeps **one party row per
+Tally book**, so *which book may bill this row* has exactly one answer, and it is `company_id`.
+
+**One thing this does NOT change:** an item's company is informational and deliberately does not
+narrow the item picker — the customer↔item mapping is the authority there
+([types/index.ts](frontend/src/apps/order-to-dispatch/types/index.ts)). Stamping it on a requested
+item is record-keeping, so nobody should expect the picker to behave differently afterwards.
+
+**Precedent to match:** Customer Onboarding already asks the company **first**, before the GSTIN,
+and refuses to submit without it ([20260918120000](supabase/migrations/20260918120000_add_fms_customer_company.sql),
+[20260918120200](supabase/migrations/20260918120200_fms_customer_require_company_and_salesperson.sql)).
+
+**Sequencing:** overlaps **OD-2** — if Bushra removes "request a new customer / new item" from
+Dispatch outright, this dies with it for those two types. The prefill half is cheap and safe either
+way; do the resolver half once OD-2 is answered.
+
+**Open, for us to settle:**
+- [ ] Default-and-editable, or fixed to the order's company? (The same firm legitimately needs a
+      ledger in more than one book, but the requester is mid-order under exactly one.)
+- [ ] Once the company is stated, does the resolver stop blanket-ticking every active company into
+      `mst_party_companies` / `mst_item_companies`, or is that tick still wanted as the sibling map?
+- [ ] Show the company on the approver's modal too, so the owner sees which book they are creating
+      the ledger in — and can correct it before it exists.
+- [ ] The rows already approved companyless: sweep them once, or leave them to the Tally sync (which
+      is what produced OD-4)?
 
 ---
 
@@ -793,34 +861,125 @@ The repo is public, so runner minutes are free.
   but it stops silently rather than failing.
 - Still open: an attachment size guard (fine today at 2.2 MB), and resolving a salesperson to a
   chosen **user id** rather than to everyone holding the tag — the run log surfaces that for now.
+- **⚠ Do not arm this before RC-5 is answered.** Who a salesperson's copy actually reaches is a
+  decision for Ritesh Bhai, and on today's tags three accounts would each receive thirteen separate
+  emails per send. Arming first and asking after is the wrong order — those mails cannot be recalled.
 
 ---
 
-### RC-4 · The "Live (Tally)" toggle can switch to a database that no longer exists  `[ ]`
-*Raised 2026-08-20 · Found while building RC-2*
+### RC-4 · Remove the legacy receivables connection — ConnectWave only  🟢  `[ ]`
+*Raised 2026-08-20 · Found while building RC-2 · **Decided 2026-08-20:** rip it out. Low priority —
+nothing is waiting on it, so it can be picked up alongside whatever else is running.*
 
-The hub's admin-only **Live (Tally)** switch has two positions. Live — the default — reads the
-ConnectWave mirror and works. Turning it **off** selects the legacy pipeline project
-`lkwtvcpeamkzzqkfnkuc`, and **that project no longer exists**: its hostname does not resolve at
-all. So the off position is a dead end that nobody has walked into recently because Live is the
-default.
+The hub's **Live (Tally)** switch has two positions. Live — the default — reads the ConnectWave
+mirror and works. Turning it **off** selects the legacy pipeline project `lkwtvcpeamkzzqkfnkuc`, and
+**that project no longer exists**: its hostname does not resolve at all. The external Python pipeline
+that fed it (the separate "Orange Receivables Hub" repo) is out of the picture too.
 
-**What a user would see:** every receivables screen failing to load, with a network error rather
-than anything that explains itself. Admin-only, so the blast radius is small — but it is a trap
-sitting in the product.
+**The call: the legacy source goes away entirely.** Not "fail with a readable message" — deleted.
+ConnectWave is the only receivables backend. The dead path is not merely unused, it actively
+**conflicts**, and that is the reason to spend the time rather than leave it dormant.
 
-**Notes:** the switch is [liveMode.tsx](frontend/src/apps/receivables-hub/lib/liveMode.tsx), feeding
-[sourceContext.tsx](frontend/src/apps/receivables-hub/lib/sourceContext.tsx). The dead path is
-`loadFromSupabase` in [useAppData.ts](frontend/src/apps/receivables-hub/lib/useAppData.ts), via
-`supabaseFetcher.ts` and `receivablesSupabase.ts` on `VITE_RECEIVABLES_SUPABASE_URL`. The external
-Python pipeline that fed it (separate "Orange Receivables Hub" repo) is out of the picture too.
+**Where it already costs us — three kinds of conflict, all real today:**
 
-**To decide:**
-- [ ] Remove the toggle outright, or keep it and have it fail with a sentence a human can read?
-- [ ] If removed: delete `supabaseFetcher.ts` / `receivablesSupabase.ts` and the `VITE_RECEIVABLES_*`
-      env vars with it, or leave them dormant?
-- [ ] Is there anything in the legacy project worth keeping before the account is tidied up?
-- [ ] Does the static-JSON (`local`) source still earn its place, or go the same way?
+- **A silent-empty bug it already caused.** In
+  [CustomerDetail.tsx:846](frontend/src/apps/receivables-hub/pages/CustomerDetail.tsx#L846) a local
+  named `source` once *shadowed* the active source, so the Live path queried the legacy project with
+  ConnectWave ledger GUIDs, matched nothing, and returned an empty set **with no error**. It is fixed,
+  but the shape of the mistake only exists because two backends are reachable from one screen.
+- **Every screen carries a fork.** `source === "connectwave" ? … : …` appears ~20 times across
+  [useAppData.ts](frontend/src/apps/receivables-hub/lib/useAppData.ts), CustomerDetail,
+  CustomerRiskRegister, LedgerVoucherList and LedgerVoucherStatement — separate cache keys, a Red Mark
+  fallback, a whole second alerts story. Each fork is a place the two sources can disagree.
+- **The Collections report has to actively fence it out.** `build.mjs` installs an esbuild resolve
+  hook whose only job is to make sure nothing in the graph imports `receivablesSupabase`
+  ([build.mjs:86](supabase/collectionsreport/build.mjs#L86)). That guard exists solely because the
+  dead module is still importable.
+
+**The removal surface** (all of it, so nothing is left half-connected):
+
+| What | Where |
+|---|---|
+| The toggle + its permission | [liveMode.tsx](frontend/src/apps/receivables-hub/lib/liveMode.tsx), the topbar switch at [UserLayout.tsx:187](frontend/src/apps/receivables-hub/layouts/UserLayout.tsx#L187) |
+| `profiles.receivables_allow_pipeline` | the column, `Profile.receivablesAllowPipeline`, its row in [MenuPermissions.tsx](frontend/src/apps/receivables-hub/components/MenuPermissions.tsx), and every seed in [data.ts](frontend/src/core/platform/data.ts) |
+| The dead fetchers | `supabaseFetcher.ts`, `receivablesSupabase.ts`, `loadFromSupabase` in useAppData |
+| The env vars | `VITE_RECEIVABLES_SUPABASE_URL` / `_ANON_KEY` / `VITE_DATA_SOURCE`, in Vercel and in `.env.local` |
+| The forks | the ~20 `source === "connectwave"` branches collapse to their Live arm |
+| `sourceContext.tsx` | with one source left, `ReceivablesSource` is a single value — keep `useHubBase()`, drop the union |
+| The esbuild fence | the `receivablesSupabase` resolve hook in `build.mjs` can go once the module does |
+| The stored preference | `receivables.source.v2` in localStorage — a browser holding `"pipeline"` must land on Live, not on nothing |
+
+**⚠ Do NOT drop the column in the same breath.** The repo rule is additive-only on Supabase: stop
+*reading* `receivables_allow_pipeline`, leave the column in place. Also check first whether any live
+profile actually has it set — if someone is using the legacy view today, they lose it the moment this
+ships and should be told rather than discover it.
+
+**Open, minor:**
+- [ ] Does the static-JSON (`local`) source go the same way? "ConnectWave only" reads as yes, and
+      `loadFromJson` plus the `public/` fixtures would go with it — but it is also the only offline
+      dev path, so worth a moment's thought rather than deleting on momentum.
+- [ ] Anything in the legacy project worth exporting before the Supabase account is tidied up? (The
+      project is unreachable, so the honest answer may be that this question is already closed.)
+- [ ] Update [CLAUDE.md](CLAUDE.md) when it lands — the "two separate Supabase projects" section and
+      the receivables-hub data-flow notes both still describe the legacy path as live.
+
+---
+
+### RC-5 · Who should receive a salesperson's copy — one person, or everyone who can see it?  `[!]`
+*Raised 2026-08-20 · **Blocked:** needs a decision from Ritesh Bhai · Blocks the go-live of **RC-2***
+
+**The question in one line:** when the Collection report goes out automatically for, say, NAKUL JI,
+should that copy reach only Nakul — or everyone who is allowed to see his book?
+
+**Why it is a question at all.** `profiles.receivables_salespersons` is a **visibility scope**, not
+an identity. It answers *"whose figures may this person see"*, not *"who is this salesperson"*. So
+a salesperson name does not resolve to one inbox. Five accounts carry more than one name:
+
+| Account | Email | Names carried |
+|---|---|---|
+| Bushra | `PC@orangeotec.com` | **13** |
+| Jayshree Patil | `collection@orangeotec.com` | **13** |
+| Ritesh Tulsyan | `ritesh@orangeotec.com` | **13** |
+| Nitesh Prajapati | `nitesh@orangeotec.com` | 8 |
+| Nakuleshwar Sharma | `nakul@orangeotec.com` | 5 |
+
+Everyone else carries one or two. Note that even **Nakul** — a real rep — carries five, so "tagged
+with exactly one name" cannot be used to identify a salesperson either.
+
+**What happens today if all thirteen names are scheduled:** those three accounts each receive
+**thirteen separate emails**, one per salesperson, every send. That may be exactly right for credit
+control, but it should be a decision.
+
+**Three ways to go, whichever Ritesh Bhai prefers:**
+
+1. **Leave it.** Everyone who can see a book gets it mailed. Simplest; noisiest.
+2. **Send to the rep only**, and give the oversight accounts the whole-book copy instead — they can
+   already see everything in it.
+3. **Choose the address per name**, the way the manual Export → Email dialog already does. Needs a
+   chosen **user id** on `report_email_recipients` (not the address, so a rep who changes email
+   keeps receiving and one who loses the tag stops).
+
+Until it is decided, the run log prints who each name reaches and how many books that person can
+see, so nothing is a surprise — but the noise is real and it is worth settling before the first
+automatic send rather than after.
+
+**Three stale tags found while checking this** — small, separate, and fixable in Admin → Users
+without waiting for the decision above. The live data holds 13 salesperson names
+(`OTHERS` 703 ledgers, `MANMOHAN JI` 300, `NAKUL JI` 292, `UMESH JI` 132, `KHURSHID JI` 116,
+`KARAN SIR` 70, `AAYUSH SIR` 62, `DHANANJAY` 42, `PURAV SHAH` 37, `SUHEL` 27, `RELATED PARTY` 24,
+`ABHISHEK` 7, `HARI OM` 2):
+
+- **`MAYANK`** is tagged on all three 13-name accounts and **no ledger carries it**. Dead.
+- **`Others`** (lower case) sits on Jayshree and Ritesh *alongside* the real `OTHERS`. Dead, and it
+  is why their count reads 13 when only 11 names are live — they are also missing `RELATED PARTY`,
+  which Bushra has.
+- **`HARI OM`** exists in the data but **nobody is tagged with it**. Scheduling it would report
+  "nobody to send to".
+
+**To discuss with Ritesh Bhai:**
+- [ ] Should a salesperson's copy go to the rep only, or to everyone who can see that book?
+- [ ] If oversight accounts should still receive something, is the whole-book copy enough?
+- [ ] Remove `MAYANK` and the lower-case `Others`, and should anyone hold `HARI OM`?
 
 ---
 
