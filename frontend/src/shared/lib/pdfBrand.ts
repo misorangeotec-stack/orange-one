@@ -590,7 +590,16 @@ export function applyDeferredLinks(
   pdf.setPage(current);
 }
 
-export type RowKind = "normal" | "total" | "muted" | "grand";
+/**
+ * How a table row is painted.
+ *
+ *   normal · total (an interim subtotal) · muted (a deduction or an aside) · grand (the bottom line)
+ *   band   · a SECTION HEADING inside the table — the row carries a label, not figures, and the
+ *            rows under it belong to it. Used where a table is grouped and the group needs naming
+ *            without breaking it into separate `drawTable` calls, which would lose the shared
+ *            header and the page-break handling.
+ */
+export type RowKind = "normal" | "total" | "muted" | "grand" | "band";
 
 export interface TableOpts<T> {
   x: number;
@@ -655,13 +664,15 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
 
     if (kind === "grand") { setFill(pdf, BRAND.navy); pdf.rect(x, y, width, rowH, "F"); }
     else if (kind === "total") { setFill(pdf, BRAND.orangeSoft); pdf.rect(x, y, width, rowH, "F"); }
+    // A band is quieter than a total on purpose: it names the section, it does not conclude it.
+    else if (kind === "band") { setFill(pdf, BRAND.line); pdf.rect(x, y, width, rowH, "F"); }
 
     const baseColor =
       kind === "grand" ? BRAND.white : kind === "muted" ? BRAND.grey2 : BRAND.navy;
 
     columns.forEach((c, i) => {
       const right = (c.align ?? "left") === "right";
-      const bold = kind === "grand" || kind === "total";
+      const bold = kind === "grand" || kind === "total" || kind === "band";
       const color = (kind === "grand" ? undefined : c.color?.(row)) ?? baseColor;
       const raw = c.value(row);
       const shown = ellipsize(pdf, raw, widths[i] - pad * 2, bodySize, bold);

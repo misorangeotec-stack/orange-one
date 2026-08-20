@@ -5,15 +5,28 @@ import * as XLSX from "xlsx-js-style";
  * style support the stock `xlsx` writer lacks).
  *
  *   • HEADER       — title + column-header rows: bold, black fill, white text.
+ *   • SUBTOTAL     — a subtotal WITHIN a block (e.g. one sale type inside a
+ *                    customer): bold, palest green — a step below TOTAL, so a
+ *                    block that carries both reads subtotal → total and not as two
+ *                    rows of equal weight.
  *   • TOTAL        — interim subtotal rows: bold, light-green fill.
  *   • GRAND_TOTAL  — the grand-total row: bold, stronger green — clearly distinct
  *                    from the interim totals.
+ *
+ * The three greens are one ladder and are meant to be read as one: palest for the
+ * innermost figure, strongest for the bottom line. Keep them in that order if the
+ * palette ever changes.
  */
 
 export const HEADER_STYLE = {
   font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11 },
   fill: { fgColor: { rgb: "000000" } },
   alignment: { vertical: "center" },
+};
+
+export const SUBTOTAL_STYLE = {
+  font: { bold: true, color: { rgb: "14532D" } },
+  fill: { fgColor: { rgb: "E7F6EC" } }, // palest green — a step below TOTAL_STYLE
 };
 
 export const TOTAL_STYLE = {
