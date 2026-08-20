@@ -22,7 +22,15 @@ export default function Account() {
 
   const [name, setName] = useState(me.name);
   const email = me.email ?? ""; // display only — see the field below
-  const [designation, setDesignation] = useState(me.designation ?? "");
+  /**
+   * Display only. Designation is now a master (Admin → Organisation) and the
+   * profile stores `designation_id` beside the text; a free-text box here would
+   * write a name that matches no master row and leave the id pointing elsewhere.
+   * The database enforces it too — a non-admin changing their own department,
+   * sub-department, designation, band or employee code is rejected by the
+   * `guard_profile_org_fields` trigger, so this box would have started erroring.
+   */
+  const designation = me.designation ?? "";
   const [savedProfile, setSavedProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileErr, setProfileErr] = useState("");
@@ -40,7 +48,7 @@ export default function Account() {
     setSavingProfile(true);
     setProfileErr("");
     try {
-      await updateUser(me.id, { name: name.trim(), email: email.trim() || null, designation: designation.trim() || null });
+      await updateUser(me.id, { name: name.trim(), email: email.trim() || null });
       setSavedProfile(true);
       setTimeout(() => setSavedProfile(false), 2500);
     } catch (err) {
@@ -104,7 +112,7 @@ export default function Account() {
                 <FieldLabel label="Email / username" hint="set by admin"><TextInput type="email" value={email} disabled /></FieldLabel>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
-                <FieldLabel label="Designation"><TextInput value={designation} onChange={(e) => setDesignation(e.target.value)} /></FieldLabel>
+                <FieldLabel label="Designation" hint="set by admin"><TextInput value={designation} disabled /></FieldLabel>
                 <FieldLabel label="Role" hint="set by admin"><TextInput value={roleLabel} disabled /></FieldLabel>
               </div>
               <div className="flex items-center justify-end gap-3 pt-1">
