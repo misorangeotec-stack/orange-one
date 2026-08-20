@@ -5,6 +5,25 @@ one extract per salesperson containing only their own customers.
 
 Live state verified against project `icutjkrqkbzwvmnfbzpr` on 14-Aug-2026.
 
+> **⚠ CORRECTION, 20-Aug-2026 — read this before Phase 3.**
+>
+> This document was written against the old receivables project `lkwtvcpeamkzzqkfnkuc`. **That
+> project no longer exists** — its hostname does not resolve. The report now reads the
+> **ConnectWave live-Tally mirror** (`ieeefdnyhzgrroifiqbb`, `VITE_CONNECTWAVE_SUPABASE_URL` /
+> `_ANON_KEY`) through `connectwaveFetcher.ts`, and `liveMode.tsx` has Live **on by default**, so
+> that is what everybody is actually looking at.
+>
+> Wherever this doc says "the receivables project", read **ConnectWave**. A builder pointed at the
+> old project would fail at 08:00 in front of nobody, which is precisely the failure mode this
+> plan exists to avoid.
+>
+> **The size risk in §5 is retired.** Measured 20-Aug-2026: ~1,850 rows in
+> `collection_customer_snapshot` and ~5,754 in `collection_invoice_snapshot`. That fits one
+> invocation comfortably; the per-salesperson split fallback is not needed.
+>
+> **Phases 0 and 1 are done, and Phase 2 is done** — the report's definition now lives in
+> `lib/collectionCards.ts` and `lib/collectionScope.ts`, both plain TypeScript.
+
 ---
 
 ## 1. What already works

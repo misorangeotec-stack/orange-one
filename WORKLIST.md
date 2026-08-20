@@ -522,6 +522,34 @@ timer is only Phase 4.
 
 ---
 
+### RC-4 · The "Live (Tally)" toggle can switch to a database that no longer exists  `[ ]`
+*Raised 2026-08-20 · Found while building RC-2*
+
+The hub's admin-only **Live (Tally)** switch has two positions. Live — the default — reads the
+ConnectWave mirror and works. Turning it **off** selects the legacy pipeline project
+`lkwtvcpeamkzzqkfnkuc`, and **that project no longer exists**: its hostname does not resolve at
+all. So the off position is a dead end that nobody has walked into recently because Live is the
+default.
+
+**What a user would see:** every receivables screen failing to load, with a network error rather
+than anything that explains itself. Admin-only, so the blast radius is small — but it is a trap
+sitting in the product.
+
+**Notes:** the switch is [liveMode.tsx](frontend/src/apps/receivables-hub/lib/liveMode.tsx), feeding
+[sourceContext.tsx](frontend/src/apps/receivables-hub/lib/sourceContext.tsx). The dead path is
+`loadFromSupabase` in [useAppData.ts](frontend/src/apps/receivables-hub/lib/useAppData.ts), via
+`supabaseFetcher.ts` and `receivablesSupabase.ts` on `VITE_RECEIVABLES_SUPABASE_URL`. The external
+Python pipeline that fed it (separate "Orange Receivables Hub" repo) is out of the picture too.
+
+**To decide:**
+- [ ] Remove the toggle outright, or keep it and have it fail with a sentence a human can read?
+- [ ] If removed: delete `supabaseFetcher.ts` / `receivablesSupabase.ts` and the `VITE_RECEIVABLES_*`
+      env vars with it, or leave them dormant?
+- [ ] Is there anything in the legacy project worth keeping before the account is tidied up?
+- [ ] Does the static-JSON (`local`) source still earn its place, or go the same way?
+
+---
+
 ### RC-3 · Planned / Gap to plan reads wrong — weekly plan against a monthly report  `[!]`
 *Raised 2026-08-20 · Feedback from Ritesh Bhai · **Blocked:** needs a decision from Ritesh Bhai*
 
