@@ -728,10 +728,25 @@ The Zero-Collection report itself is built. Live handover doc:
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
 
 ### RC-2 · Send the report automatically, on a schedule  `[~]`
-*Raised 2026-08-20 · Built and disarmed 2026-08-20*
+*Raised 2026-08-20 · Built and disarmed 2026-08-20, 22:00 IST*
 
 **Built. Nothing sends until you flip one switch.** What is left is yours: choose the days, the
 time and the recipients, read the dry-run log, then arm it.
+
+*Deliberately still open rather than moved to Done: the code is live on `master` but the feature is
+not — nothing is scheduled, nobody is on the list, and the switch is off. It moves to Done the day
+it actually posts something.*
+
+**Proved on the runner, 20-Aug-2026** (runs `32392028439`, `32392193665`, `32392294411`):
+
+- a **dry run** built the whole book in 26 s and one salesperson in 4.8 s — 60 s end to end,
+  including the checkout and `npm ci` — and reproduced the screen exactly: 247 of 362, ₹30.58 Cr,
+  ₹17.53 Cr, 34, 116, ₹3.98 Cr. The runner is faster than the desk it was written on (26 s vs 40 s).
+- a run in **scheduled** mode asked the database, was told `automatic sending is not armed`, and
+  stopped without reading a row. That is the stop that matters.
+- a **sample** posted both shapes — the book and a rep's extract — from the runner through storage
+  and the outbox to a test address. Both delivered; the send log stayed empty, because a sample
+  must not burn a slot.
 
 **How to turn it on** (full detail in [RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md) §6):
 
