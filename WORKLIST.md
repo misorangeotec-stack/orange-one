@@ -497,8 +497,11 @@ planned − received, computed in the report and not a stored field
 
 Finished work, **newest first**. A task moves here from its module heading the day it goes live.
 
-Three rules, so the section stays worth reading:
+Four rules, so the section stays worth reading:
 
+- **Stamp the date and time it shipped**, in IST, on the entry's italic line — the moment it went
+  live, not the moment the code was written. Two tasks finished on the same day still read in
+  order, and a question like "was this in yesterday evening's deploy?" has an answer.
 - **The ID and the module travel with it.** RC-1 stays RC-1, so a note or a message that referred
   to it while it was open still resolves.
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
@@ -506,7 +509,9 @@ Three rules, so the section stays worth reading:
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
 
 ### RC-1 · Group the bill-wise details by sale type  `[x]`
-*Outstanding Dashboard · Raised 2026-08-20 · Done 2026-08-20 · Feedback from Ritesh Bhai*
+*Outstanding Dashboard · Raised 2026-08-20 · **Done 2026-08-20, 14:13 IST** · Feedback from Ritesh Bhai*
+
+Live on `master` at commit `ff6dddb`.
 
 On the Collection Performance Report, a customer's bills used to run in date order with the sale
 types interleaved, so there was no way to see how much of their overdue was ink and how much was
