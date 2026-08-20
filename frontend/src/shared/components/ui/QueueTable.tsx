@@ -96,6 +96,23 @@ interface QueueTableProps<T> {
   rowsLabel?: string;
   emptyTitle?: string;
   emptyMessage?: string;
+  /**
+   * The rows are still being fetched, so `rows` being empty means "not here YET",
+   * not "there is nothing".
+   *
+   * ⚠ WITHOUT THIS THE TABLE LIES. An FMS store loads its whole module before any
+   *   page has rows, which on a slow connection is many seconds. For all of it a
+   *   queue rendered the full EmptyState — "Nothing here" — so an approver opened
+   *   Master Requests, was told there was nothing to approve, and left. The row
+   *   had been in the database the whole time. Measured 2026-08-20: 5.8s of
+   *   "Nothing here" on every load, and the team read that as the request taking
+   *   ten minutes to arrive.
+   *
+   *   Pass the store's `isLoading` on every queue. It is optional only so the 72
+   *   existing call sites did not all have to change at once; a page that omits
+   *   it keeps the old behaviour.
+   */
+  loading?: boolean;
   /** Pre-activate a sort column on first render. */
   initialSort?: { key: string; dir: "asc" | "desc" };
   /** Pre-select a group on first render (e.g. deep-linked `?status=…` from a dashboard). */
@@ -225,6 +242,7 @@ export default function QueueTable<T>({
   rowsLabel = "rows",
   emptyTitle = "Nothing here",
   emptyMessage = "Items needing action will appear here.",
+  loading = false,
   initialSort,
   initialGroup,
   exportName,
@@ -658,7 +676,18 @@ export default function QueueTable<T>({
         </div>
       )}
 
-      {rows.length === 0 ? (
+      {rows.length === 0 && loading ? (
+        /* Still fetching. Say so — never the empty state, which reads as an answer. */
+        <div className="flex flex-col items-center text-center px-6 py-14" role="status" aria-live="polite">
+          <div className="w-12 h-12 rounded-card bg-orange-soft text-orange flex items-center justify-center mb-4">
+            <svg viewBox="0 0 24 24" className="w-6 h-6 animate-spin" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M12 3a9 9 0 1 0 9 9" />
+            </svg>
+          </div>
+          <h3 className="text-[15px] font-semibold text-navy">Loading…</h3>
+          <p className="text-[13px] text-grey-2 mt-1 max-w-xs">Fetching the latest {rowsLabel}.</p>
+        </div>
+      ) : rows.length === 0 ? (
         <EmptyState title={emptyTitle} message={emptyMessage} />
       ) : (
         <>

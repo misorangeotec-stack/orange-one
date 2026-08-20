@@ -372,6 +372,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
               />
             </div>
           )}
+          loading={s.isLoading}
           rowsLabel="entries"
           emptyTitle="Nothing recorded here yet"
           emptyMessage="Entries you record at this step will appear here."
@@ -407,6 +408,7 @@ export default function StageQueue({ stepKey }: { stepKey: QueueStep }) {
             </div>
           )}
           rowClassName={pendingRowClass}
+          loading={s.isLoading}
           rowsLabel="orders"
           initialSort={{ key: "due", dir: "asc" }}
           emptyTitle="Nothing waiting here"

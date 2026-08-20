@@ -176,6 +176,7 @@ export default function OrdersTable({
           Open
         </Link>
       )}
+      loading={s.isLoading}
       rowsLabel="orders"
       initialSort={{ key: "orderNo", dir: "desc" }}
       emptyTitle={emptyTitle}
