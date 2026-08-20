@@ -8,6 +8,9 @@ a task touching several modules is filed under its primary one and cross-referen
 from the others.
 
 **Status:** `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked
+**Priority:** 🔴 marks a task that is hurting live work and jumps the queue · 🟢 marks a low-priority
+task that is worth doing and depends on nothing, so it can be picked up in parallel with whatever
+else is running.
 
 Finished work does not stay under its module — it moves to **[Done](#done)** at the foot of this
 file, so the module headings hold only what is still open and the record of what shipped is in one
@@ -39,8 +42,251 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Scope of the internal / related company tag | Bushra | **OD-1** | 2026-08-20 |
 | Call on removing "new customer / new item" from Dispatch | Bushra | **OD-2** | 2026-08-20 |
 | Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
+| Call on SO-2627-0413 — wrong copy of SPECTRUM DIGITAL | Bushra | **OD-4** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
+| Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
+
+---
+
+## Platform — all modules
+
+### PF-1 · Save Draft on every entry form  `[ ]`
+*Raised 2026-08-20 · **Order: Production Entry first, then Order to Dispatch**, then the rest*
+
+A standard **Save Draft** on all entry forms. On save the entry is **not published**; the same user
+reopens the draft, finishes it, and publishes.
+
+**The problem it solves:** in Production a user enters 10 raw materials, finds the 11th is not in
+the system, and raises a master request for it — at which point the whole page has to be abandoned
+and all 10 lines re-entered. That is a real cost on a long form, and it is why people avoid raising
+the request at all.
+
+**Notes:** this already exists, fully built, in **Customer Onboarding** — copy it rather than
+invent it. Its wizard autosaves through `fms_customer_save_draft` / `fms_customer_delete_draft`
+([customerWrites.ts](frontend/src/apps/receivables-hub/data/customerOnboarding/customerWrites.ts),
+[WizardShell.tsx](frontend/src/apps/receivables-hub/components/customerOnboarding/WizardShell.tsx)),
+with `status = 'draft'` as the first value of the status column. Two hard-won rules come with it,
+both spelled out in
+[its migration](supabase/migrations/20260802120100_add_fms_customer_requests.sql):
+
+- **A draft is incomplete by definition, so the mandatory fields cannot be `NOT NULL` columns.**
+  They are enforced by one CHECK that applies only to rows whose status is not `draft`, with the
+  submit function raising friendly field-named errors long before the constraint fires.
+- **A draft never burns a number.** The sequence is stamped by submit, not by save, so an abandoned
+  draft leaves no gap in the numbering.
+
+Nothing else in the codebase has this — every other `draft` in the frontend is just local component
+state that dies with the page.
+
+**Worth settling before building:**
+- [ ] Is a draft private to its author, or can a colleague pick it up?
+- [ ] Where does a user find their drafts — a tab on the queue, or the module dashboard?
+- [ ] Do drafts expire or get cleaned up, and does an abandoned one ever need chasing?
+- [ ] Should raising a master request from inside a form **auto-save the draft**, since that is the
+      exact moment the work is lost today? (Related: **OD-2** / **OD-3**, which change how master
+      requests are raised in Dispatch.)
+- [ ] Which forms count as "entry forms" in the modules after these two — every step modal, or only
+      the long ones that create an entry?
+
+---
+
+### PF-2 · 🔴 HIGH — queues tell approvers "Nothing here" while they are still loading  `[~]`
+*Raised 2026-08-20 · Reported by the team · **Critical: this is delaying live work***
+
+Two symptoms, one cause:
+
+- A master request sits unseen — the approver takes a long time to notice it.
+- In Order to Dispatch, once step 1 is done the item takes a long time to reach the second person's
+  bucket.
+
+**Root cause (found 2026-08-20): nothing tells a browser that someone *else* changed the data.**
+
+- The FMS stores refresh by calling `invalidateQueries` **inside the tab that performed the
+  write** ([store.tsx:302](frontend/src/apps/order-to-dispatch/store.tsx#L302)). The person who
+  completes step 1 sees their own screen update instantly. The next person's tab is never told
+  anything happened.
+- The global query config is `staleTime: 60_000` with **`refetchOnWindowFocus: false`** and no
+  `refetchInterval` ([main.tsx:22](frontend/src/main.tsx#L22)). So a page left open never refetches
+  — not on a timer, and not even when the user alt-tabs back to it. The data only moves on a
+  reload, or when a component remounts after the 60s stale window.
+- **Realtime exists in exactly one module** — Task Management subscribes to `postgres_changes` for
+  its notifications ([useMyNotifications.ts:77](frontend/src/apps/task-management/lib/useMyNotifications.ts#L77)).
+  No FMS has it.
+- **Polling exists in exactly one place** — Customer Onboarding's bell, at 60s
+  ([CustomerBell.tsx:68](frontend/src/apps/receivables-hub/components/customerOnboarding/CustomerBell.tsx#L68)).
+
+
+**PROVEN 2026-08-20 by an end-to-end test** (signed in as an approver, raised an item request from
+the New Sales Order screen, exactly the flow the team uses):
+
+| Step | Measured |
+|---|---|
+| Request submitted → row in the database | **instant** (`created_at` stamped on submit, `status = pending`) |
+| "Send request" click → dialog closes | **6.0 seconds** |
+| Master Requests page: **shows "To review 0 · All 0" and the "Nothing here" empty state** | **for the first 5.8 seconds of every load** |
+| Then flips to the true counts | at 5.8 s → "To review 1 · All 110" |
+
+**This is the bug.** While the data loads, the page does not show a spinner or "Loading…" — it shows
+a confident, fully-rendered **"Nothing here — Requests for new master entries will appear here."**
+An approver opens the screen, is told there is nothing to approve, and leaves. They reload, are told
+the same thing, and leave again. The request was in the database the whole time.
+
+That is the 10 minutes: not the system being slow, but the screen **actively saying the queue is
+empty** while it is still loading.
+
+**The fix:** never render the empty state until the query has resolved — show the loading state
+while `isLoading`, and reserve "Nothing here" for a genuinely empty result. Then check every other
+queue for the same pattern; the counts on this page start at 0 for the same reason.
+
+
+**Step 1 shipped 2026-08-20 (not yet deployed).** `QueueTable` takes a `loading` prop; when it is
+true and there are no rows it renders a spinner and "Loading…" instead of the `EmptyState`. Wired
+into Order to Dispatch: Master Requests, StageQueue (both tables), OrdersTable, SalesReturnQueue.
+The Master Requests tab counts now omit the badge while loading, so nobody reads a placeholder
+"To review 0" as an answer.
+
+Verified in the browser, same measurement as before the fix:
+
+| | Before | After |
+|---|---|---|
+| First paint | "Nothing here", To review **0** | **"Loading…"**, no counts shown |
+| Real data | 5.8 s | 3.4 s |
+
+`loading` is optional, so the other 60-odd call sites across the eight other modules are unchanged
+and still show the old empty state — **they need the same one-line wiring.**
+
+**Still to do — the actual weight (steps 2-4):** every page still downloads the whole module,
+15,425 rows over 25 round trips (notifications 4,993 · customer-items 3,179 · four months of
+activity 2,760). Measured 2026-08-20. That is the reason the wait exists at all; the loading state
+only stops the screen lying about it.
+
+**⚠ Before doing steps 2-4, watch a real user's load from the factory.** Every number here was
+measured on a fast local connection, and 6 seconds is not 10 minutes. The payload finding is solid;
+that it fully explains the team's experience is not proven.
+
+Related but separate: the 6-second submit and 5.8-second load are themselves slow for a table of
+109 rows, and worth a look once the empty-state bug is fixed.
+
+So the delay is not the approver being slow. Their screen is genuinely showing yesterday's picture
+until something forces a reload — and this applies to **every FMS queue and every master request
+list in the portal**, not just Dispatch.
+
+**The fix, cheapest first:**
+
+1. **`refetchOnWindowFocus: true`** — one line, and it covers the commonest case: the approver
+   switches back to the tab and sees the truth. ⚠ It is global, so weigh it against the heavy
+   receivables payload, which would also refetch on every focus. May be better set per query root
+   than on the default.
+2. **`refetchInterval` on the FMS queue queries** (~60s) — the Customer Onboarding bell already
+   does exactly this and is the proven pattern here.
+3. **Realtime on the FMS tables** — the correct end state, and the largest change. Task Management
+   already shows the shape.
+
+**Decide before building:**
+- [ ] Scope: fix Production + Dispatch first (matching **PF-1**'s order), or all modules at once?
+- [ ] Is a ~60s lag acceptable, or must a handover be instant (which means realtime)?
+- [ ] Should the notification the next owner receives be the thing that wakes their queue up?
+
+---
+
+### PF-3 · 🔴 The `mst-refresh-company-links` job rebuilds ~2,100 rows from scratch every 15 minutes  `[ ]`
+*Raised 2026-08-20 · Found while investigating **PF-2***
+
+A cron job added on **17-Aug** (`cron.job` id 30, schedule `5,20,35,50 * * * *`) runs
+`mst_refresh_party_companies()` + `mst_refresh_item_companies()` **unconditionally, four times an
+hour**. Measured: **11–16 seconds every run, 252 runs, average 11.6s**, steady since the 17th.
+
+**What it does each time:**
+- takes the **333** Dispatch parties, strips punctuation from each name on the fly, and compares
+  them against **all 7,842** parties (plus a GSTIN match) to find the same firm in another book;
+- same for **536** Dispatch items against **all 14,261**;
+- writes the result into `mst_party_companies` / `mst_item_companies` — **764 + 1,368 rows** that
+  almost never change.
+
+Roughly **10 million string comparisons every 15 minutes to reproduce the same ~2,100 rows.**
+
+**Why it is slow:** the normalised name is computed *inside the join*
+(`upper(regexp_replace(name,'[^A-Za-z0-9]+','','g'))`) on **both** sides, so no index can be used —
+it is a full scan of every party against every party. It also has **no `statement_timeout`**, unlike
+every other heavy job in `cron.job`.
+
+**The fix, in order:**
+1. **Guard it** — only rebuild when the masters actually changed. `mst_sync_runs` already keeps a
+   watermark, and `masters-sync-watch` (job 8) proves the pattern works: 575 runs, **0.0s average**,
+   because it does nothing when nothing changed.
+2. **Store the normalised name as a real, indexed column** instead of computing it per comparison.
+   That turns the scan into a lookup and should take the run well under a second.
+3. **Ease the schedule** to every 3 hours as a safety net (the user's call, 2026-08-20). A manual
+   sync covers anything urgent.
+
+**⚠ Not the cause of PF-2.** Checked hour by hour: this job has been flat at 11–13s yesterday *and*
+today, so it did not change when the complaints started. It is a standing waste worth removing on
+its own merits, not the answer to the delay.
+
+---
+
+### PF-4 · 🟢 Document every Supabase table, view, function and cron job — and list the dead ones  `[ ]`
+*Raised 2026-08-20 · **Low priority, high value** · touches no other task, so it can run in parallel
+with anything on this list*
+
+Months of building have left the database larger than anyone's memory of it. Nobody can say today
+what half the tables hold, and there is no one place that answers it. Along the way we have almost
+certainly created tables, views and cron jobs for features that changed shape or were dropped, and
+they are still there — costing backup size, autovacuum, and the time of the next person who has to
+work out whether a name matters.
+
+**The deliverable:** one file — `docs/SUPABASE-INVENTORY.md` — carrying a **one-line purpose against
+every object**, and a second list of **what looks dead**, with the evidence for each.
+
+**What is actually there** — identity project `icutjkrqkbzwvmnfbzpr`, `public` schema, counted
+2026-08-20:
+
+| | Count |
+|---|---|
+| Tables | **240**, of which **44 are completely empty today** |
+| Views / materialised views | 0 |
+| Functions | 546 |
+| Cron jobs | 9, all active |
+| Edge Functions | 17 (`supabase/functions/`) |
+| Migrations applied | 313 |
+
+The nine jobs are `email-outbox-sweep`, `generate-recurring-daily`, `fms-asset-generate-jobs`,
+`fms-asset-send-reminders`, `master-report-daily`, `masters-sync-watch`, `masters-sync-daily-force`,
+`user-snapshot-daily` and `mst-refresh-company-links` — the last of which **PF-3** is already
+about, and which is the kind of thing this inventory exists to surface.
+
+**What each row should carry:** the object name · the module it belongs to · one line saying what it
+is for · what writes to it · what reads it · rows today · last write · a verdict of **live /
+historical / dead**.
+
+**Telling dead from merely quiet** — the two are easy to confuse, so check both directions:
+
+- **Written?** row count plus `max(created_at)` / `max(updated_at)`. An empty table can still be a
+  live feature nobody has used this month.
+- **Read?** grep the frontend, the Edge Functions and the SQL for the object's name. A table no code
+  anywhere names is dead however full it is — and that is the stronger signal of the two.
+
+Cron jobs get a third check: `cron.job_run_details` already records every run, so a job's real cost
+and its failure rate can be stated rather than guessed.
+
+**⚠ The output is a list, not a drop script.** [CLAUDE.md](CLAUDE.md) holds Supabase changes to
+**additive-only**, and that rule stands. Nothing is dropped off the back of this task — the list
+goes to Bushra, and each object is removed later, one at a time, with sign-off and a backup taken
+first. Several "dead" tables will also turn out to be deliberate history (the `fms_import_*` and
+`fms_purchase_*` sets in `backups/fms-purge-2026-07-29/`, for instance) and must be marked
+**historical**, not dead.
+
+**Also in scope, kept separate:** the ConnectWave mirror (`ieeefdnyhzgrroifiqbb`). It is the
+external Python pipeline's database, read-only to us, so its section only needs the tables we
+actually read — not its whole schema.
+
+**Worth settling before starting:**
+- [ ] Do the 546 functions go in the first pass, or only tables + cron jobs, with functions as a
+  second sweep? (546 one-liners is the bulk of the work, and most are RPCs named after the screen
+  that calls them.)
+- [ ] Where does the file live — `docs/`, or beside `CLAUDE.md` at the root where the other live
+  documents sit?
 
 ---
 
@@ -263,6 +509,8 @@ not throughput.
 
 All three below need a conversation with Bushra before any code moves.
 
+*(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
+
 ### OD-1 · Internal transfer / Others on a dispatch  `[!]`
 *Raised 2026-08-20 · **Blocked:** needs the scope settled with Bushra*
 
@@ -270,6 +518,20 @@ There is no such option today. Add it:
 
 1. The user picks whether this is an **Internal transfer** or **Others**.
 2. For an internal transfer, **only the companies tagged internal / related** are offered.
+
+**Update 2026-08-20 — the plumbing landed; only the TAG is still open.** Our own branches were
+invisible everywhere: a ledger under Tally's `Branch / Divisions` is neither a debtor nor a
+creditor, so `masters-sync` set both role flags false and the row appeared on no tab and in no
+picker. The sync now reads the trade registers as well as the group chain, so four internal
+ledgers are customers of their own book and are ticked into Dispatch with their catalogues
+([CENTRAL-MASTERS.md](CENTRAL-MASTERS.md), items 23–24). So an internal transfer can now be
+raised as an ordinary order against the right branch. What is still missing is exactly what this
+task is about: **nothing marks those four as internal/related**, so the picker cannot offer
+"only internal companies" and no downstream step can behave differently. The four are
+ORANGE O TEC PVT. LTD.(SURAT BRANCH), ORANGE O TEC PRIVATE LIMITED(NOIDA),
+ORANGE O TEC ENTERPRISES PVT LTD (NOIDA) and ORANGE O TEC ENTERPRISES-(SURAT) — a ready-made
+answer to "which ones count as internal", if Bushra agrees the definition is "a Branch /
+Divisions ledger that trades".
 
 **Notes:** the company tag does not exist yet — that is the bulk of the job, not the dropdown.
 Nothing on `Customer` or the company master carries an internal / related flag today. Note also
@@ -339,10 +601,43 @@ not match.
 - [ ] Does this connect to **PC-1** — should these approvals land in the coordinator's single
       queue?
 
+### OD-4 · SO-2627-0413 names the wrong copy of SPECTRUM DIGITAL  `[!]`
+*Raised 2026-08-20 · **Blocked:** needs Bushra's confirmation before the row is touched*
+
+**Left exactly as it is** on purpose — logged here rather than fixed, pending her call.
+
+A customer exists once per Tally book, so SPECTRUM DIGITAL is three rows: Colorix — Surat,
+Enterprise — Surat and O-tec — Surat. Only the **O-tec — Surat** row is ticked into Dispatch.
+Five orders have been raised against the firm, all billed by **O-tec — Surat**, and four of them
+use that O-tec row. **SO-2627-0413** (raised 2026-08-19, still at `awaiting_dispatch_confirm`)
+uses the **Enterprise — Surat** row instead.
+
+**Effect if left:** the order dispatches normally — nothing is blocked. The consequence is on the
+paperwork: the sales bill would name the Enterprise — Surat ledger while O-tec — Surat is billing,
+so the invoice and the Tally posting disagree about which ledger the sale belongs to.
+
+**Probably nobody's mistake.** `customersForCompany()` deliberately offers a customer with **no**
+company under *every* company — the newly-approved-customer case. That Enterprise row most likely
+had no `company_id` when the order was raised, and the Tally sync filled it in afterwards, which
+is what makes the pair look wrong today.
+
+**How it was found:** comparing every order's billing company against the company its customer row
+belongs to. 67 of 437 orders differ; all but this one are explained by rows that had no company at
+the time. Re-run any time with the query in
+[CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) under the company-scoped masters note.
+
+**To discuss with Bushra:**
+- [ ] Repoint SO-2627-0413 at the O-tec — Surat row, or leave it and let the bill go out as is?
+- [ ] Should an order whose customer row later gains a *different* company be flagged anywhere, or
+      is this rare enough to handle one at a time?
+- [ ] The other 66: leave them alone (they are closed or cancelled), or sweep them once?
+
 ---
 
 
 ## Production Entry
+
+*(cross-ref: **PF-1** — Save Draft lands here FIRST)*
 
 ### PE-1 · Calibration screen  `[!]`
 *Raised 2026-08-20 · From the factory visit · **Blocked:** waiting on the calibration sheets*
@@ -432,27 +727,85 @@ The Zero-Collection report itself is built. Live handover doc:
 
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
 
-### RC-2 · Send the report automatically, Saturday 08:00  `[ ]`
-*Raised 2026-08-20 · Depends on the server-side report builder*
+### RC-2 · Send the report automatically, on a schedule  `[~]`
+*Raised 2026-08-20 · Built and disarmed 2026-08-20*
 
-The report should go out on its own every **Saturday morning at 8 a.m.** — set up the cron job.
+**Built. Nothing sends until you flip one switch.** What is left is yours: choose the days, the
+time and the recipients, read the dry-run log, then arm it.
 
-**This is not just a cron row, and that is the whole difficulty.** As of 17-Aug-2026 the emailing
-is **manual only**: an admin presses Export → Email and the PDF + workbook attach. There is no
-builder, no cron, no send log. The report is drawn **in the browser** from the second Supabase
-project and every figure is computed by the app, not stored — so the report engine has to run
-server-side before anything can fire at 08:00. Phases 0–3 of the handover doc are that work; the
-timer is only Phase 4.
+**How to turn it on** (full detail in [RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md) §6):
+
+1. Receivables → Settings → Notifications — set the frequency, the days, the time, the book
+   addresses and which salespeople get their own copy.
+2. Run **Actions → Collection report → Run workflow → `mode: dry-run`** and read the log. It names
+   every address each salesperson resolves to, flags anyone tagged with more than one book, and
+   warns about names nobody carries.
+3. `select set_collections_report_armed(true);` — last, and yours.
+
+To stop it: `update private.collections_report_config set armed = false;`
+
+**What was built**
+
+| | |
+|---|---|
+| `20260922120000_…_scheduled_send.sql` | `collections_report_due()`, the send log, the arming switch |
+| `supabase/collectionsreport/` | the builder: bundles the app's own TypeScript, three guards |
+| `.github/workflows/collections-report.yml` | ticks every 30 min, gates on the database first |
+
+Earlier phases: multi-day schedules `17bad6a`, the KPI numbers and card wording out of the React
+page `3ca9e7d`, the row predicate and defaults `dd05708` / `18387c7`, the headless build `3e0cd72`.
+
+**⚠ The plan said "Edge Function". It cannot be one, and that is measured.** A probe burned
+straight-line CPU on the live runtime: 1 s → `200`, 3 s → `546 WORKER_RESOURCE_LIMIT`, and 8 s with
+an `await` every 200 ms → `546` as well. The ceiling is **2 s of CPU per request** and the budget is
+**cumulative** — yielding does not reset it. This report is **~40 s of solid CPU** (101 pages,
+~250 customers, a 1.5 MB workbook), and the per-salesperson fallback does not rescue it either: one
+rep's 18-page extract is already over. So it runs on a **GitHub Actions runner**, which has no such
+cap and has the repo checked out — so it still runs the app's own code, which was always the point.
+The repo is public, so runner minutes are free.
 
 **Notes:**
-- `cron.schedule` is UTC and Edge Functions cannot be given a timezone, so **Saturday 08:00 IST =
-  Saturday 02:30 UTC**. State the conversion in the migration.
-- The precedent to copy is `supabase/worksnapshot/`, which already bundles the frontend's own code
-  to run on Deno — not a fresh SQL reimplementation of the report.
-- Needs a send log keyed on `(report, date)` so a retry cannot double-send.
-- **The module's email switch is currently off on purpose** (`outstanding-dashboard` has no row in
-  `email_module_settings`, so a send today is a silent no-op). An automatic Saturday send means
-  flipping it on — confirm that is intended when we get there.
+- No `pg_cron` job, and no UTC conversion by hand: the IST comparison happens inside
+  `collections_report_due` in `Asia/Kolkata`, so the stored hour means what it says.
+- Send log keyed `(report_key, sent_for_date)` on the **IST** date; a run reaching nobody
+  deliberately does **not** log, or adding the first recipient an hour late would cost the slot.
+- **Four switches** must all be on. `report_email_settings` is already `true` so admins can mail by
+  hand — which is exactly why a dedicated `armed` flag exists, so finishing this feature could not
+  arm an unattended send as a side effect.
+- Timing is honest, not exact: GitHub's scheduler can run several minutes late, so an 08:00 slot
+  goes out shortly after 08:00. `grace_minutes` (120) lets a late tick still serve it.
+- **GitHub disables a scheduled workflow after 60 days with no commits to the repo.** Unlikely here,
+  but it stops silently rather than failing.
+- Still open: an attachment size guard (fine today at 2.2 MB), and resolving a salesperson to a
+  chosen **user id** rather than to everyone holding the tag — the run log surfaces that for now.
+
+---
+
+### RC-4 · The "Live (Tally)" toggle can switch to a database that no longer exists  `[ ]`
+*Raised 2026-08-20 · Found while building RC-2*
+
+The hub's admin-only **Live (Tally)** switch has two positions. Live — the default — reads the
+ConnectWave mirror and works. Turning it **off** selects the legacy pipeline project
+`lkwtvcpeamkzzqkfnkuc`, and **that project no longer exists**: its hostname does not resolve at
+all. So the off position is a dead end that nobody has walked into recently because Live is the
+default.
+
+**What a user would see:** every receivables screen failing to load, with a network error rather
+than anything that explains itself. Admin-only, so the blast radius is small — but it is a trap
+sitting in the product.
+
+**Notes:** the switch is [liveMode.tsx](frontend/src/apps/receivables-hub/lib/liveMode.tsx), feeding
+[sourceContext.tsx](frontend/src/apps/receivables-hub/lib/sourceContext.tsx). The dead path is
+`loadFromSupabase` in [useAppData.ts](frontend/src/apps/receivables-hub/lib/useAppData.ts), via
+`supabaseFetcher.ts` and `receivablesSupabase.ts` on `VITE_RECEIVABLES_SUPABASE_URL`. The external
+Python pipeline that fed it (separate "Orange Receivables Hub" repo) is out of the picture too.
+
+**To decide:**
+- [ ] Remove the toggle outright, or keep it and have it fail with a sentence a human can read?
+- [ ] If removed: delete `supabaseFetcher.ts` / `receivablesSupabase.ts` and the `VITE_RECEIVABLES_*`
+      env vars with it, or leave them dormant?
+- [ ] Is there anything in the legacy project worth keeping before the account is tidied up?
+- [ ] Does the static-JSON (`local`) source still earn its place, or go the same way?
 
 ---
 
@@ -507,6 +860,65 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### OM-1 · Organisation masters: department, sub-department, designation and band  `[x]`
+*Admin / Masters · Raised 2026-08-20 · **Done 2026-08-20, 09:35 IST** · From Bushra's employee sheet + the band categorisation sheet*
+
+Live on `master` at commit `ef2de41`.
+
+The user master held one organisational fact — department — and that list had drifted: of its 21
+rows several were really sub-departments (`After Sales - Application`, `Spare Warehouse`,
+`Travel Desk`) and one was `new test dept`. Designation was free text, so `Deputy GM`, `DGM` and
+`Deputy General Manager` were three spellings of one rank. There were four lists' worth of facts in
+HR's sheet and room for one.
+
+**Admin → Organisation** (replacing the old Departments screen, whose URL still redirects) now
+carries four tabs on the shared `MasterCrud`, so each sorts and filters on every column and takes
+an Excel round trip:
+
+- **Departments** — 12 active, 11 switched off. An **In which list** column says whether a row came
+  from the portal, HR's sheet, or both.
+- **Sub-departments** — all 38 from the sheet, each under its parent.
+- **Designations** — 27 canonical rungs, replacing 31 free-text spellings.
+- **Bands** — the 9 from the band sheet, Support Staff through Top Leadership.
+
+The user form gained **Employee code**, **Sub-department** (which offers only the chosen
+department's own — pick Sales and you see its 4, not all 38), a **Designation** picker in place of
+the free-text box, and **Band**. The Users list filters on all four and the Excel export carries them.
+
+**Every user was mapped:** all 57 have a designation and 56 a band; 44 have a sub-department and an
+employee code. 15 people moved to the department HR's sheet records, and the 11 departments that
+emptied were switched off.
+
+**Worth knowing if you touch this again:**
+
+- **A department is switched off, never deleted.** It is the parent of 5,213 tasks, 195 recurring
+  tasks, 45 HR job titles, 12 requisitions and the `department_ids` on nine FMS step-owner tables.
+  Switching off hides it from the pickers that make NEW references and leaves every existing one
+  readable — the 11 retired rows still hold 132 tasks between them. The old screen had a Delete
+  button with no FK guard at all; it is gone.
+- **Two departments are the same team under different names** — `Accounting & Finance` is HR's
+  "Finance", `Human Resources` its "Human Resource". They are ONE row each, tagged "both lists",
+  with `hr_sheet_name` recording the equivalence; the sub-department seed resolves its parent
+  through it. Inserting them as fresh rows would have put two live departments meaning one team
+  side by side in every picker.
+- **Band is independent of designation** and must stay so — several designations share a band, and
+  there is deliberately no `band_id` on `designations`.
+- **`profiles.designation` (text) is kept and must stay in sync with `designation_id`.** It is not
+  a leftover: `list_org_people()` returns it and every @mention picker renders it. Write both.
+- A `guard_profile_org_fields` trigger stops a non-admin setting their own department,
+  sub-department, designation, band or employee code — `profiles_update_own` gates the row, not the
+  columns, so this was reachable straight through PostgREST. The Account page's designation box is
+  read-only for the same reason.
+
+**To discuss with Bushra**
+
+- [ ] Ten people joined after her 27-05-2026 sheet and so have no sub-department or employee code:
+      Aayush Rathi, Karan Toshniwal, Bharat, Christie Shoham Joy, Kaushal Pawar, Khushi Soni,
+      Saloni Rathod, Shweta Chanchad, Sushil Kumar Thakre, Yash Agarwal. *(Designation and band are
+      already set for all ten.)*
+- [ ] **HR Head → Band 8** was a judgement call — the band sheet has CHRO at 9 and "Business Head"
+      at 8, and names neither. Affects Riya Kumari only. Parked as good enough for now.
 
 ### RC-1 · Group the bill-wise details by sale type  `[x]`
 *Outstanding Dashboard · Raised 2026-08-20 · **Done 2026-08-20, 14:13 IST** · Feedback from Ritesh Bhai*

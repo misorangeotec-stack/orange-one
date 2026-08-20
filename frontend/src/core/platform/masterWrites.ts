@@ -70,7 +70,18 @@ export const TALLY_OWNED_FIELDS: Record<CentralMasterType, readonly string[]> = 
   // `name` IS Tally's for a company — its real book name, rewritten every sync
   // and re-minted each April. The editable label is `alias`, which no sync touches.
   company: ["name", "tally_name"],
-  party: ["name", "gstin", "sub_group", "group_chain", "credit_limit", "credit_period", "company_id"],
+  // `is_customer` / `is_vendor` are Tally's too, and leaving them off this list
+  // was a promise the sync did not keep: the form let an admin tick a role, the
+  // next pull recomputed it from the group chain and the trade registers, and
+  // the tick was gone inside fifteen minutes with nothing said. It also cost
+  // data - Masters.tsx sends BOTH flags on every party save (`is_customer: tab
+  // === "customer"`), so editing a firm that is both from the Customers tab set
+  // is_vendor = false. On a synced row the next pull repaired it; on a portal
+  // row the vendor role was simply lost. Dropping them here fixes both, and
+  // portal rows are untouched because isTallyOwned() only bites on source
+  // 'tally' - insertMaster does not consult this list at all.
+  party: ["name", "gstin", "sub_group", "group_chain", "credit_limit", "credit_period", "company_id",
+    "is_customer", "is_vendor"],
   // company_id is Tally's too: it is derived from the tenant the item was synced
   // from, and an item cannot move between Tally companies.
   item: ["name", "company_id", "group_id", "unit_id"],

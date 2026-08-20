@@ -8,7 +8,7 @@ phase is not finished until this file says so.
 
 - **Status:** Phase 0 and Phase 1 complete and live. Company + dispatch location
   moved across and the sales order form narrows on them — live 2026-08-18.
-- **Last updated:** 2026-08-18
+- **Last updated:** 2026-08-20
 - Plan of record: `C:\Users\Admin\.claude\plans\now-the-thing-is-greedy-orbit.md`
 
 ---
@@ -254,12 +254,15 @@ Settled with the user; do not silently revisit.
 | Table | Holds | Rows |
 |---|---|---|
 | `mst_companies` | Our entities. `name` = Tally's book name, `alias` = what FMS show | 5 |
-| `mst_parties` | Customers **and** vendors (a Tally ledger is both concepts). `location` = where the customer takes delivery, seeded from Dispatch | 7,812 (1,838 cust / 3,293 vend; 604 rows carry a location) |
+| `mst_parties` | Customers **and** vendors (a Tally ledger is both concepts). `location` = where the customer takes delivery, seeded from Dispatch | 7,842 (1,885 cust / 3,300 vend) |
 | `mst_items` | Every stock item. `company_id` — items are managed per company; `item_type` — Ink / Spare Parts / Heads / Machine / Others | ~14,200 (O-tec Surat 8,328 / O-tec Noida 2,121 / Ent Noida 2,089 / Ent Surat 1,436 / Colorix 254) |
 | `mst_item_groups` | Stock groups, **per company** — 103 group names are shared across companies | ~570 |
 | `mst_units` | Units. **Global on purpose** — KGS is KGS in every company | 13 |
-| `mst_locations` | Our own sites, per company | 0 |
-| `mst_party_items` | Customer-item catalogue, **derived from the sales register** — 20,121 sale lines → pairs, carrying `last_sold_on` and `sale_count`. Shows the item's `item_type` through the join — not a copy | 5,972 |
+| `mst_locations` | Our own sites, per company | 3 |
+| `mst_company_locations` | Which site each book dispatches from | 6 |
+| `mst_party_companies` | In which books a ledger of the same NAME exists — how you find a firm's **sibling row**. ⚠ NOT a billing permission; see below | 758 (329 parties) |
+| `mst_item_companies` | The same for items | 630 |
+| `mst_party_items` | Customer-item catalogue, **derived from the sales register** — 21,144 item sale lines → pairs, carrying `last_sold_on` and `sale_count`. Shows the item's `item_type` through the join — not a copy | 5,963 |
 | `mst_master_managers` | Who may CRUD which master type | 0 |
 | `mst_sync_runs` | One row per sync; `source_watermark` is the watcher's memory | — |
 | `mst_reconcile_links` | One human decision per legacy master row | 0 |
@@ -271,6 +274,36 @@ Every grid on these screens sorts on every column and filters under every column
 — the project-wide rule now recorded in `CLAUDE.md`. `MasterCrud` derives both
 from the text each cell renders, so all 11 masters screens across every FMS
 gained it at once and a new tab needs no per-column wiring.
+
+### ⚠ mst_party_companies is NOT a billing permission
+
+Do not point the Dispatch billing gate at it. That was tried on 2026-08-20 and
+reverted within the hour — migrations `20260921120000` (wrong) and
+`20260921130000` (the revert) carry the whole story.
+
+`mst_refresh_party_companies()` matches a party against every Tally ledger of the
+same **name** or GSTIN across all five books, four times an hour via cron
+`mst-refresh-company-links`. So it answers *"in which books does a ledger of this
+name exist"* — how you find a firm's **sibling row**. It does not answer *"which
+books may bill this row"*.
+
+That second question already has one answer, and it is `company_id`: one party
+row per Tally book (the decision recorded above), so a firm billed from two books
+is two rows, each with its own guid and its own credit limit. Book B does not
+bill book A's ledger; it bills its own.
+
+The measurement that settles it: accepting a mapping row newly legalised 46
+pairs, and for **44 of them a ledger of the same firm was already sitting in the
+billing book**. That would have been 44 mis-bookings — and a wrong ledger does
+not stop at the order, it flows into the sales bill and the Tally posting.
+
+⚠ **Check which branch is deployed before diagnosing a screen/database
+disagreement.** The premise for that change — "the picker offers a flat list of
+every customer whatever company is chosen" — was read off `daily-reports`. On
+**`master`**, commit `550bd72` already narrowed the picker via
+`customersForCompany()` on `company_id`, matching the gate exactly. Screen and
+database already agreed. `master` is checked out at the **`oo-master`** worktree,
+not in this one — read it before concluding something is unbuilt.
 
 ### Tally mirror — `ieeefdnyhzgrroifiqbb` (read-only to us)
 
@@ -401,6 +434,74 @@ the URL and key from `private.masters_sync_config`.
     (`coalesce(company_id::text,''), lower(name)`), which PostgREST's `onConflict`
     cannot address. The sync therefore reads what exists and inserts the
     difference, rather than upserting.
+23. **A ledger's Tally GROUP is an accounting label, not a statement of trade.**
+    `is_customer` / `is_vendor` used to be derived from `group_chain` alone, and
+    that hid real customers two ways. A ledger under **`Branch / Divisions`** is
+    neither a debtor nor a creditor, so BOTH flags came out false and the row
+    appeared on no tab and in no picker — present in the master, unreachable in
+    the UI. Our own branches sat there trading every week: ORANGE O TEC PVT.
+    LTD.(SURAT BRANCH) with 130 sale lines and 1,836 purchase lines in the Noida
+    book. `Branch / Divisions` is one of Tally's **reserved PRIMARY groups** —
+    its parent is empty, so the chain never reaches Sundry Debtors however deep
+    the walk goes; `v_group_root` returns it as its own root. The second way is
+    the GARTEX case already noted in `reconcile.ts`: a creditor group with
+    eleven sales against it. The sync now ORs the trade registers onto the group
+    test (`rpt_sales_register` → customer, `rpt_purchase_item` → vendor), so the
+    flags only ever widen. That flipped 22 customers and 5 vendors.
+24. **⚠ LIMIT/OFFSET WITH NO `ORDER BY` SILENTLY LOSES ROWS, AND NOTHING ERRORS.**
+    `fetchAll` paged every mirror and local read with `.range()` and no sort.
+    Postgres does not define row order without `ORDER BY`, so pages overlap and
+    skip, differently on every run. `v_ledger_detail` holds **9,384** rows; one
+    run wrote **6,193** distinct guids; `mst_parties` had accumulated **7,832** —
+    the union of many runs each dropping a different ~1,600. It is invisible
+    because the sync never deletes: a missed row just keeps its old
+    `tally_synced_at` and the "In Tally" column then reports it as *Not in last
+    sync*, **blaming Tally for our pager**. Found because ORANGE O TEC PRIVATE
+    LIMITED(NOIDA) would not flip to customer while the mirror plainly still
+    returned its guid. `fetchAll` now REQUIRES an `orderBy` and every call names
+    a unique key — `tenant_id + guid`, not `guid` alone, since the same guid
+    appears under a base tenant and its `~YYYYMMDD` twin and a tied sort key
+    reshuffles just the same. Ordering is also ~4× FASTER on the big views.
+    If you add a paged read anywhere, give it a unique sort key.
+25. **A FUNCTION THE CUTOVER MISSED WROTE "Item" ONTO EVERY DISPATCH FOR THREE
+    DAYS, AND NOTHING ERRORED.** `fms_dispatch_archive_round` freezes each
+    shipped line into `fms_dispatch_round_items`, copying the product NAME so a
+    completed round still reads correctly if the master is later renamed. It
+    looked that name up in **`fms_dispatch_items`** — the legacy master, frozen
+    at the Phase 1 cutover, 234 rows — while live items had moved to
+    `mst_items`, 14,261 rows. The join matched nothing and
+    `coalesce(it.name, 'Item')` wrote the placeholder. **293 rows, and 0 of them
+    would have resolved against the legacy table** — every dispatch closed since
+    the cutover, not an intermittent failure. The gate pass hid it, because
+    `gatePass.ts` falls back to `meta.itemName(i.itemId)`; the Order Register
+    export reads the frozen copy directly and showed "Item".
+    Fixed in `20260921140000`, which also repaired all 293 from the intact
+    `item_id` (undo data in `private.round_item_name_backfill`).
+    **The standing check below existed precisely to catch this and was not
+    re-run after the cutover.** Run it after any cutover, and after any change
+    to a `fms_dispatch_*` function:
+
+    ```sql
+    -- Nothing may still READ a frozen master. mst_apply_reconcile_link is the
+    -- only legitimate hit: merging a legacy row onto its Tally twin is its job.
+    -- ⚠ prosrc includes COMMENTS, so a function merely NAMING a retired table in
+    --   a note trips this. Read the hit before believing it (see item 20).
+    select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosrc ~ 'fms_dispatch_(items|customers|customer_items)\y';
+
+    -- And every id on a live order must resolve against the LIVE masters.
+    select count(*) from fms_dispatch_round_items ri
+     where ri.item_id is not null
+       and not exists (select 1 from mst_items i where i.id = ri.item_id);  -- 0
+    ```
+
+    Audited on 2026-08-20 after the fix: no `fms_dispatch_*` function names a
+    legacy master any more; `fms_dispatch_email_payload` and
+    `fms_dispatch_apply_ship_lines` use the same
+    `coalesce(it.name, …)` shape but read `mst_items` correctly; and all nine
+    id-resolution checks across orders, lines, rounds and round items return
+    zero. The deployed frontend reads no legacy master either.
 
 ---
 

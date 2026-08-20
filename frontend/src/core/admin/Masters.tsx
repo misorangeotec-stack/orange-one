@@ -659,6 +659,14 @@ export default function Masters() {
               hint: "Comes from Tally. Rename it in Tally and the next sync brings it across." },
             { key: "gstin", label: "GSTIN", type: "text", readOnly: true },
             { key: "creditPeriod", label: "Credit period", type: "text", readOnly: true },
+            /* Deliberately NOT readOnly, unlike the item form's company.
+               updateMaster drops company_id on a source='tally' row and keeps it
+               on a portal one, so an editable field here means "correctable
+               exactly where it is ours" — and it is the only way to fill in the
+               portal rows that were created before this field existed, every one
+               of which is sitting on null. */
+            { key: "companyId", label: "Company", type: "select", options: companyOptions,
+              hint: "Which of our books this ledger lives in. Locked on a row that came from Tally." },
             { key: "code", label: "Code", type: "text", placeholder: "your own reference" },
             { key: "location", label: "Delivery location", type: "text",
               hint: "Where the CUSTOMER takes delivery — not one of our sites." },
@@ -687,6 +695,24 @@ export default function Masters() {
           createFields={[
             { key: "name", label: "Name", type: "text", required: true,
               hint: "If this firm is already in Tally, prefer waiting for the sync — a name typed here becomes a second row until someone reconciles the two." },
+            /**
+             * ⚠ REQUIRED, AND IT IS A GATE — NOT A LABEL.
+             *
+             *   This form used to have no company at all, so every row typed
+             *   here was born with company_id = null. That is not merely
+             *   untidy: fms_dispatch_assert_customer_of_company returns EARLY
+             *   when the customer's company is null, so a null-company customer
+             *   passes the billing-company check unconditionally. All ten
+             *   hand-added customers were in that state, carrying eight live
+             *   orders between them — and it is how one row came to serve
+             *   orders billed by two different books without complaint.
+             *
+             *   A firm we bill from two books is TWO rows, exactly as Tally
+             *   holds it and as the "one row per Tally company" decision in
+             *   CENTRAL-MASTERS.md records.
+             */
+            { key: "companyId", label: "Company", type: "select", required: true, options: companyOptions,
+              hint: "Which of our books bills this customer. Bill the same firm from two books and it is two rows, one per book — that is how Tally holds it." },
             { key: "gstin", label: "GSTIN", type: "text" },
             { key: "code", label: "Code", type: "text", placeholder: "your own reference" },
             ...(tab === "customer"
@@ -703,11 +729,12 @@ export default function Masters() {
             sortField,
           ]}
           emptyValues={{
-            name: "", gstin: "", creditPeriod: "", code: "", location: "",
+            name: "", companyId: "", gstin: "", creditPeriod: "", code: "", location: "",
             contactName: "", phone: "", email: "", modules: "", sortOrder: "0",
           }}
           toValues={(r) => ({
-            name: r.name, gstin: r.gstin ?? "", creditPeriod: r.creditPeriod ?? "", code: r.code ?? "",
+            name: r.name, companyId: r.companyId ?? "", gstin: r.gstin ?? "",
+            creditPeriod: r.creditPeriod ?? "", code: r.code ?? "",
             location: r.location ?? "", contactName: r.contactName ?? "", phone: r.phone ?? "",
             email: r.email ?? "", modules: r.modules.join(","), sortOrder: String(r.sortOrder),
           })}
@@ -718,6 +745,10 @@ export default function Masters() {
                reaches the database on a portal row being created and is
                discarded on an edit to a synced one. */
             gstin: v.gstin.trim() || null,
+            /* Same deal as gstin: updateMaster keeps it on a portal row and
+               drops it on a synced one, so this both creates a portal row in
+               the right book and fixes one that has no book yet. */
+            company_id: v.companyId || null,
             // Uppercased, as the Dispatch master has always stored it.
             location: v.location.trim().toUpperCase() || null,
             contact_name: v.contactName.trim() || null, phone: v.phone.trim() || null,
@@ -785,10 +816,17 @@ export default function Masters() {
            * Create-mode: everything Tally would own is EDITABLE here, because a
            * row being created has no Tally record behind it to be overwritten by.
            *
-           * Company matters more on items than on parties: an item cannot move
-           * between Tally companies, so choosing the wrong one at creation cannot
-           * be corrected later by editing — it would have to be deactivated and
-           * re-added. Hence required, rather than a quietly-null default.
+           * Company is required here because an item cannot move between Tally
+           * companies: choose the wrong one at creation and it cannot be
+           * corrected by editing, only deactivated and re-added.
+           *
+           * ⚠ This note used to add "company matters more on items than on
+           *   parties", and that was the reasoning that left the customer form
+           *   without a company field at all. It stopped being true at the
+           *   Phase 1 cutover, which put a billing-company gate on parties —
+           *   and because that gate waves through a null company, the omission
+           *   turned into a hole rather than a gap. The customer form has the
+           *   field now; do not reinstate the asymmetry.
            */
           createFields={[
             { key: "name", label: "Item name", type: "text", required: true,

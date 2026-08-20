@@ -19,7 +19,12 @@
  *   and the filter is applied after.
  */
 
-import { SALE_TYPES, dominantSaleTypeOf, ZC_FOCUS_LABELS, type ZCFocus } from "./collections";
+import {
+  COLLECTIBLE_EPS, SALE_TYPES, ZC_FOCUS_LABELS,
+  dominantSaleTypeOf, factsFor, factsForRange, isBelowThreshold, isDormant, isZeroCollection,
+  type MonthFacts, type RangeFacts, type ZCFocus, type ZCRow,
+} from "./collections";
+import type { ZCMode } from "./collectionCards";
 import { matchesCategory } from "./customerCategory";
 import { saleTypeLabel } from "./salesReport";
 import type { ConsolidatedCustomer, SaleType } from "./types";
@@ -131,3 +136,123 @@ export function buildFilterSummary(
   if (f.includeNonDebtors) s.push("Incl. zero & credit balances");
   return s;
 }
+
+/** Everything the row predicate needs that is not a filter — the period, and the derived series. */
+export interface ReportWindow {
+  mode: ZCMode;
+  /** The threshold report's bar, as a percentage. Ignored by the other two. */
+  threshold: number;
+  months: string[];
+  windowMonths: string[];
+  prevMonths: string[];
+  asOfDate: string;
+  countJournalSettlements: boolean;
+  /** Set only when the period is a custom date range; then `range` must be supplied too. */
+  usingDateRange: boolean;
+  range: Map<string, RangeFacts> | null;
+  hasPrevRange: boolean;
+  series: Map<string, Map<string, MonthFacts>>;
+  lastDates: Map<string, string | null>;
+  lastAmounts: Map<string, number | null>;
+  balances: Map<string, number>;
+}
+
+/**
+ * The report itself: which of the eligible customers are actually listed.
+ *
+ *  - zero mode      : collected nothing at all. Needs no denominator, so it still catches a
+ *                     customer with an empty collectible pool.
+ *  - threshold mode : collected less than `threshold`% of Opening + Sales. Reads the WORSE of the
+ *                     gross and net-of-cheque-return percentages, so a customer whose only
+ *                     "payment" bounced can't hide above the bar.
+ *  - dormant mode   : billed NOTHING in the window. Also needs no denominator — paired with the
+ *                     outstanding > 0 gate in `selectEligible`, that IS the report.
+ *
+ * `noPool` is the count deliberately dropped: nothing was collectible from them in this window, so
+ * their percentage is undefined — NOT 0%. The basis note reports it rather than letting them
+ * silently vanish. Threshold-only: the other two predicates have no denominator to be undefined,
+ * so they drop nobody.
+ *
+ * ⚠ SALE TYPE IS NOT APPLIED HERE. Callers filter the result with `makeSaleTypeScope`, for the
+ *   reason in this file's header — the overdue-by-type strip is measured over these rows first.
+ */
+export function listReportRows(
+  eligibleAllTypes: ConsolidatedCustomer[],
+  w: ReportWindow,
+  groupOf: (c: ConsolidatedCustomer) => string,
+): { rows: ZCRow[]; noPool: ConsolidatedCustomer[] } {
+  if (!w.windowMonths.length) return { rows: [], noPool: [] };
+  const range = w.usingDateRange ? w.range : null;
+  const out: ZCRow[] = [];
+  const dropped: ConsolidatedCustomer[] = [];
+  for (const c of eligibleAllTypes) {
+    // factsForRange is factsFor's twin — same arithmetic, day-level sources. See its header.
+    const facts = range
+      ? factsForRange(c, range, w.series, w.lastDates, w.balances, w.months, w.windowMonths, w.hasPrevRange, w.asOfDate, null, w.countJournalSettlements, w.lastAmounts)
+      : factsFor(c, w.series, w.lastDates, w.balances, w.months, w.windowMonths, w.prevMonths, w.asOfDate, w.countJournalSettlements, w.lastAmounts);
+    const listed =
+      w.mode === "dormant" ? isDormant(facts)
+      : w.mode === "zero"  ? isZeroCollection(facts)
+      : isBelowThreshold(facts, w.threshold);
+    if (listed) out.push({ customer: c, facts, group: groupOf(c) });
+    else if (w.mode === "threshold" && facts.collectible < COLLECTIBLE_EPS) dropped.push(c);
+  }
+  return { rows: out, noPool: dropped };
+}
+
+// ── The report's defaults, in one place ─────────────────────────────────────────────
+//
+// These used to live only inside the page, which meant a server-side caller had to restate them —
+// and restating a default is how a scheduled report comes out answering a different question from
+// the screen while looking entirely correct. The page imports these; so does the builder.
+
+/**
+ * Sale-type default for EVERY variant (zero / threshold / dormant): all types except Machine.
+ *
+ * A machine is a one-time capital sale paid down over months, so "hasn't bought / hasn't paid
+ * recently" is its NORMAL state, not a warning — machine-dominant customers otherwise swamp the
+ * list with business-as-usual. They are one click away, not gone.
+ */
+export const DEFAULT_SALE_TYPES: readonly string[] = ["ink", "spare_parts", "head", "other"];
+
+/**
+ * Category default: every tier EXCEPT "AA" (internal). AA is not a real customer relationship, so
+ * it does not belong on a collections call-list by default.
+ */
+export const DEFAULT_CATEGORIES: readonly string[] = ["A", "B", "C", "D", "E", "Uncategorized"];
+
+/**
+ * The period the report opens on.
+ *
+ * The collection reports open on the LAST 15 DAYS: chasing cash is a fortnightly rhythm, and a
+ * customer who has paid nothing for a fortnight is the one worth a call today.
+ *
+ * Dormant deliberately does NOT follow. Its predicate is "billed nothing in the window", and over
+ * 15 days that is nearly every customer on the books — the report would list everyone and mean
+ * nothing. Six months stands: one quiet quarter is a lull, two is a dead account.
+ */
+export const defaultPresetFor = (mode: ZCMode): "15d" | "6m" => (mode === "dormant" ? "6m" : "15d");
+
+/** The filter set the report opens with, and the one a scheduled send must use. */
+export function defaultFilters(): ZCFilters {
+  return {
+    categories: [...DEFAULT_CATEGORIES],
+    companies: [],
+    locations: [],
+    salespersons: [],
+    saleTypes: [...DEFAULT_SALE_TYPES],
+    segment: "all",
+    blockedOnly: false,
+    includeNonDebtors: false,
+    minOut: "0",
+    search: "",
+  };
+}
+
+/**
+ * The shortfall target the KPI strip measures against.
+ *
+ * It tracks the threshold when there is one (Below-30% measures shortfall against 30%), and falls
+ * back to 30 for the zero and dormant reports, which have no bar of their own.
+ */
+export const defaultTarget = (threshold: number): number => (threshold > 0 ? threshold : 30);
