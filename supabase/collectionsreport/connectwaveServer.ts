@@ -33,6 +33,18 @@ if (!url || !anonKey) {
   );
 }
 
+// ⚠ SHAPE-CHECKED, not merely presence-checked. A secret set to the wrong thing — the literal
+// string "-", from a mis-typed `gh secret set`, is the one that actually happened — reaches
+// supabase-js as "Invalid supabaseUrl: Must be a valid HTTP or HTTPS URL", thrown from line 61906
+// of a 4 MB bundle, naming neither the variable nor which of the two projects it meant. Ten
+// characters here turn that into a sentence.
+if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url)) {
+  throw new Error(
+    `collections-report: CONNECTWAVE_URL is not a Supabase URL (got "${url}"). ` +
+      "Expected https://<ref>.supabase.co — the value of VITE_CONNECTWAVE_SUPABASE_URL.",
+  );
+}
+
 const client = createClient(url, anonKey, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
