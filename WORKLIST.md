@@ -910,9 +910,13 @@ ConnectWave is the only receivables backend. The dead path is not merely unused,
 | The stored preference | `receivables.source.v2` in localStorage — a browser holding `"pipeline"` must land on Live, not on nothing |
 
 **⚠ Do NOT drop the column in the same breath.** The repo rule is additive-only on Supabase: stop
-*reading* `receivables_allow_pipeline`, leave the column in place. Also check first whether any live
-profile actually has it set — if someone is using the legacy view today, they lose it the moment this
-ships and should be told rather than discover it.
+*reading* `receivables_allow_pipeline`, leave the column in place.
+
+**Nobody loses anything when this ships — checked against the live database 2026-08-20.**
+`receivables_allow_pipeline` is set on **0 of 60 profiles**, so no non-admin can reach the legacy
+view at all. The only people who can still flip the switch are the **5 admins**, who get it from
+`isAdmin` rather than the column. So there is no user to warn and no migration path to plan: the
+removal is pure deletion.
 
 **Open, minor:**
 - [ ] Does the static-JSON (`local`) source go the same way? "ConnectWave only" reads as yes, and
@@ -1034,6 +1038,58 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### PF-5 · Module access gets a level: view-only, or view and edit  `[x]`
+*Platform — all modules · Admin / Users · **Done 2026-08-20, 22:19 IST** (the screens went live 2026-08-18, 13:52 IST) · Raised by Bushra*
+
+Live on `master` at commits `d04e9c4` (the screens) and `cd3b69d` (the database half).
+
+A module grant used to be all-or-nothing: anyone who could open Procurement could also raise,
+approve and manage its masters. There was no way to hand someone an app to **look at**.
+
+**Admin → Users** and **Admin → Module Access** now offer three levels per module — **No access ·
+View only · Full access**. On the user form each module is a row of three pills; on the matrix a
+click cycles the cell (empty → eye → tick), with a legend above it. Both screens also set several
+modules at once: an **All modules** row at the top, and the same three choices on every category
+heading, so "all of Purchase, read-only" is one click rather than three.
+
+**Nobody lost anything.** All 171 grants that existed became Full access as the column was added —
+the default is `edit`, so any code that inserts a grant without naming the level still means what it
+always meant.
+
+**What a view-only person sees:** the app opens from the launcher as before, every queue, register
+and report loads with its real data, and sorting, filtering and the Excel export all still work.
+What is gone is every add, edit, delete and action button — across all eleven apps, including the
+places that do not go through the shared table: the recruitment kanban's drag-and-drop and its bulk
+"share CVs" bar, Employee Exit's six case panels, Order to Dispatch's "Correct" amend editor, the
+FG-transfer bulk bar, and Asset Maintenance's "Log reading". A **View only** badge sits in the top
+bar so the missing buttons read as a setting rather than a fault.
+
+**It is enforced by the database, not just by the screen.** Every one of the 35 FMS write
+predicates — the `_can_act`, `_is_step_owner`, `_is_master_manager` and `_can_raise` functions that
+the ~250 stored-procedure guards and every master-table write policy funnel through — now also
+requires `edit`. Hiding a button only stops an accident; this stops someone who opens the browser's
+developer tools and calls the API directly.
+
+**Worth knowing if you touch this again:**
+
+- **Reads were deliberately left alone.** The gate sits on the write predicates only. Every master
+  table whose write policy uses one of them also carries an open `SELECT` policy, and no report or
+  snapshot function calls them — so a view-only user keeps the whole app readable. Do not fold the
+  level into `canActOn` or `canSeeQueue` in the app stores either: those two also decide which rows
+  and queues a person **sees**, and gating them empties the app instead of freezing it.
+- **Admins are never affected.** They hold no `app_access` rows at all, so the level cannot apply to
+  them. That is also what keeps every Settings screen out of scope — they are already admin-only.
+- **The Mobile App offers only No access / Full access.** It is offline-first: an edit made with the
+  buttons hidden would still be replayed by the sync queue when the phone came back online, and its
+  lead tables check only "is this your own row". A view-only tier there would be a promise the app
+  cannot keep. Remove it from `NO_VIEW_ONLY_APP_IDS` once those write policies consult
+  `module_level()`.
+- **View only wins over step ownership.** Someone who is a step owner or process coordinator in an
+  app they hold view-only still sees its queues and still gets its emails, but cannot act on a row.
+- **19 step-owner assignments name people with no grant on that module** (HR Exit, Recruitment,
+  Import, General Purchase, Production). Pre-existing, not caused by this — they already could not
+  open those apps — but worth tidying in Admin.
 
 ### OM-1 · Organisation masters: department, sub-department, designation and band  `[x]`
 *Admin / Masters · Raised 2026-08-20 · **Done 2026-08-20, 09:35 IST** · From Bushra's employee sheet + the band categorisation sheet*
