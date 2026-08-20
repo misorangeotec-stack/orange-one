@@ -8,6 +8,7 @@ a task touching several modules is filed under its primary one and cross-referen
 from the others.
 
 **Status:** `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked
+**Priority:** 🔴 marks a task that is hurting live work and jumps the queue.
 
 Finished work does not stay under its module — it moves to **[Done](#done)** at the foot of this
 file, so the module headings hold only what is still open and the record of what shipped is in one
@@ -39,6 +40,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Scope of the internal / related company tag | Bushra | **OD-1** | 2026-08-20 |
 | Call on removing "new customer / new item" from Dispatch | Bushra | **OD-2** | 2026-08-20 |
 | Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
+| Call on SO-2627-0413 — wrong copy of SPECTRUM DIGITAL | Bushra | **OD-4** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
@@ -84,6 +86,89 @@ state that dies with the page.
       requests are raised in Dispatch.)
 - [ ] Which forms count as "entry forms" in the modules after these two — every step modal, or only
       the long ones that create an entry?
+
+---
+
+### PF-2 · 🔴 HIGH — queues and approvals don't refresh until the page is reloaded  `[ ]`
+*Raised 2026-08-20 · Reported by the team · **Critical: this is delaying live work***
+
+Two symptoms, one cause:
+
+- A master request sits unseen — the approver takes a long time to notice it.
+- In Order to Dispatch, once step 1 is done the item takes a long time to reach the second person's
+  bucket.
+
+**Root cause (found 2026-08-20): nothing tells a browser that someone *else* changed the data.**
+
+- The FMS stores refresh by calling `invalidateQueries` **inside the tab that performed the
+  write** ([store.tsx:302](frontend/src/apps/order-to-dispatch/store.tsx#L302)). The person who
+  completes step 1 sees their own screen update instantly. The next person's tab is never told
+  anything happened.
+- The global query config is `staleTime: 60_000` with **`refetchOnWindowFocus: false`** and no
+  `refetchInterval` ([main.tsx:22](frontend/src/main.tsx#L22)). So a page left open never refetches
+  — not on a timer, and not even when the user alt-tabs back to it. The data only moves on a
+  reload, or when a component remounts after the 60s stale window.
+- **Realtime exists in exactly one module** — Task Management subscribes to `postgres_changes` for
+  its notifications ([useMyNotifications.ts:77](frontend/src/apps/task-management/lib/useMyNotifications.ts#L77)).
+  No FMS has it.
+- **Polling exists in exactly one place** — Customer Onboarding's bell, at 60s
+  ([CustomerBell.tsx:68](frontend/src/apps/receivables-hub/components/customerOnboarding/CustomerBell.tsx#L68)).
+
+So the delay is not the approver being slow. Their screen is genuinely showing yesterday's picture
+until something forces a reload — and this applies to **every FMS queue and every master request
+list in the portal**, not just Dispatch.
+
+**The fix, cheapest first:**
+
+1. **`refetchOnWindowFocus: true`** — one line, and it covers the commonest case: the approver
+   switches back to the tab and sees the truth. ⚠ It is global, so weigh it against the heavy
+   receivables payload, which would also refetch on every focus. May be better set per query root
+   than on the default.
+2. **`refetchInterval` on the FMS queue queries** (~60s) — the Customer Onboarding bell already
+   does exactly this and is the proven pattern here.
+3. **Realtime on the FMS tables** — the correct end state, and the largest change. Task Management
+   already shows the shape.
+
+**Decide before building:**
+- [ ] Scope: fix Production + Dispatch first (matching **PF-1**'s order), or all modules at once?
+- [ ] Is a ~60s lag acceptable, or must a handover be instant (which means realtime)?
+- [ ] Should the notification the next owner receives be the thing that wakes their queue up?
+
+---
+
+### PF-3 · 🔴 The `mst-refresh-company-links` job rebuilds ~2,100 rows from scratch every 15 minutes  `[ ]`
+*Raised 2026-08-20 · Found while investigating **PF-2***
+
+A cron job added on **17-Aug** (`cron.job` id 30, schedule `5,20,35,50 * * * *`) runs
+`mst_refresh_party_companies()` + `mst_refresh_item_companies()` **unconditionally, four times an
+hour**. Measured: **11–16 seconds every run, 252 runs, average 11.6s**, steady since the 17th.
+
+**What it does each time:**
+- takes the **333** Dispatch parties, strips punctuation from each name on the fly, and compares
+  them against **all 7,842** parties (plus a GSTIN match) to find the same firm in another book;
+- same for **536** Dispatch items against **all 14,261**;
+- writes the result into `mst_party_companies` / `mst_item_companies` — **764 + 1,368 rows** that
+  almost never change.
+
+Roughly **10 million string comparisons every 15 minutes to reproduce the same ~2,100 rows.**
+
+**Why it is slow:** the normalised name is computed *inside the join*
+(`upper(regexp_replace(name,'[^A-Za-z0-9]+','','g'))`) on **both** sides, so no index can be used —
+it is a full scan of every party against every party. It also has **no `statement_timeout`**, unlike
+every other heavy job in `cron.job`.
+
+**The fix, in order:**
+1. **Guard it** — only rebuild when the masters actually changed. `mst_sync_runs` already keeps a
+   watermark, and `masters-sync-watch` (job 8) proves the pattern works: 575 runs, **0.0s average**,
+   because it does nothing when nothing changed.
+2. **Store the normalised name as a real, indexed column** instead of computing it per comparison.
+   That turns the scan into a lookup and should take the run well under a second.
+3. **Ease the schedule** to every 3 hours as a safety net (the user's call, 2026-08-20). A manual
+   sync covers anything urgent.
+
+**⚠ Not the cause of PF-2.** Checked hour by hour: this job has been flat at 11–13s yesterday *and*
+today, so it did not change when the complaints started. It is a standing waste worth removing on
+its own merits, not the answer to the delay.
 
 ---
 
@@ -397,6 +482,37 @@ not match.
       customer's order.)
 - [ ] Does this connect to **PC-1** — should these approvals land in the coordinator's single
       queue?
+
+### OD-4 · SO-2627-0413 names the wrong copy of SPECTRUM DIGITAL  `[!]`
+*Raised 2026-08-20 · **Blocked:** needs Bushra's confirmation before the row is touched*
+
+**Left exactly as it is** on purpose — logged here rather than fixed, pending her call.
+
+A customer exists once per Tally book, so SPECTRUM DIGITAL is three rows: Colorix — Surat,
+Enterprise — Surat and O-tec — Surat. Only the **O-tec — Surat** row is ticked into Dispatch.
+Five orders have been raised against the firm, all billed by **O-tec — Surat**, and four of them
+use that O-tec row. **SO-2627-0413** (raised 2026-08-19, still at `awaiting_dispatch_confirm`)
+uses the **Enterprise — Surat** row instead.
+
+**Effect if left:** the order dispatches normally — nothing is blocked. The consequence is on the
+paperwork: the sales bill would name the Enterprise — Surat ledger while O-tec — Surat is billing,
+so the invoice and the Tally posting disagree about which ledger the sale belongs to.
+
+**Probably nobody's mistake.** `customersForCompany()` deliberately offers a customer with **no**
+company under *every* company — the newly-approved-customer case. That Enterprise row most likely
+had no `company_id` when the order was raised, and the Tally sync filled it in afterwards, which
+is what makes the pair look wrong today.
+
+**How it was found:** comparing every order's billing company against the company its customer row
+belongs to. 67 of 437 orders differ; all but this one are explained by rows that had no company at
+the time. Re-run any time with the query in
+[CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) under the company-scoped masters note.
+
+**To discuss with Bushra:**
+- [ ] Repoint SO-2627-0413 at the O-tec — Surat row, or leave it and let the bill go out as is?
+- [ ] Should an order whose customer row later gains a *different* company be flagged anywhere, or
+      is this rare enough to handle one at a time?
+- [ ] The other 66: leave them alone (they are closed or cancelled), or sweep them once?
 
 ---
 

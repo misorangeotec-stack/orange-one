@@ -6,8 +6,8 @@ This file is the memory of the operation. It survives sessions: open it, read
 *Where we are*, and carry on. Update it at the end of any working session — a
 phase is not finished until this file says so.
 
-- **Status:** Phase 0 complete. Phase 1 not started, awaiting go-ahead.
-- **Last updated:** 2026-08-14
+- **Status:** Phase 0 and Phase 1 complete and live.
+- **Last updated:** 2026-08-20
 - Plan of record: `C:\Users\Admin\.claude\plans\now-the-thing-is-greedy-orbit.md`
 
 ---
@@ -17,20 +17,66 @@ phase is not finished until this file says so.
 | Phase | What it is | Status |
 |---|---|---|
 | **0** | Build the central store, sync it from Tally, admin screens | ✅ **Done** |
-| **1** | Cut **Order to Dispatch** over to it | ⏸ Not started — needs a ~10 min freeze |
+| **1** | Cut **Order to Dispatch** over to it | ✅ **Done — 2026-08-17, ~16:45 IST** |
 | **2** | Purchase → Import → Production → Assets → Office Supplies, plus `mst_lists` for module-specific masters | ⏸ Not started |
 | **3** | Collapse the 9 duplicated master-request/approval systems into one | ⏸ Not started |
 
 **Immediately outstanding**
 
-1. ⚠ **Rotate the `service_role` key.** It was pasted into a chat transcript on
-   2026-08-14 and must be treated as exposed. Roll it in Dashboard → Project
-   Settings → API, then re-run the `private.masters_sync_config` insert with the
-   new value. Edge Functions pick the new key up automatically; only that one row
-   needs changing.
-2. User's manual testing of `/admin/masters` and `/admin/masters/reconcile`.
-3. Reconcile decisions: 326 Dispatch customers + 246 items are all undecided.
-   Phase 1 reads those decisions, so this is its real prerequisite.
+1. **Redeploy the `work-snapshot` Edge Function.** Its bundle
+   (`supabase/functions/_shared/workSnapshot.bundle.js`) is regenerated and
+   committed, but the *deployed* version is still v13 and still reads the old
+   master tables. Those tables are frozen and complete, so today's digest is
+   correct; only masters created after the cutover would render blank. Fires
+   daily at 03:30 UTC via `user-snapshot-daily`. Deploy with
+   `supabase functions deploy work-snapshot --project-ref icutjkrqkbzwvmnfbzpr`.
+2. ⚠ **The `service_role` key was pasted into a chat transcript on 2026-08-14.**
+   The user has explicitly decided not to rotate it. Do not raise this again
+   unless asked.
+3. 15 Dispatch customers have no Tally ledger and carried over as portal-only.
+   Two are waiting on a ledger being created in Tally — **ARA DIGITAL PRINTS**
+   and **AJANTA DIGITAL INDUSTRIES**. Not blocking anything.
+
+---
+
+## Phase 1 — what actually happened
+
+Run on 2026-08-17 with the user present, in this order. Nothing was skipped.
+
+| Step | Result |
+|---|---|
+| Paused `masters-sync-watch` + `masters-sync-daily-force` | no run in flight |
+| Re-baselined | counts had drifted twice during the window — orders 277 → 284 → 287 |
+| Dry run (whole cutover, aborting) | all assertions passed |
+| **Rehearsal: cutover → rollback → abort** | counts returned to baseline **exactly**; guids back on twins; 6/6 function bodies restored |
+| Cutover for real | one statement, `lock_timeout = 3s`, committed |
+| Frontend | cutover files only, pushed to `master` as `b0f26d6` |
+| Smoke tests (aborting) | `replace_lines` 4 lines / 0 null units; master-request approve → customer, item and mapping all land visible |
+| One forced Tally sync | counts **unchanged** — every absorbed row matched by guid |
+| Cron re-enabled | both jobs active |
+
+**Final state:** parties 7,815 → **7,830** (+15 = exactly the customers with no
+Tally match), items 14,239 → **14,239** (every one absorbed a twin), catalogue
+6,030 → **8,553**. Orders 287, lines 1,100, round items 609 — untouched. Zero
+orphans. Legacy tables intact at 327 / 234 / 3,169 as the rollback.
+
+**The rollback is real and rehearsed.** `private.phase1_cutover()` and
+`private.phase1_rollback()` are installed procedures; `supabase/phase1/*.sql` is
+their source. Backups live in `private.dispatch_cutover_{parties,items,
+party_items,functions}`. Keep all of it, and the old tables, until after a full
+month-end close — the email, gate-pass and receiver-copy paths only exercise on
+a completed round.
+
+**Standing checks, first week**
+
+```sql
+select count(*) from mst_parties where modules @> '{order-to-dispatch}' and not is_customer;  -- 0
+select count(*) from fms_dispatch_order_items where unit is null;                              -- 0
+select count(*) from fms_dispatch_round_items where item_name = 'Item' or unit_name is null;   -- 0
+select count(*) from fms_dispatch_customer_items;                                              -- stays 3169
+```
+
+A drop in that last one means something is eating the rollback snapshot.
 
 ---
 
@@ -58,12 +104,15 @@ Settled with the user; do not silently revisit.
 | Table | Holds | Rows |
 |---|---|---|
 | `mst_companies` | Our entities. `name` = Tally's book name, `alias` = what FMS show | 5 |
-| `mst_parties` | Customers **and** vendors (a Tally ledger is both concepts). `location` = where the customer takes delivery, seeded from Dispatch | 7,812 (1,838 cust / 3,293 vend; 604 rows carry a location) |
+| `mst_parties` | Customers **and** vendors (a Tally ledger is both concepts). `location` = where the customer takes delivery, seeded from Dispatch | 7,842 (1,885 cust / 3,300 vend) |
 | `mst_items` | Every stock item. `company_id` — items are managed per company; `item_type` — Ink / Spare Parts / Heads / Machine / Others | ~14,200 (O-tec Surat 8,328 / O-tec Noida 2,121 / Ent Noida 2,089 / Ent Surat 1,436 / Colorix 254) |
 | `mst_item_groups` | Stock groups, **per company** — 103 group names are shared across companies | ~570 |
 | `mst_units` | Units. **Global on purpose** — KGS is KGS in every company | 13 |
-| `mst_locations` | Our own sites, per company | 0 |
-| `mst_party_items` | Customer-item catalogue, **derived from the sales register** — 20,121 sale lines → pairs, carrying `last_sold_on` and `sale_count`. Shows the item's `item_type` through the join — not a copy | 5,972 |
+| `mst_locations` | Our own sites, per company | 3 |
+| `mst_company_locations` | Which site each book dispatches from | 6 |
+| `mst_party_companies` | In which books a ledger of the same NAME exists — how you find a firm's **sibling row**. ⚠ NOT a billing permission; see below | 758 (329 parties) |
+| `mst_item_companies` | The same for items | 630 |
+| `mst_party_items` | Customer-item catalogue, **derived from the sales register** — 21,144 item sale lines → pairs, carrying `last_sold_on` and `sale_count`. Shows the item's `item_type` through the join — not a copy | 5,963 |
 | `mst_master_managers` | Who may CRUD which master type | 0 |
 | `mst_sync_runs` | One row per sync; `source_watermark` is the watcher's memory | — |
 | `mst_reconcile_links` | One human decision per legacy master row | 0 |
@@ -75,6 +124,58 @@ Every grid on these screens sorts on every column and filters under every column
 — the project-wide rule now recorded in `CLAUDE.md`. `MasterCrud` derives both
 from the text each cell renders, so all 11 masters screens across every FMS
 gained it at once and a new tab needs no per-column wiring.
+
+### ⚠ Company-scoped masters — a cutover this log never recorded
+
+Found on 2026-08-20, and **not** the Phase 2 in the table above (that one is the
+per-FMS rollout, still not started). A separate *Dispatch* cutover has already
+run: `private.phase2_cutover()` / `phase2_rollback()` are installed, and
+`private.phase2_orders_before` plus six `phase2_seeded_*` snapshots exist. It
+mapped `fms_dispatch_companies` → `mst_companies` per region, seeded
+`mst_locations` / `mst_company_locations`, and created the two mapping tables.
+
+⚠ **`mst_party_companies` IS NOT A BILLING PERMISSION. Do not point the gate at
+it — that was tried on 2026-08-20 and reverted within the hour.**
+
+`mst_refresh_party_companies()` matches a party against every Tally ledger of
+the same **name** or GSTIN across all five books, and cron
+`mst-refresh-company-links` rebuilds it four times an hour. So it answers *"in
+which books does a ledger of this name exist"* — which is how you find a firm's
+**sibling row**. It does not answer *"which books may bill this row"*.
+
+That second question already has one answer, and it is `company_id`: central
+masters keeps **one party row per Tally book** (the decision recorded above), so
+a firm we bill from two books is two rows, each with its own guid and its own
+credit limit. Book B does not bill book A's ledger; it bills its own.
+
+The measurement that settles it: making
+`fms_dispatch_assert_customer_of_company` accept a mapping row newly legalised
+46 pairs, and for **44 of them a ledger of the same firm was already sitting in
+the billing book**. Allowing the cross-book pair would have been 44 mis-bookings,
+and a wrong ledger does not stop at the order — it flows into the sales bill and
+the Tally posting. Migrations `20260921120000` (wrong) and `20260921130000`
+(the revert) carry the whole story.
+
+⚠ **And check which branch is deployed before diagnosing a screen/database
+disagreement.** The premise for that change — "the picker offers a flat list of
+every customer whatever company is chosen" — was read off `daily-reports`. On
+**`master`**, which is what is actually deployed, commit `550bd72` *"the company
+you bill under decides who you can bill"* already narrows the picker via
+`customersForCompany()`, on `company_id`, matching the gate exactly. Screen and
+database already agreed. `master` is checked out at the **`oo-master`** worktree,
+not in this one.
+
+What the two mapping tables are for is already settled on `master`, and settled
+well: `liveMasters.ts` reads both through `fetchCompanyLinks()`, `masterWrites.ts`
+registers them as `party_company` / `item_company`, and `Masters.tsx` carries an
+explicit note saying there are deliberately **no** "Customer Companies" / "Item
+Companies" tabs — they were built as hand-maintained lists, which *"defeated the
+point of the whole operation: Tally ALREADY holds this … so it belongs as a
+COLUMN on the master it describes, not as a second list somebody has to keep in
+step."* They surface as a company column, not as a screen.
+
+None of that is visible from `daily-reports`, which is where the wrong diagnosis
+came from. Read `master` before concluding something is unbuilt.
 
 ### Tally mirror — `ieeefdnyhzgrroifiqbb` (read-only to us)
 
@@ -180,14 +281,68 @@ the URL and key from `private.masters_sync_config`.
     Source / Modules / Type by declaring `sortValue` + `filter.get` explicitly
     (`sourceCol()`, `modulesCol()`, `itemTypeCol` in `Masters.tsx`). Any new
     column whose cell is a component must do the same.
+19. **A rollback nobody has run is not a rollback.** The first `00_rollback.sql`
+    could not execute at all: it deleted the copied rows `where source='portal'`,
+    but the cutover sets `source='tally'` on every row that absorbed a twin — so
+    it skipped 312 of 327 parties and *all* 234 items, then collided with the
+    UNIQUE `tally_guid` those survivors now held. `on conflict (id)` does not
+    catch a conflict on a *different* index. It was found by rehearsing, not by
+    reading. Rehearse cutover → rollback → abort against live data, and assert
+    the counts return **exactly**, before committing anything.
+20. **Do not spell a retired table's name in a comment.** The standing check
+    greps every function body for `fms_dispatch_(customers|items|customer_items)`
+    to prove nothing still reads the frozen masters — and `pg_get_functiondef`
+    returns comments too. A comment in `fms_dispatch_replace_lines` explaining
+    what it *used* to read tripped the detector and made the guard useless. The
+    function carries a note saying so.
+21. **`pg_net` times out at 5 s; `masters_sync_tick` does not fail.** A forced
+    sync logs `Timeout of 5000 ms reached` in `net._http_response` while the Edge
+    Function runs on for ~35 s and writes its own row into `mst_sync_runs`. Judge
+    a sync by that table, never by the HTTP response.
+22. **The freeze does not stop orders.** Counts drifted twice inside the Phase 1
+    window (orders 277 → 284 → 287, lines 1,058 → 1,089 → 1,100) because only
+    *master writes* were frozen. Never reuse a baseline taken before the window.
 17. **`mst_item_groups` uniqueness is an EXPRESSION index**
     (`coalesce(company_id::text,''), lower(name)`), which PostgREST's `onConflict`
     cannot address. The sync therefore reads what exists and inserts the
     difference, rather than upserting.
+23. **A ledger's Tally GROUP is an accounting label, not a statement of trade.**
+    `is_customer` / `is_vendor` used to be derived from `group_chain` alone, and
+    that hid real customers two ways. A ledger under **`Branch / Divisions`** is
+    neither a debtor nor a creditor, so BOTH flags came out false and the row
+    appeared on no tab and in no picker — present in the master, unreachable in
+    the UI. Our own branches sat there trading every week: ORANGE O TEC PVT.
+    LTD.(SURAT BRANCH) with 130 sale lines and 1,836 purchase lines in the Noida
+    book. `Branch / Divisions` is one of Tally's **reserved PRIMARY groups** —
+    its parent is empty, so the chain never reaches Sundry Debtors however deep
+    the walk goes; `v_group_root` returns it as its own root. The second way is
+    the GARTEX case already noted in `reconcile.ts`: a creditor group with
+    eleven sales against it. The sync now ORs the trade registers onto the group
+    test (`rpt_sales_register` → customer, `rpt_purchase_item` → vendor), so the
+    flags only ever widen. That flipped 22 customers and 5 vendors.
+24. **⚠ LIMIT/OFFSET WITH NO `ORDER BY` SILENTLY LOSES ROWS, AND NOTHING ERRORS.**
+    `fetchAll` paged every mirror and local read with `.range()` and no sort.
+    Postgres does not define row order without `ORDER BY`, so pages overlap and
+    skip, differently on every run. `v_ledger_detail` holds **9,384** rows; one
+    run wrote **6,193** distinct guids; `mst_parties` had accumulated **7,832** —
+    the union of many runs each dropping a different ~1,600. It is invisible
+    because the sync never deletes: a missed row just keeps its old
+    `tally_synced_at` and the "In Tally" column then reports it as *Not in last
+    sync*, **blaming Tally for our pager**. Found because ORANGE O TEC PRIVATE
+    LIMITED(NOIDA) would not flip to customer while the mirror plainly still
+    returned its guid. `fetchAll` now REQUIRES an `orderBy` and every call names
+    a unique key — `tenant_id + guid`, not `guid` alone, since the same guid
+    appears under a base tenant and its `~YYYYMMDD` twin and a tied sort key
+    reshuffles just the same. Ordering is also ~4× FASTER on the big views.
+    If you add a paged read anywhere, give it a unique sort key.
 
 ---
 
-## Phase 1 — the plan when we resume
+## Phase 1 — the plan as it was written (kept; it is the template for Phase 2)
+
+> ✅ Executed 2026-08-17. See *Phase 1 — what actually happened* above for the
+> outcome. Left here because Phase 2 repeats this shape module by module.
+
 
 Prerequisite: reconcile decisions recorded for all 326 customers and 246 items.
 
