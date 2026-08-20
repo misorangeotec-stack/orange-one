@@ -20,7 +20,7 @@ import ScopeToggle, { scopeTasks, type Scope } from "../components/ScopeToggle";
 /** "Tagged" — every task the current user has been @mentioned in (in a remark). */
 export default function TaggedTasks() {
   const { user } = useSession();
-  const { tasks, notifications, profileById } = useTaskStore();
+  const { tasks, notifications, actorById } = useTaskStore();
   const location = useLocation();
   // No deep-link contract reaches this page, so the scope seed is always "".
   const sticky = useStickyScope("tm:tagged");
@@ -60,8 +60,8 @@ export default function TaggedTasks() {
   }, [mine, scope, statuses, overdueOnly, q]);
 
   const sorted = useMemo(
-    () => sortTasks(filtered, sort, (id) => profileById(id)?.name),
-    [filtered, sort, profileById],
+    () => sortTasks(filtered, sort, (id) => actorById(id)?.name),
+    [filtered, sort, actorById],
   );
 
   const pageState = useStickyState(sticky, "page", 1);

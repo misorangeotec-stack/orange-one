@@ -35,7 +35,7 @@ const RELATION_OPTIONS: { value: Relation; label: string }[] = [
 /** "My Tasks" — every task assigned to or created by the current user, with tabs. */
 export default function TasksList() {
   const { user, role } = useSession();
-  const { tasks, canCreateTask, profileById, assignableUsers } = useTaskStore();
+  const { tasks, canCreateTask, actorById, assignableUsers } = useTaskStore();
   const canCreate = canCreateTask && assignableUsers(role, user.id).length > 0;
   const [params] = useSearchParams();
   const location = useLocation();
@@ -134,8 +134,8 @@ export default function TasksList() {
       // (overdue first, then today, then upcoming). Other tabs use the column sort.
       view === "followup"
         ? [...filtered].sort((a, b) => (a.followUpDate ?? "9999").localeCompare(b.followUpDate ?? "9999"))
-        : sortTasks(filtered, sort, (id) => profileById(id)?.name),
-    [filtered, sort, profileById, view],
+        : sortTasks(filtered, sort, (id) => actorById(id)?.name),
+    [filtered, sort, actorById, view],
   );
 
   // Sticky page number: injected (not seeded) so restore, the filter-change reset and

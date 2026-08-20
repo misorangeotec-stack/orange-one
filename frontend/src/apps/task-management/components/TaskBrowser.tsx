@@ -76,7 +76,7 @@ export default function TaskBrowser({
    */
   stickyScope?: StickyScope;
 }) {
-  const { profileById, departmentById, getRecurring } = useTaskStore();
+  const { actorById, departmentById, getRecurring } = useTaskStore();
   const scope = stickyScope ?? NO_STICKY;
   const [q, setQ] = useStickyState(scope, "q", "");
   const [person, setPerson] = useStickyState(scope, "person", initialFilters?.assignee ?? "all");
@@ -110,14 +110,16 @@ export default function TaskBrowser({
   const peopleById = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
 
   // "Created by" options come from the creators that actually appear in these
-  // tasks (resolved via the directory), not from `people` — a task's creator may
-  // be an admin or the HOD themselves, who aren't in a team-scoped `people` list.
+  // tasks, not from `people` — a task's creator may be an admin or the HOD
+  // themselves, who aren't in a team-scoped `people` list. Resolved via
+  // actorById (org-wide, name-only) rather than the RLS-scoped directory, or a
+  // cross-department assigner's option reads "—" and can't be picked out.
   const creatorOptions = useMemo(() => {
     const ids = [...new Set(tasks.map((t) => t.createdBy))];
     return ids
-      .map((id) => ({ value: id, label: profileById(id)?.name ?? "—" }))
+      .map((id) => ({ value: id, label: actorById(id)?.name ?? "—" }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [tasks, profileById]);
+  }, [tasks, actorById]);
 
   // The assignee dropdown is scoped to the selected department, so picking a
   // department surfaces exactly that team's members.
@@ -199,8 +201,8 @@ export default function TaskBrowser({
   }, [filtered]);
 
   const sorted = useMemo(
-    () => sortTasks(filtered, sort, (id) => profileById(id)?.name, (id) => departmentById(id)?.name),
-    [filtered, sort, profileById, departmentById],
+    () => sortTasks(filtered, sort, (id) => actorById(id)?.name, (id) => departmentById(id)?.name),
+    [filtered, sort, actorById, departmentById],
   );
 
   // Injected rather than seeded — see the note in TasksList.
@@ -298,8 +300,8 @@ export default function TaskBrowser({
         title: t.title,
         description: t.description ?? "",
         department: departmentById(t.departmentId)?.name ?? "",
-        createdBy: profileById(t.createdBy)?.name ?? "",
-        assignedTo: profileById(t.assignedTo)?.name ?? "",
+        createdBy: actorById(t.createdBy)?.name ?? "",
+        assignedTo: actorById(t.assignedTo)?.name ?? "",
         type: t.isPersonal ? "Other" : isRecurringTask(t) ? "Recurring" : "One-off",
         recurrence: rec ? RECURRENCE_LABEL[rec] : "",
         status: t.notApplicable ? "Not Applicable" : STATUS_LABEL[t.status],
