@@ -145,12 +145,58 @@ export interface DispatchStoreValue {
   assignedCompanies: (includeId?: string | null) => Company[];
   assignedLocationsForCompany: (companyId: string | null, includeId?: string | null) => CompanyLocation[];
   /**
+   * The customers a company may bill — ACTIVE, sorted, narrowed to that
+   * company's own Tally ledgers.
+   *
+   * No company chosen yet returns [], so the form asks for the company first
+   * rather than offering 1,850 names and narrowing them afterwards.
+   *
+   * `includeId` always survives, and it is not a nicety: 71 of the 303 orders
+   * already raised were billed by a company that is not the one on their
+   * customer's ledger. Opening one of those to edit would otherwise find the
+   * customer missing from the list and blank the field — silent data loss.
+   */
+  customersForCompany: (companyId: string | null, includeId?: string | null) => Customer[];
+  /**
    * The items a customer may order — ACTIVE mappings only, sorted by item name.
    * The sales-order picker is built from this, never from the full catalogue.
    * An unmapped customer returns [], which is the honest answer: nothing is
    * offered to them until someone maps it.
+   *
+   * ⚠ THIS IS ALREADY "THAT COMPANY'S ITEMS FOR THAT CUSTOMER", with no second
+   *   filter on the company, and that is the whole subtlety of the rule. The
+   *   customer row IS company-specific — ANUPAM is four rows, one per book — so
+   *   the mappings hanging off the row picked under Enterprise are Enterprise's.
+   *   Filtering again on the ITEM's own book would break it rather than tighten
+   *   it: 1,326 of the 8,531 mappings deliberately cross books, because Tally
+   *   files one stock item under one company while both firms sell it.
+   *
+   * `includeIds` keeps whatever the order already has on it. An item whose
+   *   mapping was switched off after the order was raised must still show, or
+   *   editing the order would drop the line's unit and read as a blank cell.
+   *
+   * ⚠ AND THE RESULT IS ONE ROW PER PRODUCT NAME. Tally files a separate stock
+   *   item in every company book that stocks it, so the same ink reached the
+   *   intake picker twice with nothing on screen to choose between. Broken by
+   *   the customer's own book — see the implementation, where the measurement
+   *   that makes that exact rather than a guess is written down. Anything
+   *   already on the order wins outright.
    */
-  itemsForCustomer: (customerId: string | null) => Item[];
+  itemsForCustomer: (customerId: string | null, includeIds?: readonly string[]) => Item[];
+  /**
+   * How many items `itemsForCustomer` would offer — shown against every name in
+   * the intake form's customer picker.
+   *
+   * ⚠ IT EXISTS TO SAY ZERO. Only 781 of the 1,850 customers have any mapping at
+   *   all, so picking a name and THEN discovering the item box is empty is the
+   *   common case, not the rare one — and at that point the customer, the
+   *   location and the reset are already spent. Read before choosing, it costs
+   *   nothing; read after, it costs the whole form.
+   *
+   * Precomputed into a Map rather than derived per name: the picker asks this
+   * question 1,850 times per render, and `itemsForCustomer` is a scan.
+   */
+  mappedItemCount: (customerId: string | null) => number;
   /**
    * Every delivery location anyone has used — off the customer master AND off
    * orders already raised, so a location typed once on an order is offered to
@@ -505,7 +551,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       companyId: string | null,
       includeId?: string | null,
     ): CompanyLocation[] => {
-      const all = !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId);
+      const all = !companyId
+        ? []
+        : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId));
       if (!myLocationIds) return all;
       return all.filter((l) => myLocationIds.includes(l.id) || l.id === includeId);
     };
@@ -514,8 +562,11 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     const assignedCompanies = (includeId?: string | null): Company[] => {
       const all = activeOf(companies);
       if (!myLocationIds) return all;
+      // A site now names several companies, so this flattens rather than maps —
+      // an owner assigned to SURAT-HOJIWALA can bill under either firm that
+      // dispatches from it, which is what was already true in practice.
       const allowed = new Set(
-        companyLocations.filter((l) => myLocationIds.includes(l.id)).map((l) => l.companyId),
+        companyLocations.filter((l) => myLocationIds.includes(l.id)).flatMap((l) => l.companyIds),
       );
       return all.filter((c) => allowed.has(c.id) || c.id === includeId);
     };
@@ -541,6 +592,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       customers.forEach((c) => add(c.location));
       orders.forEach((o) => add(o.customerLocation));
       return [...seen.values()].sort((a, b) => a.localeCompare(b));
+    })();
+
+    /**
+     * Mapped-item counts, one pass over the catalogue.
+     *
+     * The test has to be the SAME one `itemsForCustomer` applies — an active
+     * mapping to an item that is itself active and loaded — or the picker would
+     * promise a number the item box then fails to produce.
+     */
+    const mappedItemCounts = (() => {
+      // ⚠ DISTINCT NAMES, not mappings. The picker collapses a product filed in
+      //   several Tally books to one row, so counting rows here would promise 12
+      //   and then show 7 - and the number exists precisely to be trusted before
+      //   the customer is chosen.
+      const liveName = new Map(items.filter((i) => i.active).map((i) => [i.id, i.name.trim().toUpperCase()]));
+      const seen = new Map<string, Set<string>>();
+      for (const m of customerItems) {
+        const nm = m.active ? liveName.get(m.itemId) : undefined;
+        if (!nm) continue;
+        const set = seen.get(m.customerId);
+        if (set) set.add(nm);
+        else seen.set(m.customerId, new Set([nm]));
+      }
+      return new Map([...seen].map(([id, set]) => [id, set.size]));
     })();
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
@@ -640,15 +715,69 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
       customerName: (id) => nameFrom(customers, id),
       itemName: (id) => nameFrom(items, id),
-      itemsForCustomer: (customerId) => {
-        if (!customerId) return [];
+      customersForCompany: (companyId, includeId) => {
+        if (!companyId) return includeId ? customers.filter((c) => c.id === includeId) : [];
+        return activeOf(customers).filter((c) =>
+          c.companyId === companyId
+          // ⚠ NO COMPANY MEANS EVERY COMPANY, not none. A customer nobody has
+          //   billed yet sits in no Tally book — the nine open reconcile rows,
+          //   and every customer approved through a master request, which is
+          //   created here and reaches Tally only after the first invoice.
+          //   Hiding them would make a newly approved customer unorderable,
+          //   which is the exact moment somebody needs to order from them.
+          || c.companyId === null
+          || c.id === includeId);
+      },
+      mappedItemCount: (customerId) => (customerId ? mappedItemCounts.get(customerId) ?? 0 : 0),
+      itemsForCustomer: (customerId, includeIds) => {
+        const keep = new Set(includeIds ?? []);
+        if (!customerId) return items.filter((i) => keep.has(i.id));
         const allowed = new Set(
           customerItems.filter((m) => m.active && m.customerId === customerId).map((m) => m.itemId),
         );
-        return activeOf(items).filter((i) => allowed.has(i.id));
+        // `items`, not activeOf(items), for the kept ones — an item switched off
+        // after the order was raised is still on the order.
+        const pool = activeOf(items).filter((i) => allowed.has(i.id))
+          .concat(items.filter((i) => keep.has(i.id) && !(allowed.has(i.id) && i.active)));
+
+        /**
+         * ONE ROW PER PRODUCT NAME, and this is not cosmetic tidying.
+         *
+         * Tally files a separate stock item in every company book that stocks it,
+         * so "EPN SUBLIMATION INK BLACK" is several rows. 1,582 of the mappings
+         * carried over from Dispatch point a customer in one book at an item in
+         * another - Dispatch matched its customer to one ledger and its item to a
+         * different book's twin. That reached the intake form as the same name
+         * twice with nothing on screen to choose between: a coin toss for whoever
+         * is punching the order, on 107 of the 783 mapped customers.
+         *
+         * The tie is broken by the CUSTOMER'S OWN BOOK, which is exact rather than
+         * a heuristic. Measured across all 684 affected groups: every one has
+         * EXACTLY ONE copy in the customer's own book - never none, never two -
+         * and no group's twins differ on unit or HSN. So the survivor is
+         * determined, and nothing that reaches the order, the gate pass or the
+         * invoice is lost by dropping the other.
+         */
+        const book = customers.find((c) => c.id === customerId)?.companyId ?? null;
+        const nameOf = (i: Item) => i.name.trim().toUpperCase();
+
+        // WHATEVER IS ALREADY ON THE ORDER SURVIVES FIRST, unconditionally. 757
+        // lines across 202 of the 303 orders sit on the twin from the OTHER book;
+        // deduping to the "right" one would take the line's item out of its own
+        // picker and blank the row on the next edit. Only names that nothing on
+        // the order already covers go through the tie-break.
+        const out = pool.filter((i) => keep.has(i.id));
+        const covered = new Set(out.map(nameOf));
+        const best = new Map<string, Item>();
+        for (const i of pool) {
+          if (keep.has(i.id) || covered.has(nameOf(i))) continue;
+          const cur = best.get(nameOf(i));
+          if (!cur || (i.companyId === book && cur.companyId !== book)) best.set(nameOf(i), i);
+        }
+        return out.concat([...best.values()]).sort((a, b) => a.name.localeCompare(b.name));
       },
       locationsForCompany: (companyId) =>
-        !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyId === companyId),
+        !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId)),
       assignedCompanies,
       assignedLocationsForCompany,
       knownLocations,

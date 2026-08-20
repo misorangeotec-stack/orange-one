@@ -3335,17 +3335,24 @@ async function fetchAll9(table, orderBy = "created_at") {
   }
   return out;
 }
-var APP_ID = "order-to-dispatch";
-async function fetchForModule(table, extra) {
+async function fetchWhere(table, extra) {
   const out = [];
   for (let from = 0; ; from += PAGE8) {
-    let q = db4.from(table).select("*").contains("modules", [APP_ID]);
-    if (extra) q = extra(q);
-    const { data, error } = await q.order("created_at", { ascending: true }).range(from, from + PAGE8 - 1);
+    const { data, error } = await extra(db4.from(table).select("*")).order("created_at", { ascending: true }).range(from, from + PAGE8 - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
     if (rows.length < PAGE8) break;
+  }
+  return out;
+}
+async function fetchByIds(table, ids) {
+  const CHUNK2 = 200;
+  const out = [];
+  for (let i = 0; i < ids.length; i += CHUNK2) {
+    const { data, error } = await db4.from(table).select("*").in("id", ids.slice(i, i + CHUNK2));
+    if (error) throw new Error(error.message);
+    out.push(...data ?? []);
   }
   return out;
 }
@@ -3448,6 +3455,9 @@ var mapRound = (r) => ({
   sbRemarks: str(r.sb_remarks),
   sbAt: r.sb_at ?? null,
   sbBy: r.sb_by ?? null,
+  sbHoldAt: r.sb_hold_at ?? null,
+  sbHoldReason: str(r.sb_hold_reason),
+  sbHoldBy: r.sb_hold_by ?? null,
   gpNo: str(r.gp_no),
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str(r.go_outward_no),
@@ -3514,6 +3524,9 @@ var mapOrder = (r) => ({
   sbRemarks: str(r.sb_remarks),
   sbAt: r.sb_at ?? null,
   sbBy: r.sb_by ?? null,
+  sbHoldAt: r.sb_hold_at ?? null,
+  sbHoldReason: str(r.sb_hold_reason),
+  sbHoldBy: r.sb_hold_by ?? null,
   gpNo: str(r.gp_no),
   goActualDate: r.go_actual_date ?? null,
   goOutwardNo: str(r.go_outward_no),
@@ -3598,10 +3611,10 @@ async function fetchDispatchData() {
     configRows,
     designations,
     companies,
-    companyLocations,
+    locations,
+    companySites,
     customerItems,
     customers,
-    items,
     units,
     masterManagers,
     masterRequests,
@@ -3615,13 +3628,20 @@ async function fetchDispatchData() {
     fetchAll9("fms_dispatch_step_owners"),
     fetchAll9("fms_dispatch_config", "key"),
     fetchAll9("designations"),
-    fetchAll9("fms_dispatch_companies"),
-    fetchAll9("fms_dispatch_company_locations"),
-    // The catalogue carries no `modules` of its own — a pair is scoped by the
-    // customer and item it points at, so it is filtered below rather than here.
+    // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
+    // items, where Tally holds thousands and the tick is the only thing making
+    // a picker usable, there are five companies. A new one should appear on its
+    // own rather than waiting for somebody to remember to tick it.
+    fetchAll9("mst_companies"),
+    fetchAll9("mst_locations"),
+    fetchAll9("mst_company_locations"),
+    // ⚠ THE CATALOGUE IS FETCHED FIRST BECAUSE IT DECIDES THE ITEM LIST. Every
+    //   item the order form can offer is one a pair names; nothing else is
+    //   reachable. 8,555 rows of two uuids — cheaper than the item rows it saves.
     fetchAll9("mst_party_items"),
-    fetchForModule("mst_parties", (q) => q.eq("is_customer", true)),
-    fetchForModule("mst_items"),
+    // EVERY customer ledger, all 1,850 of them. The company narrows them on the
+    // form; there is no list to tick any more.
+    fetchWhere("mst_parties", (q) => q.eq("is_customer", true)),
     fetchAll9("mst_units"),
     fetchAll9("fms_dispatch_master_managers"),
     fetchAll9("fms_dispatch_master_requests"),
@@ -3634,6 +3654,12 @@ async function fetchDispatchData() {
   ]);
   const unitNameById = new Map(units.map((u) => [u.id, u.name]));
   const customerIds = new Set(customers.map((c) => c.id));
+  const wantedItemIds = /* @__PURE__ */ new Set();
+  for (const r of customerItems) {
+    if (customerIds.has(r.party_id)) wantedItemIds.add(r.item_id);
+  }
+  for (const r of orderItems) if (r.item_id) wantedItemIds.add(r.item_id);
+  const items = await fetchByIds("mst_items", [...wantedItemIds]);
   const itemIds = new Set(items.map((i) => i.id));
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
@@ -3676,34 +3702,70 @@ async function fetchDispatchData() {
     stepOwners: stepOwners.map(mapStepOwner8),
     designations: designations.map(mapDesignation8),
     config,
+    /**
+     * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name.
+     *   `name` is Tally's book name — "ORANGE O TEC PRIVATE LIMITED
+     *   (01-04-25TO31-03-27)" — which the sync rewrites and which is re-minted
+     *   every April. It reaches a driver at the gate: printGatePass puts the
+     *   billing company in the masthead. `alias` is the human's label and no
+     *   sync touches it.
+     *
+     *   The city is appended because Tally keeps a separate book per site, so
+     *   "O-tec" alone names two of the five rows and the picker would show the
+     *   same word twice with no way to tell them apart.
+     */
     companies: companies.map((r) => ({
       ...mapMaster4(r),
+      name: [str(r.alias) || r.name, str(r.location)].filter(Boolean).join(" \u2014 "),
       gstin: str(r.gstin),
       address: str(r.address),
       gatePassPrefix: str(r.gate_pass_prefix)
     })),
-    companyLocations: companyLocations.map((r) => ({
-      ...mapMaster4(r),
-      companyId: r.company_id
-    })),
     /**
-     * ⚠ `companyId` IS DELIBERATELY DROPPED. In Dispatch it meant "which of our
-     *   companies bills this customer" and was filled on 1 of 327 rows. On
-     *   mst_parties the same column means Tally's company BOOK, which is a
-     *   different set of ids entirely — carrying it through would have the
-     *   Masters grid resolve a Tally company id against Dispatch's 2-row company
-     *   list and render a blank. The order carries the billing company anyway.
+     * A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.
+     *
+     * It used to be one row per (company, site) — NOIDA twice, SURAT-HOJIWALA
+     * twice, SURAT-SACHIN twice — so a single `companyId` was enough. The
+     * duplication carried no information (every step's owners were identical
+     * across both copies) and it meant a new company added three rows to retype.
+     * Now there are three sites and a separate list of who dispatches from each,
+     * so this carries `companyIds`.
      */
-    customers: customers.map((r) => ({
-      ...mapCustomer(r),
-      companyId: null
-    })),
+    companyLocations: (() => {
+      const byLocation = /* @__PURE__ */ new Map();
+      for (const cs of companySites) {
+        if (cs.active === false) continue;
+        const arr2 = byLocation.get(cs.location_id);
+        if (arr2) arr2.push(cs.company_id);
+        else byLocation.set(cs.location_id, [cs.company_id]);
+      }
+      return locations.map((r) => ({
+        ...mapMaster4(r),
+        companyIds: byLocation.get(r.id) ?? []
+      }));
+    })(),
+    /**
+     * ⚠ `companyId` IS CARRIED AGAIN, and it now means something real.
+     *
+     *   It was dropped when the masters moved: in Dispatch's own table it had
+     *   meant "which of our companies bills this customer" and was filled on 1
+     *   of 327 rows, while on mst_parties the same name means Tally's company
+     *   BOOK — a different set of ids entirely, which the old 2-row company list
+     *   could only render as a blank.
+     *
+     *   The company list is now Tally's own, so the two agree. And a firm having
+     *   a separate ledger in every book it trades with is exactly the fact the
+     *   order form needs: this column IS "which of our companies may bill this
+     *   customer", kept up to date by the sync rather than by hand.
+     */
+    customers: customers.map(mapCustomer),
     items: items.map((r) => ({
       ...mapMaster4(r),
       code: str(r.code),
       // mst_items points at mst_units; Dispatch's Item carries the unit's NAME.
       unit: unitNameById.get(r.unit_id) ?? "",
-      hsnCode: str(r.hsn_code)
+      hsnCode: str(r.hsn_code),
+      companyId: r.company_id ?? null
     })),
     /**
      * The customer-item catalogue, now shared.
@@ -4977,10 +5039,8 @@ var isMineByStepOwners = (stepKey, userId, owners) => stepOwnerIdsFor(stepKey, o
 var APPROVAL_STEPS = /* @__PURE__ */ new Set(["hr_head_approval", "mgmt_approval", "final_decision"]);
 function hrWorkItems(data, uid, isAdmin) {
   const owners = data.stepOwners;
-  const managersByReq = new Map(
-    data.requisitions.map((r) => [r.id, r.hiringManagerIds ?? []])
-  );
-  const isMine = (stepKey, requisitionId) => isHodStep(stepKey) ? (requisitionId ? managersByReq.get(requisitionId) ?? [] : []).includes(uid) : isMineByStepOwners(stepKey, uid, owners);
+  const managersByReq = new Map(data.requisitions.map((r) => [r.id, r.hiringManagerIds]));
+  const isMine = (stepKey, requisitionId) => isHodStep(stepKey) ? (managersByReq.get(requisitionId ?? "") ?? []).includes(uid) : isMineByStepOwners(stepKey, uid, owners);
   return buildQueueEntries3(hrSnapshotFrom(data)).filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId)).map((e) => ({
     id: `hr:${e.entityId}:${e.stepKey}`,
     source: "hr",
@@ -5556,6 +5616,9 @@ function currentRoundView(order) {
     sbRemarks: order.sbRemarks,
     sbAt: order.sbAt,
     sbBy: order.sbBy,
+    sbHoldAt: order.sbHoldAt,
+    sbHoldReason: order.sbHoldReason,
+    sbHoldBy: order.sbHoldBy,
     gpNo: order.gpNo,
     goActualDate: order.goActualDate,
     goOutwardNo: order.goOutwardNo,

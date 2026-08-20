@@ -6,7 +6,8 @@ This file is the memory of the operation. It survives sessions: open it, read
 *Where we are*, and carry on. Update it at the end of any working session — a
 phase is not finished until this file says so.
 
-- **Status:** Phase 0 and Phase 1 complete and live.
+- **Status:** Phase 0 and Phase 1 complete and live. Company + dispatch location
+  moved across and the sales order form narrows on them — live 2026-08-18.
 - **Last updated:** 2026-08-20
 - Plan of record: `C:\Users\Admin\.claude\plans\now-the-thing-is-greedy-orbit.md`
 
@@ -23,19 +24,31 @@ phase is not finished until this file says so.
 
 **Immediately outstanding**
 
-1. **Redeploy the `work-snapshot` Edge Function.** Its bundle
-   (`supabase/functions/_shared/workSnapshot.bundle.js`) is regenerated and
-   committed, but the *deployed* version is still v13 and still reads the old
-   master tables. Those tables are frozen and complete, so today's digest is
-   correct; only masters created after the cutover would render blank. Fires
-   daily at 03:30 UTC via `user-snapshot-daily`. Deploy with
-   `supabase functions deploy work-snapshot --project-ref icutjkrqkbzwvmnfbzpr`.
+1. ✅ **`work-snapshot` redeployed — v13 → v14, 2026-08-18.** The rebuilt bundle
+   (`supabase/functions/_shared/workSnapshot.bundle.js`) is live; the deployed
+   copy no longer reads the retired master tables. Verified by signing in and
+   running a real snapshot through the function, not just by the version number.
+   Fires daily at 03:30 UTC via `user-snapshot-daily`.
+
+   ⚠ **`npx supabase …` fails in PowerShell here** — the execution policy blocks
+   `npx.ps1` with `UnauthorizedAccess`. Use **`npx.cmd`**, which bypasses the
+   `.ps1` wrapper entirely. `npx.cmd supabase login`, then
+   `npx.cmd supabase functions deploy work-snapshot --project-ref icutjkrqkbzwvmnfbzpr --no-verify-jwt`.
+   The "Docker is not running" warning is noise; the deploy does not need it.
 2. ⚠ **The `service_role` key was pasted into a chat transcript on 2026-08-14.**
    The user has explicitly decided not to rotate it. Do not raise this again
    unless asked.
 3. 15 Dispatch customers have no Tally ledger and carried over as portal-only.
    Two are waiting on a ledger being created in Tally — **ARA DIGITAL PRINTS**
    and **AJANTA DIGITAL INDUSTRIES**. Not blocking anything.
+4. **Six reconcile decisions still open** — AVADH FAB TEX, JINDAL TEXOFAB,
+   N S ENTERPRISES, A N CREATION, TEX INDIA ENTERPRISES, GARTEX. Until they are
+   settled these sit in no company book, which now means they are offered under
+   *every* company on the sales order form. Not wrong, just wider than it needs
+   to be.
+5. **Enterprise — Noida can take no order yet**: it has no customer↔item
+   mappings. Colorix has no dispatch site. Both are filled in on the Central
+   Masters screens, not by a migration.
 
 ---
 
@@ -77,6 +90,143 @@ select count(*) from fms_dispatch_customer_items;                               
 ```
 
 A drop in that last one means something is eating the rollback snapshot.
+
+---
+
+## Company & dispatch location — what actually happened
+
+Run on **2026-08-17 / 18**. Phase 1 moved customers and items; this moved the two
+masters it left behind, and then made the order form narrow on them. Called
+"Phase 2" in `supabase/phase2/*.sql` and in the plan file — **not** the Phase 2
+in the table above, which is the other modules.
+
+**The database (2026-08-17).** `private.phase2_cutover()` / `phase2_rollback()`,
+installed as procedures so the dry run, the rehearsal and the real run were
+byte-identical; the files were verified against the DB by md5 of the
+comment-stripped text. Rehearsed cutover → rollback → abort on live data before
+committing, because Phase 1 taught that a rollback which is only *read* does not
+work (see the list below).
+
+| | |
+|---|---|
+| Dispatch's private 2-row company list | → `mst_companies`, all 5 Tally books |
+| 6 location rows (3 sites × 2 companies) | → 3 sites in `mst_locations` + `mst_company_locations` |
+| Orders / rounds / step owners | repointed; 303 orders, 1,148 lines, 165 rounds **unchanged**, 0 orphans |
+| Step owners | merged 28 → 14 pairs; identical owners asserted first (compare `array_agg(x order by x)`, not the raw array) |
+| 5 functions | repointed by string substitution with asserted hit counts |
+| Gate pass | prints the **alias**, never `mst_companies.name` — that is Tally's FY-suffixed book name, re-minted every April, and it reaches a driver at the gate |
+
+Legacy tables left populated and unread as the rollback.
+
+**The order form (2026-08-18, `550bd72`).** The `modules` tick no longer scopes
+Dispatch. The company does:
+
+- company → its own dispatch sites (`mst_company_locations`)
+- company → its own customers (`mst_parties.company_id` — Tally keeps a separate
+  ledger per book, so this IS the mapping; nothing is maintained by hand)
+- customer → the items that customer buys (`mst_party_items`)
+
+Measured before it was written, because the tick existed to keep the payload
+small: **1,850** customer ledgers, and — since the item picker can only offer
+what a pair names — **1,656** distinct items, not 14,239. All 121 items on the
+303 orders are inside that set. So it still loads up front; `mst_items` is
+fetched **by id from the pairs** instead of by a tick.
+
+⚠ **Items are NOT filtered by the item's own Tally book.** 1,326 of the 8,531
+mappings deliberately cross books (Tally files one stock item under one company
+while both firms sell it). Filtering on `mst_items.company_id` would offer an
+Enterprise order 21 items instead of ~230 and invalidate 589 of its 619 existing
+lines. The customer row is already company-specific; that is what makes the
+mapping the right authority.
+
+⚠ **71 of the 303 existing orders are billed by a company that is not the one on
+their customer's ledger** — the old picker offered one flat list whatever company
+was chosen. They are history. The form always keeps the customer it is showing,
+and `fms_dispatch_update_order` tests the pair **only when the customer is being
+changed**. Never make that check unconditional.
+
+⚠ **A customer with no company book appears under EVERY company.** Nine rows
+today (the open reconcile decisions, two internal Noida entities), plus every
+customer approved through a master request — those are created in the portal and
+reach Tally only after the first invoice. Hiding them would make a newly
+approved customer unorderable at the exact moment somebody needs it.
+
+**Retired without being dropped.** `mst_party_companies` / `mst_item_companies`
+and `mst_refresh_party_companies()` / `mst_refresh_item_companies()` (cron
+`mst-refresh-company-links`, jobid 30) are still installed and populated but
+**nothing reads them**. They were built as lists to maintain by hand; the user
+was right that this defeated the point, since Tally already holds the answer.
+Kept as the documented fallback — deriving from sibling ledgers took
+Enterprise — Surat from 76 items to 168 and Enterprise — Noida from 0 to 79, so
+the "gap" that would have been filled by hand was never a gap.
+
+---
+
+## One product, one record — the item swap (2026-08-18)
+
+The narrowing shipped and the intake form *still* offered `EPN SUBLIMATION INK
+BLACK` twice for NIRVANA FAB ART, under a company already chosen. Not a fault in
+the narrowing: the customer's own mapping list held both books' copies of the
+same ink. The company decides which customer you get; it cannot clean what is
+already hanging off them.
+
+**Where they came from.** Tally files a separate stock item in every company book
+that stocks it. When Dispatch's hand-typed customer↔item list moved into Central
+Masters, 1,582 of its pairs landed with the customer matched to one book's ledger
+and the item matched to a *different* book's twin. Tally's own 6,064 pairs never
+cross books — every one of these came from the old list, and not one had ever
+been sold against.
+
+**What was retired, and what was not.**
+
+| | |
+|---|---|
+| 1,582 | cross-book pairs, every one `source = 'portal'`, none with a single sale |
+| **684** | true duplicates — the customer already had the product through its own book's item. **Retired** |
+| **898** | no twin exists. **Kept, and must stay.** They are the only route by which that customer can order that product |
+
+That second row is the whole reason this was not a one-line DELETE. Most of the
+catalogue is filed under one company's book while both firms sell it — which is
+also why the order form does not filter items by the item's own book.
+
+**Run 2026-08-18.** Installed as `private.itemswap_run()` /
+`private.itemswap_rollback()`; source in `supabase/itemswap/00_itemswap.sql`.
+Dry run first, then a full rehearsal — run → undo → abort — on the live data:
+every count came back exactly, with `lines_not_restored` and `pairs_not_restored`
+both 0.
+
+Result: **684 mappings retired, 575 order lines repointed across 159 orders.**
+Orders 334, lines 1,260, rounds 201, round lines 748 and total quantity
+74,040.400 all unchanged; 0 lines lost a unit; `mst_items` untouched at 14,242;
+and **no customer anywhere still sees one product name twice** (was 684 such
+names across 107 customers).
+
+⚠ **THIS IS THE ONLY OPERATION IN CENTRAL MASTERS THAT HAS CHANGED EXISTING
+ROWS.** Everything else has been additive. It was safe only because the swap was
+proved one-to-one *first*, on live data: exactly one target each, zero differing
+on name, unit or HSN, zero with any sales, and no order carrying both twins.
+Authorised explicitly by the user. **Do not treat it as a precedent** — re-prove
+all four before any repeat.
+
+⚠ `fms_dispatch_round_items` was deliberately NOT rewritten. It is the archive of
+what physically went out and carries its own frozen `item_name` / `unit_name`;
+its `item_id` resolves to an item with an identical name and unit, so nothing
+renders differently. Rewriting it would be editing a photograph.
+
+⚠ **The frontend dedupe stays** (`itemsForCustomer` in the Dispatch store, commit
+`1f9b599`). The data is clean today, but nothing stops a new hand-typed
+cross-book pair recreating the duplicate tomorrow, and the intake picker should
+never be the place that discovers it.
+
+⚠ **4 order lines were already unsaveable before this ran, and still are.** The
+customer has no active mapping to the item, so `fms_dispatch_replace_lines`
+refuses them. Pre-existing and unrelated; the swap asserts the number does not
+*rise*. Worth chasing separately.
+
+**Undo, while it lasts.** `private.itemswap_pairs_before` (684 rows) and
+`private.itemswap_lines_before` (575 rows) hold the snapshot;
+`select private.itemswap_rollback();` puts both back and asserts it did. Keep
+until after a full month-end close, like the Phase 1 backups.
 
 ---
 
@@ -125,57 +275,35 @@ Every grid on these screens sorts on every column and filters under every column
 from the text each cell renders, so all 11 masters screens across every FMS
 gained it at once and a new tab needs no per-column wiring.
 
-### ⚠ Company-scoped masters — a cutover this log never recorded
+### ⚠ mst_party_companies is NOT a billing permission
 
-Found on 2026-08-20, and **not** the Phase 2 in the table above (that one is the
-per-FMS rollout, still not started). A separate *Dispatch* cutover has already
-run: `private.phase2_cutover()` / `phase2_rollback()` are installed, and
-`private.phase2_orders_before` plus six `phase2_seeded_*` snapshots exist. It
-mapped `fms_dispatch_companies` → `mst_companies` per region, seeded
-`mst_locations` / `mst_company_locations`, and created the two mapping tables.
+Do not point the Dispatch billing gate at it. That was tried on 2026-08-20 and
+reverted within the hour — migrations `20260921120000` (wrong) and
+`20260921130000` (the revert) carry the whole story.
 
-⚠ **`mst_party_companies` IS NOT A BILLING PERMISSION. Do not point the gate at
-it — that was tried on 2026-08-20 and reverted within the hour.**
+`mst_refresh_party_companies()` matches a party against every Tally ledger of the
+same **name** or GSTIN across all five books, four times an hour via cron
+`mst-refresh-company-links`. So it answers *"in which books does a ledger of this
+name exist"* — how you find a firm's **sibling row**. It does not answer *"which
+books may bill this row"*.
 
-`mst_refresh_party_companies()` matches a party against every Tally ledger of
-the same **name** or GSTIN across all five books, and cron
-`mst-refresh-company-links` rebuilds it four times an hour. So it answers *"in
-which books does a ledger of this name exist"* — which is how you find a firm's
-**sibling row**. It does not answer *"which books may bill this row"*.
+That second question already has one answer, and it is `company_id`: one party
+row per Tally book (the decision recorded above), so a firm billed from two books
+is two rows, each with its own guid and its own credit limit. Book B does not
+bill book A's ledger; it bills its own.
 
-That second question already has one answer, and it is `company_id`: central
-masters keeps **one party row per Tally book** (the decision recorded above), so
-a firm we bill from two books is two rows, each with its own guid and its own
-credit limit. Book B does not bill book A's ledger; it bills its own.
+The measurement that settles it: accepting a mapping row newly legalised 46
+pairs, and for **44 of them a ledger of the same firm was already sitting in the
+billing book**. That would have been 44 mis-bookings — and a wrong ledger does
+not stop at the order, it flows into the sales bill and the Tally posting.
 
-The measurement that settles it: making
-`fms_dispatch_assert_customer_of_company` accept a mapping row newly legalised
-46 pairs, and for **44 of them a ledger of the same firm was already sitting in
-the billing book**. Allowing the cross-book pair would have been 44 mis-bookings,
-and a wrong ledger does not stop at the order — it flows into the sales bill and
-the Tally posting. Migrations `20260921120000` (wrong) and `20260921130000`
-(the revert) carry the whole story.
-
-⚠ **And check which branch is deployed before diagnosing a screen/database
+⚠ **Check which branch is deployed before diagnosing a screen/database
 disagreement.** The premise for that change — "the picker offers a flat list of
 every customer whatever company is chosen" — was read off `daily-reports`. On
-**`master`**, which is what is actually deployed, commit `550bd72` *"the company
-you bill under decides who you can bill"* already narrows the picker via
-`customersForCompany()`, on `company_id`, matching the gate exactly. Screen and
+**`master`**, commit `550bd72` already narrowed the picker via
+`customersForCompany()` on `company_id`, matching the gate exactly. Screen and
 database already agreed. `master` is checked out at the **`oo-master`** worktree,
-not in this one.
-
-What the two mapping tables are for is already settled on `master`, and settled
-well: `liveMasters.ts` reads both through `fetchCompanyLinks()`, `masterWrites.ts`
-registers them as `party_company` / `item_company`, and `Masters.tsx` carries an
-explicit note saying there are deliberately **no** "Customer Companies" / "Item
-Companies" tabs — they were built as hand-maintained lists, which *"defeated the
-point of the whole operation: Tally ALREADY holds this … so it belongs as a
-COLUMN on the master it describes, not as a second list somebody has to keep in
-step."* They surface as a company column, not as a screen.
-
-None of that is visible from `daily-reports`, which is where the wrong diagnosis
-came from. Read `master` before concluding something is unbuilt.
+not in this one — read it before concluding something is unbuilt.
 
 ### Tally mirror — `ieeefdnyhzgrroifiqbb` (read-only to us)
 

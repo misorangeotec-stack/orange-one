@@ -198,9 +198,14 @@ export default function StepOwnersSection() {
                           <td className="px-4 py-2.5" />
                           <td className="px-4 py-2.5 whitespace-nowrap text-grey pl-8">
                             {site.name}
+                            {/* Every company that dispatches from this site, not
+                                one. The site used to be stored once per company,
+                                so a single name was the whole truth; now it is
+                                one shed serving several, and naming only the
+                                first would read as "this row is that company's". */}
                             <span className="text-grey-2 text-[12px]">
                               {" "}
-                              · {s.masterName("company", site.companyId)}
+                              · {site.companyIds.map((id) => s.masterName("company", id)).join(" · ")}
                             </span>
                           </td>
                           <td className="px-4 py-2.5">{ownerCell(st.key, site.id)}</td>

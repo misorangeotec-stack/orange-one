@@ -32,11 +32,13 @@ const PAGE = 1000;
 type Tbl =
   | "fms_dispatch_step_owners"
   | "fms_dispatch_config"
-  | "fms_dispatch_companies"
-  | "fms_dispatch_company_locations"
-  | "fms_dispatch_customer_items"
-  | "fms_dispatch_customers"
-  | "fms_dispatch_items"
+  | "mst_companies"
+  | "mst_locations"
+  | "mst_company_locations"
+  | "mst_parties"
+  | "mst_items"
+  | "mst_units"
+  | "mst_party_items"
   | "fms_dispatch_master_managers"
   | "fms_dispatch_master_requests"
   | "fms_dispatch_orders"
@@ -59,6 +61,65 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
     const rows = data ?? [];
     out.push(...rows);
     if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * CENTRAL MASTERS — customers and items live in mst_*, shared with every module.
+ *
+ * ⚠ THE `modules` TICK NO LONGER SCOPES THIS APP, and dropping it was the point
+ *   of the change rather than an oversight.
+ *
+ *   The tick existed to keep a picker usable: mst_parties holds ~7,800 ledgers
+ *   and mst_items ~14,200 stock items, so an unfiltered customer dropdown showed
+ *   eight thousand names. But it also meant a customer Tally already knew about
+ *   could not be ordered from until somebody remembered to tick it — and the
+ *   list it produced (328 customers, 234 items) was one flat list regardless of
+ *   which company was billing.
+ *
+ *   THE COMPANY DOES THAT JOB NOW, and does it better, because Tally already
+ *   knows the answer: a firm has a separate ledger in every book it trades with,
+ *   so `mst_parties.company_id` IS "which of our companies may bill this
+ *   customer". Pick the company and the picker narrows to that book's own
+ *   customers on its own, with no list to maintain.
+ *
+ *   What that costs was measured before it was written, not assumed:
+ *     • customers — 1,850 rows in total, the largest single book 1,184
+ *     • items — the picker can only ever offer what a customer↔item pair names,
+ *       and there are 1,656 distinct items across all 8,555 pairs. Not 14,200.
+ *     • every item on all 303 existing orders is inside that 1,656.
+ *   So the whole thing still loads up front, in one wave, as it always did.
+ */
+
+/** Everything Dispatch reads is per-table and unfiltered except these two. */
+async function fetchWhere(table: Tbl, extra: (q: any) => any): Promise<any[]> {
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await extra(db.from(table).select("*"))
+      .order("created_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return out;
+}
+
+/**
+ * Rows by id, chunked.
+ *
+ * `in` builds a query STRING, and a few thousand uuids exceeds what the gateway
+ * accepts as one — so this is chunked for the same reason setMasterModules is.
+ */
+async function fetchByIds(table: Tbl, ids: string[]): Promise<any[]> {
+  const CHUNK = 200;
+  const out: any[] = [];
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const { data, error } = await db.from(table).select("*").in("id", ids.slice(i, i + CHUNK));
+    if (error) throw new Error(error.message);
+    out.push(...(data ?? []));
   }
   return out;
 }
@@ -397,10 +458,11 @@ const mapNotification = (r: any): DispatchNotification => ({
 });
 
 export async function fetchDispatchData(): Promise<DispatchData> {
-  // 16 names, 16 calls. Keep them in step.
+  // 17 names, 17 calls. Keep them in step. (mst_items is the 18th and comes
+  // after, in its own wave — see the note where it is fetched.)
   const [
     stepOwners, configRows, designations,
-    companies, companyLocations, customerItems, customers, items,
+    companies, locations, companySites, customerItems, customers, units,
     masterManagers, masterRequests,
     orders, orderItems, rounds, roundItems,
     activity, notifications,
@@ -408,11 +470,21 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchAll("fms_dispatch_step_owners"),
     fetchAll("fms_dispatch_config", "key"),
     fetchAll("designations"),
-    fetchAll("fms_dispatch_companies"),
-    fetchAll("fms_dispatch_company_locations"),
-    fetchAll("fms_dispatch_customer_items"),
-    fetchAll("fms_dispatch_customers"),
-    fetchAll("fms_dispatch_items"),
+    // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
+    // items, where Tally holds thousands and the tick is the only thing making
+    // a picker usable, there are five companies. A new one should appear on its
+    // own rather than waiting for somebody to remember to tick it.
+    fetchAll("mst_companies"),
+    fetchAll("mst_locations"),
+    fetchAll("mst_company_locations"),
+    // ⚠ THE CATALOGUE IS FETCHED FIRST BECAUSE IT DECIDES THE ITEM LIST. Every
+    //   item the order form can offer is one a pair names; nothing else is
+    //   reachable. 8,555 rows of two uuids — cheaper than the item rows it saves.
+    fetchAll("mst_party_items"),
+    // EVERY customer ledger, all 1,850 of them. The company narrows them on the
+    // form; there is no list to tick any more.
+    fetchWhere("mst_parties", (q) => q.eq("is_customer", true)),
+    fetchAll("mst_units"),
     fetchAll("fms_dispatch_master_managers"),
     fetchAll("fms_dispatch_master_requests"),
     fetchAll("fms_dispatch_orders", "submitted_at"),
@@ -422,6 +494,31 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     fetchRecentActivity(),
     fetchAll("fms_dispatch_notifications"),
   ]);
+
+  const unitNameById = new Map<string, string>(units.map((u: any) => [u.id, u.name]));
+  const customerIds = new Set<string>(customers.map((c: any) => c.id));
+
+  /**
+   * THE ITEM LIST, DERIVED RATHER THAN TICKED.
+   *
+   * Two sources, and the second is not optional:
+   *   • every item a customer↔item pair names — what the picker may offer;
+   *   • every item ALREADY ON AN ORDER — what the app must be able to render.
+   *
+   * The second exists because a pair can be switched off after an order was
+   * raised. The item would then vanish from this list, and the order's line
+   * would render as a blank in the queue, on the gate pass and in the export —
+   * "deleted" dressed up as an empty cell. Today all 121 items on the 303 live
+   * orders are inside the first set anyway, so this costs nothing; it is here
+   * for the day somebody deactivates a mapping.
+   */
+  const wantedItemIds = new Set<string>();
+  for (const r of customerItems as any[]) {
+    if (customerIds.has(r.party_id)) wantedItemIds.add(r.item_id);
+  }
+  for (const r of orderItems as any[]) if (r.item_id) wantedItemIds.add(r.item_id);
+  const items = await fetchByIds("mst_items", [...wantedItemIds]);
+  const itemIds = new Set<string>(items.map((i: any) => i.id));
 
   const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
   const config: DispatchConfig = {
@@ -474,22 +571,85 @@ export async function fetchDispatchData(): Promise<DispatchData> {
     designations: designations.map(mapDesignation),
     config,
 
+    /**
+     * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name.
+     *   `name` is Tally's book name — "ORANGE O TEC PRIVATE LIMITED
+     *   (01-04-25TO31-03-27)" — which the sync rewrites and which is re-minted
+     *   every April. It reaches a driver at the gate: printGatePass puts the
+     *   billing company in the masthead. `alias` is the human's label and no
+     *   sync touches it.
+     *
+     *   The city is appended because Tally keeps a separate book per site, so
+     *   "O-tec" alone names two of the five rows and the picker would show the
+     *   same word twice with no way to tell them apart.
+     */
     companies: companies.map((r): Company => ({
-      ...mapMaster(r), gstin: str(r.gstin), address: str(r.address),
+      ...mapMaster(r),
+      name: [str(r.alias) || r.name, str(r.location)].filter(Boolean).join(" — "),
+      gstin: str(r.gstin), address: str(r.address),
       gatePassPrefix: str(r.gate_pass_prefix),
     })),
-    companyLocations: companyLocations.map((r): CompanyLocation => ({
-      ...mapMaster(r), companyId: r.company_id,
-    })),
+    /**
+     * A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.
+     *
+     * It used to be one row per (company, site) — NOIDA twice, SURAT-HOJIWALA
+     * twice, SURAT-SACHIN twice — so a single `companyId` was enough. The
+     * duplication carried no information (every step's owners were identical
+     * across both copies) and it meant a new company added three rows to retype.
+     * Now there are three sites and a separate list of who dispatches from each,
+     * so this carries `companyIds`.
+     */
+    companyLocations: (() => {
+      const byLocation = new Map<string, string[]>();
+      for (const cs of companySites as any[]) {
+        if (cs.active === false) continue;
+        const arr = byLocation.get(cs.location_id);
+        if (arr) arr.push(cs.company_id);
+        else byLocation.set(cs.location_id, [cs.company_id]);
+      }
+      return locations.map((r): CompanyLocation => ({
+        ...mapMaster(r), companyIds: byLocation.get(r.id) ?? [],
+      }));
+    })(),
+    /**
+     * ⚠ `companyId` IS CARRIED AGAIN, and it now means something real.
+     *
+     *   It was dropped when the masters moved: in Dispatch's own table it had
+     *   meant "which of our companies bills this customer" and was filled on 1
+     *   of 327 rows, while on mst_parties the same name means Tally's company
+     *   BOOK — a different set of ids entirely, which the old 2-row company list
+     *   could only render as a blank.
+     *
+     *   The company list is now Tally's own, so the two agree. And a firm having
+     *   a separate ledger in every book it trades with is exactly the fact the
+     *   order form needs: this column IS "which of our companies may bill this
+     *   customer", kept up to date by the sync rather than by hand.
+     */
     customers: customers.map(mapCustomer),
     items: items.map((r): Item => ({
-      ...mapMaster(r), code: str(r.code), unit: str(r.unit), hsnCode: str(r.hsn_code),
+      ...mapMaster(r), code: str(r.code),
+      // mst_items points at mst_units; Dispatch's Item carries the unit's NAME.
+      unit: unitNameById.get(r.unit_id) ?? "",
+      hsnCode: str(r.hsn_code),
+      companyId: r.company_id ?? null,
     })),
-    // The row has no name of its own; the synthetic "Customer - Item" label is
-    // built where it is displayed, from the live master lists.
-    customerItems: customerItems.map((r): CustomerItem => ({
-      ...mapMaster(r), name: "", customerId: r.customer_id, itemId: r.item_id,
-    })),
+    /**
+     * The customer-item catalogue, now shared.
+     *
+     * Two sources feed it: the pairs Dispatch maintains by hand, and the pairs
+     * derived from Tally's sales register (what a customer has ACTUALLY bought).
+     * Both live in mst_party_items, so a customer's picker is richer than it was.
+     *
+     * ⚠ Filtered to this module's masters. The table holds every party-item pair
+     *   in the business; a pair whose item is not ticked into Dispatch must not
+     *   appear in a Dispatch picker, and `itemsForCustomer` intersects with the
+     *   item list anyway — this just avoids carrying thousands of dead rows.
+     */
+    customerItems: customerItems
+      .filter((r: any) => customerIds.has(r.party_id) && itemIds.has(r.item_id))
+      .map((r: any): CustomerItem => ({
+        ...mapMaster(r), name: "", customerId: r.party_id, itemId: r.item_id,
+      })),
 
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),

@@ -97,7 +97,16 @@ export default function OrderRegister() {
             <Combobox
               value={customerId}
               onChange={setCustomerId}
-              options={[{ value: "", label: "All customers" }, ...s.customers.map((c) => ({ value: c.id, label: c.name }))]}
+              /* Only customers that HAVE an order. The master now carries every
+                 ledger in Tally (1,850 of them) and a register filter offering
+                 1,718 names that can only ever return nothing is a worse list,
+                 not a fuller one. */
+              options={[
+                { value: "", label: "All customers" },
+                ...s.customers
+                  .filter((c) => s.orders.some((o) => o.customerId === c.id))
+                  .map((c) => ({ value: c.id, label: c.name })),
+              ]}
               searchable
             />
           </FieldLabel>

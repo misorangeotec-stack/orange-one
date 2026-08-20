@@ -6,6 +6,7 @@ import Button from "@/shared/components/ui/Button";
 import Tabs from "@/shared/components/ui/Tabs";
 import MultiSelect from "@/shared/components/ui/MultiSelect";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
+import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { useSession } from "@/core/platform/session";
 import { APPS } from "@/apps/appInfo";
 import {
@@ -13,11 +14,12 @@ import {
   fetchMasterCompanies, fetchMasterItems, fetchMasterLocations, fetchMasterLookup,
   fetchMasterParties, fetchMasterPartyItems, fetchMasterSyncRuns,
   type ItemType,
-  type MasterCompany, type MasterItem, type MasterLocation, type MasterLookup,
-  type MasterParty, type MasterPartyItem,
+  type MasterCompany, type MasterItem, type MasterLocation,
+  type MasterLookup, type MasterParty, type MasterPartyItem,
 } from "@/core/platform/liveMasters";
 import {
-  fetchMyMasterManagerTypes, insertMaster, runMastersSync, setMasterActive, updateMaster,
+  deleteCompanyLink, fetchMyMasterManagerTypes, insertMaster, insertMasters, runMastersSync,
+  setMasterActive, updateMaster,
   type CentralMasterType,
 } from "@/core/platform/masterWrites";
 
@@ -49,13 +51,24 @@ type TabKey =
 
 const TABS: { value: TabKey; label: string }[] = [
   { value: "company", label: "Companies" },
+  // Immediately after Companies, because a dispatch location is read as their
+  // child: the two are set up together, and a site with no company attached is
+  // offered on no order at all.
+  { value: "location", label: "Dispatch Locations" },
   { value: "customer", label: "Customers" },
   { value: "vendor", label: "Vendors" },
   { value: "item", label: "Items" },
   { value: "party_item", label: "Customer Items" },
+  // ⚠ NO "Customer Companies" / "Item Companies" TABS, and that was a real
+  //   correction rather than a tidy-up. They were built as lists to maintain by
+  //   hand, which defeated the point of the whole operation: Tally ALREADY
+  //   holds this. A firm has a separate ledger in every book it trades with,
+  //   and a stock item exists in every book that stocks it — that IS the
+  //   company mapping. mst_refresh_party_companies() and its item twin derive
+  //   it, so it belongs as a COLUMN on the master it describes, not as a
+  //   second list somebody has to keep in step.
   { value: "item_group", label: "Item Groups" },
   { value: "unit", label: "Units" },
-  { value: "location", label: "Our Locations" },
 ];
 
 /** Which mst_* table each tab writes to. Customers and vendors share one. */
@@ -83,6 +96,29 @@ const modulesField = (): MasterFieldDef => ({
       onChange={(ids) => onChange(ids.join(","))}
       options={MODULE_OPTIONS}
       placeholder="No module"
+      searchable
+      chips
+    />
+  ),
+});
+
+/**
+ * Which of our companies dispatch from a site. Plural, and required in spirit
+ * though not enforced: a site nobody dispatches from is not an error — it is a
+ * shed we have not started using — but it can be offered on no order, so the
+ * hint says so rather than letting it look like a save that failed.
+ */
+const companiesField = (options: ComboOption[]): MasterFieldDef => ({
+  key: "companyIds",
+  label: "Dispatched by",
+  type: "custom",
+  hint: "Leave empty and the site exists but appears on no order form. A site is a place — tick every company that dispatches from it.",
+  render: (value, onChange) => (
+    <MultiSelect
+      values={csvToList(value)}
+      onChange={(ids) => onChange(ids.join(","))}
+      options={options}
+      placeholder="No company"
       searchable
       chips
     />
@@ -247,7 +283,8 @@ export default function Masters() {
       case "party_item": return partyItems.data ?? [];
       default: return [];
     }
-  }, [tab, companies.data, parties.data, items.data, groups.data, units.data, locations.data, partyItems.data]);
+  }, [tab, companies.data, parties.data, items.data, groups.data, units.data, locations.data,
+      partyItems.data]);
 
   const addedHereCount = useMemo(
     () => tabRows.filter((r) => r.source === "portal").length,
@@ -267,6 +304,9 @@ export default function Masters() {
     () => new Map((companies.data ?? []).map((c) => [c.id, companyDisplayName(c)])),
     [companies.data],
   );
+  const companyNames = (ids: string[]) =>
+    ids.map((id) => companyLabel.get(id) ?? "—").sort().join(", ");
+
   /**
    * Group labels carry their company, because 103 group NAMES are shared across
    * companies — a bare "PAPER ROLL" in a picker would be five different things.
@@ -282,34 +322,113 @@ export default function Masters() {
   const unitOptions = useMemo(() => (units.data ?? []).map((u) => ({ value: u.id, label: u.name })), [units.data]);
 
   /**
-   * The two pickers on the Customer Items add form.
+   * The Customer Items ADD form: company, then customer, then every item at once.
    *
-   * Inactive rows are left out: mapping a customer to an item nobody may order
-   * creates a pair that cannot be used and reads as a bug when it fails later.
-   * Both lists carry the company as a sublabel, because the same firm and the
-   * same stock item exist once per Tally company book — without it the picker
-   * shows the same name three times with no way to tell them apart.
+   * ⚠ THE COMPANY IS A FILTER, NOT A COLUMN. No company is stored on the pair —
+   *   `mst_party_items` joins a party to an item and nothing else. It is here
+   *   because both lists are per-company in Tally: the same firm has a separate
+   *   ledger in every book it trades with, and the same stock item exists in
+   *   every book that stocks it. So "ANUPAM" is four rows and "100ml Beaker
+   *   Glass" is several, and picking between identical names is a coin toss.
+   *   Choose the company first and each list collapses to that book's own rows,
+   *   which is the only reading under which the two halves belong together.
+   *
+   *   It stays OPTIONAL. Nine customers sit in no company book at all (the open
+   *   reconcile decisions, plus two internal Noida entities) and a required
+   *   company would make them unmappable by hand — the one case where a hand
+   *   mapping is most needed.
+   *
+   * Inactive rows are left out throughout: mapping a customer to an item nobody
+   * may order makes a pair that cannot be used and reads as a bug when it fails
+   * later. Items the customer ALREADY has are left out too — offering them would
+   * only earn a unique-violation on save.
    */
-  const customerPickOptions = useMemo(
-    () => (parties.data ?? [])
-      .filter((p) => p.isCustomer && p.active)
-      .map((p) => ({
-        value: p.id,
-        label: p.name,
-        sublabel: p.companyId ? companyLabel.get(p.companyId) : undefined,
-      })),
-    [parties.data, companyLabel],
-  );
-  const itemPickOptions = useMemo(
-    () => (items.data ?? [])
-      .filter((i) => i.active)
-      .map((i) => ({
-        value: i.id,
-        label: i.name,
-        sublabel: i.companyId ? companyLabel.get(i.companyId) : undefined,
-      })),
-    [items.data, companyLabel],
-  );
+  const partyItemCreateFields = useMemo((): MasterFieldDef[] => {
+    const customers = (parties.data ?? []).filter((p) => p.isCustomer && p.active);
+    const sellables = (items.data ?? []).filter((i) => i.active);
+    /** Blank company means "no filter" — see the note above. */
+    const inCompany = <T extends { companyId: string | null }>(rows: T[], companyId: string): T[] =>
+      companyId ? rows.filter((r) => r.companyId === companyId) : rows;
+
+    return [
+      {
+        key: "companyId",
+        label: "Company",
+        type: "custom",
+        hint: "Narrows both lists below to that company's own customers and items. Leave blank to search all of them.",
+        render: (value, onChange, _values, setField) => (
+          <Combobox
+            value={value}
+            /* Changing the company invalidates what the other two hold, so it
+               empties them. Keeping a customer the list no longer shows would
+               submit a pair the form has stopped displaying. */
+            onChange={(id) => { onChange(id); setField("partyId", ""); setField("itemIds", ""); }}
+            options={companyOptions}
+            placeholder="All companies"
+            searchable
+            clearable
+          />
+        ),
+      },
+      {
+        key: "partyId",
+        label: "Customer",
+        type: "custom",
+        required: true,
+        render: (value, onChange, values, setField) => (
+          <Combobox
+            value={value}
+            /* A different customer has a different set of items already mapped,
+               so the selection below cannot survive the change. */
+            onChange={(id) => { onChange(id); setField("itemIds", ""); }}
+            options={inCompany(customers, values.companyId ?? "").map((p) => ({
+              value: p.id,
+              label: p.name,
+              sublabel: p.companyId ? companyLabel.get(p.companyId) : undefined,
+            }))}
+            placeholder="Search customer…"
+            searchable
+          />
+        ),
+      },
+      {
+        key: "itemIds",
+        label: "Items",
+        type: "custom",
+        required: true,
+        hint: "Pick as many as you like — each becomes one mapping. Items this customer already has are not listed.",
+        render: (value, onChange, values) => {
+          const partyId = values.partyId ?? "";
+          const companyId = values.companyId ?? "";
+          const taken = new Set(
+            (partyItems.data ?? []).filter((r) => r.partyId === partyId).map((r) => r.itemId),
+          );
+          const options = inCompany(sellables, companyId)
+            .filter((i) => !taken.has(i.id))
+            .map((i) => ({
+              value: i.id,
+              label: i.name,
+              /* Only when the list spans books — inside one company the heading
+                 would be the same word above every row. */
+              group: companyId ? undefined : (i.companyId ? companyLabel.get(i.companyId) : "No company"),
+            }))
+            // Grouped lists render in option order, so the books must not interleave.
+            .sort((a, b) => (a.group ?? "").localeCompare(b.group ?? "") || a.label.localeCompare(b.label));
+          return (
+            <MultiSelect
+              values={csvToList(value)}
+              onChange={(ids) => onChange(ids.join(","))}
+              options={options}
+              placeholder={partyId ? "Select items…" : "Pick a customer first"}
+              disabled={!partyId}
+              searchable
+              chips
+            />
+          );
+        },
+      },
+    ];
+  }, [parties.data, items.data, partyItems.data, companyOptions, companyLabel]);
 
   const doSync = async (force: boolean) => {
     setSyncing(true);
@@ -367,8 +486,13 @@ export default function Masters() {
       : <span className="text-[12px] text-grey-2">In Tally</span>;
 
   const lastRun = runs.data?.[0];
-  const loading = [companies, parties, items, groups, units, locations].some((q) => q.isFetching);
-  const error = [companies, parties, items, groups, units, locations].find((q) => q.error)?.error as Error | undefined;
+  // Every query, so the spinner and the error banner cover every tab. A query
+  // left out of these two lists shows an empty table instead of "loading" and
+  // swallows its own failure.
+  const allQueries = [companies, parties, items, groups, units, locations,
+                      partyItems];
+  const loading = allQueries.some((q) => q.isFetching);
+  const error = allQueries.find((q) => q.error)?.error as Error | undefined;
 
   return (
     <div className="space-y-4">
@@ -427,7 +551,7 @@ export default function Masters() {
         by the sync, which is most of them.
       */}
       {addedHereCount > 0 && (
-        <div className="flex items-center gap-2 px-1">
+        <div className="flex flex-wrap items-center gap-2 px-1">
           <button
             onClick={() => setAddedHere((v) => !v)}
             aria-pressed={addedHere}
@@ -507,7 +631,9 @@ export default function Masters() {
           searchText={(r) => `${r.name} ${r.code ?? ""} ${r.gstin ?? ""} ${r.subGroup ?? ""} ${r.location ?? ""}`}
           columns={[
             { header: "Name", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Company", render: (r) => (
+            /* Tally's filing, one value, rewritten every sync — renamed so it is
+               not read as "who bills them", which is the column beside it. */
+            { header: "In Tally's books", render: (r) => (
               <span className="text-[12px] text-grey">{r.companyId ? companyLabel.get(r.companyId) ?? "—" : "—"}</span>
             ) },
             /* Where the CUSTOMER takes delivery — 33 places, seeded from what the
@@ -648,8 +774,13 @@ export default function Masters() {
             itemTypeCol<MasterItem>(),
             /* Items are managed per company, so this is the first thing anyone
                needs to see — and the filter under it is how you get from 14,000
-               rows to one company's catalogue. */
-            { header: "Company", render: (r) => (
+               rows to one company's catalogue.
+
+               ⚠ ONE BOOK, and it is Tally's filing rather than who sells it. The
+                 Phase 1 reconcile put 209 of Dispatch's 234 items under O-tec
+                 while Enterprise sells them too. "Sold by", beside it, is the
+                 one an order form may narrow on. */
+            { header: "In Tally's books", render: (r) => (
               <span className="text-[12px] text-grey">
                 {r.companyId ? companyLabel.get(r.companyId) ?? "—" : "—"}
               </span>
@@ -751,19 +882,14 @@ export default function Masters() {
            * True, and beside the point: this list is not a sales history, it is
            * the list of what a customer MAY be sold, and a first order for a new
            * item has to be possible before there is anything to record. Order to
-           * Dispatch had 3,169 hand-typed pairs for exactly that reason, and
+           * Dispatch carried 3,169 hand-typed pairs for exactly that reason, and
            * every one of them came across in the cutover.
            *
-           * A hand-added row is source='portal' and carries no last-sold date or
-           * sale count, so it stays distinguishable from one the register proved.
+           * A hand-added row is source='portal' with no last-sold date and a sale
+           * count of zero, so it stays distinguishable from one the register
+           * proved — which is what the Source column and the Added-here chip read.
            */
-          createFields={[
-            { key: "partyId", label: "Customer", type: "select", required: true,
-              options: customerPickOptions, placeholder: "Search customer…" },
-            { key: "itemId", label: "Item", type: "select", required: true,
-              options: itemPickOptions, placeholder: "Search item…",
-              hint: "The customer may then be sold this item. Pick the row whose company matches the customer's." },
-          ]}
+          createFields={partyItemCreateFields}
           searchText={(r) => `${r.partyName} ${r.itemName} ${itemTypeLabel(r.itemType)}`}
           columns={[
             { header: "Customer", render: (r) => <span className="font-medium text-navy">{r.partyName}</span> },
@@ -826,21 +952,28 @@ export default function Masters() {
               });
             } else {
               const partyId = (v.partyId ?? "").trim();
-              const itemId = (v.itemId ?? "").trim();
-              if (!partyId || !itemId) throw new Error("Pick both a customer and an item.");
-              // UNIQUE(party_id, item_id) would catch this, but as a database
-              // error nobody can act on. An inactive twin especially: the answer
-              // there is to switch it back on, not to add a second one.
-              const dup = (partyItems.data ?? []).find((r) => r.partyId === partyId && r.itemId === itemId);
-              if (dup) {
-                throw new Error(dup.active
-                  ? `${dup.partyName} is already mapped to ${dup.itemName}.`
-                  : `${dup.partyName} → ${dup.itemName} already exists but is switched off. Search for it and switch it back on rather than adding it again.`);
+              const itemIds = csvToList(v.itemIds ?? "");
+              if (!partyId || itemIds.length === 0) throw new Error("Pick a customer and at least one item.");
+              /**
+               * UNIQUE(party_id, item_id) would catch a repeat, but as a database
+               * error nobody can act on. An INACTIVE twin especially: the answer
+               * there is to switch it back on, not to add a second one — and the
+               * picker cannot warn about it, because it lists what is missing and
+               * a switched-off pair is not missing.
+               */
+              const clashes = (partyItems.data ?? []).filter(
+                (r) => r.partyId === partyId && itemIds.includes(r.itemId),
+              );
+              if (clashes.length > 0) {
+                const names = clashes.map((r) => r.itemName).join(", ");
+                throw new Error(clashes.every((r) => !r.active)
+                  ? `${clashes[0].partyName} already has ${names}, switched off. Search for the row and switch it back on rather than adding it again.`
+                  : `${clashes[0].partyName} already has ${names}.`);
               }
-              await insertMaster("party_item", {
+              await insertMasters("party_item", itemIds.map((itemId) => ({
                 party_id: partyId, item_id: itemId,
                 active, sort_order: Number(v.sortOrder ?? 0) || 0,
-              });
+              })));
             }
             await invalidate();
           }}
@@ -899,36 +1032,82 @@ export default function Masters() {
         />
       )}
 
-      {/* -------------------------------------------------------- locations -- */}
+      {/* ------------------------------------------------ dispatch locations -- */}
+      {/*
+        A SITE IS A PLACE, AND SEVERAL COMPANIES DISPATCH FROM IT.
+
+        This tab used to be one row per (company, site) with a single Company
+        column, mirroring how Order to Dispatch stored it: NOIDA twice,
+        SURAT-HOJIWALA twice, SURAT-SACHIN twice. The duplication carried no
+        information — every step's owners were identical across both copies —
+        and it meant a new company added three more rows to retype, which is the
+        opposite of what a shared master is for. So the site is the row, and
+        "Dispatched by" is a list.
+      */}
       {tab === "location" && (
         <MasterCrud<MasterLocation>
-          singular="Location"
+          singular="Dispatch location"
           rows={onlyAddedHere(locations.data ?? [])}
           canManage={mayManage("location")}
-          searchText={(r) => `${r.name} ${companyLabel.get(r.companyId) ?? ""}`}
+          searchText={(r) => `${r.name} ${companyNames(r.companyIds)}`}
           columns={[
             { header: "Location", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            { header: "Company", render: (r) => (
-              <span className="text-[12px] text-grey">{companyLabel.get(r.companyId) ?? "—"}</span>
-            ) },
+            {
+              header: "Dispatched by",
+              render: (r) => (
+                <span className="text-[12px] text-grey">
+                  {r.companyIds.length === 0
+                    ? <span className="text-orange">no company yet</span>
+                    : companyNames(r.companyIds)}
+                </span>
+              ),
+              // The cell renders a component when the list is empty, and nodeText
+              // cannot walk that — so both are declared rather than derived.
+              sortValue: (r) => companyNames(r.companyIds),
+              filter: { get: (r) => (r.companyIds.length ? r.companyIds.map((id) => companyLabel.get(id) ?? "") : ["no company yet"]) },
+            },
             modulesCol(),
           ]}
           fields={[
             { key: "name", label: "Location name", type: "text", required: true, placeholder: "e.g. Unit 2" },
-            { key: "companyId", label: "Company", type: "select", required: true, options: companyOptions },
+            companiesField(companyOptions),
             modulesField(),
             sortField,
           ]}
-          emptyValues={{ name: "", companyId: "", modules: "", sortOrder: "0" }}
+          emptyValues={{ name: "", companyIds: "", modules: "", sortOrder: "0" }}
           toValues={(r) => ({
-            name: r.name, companyId: r.companyId, modules: r.modules.join(","), sortOrder: String(r.sortOrder),
+            name: r.name, companyIds: r.companyIds.join(","),
+            modules: r.modules.join(","), sortOrder: String(r.sortOrder),
           })}
-          onSubmit={submitFor("location", (v) => ({
-            name: v.name.trim(), company_id: v.companyId, modules: csvToList(v.modules),
-          }))}
+          /**
+           * Two tables, one form. The site is a row in mst_locations; who
+           * dispatches from it is rows in mst_company_locations, reconciled as a
+           * diff so an untouched pair keeps its id — and with it any history
+           * hanging off that pair.
+           */
+          onSubmit={async (id, v, active) => {
+            const want = csvToList(v.companyIds);
+            const patch = {
+              name: v.name.trim(), modules: csvToList(v.modules),
+              active, sort_order: Number(v.sortOrder ?? 0) || 0,
+            };
+            const locId = id
+              ? (await updateMaster("location", id, patch), id)
+              : await insertMaster("location", patch);
+
+            const had = id ? (locations.data ?? []).find((l) => l.id === id)?.companyIds ?? [] : [];
+            await Promise.all([
+              ...want.filter((c) => !had.includes(c)).map((c) =>
+                insertMaster("company_location", { location_id: locId, company_id: c })),
+              ...had.filter((c) => !want.includes(c)).map((c) =>
+                deleteCompanyLink("mst_company_locations", { location_id: locId, company_id: c })),
+            ]);
+            await invalidate();
+          }}
           onToggleActive={toggle("location")}
         />
       )}
+
     </div>
   );
 }

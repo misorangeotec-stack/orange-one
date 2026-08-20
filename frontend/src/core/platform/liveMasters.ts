@@ -144,8 +144,25 @@ export interface MasterLookup extends MasterRowBase {
   companyId: string | null;
 }
 
+/**
+ * One of OUR sites — the place a consignment leaves from.
+ *
+ * ⚠ `companyIds`, PLURAL, and it is NOT the table's `company_id` column. A site
+ *   is a shed with a gate and several of our companies dispatch from it, so
+ *   which ones is its own list (mst_company_locations). The column survives on
+ *   the table, nullable and unused, because nothing here is ever dropped — see
+ *   migration 20260919120000. New rows leave it null; read `companyIds`.
+ */
 export interface MasterLocation extends MasterRowBase {
+  companyIds: string[];
+}
+
+/** Which of our companies dispatch from a site, and which may bill / sell. */
+export interface MasterCompanyLink extends MasterRowBase {
   companyId: string;
+  /** The site, party or item this link hangs off. */
+  targetId: string;
+  targetName: string;
 }
 
 /**
@@ -334,18 +351,71 @@ export async function fetchMasterLookup(table: "mst_item_groups" | "mst_units"):
 }
 
 export async function fetchMasterLocations(): Promise<MasterLocation[]> {
-  const rows = await fetchAllRows<Record<string, any>>(
-    "mst_locations",
-    "id,name,company_id,modules,active,sort_order",
-  );
+  const [rows, links] = await Promise.all([
+    fetchAllRows<Record<string, any>>("mst_locations", "id,name,modules,active,sort_order"),
+    fetchAllRows<Record<string, any>>("mst_company_locations", "location_id,company_id,active"),
+  ]);
+  const byLocation = new Map<string, string[]>();
+  for (const l of links) {
+    if (l.active === false) continue;
+    const arr = byLocation.get(l.location_id);
+    if (arr) arr.push(l.company_id);
+    else byLocation.set(l.location_id, [l.company_id]);
+  }
   return byName(rows.map((r) => ({
     ...base(r),
     source: "portal" as const,
     tallyGuid: null,
     tallySyncedAt: null,
-    companyId: r.company_id,
+    companyIds: byLocation.get(r.id) ?? [],
   })));
 }
+
+/**
+ * The company links, as flat rows the shared CRUD can list, sort and filter.
+ *
+ * ⚠ THESE ARE NOT READABLE OFF TALLY, which is the whole reason they exist.
+ *   Tally files a stock item under one company BOOK, and the Phase 1 reconcile
+ *   put 209 of Dispatch's 234 items in the O-tec book against 21 in Enterprise —
+ *   yet both firms sell the same physical goods. Measured before building this:
+ *   filtering a picker on mst_items.company_id would offer 21 items on an
+ *   Enterprise order instead of ~230 and invalidate 589 of its 619 existing
+ *   order lines. `company_id` says where Tally FILES a row, not who sells it.
+ *
+ *   So these are ours, seeded from order history, and no sync deletes from them.
+ */
+async function fetchCompanyLinks(
+  table: "mst_party_companies" | "mst_item_companies",
+  fk: "party_id" | "item_id",
+  target: "party:mst_parties(id,name)" | "item:mst_items(id,name)",
+  key: "party" | "item",
+): Promise<MasterCompanyLink[]> {
+  const rows = await fetchAllRows<Record<string, any>>(
+    table,
+    `id,company_id,${fk},active,sort_order,source,${target}`,
+  );
+  return rows
+    .map((r) => ({
+      id: r.id,
+      name: r[key]?.name ?? "",
+      active: r.active ?? true,
+      sortOrder: r.sort_order ?? 0,
+      modules: [] as string[],
+      source: (r.source === "portal" ? "portal" : "tally") as MasterSource,
+      tallyGuid: null,
+      tallySyncedAt: null,
+      companyId: r.company_id,
+      targetId: r[key]?.id ?? "",
+      targetName: r[key]?.name ?? "",
+    }))
+    .sort((a, b) => a.targetName.localeCompare(b.targetName));
+}
+
+export const fetchMasterPartyCompanies = () =>
+  fetchCompanyLinks("mst_party_companies", "party_id", "party:mst_parties(id,name)", "party");
+
+export const fetchMasterItemCompanies = () =>
+  fetchCompanyLinks("mst_item_companies", "item_id", "item:mst_items(id,name)", "item");
 
 /**
  * The newest sync runs, for the "last synced" line on the Masters page.

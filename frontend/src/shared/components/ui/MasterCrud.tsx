@@ -54,8 +54,19 @@ export interface MasterFieldDef {
    * The whole bag is handed over as well, because a control can depend on a
    * SIBLING field: Dispatch's customer↔item mapping offers only the items that
    * customer does not already have, which it cannot know from its own value.
+   *
+   * And `setField` so it can CLEAR one. A control that narrows what its siblings
+   * may offer has to be able to drop a choice its narrowing just invalidated —
+   * pick a company on the customer↔item form after choosing the customer and
+   * that customer may not be one of the company's. Leaving the id in the bag
+   * would submit a pair the form is no longer showing, so the picker empties it.
    */
-  render?: (value: string, onChange: (next: string) => void, values: Record<string, string>) => ReactNode;
+  render?: (
+    value: string,
+    onChange: (next: string) => void,
+    values: Record<string, string>,
+    setField: (key: string, next: string) => void,
+  ) => ReactNode;
 }
 
 export interface MasterColumn<T> {
@@ -708,7 +719,7 @@ export default function MasterCrud<T extends { id: string; name: string; active:
               >
                 <FieldLabel label={f.label} required={f.required}>
                   {f.type === "custom" ? (
-                    f.render?.(values[f.key] ?? "", (next) => setField(f.key, next), values)
+                    f.render?.(values[f.key] ?? "", (next) => setField(f.key, next), values, setField)
                   ) : f.type === "select" ? (
                     <Combobox
                       value={values[f.key] ?? ""}

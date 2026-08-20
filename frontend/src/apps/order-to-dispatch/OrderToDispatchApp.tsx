@@ -37,12 +37,19 @@ function RequireAdmin({ children }: { children: ReactNode }) {
  * Tally. The tables this page used to edit still exist as the cutover's rollback
  * copy and NOTHING READS THEM, which is exactly the confusion worth heading off:
  * a row saved into them saves cleanly, reports success, and is then invisible
- * everywhere. That has already happened once.
+ * everywhere. That has already happened once, to a real customer, on the day of
+ * the cutover.
  *
- * Deliberately not admin-gated. Most people who land here cannot open
- * /admin/masters, and telling them "access denied" would answer a question they
- * did not ask. What they need is the sentence below and the Master Requests
- * link, both of which are theirs.
+ * ⚠ A PAGE, NOT A REDIRECT. This route used to `<Navigate>` to /admin/masters.
+ *   Two problems with that. Anyone who had bookmarked the old URL was thrown onto
+ *   a different screen with no explanation, which reads as a glitch rather than a
+ *   move. And /admin/masters is admin-gated, so for everyone else the redirect
+ *   landed on "access denied" — answering a question they had not asked, while
+ *   the real answer is "this moved, and here is what to use instead".
+ *
+ * Deliberately NOT gated for the same reason: the people most likely to arrive
+ * here are the ones who cannot open Central Masters, and Master Requests — which
+ * is theirs — is the thing they actually need.
  */
 function MastersMoved() {
   const { isAdmin } = useSession();
@@ -56,7 +63,7 @@ function MastersMoved() {
       </h1>
       <p className="mt-3 text-[13.5px] leading-relaxed text-grey">
         They are shared with every module now and come from Tally automatically, so
-        they are kept in one place rather than a copy per module. Editing them here
+        they are kept in one place instead of a copy per module. Editing them here
         would have renamed them for everyone — and the next sync would have undone
         it a few minutes later.
       </p>
@@ -140,16 +147,8 @@ export default function OrderToDispatchApp() {
               Customers and items are now shared with every module, so editing
               them from inside one module would rename them for all of the
               others — and the next Tally sync would revert it 15 minutes later.
-
-              ⚠ A PAGE, NOT A REDIRECT, AND THE DIFFERENCE MATTERS.
-                This used to `<Navigate>` straight to /admin/masters. Two problems.
-                Anyone who bookmarked the old URL was thrown onto a different
-                screen with no explanation — it reads as a glitch, not a move. And
-                /admin/masters is admin-gated, so for everybody else the redirect
-                landed on an access-denied page, which says "you are not allowed"
-                where the truth is "this moved, and here is what to use instead".
-                Saying so plainly is the whole job of this route.
-
+              Kept as an explaining page, not deleted and not a bare redirect —
+              see MastersMoved above for why.
               Master Requests stays where it was — raising and approving a new
               master is still a Dispatch job. */}
           <Route path="masters" element={<MastersMoved />} />
