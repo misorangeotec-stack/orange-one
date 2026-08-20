@@ -132,7 +132,7 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
    */
   emptyMessage?: ReactNode;
 }) {
-  const { profileById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
+  const { actorById, departmentById, getRecurring, canStatusActions, deleteTask, unreadAssignedTaskIds } = useTaskStore();
   const { user, role } = useSession();
   const navigate = useNavigate();
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -239,8 +239,13 @@ export default function TaskTable({ tasks, sort, onSort, showDepartment = false,
             </tr>
           )}
           {tasks.map((task) => {
-            const creator = profileById(task.createdBy);
-            const assignee = profileById(task.assignedTo);
+            // actorById, NOT profileById. The directory is RLS-scoped to self +
+            // same department + downline, so a cross-department assigner — a
+            // Director handing work to another team — resolves to undefined and
+            // the Created By cell prints "—" for a task that plainly has one.
+            // actorById falls back to the org-wide, name-only people list.
+            const creator = actorById(task.createdBy);
+            const assignee = actorById(task.assignedTo);
             const dept = departmentById(task.departmentId);
             const closed = task.status === "completed" || task.status === "shifted";
             // One definition of overdue for the red due date, the Overdue pill and
