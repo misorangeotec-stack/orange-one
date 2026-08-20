@@ -98,9 +98,28 @@ The three guards, since this repo has no test runner:
    repo's only gate — never sees them. Without this a wrong argument would compile, bundle, deploy
    and fail at 08:00 in front of nobody.
 
-**Measured end to end, 20-Aug-2026:** ConnectWave loaded in 2.1 s (1,847 ledgers), day-level facts
-0.2 s, the book drawn in 40.1 s (667 KB PDF + 1,541 KB workbook), one salesperson in 7.7 s.
+**Measured end to end, 20-Aug-2026.** On the desk: ConnectWave in 2.1 s (1,847 ledgers), day-level
+facts 0.2 s, the book drawn in 40.1 s (667 KB PDF + 1,541 KB workbook), one salesperson in 7.7 s.
+**On the runner it is faster** — 26.0 s for the book, 4.8 s per rep, 60 s for the whole job
+including the checkout and `npm ci`. A full send (the book plus thirteen reps) is therefore about
+two minutes, against a 30-minute step timeout.
+
 It reproduced the screen figure for figure: 247 of 362, ₹30.58 Cr, ₹17.53 Cr, 34, 116, ₹3.98 Cr.
+
+Three runs proved the three modes (`32392028439`, `32392193665`, `32392294411`): a dry run built
+both shapes; a **scheduled** run asked the database, was told `automatic sending is not armed`, and
+stopped without reading a row; a **sample** posted the book and a rep extract from the runner
+through storage and the outbox, both delivered, with the send log left empty — a sample must not
+burn a slot.
+
+Two things bit on the way, both worth knowing:
+
+- **Node 20 is not enough.** `createClient` builds a RealtimeClient whether or not anything
+  subscribes, and that needs a global `WebSocket`, which Node gained in 22. On 20 the job dies at
+  module load, before a single row is read. The workflow pins **24**.
+- **A wrong secret used to fail unreadably** — `Invalid supabaseUrl` thrown from line 61906 of a
+  4 MB bundle, naming neither the variable nor which of the two projects it meant. Both clients now
+  check the shape of their URL and say which one is wrong.
 
 ### 2.2 The timer — ✅ done, split between the database and the runner
 
