@@ -199,3 +199,60 @@ export function listReportRows(
   }
   return { rows: out, noPool: dropped };
 }
+
+// ── The report's defaults, in one place ─────────────────────────────────────────────
+//
+// These used to live only inside the page, which meant a server-side caller had to restate them —
+// and restating a default is how a scheduled report comes out answering a different question from
+// the screen while looking entirely correct. The page imports these; so does the builder.
+
+/**
+ * Sale-type default for EVERY variant (zero / threshold / dormant): all types except Machine.
+ *
+ * A machine is a one-time capital sale paid down over months, so "hasn't bought / hasn't paid
+ * recently" is its NORMAL state, not a warning — machine-dominant customers otherwise swamp the
+ * list with business-as-usual. They are one click away, not gone.
+ */
+export const DEFAULT_SALE_TYPES: readonly string[] = ["ink", "spare_parts", "head", "other"];
+
+/**
+ * Category default: every tier EXCEPT "AA" (internal). AA is not a real customer relationship, so
+ * it does not belong on a collections call-list by default.
+ */
+export const DEFAULT_CATEGORIES: readonly string[] = ["A", "B", "C", "D", "E", "Uncategorized"];
+
+/**
+ * The period the report opens on.
+ *
+ * The collection reports open on the LAST 15 DAYS: chasing cash is a fortnightly rhythm, and a
+ * customer who has paid nothing for a fortnight is the one worth a call today.
+ *
+ * Dormant deliberately does NOT follow. Its predicate is "billed nothing in the window", and over
+ * 15 days that is nearly every customer on the books — the report would list everyone and mean
+ * nothing. Six months stands: one quiet quarter is a lull, two is a dead account.
+ */
+export const defaultPresetFor = (mode: ZCMode): "15d" | "6m" => (mode === "dormant" ? "6m" : "15d");
+
+/** The filter set the report opens with, and the one a scheduled send must use. */
+export function defaultFilters(): ZCFilters {
+  return {
+    categories: [...DEFAULT_CATEGORIES],
+    companies: [],
+    locations: [],
+    salespersons: [],
+    saleTypes: [...DEFAULT_SALE_TYPES],
+    segment: "all",
+    blockedOnly: false,
+    includeNonDebtors: false,
+    minOut: "0",
+    search: "",
+  };
+}
+
+/**
+ * The shortfall target the KPI strip measures against.
+ *
+ * It tracks the threshold when there is one (Below-30% measures shortfall against 30%), and falls
+ * back to 30 for the zero and dormant reports, which have no bar of their own.
+ */
+export const defaultTarget = (threshold: number): number => (threshold > 0 ? threshold : 30);

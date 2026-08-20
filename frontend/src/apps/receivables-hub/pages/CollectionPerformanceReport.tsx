@@ -48,7 +48,8 @@ import {
 // Who is on the list, and the one-line record of how it was narrowed. Plain TypeScript for the
 // same reason as the cards above.
 import {
-  MIN_OUTSTANDING_OPTIONS, buildFilterSummary, listReportRows, makeSaleTypeScope, selectEligible,
+  DEFAULT_CATEGORIES, DEFAULT_SALE_TYPES, MIN_OUTSTANDING_OPTIONS,
+  buildFilterSummary, defaultPresetFor, defaultTarget, listReportRows, makeSaleTypeScope, selectEligible,
   type MinOutKey, type Segment, type ZCFilters,
 } from "@hub/lib/collectionScope";
 import { CARD_ICONS, CARD_EXPLAIN } from "./collections/kpiCardCopy";
@@ -127,21 +128,13 @@ const HEADER_STICKY = "sticky top-0 z-20 bg-muted shadow-[inset_0_-1px_0_hsl(var
 // MIN_OUTSTANDING_OPTIONS, MinOutKey and Segment moved to `lib/collectionScope.ts` — the pool
 // filter reads them and has to run on a server. Imported above.
 
-/**
- * Sale-type default for EVERY variant of this report (zero / threshold / dormant): all types
- * except Machine. A machine is a one-time capital sale paid down over months, so "hasn't bought /
- * hasn't paid recently" is its NORMAL state, not a warning — machine-dominant customers otherwise
- * swamp the list with business-as-usual. They are one click away, not gone. "Clear filters"
- * resets to THIS, not to a truly-empty (Machine back in) set, so a cleared call-list stays honest.
- */
-const DEFAULT_SALE_TYPES = ["ink", "spare_parts", "head", "other"] as const;
+// DEFAULT_SALE_TYPES and DEFAULT_CATEGORIES moved to `lib/collectionScope.ts` and are imported
+// above — a scheduled send must open on exactly these, and a default restated in two places is
+// how the mailed report quietly starts answering a different question from the screen.
+// "Clear filters" still resets to THESE, not to a truly-empty set, so a cleared call-list stays
+// honest about Machine being out.
 
-/**
- * Category default for every variant: all tiers EXCEPT "AA" (internal). AA is not a real customer
- * relationship, so it doesn't belong on a collections call-list by default. One click ("Select
- * all" in the dropdown) adds it back; "Clear filters" resets to THIS, not to a truly-empty set.
- */
-const DEFAULT_CATEGORIES = CATEGORY_OPTIONS.map((o) => o.value).filter((v) => v !== "AA");
+// See the note above. One click ("Select all" in the dropdown) adds AA back.
 
 /** The thresholds management actually asks for. Anything else via the URL (?below=42). */
 const THRESHOLD_OPTIONS = [0, 30, 50] as const;
@@ -248,7 +241,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // Dormant deliberately does NOT follow. Its predicate is "billed nothing in the window", and
   // over 15 days that is nearly every customer on the books — the report would list everyone and
   // mean nothing. Six months stands: one quiet quarter is a lull, two is a dead account.
-  const defaultPreset: PeriodPreset = isDormantMode ? "6m" : "15d";
+  const defaultPreset: PeriodPreset = defaultPresetFor(mode);
   const [preset, setPreset] = useState<PeriodPreset>(defaultPreset);
   const [customFrom, setCustomFrom] = useState<string>("");
   const [customTo, setCustomTo] = useState<string>("");
@@ -371,8 +364,8 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       : "";
 
   // ── Target (drives Shortfall ₹) ───────────────────────────────────────────────────
-  const [target, setTarget] = useState<number>(30);
-  useEffect(() => { setTarget(threshold > 0 ? threshold : 30); }, [threshold]);
+  const [target, setTarget] = useState<number>(() => defaultTarget(threshold));
+  useEffect(() => { setTarget(defaultTarget(threshold)); }, [threshold]);
 
   // ── Count journal settlements as collected ────────────────────────────────────────
   // Multi-company reality: a customer often pays into ONE company and the receivable in another
