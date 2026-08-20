@@ -34,6 +34,7 @@
 // from /assets/fonts — see pdfBrand.loadBrandAssets.
 import jsPDF from "jspdf";
 import { formatDateDMY, fmtINRMoney } from "./utils";
+import { SALE_TYPE_ORDER, saleTypeLabel, saleTypeRank } from "./salesReport";
 import {
   BRAND, CONTENT_W, MARGIN, MINI_CARD_H, PAGE_H,
   applyDeferredLinks, divider, drawTable, ellipsize, footer, headerBand, homeIcon,
@@ -107,7 +108,17 @@ export interface PdfBillRow {
   sortDate?: string;
   dueDate: string;
   overdueDays: number | null;
+  /** The printed label, e.g. "Spare Parts". */
   saleType: string;
+  /**
+   * The raw `sale_type` code behind that label, for GROUPING only, never printed.
+   *
+   * Same arrangement as `sortDate` above and for the same reason: the page groups its bills in the
+   * business's own order (`SALE_TYPE_ORDER`), which is a property of the code, and a label cannot
+   * be ranked — "Spare Parts" and "Machine" carry no sequence between them. Empty on the On
+   * Account line, which belongs to no sale type.
+   */
+  saleTypeCode?: string;
   amount: number;
   received: number;
   pending: number;
@@ -277,6 +288,51 @@ function byBillDate(a: PdfBillRow, b: PdfBillRow): number {
     return ka < kb ? -1 : 1;
   }
   return (b.overdueDays ?? 0) - (a.overdueDays ?? 0) || a.number.localeCompare(b.number);
+}
+
+/** One sale type's bills on a customer's page, already in reading order. */
+interface SaleTypeGroup {
+  label: string;
+  bills: PdfBillRow[];
+}
+
+/**
+ * A customer's open bills, bucketed by sale type — Ink together, Spare Parts together.
+ *
+ * SALE TYPE IS THE OUTER KEY AND BILL DATE THE INNER ONE. Interleaved, a page gives no way to see
+ * how much of a customer's overdue is ink and how much is hardware without adding it up by hand,
+ * which is what was reported. Grouping changes the SEQUENCE and nothing else: the same bills print
+ * and the page still totals to the Overdue figure that linked here.
+ *
+ * Groups follow `SALE_TYPE_ORDER`, the business's own sequence, so every customer's page reads the
+ * same way. Anything Tally sends that we do not recognise ranks last and sorts among its own kind
+ * on the code, so a new voucher type appears in a group of its own rather than vanishing into
+ * another one.
+ *
+ * ⚠ PASS OPEN BILLS ONLY. The On Account credit is stamped `voucherType: "other"` upstream, so a
+ *   caller that hands the whole list in files the deduction inside the Other group instead of
+ *   leaving it at the foot of the page, where it reconciles the total.
+ */
+function groupBySaleType(open: readonly PdfBillRow[]): SaleTypeGroup[] {
+  const byCode = new Map<string, PdfBillRow[]>();
+  for (const b of open) {
+    const code = b.saleTypeCode ?? "";
+    const list = byCode.get(code);
+    if (list) list.push(b); else byCode.set(code, [b]);
+  }
+  return [...byCode.keys()]
+    .sort((a, b) => {
+      const ra = saleTypeRank(a);
+      const rb = saleTypeRank(b);
+      if (ra !== rb) return ra - rb;
+      // Both unranked: order on the code so two exports of the same data come out identical.
+      return ra === SALE_TYPE_ORDER.length ? a.localeCompare(b) : 0;
+    })
+    .map((code) => ({
+      // A bill whose type never arrived would otherwise head a nameless band.
+      label: code ? saleTypeLabel(code) : "Unspecified",
+      bills: [...(byCode.get(code) ?? [])].sort(byBillDate),
+    }));
 }
 
 /**
@@ -1094,24 +1150,71 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     const bills = cust.bills ?? [];
     const open = bills.filter((b) => !b.isOnAccount);
     const onAccount = bills.filter((b) => b.isOnAccount);
-    // BILL DATE, OLDEST FIRST, with the On Account credit last: it is the deduction that
-    // reconciles the page, not another bill. Same order as the workbook's block, and for the same
-    // reason — see `billDateKey`.
-    const ordered = [[...open].sort(byBillDate), onAccount].flat();
+    // GROUPED BY SALE TYPE, and BILL DATE OLDEST FIRST inside each group — see `groupBySaleType`.
+    // The On Account credit stays out of the grouping and lands last, because it is the deduction
+    // that reconciles the page rather than another bill. Same order as the workbook's block.
+    const groups = groupBySaleType(open);
 
     cy = sectionHeading(
       pdf, MARGIN, cy,
-      `${open.length} open past-due bill${open.length === 1 ? "" : "s"}${onAccount.length ? " · plus On Account credit" : ""}`,
+      `${open.length} open past-due bill${open.length === 1 ? "" : "s"}` +
+      `${groups.length > 1 ? ` across ${groups.length} sale types` : ""}` +
+      `${onAccount.length ? " · plus On Account credit" : ""}`,
     ) + 7;
 
-    interface BillLine { bill?: PdfBillRow; total?: boolean }
-    const billRows: BillLine[] = [...ordered.map((bill) => ({ bill })), { total: true }];
+    interface BillSubtotal { count: number; amount: number; received: number; pending: number }
+    interface BillLine {
+      bill?: PdfBillRow;
+      /** A sale-type heading. Carries a label and no figures. */
+      band?: string;
+      /** That sale type's own total, drawn under its bills. */
+      subtotal?: BillSubtotal;
+      /** The customer's bottom line — the existing row, unchanged. */
+      total?: boolean;
+    }
+
+    // One `drawTable` call for the whole page, bands and subtotals included, rather than one per
+    // group: the table's repeating header and its page-break handling belong to a single call, and
+    // a per-group call would reprint the column headers between every sale type.
+    //
+    // A lone group gets its band but NO subtotal — with nothing to compare it against it would
+    // simply restate the TOTAL two rows below it.
+    const billRows: BillLine[] = [];
+    for (const g of groups) {
+      billRows.push({ band: g.label });
+      for (const bill of g.bills) billRows.push({ bill });
+      if (groups.length > 1) {
+        billRows.push({
+          subtotal: {
+            count: g.bills.length,
+            amount: g.bills.reduce((s, b) => s + b.amount, 0),
+            received: g.bills.reduce((s, b) => s + b.received, 0),
+            pending: g.bills.reduce((s, b) => s + b.pending, 0),
+          },
+        });
+      }
+    }
+    for (const bill of onAccount) billRows.push({ bill });
+    billRows.push({ total: true });
+
+    // Over ALL bills, On Account included — see the Pending column's note. The subtotals above
+    // cover the open bills only, so they will not add up to this row whenever a credit exists;
+    // that gap is the credit, and the paragraph under the table says so.
     const sum = (of: (b: PdfBillRow) => number) => bills.reduce((s, b) => s + of(b), 0);
 
+    // The band and the subtotal both speak in the Bill No column: it is the widest one and the
+    // only one whose content is a name rather than a figure.
     const billCols: PdfColumn<BillLine>[] = [
       {
         header: "Bill No", width: 22,
-        value: (r) => (r.total ? "TOTAL" : r.bill!.number),
+        value: (r) =>
+          r.total ? "TOTAL"
+          : r.band ? r.band.toUpperCase()
+          // "Subtotal", NOT "<sale type> subtotal": the band two rows up already names the type in
+          // full, and the longer captions did not fit this column — "Non-product income subtotal"
+          // ellipsized to nonsense at 22/113 of the content width.
+          : r.subtotal ? `Subtotal · ${r.subtotal.count} bill${r.subtotal.count === 1 ? "" : "s"}`
+          : r.bill!.number,
         color: (r) => (r.bill?.isOnAccount ? BRAND.green : undefined),
       },
       // 13, not 12: a dd-mm-yyyy of all-wide digits needs ~47pt of cell and 12 gives 47 exactly,
@@ -1120,17 +1223,30 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       { header: "Due Date", width: 13, align: "right", value: (r) => (r.bill ? r.bill.dueDate || NIL : "") },
       {
         header: "Due Days", width: 10, align: "right",
-        value: (r) => (r.bill && r.bill.overdueDays !== null ? String(r.bill.overdueDays) : r.total ? "" : NIL),
+        // NIL is for a BILL whose due days we do not have. A band, a subtotal or the TOTAL has no
+        // due days to be missing, so those read blank rather than as a gap in the data.
+        value: (r) => (r.bill ? (r.bill.overdueDays !== null ? String(r.bill.overdueDays) : NIL) : ""),
         color: (r) => (r.bill && (r.bill.overdueDays ?? 0) > 180 ? BRAND.red : undefined),
       },
+      // Blank on a band row: the band IS the sale type, and repeating it down the column it
+      // heads would say the same thing twice.
       { header: "Sale Type", width: 13, value: (r) => (r.bill ? r.bill.saleType || NIL : "") },
-      { header: "Amount", width: 13, align: "right", value: (r) => money(r.total ? sum((b) => b.amount) : r.bill!.amount) },
-      { header: "Received", width: 13, align: "right", value: (r) => money(r.total ? sum((b) => b.received) : r.bill!.received) },
+      {
+        header: "Amount", width: 13, align: "right",
+        value: (r) =>
+          r.band ? "" : money(r.total ? sum((b) => b.amount) : r.subtotal ? r.subtotal.amount : r.bill!.amount),
+      },
+      {
+        header: "Received", width: 13, align: "right",
+        value: (r) =>
+          r.band ? "" : money(r.total ? sum((b) => b.received) : r.subtotal ? r.subtotal.received : r.bill!.received),
+      },
       {
         // The TOTAL of this column IS the customer's Overdue on the table that linked here, which
         // is the whole point of putting the On Account line in the list rather than in a footnote.
         header: "Pending", width: 13, align: "right",
-        value: (r) => money(r.total ? sum((b) => b.pending) : r.bill!.pending),
+        value: (r) =>
+          r.band ? "" : money(r.total ? sum((b) => b.pending) : r.subtotal ? r.subtotal.pending : r.bill!.pending),
         color: (r) => (r.bill ? (r.bill.isOnAccount ? BRAND.green : BRAND.red) : undefined),
       },
     ];
@@ -1139,7 +1255,13 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       x: MARGIN, y: cy, width: CONTENT_W,
       columns: billCols,
       rows: billRows,
-      rowKind: (r) => (r.total ? "total" : r.bill?.isOnAccount ? "muted" : "normal"),
+      rowKind: (r) =>
+        r.total ? "total"
+        : r.band ? "band"
+        // A sale-type subtotal is deliberately quieter than the customer's TOTAL, so the page
+        // reads subtotal → TOTAL rather than as two rows of equal weight.
+        : r.subtotal || r.bill?.isOnAccount ? "muted"
+        : "normal",
       rowH: 14,
       maxY: FLOOR,
       onNewPage: newPage,

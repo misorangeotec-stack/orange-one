@@ -37,8 +37,8 @@
 import * as XLSX from "xlsx-js-style";
 import { saveAs } from "file-saver";
 import { formatDateDMY } from "./utils";
-import { saleTypeLabel } from "./salesReport";
-import { HEADER_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
+import { SALE_TYPE_ORDER, saleTypeLabel, saleTypeRank } from "./salesReport";
+import { HEADER_STYLE, SUBTOTAL_STYLE, TOTAL_STYLE, GRAND_TOTAL_STYLE, styleRow } from "./xlsxStyle";
 import {
   NEVER_PAID, NEVER_SOLD,
   type ZCColumn, type ZCMetrics,
@@ -104,6 +104,8 @@ function autoWidths(
 
 // TOTAL_STYLE (light green) marks the one subtotal row per top-level group; GRAND_TOTAL_STYLE
 // (strong green) stays reserved for the single row at the bottom, so the two never read alike.
+// SUBTOTAL_STYLE (palest green) sits below both, for a subtotal INSIDE a block — the bill sheet's
+// per-sale-type lines within one customer. Three greens, innermost palest.
 
 export interface ZCExportMeta {
   /** Report title, e.g. "Customers Below 30% Collection". */
@@ -404,8 +406,8 @@ function buildRollupSheet(
  *
  * THE SHAPE IS DELIBERATELY NOT A DATABASE TABLE
  *   Bills are blocked per customer, each block closed by its own TOTAL and separated by a blank
- *   row. That is the explicit ask: this sheet is meant to be READ, and a solid 4,000-row grid is
- *   not readable. Know the cost, which is the same one the roll-up sheet documents at the top of
+ *   row, and within a block they are grouped by SALE TYPE with a subtotal per type. That is the
+ *   explicit ask: this sheet is meant to be READ, and a solid 4,000-row grid is not readable. Know the cost, which is the same one the roll-up sheet documents at the top of
  *   this file: a SUM down the whole Pending column double-counts, and re-sorting scatters the
  *   totals away from their blocks. There is deliberately NO autofilter here — a filter over
  *   interleaved spacer and total rows produces nonsense, and this sheet is for reading, not
@@ -421,7 +423,10 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
   const aoa: Array<Array<string | number>> = [];
 
   aoa.push([meta.title]);
-  aoa.push(["Overdue bill details: the open past-due bills behind the Overdue column."]);
+  aoa.push([
+    "Overdue bill details: the open past-due bills behind the Overdue column, " +
+    "grouped by sale type within each customer and oldest bill first.",
+  ]);
   aoa.push(["Period", meta.periodLabel]);
   aoa.push([]);
 
@@ -478,15 +483,27 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
   ]);
 
   const totalRows: number[] = [];
+  const subtotalRows: number[] = [];
 
   for (const key of orderedKeys) {
     const list = blocks.get(key) ?? [];
     const [sp, customer, company, location] = key.split(SEP);
     /**
-     * BILL DATE, OLDEST FIRST. The On Account credit sinks to the bottom, where it reads as the
-     * deduction that reconciles the block rather than as another bill.
+     * SALE TYPE FIRST, then BILL DATE, OLDEST FIRST within it. The On Account credit sinks to the
+     * bottom, where it reads as the deduction that reconciles the block rather than as another
+     * bill.
      *
-     * This used to rank on Overdue Days, which LOOKS like the same order and is not: due days are
+     * Sale type is the outer key so every bill of one type sits together and a reader can see how
+     * much of a customer's overdue is ink and how much is hardware without adding it up by hand.
+     * Groups follow `SALE_TYPE_ORDER` — the business's own sequence, so every block reads the same
+     * way — and the PDF's bill pages group identically, by the same rank function, so the two
+     * documents cannot drift.
+     *
+     * ⚠ THE ON-ACCOUNT CLAUSE MUST STAY FIRST. `buildDrillRows` stamps the synthetic credit line
+     *   `voucherType: "other"`, so ranking before sinking it files the deduction inside the Other
+     *   group instead of at the foot of the block, where it belongs.
+     *
+     * Bill date is NOT Overdue Days, which looks like the same order and is not: due days are
      * measured from the DUE date, so a bill sold in March on 90-day terms sits below one sold in
      * June on 7-day terms. The block then reads as an unordered pile, which is exactly how it was
      * reported. Bill date is the sequence a ledger is actually worked in.
@@ -497,6 +514,13 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
      */
     const sorted = [...list].sort((a, b) => {
       if (!!a.isOnAccount !== !!b.isOnAccount) return a.isOnAccount ? 1 : -1;
+      const ra = saleTypeRank(a.voucherType);
+      const rb = saleTypeRank(b.voucherType);
+      if (ra !== rb) return ra - rb;
+      // Both unrecognised: keep them apart, and in a stable order, rather than interleaved.
+      if (ra === SALE_TYPE_ORDER.length && a.voucherType !== b.voucherType) {
+        return a.voucherType.localeCompare(b.voucherType);
+      }
       if (a.date !== b.date) {
         if (!a.date) return 1;
         if (!b.date) return -1;
@@ -505,7 +529,7 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
       return b.overdueDays - a.overdueDays || a.number.localeCompare(b.number);
     });
 
-    for (const r of sorted) {
+    const pushBill = (r: InvoiceDrillRow) => {
       aoa.push([
         sp, customer, company, location,
         r.isOnAccount ? (r.onAccountLabel ?? "On Account") : r.number,
@@ -516,7 +540,50 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
         r.isOnAccount ? "" : saleTypeLabel(r.voucherType),
         Math.round(r.amount), Math.round(r.received), Math.round(r.pending),
       ]);
+    };
+
+    /**
+     * A subtotal per sale type, written as the type changes — the figure the grouping exists to
+     * give, and the one thing the reader cannot get off the grid for free.
+     *
+     * NO BAND ROW ABOVE EACH GROUP, unlike the PDF: the Sale Type column already labels every row
+     * here, so a heading would restate a column sitting two cells away. And no subtotal at all
+     * when the customer sells one type only — it would merely repeat the TOTAL below it.
+     *
+     * The label goes in the BILL NO column, not Sale Type. `autoWidths` measures every row, and
+     * Sale Type is a narrow column of short labels; a 24-character subtotal caption would widen it
+     * on every export. Bill No already carries "On Account (paid, tagged to no bill)", so the
+     * caption costs nothing there.
+     */
+    const open = sorted.filter((r) => !r.isOnAccount);
+    const onAccount = sorted.filter((r) => r.isOnAccount);
+    const byType = open.length ? new Set(open.map((r) => r.voucherType)).size : 0;
+
+    let run: InvoiceDrillRow[] = [];
+    const flushSubtotal = () => {
+      if (run.length && byType > 1) {
+        subtotalRows.push(aoa.length);
+        aoa.push([
+          "", "", "", "",
+          `${saleTypeLabel(run[0].voucherType)} subtotal · ${run.length} bill${run.length === 1 ? "" : "s"}`,
+          "", "", "", "", "",
+          Math.round(run.reduce((s, r) => s + r.amount, 0)),
+          Math.round(run.reduce((s, r) => s + r.received, 0)),
+          Math.round(pendingOf(run)),
+        ]);
+      }
+      run = [];
+    };
+
+    for (const r of open) {
+      if (run.length && run[0].voucherType !== r.voucherType) flushSubtotal();
+      pushBill(r);
+      run.push(r);
     }
+    flushSubtotal();
+    // After every group, never inside one: the credit belongs to no sale type, and the customer
+    // TOTAL below is net of it while the subtotals above are not.
+    for (const r of onAccount) pushBill(r);
 
     totalRows.push(aoa.length);
     aoa.push([
@@ -542,6 +609,7 @@ function buildOverdueBillsSheet(rows: InvoiceDrillRow[], meta: ZCExportMeta): XL
   styleRow(ws, 0, ncols, HEADER_STYLE);
   styleRow(ws, headerRow0, ncols, HEADER_STYLE);
   styleRow(ws, grandRow0, ncols, GRAND_TOTAL_STYLE);
+  for (const r of subtotalRows) styleRow(ws, r, ncols, SUBTOTAL_STYLE);
   for (const r of totalRows) styleRow(ws, r, ncols, TOTAL_STYLE);
 
   // ⚠ INERT WITH THIS WRITER, KEPT DELIBERATELY. `xlsx-js-style` has no freeze-pane writer — the

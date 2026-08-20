@@ -192,6 +192,11 @@ function billsFor(
     dueDate: r.dueDate ? (formatDateDMY(r.dueDate) || "") : "",
     overdueDays: r.isOnAccount ? null : r.overdueDays,
     saleType: r.isOnAccount ? "" : saleTypeLabel(r.voucherType),
+    // The code as well as the label — the bill page groups on it. Empty on the On Account line,
+    // which is a deduction rather than a sale of any type. NOTE that `buildDrillRows` stamps that
+    // line `voucherType: "other"`, so reading the code without the `isOnAccount` guard would file
+    // the credit inside the Other group instead of at the foot of the page.
+    saleTypeCode: r.isOnAccount ? "" : r.voucherType,
     amount: r.amount,
     received: r.received,
     pending: r.pending,

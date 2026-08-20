@@ -198,6 +198,28 @@ export const SALE_TYPE_LABELS: Record<string, string> = {
 
 export const saleTypeLabel = (code: string) => SALE_TYPE_LABELS[code] ?? code;
 
+/**
+ * The order sale types are read in — ink first, then the hardware, then the catch-alls.
+ *
+ * This is the business's own sequence, not an alphabetical or by-value one, and it is FIXED on
+ * purpose: the collection report's bill pages group on it, so every customer's page reads the same
+ * way and the eye learns where to look. Ranking by money instead would reshuffle the groups from
+ * one customer to the next.
+ */
+export const SALE_TYPE_ORDER: readonly string[] = [
+  "ink", "spare_parts", "machine", "head", "other", "non_product",
+];
+
+/**
+ * A sale type's place in that order. Anything unrecognised ranks LAST rather than first, so a
+ * voucher type Tally starts sending tomorrow lands in a group of its own at the foot of the page
+ * instead of silently leading it. Callers break the tie among unknowns on the code itself.
+ */
+export const saleTypeRank = (code: string): number => {
+  const i = SALE_TYPE_ORDER.indexOf(code);
+  return i === -1 ? SALE_TYPE_ORDER.length : i;
+};
+
 /* ------------------------------------------------------------------ reads */
 
 /**
