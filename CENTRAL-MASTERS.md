@@ -335,6 +335,45 @@ the URL and key from `private.masters_sync_config`.
     appears under a base tenant and its `~YYYYMMDD` twin and a tied sort key
     reshuffles just the same. Ordering is also ~4× FASTER on the big views.
     If you add a paged read anywhere, give it a unique sort key.
+25. **A FUNCTION THE CUTOVER MISSED WROTE "Item" ONTO EVERY DISPATCH FOR THREE
+    DAYS, AND NOTHING ERRORED.** `fms_dispatch_archive_round` freezes each
+    shipped line into `fms_dispatch_round_items`, copying the product NAME so a
+    completed round still reads correctly if the master is later renamed. It
+    looked that name up in **`fms_dispatch_items`** — the legacy master, frozen
+    at the Phase 1 cutover, 234 rows — while live items had moved to
+    `mst_items`, 14,261 rows. The join matched nothing and
+    `coalesce(it.name, 'Item')` wrote the placeholder. **293 rows, and 0 of them
+    would have resolved against the legacy table** — every dispatch closed since
+    the cutover, not an intermittent failure. The gate pass hid it, because
+    `gatePass.ts` falls back to `meta.itemName(i.itemId)`; the Order Register
+    export reads the frozen copy directly and showed "Item".
+    Fixed in `20260921140000`, which also repaired all 293 from the intact
+    `item_id` (undo data in `private.round_item_name_backfill`).
+    **The standing check below existed precisely to catch this and was not
+    re-run after the cutover.** Run it after any cutover, and after any change
+    to a `fms_dispatch_*` function:
+
+    ```sql
+    -- Nothing may still READ a frozen master. mst_apply_reconcile_link is the
+    -- only legitimate hit: merging a legacy row onto its Tally twin is its job.
+    -- ⚠ prosrc includes COMMENTS, so a function merely NAMING a retired table in
+    --   a note trips this. Read the hit before believing it (see item 20).
+    select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.prosrc ~ 'fms_dispatch_(items|customers|customer_items)\y';
+
+    -- And every id on a live order must resolve against the LIVE masters.
+    select count(*) from fms_dispatch_round_items ri
+     where ri.item_id is not null
+       and not exists (select 1 from mst_items i where i.id = ri.item_id);  -- 0
+    ```
+
+    Audited on 2026-08-20 after the fix: no `fms_dispatch_*` function names a
+    legacy master any more; `fms_dispatch_email_payload` and
+    `fms_dispatch_apply_ship_lines` use the same
+    `coalesce(it.name, …)` shape but read `mst_items` correctly; and all nine
+    id-resolution checks across orders, lines, rounds and round items return
+    zero. The deployed frontend reads no legacy master either.
 
 ---
 
