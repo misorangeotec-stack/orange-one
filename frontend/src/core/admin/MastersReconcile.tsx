@@ -16,7 +16,7 @@ import {
   companyDisplayName, fetchMasterCompanies, fetchMasterItems, fetchMasterLookup, fetchMasterParties,
 } from "@/core/platform/liveMasters";
 import {
-  buildMatcher, clearReconcileDecision, fetchLegacyRows, fetchReconcileLinks,
+  applyReconcileLink, buildMatcher, clearReconcileDecision, fetchLegacyRows, fetchReconcileLinks,
   itemCandidates, partyCandidates, saveReconcileDecision,
   type LegacyTable, type Suggestion,
 } from "@/core/platform/reconcile";
@@ -24,20 +24,27 @@ import {
 /**
  * RECONCILE — say which Tally record each hand-typed Dispatch master actually is.
  *
- * The last thing standing between Phase 0 and the Dispatch cutover. 326 customers
- * and 246 items were typed in by hand; Tally holds 7,812 parties and 14,228 items;
- * many pairs are the same real firm or product under two ids, and no column joins
- * them. Suggestions are offered, a human confirms, and the answers are written to
- * mst_reconcile_links for the cutover to read.
+ * 326 customers and 246 items were typed in by hand; Tally holds 7,812 parties
+ * and 14,228 items; many pairs are the same real firm or product under two ids,
+ * and no column joins them. Suggestions are offered and a human confirms.
  *
- * ⚠ NOTHING HERE CHANGES A MASTER OR AN ORDER. This screen only records opinions.
- *   The merge itself happens in the Phase 1 migration, inside its freeze window,
- *   reading these decisions. That separation is the point: fuzzy name-matching is
- *   not something to be doing while the app is down.
+ * ⚠ LINKING NOW MERGES, IMMEDIATELY. It did not always.
+ *   Until the Phase 1 cutover ran (2026-08-17) this screen only recorded
+ *   opinions and the migration applied them in bulk — the separation was the
+ *   point, because fuzzy name-matching is not something to be doing while the
+ *   app is down. That reasoning expired with the cutover. A decision recorded
+ *   afterwards would have written a row to mst_reconcile_links and changed
+ *   nothing, leaving the Dispatch master and its Tally twin as two rows while
+ *   the counter read "Linked". So `decide` now calls mst_apply_reconcile_link
+ *   first and only records the answer if the merge succeeded.
+ *
+ *   The merge is the cutover's own technique, one row at a time: the master
+ *   Dispatch already points at SURVIVES and absorbs the Tally twin, keeping its
+ *   id — so no order is ever rewritten, only renamed.
  *
  * "No Tally match" is a real, first-class answer — not a skip. A customer that
  * genuinely exists only in Dispatch stays a portal-owned row, and saying so is
- * what lets the cutover tell "decided: portal-only" from "nobody looked yet".
+ * what separates "decided: portal-only" from "nobody looked yet".
  */
 
 type TabKey = "customer" | "item";
@@ -70,6 +77,8 @@ export default function MastersReconcile() {
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  /** What the last merge actually did — a link is no longer a no-op, so say so. */
+  const [note, setNote] = useState<string | null>(null);
 
   const opts = { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false } as const;
 
@@ -104,13 +113,18 @@ export default function MastersReconcile() {
     return buildMatcher(itemCandidates(items.data ?? [], groupLabel));
   }, [tab, parties.data, items.data, companyLabel, groupLabel]);
 
-  /** Every candidate, for the manual picker when no suggestion is right. */
+  /**
+   * Every candidate, for the manual picker when no suggestion is right.
+   *
+   * ⚠ NOT FILTERED BY `isCustomer` — see partyCandidates' note. The flag comes
+   *   from the Tally group, and a ledger filed under a creditor group can still
+   *   have sales booked against it. Filtering here left rows with no reachable
+   *   answer but "No Tally match", which is how the screen came to insist a
+   *   ledger did not exist while it sat in the table.
+   */
   const allOptions = useMemo(() => {
     const src = tab === "customer"
-      ? (parties.data ?? []).filter((p) => p.isCustomer).map((p) => ({
-          guid: p.tallyGuid, name: p.name,
-          detail: p.companyId ? companyLabel.get(p.companyId) ?? "" : "",
-        }))
+      ? partyCandidates(parties.data ?? [], companyLabel, "customer")
       : (items.data ?? []).map((i) => ({
           guid: i.tallyGuid, name: i.name,
           detail: i.groupId ? groupLabel.get(i.groupId) ?? "" : "",
@@ -160,6 +174,22 @@ export default function MastersReconcile() {
 
   const refresh = () => qc.invalidateQueries({ queryKey: ["reconcile", "links"] });
 
+  /**
+   * ⚠ THE MERGE HAPPENS FIRST, AND THE DECISION IS ONLY RECORDED IF IT WORKED.
+   *
+   *   Before the Phase 1 cutover this screen wrote to mst_reconcile_links and
+   *   stopped, because the migration was the thing that applied the answers. The
+   *   cutover has run, so recording alone would leave the two rows unmerged
+   *   while the counter said "Linked" — the screen would be reporting work it
+   *   had not done.
+   *
+   *   The order matters the other way round too: record first and the merge can
+   *   still fail, leaving a decision that claims a merge nobody performed. So the
+   *   merge goes first and its error surfaces with nothing written.
+   *
+   *   "No Tally match" (guid === null) merges nothing — there is nothing to
+   *   merge — and is recorded directly.
+   */
   const decide = async (
     row: { id: string; name: string },
     guid: string | null,
@@ -167,7 +197,11 @@ export default function MastersReconcile() {
   ) => {
     setBusyId(row.id);
     setErr(null);
+    setNote(null);
     try {
+      let applied = "";
+      if (guid) applied = await applyReconcileLink(LEGACY_TABLE[tab], row.id, guid);
+
       await saveReconcileDecision({
         legacyTable: LEGACY_TABLE[tab],
         legacyId: row.id,
@@ -177,7 +211,13 @@ export default function MastersReconcile() {
         status: guid ? "linked" : "portal_only",
         decidedBy: user?.id ?? null,
       });
-      await refresh();
+      // The merge changed masters, not just this screen's ledger — so the
+      // parties/items caches are stale as well, not only the links.
+      await Promise.all([
+        refresh(),
+        qc.invalidateQueries({ queryKey: ["masters"] }),
+      ]);
+      if (applied) setNote(`${row.name}: ${applied}`);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -208,8 +248,9 @@ export default function MastersReconcile() {
             <h1 className="text-[17px] font-semibold text-navy">Reconcile with Tally</h1>
             <p className="mt-1 max-w-3xl text-[13px] text-grey">
               Say which Tally record each hand-typed Order&nbsp;to&nbsp;Dispatch master actually is.
-              Nothing here changes a master or an order — it records the answers, and the
-              cutover applies them. <strong>No Tally match</strong> is a real answer, not a skip.
+              Linking <strong>merges them now</strong>: the master keeps its id, so every existing
+              order still points at the same row and only the Tally-owned fields change.
+              <strong> No Tally match</strong> is a real answer, not a skip.
             </p>
           </div>
           <Link to="/admin/masters" className="text-[12.5px] font-medium text-orange hover:underline">
@@ -224,6 +265,7 @@ export default function MastersReconcile() {
           <span className="text-grey">Undecided <strong className="text-orange">{stats.undecided}</strong></span>
         </div>
         {err && <p className="mt-3 rounded bg-orange/10 px-3 py-2 text-[12.5px] text-orange">{err}</p>}
+        {note && <p className="mt-3 rounded bg-navy/5 px-3 py-2 text-[12.5px] text-navy">{note}</p>}
       </Card>
 
       <Tabs tabs={TABS} active={tab} onChange={(k) => setTab(k as TabKey)} />
@@ -313,14 +355,22 @@ export default function MastersReconcile() {
 
                       <td className="py-2.5">
                         {/* Suggestions first — one click each. The picker below is
-                            the fallback when none of them is right. */}
+                            the fallback when none of them is right.
+                            Each tier says WHY it was offered: a `prefix` match
+                            only agrees once Tally's "M/S" is dropped, which is a
+                            weaker claim than the other two and should read that
+                            way rather than sitting there looking certain. */}
                         <div className="flex flex-wrap items-center gap-1.5">
                           {r.suggestions.slice(0, 3).map((s: Suggestion) => (
                             <button
                               key={s.guid}
                               onClick={() => decide(r, s.guid, s.name)}
                               disabled={!isAdmin || busyId === r.id}
-                              title={s.confidence === "exact" ? "Same name" : "Same name ignoring punctuation"}
+                              title={
+                                s.confidence === "exact" ? "Same name"
+                                  : s.confidence === "close" ? "Same name ignoring punctuation"
+                                  : "Same name once Tally's “M/S” is ignored"
+                              }
                               className={
                                 "rounded border px-2 py-1 text-[12px] transition disabled:opacity-50 " +
                                 (s.confidence === "exact"
@@ -328,6 +378,11 @@ export default function MastersReconcile() {
                                   : "border-line text-grey hover:text-navy")
                               }
                             >
+                              {s.confidence === "prefix" && (
+                                <span className="mr-1 text-[10.5px] font-semibold uppercase tracking-wide text-grey-2">
+                                  M/S
+                                </span>
+                              )}
                               {s.name}
                               {s.detail && <span className="text-grey-2"> · {s.detail}</span>}
                             </button>

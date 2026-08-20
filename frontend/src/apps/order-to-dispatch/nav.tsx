@@ -59,13 +59,16 @@ export function buildDispatchNav(opts: {
   /** Requests this person can actually resolve. 0 shows no badge. */
   pendingReviews: number;
   /**
-   * Orders this person can see sitting on a credit hold. 0 shows no badge.
+   * Per queue, the orders this person can see parked at that step. An absent or
+   * 0 entry shows no badge.
    *
-   * A held order stays in the credit queue rather than leaving it, so the queue
-   * count alone cannot say how much of the backlog is parked on payment versus
-   * genuinely undecided. This is the only queue link that carries a badge.
+   * A step hold leaves the order in its own queue rather than pulling it out, so
+   * the queue count alone cannot say how much of the backlog is parked on
+   * purpose versus genuinely untouched. Two steps can park a row today — credit,
+   * and the sales bill — and both links are badged from this one record rather
+   * than from a step named in the loop below.
    */
-  heldCredit: number;
+  heldByStep: Partial<Record<QueueStep, number>>;
   queues: Record<QueueStep, boolean>;
   /** May this person see the Sales Return queue — an owner of it, or a coordinator. */
   canSeeSalesReturn: boolean;
@@ -98,7 +101,7 @@ export function buildDispatchNav(opts: {
       label: st.title,
       to: `${B}/queues/${QUEUE_PATH[step]}`,
       icon: ic.step,
-      badge: step === "credit_check" ? opts.heldCredit || undefined : undefined,
+      badge: opts.heldByStep[step] || undefined,
       section: queueUsed ? undefined : "Queues",
     });
     queueUsed = true;
@@ -108,9 +111,9 @@ export function buildDispatchNav(opts: {
   // deliberately not in it. Last in the Queues group: it is where an order goes
   // when it leaves the chain, not a step on the way through.
   //
-  // BADGED, unlike the four ordinary queues. This page is not somewhere anybody
-  // visits out of habit, and what waits on it is an invoice that is still live
-  // in Tally for an order that no longer exists.
+  // BADGED WITH ITS WHOLE BACKLOG, not with a held subset like the queues above.
+  // This page is not somewhere anybody visits out of habit, and what waits on it
+  // is an invoice that is still live in Tally for an order that no longer exists.
   if (opts.canSeeSalesReturn) {
     nav.push({
       label: "Sales Return",
@@ -130,9 +133,11 @@ export function buildDispatchNav(opts: {
   if (opts.hasOrders) admin("Order Register", `${B}/reports/register`, ic.report);
   if (opts.canMonitor) admin(`${appName("order-to-dispatch")} Control Center`, `${B}/monitoring`, ic.monitor);
   if (opts.canManageMasters) {
-    admin("Masters", `${B}/masters`, ic.masters);
-    // Beside the masters it approves INTO, and carrying the count — raising a
-    // master is now one click from any picker, so this queue fills fast.
+    // ⚠ NO "Masters" ENTRY. Customers and items live in Central Masters
+    //   (/admin/masters) now, shared with every module — editing them from
+    //   inside one module would rename them everywhere, and the next Tally sync
+    //   would undo it. Master Requests stays: raising and approving a new master
+    //   is still a Dispatch job, and the approval writes to the central tables.
     admin("Master Requests", `${B}/master-requests`, ic.requests, opts.pendingReviews || undefined);
   }
   if (opts.isAdmin) admin("Setup", `${B}/settings`, ic.settings);

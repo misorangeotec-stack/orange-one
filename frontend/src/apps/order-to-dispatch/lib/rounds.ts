@@ -76,6 +76,16 @@ export interface RoundView {
   sbAt: string | null;
   sbBy: string | null;
   /**
+   * Whether this round's invoice was parked, and since when.
+   *
+   * ⚠ NO ROUND-OWNERSHIP TEST, like `gp_no` and unlike the `cc*` fields: the
+   *   archive clears the hold with the rest of the sb_ block, so whatever the
+   *   header holds was set during the round in progress.
+   */
+  sbHoldAt: string | null;
+  sbHoldReason: string | null;
+  sbHoldBy: string | null;
+  /**
    * The gate pass issued for this round's invoice.
    *
    * ⚠ NO ROUND-OWNERSHIP TEST, unlike the `cc*` fields above. A credit decision
@@ -217,6 +227,9 @@ export function currentRoundView(order: DispatchOrder): RoundView | null {
     sbRemarks: order.sbRemarks,
     sbAt: order.sbAt,
     sbBy: order.sbBy,
+    sbHoldAt: order.sbHoldAt,
+    sbHoldReason: order.sbHoldReason,
+    sbHoldBy: order.sbHoldBy,
     gpNo: order.gpNo,
 
     goActualDate: order.goActualDate,
@@ -275,6 +288,9 @@ export function archivedRoundView(r: DispatchRound): RoundView {
     sbRemarks: r.sbRemarks,
     sbAt: r.sbAt,
     sbBy: r.sbBy,
+    sbHoldAt: r.sbHoldAt,
+    sbHoldReason: r.sbHoldReason,
+    sbHoldBy: r.sbHoldBy,
     gpNo: r.gpNo,
 
     goActualDate: r.goActualDate,

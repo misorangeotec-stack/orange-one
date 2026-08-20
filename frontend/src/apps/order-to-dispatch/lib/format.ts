@@ -11,6 +11,7 @@ import type {
   DispatchType,
   SalesReturnMode,
 } from "../types";
+import type { QueueStep } from "./queues";
 
 export type Tone = "grey" | "blue" | "orange" | "green" | "red" | "yellow";
 
@@ -69,6 +70,59 @@ export const DELIVERY_STATUS_LABEL: Record<DeliveryStatus, string> = {
  */
 export const isCreditHeld = (o: DispatchOrder): boolean =>
   o.ccStatus === "credit_hold" && !o.ccAt;
+
+/**
+ * Is the invoice parked? Same shape, one step further down: recording the bill
+ * leaves the `sbHold*` stamps standing as history, so `sbAt` is what says the
+ * step is actually done.
+ *
+ * ⚠ NOT `status === "on_hold"`. That is the ORDER-level hold, which pulls the
+ *   order out of every queue. This one leaves it exactly where it is.
+ */
+export const isBillHeld = (o: DispatchOrder): boolean => !!o.sbHoldAt && !o.sbAt;
+
+/**
+ * The steps that can park a row INSIDE their own queue, and where each one
+ * keeps its reason and its "held since".
+ *
+ * A step-level hold is not a status: the order stays where it is, still owed by
+ * the same desk, and the only thing that tells it apart from a row nobody has
+ * touched is the chip and the remark. Anything drawing that chip — the queue,
+ * the dashboard, the Control Center — reads this map rather than naming a step,
+ * so a third held step needs one entry here and no new branches.
+ */
+export const STEP_HOLD: Partial<Record<QueueStep, {
+  held: (o: DispatchOrder) => boolean;
+  reason: (o: DispatchOrder) => string | null;
+  since: (o: DispatchOrder) => string | null;
+  /** Distinct wording per step — two holds must never share one word. */
+  label: string;
+}>> = {
+  credit_check: {
+    held: isCreditHeld,
+    reason: (o) => o.ccRemarks,
+    since: (o) => o.ccDecidedAt,
+    label: "Credit on hold",
+  },
+  sales_bill: {
+    held: isBillHeld,
+    reason: (o) => o.sbHoldReason,
+    since: (o) => o.sbHoldAt,
+    label: "Bill on hold",
+  },
+};
+
+/** Is this order parked at whichever step currently owes it? */
+export const isStepHeld = (o: DispatchOrder): boolean =>
+  isCreditHeld(o) || isBillHeld(o);
+
+/** Why it is parked, whichever hold is live. Null when it is not. */
+export const stepHoldReason = (o: DispatchOrder): string | null =>
+  isCreditHeld(o) ? o.ccRemarks : isBillHeld(o) ? o.sbHoldReason : null;
+
+/** What to call this order's live hold, for a chip or a filter value. */
+export const stepHoldLabel = (o: DispatchOrder): string | null =>
+  isCreditHeld(o) ? "Credit on hold" : isBillHeld(o) ? "Bill on hold" : null;
 
 /** The outcomes that deserve a red chip wherever they appear. */
 export const isExceptionOutcome = (o: DispatchOrder): boolean =>

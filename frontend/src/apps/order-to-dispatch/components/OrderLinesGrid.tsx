@@ -79,7 +79,7 @@ export default function OrderLinesGrid({
     const name = typed.trim();
     const existing = s.items.find((i) => i.name.trim().toLowerCase() === name.toLowerCase());
     return existing
-      ? { mt: "customer_item", prefill: { customer_id: customerId, item_id: existing.id }, from: "lines" }
+      ? { mt: "customer_item", prefill: { party_id: customerId, item_id: existing.id }, from: "lines" }
       : { mt: "item", prefill: { name }, from: "lines" };
   };
   const isKnownItem = (typed: string) =>

@@ -443,6 +443,20 @@ var mapRequisitionPlatform = (r) => ({
   postedOn: r.posted_on ?? null,
   otherNote: r.other_note ?? null
 });
+var KNOWN_STAGES = /* @__PURE__ */ new Set([
+  "resume_uploaded",
+  "hr_shortlisted",
+  "hod_shortlisted",
+  "telephonic",
+  "interview_1",
+  "interview_2",
+  "interview_3",
+  "final_decision",
+  "finalized",
+  "hired",
+  "disqualified"
+]);
+var toStage = (raw) => KNOWN_STAGES.has(raw) ? raw : "hr_shortlisted";
 var mapCandidate = (r) => ({
   id: r.id,
   requisitionId: r.requisition_id,
@@ -460,12 +474,10 @@ var mapCandidate = (r) => ({
   resumeName: r.resume_name ?? null,
   parseStatus: r.parse_status ?? "manual",
   parsedJson: r.parsed_json ?? {},
-  stage: r.stage,
+  stage: toStage(r.stage),
   uploadedAt: r.uploaded_at,
   hrShortlistedAt: r.hr_shortlisted_at ?? null,
   hrShortlistedBy: r.hr_shortlisted_by ?? null,
-  sharedToHodAt: r.shared_to_hod_at ?? null,
-  sharedToHodBy: r.shared_to_hod_by ?? null,
   hodDecidedAt: r.hod_decided_at ?? null,
   hodDecidedBy: r.hod_decided_by ?? null,
   telephonicAt: r.telephonic_at ?? null,
@@ -585,24 +597,33 @@ var STEPS = [
   { key: "job_posting", index: 5, title: "Job Posting", short: "Posting", scope: "requisition" },
   { key: "resume_upload", index: 6, title: "Collect Resumes", short: "Resumes", scope: "requisition" },
   { key: "hr_shortlist", index: 7, title: "Shortlist by HR", short: "HR Shortlist", scope: "candidate" },
-  { key: "hod_share", index: 8, title: "Share CVs with HOD", short: "Share to HOD", scope: "candidate" },
-  { key: "hod_shortlist", index: 9, title: "Shortlist by HOD", short: "HOD Shortlist", scope: "candidate" },
-  { key: "telephonic_screening", index: 10, title: "Telephonic Screening", short: "Telephonic", scope: "candidate" },
-  { key: "interview_1", index: 11, title: "Interview Round 1 \u2014 HR", short: "Round 1", scope: "candidate" },
-  { key: "interview_2", index: 12, title: "Interview Round 2 \u2014 HOD", short: "Round 2", scope: "candidate" },
-  { key: "interview_3", index: 13, title: "Interview Round 3 \u2014 Director", short: "Round 3", scope: "candidate" },
+  { key: "hod_shortlist", index: 8, title: "Shortlist by HOD", short: "HOD Shortlist", scope: "candidate" },
+  { key: "telephonic_screening", index: 9, title: "Telephonic Screening", short: "Telephonic", scope: "candidate" },
+  { key: "interview_1", index: 10, title: "Interview Round 1 \u2014 HR", short: "Round 1", scope: "candidate" },
+  { key: "interview_2", index: 11, title: "Interview Round 2 \u2014 HOD", short: "Round 2", scope: "candidate" },
+  { key: "interview_3", index: 12, title: "Interview Round 3 \u2014 Director", short: "Round 3", scope: "candidate" },
   // The step is the PERMISSION to make an offer (configured in Setup → Step Owners),
   // which outlived the "Awaiting Decision" board column it was named after. Key kept:
   // it is stored as free text on every historical row.
-  { key: "final_decision", index: 14, title: "Make the Offer", short: "Offer", scope: "candidate" },
-  { key: "onboarding", index: 15, title: "Onboarding", short: "Onboarding", scope: "hire" },
-  { key: "probation_m1", index: 16, title: "Month-1 Review (HOD)", short: "Review M1", scope: "hire" },
-  { key: "probation_m2", index: 17, title: "Month-2 Review (HOD)", short: "Review M2", scope: "hire" },
-  { key: "probation_m3", index: 18, title: "Month-3 Review (HOD)", short: "Review M3", scope: "hire" },
-  { key: "probation_final", index: 19, title: "Probation Decision", short: "Confirm", scope: "hire" },
-  { key: "probation_extension", index: 20, title: "Extended Review (Month 4)", short: "Extension", scope: "hire" }
+  { key: "final_decision", index: 13, title: "Make the Offer", short: "Offer", scope: "candidate" },
+  { key: "onboarding", index: 14, title: "Onboarding", short: "Onboarding", scope: "hire" },
+  { key: "probation_m1", index: 15, title: "Month-1 Review (HOD)", short: "Review M1", scope: "hire" },
+  { key: "probation_m2", index: 16, title: "Month-2 Review (HOD)", short: "Review M2", scope: "hire" },
+  { key: "probation_m3", index: 17, title: "Month-3 Review (HOD)", short: "Review M3", scope: "hire" },
+  { key: "probation_final", index: 18, title: "Probation Decision", short: "Confirm", scope: "hire" },
+  { key: "probation_extension", index: 19, title: "Extended Review (Month 4)", short: "Extension", scope: "hire" }
 ];
 var stepByKey = (key) => STEPS.find((s) => s.key === key);
+var HOD_STEPS = [
+  "hod_shortlist",
+  "interview_2",
+  "probation_m1",
+  "probation_m2",
+  "probation_m3",
+  "probation_final",
+  "probation_extension"
+];
+var isHodStep = (key) => HOD_STEPS.includes(key);
 
 // frontend/src/apps/hr-recruitment/lib/sla.ts
 var OVERRIDES = {
@@ -616,8 +637,9 @@ var OVERRIDES = {
   job_posting: { anchor: "mgmt_approval", days: 1 },
   resume_upload: { anchor: "job_posting", days: 7 },
   hr_shortlist: { anchor: "resume_upload", days: 2 },
-  hod_share: { anchor: "hr_shortlist", days: 1 },
-  hod_shortlist: { anchor: "hod_share", days: 2 },
+  // Anchored on HR's shortlist, because that IS the handover now — the day
+  // `hod_share` used to be allotted was a day spent waiting for a button press.
+  hod_shortlist: { anchor: "hr_shortlist", days: 2 },
   telephonic_screening: { anchor: "hod_shortlist", days: 2 },
   // Anchored on the telephonic screen (the default previous stage). If the screen was
   // skipped its timestamp is null, and candidateDueIso falls back to the last completed
@@ -872,7 +894,6 @@ async function fetchHrData() {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
     // Unset or partially-stored rules fall back to the code defaults.
     stepSla: resolveStepSla(byKey.get("step_sla")),
-    minCvsToShare: Number(byKey.get("min_cvs_to_share")?.value ?? 5),
     salaryViewers: {
       departmentIds: byKey.get("salary_viewers")?.department_ids ?? [],
       personIds: byKey.get("salary_viewers")?.person_ids ?? []
@@ -2512,6 +2533,7 @@ var mapRequest3 = (r) => ({
   quantity: r.quantity,
   reason: r.reason ?? null,
   requiresApproval: !!r.requires_approval,
+  firstApprovalSkipped: !!r.first_approval_skipped,
   status: r.status,
   currentStep: r.current_step,
   submittedAt: r.submitted_at,
@@ -2545,7 +2567,12 @@ var mapStepOwner5 = (r) => ({
   designationId: r.designation_id ?? null,
   employeeIds: r.employee_ids ?? []
 });
-var mapDesignation5 = (r) => ({ id: r.id, name: r.name, active: r.active });
+var mapDesignation5 = (r) => ({
+  id: r.id,
+  name: r.name,
+  active: r.active,
+  sortOrder: r.sort_order ?? 0
+});
 var mapActivity5 = (r) => ({
   id: r.id,
   entityType: r.entity_type,
@@ -2600,6 +2627,8 @@ async function fetchSuppliesData() {
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
+    requesterIds: byKey.get("requesters")?.user_ids ?? [],
+    hodDesignationIds: byKey.get("hod_designations")?.designation_ids ?? [],
     stepSla: resolveStepSla5(byKey.get("step_sla"))
   };
   return {
@@ -3215,7 +3244,11 @@ async function fetchProductionData() {
     masterRequests,
     requests,
     activity,
-    notifications
+    notifications,
+    // The next Lot/Batch number to be issued (preview — does not consume the
+    // counter). In the same Promise.all, not after it: as a sequential call it
+    // added a whole round trip to the critical path of every load.
+    batchPeek
   ] = await Promise.all([
     fetchAll8("fms_production_step_owners"),
     fetchAll8("fms_production_config", "key"),
@@ -3231,7 +3264,8 @@ async function fetchProductionData() {
     fetchAll8("fms_production_master_requests"),
     fetchAll8("fms_production_requests", "submitted_at"),
     fetchAll8("fms_production_activity"),
-    fetchAll8("fms_production_notifications")
+    fetchAll8("fms_production_notifications"),
+    db3.rpc("fms_production_peek_batch_no")
   ]);
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
@@ -3239,7 +3273,6 @@ async function fetchProductionData() {
     stepSla: resolveStepSla7(byKey.get("step_sla")),
     batchSeqStart: Number(byKey.get("batch_seq_start")?.start ?? 1) || 1
   };
-  const { data: batchPeek } = await db3.rpc("fms_production_peek_batch_no");
   return {
     stepOwners: stepOwners.map(mapStepOwner7),
     designations: designations.map(mapDesignation7),
@@ -3256,7 +3289,7 @@ async function fetchProductionData() {
     requests: requests.map(mapRequest5),
     activity: activity.map(mapActivity7),
     notifications: notifications.map(mapNotification7),
-    batchNoPreview: batchPeek ?? ""
+    batchNoPreview: batchPeek.data ?? ""
   };
 }
 
@@ -3295,6 +3328,20 @@ async function fetchAll9(table, orderBy = "created_at") {
   const out = [];
   for (let from = 0; ; from += PAGE8) {
     const { data, error } = await db4.from(table).select("*").order(orderBy, { ascending: true }).range(from, from + PAGE8 - 1);
+    if (error) throw new Error(error.message);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE8) break;
+  }
+  return out;
+}
+var APP_ID = "order-to-dispatch";
+async function fetchForModule(table, extra) {
+  const out = [];
+  for (let from = 0; ; from += PAGE8) {
+    let q = db4.from(table).select("*").contains("modules", [APP_ID]);
+    if (extra) q = extra(q);
+    const { data, error } = await q.order("created_at", { ascending: true }).range(from, from + PAGE8 - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -3555,6 +3602,7 @@ async function fetchDispatchData() {
     customerItems,
     customers,
     items,
+    units,
     masterManagers,
     masterRequests,
     orders,
@@ -3569,9 +3617,12 @@ async function fetchDispatchData() {
     fetchAll9("designations"),
     fetchAll9("fms_dispatch_companies"),
     fetchAll9("fms_dispatch_company_locations"),
-    fetchAll9("fms_dispatch_customer_items"),
-    fetchAll9("fms_dispatch_customers"),
-    fetchAll9("fms_dispatch_items"),
+    // The catalogue carries no `modules` of its own — a pair is scoped by the
+    // customer and item it points at, so it is filtered below rather than here.
+    fetchAll9("mst_party_items"),
+    fetchForModule("mst_parties", (q) => q.eq("is_customer", true)),
+    fetchForModule("mst_items"),
+    fetchAll9("mst_units"),
     fetchAll9("fms_dispatch_master_managers"),
     fetchAll9("fms_dispatch_master_requests"),
     fetchAll9("fms_dispatch_orders", "submitted_at"),
@@ -3581,6 +3632,9 @@ async function fetchDispatchData() {
     fetchRecentActivity(),
     fetchAll9("fms_dispatch_notifications")
   ]);
+  const unitNameById = new Map(units.map((u) => [u.id, u.name]));
+  const customerIds = new Set(customers.map((c) => c.id));
+  const itemIds = new Set(items.map((i) => i.id));
   const byKey = new Map(configRows.map((r) => [r.key, r.value ?? {}]));
   const config = {
     processCoordinatorIds: byKey.get("process_coordinators")?.user_ids ?? [],
@@ -3632,19 +3686,41 @@ async function fetchDispatchData() {
       ...mapMaster4(r),
       companyId: r.company_id
     })),
-    customers: customers.map(mapCustomer),
+    /**
+     * ⚠ `companyId` IS DELIBERATELY DROPPED. In Dispatch it meant "which of our
+     *   companies bills this customer" and was filled on 1 of 327 rows. On
+     *   mst_parties the same column means Tally's company BOOK, which is a
+     *   different set of ids entirely — carrying it through would have the
+     *   Masters grid resolve a Tally company id against Dispatch's 2-row company
+     *   list and render a blank. The order carries the billing company anyway.
+     */
+    customers: customers.map((r) => ({
+      ...mapCustomer(r),
+      companyId: null
+    })),
     items: items.map((r) => ({
       ...mapMaster4(r),
       code: str(r.code),
-      unit: str(r.unit),
+      // mst_items points at mst_units; Dispatch's Item carries the unit's NAME.
+      unit: unitNameById.get(r.unit_id) ?? "",
       hsnCode: str(r.hsn_code)
     })),
-    // The row has no name of its own; the synthetic "Customer - Item" label is
-    // built where it is displayed, from the live master lists.
-    customerItems: customerItems.map((r) => ({
+    /**
+     * The customer-item catalogue, now shared.
+     *
+     * Two sources feed it: the pairs Dispatch maintains by hand, and the pairs
+     * derived from Tally's sales register (what a customer has ACTUALLY bought).
+     * Both live in mst_party_items, so a customer's picker is richer than it was.
+     *
+     * ⚠ Filtered to this module's masters. The table holds every party-item pair
+     *   in the business; a pair whose item is not ticked into Dispatch must not
+     *   appear in a Dispatch picker, and `itemsForCustomer` intersects with the
+     *   item list anyway — this just avoids carrying thousands of dead rows.
+     */
+    customerItems: customerItems.filter((r) => customerIds.has(r.party_id) && itemIds.has(r.item_id)).map((r) => ({
       ...mapMaster4(r),
       name: "",
-      customerId: r.customer_id,
+      customerId: r.party_id,
       itemId: r.item_id
     })),
     masterManagers: masterManagers.map(mapMasterManager6),
@@ -4666,10 +4742,8 @@ var seatsTaken = (requisitionId, candidates, onboardings) => {
 var STAGE_PENDING_STEP = {
   resume_uploaded: "hr_shortlist",
   // HR must screen this CV
-  hr_shortlisted: "hod_share",
-  // HR must send it to the HOD
-  shared_with_hod: "hod_shortlist",
-  // the HOD must decide
+  hr_shortlisted: "hod_shortlist",
+  // shortlisting IS the handover — the HOD must decide
   hod_shortlisted: "telephonic_screening",
   // next up is the telephonic screen (default; rounds are skippable)
   telephonic: "telephonic_screening",
@@ -4707,8 +4781,6 @@ function candidateStepCompletedIso(c, step, reqById) {
       return c.uploadedAt;
     case "hr_shortlist":
       return c.hrShortlistedAt;
-    case "hod_share":
-      return c.sharedToHodAt;
     case "hod_shortlist":
       return c.hodDecidedAt;
     case "telephonic_screening":
@@ -4735,7 +4807,7 @@ function requisitionDueIso(snap, r, step) {
 }
 var stageRound = (stage) => stage === "telephonic" ? 0 : stage === "interview_1" ? 1 : stage === "interview_2" ? 2 : stage === "interview_3" ? 3 : null;
 function lastCompletedStageIso(c) {
-  return c.interview3At ?? c.interview2At ?? c.interview1At ?? c.telephonicAt ?? c.hodDecidedAt ?? c.sharedToHodAt ?? c.hrShortlistedAt ?? null;
+  return c.interview3At ?? c.interview2At ?? c.interview1At ?? c.telephonicAt ?? c.hodDecidedAt ?? c.hrShortlistedAt ?? null;
 }
 function candidateDueIso(snap, c, reqById, ivByCandidate) {
   const step = STAGE_PENDING_STEP[c.stage];
@@ -4905,7 +4977,11 @@ var isMineByStepOwners = (stepKey, userId, owners) => stepOwnerIdsFor(stepKey, o
 var APPROVAL_STEPS = /* @__PURE__ */ new Set(["hr_head_approval", "mgmt_approval", "final_decision"]);
 function hrWorkItems(data, uid, isAdmin) {
   const owners = data.stepOwners;
-  return buildQueueEntries3(hrSnapshotFrom(data)).filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners)).map((e) => ({
+  const managersByReq = new Map(
+    data.requisitions.map((r) => [r.id, r.hiringManagerIds ?? []])
+  );
+  const isMine = (stepKey, requisitionId) => isHodStep(stepKey) ? (requisitionId ? managersByReq.get(requisitionId) ?? [] : []).includes(uid) : isMineByStepOwners(stepKey, uid, owners);
+  return buildQueueEntries3(hrSnapshotFrom(data)).filter((e) => isAdmin || isMine(e.stepKey, e.requisitionId)).map((e) => ({
     id: `hr:${e.entityId}:${e.stepKey}`,
     source: "hr",
     sourceLabel: appName("hr-recruitment"),
@@ -4914,7 +4990,7 @@ function hrWorkItems(data, uid, isAdmin) {
     dueIso: e.dueIso,
     // A candidate row has no page of its own — it opens its requisition.
     to: `/hr-recruitment/requisitions/${e.entityType === "requisition" ? e.entityId : e.requisitionId ?? ""}`,
-    assignment: isMineByStepOwners(e.stepKey, uid, owners) ? "direct" : "team",
+    assignment: isMine(e.stepKey, e.requisitionId) ? "direct" : "team",
     isApproval: APPROVAL_STEPS.has(e.stepKey)
   }));
 }
@@ -5195,9 +5271,13 @@ var requestHref = (id) => `${B}/requests/${id}`;
 var APPROVAL_STEPS3 = /* @__PURE__ */ new Set(["first_approval", "second_approval"]);
 function officeSuppliesWorkItems(data, uid, isAdmin) {
   const owners = data.stepOwners;
+  const myHodDepartmentIds = new Set(
+    data.departments.filter((d) => d.hodUserId === uid).map((d) => d.id)
+  );
+  const mine = (stepKey, departmentId) => stepKey === "first_approval" ? myHodDepartmentIds.has(departmentId) : isMineByStepOwners(stepKey, uid, owners);
   return buildQueueEntries5(
     supplySnapshotFrom({ requests: data.requests, stepSla: data.config.stepSla })
-  ).filter((e) => isAdmin || isMineByStepOwners(e.stepKey, uid, owners)).map((e) => ({
+  ).filter((e) => isAdmin || mine(e.stepKey, e.departmentId)).map((e) => ({
     id: `office-supplies:${e.requestId}:${e.stepKey}`,
     source: "office-supplies",
     sourceLabel: appName("office-supplies"),
@@ -5205,7 +5285,7 @@ function officeSuppliesWorkItems(data, uid, isAdmin) {
     stage: stepByKey5(e.stepKey)?.short,
     dueIso: e.dueIso,
     to: requestHref(e.requestId),
-    assignment: isMineByStepOwners(e.stepKey, uid, owners) ? "direct" : "team",
+    assignment: mine(e.stepKey, e.departmentId) ? "direct" : "team",
     isApproval: APPROVAL_STEPS3.has(e.stepKey)
   }));
 }

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, Link } from "react-router-dom";
 import { useSession } from "@/core/platform/session";
 import { DispatchStoreProvider, useDispatchStore } from "./store";
 import type { OwnerStepKey } from "./lib/steps";
@@ -17,7 +17,6 @@ import GateOutQueue from "./pages/queues/GateOutQueue";
 import DispatchConfirmQueue from "./pages/queues/DispatchConfirmQueue";
 import SalesReturnQueue from "./pages/queues/SalesReturnQueue";
 import OrderRegister from "./pages/reports/OrderRegister";
-import Masters from "./pages/masters/Masters";
 import MasterRequests from "./pages/MasterRequests";
 import ControlCenter from "./pages/monitoring/ControlCenter";
 import Setup from "./pages/settings/Setup";
@@ -30,15 +29,65 @@ function RequireAdmin({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * What the old Dispatch Masters URL now says.
+ *
+ * Customers, items and the customer-item mapping are no longer this module's to
+ * keep — they are the company's, held once in Central Masters and fed from
+ * Tally. The tables this page used to edit still exist as the cutover's rollback
+ * copy and NOTHING READS THEM, which is exactly the confusion worth heading off:
+ * a row saved into them saves cleanly, reports success, and is then invisible
+ * everywhere. That has already happened once.
+ *
+ * Deliberately not admin-gated. Most people who land here cannot open
+ * /admin/masters, and telling them "access denied" would answer a question they
+ * did not ask. What they need is the sentence below and the Master Requests
+ * link, both of which are theirs.
+ */
+function MastersMoved() {
+  const { isAdmin } = useSession();
+  return (
+    <div className="mx-auto max-w-2xl px-4 py-14 text-center">
+      <span className="inline-flex items-center rounded-full bg-orange/10 px-3 py-1 text-[12px] font-semibold uppercase tracking-wide text-orange">
+        No longer in use here
+      </span>
+      <h1 className="mt-4 text-[19px] font-semibold text-navy">
+        Customers and items moved to Central Masters
+      </h1>
+      <p className="mt-3 text-[13.5px] leading-relaxed text-grey">
+        They are shared with every module now and come from Tally automatically, so
+        they are kept in one place rather than a copy per module. Editing them here
+        would have renamed them for everyone — and the next sync would have undone
+        it a few minutes later.
+      </p>
+      <p className="mt-3 text-[13.5px] leading-relaxed text-grey">
+        <strong className="text-navy">Need a customer, an item, or a new
+        customer-item mapping?</strong> Raise it under Master Requests, exactly as
+        before. An owner approves it and it lands in the shared master.
+      </p>
+      <div className="mt-6 flex flex-wrap justify-center gap-2">
+        <Link
+          to="/order-to-dispatch/master-requests"
+          className="rounded-lg bg-orange px-4 py-2 text-[13px] font-medium text-white transition hover:opacity-90"
+        >
+          Go to Master Requests
+        </Link>
+        {isAdmin && (
+          <Link
+            to="/admin/masters"
+            className="rounded-lg border border-line px-4 py-2 text-[13px] font-medium text-navy transition hover:border-orange hover:text-orange"
+          >
+            Open Central Masters
+          </Link>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RequireMonitor({ children }: { children: ReactNode }) {
   const { isProcessCoordinator } = useDispatchStore();
   if (!isProcessCoordinator) return <AccessDenied />;
-  return <>{children}</>;
-}
-
-function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyMasterManager } = useDispatchStore();
-  if (!isAnyMasterManager) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -87,7 +136,23 @@ export default function OrderToDispatchApp() {
           <Route path="queues/sales-return" element={<RequireQueue step="sales_return"><SalesReturnQueue /></RequireQueue>} />
           <Route path="reports/register" element={<OrderRegister />} />
           <Route path="monitoring" element={<RequireMonitor><ControlCenter /></RequireMonitor>} />
-          <Route path="masters" element={<RequireMasterAccess><Masters /></RequireMasterAccess>} />
+          {/* MASTERS MOVED TO CENTRAL MASTERS (/admin/masters).
+              Customers and items are now shared with every module, so editing
+              them from inside one module would rename them for all of the
+              others — and the next Tally sync would revert it 15 minutes later.
+
+              ⚠ A PAGE, NOT A REDIRECT, AND THE DIFFERENCE MATTERS.
+                This used to `<Navigate>` straight to /admin/masters. Two problems.
+                Anyone who bookmarked the old URL was thrown onto a different
+                screen with no explanation — it reads as a glitch, not a move. And
+                /admin/masters is admin-gated, so for everybody else the redirect
+                landed on an access-denied page, which says "you are not allowed"
+                where the truth is "this moved, and here is what to use instead".
+                Saying so plainly is the whole job of this route.
+
+              Master Requests stays where it was — raising and approving a new
+              master is still a Dispatch job. */}
+          <Route path="masters" element={<MastersMoved />} />
           <Route path="settings" element={<RequireAdmin><Setup /></RequireAdmin>} />
           <Route path="*" element={<NotFound />} />
         </Route>

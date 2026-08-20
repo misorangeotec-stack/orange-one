@@ -137,6 +137,24 @@ export async function materialNothingAvailable(orderId: string, remarks: string)
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Park a sales bill, or let it go again — with the reason on the record.
+ *
+ * ⚠ THIS IS NOT `holdOrder`. That one rewrites `status`, so the order leaves
+ *   every queue, My Work and the daily email until a coordinator resumes it.
+ *   This one touches only the `sb_hold_` columns: the order stays exactly where
+ *   it is, because deciding to release it is the billing desk's own work.
+ *
+ * Holding with a blank reason is refused by the RPC — a hold nobody explained
+ * is indistinguishable from an order nobody has looked at.
+ */
+export async function holdSalesBill(orderId: string, hold: boolean, reason: string): Promise<void> {
+  const { error } = await db.rpc("fms_dispatch_hold_sales_bill", {
+    p_order: orderId, p_hold: hold, p_reason: reason,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export interface AmendRoundLine {
   id: string;
   shipQty: string;
@@ -369,12 +387,24 @@ export async function setConfig(key: string, value: Record<string, unknown>): Pr
 
 /* --------------------------------- masters -------------------------------- */
 
+/**
+ * ⚠ CUSTOMERS, ITEMS AND THEIR MAPPING NOW LIVE IN THE CENTRAL MASTERS.
+ *
+ * They are shared with every other module, so a row written here is a row every
+ * module can be given. Companies and locations stay Dispatch's own for now:
+ * Dispatch models a site as company x location, while Tally models it as a
+ * separate company book, and the two do not map one to one (see
+ * supabase/phase1/01_cutover.sql).
+ *
+ * ⚠ The column names differ on the mapping: mst_party_items uses party_id, not
+ *   customer_id. lib/masterFields.ts and the request RPC must agree with this.
+ */
 const MASTER_TABLE: Record<DispatchMasterType, string> = {
   company: "fms_dispatch_companies",
   company_location: "fms_dispatch_company_locations",
-  customer: "fms_dispatch_customers",
-  item: "fms_dispatch_items",
-  customer_item: "fms_dispatch_customer_items",
+  customer: "mst_parties",
+  item: "mst_items",
+  customer_item: "mst_party_items",
 };
 
 /**

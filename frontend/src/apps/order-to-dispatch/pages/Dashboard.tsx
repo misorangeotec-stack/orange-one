@@ -28,7 +28,7 @@ import { monthEndOf, monthStartOf, todayIso, weekEndOf, weekStartOf } from "@/sh
 import { DISPATCH_QK } from "../data/dispatchFetch";
 import { useDispatchStore } from "../store";
 import { STEPS } from "../lib/steps";
-import { dmy, isCreditHeld } from "../lib/format";
+import { dmy, isBillHeld, isCreditHeld, stepHoldLabel, stepHoldReason } from "../lib/format";
 import type { DispatchOrder, OrderLine } from "../types";
 import CompanyBreakdown from "../components/CompanyBreakdown";
 import DispatchTrend from "../components/DispatchTrend";
@@ -61,15 +61,16 @@ const PRESETS: { value: Preset; label: string }[] = [
  *
  * "all" is the resting state: the board as it reads before anything is picked.
  */
-type Focus = "all" | "punched" | "billed" | "awaiting" | "dispatched" | "onHold";
+type Focus = "all" | "punched" | "billed" | "awaiting" | "dispatched" | "onHold" | "billHold";
 
 /**
- * Two of the five tiles count ORDERS, not consignments, and no filter can bridge
- * that — a just-punched or credit-held order has no invoice and no gate pass, so
- * `consignmentsOf` never emits a row for it. The table therefore swaps its row
- * model with the tile, rather than pretending one shape fits both.
+ * Three of the tiles count ORDERS, not consignments, and no filter can bridge
+ * that — a just-punched order, a credit-held one and one whose bill is parked
+ * all have no invoice and no gate pass, so `consignmentsOf` never emits a row
+ * for them. The table therefore swaps its row model with the tile, rather than
+ * pretending one shape fits both.
  */
-const ORDER_FOCUS: Focus[] = ["punched", "onHold"];
+const ORDER_FOCUS: Focus[] = ["punched", "onHold", "billHold"];
 
 /*
   One name for one condition. "Billed but not yet through the gate" is the KPI
@@ -308,34 +309,38 @@ export default function Dashboard() {
   const creditHref = s.canSeeQueue("credit_check") ? `${B}/queues/credit-check` : undefined;
 
   /**
-   * Orders credit is holding, and how long the oldest has waited.
+   * Orders parked at a step, and how long the oldest has waited.
    *
-   * Read off `s.orders` rather than a queue, so the tile counts every held order
-   * this person can see — the dashboard is a summary of the operation, not of one
-   * step's inbox.
+   * TWO SEPARATE LISTS, NEVER ONE. Credit holding an order and billing holding
+   * its invoice are different backlogs owned by different desks; a single "on
+   * hold" number would let one desk's problem hide inside the other's.
+   *
+   * Read off `s.orders` rather than a queue, so each tile counts every held
+   * order this person can see — the dashboard is a summary of the operation, not
+   * of one step's inbox.
    */
   const held = useMemo(() => s.orders.filter(isCreditHeld), [s.orders]);
+  const billHeld = useMemo(() => s.orders.filter(isBillHeld), [s.orders]);
   /*
     What is actually stuck: the quantity STILL OWED on a held order, not what was
     originally ordered. On a part-shipped order that has looped back to credit,
     the quantity already delivered is not being held by anybody.
   */
-  const heldQty = useMemo(
-    () =>
-      lineQty(held, (l) =>
-        Math.max((Number(l.quantity) || 0) - (Number(l.dispatchedQty) || 0), 0),
-      ),
-    [held],
-  );
-  const oldestHold = useMemo(
-    () =>
-      held.reduce((worst, o) => {
-        if (!o.ccDecidedAt) return worst;
-        const days = Math.max(0, Math.floor((Date.now() - new Date(o.ccDecidedAt).getTime()) / 86_400_000));
-        return Math.max(worst, days);
-      }, 0),
-    [held],
-  );
+  const pendingQty = (rows: DispatchOrder[]) =>
+    lineQty(rows, (l) => Math.max((Number(l.quantity) || 0) - (Number(l.dispatchedQty) || 0), 0));
+  const heldQty = useMemo(() => pendingQty(held), [held]);
+  const billHeldQty = useMemo(() => pendingQty(billHeld), [billHeld]);
+
+  /** Days since the OLDEST hold was placed — the one worth chasing. */
+  const oldestSince = (rows: DispatchOrder[], since: (o: DispatchOrder) => string | null) =>
+    rows.reduce((worst, o) => {
+      const at = since(o);
+      if (!at) return worst;
+      const days = Math.max(0, Math.floor((Date.now() - new Date(at).getTime()) / 86_400_000));
+      return Math.max(worst, days);
+    }, 0);
+  const oldestHold = useMemo(() => oldestSince(held, (o) => o.ccDecidedAt), [held]);
+  const oldestBillHold = useMemo(() => oldestSince(billHeld, (o) => o.sbHoldAt), [billHeld]);
 
   /*
     ORDERED AS THE WORK FLOWS: punched → billed → waiting to go → gone, with the
@@ -404,7 +409,9 @@ export default function Dashboard() {
     },
     {
       key: "creditHold",
-      label: "On hold",
+      // "Credit on hold", not "On hold": there are two holds on this board now,
+      // and a tile that only says "On hold" is the one somebody reads as both.
+      label: "Credit on hold",
       /*
         Leads with QUANTITY, like every tile beside it — how many cages credit is
         sitting on is the operational question; the order count is the footnote.
@@ -425,6 +432,27 @@ export default function Dashboard() {
       tone: oldestHold >= 7 ? "red" : undefined,
       onSelect: () => pick("onHold"),
       selected: focus === "onHold",
+    },
+    {
+      key: "billHold",
+      label: "Bill on hold",
+      /*
+        The same tile one step down the chain, and not range-scoped for the same
+        reason: an invoice nobody has raised for three weeks is exactly the one
+        worth chasing, and a "today" view would hide it.
+      */
+      value: <QtyValue q={billHeldQty} />,
+      hint: billHeld.length
+        ? qtyHint(
+            billHeldQty,
+            `${plural(billHeld.length, "order")} · invoice not raised${
+              oldestBillHold > 0 ? ` · oldest ${oldestBillHold}d` : ""
+            }`,
+          )
+        : "nothing held",
+      tone: oldestBillHold >= 7 ? "red" : undefined,
+      onSelect: () => pick("billHold"),
+      selected: focus === "billHold",
     },
   ];
 
@@ -490,8 +518,12 @@ export default function Dashboard() {
    * never disagree with the tile above it.
    */
   const orderRows = useMemo(
-    () => (focus === "onHold" ? held : focus === "punched" ? punched : []),
-    [focus, held, punched],
+    () =>
+      focus === "onHold" ? held
+      : focus === "billHold" ? billHeld
+      : focus === "punched" ? punched
+      : [],
+    [focus, held, billHeld, punched],
   );
 
   /*
@@ -715,14 +747,19 @@ export default function Dashboard() {
     {
       key: "hold",
       header: "Hold reason",
-      cell: (o) =>
-        isCreditHeld(o) ? (
-          <span className="text-[12.5px] text-grey">{o.ccRemarks ?? "—"}</span>
+      // ONE COLUMN, EITHER HOLD. This table is shared by both hold tiles, and a
+      // column hard-wired to the credit remark would sit empty on the whole of
+      // the Bill on hold list — the one list where the reason is the point.
+      cell: (o) => {
+        const why = stepHoldReason(o);
+        return why ? (
+          <span className="text-[12.5px] text-grey">{why}</span>
         ) : (
           <span className="text-grey-2">—</span>
-        ),
-      sortValue: (o) => o.ccRemarks ?? "",
-      filter: { kind: "text", get: (o) => o.ccRemarks ?? "" },
+        );
+      },
+      sortValue: (o) => stepHoldReason(o) ?? "",
+      filter: { kind: "text", get: (o) => stepHoldReason(o) ?? "" },
     },
     {
       key: "status",
@@ -730,11 +767,11 @@ export default function Dashboard() {
       cell: (o) => (
         <span className="inline-flex items-center gap-1.5">
           <StatusPill status={o.status} />
-          {isCreditHeld(o) && <OutcomePill label="On hold" tone="yellow" />}
+          {stepHoldLabel(o) && <OutcomePill label={stepHoldLabel(o)!} tone="yellow" />}
         </span>
       ),
       sortValue: (o) => o.status,
-      filter: { kind: "multiselect", get: (o) => (isCreditHeld(o) ? "Credit on hold" : o.status) },
+      filter: { kind: "multiselect", get: (o) => stepHoldLabel(o) ?? o.status },
     },
   ];
 
@@ -750,7 +787,8 @@ export default function Dashboard() {
      wrong list once a tile has narrowed it. */
   const tableTitle =
     focus === "punched" ? "New sales orders"
-    : focus === "onHold" ? "On hold"
+    : focus === "onHold" ? "Credit on hold"
+    : focus === "billHold" ? "Bill on hold"
     : focus === "billed" ? "Sales bills raised"
     : focus === "awaiting" ? "Awaiting dispatch"
     : focus === "dispatched" ? "Dispatched"
@@ -840,14 +878,20 @@ export default function Dashboard() {
             columnPicker={{ storageKey: "dispatch.dashboard.orders" }}
             rowsLabel="orders"
             initialSort={{ key: "orderDate", dir: "desc" }}
-            emptyTitle={focus === "onHold" ? "Nothing on hold" : "Nothing punched in this range"}
+            emptyTitle={
+              focus === "onHold" ? "Nothing on credit hold"
+              : focus === "billHold" ? "No bills on hold"
+              : "Nothing punched in this range"
+            }
             emptyMessage={
-              focus === "onHold"
-                ? "Orders credit is holding will appear here."
-                : "Orders raised in the selected dates will appear here."
+              focus === "onHold" ? "Orders credit is holding will appear here."
+              : focus === "billHold" ? "Orders whose invoice is being held back will appear here."
+              : "Orders raised in the selected dates will appear here."
             }
             exportName={
-              focus === "onHold" ? "Order_To_Dispatch_On_Hold" : "Order_To_Dispatch_New_Orders"
+              focus === "onHold" ? "Order_To_Dispatch_On_Hold"
+              : focus === "billHold" ? "Order_To_Dispatch_Bill_On_Hold"
+              : "Order_To_Dispatch_New_Orders"
             }
           />
         ) : (
