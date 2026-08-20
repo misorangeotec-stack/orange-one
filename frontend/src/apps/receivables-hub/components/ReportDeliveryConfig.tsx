@@ -33,6 +33,15 @@ import { cn } from "@/shared/lib/cn";
  */
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+/** Same order, for the checkbox row and the read-back sentence, where the full names do not fit. */
+const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** "Tue and Sat" · "Mon, Wed and Fri" — an English list, not an array printed with commas. */
+function listDays(days: number[]): string {
+  const names = [...days].sort((a, b) => a - b).map((d) => DAYS_SHORT[d]).filter(Boolean);
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
 
 const FREQUENCIES: { value: ReportEmailFrequency; label: string }[] = [
   { value: "off", label: "Not scheduled" },
@@ -47,7 +56,13 @@ const pad = (n: number) => String(n).padStart(2, "0");
 function describe(s: ReportEmailSchedule): string {
   const at = `${pad(s.hourIst)}:${pad(s.minuteIst)} IST`;
   if (s.frequency === "daily") return `Every day at ${at}`;
-  if (s.frequency === "weekly") return `Every ${DAYS[s.dayOfWeek ?? 1]} at ${at}`;
+  if (s.frequency === "weekly") {
+    if (!s.daysOfWeek.length) return "Every week — pick at least one day";
+    // A single day still reads as "Every Saturday", not "Every Sat": one day is a rhythm, and the
+    // long name is what someone setting it up expects to see back.
+    if (s.daysOfWeek.length === 1) return `Every ${DAYS[s.daysOfWeek[0]]} at ${at}`;
+    return `Every ${listDays(s.daysOfWeek)} at ${at}`;
+  }
   if (s.frequency === "monthly") {
     const d = s.dayOfMonth ?? 1;
     const suffix = d === 1 ? "st" : d === 2 ? "nd" : d === 3 ? "rd" : "th";
@@ -199,7 +214,7 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
                 frequency,
                 // Give the field the chosen frequency needs a value, so a weekly schedule can
                 // never be saved without a day. The RPC nulls out the one it does not use.
-                dayOfWeek: frequency === "weekly" ? (s.dayOfWeek ?? 1) : s.dayOfWeek,
+                daysOfWeek: frequency === "weekly" && !s.daysOfWeek.length ? [1] : s.daysOfWeek,
                 dayOfMonth: frequency === "monthly" ? (s.dayOfMonth ?? 1) : s.dayOfMonth,
               }));
             }}
@@ -207,14 +222,42 @@ export default function ReportDeliveryConfig({ reportKey }: { reportKey: string 
             {FREQUENCIES.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
           </select>
 
+          {/* Checkboxes, not a dropdown: a weekly send can name SEVERAL days — Tue and Sat is the
+              rhythm this report is wanted on — and a set is not a thing a select can express.
+              The last ticked day cannot be unticked; a weekly schedule with no day is not a
+              schedule, and the RPC would reject it on save rather than here. */}
           {sched.frequency === "weekly" && (
-            <select
-              className={selectCls}
-              value={sched.dayOfWeek ?? 1}
-              onChange={(e) => setSched((s) => ({ ...s, dayOfWeek: Number(e.target.value) }))}
-            >
-              {DAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
-            </select>
+            <div className="flex flex-wrap items-center gap-1">
+              {DAYS_SHORT.map((short, i) => {
+                const on = sched.daysOfWeek.includes(i);
+                const last = on && sched.daysOfWeek.length === 1;
+                return (
+                  <button
+                    key={short}
+                    type="button"
+                    disabled={last}
+                    title={last ? "A weekly schedule needs at least one day" : DAYS[i]}
+                    onClick={() =>
+                      setSched((s) => ({
+                        ...s,
+                        daysOfWeek: on
+                          ? s.daysOfWeek.filter((d) => d !== i)
+                          : [...s.daysOfWeek, i].sort((a, b) => a - b),
+                      }))
+                    }
+                    className={cn(
+                      "rounded-input border px-2 py-1 text-xs transition-colors",
+                      on
+                        ? "border-orange bg-orange text-white"
+                        : "border-line bg-white text-navy hover:border-orange/50",
+                      last && "cursor-not-allowed opacity-80",
+                    )}
+                  >
+                    {short}
+                  </button>
+                );
+              })}
+            </div>
           )}
 
           {sched.frequency === "monthly" && (
