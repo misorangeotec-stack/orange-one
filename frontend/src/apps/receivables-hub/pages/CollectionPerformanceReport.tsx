@@ -38,6 +38,20 @@ import { FYProvider } from "@hub/lib/fyContext";
 import { buildGroupTree, sortTree, type GroupNode } from "@hub/lib/groupTree";
 import { sumOutstanding } from "@hub/lib/receivables";
 import { fmtINRMoney, formatDateDMY } from "@hub/lib/utils";
+// The report's numbers and the words on its cards. Plain TypeScript, no React — so the scheduled
+// send can build the same report on a server. The icons and tooltips that dress them are in
+// ./collections/kpiCardCopy.
+import {
+  cardFactsFor, computeKpis, toPdfKpi,
+  type CardContext, type CardFact, type ZCKpis,
+} from "@hub/lib/collectionCards";
+// Who is on the list, and the one-line record of how it was narrowed. Plain TypeScript for the
+// same reason as the cards above.
+import {
+  MIN_OUTSTANDING_OPTIONS, buildFilterSummary, makeSaleTypeScope, selectEligible,
+  type MinOutKey, type Segment, type ZCFilters,
+} from "@hub/lib/collectionScope";
+import { CARD_ICONS, CARD_EXPLAIN } from "./collections/kpiCardCopy";
 import { monthEndLong, monthStartLong, monthStartISO, monthEndISO, isoToMonthLabel } from "@hub/lib/months";
 import { Input } from "@hub/components/ui/input";
 import { useQuery } from "@tanstack/react-query";
@@ -110,15 +124,8 @@ type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
  */
 const HEADER_STICKY = "sticky top-0 z-20 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]";
 
-/** Cut the long tail without a fiddly ₹ input. */
-const MIN_OUTSTANDING_OPTIONS = [
-  { key: "0", label: "All", value: 0 },
-  { key: "1L", label: "≥ ₹1 L", value: 100_000 },
-  { key: "5L", label: "≥ ₹5 L", value: 500_000 },
-] as const;
-type MinOutKey = (typeof MIN_OUTSTANDING_OPTIONS)[number]["key"];
-
-type Segment = "all" | "active" | "no_activity";
+// MIN_OUTSTANDING_OPTIONS, MinOutKey and Segment moved to `lib/collectionScope.ts` — the pool
+// filter reads them and has to run on a server. Imported above.
 
 /**
  * Sale-type default for EVERY variant of this report (zero / threshold / dormant): all types
@@ -560,45 +567,27 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
    * The cards have to be a stable, complete strip you can click between — so they are measured
    * before the filter and the filter is applied after. See `rows`.
    */
-  const eligibleAllTypes = useMemo(() => {
-    let d = consolidatedCustomers.filter((c) => matchesCategory(c, categories));
-    if (companies.length)    { const s = new Set(companies);    d = d.filter((c) => (c.companies ?? [c.company]).some((x) => s.has(x))); }
-    if (locations.length)    { const s = new Set(locations);    d = d.filter((c) => (c.locations ?? [c.location]).some((x) => s.has(x))); }
-    if (salespersons.length) { const s = new Set(salespersons); d = d.filter((c) => (c.salesPersons?.length ? c.salesPersons : [c.salesPerson]).some((x) => s.has(x))); }
-    if (segment === "active")
-      d = d.filter((c) => c.sales > 0 || c.receipts > 0 || c.creditNotes > 0 || (c.otherPayments ?? 0) > 0);
-    else if (segment === "no_activity")
-      d = d.filter((c) => c.sales === 0 && c.receipts === 0 && c.creditNotes === 0 && (c.otherPayments ?? 0) === 0);
-    if (blockedOnly) d = d.filter((c) => c.blocked === true);
-    // Credit / advance ledgers have OVERPAID us. They are not non-payers, so they're out
-    // by default — the report would otherwise open on a list of people who owe nothing.
-    if (!includeNonDebtors) d = d.filter((c) => c.outstanding > 0);
-    const min = MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.value ?? 0;
-    if (min > 0) d = d.filter((c) => c.outstanding >= min);
-    const q = search.trim().toLowerCase();
-    if (q) {
-      const tokens = q.split(/\s+/).filter(Boolean);
-      d = d.filter((c) => {
-        const text = `${c.name} ${groupOf(c)} ${c.salesPersons?.join(" ") ?? c.salesPerson}`.toLowerCase();
-        return tokens.every((t) => text.includes(t));
-      });
-    }
-    return d;
-  }, [
-    consolidatedCustomers, categories, companies, locations, salespersons,
-    segment, blockedOnly, includeNonDebtors, minOut, search, groupOf,
-  ]);
+  /** Every narrowing the screen offers, as data — the shape `lib/collectionScope.ts` reads. */
+  const zcFilters: ZCFilters = useMemo(
+    () => ({
+      categories, companies, locations, salespersons, saleTypes,
+      segment, blockedOnly, includeNonDebtors, minOut, search,
+    }),
+    [categories, companies, locations, salespersons, saleTypes, segment, blockedOnly, includeNonDebtors, minOut, search],
+  );
+
+  const eligibleAllTypes = useMemo(
+    () => selectEligible(consolidatedCustomers, zcFilters, groupOf),
+    [consolidatedCustomers, zcFilters, groupOf],
+  );
 
   /**
    * Scope by the customer's DOMINANT sale type. Active only on a PROPER subset: empty and full
    * both mean "no filter", the same convention SaleTypeMultiSelect labels ("All Sale Types") and
    * every other multi-select in the app uses. Default excludes Machine (see DEFAULT_SALE_TYPES).
    */
-  const inSaleTypeScope = useCallback(
-    (c: ConsolidatedCustomer) => {
-      if (saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length) return true;
-      return saleTypes.includes(dominantSaleTypeOf(c, outstandingByType));
-    },
+  const inSaleTypeScope = useMemo(
+    () => makeSaleTypeScope(saleTypes, outstandingByType),
     [saleTypes, outstandingByType],
   );
 
@@ -770,78 +759,23 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
   // to "never-paid AND still-buying": the number printed on a card would stop matching what
   // clicking it shows, and the second click of a combination would be unreadable.
   /**
-   * The KPI numbers for an arbitrary row set.
+   * The KPI numbers, and the cards over them, now live in `lib/collectionCards.ts`.
    *
-   * A FUNCTION rather than a memo body, because the per-salesperson PDF has to state that
-   * salesperson's position, not the company's. Handing a rep a file whose cards read "219
-   * customers, ₹21.06 Cr" above a table of their own 59 is not a scoped report, it is a
-   * mislabelled one. The screen still calls this once with the full row set (`allKpis`).
+   * They moved because the scheduled send has to build this report on a server, and a server
+   * cannot import a React page. What is left here is the presentation the numbers wear: an icon
+   * and an `explain` tooltip per card, attached by `CardFact.id`. See that file's header.
    */
-  const computeKpis = useCallback((src: ZCRow[], pool: ConsolidatedCustomer[]) => {
-    const t = totalsOf(src, target);
-    const eligibleOutstanding = sumOutstanding(pool);
-    const neverPaidOutstanding = src
-      .filter((r) => r.facts.lastReceiptDate === null)
-      .reduce((s, r) => s + r.customer.outstanding, 0);
-    // The dormant report's damning subset: stopped buying AND stopped paying. The money on
-    // these is what "dead and stuck" actually costs.
-    const paidNothingOutstanding = src
-      .filter((r) => r.facts.collected < ZERO_EPS)
-      .reduce((s, r) => s + r.customer.outstanding, 0);
-    const wentQuietOutstanding = src
-      .filter((r) => r.facts.salesInPrior > 0.5 && r.facts.salesInWindow <= 0.5)
-      .reduce((s, r) => s + r.customer.outstanding, 0);
-    const neverSoldOutstanding = src
-      .filter((r) => r.facts.lastSaleMonth === null)
-      .reduce((s, r) => s + r.customer.outstanding, 0);
-    return {
-      count: src.length,
-      eligibleCount: pool.length,
-      outstanding: t.outstanding,
-      sharePct: eligibleOutstanding > 0 ? (t.outstanding / eligibleOutstanding) * 100 : 0,
-      overdue: t.overdue,
-      // The bridge behind it, so the card can say the figure is net rather than leave the reader
-      // to discover it in the drill-down.
-      overdueGross: t.overdueGross,
-      onAccount: t.onAccount,
-      over180: t.over180,
-      neverPaid: t.neverPaid,
-      neverPaidOutstanding,
-      stillBuying: t.stillBuying,
-      salesInWindow: t.salesInWindow,
-      // Weighted, never an average of percentages.
-      collectionPct: pctOf(t.collected, t.collectible),
-      collected: t.collected,
-      collectible: t.collectible,
-      shortfall: t.shortfall,
-      deteriorating: t.deteriorating,
-      bounced: t.bounced,
-      chequeReturns: t.chequeReturns,
-      // Dormant
-      paidNothing: t.zeroCollectors,
-      paidNothingOutstanding,
-      wentQuiet: t.wentQuiet,
-      wentQuietOutstanding,
-      neverSold: t.neverSold,
-      neverSoldOutstanding,
-    };
-  }, [target]);
+  const kpiCtx: CardContext = useMemo(
+    () => ({ mode, threshold, target, hasPrior, priorLabel, horizonLabel }),
+    [mode, threshold, target, hasPrior, priorLabel, horizonLabel],
+  );
 
   /** The screen's numbers: every row in the report, before any lens. See the note above. */
-  const allKpis = useMemo(() => computeKpis(rows, eligible), [computeKpis, rows, eligible]);
+  const allKpis = useMemo(() => computeKpis(rows, eligible, target), [rows, eligible, target]);
 
-  /** A KPI card. `focusKey: null` = a summary card describing the WHOLE list (clicking it
-   *  clears every lens rather than pretending to filter). `count` drives the inert state. */
-  interface KpiCard {
-    label: string;
+  /** A card, plus the two things only a screen can use. */
+  interface KpiCard extends CardFact {
     icon: typeof UserX;
-    value: string;
-    sub: string;
-    focusKey: ZCFocus | null;
-    /** The underlying magnitude — a card with nothing behind it isn't worth a click. */
-    count: number;
-    /** Why the card is inert, when that isn't obvious (e.g. no prior period this FY). */
-    disabledHint?: string;
     /**
      * What the card MEANS, in plain words, on hover. A number on a management screen that
      * can't explain itself gets quoted wrong in a meeting — so every card says what it
@@ -850,435 +784,24 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     explain: ReactNode;
   }
 
-  const money = (n: number) => fmtINRMoney(n);
-
   /**
-   * The mode's cards, for a given set of KPI numbers.
+   * The mode's cards, dressed for the screen.
    *
-   * ⚠ THE PARAMETER IS NAMED `kpis` ON PURPOSE. It shadows the outer `allKpis`-fed binding these
-   *   card definitions used to read, so ~400 lines of card copy needed no edit to become
-   *   scope-aware, and there is exactly ONE definition of each card rather than a screen version
-   *   and a drifting PDF version. Call it with `allKpis` for the screen, or with a salesperson's
-   *   own numbers for their extract.
+   * Call it with `allKpis` for the screen, or with a salesperson's own numbers for their extract —
+   * the wording comes from one place either way, so there is no screen version and drifting PDF
+   * version of the same card.
    */
-  const cardsFor = (kpis: ReturnType<typeof computeKpis>): KpiCard[] => {
-  const zeroCards: KpiCard[] = [
-    {
-      label: "Zero-Collection Customers", icon: UserX, focusKey: null,
-      value: String(kpis.count),
-      sub: `of ${kpis.eligibleCount} who owe money`,
-      count: kpis.count,
-      explain: (
-        <>
-          Customers who owe you money and paid <strong>nothing at all</strong> in this period:
-          no receipt voucher and no manual Other Payment.
-          <br />
-          <br />
-          <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
-          currently owe you money. Ledgers with the same name are merged, so one customer with
-          three company ledgers counts once.
-        </>
-      ),
-    },
-    {
-      label: "Outstanding Locked", icon: Wallet, focusKey: null,
-      value: fmtINRMoney(kpis.outstanding),
-      sub: `${kpis.sharePct.toFixed(1)}% of in-scope outstanding`,
-      count: kpis.count,
-      explain: (
-        <>
-          The total these zero-collection customers owe you is <strong>{money(kpis.outstanding)}</strong>.
-          <br />
-          <br />
-          That is <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in
-          scope. The higher this is, the more your problem is concentrated in people who aren’t
-          paying at all.
-        </>
-      ),
-    },
-    {
-      label: "Overdue Locked", icon: TrendingDown, focusKey: "overdue",
-      value: fmtINRMoney(kpis.overdue),
-      sub: kpis.onAccount > 0.5
-        ? `past due date · less On Account ${fmtINRMoney(kpis.onAccount)}`
-        : "already past due date",
-      count: kpis.overdue,
-      explain: (
-        <>
-          How much of that money is <strong>already past its due date</strong>. You had a
-          contractual right to it and it still hasn’t come.
-          <br />
-          <br />
-          The rest of the Outstanding is still inside its credit period.
-          {kpis.onAccount > 0.5 && (
-            <>
-              <br />
-              <br />
-              <strong>This figure is net.</strong> The bills themselves come to{" "}
-              {money(kpis.overdueGross)}, but {money(kpis.onAccount)} of that has already been paid
-              as <strong>On Account</strong>: advances, credit notes and receipts that settle no
-              specific bill, so they cannot be knocked off any one invoice.{" "}
-              {money(kpis.overdueGross)} − {money(kpis.onAccount)} = {money(kpis.overdue)}.
-            </>
-          )}
-        </>
-      ),
-    },
-    {
-      label: "Never Paid", icon: Ban, focusKey: "never",
-      value: String(kpis.neverPaid),
-      sub: `${fmtINRMoney(kpis.neverPaidOutstanding)} · no receipt ever`,
-      count: kpis.neverPaid,
-      explain: (
-        <>
-          Of those, how many have <strong>never made a single payment</strong>: not one receipt
-          since the data begins (01-04-2025). They hold {money(kpis.neverPaidOutstanding)}.
-          <br />
-          <br />
-          This is a write-off or legal conversation, not a follow-up call.
-        </>
-      ),
-    },
-    {
-      label: "Still Buying", icon: ShoppingCart, focusKey: "buying",
-      value: String(kpis.stillBuying),
-      sub: `${fmtINRMoney(kpis.salesInWindow)} billed in period`,
-      count: kpis.stillBuying,
-      explain: (
-        <>
-          How many of these non-payers you are <strong>still billing</strong>. You invoiced them{" "}
-          <strong>{money(kpis.salesInWindow)}</strong> during the very period in which they paid
-          you nothing.
-          <br />
-          <br />
-          This is the card that gets a decision made, and it’s a <strong>credit</strong> decision, not
-          a collections one.
-        </>
-      ),
-    },
-    {
-      label: "> 180 Days", icon: CalendarClock, focusKey: "over180",
-      value: fmtINRMoney(kpis.over180),
-      sub: "oldest, hardest money",
-      count: kpis.over180,
-      explain: (
-        <>
-          Money on bills more than <strong>180 days past due</strong>: the oldest and hardest to
-          recover.
-          <br />
-          <br />
-          The longer a receivable sits here, the less of it you typically get back.
-        </>
-      ),
-    },
-  ];
-
-  const thresholdCards: KpiCard[] = [
-    {
-      label: `Customers Below ${threshold}%`, icon: UserX, focusKey: null,
-      value: String(kpis.count),
-      sub: `of ${kpis.eligibleCount} who owe money`,
-      count: kpis.count,
-      explain: (
-        <>
-          Worked out <strong>for each customer separately</strong>:
-          <br />
-          <br />
-          <span className="font-mono text-[10px] leading-relaxed block">
-            Collectible = what they owed at the start
-            <br />
-            &nbsp;&nbsp;&nbsp;&nbsp;+ what you billed them since
-            <br />
-            Collected&nbsp;&nbsp; = what they actually paid
-            <br />
-            <br />
-            Collected ÷ Collectible &lt; {threshold}% → listed
-          </span>
-          <br />
-          <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
-          currently owe you money. Bounced cheques don’t count as payment; customers with nothing
-          to collect are excluded, not scored 0%.
-        </>
-      ),
-    },
-    {
-      label: "Collection %", icon: Percent, focusKey: null,
-      value: pctText(kpis.collectionPct),
-      sub: `${fmtINRMoney(kpis.collected)} of ${fmtINRMoney(kpis.collectible)} collectible`,
-      count: kpis.count,
-      explain: (
-        <>
-          Together these {kpis.count} customers could have paid{" "}
-          <strong>{money(kpis.collectible)}</strong>. They paid{" "}
-          <strong>{money(kpis.collected)}</strong>.
-          <br />
-          <br />
-          So roughly <strong>{kpis.collectionPct === null ? "—" : Math.round(kpis.collectionPct)} paise
-          in every rupee</strong>.
-          <br />
-          <br />
-          This is <strong>weighted</strong>: total collected ÷ total collectible, not the average
-          of their individual percentages, which would let a tiny customer count as much as a
-          ₹1 Cr one.
-        </>
-      ),
-    },
-    {
-      // The headline. A % can't be summed up a roll-up; this can — and it is the number
-      // management acts on: "₹X would have come in had everyone hit the target."
-      label: `Shortfall vs ${target}%`, icon: Target, focusKey: null,
-      value: fmtINRMoney(kpis.shortfall),
-      sub: "money that didn't come in",
-      count: kpis.count,
-      explain: (
-        <>
-          <strong>The number to take to a review meeting.</strong>
-          <br />
-          <br />
-          If every one of these {kpis.count} customers had simply hit <strong>{target}%</strong>,
-          another <strong>{money(kpis.shortfall)}</strong> would have landed in the bank this
-          period.
-          <br />
-          <br />
-          It’s added up <strong>customer by customer</strong>, so a good payer can’t quietly cancel
-          out a bad one. Unlike a percentage, it totals correctly under every salesperson, group
-          and company in the table below.
-        </>
-      ),
-    },
-    {
-      label: "Outstanding Locked", icon: Wallet, focusKey: null,
-      value: fmtINRMoney(kpis.outstanding),
-      sub: `${kpis.sharePct.toFixed(1)}% of in-scope outstanding`,
-      count: kpis.count,
-      explain: (
-        <>
-          The total these under-payers owe you is <strong>{money(kpis.outstanding)}</strong>, which is{" "}
-          <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in scope.
-          <br />
-          <br />
-          This is the “how bad is it really” card. A high share means the problem isn’t a long tail
-          of small defaulters; it’s sitting where most of your money already is.
-        </>
-      ),
-    },
-    {
-      label: "Still Buying", icon: ShoppingCart, focusKey: "buying",
-      value: String(kpis.stillBuying),
-      sub: `${fmtINRMoney(kpis.salesInWindow)} billed in period`,
-      count: kpis.stillBuying,
-      explain: (
-        <>
-          How many of these poor payers you are <strong>still billing</strong>. You invoiced them{" "}
-          <strong>{money(kpis.salesInWindow)}</strong> during the very period in which they were
-          under-paying you.
-          <br />
-          <br />
-          The most actionable card here. It’s a <strong>credit</strong> decision, not a collections
-          one.
-        </>
-      ),
-    },
-    {
-      label: "Deteriorating", icon: TrendingDown, focusKey: "deteriorating",
-      value: String(kpis.deteriorating),
-      sub: hasPrior ? `fell > ${DETERIORATION_PP}pp vs prior period` : "no prior period in this FY",
-      count: hasPrior ? kpis.deteriorating : 0,
-      disabledHint: hasPrior
-        ? undefined
-        : "This fiscal year has no earlier months to compare against. Pick a shorter period.",
-      explain: hasPrior ? (
-        <>
-          These customers <strong>used to pay better</strong>. Their collection % fell by more than{" "}
-          {DETERIORATION_PP} percentage points versus the previous period of the same length
-          ({priorLabel}).
-          <br />
-          <br />
-          Something changed <strong>recently</strong>, so it is worth a call before it hardens. This is what
-          separates a customer who just went quiet from a chronic non-payer.
-        </>
-      ) : (
-        <>
-          Compares each customer’s collection % against the previous period of the same length.
-          <br />
-          <br />
-          <strong>Unavailable here:</strong> this fiscal year has no earlier months to compare
-          against, so Prior % and Δ read as a dash. Pick a shorter period to enable it.
-        </>
-      ),
-    },
-    {
-      label: "Bounced", icon: Undo2, focusKey: "bounced",
-      value: String(kpis.bounced),
-      sub: `${fmtINRMoney(kpis.chequeReturns)} of cheques returned`,
-      count: kpis.bounced,
-      explain: (
-        <>
-          They “paid”, and the cheque <strong>came back</strong>.{" "}
-          <strong>{money(kpis.chequeReturns)}</strong> of cheques returned in this period.
-          <br />
-          <br />
-          A bounced cheque is not a collection. Without this check, several of these customers would
-          look like they had paid and would <strong>never appear on this report at all</strong>,
-          so a customer is listed if they fall below {threshold}% on <em>either</em> the gross or the
-          net-of-bounces figure.
-        </>
-      ),
-    },
-    {
-      label: "Never Paid", icon: Ban, focusKey: "never",
-      value: String(kpis.neverPaid),
-      sub: `${fmtINRMoney(kpis.neverPaidOutstanding)} · no receipt ever`,
-      count: kpis.neverPaid,
-      explain: (
-        <>
-          Not a single payment <strong>ever</strong>: no receipt since the data begins
-          (01-04-2025). They hold <strong>{money(kpis.neverPaidOutstanding)}</strong>.
-          <br />
-          <br />
-          A write-off or legal conversation, not a follow-up call.
-        </>
-      ),
-    },
-  ];
-
-  /**
-   * The dormant report asks the SALES question, so its cards rank a dead account, not a bad
-   * payer. "Still Buying" is deliberately absent: it is false for every row by construction —
-   * that is the predicate — so the card would read 0 on every screen, forever.
-   */
-  const dormantCards: KpiCard[] = [
-    {
-      label: "Dormant Customers", icon: UserX, focusKey: null,
-      value: String(kpis.count),
-      sub: `of ${kpis.eligibleCount} who owe money`,
-      count: kpis.count,
-      explain: (
-        <>
-          Customers who owe you money and have billed <strong>nothing at all</strong> in this
-          period. You are no longer selling to them, but they are still holding your cash.
-          <br />
-          <br />
-          <strong>{kpis.count}</strong> of the <strong>{kpis.eligibleCount}</strong> customers who
-          currently owe you money. Ledgers with the same name are merged, so one customer with
-          three company ledgers counts once.
-        </>
-      ),
-    },
-    {
-      label: "Outstanding Locked", icon: Wallet, focusKey: null,
-      value: fmtINRMoney(kpis.outstanding),
-      sub: `${kpis.sharePct.toFixed(1)}% of in-scope outstanding`,
-      count: kpis.count,
-      explain: (
-        <>
-          The total these dormant customers owe you is <strong>{money(kpis.outstanding)}</strong>,
-          which is <strong>{kpis.sharePct.toFixed(1)}%</strong> of everything owed by customers in
-          scope.
-          <br />
-          <br />
-          This is money tied up in relationships that have <strong>already ended</strong>. It will
-          not be recovered by selling them more.
-        </>
-      ),
-    },
-    {
-      label: "Overdue Locked", icon: TrendingDown, focusKey: "overdue",
-      value: fmtINRMoney(kpis.overdue),
-      sub: "already past due date",
-      count: kpis.overdue,
-      explain: (
-        <>
-          How much of that dormant money is <strong>already past its due date</strong>.
-          <br />
-          <br />
-          The rest is still inside its credit period, so a customer can have stopped buying and
-          still not be late yet.
-        </>
-      ),
-    },
-    {
-      label: "Paid Nothing Either", icon: Ban, focusKey: "paidNothing",
-      value: String(kpis.paidNothing),
-      sub: `${fmtINRMoney(kpis.paidNothingOutstanding)} · dead and stuck`,
-      count: kpis.paidNothing,
-      explain: (
-        <>
-          Of these dormant customers, how many also paid you <strong>nothing</strong> in the
-          period. They hold <strong>{money(kpis.paidNothingOutstanding)}</strong>.
-          <br />
-          <br />
-          <strong>The list that matters.</strong> The others are dormant but still clearing their
-          balance; these have stopped buying <em>and</em> stopped paying. Nothing is coming back
-          on its own.
-        </>
-      ),
-    },
-    {
-      label: "Recently Gone Quiet", icon: ShoppingCart, focusKey: "wentQuiet",
-      value: String(kpis.wentQuiet),
-      sub: hasPrior
-        ? `${fmtINRMoney(kpis.wentQuietOutstanding)} · were buying before`
-        : "no prior period in this FY",
-      count: hasPrior ? kpis.wentQuiet : 0,
-      disabledHint: hasPrior
-        ? undefined
-        : "This period has no earlier months to compare against. Pick a shorter period.",
-      explain: hasPrior ? (
-        <>
-          They were buying in the <strong>previous</strong> period of the same length ({priorLabel})
-          and have billed nothing since. They hold <strong>{money(kpis.wentQuietOutstanding)}</strong>.
-          <br />
-          <br />
-          <strong>The ones you can still save.</strong> A customer who went quiet last quarter is a
-          sales call; one who has been dead for two years is a collections problem.
-        </>
-      ) : (
-        <>
-          Compares billing against the previous period of the same length.
-          <br />
-          <br />
-          <strong>Unavailable here:</strong> there are no earlier months to compare against. Pick a
-          shorter period to enable it.
-        </>
-      ),
-    },
-    {
-      label: "Never Sold in Horizon", icon: CalendarClock, focusKey: "neverSold",
-      value: String(kpis.neverSold),
-      sub: `${fmtINRMoney(kpis.neverSoldOutstanding)} · nothing billed since ${horizonLabel}`,
-      count: kpis.neverSold,
-      explain: (
-        <>
-          Not a single sale <strong>anywhere in the available data</strong>, which begins{" "}
-          {horizonLabel}. They hold <strong>{money(kpis.neverSoldOutstanding)}</strong>.
-          <br />
-          <br />
-          This does <strong>not</strong> mean they never bought from you, only that they haven’t
-          since the data starts. The balance is a leftover from an older relationship, and it is
-          the oldest, hardest money on this report.
-        </>
-      ),
-    },
-  ];
-
-    return isDormantMode ? dormantCards : mode === "zero" ? zeroCards : thresholdCards;
-  };
+  const cardsFor = (kpis: ZCKpis): KpiCard[] =>
+    cardFactsFor(kpis, kpiCtx).map((f) => ({
+      ...f,
+      icon: CARD_ICONS[f.id],
+      explain: CARD_EXPLAIN[f.id](kpis, kpiCtx),
+    }));
 
   const kpiCards = cardsFor(allKpis);
 
-  /** A screen card, projected to the plain data the PDF renderer understands. */
-  const toPdfKpi = (c: KpiCard) => ({
-    label: c.label,
-    value: c.value,
-    sub: c.sub,
-    // The card's own alarm styling isn't a field — a card is "bad news" when it is a lens onto a
-    // problem subset rather than a summary of the whole list.
-    alarm: c.focusKey !== null,
-    // The lens key, carried so the PDF can give a card its own appendix page WITHOUT matching on
-    // the printed label. `never` and `over180` get one; the rest are carried and ignored.
-    key: c.focusKey ?? undefined,
-  });
+  /** Shorthand the tooltip copy on this page reads. The card tooltips use their own. */
+  const money = (n: number) => fmtINRMoney(n);
   const kpiGridClass = mode === "threshold"
     ? "grid grid-cols-2 sm:grid-cols-4 gap-2"
     : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2";
@@ -1328,30 +851,12 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
     setFocus(new Set()); setBands(new Set());
   };
 
-  const filterSummary = useMemo(() => {
-    const s: string[] = [];
-    // Lenses first — they're the most drastic cut, and the exported sheet has to record
-    // them or it's unauditable a week later.
-    for (const f of focus) s.push(`Focus: ${ZC_FOCUS_LABELS[f]}`);
-    for (const b of bands) s.push(`Band: ${BAND_LABELS[b]}`);
-    if (search.trim()) s.push(`Search: ${search.trim()}`);
-    if (salespersons.length) s.push(`Salesperson: ${salespersons.join(", ")}`);
-    if (companies.length) s.push(`Company: ${companies.join(", ")}`);
-    if (locations.length) s.push(`Location: ${locations.join(", ")}`);
-    if (categories.length) s.push(`Category: ${categories.join(", ")}`);
-    // Always record the sale-type scope, INCLUDING the default — every report now excludes Machine
-    // by default, so the sheet has to say so or the totals are unexplainable a week later.
-    s.push(
-      saleTypes.length === 0 || saleTypes.length === SALE_TYPES.length
-        ? "Sale Type: All (incl. Machine)"
-        : `Sale Type: ${saleTypes.map(saleTypeLabel).join(", ")} (dominant type; Machine excluded by default)`,
-    );
-    if (minOut !== "0") s.push(`Min Outstanding: ${MIN_OUTSTANDING_OPTIONS.find((o) => o.key === minOut)?.label}`);
-    if (segment !== "all") s.push(`Segment: ${segment === "active" ? "Active" : "No Activity"}`);
-    if (blockedOnly) s.push("Red Mark only");
-    if (includeNonDebtors) s.push("Incl. zero & credit balances");
-    return s;
-  }, [focus, bands, search, salespersons, companies, locations, categories, minOut, segment, blockedOnly, includeNonDebtors, saleTypes]);
+  // Lenses first — they're the most drastic cut, and the exported sheet has to record them or
+  // it's unauditable a week later. See `buildFilterSummary`.
+  const filterSummary = useMemo(
+    () => buildFilterSummary(zcFilters, focus, bands, BAND_LABELS),
+    [zcFilters, focus, bands],
+  );
 
 
   // ── Export — WYSIWYG: same period, threshold, filters, FOCUS, view, sort, columns ──
@@ -1394,7 +899,7 @@ function CollectionPerformanceInner({ variant }: { variant?: "dormant" }) {
       // denominator would still be the company's.
       kpisFor: (subset: ZCRow[], salesperson: string) =>
         cardsFor(
-          computeKpis(subset, eligible.filter((c) => salespersonNamesOf(c).includes(salesperson))),
+          computeKpis(subset, eligible.filter((c) => salespersonNamesOf(c).includes(salesperson)), target),
         ).map(toPdfKpi),
       // The cards are measured over every row in the report; the table follows the lens. Say so
       // on the page when the two can disagree, since a PDF has no tooltip to explain it.
