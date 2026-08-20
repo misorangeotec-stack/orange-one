@@ -26,9 +26,19 @@
 //     comparison would mismatch and the watcher would pull on EVERY tick — the
 //     exact opposite of what it is for. See 20260902120300.
 //
+// HOW A LEDGER'S ROLE IS DECIDED (it is not the group alone any more)
+//   is_customer / is_vendor are the Tally group chain OR the trade registers:
+//   a ledger with sales booked against it in a book is a customer of that book
+//   whatever Tally files it under, and likewise purchases and vendors. The
+//   group test is unchanged and the register is OR-ed onto it, so the flags
+//   only ever widen. See the block above the party upsert for why - in short,
+//   "Branch / Divisions" is a reserved PRIMARY group, so our own branches came
+//   out neither customer nor vendor and vanished from every screen despite
+//   trading every week.
+//
 // WHAT IS TALLY-OWNED AND WHAT IS NOT
 //   Overwritten on every pull: party name/gstin/sub_group/group_chain/credit_*,
-//   item name/group/unit, company tally_name/gstin/address.
+//   is_customer/is_vendor, item name/group/unit, company tally_name/gstin/address.
 //   NEVER touched: modules, active, sort_order, company_id, location, contact_name,
 //   phone, email, hsn_code, gate_pass_prefix — and mst_companies.name, which is a
 //   human's clean label, not Tally's FY-suffixed book name.
@@ -94,12 +104,44 @@ const clean = (v: unknown): string | null => {
  *  how a sync silently imports exactly 1000 of everything and calls it success. */
 const PAGE = 1000;
 
+/**
+ * ⚠ `orderBy` IS MANDATORY, AND IT IS NOT A TIDINESS ARGUMENT.
+ *
+ *   LIMIT/OFFSET over a query with NO ORDER BY has no defined row order in
+ *   Postgres. Page 3 may repeat a row from page 2 and omit one entirely, and
+ *   which rows those are changes run to run. This function paged unordered for
+ *   months and the damage was invisible because nothing is ever deleted:
+ *   v_ledger_detail holds 9,384 rows, a single run wrote 6,193 distinct guids,
+ *   and mst_parties had accumulated 7,832 - the UNION of many runs, each having
+ *   silently dropped a different ~1,600.
+ *
+ *   How it surfaced: ORANGE O TEC PRIVATE LIMITED(NOIDA) sat at
+ *   tally_synced_at = 2026-08-16 while the mirror plainly still returned its
+ *   guid, so it read as "Tally deleted this" when the truth was "our pager
+ *   skipped it, twice". Rows a sync misses do not error - they go stale, and
+ *   the "In Tally" column then blames Tally.
+ *
+ *   Order on something UNIQUE per row. tenant_id+guid, not guid alone: the same
+ *   ledger guid appears under both the base tenant and its ~YYYYMMDD prior-FY
+ *   twin, and a non-unique sort key leaves ties free to reshuffle between
+ *   pages - the same bug wearing a hat.
+ *
+ *   It is also FASTER: an ordered page of v_ledger_detail measured ~4s against
+ *   ~17s unordered, because the planner can walk an index instead of
+ *   re-materialising the view to skip 8,000 rows.
+ */
 async function fetchAll<T>(
-  build: () => { range: (a: number, b: number) => Promise<{ data: T[] | null; error: unknown }> },
+  // deno-lint-ignore no-explicit-any
+  build: () => any,
+  orderBy: string[],
 ): Promise<T[]> {
+  if (!orderBy.length) throw new Error("fetchAll needs a stable sort key");
   const out: T[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await build().range(from, from + PAGE - 1);
+    let q = build();
+    for (const col of orderBy) q = q.order(col, { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE - 1) as
+      { data: T[] | null; error: unknown };
     if (error) throw new Error(`mirror read failed: ${JSON.stringify(error)}`);
     const rows = data ?? [];
     out.push(...rows);
@@ -222,17 +264,21 @@ Deno.serve(async (req) => {
     // =================================================================== read --
     const [companyRows, cleanNames, ledgerRows, itemRows] = await Promise.all([
       fetchAll<{ tenant_id: string; company_guid: string; company_name: string }>(() =>
-        cw.from("v_company").select("tenant_id,company_guid,company_name")),
+        cw.from("v_company").select("tenant_id,company_guid,company_name"),
+        ["tenant_id", "company_guid"]),
       fetchAll<{ company_guid: string; company: string; location: string }>(() =>
-        cw.from("ext_company_map").select("company_guid,company,location")),
+        cw.from("ext_company_map").select("company_guid,company,location"),
+        ["company_guid"]),
       fetchAll<{
         tenant_id: string; guid: string; ledger: string; sub_group: string | null;
         group_chain: string[] | null; gstin: string | null;
         credit_limit: number | null; credit_period: string | null;
       }>(() => cw.from("v_ledger_detail").select(
-        "tenant_id,guid,ledger,sub_group,group_chain,gstin,credit_limit,credit_period")),
+        "tenant_id,guid,ledger,sub_group,group_chain,gstin,credit_limit,credit_period"),
+        ["tenant_id", "guid"]),
       fetchAll<{ tenant_id: string; guid: string; item: string; stock_group: string | null; base_unit: string | null }>(
-        () => cw.from("v_master_stock_item").select("tenant_id,guid,item,stock_group,base_unit")),
+        () => cw.from("v_master_stock_item").select("tenant_id,guid,item,stock_group,base_unit"),
+        ["tenant_id", "guid"]),
     ]);
 
     // ============================================================== companies --
@@ -321,7 +367,7 @@ Deno.serve(async (req) => {
       // PostgREST cannot address. So this inserts and tolerates the duplicate
       // rather than upserting.
       const existing = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-        () => db.from("mst_item_groups").select("id,name,company_id"));
+        () => db.from("mst_item_groups").select("id,name,company_id"), ["id"]);
       const have = new Set(existing.map((g) => `${g.company_id ?? ""}|${g.name.toLowerCase()}`));
       const missing = [...groupPairs.entries()]
         .filter(([k]) => !have.has(k))
@@ -337,8 +383,8 @@ Deno.serve(async (req) => {
     }
 
     const groupRows = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-      () => db.from("mst_item_groups").select("id,name,company_id"));
-    const unitRows = await fetchAll<{ id: string; name: string }>(() => db.from("mst_units").select("id,name"));
+      () => db.from("mst_item_groups").select("id,name,company_id"), ["id"]);
+    const unitRows = await fetchAll<{ id: string; name: string }>(() => db.from("mst_units").select("id,name"), ["id"]);
     // Keyed by company AND name, so an item lands in ITS company's group.
     const groupIdByKey = new Map(groupRows.map((r) => [`${r.company_id ?? ""}|${r.name.toLowerCase()}`, r.id]));
     const unitIdByName = new Map(unitRows.map((r) => [r.name, r.id]));
@@ -380,6 +426,64 @@ Deno.serve(async (req) => {
     //   own bucket ("CREDITOR FOR OTHER"); only the chain carries "Sundry Creditors".
     const inChain = (chain: string[] | null, want: string) => (chain ?? []).some((g) => g === want);
 
+    // ======================================= who actually trades with us --
+    //
+    // ⚠ THE TALLY GROUP IS AN ACCOUNTING LABEL, NOT A STATEMENT OF TRADE.
+    //   Deciding the role from the group alone hid real customers, in two ways:
+    //
+    //   1. A ledger under "Branch / Divisions" is NEITHER a debtor nor a
+    //      creditor, so BOTH flags came out false and the row appeared on
+    //      neither tab and in no module picker - present in the master,
+    //      unreachable in the UI. ORANGE O TEC PVT. LTD.(SURAT BRANCH) sat
+    //      there with 130 sale lines and 1,836 purchase lines against it in
+    //      the Noida book. "Branch / Divisions" is one of Tally's RESERVED
+    //      PRIMARY groups: its parent is empty, so the chain never reaches
+    //      Sundry Debtors no matter how deep the walk goes.
+    //   2. A firm filed under a creditor group that nonetheless buys from us
+    //      was offered as a vendor only. reconcile.ts has carried a note about
+    //      exactly this since before the cutover (GARTEX TEXPROCESS INDIA:
+    //      creditor group, eleven sales).
+    //
+    //   So the registers get a vote. A ledger with sales booked against it in
+    //   a book IS a customer of that book, whatever Tally files it under; same
+    //   for purchases and vendors. Evidence cannot drift the way a hand-kept
+    //   exception list would, and it self-corrects: a branch that starts
+    //   trading next month is picked up by the next pull.
+    //
+    // ⚠ THE FLAGS ONLY EVER WIDEN. The group test stays exactly as it was and
+    //   the register is OR-ed onto it, so no row can lose a role it has today.
+    //
+    // ⚠ NO `kind` FILTER ON THE SALES READ. The catalogue below wants item
+    //   lines only, but 709 of the register's rows are `kind='ledger'` - a
+    //   sale with no stock item, which is still proof of a trading
+    //   relationship. Read everything here; the catalogue narrows it itself.
+    const salesRows = await fetchAll<{
+      kind: string; company_guid: string; party: string; particulars: string;
+      vch_date: string; quantity: number;
+    }>(() => cw.from("rpt_sales_register")
+      .select("kind,company_guid,party,particulars,vch_date,quantity"),
+      // One voucher line is (tenant, voucher, line_no) - unique, so no ties.
+      ["tenant_id", "voucher_guid", "line_no"]);
+
+    const purchaseRows = await fetchAll<{ company_guid: string; party: string }>(
+      () => cw.from("rpt_purchase_item").select("company_guid,party"),
+      ["tenant_id", "voucher_guid", "line_no"]);
+
+    /** Keyed on company GUID, not company_id, so the sets exist before the
+     *  parties are written. companyGuidOf() strips both the `acct_orange::`
+     *  prefix and the `~YYYYMMDD` prior-FY suffix; the registers carry
+     *  company_guid bare, so the two sides meet. */
+    const evidenceKey = (companyGuid: string, name: string) =>
+      `${companyGuid}|${String(name ?? "").trim().toLowerCase()}`;
+
+    const soldTo = new Set(salesRows.map((s) => evidenceKey(s.company_guid, s.party)));
+    const boughtFrom = new Set(purchaseRows.map((p) => evidenceKey(p.company_guid, p.party)));
+
+    const traded = (l: { tenant_id: string; ledger: string }) => {
+      const key = evidenceKey(companyGuidOf(l.tenant_id), l.ledger);
+      return { sold: soldTo.has(key), bought: boughtFrom.has(key) };
+    };
+
     // company_id is portal-owned in general, but on INSERT it is the one thing we
     // can derive honestly: the ledger physically belongs to that Tally company.
     // It is included here, which means a pull DOES refresh it - acceptable and
@@ -390,8 +494,8 @@ Deno.serve(async (req) => {
       tally_tenant: l.tenant_id,
       tally_synced_at: stamp,
       source: "tally",
-      is_customer: inChain(l.group_chain, "Sundry Debtors"),
-      is_vendor: inChain(l.group_chain, "Sundry Creditors"),
+      is_customer: inChain(l.group_chain, "Sundry Debtors") || traded(l).sold,
+      is_vendor: inChain(l.group_chain, "Sundry Creditors") || traded(l).bought,
       gstin: clean(l.gstin),
       sub_group: clean(l.sub_group),
       group_chain: l.group_chain ?? null,
@@ -412,15 +516,14 @@ Deno.serve(async (req) => {
     //   Anything that will not resolve is COUNTED AND SKIPPED, never guessed:
     //   a wrong catalogue row is worse than a missing one, because it puts an
     //   item a customer has never bought onto their order form.
-    const salesRows = await fetchAll<{
-      company_guid: string; party: string; particulars: string; vch_date: string; quantity: number;
-    }>(() => cw.from("rpt_sales_register")
-      .select("company_guid,party,particulars,vch_date,quantity").eq("kind", "item"));
+    // Read once, above, for the role flags - narrowed to item lines HERE, because
+    // a catalogue row needs an item and a `kind='ledger'` sale has none.
+    const saleItemRows = salesRows.filter((s) => s.kind === "item");
 
     const writtenParties = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-      () => db.from("mst_parties").select("id,name,company_id"));
+      () => db.from("mst_parties").select("id,name,company_id"), ["id"]);
     const writtenItems = await fetchAll<{ id: string; name: string; company_id: string | null }>(
-      () => db.from("mst_items").select("id,name,company_id"));
+      () => db.from("mst_items").select("id,name,company_id"), ["id"]);
 
     const nameKey = (companyId: string | null, name: string) =>
       `${companyId ?? ""}|${String(name ?? "").trim().toLowerCase()}`;
@@ -436,7 +539,7 @@ Deno.serve(async (req) => {
     const pairs = new Map<string, { party_id: string; item_id: string; last: string | null; count: number }>();
     let unresolvedParty = 0;
     let unresolvedItem = 0;
-    for (const s of salesRows) {
+    for (const s of saleItemRows) {
       const companyId = companyIdByGuid.get(s.company_guid) ?? null;
       const partyId = partyIdByKey.get(nameKey(companyId, s.party));
       const itemId = itemIdByKey.get(nameKey(companyId, s.particulars));
@@ -473,12 +576,26 @@ Deno.serve(async (req) => {
       units: unitNames.length,
       items: itemsWritten,
       parties: partiesWritten,
-      customers: [...ledgerByGuid.values()].filter((l) => inChain(l.group_chain, "Sundry Debtors")).length,
-      vendors: [...ledgerByGuid.values()].filter((l) => inChain(l.group_chain, "Sundry Creditors")).length,
+      // ⚠ COUNT WHAT WAS WRITTEN, not what the group test alone would have said.
+      //   These used to recompute `inChain(...)` and would now UNDER-report the
+      //   flags actually set - a count that quietly disagrees with the table is
+      //   worse than no count. The `_by_evidence` pair is the interesting half:
+      //   it is how many rows owe their role to trade rather than to the group,
+      //   so a sudden jump is visible here instead of being a mystery later.
+      customers: [...ledgerByGuid.values()]
+        .filter((l) => inChain(l.group_chain, "Sundry Debtors") || traded(l).sold).length,
+      vendors: [...ledgerByGuid.values()]
+        .filter((l) => inChain(l.group_chain, "Sundry Creditors") || traded(l).bought).length,
+      customers_by_evidence: [...ledgerByGuid.values()]
+        .filter((l) => !inChain(l.group_chain, "Sundry Debtors") && traded(l).sold).length,
+      vendors_by_evidence: [...ledgerByGuid.values()]
+        .filter((l) => !inChain(l.group_chain, "Sundry Creditors") && traded(l).bought).length,
       customer_items: catalogueWritten,
       // Surfaced, not swallowed: a rising unresolved count is how you find out
       // the register and the masters have drifted apart on naming.
       sales_lines_read: salesRows.length,
+      sale_item_lines: saleItemRows.length,
+      purchase_lines_read: purchaseRows.length,
       unresolved_party: unresolvedParty,
       unresolved_item: unresolvedItem,
     };
