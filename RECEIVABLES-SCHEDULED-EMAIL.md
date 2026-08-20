@@ -1,7 +1,11 @@
 # Emailing the Collection reports — status and what is left
 
-**Where it stands (17-Aug-2026): sending BY HAND works and is live. Sending ON A SCHEDULE is not
-built.** Somebody has to press a button. This file is the handover for the half that remains.
+**Where it stands (20-Aug-2026): sending BY HAND is live. Sending ON A SCHEDULE is now BUILT and
+DISARMED.** Every piece works and has been run end to end; nothing goes out until somebody flips
+one switch. See §2 for what was built and §6 for the order it goes live in.
+
+*(Written 17-Aug-2026, when only the manual half existed. The reasoning is kept; the boxes say
+what actually happened.)*
 
 Live state verified against project `icutjkrqkbzwvmnfbzpr`.
 
@@ -21,8 +25,9 @@ Live state verified against project `icutjkrqkbzwvmnfbzpr`.
 > `collection_customer_snapshot` and ~5,754 in `collection_invoice_snapshot`. That fits one
 > invocation comfortably; the per-salesperson split fallback is not needed.
 >
-> **Phases 0 and 1 are done, and Phase 2 is done** — the report's definition now lives in
-> `lib/collectionCards.ts` and `lib/collectionScope.ts`, both plain TypeScript.
+> **Phases 0, 1 and 2 are done** — the report's definition now lives in `lib/collectionCards.ts`
+> and `lib/collectionScope.ts`, both plain TypeScript. **Phase 3 is done too, but not as an Edge
+> Function** — that turned out to be impossible on CPU grounds. See §2.1.
 
 ---
 
@@ -49,67 +54,127 @@ down since July is stale.
 
 ## 2. What is PENDING — the automatic send
 
-Three pieces, in order. None of them exists yet.
+**Update 20-Aug-2026: the builder and the runner are BUILT. What is left is the list and the
+switch, both of which are yours to set.** The rest of this section is kept because the reasoning
+still holds; the boxes below say what actually happened.
 
-### 2.1 The report builder (the real work)
+### 2.1 The report builder — ✅ done, but NOT where this document assumed
 
-An Edge Function that builds the report with nobody logged in.
+The plan said "an Edge Function". **It cannot be one, and that is measured rather than argued.**
+A throwaway probe (`cpu-probe`) burned straight-line CPU on the live Supabase runtime:
 
-**Why it is needed at all:** the PDF and workbook are drawn in the BROWSER, from a *different*
-Supabase project. At 08:00 there is no browser. And it is not only the drawing — every figure on
-the report (each KPI card, each customer's overdue, the sale-type split) is computed by the app
-from raw ledgers; none of it sits in a table waiting to be selected. So the report engine has to
-run server-side however much of the report we mail.
+| asked for | result |
+|---|---|
+| 1 second of computation | `200 OK` |
+| 3 seconds | `546 WORKER_RESOURCE_LIMIT` |
+| 8 seconds, awaiting a timer every 200 ms | `546` as well |
 
-**How:** follow `supabase/worksnapshot/build.mjs`. That is an existing, working precedent for
-running the frontend's own code on Deno: esbuild bundles the real TypeScript, substituting the
-browser Supabase client for a service-role one, and the build FAILS if React, `window`,
-`localStorage` or `import.meta.env` reach the graph. Copy that shape rather than inventing one, and
-copy its guard — it is the only test this repo has.
+The documented ceiling is **2 seconds of CPU per request**, and the budget is **cumulative** —
+yielding to the event loop does not reset it. Drawing this report is **~40 seconds of solid CPU**
+(101 pages of hand-drawn vector PDF over ~250 customers, plus a 1.5 MB workbook). That is not a
+near miss, and §5's fallback does not rescue it either: one salesperson's 18-page extract is
+already over the limit on its own.
 
-**What has to move out of the React page** (`CollectionPerformanceReport.tsx`, ~2,500 lines): who
-counts as a zero-collection customer, the `eligible` pool, `computeKpis` / `cardsFor`, and
-`filterSummary`. Into one plain module both the screen and the server call, so the mailed report
-and the on-screen report cannot drift. The engine underneath (`collections.ts`, `groupTree.ts`,
-`appDataCore.ts`, `supabaseFetcher.ts`) is already plain and moves as-is.
+So the drawing happens on a **GitHub Actions runner**, which has no CPU cap and has the repository
+checked out — which means it runs the app's **own TypeScript**, exactly as this plan always
+required. Nothing about the "one implementation, two callers" principle is given up; only the
+address of the machine changed. The repo is public, so runner minutes are free.
 
-### 2.2 The timer
+| | |
+|---|---|
+| `supabase/collectionsreport/build.mjs` | bundles the app's TypeScript with esbuild, four substitutions at the module boundary, **three guards** |
+| `supabase/collectionsreport/entry.ts` | the job: ask the database, build, upload, queue, claim the slot |
+| `supabase/collectionsreport/reportSpec.ts` | the period and the defaults — the one piece still mirrored rather than shared, and it says so |
+| `.github/workflows/collections-report.yml` | ticks every 30 minutes, gates on the database before spending anything |
 
-`pg_cron` → the builder over `pg_net`, following `masters_sync_tick` (20260902120400) for the
-call and `master_report_enqueue_daily` (20260830120200) for the shape:
+The three guards, since this repo has no test runner:
 
-- `cron.schedule` is **UTC**. Convert from the stored IST hour by hand and state the conversion.
-- A send log keyed on `(report, date)` so a retry or manual catch-up cannot double-send.
-- **A run that reaches nobody must NOT log.** Otherwise adding the first recipient at 09:00 costs
-  the whole day.
-- Three switches must all be on: the schedule, the report's email switch, the per-recipient flag.
+1. importing the **dead legacy receivables project** fails the build outright (RC-4).
+2. our own code may not reach for `window`, `document`, `localStorage`, `import.meta.env` or React.
+   npm packages are excluded from that scan on purpose — jsPDF legitimately feature-detects a
+   browser, and failing over a dependency's internals only teaches the next person to delete the
+   check.
+3. `tsc --noEmit` over these four files. They sit outside `frontend/src`, so `npm run build` — the
+   repo's only gate — never sees them. Without this a wrong argument would compile, bundle, deploy
+   and fail at 08:00 in front of nobody.
 
-### 2.3 Housekeeping that ships with it
+**Measured end to end, 20-Aug-2026:** ConnectWave loaded in 2.1 s (1,847 ledgers), day-level facts
+0.2 s, the book drawn in 40.1 s (667 KB PDF + 1,541 KB workbook), one salesperson in 7.7 s.
+It reproduced the screen figure for figure: 247 of 362, ₹30.58 Cr, ₹17.53 Cr, 34, 116, ₹3.98 Cr.
 
-- **Retention.** A PDF + workbook per recipient per day accumulates in `report-exports`. A cleanup
-  job (30 days) goes in with the cron, not "later".
-- **Attachment size guard.** Over ~10 MB, drop the files and send a time-limited link instead.
-  Degrade, do not fail.
+### 2.2 The timer — ✅ done, split between the database and the runner
+
+There is **no `pg_cron` job**, and the reason is the same one: nothing in Postgres or in an Edge
+Function can build this report, so a Postgres timer would have nothing to call.
+
+Instead the workflow ticks every 30 minutes and asks
+**`collections_report_due()`** — one SECURITY DEFINER function that is the single answer to "should
+anything go out right now, and to whom". It checks, in order: the arming switch, the report's own
+switch, the module switch, the schedule an admin set on the settings screen, whether today is one
+of its days, whether the slot has arrived, whether the slot is still inside the grace window
+(default 120 minutes), the send log, and finally who the recipients resolve to. On 46 of the 48
+daily ticks it answers "no" in about a second, and the runner stops before checking anything out.
+
+That keeps every judgement in the database, where the settings screen writes it — so a change to
+the schedule or the list takes effect at the next tick, with no deploy.
+
+- `cron` in the workflow is **UTC**, but nothing here converts by hand: the IST comparison happens
+  inside `collections_report_due`, in `Asia/Kolkata`, so the stored hour means what it says.
+- The send log is keyed **`(report_key, sent_for_date)`** on the **IST** date, so a retry or a
+  manual catch-up cannot double-send. The workflow's `concurrency` group stops two runs racing at
+  it in the first place.
+- **A run that reaches nobody does not log** — `collections_report_mark_sent` returns `false` on a
+  zero count and writes nothing. Adding the first recipient an hour late must not cost the slot.
+- **Four switches must all be on**, and the fourth is new. `report_email_settings` is already `true`
+  so admins can mail by hand, so without a dedicated lever this feature would have armed an
+  unattended send as a side effect of code landing. `private.collections_report_config.armed`
+  ships **`false`** and flipping it is a deliberate act:
+  `select set_collections_report_armed(true);`
+
+**Timing, honestly:** GitHub's scheduler can run several minutes late under load, so an 08:00 slot
+goes out shortly after 08:00, not on the second. `grace_minutes` is what lets a late tick still
+serve it.
+
+**And one silent failure mode worth knowing:** GitHub disables a scheduled workflow after **60 days
+with no commits to the repository**, emailing the owner. This repo is under daily development, so
+it is unlikely — but it stops rather than fails, which is the kind worth writing down.
+
+### 2.3 Housekeeping — ✅ retention done, ⚠ size guard not
+
+- **Retention** ships with it: a real run clears anything under `report-exports/scheduled/` older
+  than 30 days. Folder names are `YYYYMMDD`, so the string comparison IS the date comparison.
+- **Attachment size guard — still not built.** The book is 667 KB + 1.5 MB today, comfortably
+  inside Gmail's limit, so this is not urgent; but a much larger month would fail the send rather
+  than degrade it. Over ~10 MB the right behaviour is to drop the files and send a time-limited
+  link.
 
 ---
 
 ## 3. Known open items
 
-- **`ReportDeliveryConfig` resolves recipients the wrong way** (see §4). It stores only the
-  salesperson NAME and would resolve to everyone holding the tag. Nothing reads that table yet, so
-  nothing is sending on it — but it needs the same treatment as the send dialog, plus a column for
-  the chosen **user id** (not the address, so a rep who changes email keeps receiving and one who
-  loses the tag stops).
-- **`supabase/functions/report-spike` is deployed and should be deleted.** It answered its question.
-  There is no delete in the Supabase MCP tools — use the dashboard or
-  `supabase functions delete report-spike --project-ref icutjkrqkbzwvmnfbzpr`.
-- **Size is unmeasured.** The spike proved the runtime with a two-page toy. Whether ~60 pages over
-  a few thousand invoices fits the function's memory and wall clock is the first thing to measure
-  in 2.1. If it does not, fan out per salesperson across invocations.
+- **A salesperson name still resolves to EVERYONE holding the tag** (see §4). The send *dialog*
+  shows each candidate with how many books they can see and makes a human choose; a schedule has
+  no human at send time. Rather than invent an exclusion rule, `collections_report_due()` now
+  returns `covers` on every resolved recipient and the run log prints
+  `NAKUL JI → nakul@… (also covers 13 names)` — so an overseer receiving a rep's book is visible
+  before the list is signed off, never a surprise afterwards. **Read that log when setting the
+  list.** The proper fix is still a chosen **user id** on `report_email_recipients`, so a rep who
+  changes address keeps receiving and one who loses the tag stops.
+- **Two throwaway Edge Functions are deployed and should be deleted.** `report-spike` answered its
+  question in Aug-2026; `cpu-probe` measured the CPU ceiling and has been stubbed to return `410`
+  so nothing can burn compute by calling it. There is no delete in the Supabase MCP tools — use the
+  dashboard or `supabase functions delete <name> --project-ref icutjkrqkbzwvmnfbzpr`.
+- ~~**Size is unmeasured.**~~ Measured: see §2.1. The book is 101 pages, 667 KB + 1.5 MB, built in
+  ~40 s. The constraint that bit was CPU time, not size, and not on the axis this document expected.
 - **`send-email/index.ts` is not committed** on some branches. It carries both the receivables
   branch and the master-report work, tangled. It IS deployed; the source just is not always tracked.
 - Only `zero-collections` is marked `emailable`. `low-collections` and `dormant-debtors` share the
   same code and would probably work — mark them when their output has actually been read.
+- **The scheduled path bypasses `queue_report_email`.** It has to: that RPC is the browser's door
+  and demands `auth.uid()` plus attachment paths under the caller's own id, neither of which a
+  server run has. The checks it performs are performed instead by `collections_report_due()`, which
+  is strictly stronger. Anything else that ever inserts into `email_outbox` directly must clear the
+  same bar.
 
 ---
 
@@ -132,7 +197,19 @@ job above, especially — must do the same. Do not reintroduce the shortcut.
 
 ---
 
-## 5. Two Deno traps the builder will hit
+## 5. Two library traps the builder hits
+
+> **20-Aug-2026: one of these survived contact, the other was overtaken.**
+>
+> The **jsPDF trap is real and is now pinned**: the package's Node entry is CJS whose default
+> export is not the constructor, so `build.mjs` resolves `jspdf` to its ESM build. It is a
+> first-USE failure, which is why it is pinned rather than remembered.
+>
+> **Inlining the fonts is no longer necessary.** The builder runs on a machine that has the
+> repository checked out, so `brandAssetsServer.ts` reads `Poppins-Regular.ttf`,
+> `Poppins-SemiBold.ttf` **and the logo** straight off disk. Same effect — no network call, no base
+> URL — without a 400 KB base64 blob in the tree. The rest of this section still explains WHY the
+> fonts are load-bearing, which has not changed.
 
 Both libraries ship CJS, and Deno's interop hands back the wrong thing. **Neither fails at import
 time** — they fail on first use, which in a scheduled job means 08:00 in front of nobody.
@@ -158,13 +235,21 @@ Proven on the live runtime 17-Aug-2026: Poppins embedded, valid 2-page PDF in 75
 
 ---
 
-## 6. Deploy order, when the time comes
+## 6. Deploy order
 
-The frontend calls things that must already exist.
+The frontend calls things that must already exist, and the workflow only ticks from `master`.
 
-1. migration (bucket / functions / switches — seeded **off**)
-2. `send-email`
-3. the report builder
-4. the frontend
-5. switch the report on, add recipients
-6. enable the schedule — **last**, so nothing sends before it has been seen
+1. the migration (`20260922120000_collections_report_scheduled_send.sql`) — ships **disarmed**
+2. `send-email` — already deployed
+3. the repository secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `CONNECTWAVE_URL`,
+   `CONNECTWAVE_ANON_KEY` — set 20-Aug-2026
+4. merge the workflow to **`master`**. Scheduled workflows only run from the default branch, so
+   until this lands the cron does not exist as far as GitHub is concerned. It is harmless there:
+   every tick asks the database and the database says "not armed".
+5. set the schedule and the recipients on Receivables → Settings → Notifications, then run the
+   workflow by hand with **`mode: dry-run`** and read the log — it names every recipient a rep
+   entry resolves to, and warns about any name nobody carries
+6. `select set_collections_report_armed(true);` — **last, and yours.** Nothing sends before it.
+
+To stop it again at any time, without losing the history:
+`update private.collections_report_config set armed = false;`

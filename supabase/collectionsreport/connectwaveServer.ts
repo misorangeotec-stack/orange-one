@@ -1,10 +1,10 @@
 /**
- * The Deno stand-in for `@hub/lib/connectwaveSupabase`.
+ * The server stand-in for `@hub/lib/connectwaveSupabase`.
  *
  * WHY THIS FILE EXISTS
  *   `connectwaveFetcher.ts` is otherwise pure PostgREST — paging, `.select()`, `.in()` — and the
- *   only thing stopping it running on a server is its one import of the browser client, which
- *   reads `import.meta.env`. The bundle build aliases that specifier here, so the fetcher compiles
+ *   only thing stopping it running off-browser is its one import of the browser client, which
+ *   reads `import.meta.env`. The build aliases that specifier here, so the fetcher compiles
  *   unchanged and the mailed report is built by the SAME code that draws the screen. A second
  *   implementation would be a second source of truth, and the point of this whole exercise is not
  *   to have one.
@@ -17,18 +17,19 @@
  *
  * ⚠ ANON KEY, DELIBERATELY — not a service role.
  *   ConnectWave is a third-party mirror we only read. The anon key is what the browser uses and it
- *   is sufficient, so the function holds no elevated credential for a project that is not ours.
+ *   is sufficient, so the job holds no elevated credential for a project that is not ours.
  *   Scoping to a salesperson happens later, in the report builder, exactly as it does on screen.
  */
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import { createClient } from "@supabase/supabase-js";
 
-const url = Deno.env.get("CONNECTWAVE_URL") ?? "";
-const anonKey = Deno.env.get("CONNECTWAVE_ANON_KEY") ?? "";
+const url = process.env.CONNECTWAVE_URL ?? "";
+const anonKey = process.env.CONNECTWAVE_ANON_KEY ?? "";
 
 if (!url || !anonKey) {
   throw new Error(
     "collections-report: CONNECTWAVE_URL / CONNECTWAVE_ANON_KEY are not set. " +
-    "Set them as Edge secrets from the frontend's VITE_CONNECTWAVE_SUPABASE_URL / _ANON_KEY.",
+      "They are the frontend's VITE_CONNECTWAVE_SUPABASE_URL / _ANON_KEY, and on CI they come " +
+      "from the repository secrets of the same name.",
   );
 }
 

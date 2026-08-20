@@ -727,32 +727,57 @@ The Zero-Collection report itself is built. Live handover doc:
 
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
 
-### RC-2 · Send the report automatically, Saturday 08:00  `[~]`
-*Raised 2026-08-20 · Depends on the server-side report builder*
+### RC-2 · Send the report automatically, on a schedule  `[~]`
+*Raised 2026-08-20 · Built and disarmed 2026-08-20*
 
-**In progress.** Two pieces have landed since this was raised: a weekly schedule can now name more
-than one day (`17bad6a`), and the report's KPI numbers and card wording have moved out of the React
-page (`3ca9e7d`) — that second one is the "lift the report's definition out of the screen" phase.
-The builder, the cron and the send log are still to come.
+**Built. Nothing sends until you flip one switch.** What is left is yours: choose the days, the
+time and the recipients, read the dry-run log, then arm it.
 
-The report should go out on its own every **Saturday morning at 8 a.m.** — set up the cron job.
+**How to turn it on** (full detail in [RECEIVABLES-SCHEDULED-EMAIL.md](RECEIVABLES-SCHEDULED-EMAIL.md) §6):
 
-**This is not just a cron row, and that is the whole difficulty.** As of 17-Aug-2026 the emailing
-is **manual only**: an admin presses Export → Email and the PDF + workbook attach. There is no
-builder, no cron, no send log. The report is drawn **in the browser** from the second Supabase
-project and every figure is computed by the app, not stored — so the report engine has to run
-server-side before anything can fire at 08:00. Phases 0–3 of the handover doc are that work; the
-timer is only Phase 4.
+1. Receivables → Settings → Notifications — set the frequency, the days, the time, the book
+   addresses and which salespeople get their own copy.
+2. Run **Actions → Collection report → Run workflow → `mode: dry-run`** and read the log. It names
+   every address each salesperson resolves to, flags anyone tagged with more than one book, and
+   warns about names nobody carries.
+3. `select set_collections_report_armed(true);` — last, and yours.
+
+To stop it: `update private.collections_report_config set armed = false;`
+
+**What was built**
+
+| | |
+|---|---|
+| `20260922120000_…_scheduled_send.sql` | `collections_report_due()`, the send log, the arming switch |
+| `supabase/collectionsreport/` | the builder: bundles the app's own TypeScript, three guards |
+| `.github/workflows/collections-report.yml` | ticks every 30 min, gates on the database first |
+
+Earlier phases: multi-day schedules `17bad6a`, the KPI numbers and card wording out of the React
+page `3ca9e7d`, the row predicate and defaults `dd05708` / `18387c7`, the headless build `3e0cd72`.
+
+**⚠ The plan said "Edge Function". It cannot be one, and that is measured.** A probe burned
+straight-line CPU on the live runtime: 1 s → `200`, 3 s → `546 WORKER_RESOURCE_LIMIT`, and 8 s with
+an `await` every 200 ms → `546` as well. The ceiling is **2 s of CPU per request** and the budget is
+**cumulative** — yielding does not reset it. This report is **~40 s of solid CPU** (101 pages,
+~250 customers, a 1.5 MB workbook), and the per-salesperson fallback does not rescue it either: one
+rep's 18-page extract is already over. So it runs on a **GitHub Actions runner**, which has no such
+cap and has the repo checked out — so it still runs the app's own code, which was always the point.
+The repo is public, so runner minutes are free.
 
 **Notes:**
-- `cron.schedule` is UTC and Edge Functions cannot be given a timezone, so **Saturday 08:00 IST =
-  Saturday 02:30 UTC**. State the conversion in the migration.
-- The precedent to copy is `supabase/worksnapshot/`, which already bundles the frontend's own code
-  to run on Deno — not a fresh SQL reimplementation of the report.
-- Needs a send log keyed on `(report, date)` so a retry cannot double-send.
-- **The module's email switch is currently off on purpose** (`outstanding-dashboard` has no row in
-  `email_module_settings`, so a send today is a silent no-op). An automatic Saturday send means
-  flipping it on — confirm that is intended when we get there.
+- No `pg_cron` job, and no UTC conversion by hand: the IST comparison happens inside
+  `collections_report_due` in `Asia/Kolkata`, so the stored hour means what it says.
+- Send log keyed `(report_key, sent_for_date)` on the **IST** date; a run reaching nobody
+  deliberately does **not** log, or adding the first recipient an hour late would cost the slot.
+- **Four switches** must all be on. `report_email_settings` is already `true` so admins can mail by
+  hand — which is exactly why a dedicated `armed` flag exists, so finishing this feature could not
+  arm an unattended send as a side effect.
+- Timing is honest, not exact: GitHub's scheduler can run several minutes late, so an 08:00 slot
+  goes out shortly after 08:00. `grace_minutes` (120) lets a late tick still serve it.
+- **GitHub disables a scheduled workflow after 60 days with no commits to the repo.** Unlikely here,
+  but it stops silently rather than failing.
+- Still open: an attachment size guard (fine today at 2.2 MB), and resolving a salesperson to a
+  chosen **user id** rather than to everyone holding the tag — the run log surfaces that for now.
 
 ---
 

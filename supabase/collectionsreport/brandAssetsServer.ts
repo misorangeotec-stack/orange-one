@@ -1,23 +1,17 @@
 /**
- * The Deno stand-in for `@/shared/lib/pdfBrand`.
+ * The server stand-in for `@/shared/lib/pdfBrand`.
  *
  * It re-exports the real module untouched and overrides ONE function: `loadBrandAssets`.
  *
  * WHY
- *   The browser fetches its fonts from `/assets/fonts/…` — a page-relative URL, which on a server
- *   means nothing. `report-spike` proved the runtime can draw the PDF but had to pull Poppins off
- *   the public Google Fonts repo to do it, and wrote down the conclusion: in production the fonts
- *   must be INLINED into the bundle. That removes a network call, a base URL, and a whole class of
- *   failure from a send path that runs at 08:00 with nobody watching. The browser is unaffected —
- *   it keeps fetching and caching its own copy.
+ *   The browser fetches its fonts and logo from `/assets/…` — page-relative URLs, which off a
+ *   page mean nothing. Here the very same files are read off the repository that is already
+ *   checked out, so the mailed PDF is drawn with the same faces and the same wordmark as the one
+ *   an admin downloads by hand. No network call, no base URL, and nothing to go wrong at 08:00
+ *   with nobody watching.
  *
  *   The fonts are not decoration. Without them U+20B9 is unrenderable and every rupee figure in
  *   the report comes out as a blank box.
- *
- * ⚠ THE LOGO IS DELIBERATELY DROPPED. It is a 163 KB PNG, it is the one asset `loadBrandAssets`
- *   already treats as optional, and `headerBand` draws its wordmark instead when it is absent —
- *   which is the documented fallback, not a degradation nobody chose. Inlining it would add a
- *   220 KB base64 string to every deploy of this function to save one wordmark.
  *
  * ⚠ `export *` FIRST, OVERRIDE SECOND. An explicit local export beats a star re-export in ESM, so
  *   `loadBrandAssets` below is the one callers get and everything else — drawTable, headerBand,
@@ -27,21 +21,42 @@
  */
 export * from "@/shared/lib/pdfBrand";
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { BrandAssets } from "@/shared/lib/pdfBrand";
-import { POPPINS_REGULAR_B64, POPPINS_SEMIBOLD_B64 } from "./fonts.generated";
 
-const assets: BrandAssets = {
-  regular: POPPINS_REGULAR_B64,
-  semibold: POPPINS_SEMIBOLD_B64,
-  logo: "",
-};
+/**
+ * Where the app keeps them. Set by the build so this file does not have to guess how deep it is
+ * inside whatever directory the bundle ends up in.
+ */
+const PUBLIC_DIR = process.env.COLLECTIONS_REPORT_PUBLIC_DIR ?? resolve("frontend/public");
 
-if (!assets.regular || !assets.semibold) {
-  // At module load, not mid-render: a missing font is a broken report, and the one thing worse
-  // than failing is mailing sixty pages of blank boxes where the money should be.
-  throw new Error("collections-report: the Poppins faces are missing from the bundle");
-}
+const read = (rel: string): string => readFileSync(resolve(PUBLIC_DIR, rel)).toString("base64");
+
+let assets: BrandAssets | null = null;
 
 export function loadBrandAssets(): Promise<BrandAssets> {
+  if (!assets) {
+    // At first use, and it throws rather than degrading: the one thing worse than a report that
+    // fails is sixty pages of blank boxes where the money should be.
+    const regular = read("assets/fonts/Poppins-Regular.ttf");
+    const semibold = read("assets/fonts/Poppins-SemiBold.ttf");
+    if (!regular || !semibold) {
+      throw new Error(
+        `collections-report: the Poppins faces are missing under ${PUBLIC_DIR}. ` +
+          "Set COLLECTIONS_REPORT_PUBLIC_DIR to the app's public folder.",
+      );
+    }
+    // The logo is the one asset the real loader already treats as optional — `headerBand` draws
+    // its wordmark instead when it is absent, which is a documented fallback rather than a
+    // degradation nobody chose. Kept optional here for the same reason.
+    let logo = "";
+    try {
+      logo = `data:image/png;base64,${read("assets/orange-one-logo-dark.png")}`;
+    } catch {
+      logo = "";
+    }
+    assets = { regular, semibold, logo };
+  }
   return Promise.resolve(assets);
 }

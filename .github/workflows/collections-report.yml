@@ -1,0 +1,152 @@
+# =============================================================================
+# Customers with Zero Collections — the scheduled send.
+#
+# WHY A GITHUB RUNNER AND NOT AN EDGE FUNCTION, WHICH IS WHERE EVERY OTHER SCHEDULED JOB IN THIS
+# PROJECT LIVES
+#   Because the report cannot be drawn inside one, and that is measured rather than assumed. On
+#   20-Aug-2026 a throwaway function burned straight-line CPU on the live Supabase runtime:
+#
+#       1 second   -> 200 OK
+#       3 seconds  -> 546 WORKER_RESOURCE_LIMIT
+#       8 seconds, awaiting a timer every 200 ms -> 546 as well
+#
+#   The documented ceiling is 2 seconds of CPU per request, and the budget is CUMULATIVE — yielding
+#   does not reset it. Drawing this report is ~40 seconds of solid CPU: 101 pages of hand-drawn
+#   vector PDF over ~250 customers, plus a 1.5 MB workbook. Splitting it per salesperson does not
+#   rescue it either; one rep's 18-page extract is already over the limit.
+#
+#   A runner has no such cap, and it has the repository checked out — so the mail is built by the
+#   app's OWN TypeScript rather than by a second implementation that would drift away from the
+#   screen. That is the whole point of the exercise.
+#
+# WHAT THIS FILE DECIDES: NOTHING.
+#   `collections_report_due()` in the database answers "should anything go out right now, and to
+#   whom", checking four separate switches, the schedule an admin set on the settings screen, the
+#   grace window and the send log. The gate step below asks it and stops if the answer is no. So
+#   changing the schedule, the recipients, or turning the whole thing off, takes effect at the next
+#   tick with no deploy and no edit here.
+#
+# ⚠ SCHEDULED WORKFLOWS ONLY RUN FROM THE DEFAULT BRANCH. Until this file is on `master`, the cron
+#   below does not exist as far as GitHub is concerned — a `workflow_dispatch` from a branch will
+#   still work, the timer will not.
+#
+# ⚠ AND GITHUB DISABLES A SCHEDULED WORKFLOW AFTER 60 DAYS WITH NO COMMITS TO THE REPOSITORY.
+#   It emails the owner when it does. This repo is under daily development so it is unlikely, but
+#   it is a silent stop rather than a failure, which is the kind worth writing down.
+#
+# TIMING: the cron ticks every 30 minutes and GitHub may run it several minutes late under load, so
+# a slot set for 08:00 IST goes out shortly after 08:00, not at 08:00 exactly. `grace_minutes` in
+# the database (default 120) is what lets a late or missed tick still serve the slot.
+# =============================================================================
+
+name: Collection report
+
+on:
+  schedule:
+    # Every half hour. The job's first step is a single HTTP call that costs a second or two and
+    # stops there on all but the two or three ticks a week that are actually due.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run builds and sends nothing · sample mails only sample_to · scheduled is the real send"
+        type: choice
+        default: dry-run
+        options: [dry-run, sample, scheduled]
+      sample_to:
+        description: "MODE=sample only — the single address the sample goes to"
+        type: string
+        default: ""
+
+# A slot must never be served twice. The send log in the database is the real guarantee; this stops
+# two runs racing towards it in the first place. `cancel-in-progress: false` on purpose — killing a
+# run that has already queued some of the mail would be worse than letting it finish.
+concurrency:
+  group: collections-report
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      CONNECTWAVE_URL: ${{ secrets.CONNECTWAVE_URL }}
+      CONNECTWAVE_ANON_KEY: ${{ secrets.CONNECTWAVE_ANON_KEY }}
+      MODE: ${{ github.event_name == 'schedule' && 'scheduled' || inputs.mode }}
+      SAMPLE_TO: ${{ inputs.sample_to }}
+
+    steps:
+      # ── The gate ──────────────────────────────────────────────────────────
+      # Asked BEFORE the checkout and the install, because on 46 of the 48 daily ticks the answer
+      # is no and there is no reason to spend two minutes finding that out. A dispatched run skips
+      # the gate: someone asking for it by hand has already decided.
+      - name: Is anything due?
+        id: gate
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+            echo "dispatched by hand (MODE=$MODE) — not asking the scheduler"
+            exit 0
+          fi
+          answer=$(curl -sS -X POST "$SUPABASE_URL/rest/v1/rpc/collections_report_due" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+            -H "Content-Type: application/json" -d '{}')
+          echo "$answer" | jq -r 'if .due then "DUE for \(.forDate) — \((.book|length)) on the book, \((.salespersons|length)) rep copies" else "not due: \(.reason)" end'
+          # Anything ticked that nobody can receive is said out loud even on a tick that does
+          # nothing: it is the failure that otherwise looks exactly like success.
+          echo "$answer" | jq -r 'if (.unclaimed // []) | length > 0 then "WARNING ticked but nobody carries the tag: \((.unclaimed|join(", ")))" else empty end'
+          if [ "$(echo "$answer" | jq -r '.due')" = "true" ]; then
+            echo "run=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out
+        if: steps.gate.outputs.run == 'yes'
+        uses: actions/checkout@v4
+
+      - name: Node
+        if: steps.gate.outputs.run == 'yes'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # The app's own install. The builder bundles the app's TypeScript and uses the app's jsPDF
+      # and xlsx-js-style, so there is no second dependency tree to keep in step.
+      - name: Install
+        if: steps.gate.outputs.run == 'yes'
+        run: npm ci
+        working-directory: frontend
+
+      # Built here rather than committed: a stale 4 MB bundle that no longer matches the report's
+      # rules is exactly the drift this design exists to avoid. The build also refuses to compile
+      # anything that reaches for the browser or for the dead legacy receivables project.
+      - name: Bundle the report builder
+        if: steps.gate.outputs.run == 'yes'
+        run: node supabase/collectionsreport/build.mjs
+
+      - name: Build and send
+        if: steps.gate.outputs.run == 'yes'
+        env:
+          COLLECTIONS_REPORT_PUBLIC_DIR: ${{ github.workspace }}/frontend/public
+          OUT_DIR: ${{ github.workspace }}/collections-report-out
+        run: node supabase/collectionsreport/dist/collections-report.cjs
+
+      # Only in dry-run, and only so a person can open what the scheduler would have posted without
+      # anything being posted. A real run leaves its files in the `report-exports` bucket instead.
+      - name: Keep the dry-run files
+        if: steps.gate.outputs.run == 'yes' && env.MODE == 'dry-run'
+        uses: actions/upload-artifact@v4
+        with:
+          name: collections-report
+          path: collections-report-out
+          retention-days: 7
