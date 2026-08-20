@@ -41,6 +41,49 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
+| Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
+
+---
+
+## Platform — all modules
+
+### PF-1 · Save Draft on every entry form  `[ ]`
+*Raised 2026-08-20 · **Order: Production Entry first, then Order to Dispatch**, then the rest*
+
+A standard **Save Draft** on all entry forms. On save the entry is **not published**; the same user
+reopens the draft, finishes it, and publishes.
+
+**The problem it solves:** in Production a user enters 10 raw materials, finds the 11th is not in
+the system, and raises a master request for it — at which point the whole page has to be abandoned
+and all 10 lines re-entered. That is a real cost on a long form, and it is why people avoid raising
+the request at all.
+
+**Notes:** this already exists, fully built, in **Customer Onboarding** — copy it rather than
+invent it. Its wizard autosaves through `fms_customer_save_draft` / `fms_customer_delete_draft`
+([customerWrites.ts](frontend/src/apps/receivables-hub/data/customerOnboarding/customerWrites.ts),
+[WizardShell.tsx](frontend/src/apps/receivables-hub/components/customerOnboarding/WizardShell.tsx)),
+with `status = 'draft'` as the first value of the status column. Two hard-won rules come with it,
+both spelled out in
+[its migration](supabase/migrations/20260802120100_add_fms_customer_requests.sql):
+
+- **A draft is incomplete by definition, so the mandatory fields cannot be `NOT NULL` columns.**
+  They are enforced by one CHECK that applies only to rows whose status is not `draft`, with the
+  submit function raising friendly field-named errors long before the constraint fires.
+- **A draft never burns a number.** The sequence is stamped by submit, not by save, so an abandoned
+  draft leaves no gap in the numbering.
+
+Nothing else in the codebase has this — every other `draft` in the frontend is just local component
+state that dies with the page.
+
+**Worth settling before building:**
+- [ ] Is a draft private to its author, or can a colleague pick it up?
+- [ ] Where does a user find their drafts — a tab on the queue, or the module dashboard?
+- [ ] Do drafts expire or get cleaned up, and does an abandoned one ever need chasing?
+- [ ] Should raising a master request from inside a form **auto-save the draft**, since that is the
+      exact moment the work is lost today? (Related: **OD-2** / **OD-3**, which change how master
+      requests are raised in Dispatch.)
+- [ ] Which forms count as "entry forms" in the modules after these two — every step modal, or only
+      the long ones that create an entry?
 
 ---
 
@@ -263,6 +306,8 @@ not throughput.
 
 All three below need a conversation with Bushra before any code moves.
 
+*(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
+
 ### OD-1 · Internal transfer / Others on a dispatch  `[!]`
 *Raised 2026-08-20 · **Blocked:** needs the scope settled with Bushra*
 
@@ -270,6 +315,20 @@ There is no such option today. Add it:
 
 1. The user picks whether this is an **Internal transfer** or **Others**.
 2. For an internal transfer, **only the companies tagged internal / related** are offered.
+
+**Update 2026-08-20 — the plumbing landed; only the TAG is still open.** Our own branches were
+invisible everywhere: a ledger under Tally's `Branch / Divisions` is neither a debtor nor a
+creditor, so `masters-sync` set both role flags false and the row appeared on no tab and in no
+picker. The sync now reads the trade registers as well as the group chain, so four internal
+ledgers are customers of their own book and are ticked into Dispatch with their catalogues
+([CENTRAL-MASTERS.md](CENTRAL-MASTERS.md), items 23–24). So an internal transfer can now be
+raised as an ordinary order against the right branch. What is still missing is exactly what this
+task is about: **nothing marks those four as internal/related**, so the picker cannot offer
+"only internal companies" and no downstream step can behave differently. The four are
+ORANGE O TEC PVT. LTD.(SURAT BRANCH), ORANGE O TEC PRIVATE LIMITED(NOIDA),
+ORANGE O TEC ENTERPRISES PVT LTD (NOIDA) and ORANGE O TEC ENTERPRISES-(SURAT) — a ready-made
+answer to "which ones count as internal", if Bushra agrees the definition is "a Branch /
+Divisions ledger that trades".
 
 **Notes:** the company tag does not exist yet — that is the bulk of the job, not the dropdown.
 Nothing on `Customer` or the company master carries an internal / related flag today. Note also
@@ -343,6 +402,8 @@ not match.
 
 
 ## Production Entry
+
+*(cross-ref: **PF-1** — Save Draft lands here FIRST)*
 
 ### PE-1 · Calibration screen  `[!]`
 *Raised 2026-08-20 · From the factory visit · **Blocked:** waiting on the calibration sheets*
@@ -432,8 +493,13 @@ The Zero-Collection report itself is built. Live handover doc:
 
 *(**RC-1**, grouping the bill-wise details by sale type, is done — see [Done](#done).)*
 
-### RC-2 · Send the report automatically, Saturday 08:00  `[ ]`
+### RC-2 · Send the report automatically, Saturday 08:00  `[~]`
 *Raised 2026-08-20 · Depends on the server-side report builder*
+
+**In progress.** Two pieces have landed since this was raised: a weekly schedule can now name more
+than one day (`17bad6a`), and the report's KPI numbers and card wording have moved out of the React
+page (`3ca9e7d`) — that second one is the "lift the report's definition out of the screen" phase.
+The builder, the cron and the send log are still to come.
 
 The report should go out on its own every **Saturday morning at 8 a.m.** — set up the cron job.
 
@@ -507,6 +573,65 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### OM-1 · Organisation masters: department, sub-department, designation and band  `[x]`
+*Admin / Masters · Raised 2026-08-20 · **Done 2026-08-20, 09:35 IST** · From Bushra's employee sheet + the band categorisation sheet*
+
+Live on `master` at commit `ef2de41`.
+
+The user master held one organisational fact — department — and that list had drifted: of its 21
+rows several were really sub-departments (`After Sales - Application`, `Spare Warehouse`,
+`Travel Desk`) and one was `new test dept`. Designation was free text, so `Deputy GM`, `DGM` and
+`Deputy General Manager` were three spellings of one rank. There were four lists' worth of facts in
+HR's sheet and room for one.
+
+**Admin → Organisation** (replacing the old Departments screen, whose URL still redirects) now
+carries four tabs on the shared `MasterCrud`, so each sorts and filters on every column and takes
+an Excel round trip:
+
+- **Departments** — 12 active, 11 switched off. An **In which list** column says whether a row came
+  from the portal, HR's sheet, or both.
+- **Sub-departments** — all 38 from the sheet, each under its parent.
+- **Designations** — 27 canonical rungs, replacing 31 free-text spellings.
+- **Bands** — the 9 from the band sheet, Support Staff through Top Leadership.
+
+The user form gained **Employee code**, **Sub-department** (which offers only the chosen
+department's own — pick Sales and you see its 4, not all 38), a **Designation** picker in place of
+the free-text box, and **Band**. The Users list filters on all four and the Excel export carries them.
+
+**Every user was mapped:** all 57 have a designation and 56 a band; 44 have a sub-department and an
+employee code. 15 people moved to the department HR's sheet records, and the 11 departments that
+emptied were switched off.
+
+**Worth knowing if you touch this again:**
+
+- **A department is switched off, never deleted.** It is the parent of 5,213 tasks, 195 recurring
+  tasks, 45 HR job titles, 12 requisitions and the `department_ids` on nine FMS step-owner tables.
+  Switching off hides it from the pickers that make NEW references and leaves every existing one
+  readable — the 11 retired rows still hold 132 tasks between them. The old screen had a Delete
+  button with no FK guard at all; it is gone.
+- **Two departments are the same team under different names** — `Accounting & Finance` is HR's
+  "Finance", `Human Resources` its "Human Resource". They are ONE row each, tagged "both lists",
+  with `hr_sheet_name` recording the equivalence; the sub-department seed resolves its parent
+  through it. Inserting them as fresh rows would have put two live departments meaning one team
+  side by side in every picker.
+- **Band is independent of designation** and must stay so — several designations share a band, and
+  there is deliberately no `band_id` on `designations`.
+- **`profiles.designation` (text) is kept and must stay in sync with `designation_id`.** It is not
+  a leftover: `list_org_people()` returns it and every @mention picker renders it. Write both.
+- A `guard_profile_org_fields` trigger stops a non-admin setting their own department,
+  sub-department, designation, band or employee code — `profiles_update_own` gates the row, not the
+  columns, so this was reachable straight through PostgREST. The Account page's designation box is
+  read-only for the same reason.
+
+**To discuss with Bushra**
+
+- [ ] Ten people joined after her 27-05-2026 sheet and so have no sub-department or employee code:
+      Aayush Rathi, Karan Toshniwal, Bharat, Christie Shoham Joy, Kaushal Pawar, Khushi Soni,
+      Saloni Rathod, Shweta Chanchad, Sushil Kumar Thakre, Yash Agarwal. *(Designation and band are
+      already set for all ten.)*
+- [ ] **HR Head → Band 8** was a judgement call — the band sheet has CHRO at 9 and "Business Head"
+      at 8, and names neither. Affects Riya Kumari only. Parked as good enough for now.
 
 ### RC-1 · Group the bill-wise details by sale type  `[x]`
 *Outstanding Dashboard · Raised 2026-08-20 · **Done 2026-08-20, 14:13 IST** · Feedback from Ritesh Bhai*
