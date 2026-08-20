@@ -7304,6 +7304,7 @@ export type Database = {
         Row: {
           day_of_month: number | null
           day_of_week: number | null
+          days_of_week: number[] | null
           frequency: string
           hour_ist: number
           minute_ist: number
@@ -7314,6 +7315,7 @@ export type Database = {
         Insert: {
           day_of_month?: number | null
           day_of_week?: number | null
+          days_of_week?: number[] | null
           frequency?: string
           hour_ist?: number
           minute_ist?: number
@@ -7324,6 +7326,7 @@ export type Database = {
         Update: {
           day_of_month?: number | null
           day_of_week?: number | null
+          days_of_week?: number[] | null
           frequency?: string
           hour_ist?: number
           minute_ist?: number
@@ -7657,15 +7660,27 @@ export type Database = {
         Args: { p_enabled: boolean; p_report_key: string }
         Returns: undefined
       }
+      // Two overloads in the database: the int[] one is what the app calls, the
+      // single-day one is kept so an older bundle still saves. See migration
+      // 20260921120000.
       set_report_email_schedule: {
-        Args: {
-          p_day_of_month?: number | null
-          p_day_of_week?: number | null
-          p_frequency: string
-          p_hour_ist?: number
-          p_minute_ist?: number
-          p_report_key: string
-        }
+        Args:
+          | {
+              p_day_of_month?: number | null
+              p_days_of_week: number[]
+              p_frequency: string
+              p_hour_ist?: number
+              p_minute_ist?: number
+              p_report_key: string
+            }
+          | {
+              p_day_of_month?: number | null
+              p_day_of_week?: number | null
+              p_frequency: string
+              p_hour_ist?: number
+              p_minute_ist?: number
+              p_report_key: string
+            }
         Returns: undefined
       }
       set_report_email_recipients: {

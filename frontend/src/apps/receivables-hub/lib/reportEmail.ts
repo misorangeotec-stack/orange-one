@@ -144,7 +144,7 @@ export async function setReportEmailEnabled(reportKey: string, enabled: boolean)
 
 // ── When it goes out, and to whom ───────────────────────────────────────────────────
 //
-// ⚠ NOTHING READS EITHER OF THESE YET. The job that would send on a schedule does not exist:
+// ⚠ NOTHING READS EITHER OF THESE YET (RC-2). The job that would send on a schedule does not exist:
 //   the report is built in the browser, so there is nothing for a scheduler to call at 08:00.
 //   These are stored so the distribution list can be set up and CHECKED — particularly that
 //   every salesperson resolves to a real address — before anything is capable of posting it.
@@ -153,8 +153,15 @@ export type ReportEmailFrequency = "off" | "daily" | "weekly" | "monthly";
 
 export interface ReportEmailSchedule {
   frequency: ReportEmailFrequency;
-  /** 0 = Sunday. Only meaningful when frequency is "weekly". */
-  dayOfWeek: number | null;
+  /**
+   * The days a weekly schedule fires on, 0 = Sunday, sorted. Only meaningful when frequency is
+   * "weekly", and never empty when it is.
+   *
+   * A SET rather than one day, so "every Tuesday and Saturday" is expressible — the rhythm the
+   * collection report is actually wanted on. The database keeps its older single `day_of_week`
+   * column in step with the first of these; nothing here writes it directly.
+   */
+  daysOfWeek: number[];
   /** 1..28. Only meaningful when frequency is "monthly". */
   dayOfMonth: number | null;
   /** IST, as typed. The scheduler converts to UTC; the screen never has to. */
@@ -165,7 +172,7 @@ export interface ReportEmailSchedule {
 /** What an unscheduled report looks like: paused, at a sensible hour if it is ever started. */
 export const NO_SCHEDULE: ReportEmailSchedule = {
   frequency: "off",
-  dayOfWeek: null,
+  daysOfWeek: [],
   dayOfMonth: null,
   hourIst: 8,
   minuteIst: 0,
@@ -190,14 +197,22 @@ export interface ReportRecipientRow {
 export async function fetchReportEmailSchedule(reportKey: string): Promise<ReportEmailSchedule> {
   const { data, error } = await supabase
     .from("report_email_schedule")
-    .select("frequency, day_of_week, day_of_month, hour_ist, minute_ist")
+    .select("frequency, day_of_week, days_of_week, day_of_month, hour_ist, minute_ist")
     .eq("report_key", reportKey)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return NO_SCHEDULE;
   return {
     frequency: data.frequency as ReportEmailFrequency,
-    dayOfWeek: data.day_of_week,
+    // `days_of_week` is the column to read. The fall back to the older single day covers a row
+    // written before migration 20260921120000 by a client that has not reloaded — the migration
+    // backfilled the stored rows, but the old RPC overload is still callable.
+    daysOfWeek:
+      data.days_of_week && data.days_of_week.length
+        ? [...data.days_of_week].sort((a, b) => a - b)
+        : data.day_of_week !== null && data.day_of_week !== undefined
+          ? [data.day_of_week]
+          : [],
     dayOfMonth: data.day_of_month,
     hourIst: data.hour_ist,
     minuteIst: data.minute_ist,
@@ -208,10 +223,12 @@ export async function saveReportEmailSchedule(
   reportKey: string,
   s: ReportEmailSchedule,
 ): Promise<void> {
+  // The int[] overload. The RPC sorts and de-duplicates, and writes the older single-day column
+  // as the first of these, so nothing downstream has to know both shapes exist.
   const { error } = await supabase.rpc("set_report_email_schedule", {
     p_report_key: reportKey,
     p_frequency: s.frequency,
-    p_day_of_week: s.dayOfWeek,
+    p_days_of_week: s.daysOfWeek,
     p_day_of_month: s.dayOfMonth,
     p_hour_ist: s.hourIst,
     p_minute_ist: s.minuteIst,
