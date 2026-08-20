@@ -112,11 +112,17 @@ jobs:
         if: steps.gate.outputs.run == 'yes'
         uses: actions/checkout@v4
 
+      # ⚠ 24, NOT 20, AND NOT BY PREFERENCE.
+      #   supabase-js builds a RealtimeClient inside `createClient` whether or not anything
+      #   subscribes, and that needs a global `WebSocket`. Node gained one in 22, so on 20 the job
+      #   dies at module load with "Node.js 20 detected without native WebSocket support" before a
+      #   single row is read. 24 is also the version this was verified on locally, so the runner and
+      #   the desk are running the same thing.
       - name: Node
         if: steps.gate.outputs.run == 'yes'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
