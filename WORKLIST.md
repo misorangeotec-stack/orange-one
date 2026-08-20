@@ -8,7 +8,9 @@ a task touching several modules is filed under its primary one and cross-referen
 from the others.
 
 **Status:** `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked
-**Priority:** 🔴 marks a task that is hurting live work and jumps the queue.
+**Priority:** 🔴 marks a task that is hurting live work and jumps the queue · 🟢 marks a low-priority
+task that is worth doing and depends on nothing, so it can be picked up in parallel with whatever
+else is running.
 
 Finished work does not stay under its module — it moves to **[Done](#done)** at the foot of this
 file, so the module headings hold only what is still open and the record of what shipped is in one
@@ -221,6 +223,70 @@ every other heavy job in `cron.job`.
 **⚠ Not the cause of PF-2.** Checked hour by hour: this job has been flat at 11–13s yesterday *and*
 today, so it did not change when the complaints started. It is a standing waste worth removing on
 its own merits, not the answer to the delay.
+
+---
+
+### PF-4 · 🟢 Document every Supabase table, view, function and cron job — and list the dead ones  `[ ]`
+*Raised 2026-08-20 · **Low priority, high value** · touches no other task, so it can run in parallel
+with anything on this list*
+
+Months of building have left the database larger than anyone's memory of it. Nobody can say today
+what half the tables hold, and there is no one place that answers it. Along the way we have almost
+certainly created tables, views and cron jobs for features that changed shape or were dropped, and
+they are still there — costing backup size, autovacuum, and the time of the next person who has to
+work out whether a name matters.
+
+**The deliverable:** one file — `docs/SUPABASE-INVENTORY.md` — carrying a **one-line purpose against
+every object**, and a second list of **what looks dead**, with the evidence for each.
+
+**What is actually there** — identity project `icutjkrqkbzwvmnfbzpr`, `public` schema, counted
+2026-08-20:
+
+| | Count |
+|---|---|
+| Tables | **240**, of which **44 are completely empty today** |
+| Views / materialised views | 0 |
+| Functions | 546 |
+| Cron jobs | 9, all active |
+| Edge Functions | 17 (`supabase/functions/`) |
+| Migrations applied | 313 |
+
+The nine jobs are `email-outbox-sweep`, `generate-recurring-daily`, `fms-asset-generate-jobs`,
+`fms-asset-send-reminders`, `master-report-daily`, `masters-sync-watch`, `masters-sync-daily-force`,
+`user-snapshot-daily` and `mst-refresh-company-links` — the last of which **PF-3** is already
+about, and which is the kind of thing this inventory exists to surface.
+
+**What each row should carry:** the object name · the module it belongs to · one line saying what it
+is for · what writes to it · what reads it · rows today · last write · a verdict of **live /
+historical / dead**.
+
+**Telling dead from merely quiet** — the two are easy to confuse, so check both directions:
+
+- **Written?** row count plus `max(created_at)` / `max(updated_at)`. An empty table can still be a
+  live feature nobody has used this month.
+- **Read?** grep the frontend, the Edge Functions and the SQL for the object's name. A table no code
+  anywhere names is dead however full it is — and that is the stronger signal of the two.
+
+Cron jobs get a third check: `cron.job_run_details` already records every run, so a job's real cost
+and its failure rate can be stated rather than guessed.
+
+**⚠ The output is a list, not a drop script.** [CLAUDE.md](CLAUDE.md) holds Supabase changes to
+**additive-only**, and that rule stands. Nothing is dropped off the back of this task — the list
+goes to Bushra, and each object is removed later, one at a time, with sign-off and a backup taken
+first. Several "dead" tables will also turn out to be deliberate history (the `fms_import_*` and
+`fms_purchase_*` sets in `backups/fms-purge-2026-07-29/`, for instance) and must be marked
+**historical**, not dead.
+
+**Also in scope, kept separate:** the ConnectWave mirror (`ieeefdnyhzgrroifiqbb`). It is the
+external Python pipeline's database, read-only to us, so its section only needs the tables we
+actually read — not its whole schema.
+
+**Worth settling before starting:**
+- [ ] Do the 546 functions go in the first pass, or only tables + cron jobs, with functions as a
+  second sweep? (546 one-liners is the bulk of the work, and most are RPCs named after the screen
+  that calls them.)
+- [ ] Where does the file live — `docs/`, or beside `CLAUDE.md` at the root where the other live
+  documents sit?
 
 ---
 
