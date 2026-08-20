@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import QueueTable, { type QueueColumn } from "@/shared/components/ui/QueueTable";
 import { useDispatchStore } from "../store";
 import { stepByKey } from "../lib/steps";
-import { dmy, isCreditHeld, qtyTotals } from "../lib/format";
+import { dmy, isStepHeld, qtyTotals, stepHoldLabel } from "../lib/format";
 import StatusPill, { OutcomePill } from "./StatusPill";
 import type { DispatchOrder } from "../types";
 
@@ -144,20 +144,24 @@ export default function OrdersTable({
       key: "status",
       header: "Status",
       /*
-        ⚠ A CREDIT HOLD DOES NOT SHOW IN `status`. The order stays
-          `awaiting_credit_check` while credit holds it, so the pill alone reads
-          "Awaiting credit" — identical to an order nobody has looked at yet. The
-          second chip is the only thing on this screen that tells them apart, and
-          the filter value follows it so "show me the held ones" is one click.
+        ⚠ A STEP HOLD DOES NOT SHOW IN `status`. The order stays
+          `awaiting_credit_check` while credit holds it, and `awaiting_sales_bill`
+          while billing holds it, so the pill alone reads "Awaiting credit" or
+          "Awaiting sales bill" — identical to an order nobody has looked at yet.
+          The second chip is the only thing on this screen that tells them apart,
+          and the filter value follows it so "show me the held ones" is one click.
+
+        ⚠ THE TWO HOLDS KEEP THEIR OWN WORDS. "On hold" for both would collapse
+          them into one filter value and hide which desk is sitting on the order.
       */
       cell: (o) => (
         <span className="inline-flex items-center gap-1.5">
           <StatusPill status={o.status} />
-          {isCreditHeld(o) && <OutcomePill label="Credit on hold" tone="yellow" />}
+          {stepHoldLabel(o) && <OutcomePill label={stepHoldLabel(o)!} tone="yellow" />}
         </span>
       ),
-      sortValue: (o) => (isCreditHeld(o) ? `${o.status} hold` : o.status),
-      filter: { kind: "select", get: (o) => (isCreditHeld(o) ? "Credit on hold" : o.status) },
+      sortValue: (o) => (isStepHeld(o) ? `${o.status} hold` : o.status),
+      filter: { kind: "select", get: (o) => stepHoldLabel(o) ?? o.status },
       tdClassName: "whitespace-nowrap",
     },
   ];
@@ -172,6 +176,7 @@ export default function OrdersTable({
           Open
         </Link>
       )}
+      loading={s.isLoading}
       rowsLabel="orders"
       initialSort={{ key: "orderNo", dir: "desc" }}
       emptyTitle={emptyTitle}

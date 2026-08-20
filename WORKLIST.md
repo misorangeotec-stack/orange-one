@@ -89,7 +89,7 @@ state that dies with the page.
 
 ---
 
-### PF-2 · 🔴 HIGH — queues and approvals don't refresh until the page is reloaded  `[ ]`
+### PF-2 · 🔴 HIGH — queues tell approvers "Nothing here" while they are still loading  `[~]`
 *Raised 2026-08-20 · Reported by the team · **Critical: this is delaying live work***
 
 Two symptoms, one cause:
@@ -113,6 +113,58 @@ Two symptoms, one cause:
   No FMS has it.
 - **Polling exists in exactly one place** — Customer Onboarding's bell, at 60s
   ([CustomerBell.tsx:68](frontend/src/apps/receivables-hub/components/customerOnboarding/CustomerBell.tsx#L68)).
+
+
+**PROVEN 2026-08-20 by an end-to-end test** (signed in as an approver, raised an item request from
+the New Sales Order screen, exactly the flow the team uses):
+
+| Step | Measured |
+|---|---|
+| Request submitted → row in the database | **instant** (`created_at` stamped on submit, `status = pending`) |
+| "Send request" click → dialog closes | **6.0 seconds** |
+| Master Requests page: **shows "To review 0 · All 0" and the "Nothing here" empty state** | **for the first 5.8 seconds of every load** |
+| Then flips to the true counts | at 5.8 s → "To review 1 · All 110" |
+
+**This is the bug.** While the data loads, the page does not show a spinner or "Loading…" — it shows
+a confident, fully-rendered **"Nothing here — Requests for new master entries will appear here."**
+An approver opens the screen, is told there is nothing to approve, and leaves. They reload, are told
+the same thing, and leave again. The request was in the database the whole time.
+
+That is the 10 minutes: not the system being slow, but the screen **actively saying the queue is
+empty** while it is still loading.
+
+**The fix:** never render the empty state until the query has resolved — show the loading state
+while `isLoading`, and reserve "Nothing here" for a genuinely empty result. Then check every other
+queue for the same pattern; the counts on this page start at 0 for the same reason.
+
+
+**Step 1 shipped 2026-08-20 (not yet deployed).** `QueueTable` takes a `loading` prop; when it is
+true and there are no rows it renders a spinner and "Loading…" instead of the `EmptyState`. Wired
+into Order to Dispatch: Master Requests, StageQueue (both tables), OrdersTable, SalesReturnQueue.
+The Master Requests tab counts now omit the badge while loading, so nobody reads a placeholder
+"To review 0" as an answer.
+
+Verified in the browser, same measurement as before the fix:
+
+| | Before | After |
+|---|---|---|
+| First paint | "Nothing here", To review **0** | **"Loading…"**, no counts shown |
+| Real data | 5.8 s | 3.4 s |
+
+`loading` is optional, so the other 60-odd call sites across the eight other modules are unchanged
+and still show the old empty state — **they need the same one-line wiring.**
+
+**Still to do — the actual weight (steps 2-4):** every page still downloads the whole module,
+15,425 rows over 25 round trips (notifications 4,993 · customer-items 3,179 · four months of
+activity 2,760). Measured 2026-08-20. That is the reason the wait exists at all; the loading state
+only stops the screen lying about it.
+
+**⚠ Before doing steps 2-4, watch a real user's load from the factory.** Every number here was
+measured on a fast local connection, and 6 seconds is not 10 minutes. The payload finding is solid;
+that it fully explains the team's experience is not proven.
+
+Related but separate: the 6-second submit and 5.8-second load are themselves slow for a table of
+109 rows, and worth a look once the empty-state bug is fixed.
 
 So the delay is not the approver being slow. Their screen is genuinely showing yesterday's picture
 until something forces a reload — and this applies to **every FMS queue and every master request

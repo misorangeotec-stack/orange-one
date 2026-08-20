@@ -252,6 +252,7 @@ export default function SalesReturnQueue() {
               onView={() => acting.openView({ order: r.order })}
             />
           )}
+          loading={s.isLoading}
           rowsLabel="entries"
           emptyTitle="Nothing recorded here yet"
           emptyMessage="Sales returns you record will appear here."
@@ -276,6 +277,7 @@ export default function SalesReturnQueue() {
               </Link>
             )
           }
+          loading={s.isLoading}
           rowsLabel="orders"
           // Oldest cancellation first: an invoice left live in Tally is the thing
           // that has been wrong for longest, and it is the only ordering the app

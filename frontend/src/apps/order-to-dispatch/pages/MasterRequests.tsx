@@ -157,9 +157,12 @@ export default function MasterRequests() {
 
       <Tabs
         tabs={[
-          ...(s.isAnyMasterManager ? [{ key: "review", label: "To review", count: s.resolvableRequests.length }] : []),
-          { key: "mine", label: "My requests", count: s.myMasterRequests.length },
-          { key: "all", label: "All", count: s.masterRequests.length },
+          /* While the module is still loading every count is 0, and "To review 0"
+             reads as "nothing to approve". Omitting the count hides the badge
+             until the real number is known — see QueueTable's `loading` note. */
+          ...(s.isAnyMasterManager ? [{ key: "review", label: "To review", count: s.isLoading ? undefined : s.resolvableRequests.length }] : []),
+          { key: "mine", label: "My requests", count: s.isLoading ? undefined : s.myMasterRequests.length },
+          { key: "all", label: "All", count: s.isLoading ? undefined : s.masterRequests.length },
         ]}
         active={tab}
         onChange={(k) => setTab(k as Tab)}
@@ -179,6 +182,7 @@ export default function MasterRequests() {
         }
         rowsLabel="requests"
         initialSort={{ key: "on", dir: "desc" }}
+        loading={s.isLoading}
         emptyTitle="Nothing here"
         emptyMessage="Requests for new master entries will appear here."
       />
