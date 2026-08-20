@@ -281,66 +281,106 @@ async function main() {
   const prefix = `scheduled/${runId}`;
   let queued = 0;
 
-  // ── 4. Draw, upload, queue — the book ──
-  if (drawBook) {
-    const t = Date.now();
-    const files = await buildBoth(ctx, { kind: "all" });
-    log(`book · ${files.map((f) => `${f.filename} ${(f.blob.size / 1024).toFixed(0)} KB`).join(" · ")} · ${ms(t)}`);
-    if (MODE === "dry-run") {
-      await writeLocal(files);
-    } else {
-      const att = await upload(`${prefix}/book`, files);
-      const to = MODE === "sample" ? [{ email: SAMPLE_TO, name: "Sample" }] : bookRecipients;
+  // ── 4 and 5, inside a `finally` ─────────────────────────────────────────
+  //
+  // ⚠ THE SLOT IS CLAIMED IF ANYTHING WAS QUEUED, EVEN WHEN THE RUN THEN FAILS.
+  //   Without the `finally` there is a real double-send: suppose the eighth of thirteen extracts
+  //   fails to upload. The run throws, the slot is never claimed, and the next tick — still inside
+  //   the two-hour grace window — rebuilds and mails the book and the first seven reps a second
+  //   time. Everyone who already received it receives it again.
+  //
+  //   Once a single mail is queued it cannot be unqueued, so the slot HAS been served. A partial
+  //   send that says so in the log is recoverable by a person; a duplicate send is not. The note
+  //   carries the failure, and the run still exits non-zero so the failure is visible in Actions.
+  const failures: string[] = [];
+  try {
+    // ── 4. Draw, upload, queue — the book ──
+    if (drawBook) {
+      const t = Date.now();
+      const files = await buildBoth(ctx, { kind: "all" });
+      log(`book · ${files.map((f) => `${f.filename} ${(f.blob.size / 1024).toFixed(0)} KB`).join(" · ")} · ${ms(t)}`);
+      if (MODE === "dry-run") {
+        await writeLocal(files);
+      } else {
+        const att = await upload(`${prefix}/book`, files);
+        const to = MODE === "sample" ? [{ email: SAMPLE_TO, name: "Sample" }] : bookRecipients;
+        for (const r of to) {
+          // One bad address must not cost the other twelve people their report.
+          try {
+            const id = await enqueue(r, subjectBase, ctx.meta.title, BOOK_BODY, att);
+            queued++;
+            log(`  → ${r.email} (${id})`);
+          } catch (e) {
+            failures.push(`book/${r.email}: ${(e as Error).message}`);
+            log(`  ✗ ${r.email}: ${(e as Error).message}`);
+          }
+        }
+      }
+    }
+
+    // ── 5. Draw, upload, queue — one extract per salesperson ──
+    for (const name of namesToDraw) {
+      const t = Date.now();
+      const files = await buildBoth(ctx, { kind: "salesperson", name });
+      log(`${name} · ${files.map((f) => `${f.filename} ${(f.blob.size / 1024).toFixed(0)} KB`).join(" · ")} · ${ms(t)}`);
+      if (MODE === "dry-run") {
+        await writeLocal(files);
+        continue;
+      }
+      const att = await upload(`${prefix}/${storageSafe(name)}`, files);
+      const to = MODE === "sample"
+        ? [{ email: SAMPLE_TO, name: "Sample" }]
+        : repRecipients.filter((r) => r.salesperson === name);
       for (const r of to) {
-        const id = await enqueue(r, subjectBase, ctx.meta.title, BOOK_BODY, att);
-        queued++;
-        log(`  → ${r.email} (${id})`);
+        try {
+          const id = await enqueue(
+            r,
+            `${subjectBase} — ${name}`,
+            `${ctx.meta.title} — ${name}`,
+            REP_BODY,
+            att,
+          );
+          queued++;
+          log(`  → ${r.email} (${id})`);
+        } catch (e) {
+          failures.push(`${name}/${r.email}: ${(e as Error).message}`);
+          log(`  ✗ ${r.email}: ${(e as Error).message}`);
+        }
+      }
+    }
+  } finally {
+    // ── 6. Claim the slot ──
+    // `mark_sent` refuses a zero count, so a run that reached nobody still does not burn the slot.
+    if (MODE === "scheduled" && queued > 0) {
+      const note = `${stats.listed} listed · ${queued} mails · ${ms(t0)}` +
+        (failures.length ? ` · ${failures.length} FAILED: ${failures.join("; ")}` : "");
+      const { data: claimed, error } = await supabase.rpc("collections_report_mark_sent", {
+        p_report_key: REPORT_KEY,
+        p_for_date: due.forDate,
+        p_queued: queued,
+        p_note: note.slice(0, 2000),
+      });
+      if (error) {
+        // Said loudly and NOT rethrown from a finally — that would replace whatever real error is
+        // already on its way out with this one, hiding the actual cause.
+        log(`⚠ could not record the send: ${error.message} — a retry may double-send`);
+      } else {
+        log(claimed ? `slot ${due.forDate} claimed` : `slot ${due.forDate} was already claimed`);
       }
     }
   }
 
-  // ── 5. Draw, upload, queue — one extract per salesperson ──
-  for (const name of namesToDraw) {
-    const t = Date.now();
-    const files = await buildBoth(ctx, { kind: "salesperson", name });
-    log(`${name} · ${files.map((f) => `${f.filename} ${(f.blob.size / 1024).toFixed(0)} KB`).join(" · ")} · ${ms(t)}`);
-    if (MODE === "dry-run") {
-      await writeLocal(files);
-      continue;
-    }
-    const att = await upload(`${prefix}/${storageSafe(name)}`, files);
-    const to = MODE === "sample"
-      ? [{ email: SAMPLE_TO, name: "Sample" }]
-      : repRecipients.filter((r) => r.salesperson === name);
-    for (const r of to) {
-      const id = await enqueue(
-        r,
-        `${subjectBase} — ${name}`,
-        `${ctx.meta.title} — ${name}`,
-        REP_BODY,
-        att,
-      );
-      queued++;
-      log(`  → ${r.email} (${id})`);
-    }
-  }
-
-  // ── 6. Claim the slot ──
   if (MODE === "scheduled") {
-    const { data: claimed, error } = await supabase.rpc("collections_report_mark_sent", {
-      p_report_key: REPORT_KEY,
-      p_for_date: due.forDate,
-      p_queued: queued,
-      p_note: `${stats.listed} listed · ${queued} mails · ${ms(t0)}`,
-    });
-    if (error) throw new Error(`could not record the send: ${error.message}`);
-    log(claimed ? `slot ${due.forDate} claimed` : `slot ${due.forDate} was already claimed`);
-
     const swept = await sweepOldExports();
     if (swept) log(`cleared ${swept} generated file(s) older than ${KEEP_DAYS} days`);
   }
 
   log(`\n${queued} mail(s) queued · total ${ms(t0)}`);
+  if (failures.length) {
+    // Non-zero exit, so Actions shows it red and somebody looks — but only after the slot has been
+    // claimed above, so looking does not turn into everyone being mailed twice.
+    throw new Error(`${failures.length} recipient(s) failed: ${failures.join("; ")}`);
+  }
 }
 
 /** In dry-run the files land next to the checkout so a human can open them. */
