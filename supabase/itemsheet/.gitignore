@@ -1,0 +1,3 @@
+# The pre-load snapshot is 14k rows of live data — useful, but not repo content.
+# unmatched.txt IS committed: 668 names is a review list, and it should show up in a diff.
+snapshot-before.json
