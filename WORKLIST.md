@@ -293,6 +293,151 @@ actually read — not its whole schema.
 
 ---
 
+### PF-6 · 🔴 A view-only user gets the module dashboard and nothing else  `[ ]`
+*Raised 2026-08-21 · **Order: Order to Dispatch first as the pilot**, then the rest · Follows on from
+**PF-5**, which shipped the view/edit level itself*
+
+We can now grant a module at **View only** instead of full access. The intent is written into
+[session.tsx](frontend/src/core/platform/session.tsx) in as many words — *"a view-only user opens the
+app normally and reads every screen in it, they simply have no buttons"*. **That is not what
+happens.** They land on the module dashboard and can reach nothing else.
+
+**Why.** Inside every FMS, *which screens exist* is decided by **ownership config**, never by the
+module grant: `fms_<mod>_step_owners` → the queue links and their route guards,
+`process_coordinators` → the Control Center, `fms_<mod>_master_managers` → Masters. A view-only user
+owns none of these. Nothing anywhere in the read path consults `app_access` at all.
+
+It is not only a nav problem. In four modules the **data itself** is ownership-scoped by RLS, so
+even with the routes open the tables would come back empty.
+
+**What the audit found** (2026-08-21, all nine FMS modules) — three things that decide the shape of
+the work:
+
+1. **Only four modules need SQL.** Procurement, Import, Sampling, Production Entry and Asset
+   Maintenance already read `for select using (true)` — nothing to widen. Dispatch, New Recruitment,
+   Employee Exit and General Purchase each funnel every gated table through **one** function, so it
+   is about six SQL edits rather than forty.
+2. **There is no single lever in the frontend.** `canSeeQueue` exists in only five of the nine.
+   Procurement and Import use twelve flat per-step capability flags; the two HR modules have **no
+   route guards on their queue routes at all** and self-guard inside each page.
+3. **About 25 action buttons are gated by ownership with no write-ceiling test** — see **PF-7**,
+   which is that half.
+
+**The decisions, taken 2026-08-21:**
+
+1. **View-only unlocks the whole module.** An `edit` grant keeps today's ownership-driven
+   visibility, so **nothing changes for anyone working in the modules now.** This does mean a viewer
+   sees more screens than an editor who owns no step — accepted, and to be written into the code so
+   the next reader does not "fix" it.
+2. **Operational screens only.** Dashboards, lists, registers, queues, Masters lists, Master
+   Requests and the Control Center. Setup and configuration stay admin-only — that is where
+   permissions themselves are set.
+3. **HR and Exit: the operational tier only.** A viewer reads requisitions, candidates, exit cases,
+   clearance and handover. The three confidential satellites keep their existing narrow gates —
+   **candidate PII**, **exit-interview transcripts**, **F&F settlement amounts**. Note
+   `20260712180000_fms_hr_restrict_candidate_pii.sql` exists precisely to stop a wide HR read
+   leaking PII; whether its function *is* the PII protection or merely sits beside it has to be
+   settled before that module is touched.
+4. **Pilot Order to Dispatch, verify on a real view-only login, then roll out.**
+
+**Two that come free with it:** the FMS Control Center lists a viewer's modules but every row
+click-throughs to `/<app>/monitoring`, which is behind the coordinator guard — so today
+non-coordinators hit Access Denied from a link the page offered them. And **New Customer
+Onboarding** carries the same `canSeeQueue` gate and is in scope with the FMS modules.
+
+**Not in scope, deliberately:** the My Work feed. It filters on `hasModule` and no provider consults
+the write ceiling, so a view-only user who is *also* a step owner gets an actionable worklist. That
+is not a regression — they were made an owner — and the fix is constrained, because
+`mywork/items/README.md` forbids filtering in `providers/` and the same builders are bundled and run
+server-side for the 9am snapshot email. Filing it rather than bolting it on.
+
+**Deploy ordering:** the migration goes in **before** the frontend, or the newly-visible queues
+render empty.
+
+---
+
+### PF-8 · Give the other FMS modules the treatment Dispatch just had  🟢  `[ ]`
+*Raised 2026-08-21 · **not blocked** · **low priority on purpose** — nobody is waiting on it and no
+module is hurting today. Pick it up when there is room, or when one of them starts to feel slow.*
+
+**OD-6** and **OD-8** fixed Order to Dispatch: a save went from a 6-second wait and ~5 MB of traffic
+to instant and 126 kB. Neither problem was unique to that module — **the shape is the house pattern,
+and every FMS module has it.**
+
+Counted on 2026-08-21, every write path that ends by re-downloading its whole module:
+
+| Module | Write paths that refetch everything |
+|---|---|
+| Procurement | **58** |
+| Import | **56** |
+| Sampling | **43** |
+| HR Recruitment | **39** |
+| Office Supplies | **29** |
+| Asset Maintenance | **23** |
+| Production Entry | **12** |
+
+**Why this is 🟢 and not 🔴.** Only Dispatch carried 5 MB, because it is the only module that loads
+the full customer/item catalogue — its pickers need it. Every other module's largest table is **701
+rows**, and their reads run 120–220 ms. They re-download a few hundred KB per save, which nobody
+notices and Supabase barely feels. That is the whole reason this waited.
+
+**What to reuse when the time comes** — Dispatch is the worked example, and each piece stands alone:
+
+1. **Check the RLS shape first, before anything in the app.** Dispatch's real problem was a policy
+   calling a non-inlinable `SECURITY DEFINER` function per row. Supabase's own advisor flags this
+   across the project (`auth_rls_initplan`, 257 warnings; `multiple_permissive_policies`, 233). See
+   [20260924120000](supabase/migrations/20260924120000_dispatch_visibility_hoisted.sql) for the
+   rewrite and, more importantly, for how it was proved not to change who sees what.
+2. **Stop the modal waiting on the refetch** — the one-line change that users actually feel.
+3. **Split the query key** so a save stops re-pulling masters that cannot have changed.
+4. **Trim `select("*")`** to the columns the mappers read.
+5. **Fetch per-row detail on demand** rather than carrying every row's history in the snapshot.
+6. **Ask only for what changed** — but only where the payload justifies it, and only on top of a
+   trigger that makes the parent's timestamp trustworthy
+   ([20260926120000](supabase/migrations/20260926120000_dispatch_children_touch_parent_order.sql)).
+
+**Do not do all six everywhere by rote.** On these modules, 2 and 3 are cheap and probably sufficient;
+5 and 6 buy little against a 701-row table and carry real risk. Measure the module first — bytes and
+requests for a cold load and a save — and stop when the number stops being embarrassing.
+
+**One thing already fixed for everyone, not just Dispatch:** sign-out now clears the persisted
+IndexedDB cache. It never did, so a signed-out browser kept the last user's receivables payload and
+staff directory on disk for 24 hours, readable through devtools without logging in. That shipped with
+**OD-8**.
+
+---
+
+### PF-7 · About 25 action buttons are gated by ownership alone, with no write-ceiling test  `[ ]`
+*Raised 2026-08-21 · Found while auditing **PF-6**, and it ships with it · **Moves to
+[Fixes](#fixes) when it lands** — several of these are live faults, not new work*
+
+A write affordance is supposed to ask `canEdit` (the module write ceiling) as well as "is this step
+mine". Roughly 25 do not, and **several leak today**, before any of PF-6:
+
+- **Two store-level root causes.** `canManage` in **Employee Exit** and **New Recruitment** omits
+  `canEdit` entirely — the other seven stores fold it. That is every `MasterCrud` Add/Actions column
+  plus Approve/Reject on two `master-requests` routes that are already ungated.
+- **Twelve capability flags** in Procurement and Import are bare `isStepOwner(...)` and feed the
+  buttons as well as the routes, so the nav and the write gate are the same flag.
+- **Individually:** the sales-return buttons in Dispatch, `JobDetail` in Asset Maintenance,
+  `RequestDetail` in Production Entry, the Ready-to-Dispatch **bulk-action bar** (a viewer gets row
+  checkboxes), `requestEditable` in General Purchase, the Decide/Post modals and stage-change menu in
+  New Recruitment, and the four decision modals behind the Exit approvals queue.
+- **Two with no gate at all:** candidate tag add/remove, and the **AI CV read** — which writes *and
+  spends money*.
+
+**The fix is uniform:** `canEdit && <existing predicate>`, matching the reference implementations in
+`production-entry/components/StageQueue.tsx` and `sampling/components/RequestQueue.tsx`. Where a
+`QueueTable` wraps the buttons, `readOnly={!canEdit}` does it in one line — it drops the actions
+column *and* the whole row-select apparatus. Of 70 `QueueTable` sites across these apps, **three**
+pass it today.
+
+⚠ One deliberate counter-example not to "fix": the Completed table in
+`sampling/components/RequestQueue.tsx` omits `readOnly` on purpose, so the row action degrades to a
+lock that still opens the entry read-only. The comment above it says so.
+
+---
+
 ## Process Coordinator Dashboard  *(new)*
 
 ### PC-1 · Consolidated dashboard for the process coordinator  `[ ]`
@@ -512,13 +657,13 @@ not throughput.
 
 **OD-1 and OD-4 still need a conversation with Bushra. OD-2 and OD-3 no longer do** — both were
 answered on 2026-08-21 and the build is **[OD-9](#od-9--the-user-maps-a-customer-to-an-item-themselves-)**.
-**OD-5, OD-7 and OD-8 are not blocked either** — OD-5 is decided, OD-7 is a new ask, and OD-8 is the
-tail of OD-6, so all can be picked up now.
+**OD-5 and OD-7 are not blocked either** — OD-5 is decided and OD-7 is a new ask, so both can be
+picked up now. (**OD-8**, the tail of OD-6, shipped on 2026-08-21 — see [Done](#done).)
 **OD-7's Step 0 is finished**: every item now carries the type the sheet gave it — **MS-1**, shipped
 2026-08-21, see [Done](#done). The screen work is no longer blocked on it. (**OD-6**, the slow save,
 is fixed — also in Done.)
 
-*(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
+*(cross-ref: **PF-1** — Save Draft lands here second, after Production · **PF-6** — this module is the pilot for opening view-only access, and **PF-7** ships with it)*
 
 ### OD-1 · Internal transfer / Others on a dispatch  `[!]`
 *Raised 2026-08-20 · **Blocked:** needs the scope settled with Bushra*
@@ -822,34 +967,6 @@ what the Step 0 sheet is.
 **To discuss with Bushra:**
 - [ ] Can one order mix sale types, or is a mixed order meant to be split?
 - [ ] Who owns the group → sale type map once it exists — the same owner as the item master?
-
----
-
----
-
-### OD-8 · Dispatch still re-downloads every master after each save  🟢  `[ ]`
-*Raised 2026-08-21 · **not blocked** — the last piece of **OD-6**, deliberately left out of it*
-
-**OD-6** is fixed: the write no longer waits for anything, and the reload behind it fell from 6.1 s to
-~1.4 s. But a save still *triggers* a reload of the module's whole snapshot, and most of that snapshot
-cannot possibly have changed — a step save does not touch `mst_parties`, `mst_party_items` or
-`mst_items`, yet all three come down again, roughly 5 MB, every time anyone saves anything.
-
-Nobody is kept waiting by it any more, so this is bandwidth and database load rather than a
-complaint: eight dispatch users saving through the day, each pulling the masters again on every save.
-
-**The fix** is to split the one react-query key
-([dispatchFetch.ts:232](frontend/src/apps/order-to-dispatch/data/dispatchFetch.ts#L232)) into a
-**masters** query with a long `staleTime` and a **dispatch working set**, so a write invalidates only
-the second. Expect the post-save reload to fall from ~1.4 s to a couple of hundred milliseconds, and
-the module's first load to get faster too.
-
-**Why it was held back rather than done with OD-6:** three consumers share that one cache entry — the
-store, [fms-control-center/adapters/order-to-dispatch.ts](frontend/src/apps/fms-control-center/adapters/order-to-dispatch.ts)
-and [core/workspace/mywork/providers/order-to-dispatch.ts](frontend/src/core/workspace/mywork/providers/order-to-dispatch.ts)
-— and all three have to move together. That is a data-layer refactor with its own verification
-(does the Control Center still render? does My Work?), not a line to append to a fix that was already
-measured and proved. It deserves its own change.
 
 ---
 
@@ -1800,6 +1917,55 @@ popup still says only "*N* job cards will be closed" and names no cards (it neve
 the number is not a column on the registers (All Issue Slips / My Requests), which are lists, not
 steps — that is where it would go if someone wants to *search* a card by its FG lot.
 
+### OD-8 · Dispatch stopped re-downloading itself on every save  `[x]`
+*Order to Dispatch · **Done 2026-08-21, 15:40 IST** (on `master` at `4d1e006`, deployed with `f6ed06c`)*
+
+**What a user sees:** nothing — and that is the point. Saves were already instant after **OD-6**; this
+was about what the module was doing to Supabase behind them.
+
+**A save now costs 126 kB over 8 requests. It was ~5,000 kB over ~30.** Measured in the browser, end
+to end. It was also worse than "per save": the dashboard re-invalidates the whole snapshot **every
+time the tab regains focus**, so alt-tabbing cost 5 MB too.
+
+**Six changes.**
+
+1. **A trigger, so "what changed?" can be trusted**
+   ([20260926120000](supabase/migrations/20260926120000_dispatch_children_touch_parent_order.sql)).
+   `fms_dispatch_rounds` has no timestamp column at all, so a delta has to hang off the parent order —
+   and that assumption was **already false**: 447 order lines were newer than their parent's
+   `updated_at`, because the helpers that rewrite children do not always touch the order. Nine
+   statement-level triggers now bump the parent (`replace_lines` rewrites every line of an order, so
+   row-level would have updated the same row once per line).
+2. **The catalogue left the save path.** Customers, items and their pairs moved to their own query on a
+   30-minute clock — Tally itself only syncs ~5×/day, so the picker stays fresher than its source.
+   Only 4 of the 23 writes may refresh it.
+3. **Stopped asking for columns nobody reads.** `select("*")` fetched 26 columns of `mst_parties` to
+   map 11. Catalogue: 2.1 MB → 678 kB.
+4. **An order's history loads when the order is opened.** 2,943 rows / 743 kB rode in every snapshot
+   and every save, for a panel with one reader showing one order — and carried master-request rows
+   that were never displayed at all.
+5. **Ask only for what changed.** Read every visible order's id and stamp (~25 kB), fetch only the rows
+   that moved, re-read their children wholesale so a deleted line disappears, and **drop any id no
+   longer in the list**. ⚠ That last step is access control, not tidiness: `update_order` can change an
+   order's `location_id`, moving it out of a user's visibility — a watermark-only delta would never
+   mention it again and the stale copy would sit in their queue.
+6. **The catalogue is kept between visits, and sign-out now clears the cache.** ⚠ Found while
+   auditing: `removeClient()` existed and was **never called**. The persisted cache already outlived
+   sign-out by 24 hours holding the receivables payload and the staff directory, readable through
+   devtools *without logging in*. This change would have added customer names, GSTINs, phones and
+   emails to it. Sign-out now empties memory **and** deletes the disk copy — a fix that reaches beyond
+   this module.
+
+**Verified, not assumed.** The trigger was proved by creating it inside a transaction, testing both
+paths and raising an exception so Postgres rolled it all back — no live row was touched. The column
+trim was proved by fetching every catalogue table both ways, mapping both through the same mapper and
+comparing: identical. The delta was proved against a full fetch over **487 orders and 1,813 lines**,
+for an order never seen, a stale one, one no longer visible, and no change at all — byte-identical
+every time. In production afterwards: zero non-2xx in 90 minutes, and catalogue requests fell from
+1,165–2,008 per half hour to 314–602.
+
+*(cross-ref: **PF-8** — the same treatment for the other modules, when it matters)*
+
 ### OD-6 · Every save in Order to Dispatch was slow — the write was fast, the reload after it was not  `[x]`
 *Order to Dispatch · **Done 2026-08-21, 13:35 IST** (database) and **14:05 IST** (the app, on `master` at `74a525b`) · Raised by Bushra*
 
@@ -1858,7 +2024,8 @@ everyone else's rows anyway, and an admin was pulling all 5,296 of them on every
 Both halves are live: the migration was applied first, then the app followed on `master` at
 `74a525b`. That order matters and is the rule here — the policies only make the existing reads
 faster, so the app was safe either way, but a frontend that needs a migration must never land first.
-See **OD-8** for the one optimisation deliberately left out.
+The one optimisation deliberately left out of this — a save still re-downloading the whole catalogue —
+became **OD-8**, and shipped later the same day.
 
 ### PF-5 · Module access gets a level: view-only, or view and edit  `[x]`
 *Platform — all modules · Admin / Users · **Done 2026-08-20, 22:19 IST** (the screens went live 2026-08-18, 13:52 IST) · Raised by Bushra*
