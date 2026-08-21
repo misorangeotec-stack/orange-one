@@ -45,8 +45,6 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Decision: weekly or monthly plan on the Collection Report | Ritesh Bhai | **RC-3** | 2026-08-20 |
 | Decision: does a salesperson's copy go to the rep only, or to everyone who can see that book? | Ritesh Bhai | **RC-5**, and the go-live of **RC-2** | 2026-08-20 |
 | Scope of the internal / related company tag | Bushra | **OD-1** | 2026-08-20 |
-| Call on removing "new customer / new item" from Dispatch | Bushra | **OD-2** | 2026-08-20 |
-| Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
 | Call on SO-2627-0413 — wrong copy of SPECTRUM DIGITAL | Bushra | **OD-4** | 2026-08-20 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
@@ -512,8 +510,10 @@ not throughput.
 
 ## Order to Dispatch
 
-OD-1 to OD-4 need a conversation with Bushra before any code moves. **OD-5, OD-7 and OD-8 do not** —
-OD-5 is decided, OD-7 is a new ask, and OD-8 is the tail of OD-6, so all three can be picked up now.
+**OD-1 and OD-4 still need a conversation with Bushra. OD-2 and OD-3 no longer do** — both were
+answered on 2026-08-21 and the build is **[OD-9](#od-9--the-user-maps-a-customer-to-an-item-themselves-)**.
+**OD-5, OD-7 and OD-8 are not blocked either** — OD-5 is decided, OD-7 is a new ask, and OD-8 is the
+tail of OD-6, so all can be picked up now.
 **OD-7's Step 0 is finished**: every item now carries the type the sheet gave it — **MS-1**, shipped
 2026-08-21, see [Done](#done). The screen work is no longer blocked on it. (**OD-6**, the slow save,
 is fixed — also in Done.)
@@ -558,8 +558,18 @@ than two more values on that one; worth confirming rather than assuming.
       only who appears in the picker?
 - [ ] What happens to orders already raised for internal movement under the current options.
 
-### OD-2 · Stop creating customer and item masters inside Orange One  `[!]`
-*Raised 2026-08-20 · **Blocked:** needs Bushra's call on removing it outright*
+### OD-2 · Stop creating customer and item masters inside Orange One  `[~]`
+*Raised 2026-08-20 · **Half answered 2026-08-21** — the removal is decided; the tagging half is still open*
+
+**✅ ANSWERED: remove them.** "Request a new customer" and "request a new item" come out of Order to
+Dispatch entirely — they come from Tally only. That is built as part of
+**[OD-9](#od-9--the-user-maps-a-customer-to-an-item-themselves-)**, which also answers what a user
+sees instead of a dead end: the item they could not find is nearly always merely *unmapped*, and OD-9
+lets them map it themselves. Only an item that exists nowhere in Tally now stops them, and it says so.
+
+**Still open here:** how loudly a portal-created master is flagged *inside Dispatch*, and what happens
+to the ones already sitting there. The admin Masters grid already carries the tag; Dispatch does not
+surface it.
 
 *(cross-ref: **OD-5** — if the request stays, the company it is raised for is the missing half)*
 
@@ -591,8 +601,19 @@ What is open is the disabling. Today *all five* master types are requestable fro
 - [ ] How loudly a portal-created master should be flagged in Dispatch, and what happens to the
       ones already sitting there.
 
-### OD-3 · Who maps customer to item  `[!]`
-*Raised 2026-08-20 · **Blocked:** needs Bushra's call*
+### OD-3 · Who maps customer to item  `[x]` *(decision — build is OD-9)*
+*Raised 2026-08-20 · **Answered 2026-08-21***
+
+**✅ THE USER DOES IT, DIRECTLY. No approval, and no request.** The mapping stops being something you
+ask for and becomes something you do, in place, while raising the order.
+
+**Why it was never really a gate:** of the 122 master requests ever raised in this module, **85 are
+customer-item mappings and only 5 of those were rejected** — 94% approved. Nobody was being protected
+by the wait; a person mid-order was simply blocked.
+
+**Guard:** the same one that already decides who may raise the order — `fms_dispatch_can_raise`. The
+mapping owners are still named, and still told when one is created, but for information only; there is
+nothing to approve. **The build is [OD-9](#od-9--the-user-maps-a-customer-to-an-item-themselves-).**
 
 Customer-to-item mapping depends entirely on Tally today. When a mapping is missing, the user
 raises a request and the PC has to approve it. Give the user the option instead — or, now that we
@@ -829,6 +850,130 @@ and [core/workspace/mywork/providers/order-to-dispatch.ts](frontend/src/core/wor
 — and all three have to move together. That is a data-layer refactor with its own verification
 (does the Control Center still render? does My Work?), not a line to append to a fix that was already
 measured and proved. It deserves its own change.
+
+---
+
+### OD-9 · The user maps a customer to an item themselves  🔴  `[~]`
+*Raised 2026-08-21 · **Built 2026-08-21**, migration applied. Answers **OD-3** and the removal half of
+**OD-2**.*
+
+**Where it stands.** All of it is written and `npm run build` passes. The migration
+([20260927120000](supabase/migrations/20260927120000_dispatch_map_customer_item.sql)) is **applied to
+`icutjkrqkbzwvmnfbzpr`** — the RPC and the `created_by` trigger are live.
+
+The RPC was exercised against **live data as a real non-admin raiser**, inside a transaction that
+rolled back. All five behaviours hold:
+
+| | |
+|---|---|
+| new pair | `created 1` · `source=portal` · `created_by` stamped by the trigger |
+| the same pair again | `skipped 1` — not an error |
+| a pair switched OFF | `reactivated 1`, active again — no unique violation |
+| an item from another book | refused, **naming the item** |
+| empty selection | no-op |
+
+An unauthenticated caller is refused by `fms_dispatch_can_raise`, checked separately.
+
+**⏳ Still owed: the browser pass.** Everything above is server-side or the type-checker; nobody has
+clicked through the modal yet — the Playwright profile was locked by another Chrome instance. What to
+drive, in order: raise an order under O-tec — Surat as an ordinary user; confirm the 8,340-item book
+loads without stalling and the Type filter narrows it; map something and confirm it is selectable on
+the line immediately; then open one of the 78 twin customers and confirm a name they can **already**
+order is not offered a second time.
+
+When the item a customer needs is not in their list, the user stops asking and just does it. The
+customer-item mapping becomes a direct action inside the sales order; the request queue behind it goes.
+
+**Two entry points, one modal, one write path, no approval.**
+
+1. **Inside the new sales order.** The item picker's `＋ Request new item…` row becomes
+   **`＋ Map an item to this customer`**. The popup opens with the **company and customer already
+   filled in from the order** and read-only, the typed text seeded into the search, and every item of
+   that company listed. Tick and save; the item is selectable on the line immediately.
+2. **Standalone**, from Master Requests → "Request a new entry". "What do you need?" drops from four
+   choices to two: **Customer-Item Mapping** (direct) and **Company Location** (still a request).
+   **Customer** and **Item** are removed — they come from Tally only (**OD-2**).
+
+**Decided, and not to be re-opened without a reason:**
+
+| | |
+|---|---|
+| Standalone entry point | Direct create, same as the popup |
+| Company Location | Stays requestable — it is our own site, not Tally's |
+| Item that exists nowhere in Tally | Say so plainly: create it in Tally first |
+| Which items the popup lists | **Only the selected company's own book. No way to widen.** |
+| Notification | Mapping owners told, information only |
+| Seeing manual mappings | Must be filterable in Central Masters |
+
+**⚠ THE COMPANY FILTER IS A HARD ONE, AND IT WAS CHOSEN KNOWING THE COST.** Tally files a stock item
+in exactly one company book, but the firms sell each other's stock: **185 of 1,813 existing order
+lines (10%)** use an item from a different book than the one billing — SO-2627-0449 is O-tec **Noida**
+billing `444-028 PRINTHEAD WIPER`, an item created in O-tec **Surat**'s book. Those 10% cannot be
+mapped in this popup and go to an admin in Central Masters, where the company filter is optional. The
+popup must **say which book the item lives in** rather than showing an unexplained empty list.
+The compensation is real, though: there are **zero duplicate item names inside a single book**, so the
+hard filter removes the twin-ambiguity at the point of choosing.
+
+**Five things the audit caught before any code moved. The first two would have shipped broken.**
+
+1. **⚠ EXCLUDE ALREADY-MAPPED ITEMS BY NAME, NOT BY ID.** `itemsForCustomer` collapses the picker to
+   **one row per product name** ([store.tsx:889](frontend/src/apps/order-to-dispatch/store.tsx#L889)),
+   while the admin form this popup is modelled on excludes by item id
+   ([Masters.tsx:457](frontend/src/core/admin/Masters.tsx#L457)). Those disagree: a customer mapped to
+   the Enterprise twin of a name would be *offered* the O-tec twin, the save would succeed, and the
+   picker would look **identical** — so the user concludes it failed and does it again.
+   **Measured on live data: 375 pairs across 78 customers would be offered a duplicate this way** —
+   KALAHANSH FASHIONS LLP (Enterprise — Surat) is already mapped to EP SUBLIMATION SUPER HD YELLOW out
+   of O-tec's book, and Enterprise's own book holds a copy of that very name.
+   `mappedItemCounts` already counts distinct NAMES for exactly this reason; match it.
+2. **⚠ `source` CANNOT CARRY THE "MADE BY HAND" MARK — IT ERASES ITSELF.** `masters-sync` upserts
+   `mst_party_items` and sets `source: 'sales_register'` unconditionally
+   ([masters-sync/index.ts:561](supabase/functions/masters-sync/index.ts#L561)), so the first time the
+   customer actually buys the mapped item the mark flips and the row drops out of the filter. **Four
+   rows already show this damage** — `created_by` set, `source` reading `sales_register`. And
+   `source='portal'` is useless anyway: 1,823 of its 1,869 rows are bulk migration rows. Use
+   **`created_by` / `created_at`**, which that upsert never names. Clean rule: **null = a machine
+   made it, non-null = a person did** — the sync runs on the service key, so `auth.uid()` is null
+   there and it cannot mis-attribute. `insertMasters` does not set it
+   ([masterWrites.ts:158](frontend/src/core/platform/masterWrites.ts#L158)), so a `before insert`
+   trigger defaulting it to `auth.uid()` closes every hand path at once.
+3. **⚠ DO NOT FILTER ON `modules`.** Only **540 of 14,264** active items are ticked for
+   `order-to-dispatch` and **13,724 carry none at all**. Filtering there collapses the catalogue and
+   defeats the feature. The company book is the filter.
+4. **The Master Owners screen would start lying.** Its "Requestable — Yes / —" column reads
+   `REQUESTABLE_DISPATCH_MASTER_TYPES`
+   ([MasterOwnersSection.tsx:97](frontend/src/apps/order-to-dispatch/pages/settings/MasterOwnersSection.tsx#L97));
+   narrowing that list makes the mapping read "—" while its owners are still the people notified.
+   Relabel to **"How it's raised"**: *Direct* / *Request* / *Tally only*.
+5. **8,340 items needs a Type filter, not just a search box.** `item_type` is populated on **14,208
+   of 14,261** items now (**MS-1**), and O-tec Surat splits spare_parts 4,877 · ink 1,119 · paper 855 ·
+   machine 687 · head 485. ⚠ **Show every type, hide none** — the book also holds `raw_material`,
+   `packing_material` and `service_expense`, and hiding them silently is the failure **OD-7**
+   warns about. Filter, don't hide.
+
+**Two constraints that shape the build.**
+
+- **The module's item list cannot show a company's catalogue — it is derived from the mappings.**
+  [dispatchFetch.ts:678](frontend/src/apps/order-to-dispatch/data/dispatchFetch.ts#L678) builds `items`
+  from the ids `mst_party_items` names plus ids already on an order: **1,693 of 14,264**. The item
+  this feature exists to find is by definition not in it. The modal needs its own per-company fetch —
+  Colorix 254 · Enterprise-Surat 1,450 · Enterprise-Noida 2,092 · O-tec-Noida 2,125 · O-tec-Surat 8,340.
+  `pagedWalk` already fires its pages **concurrently**, so that is one round trip, not nine — but it
+  must be ordered by `name` **and `id`**, or ties silently drop rows (it cost ~300 mappings once).
+- **RLS blocks the write for exactly the people this is for.** `mst_party_items_write` is
+  `is_admin(uid) OR mst_is_master_manager('party_item', uid)`, so an ordinary user calling
+  `insertMasters` gets a policy violation. A `SECURITY DEFINER` RPC
+  **`fms_dispatch_map_customer_item`** is required — gated on `fms_dispatch_can_raise`, asserting
+  the customer↔company pair with the existing `fms_dispatch_assert_customer_of_company`, and
+  refusing any item outside `p_company`'s book. `UNIQUE (party_id, item_id)` means a pair switched
+  off in the past must be **reactivated and reported**, not inserted into a unique violation.
+
+**Also swept up:** the company picker on the sales order can raise a `company` request the resolver
+then refuses outright with *"Companies come from Tally now"* — after an owner has already approved it
+([SalesOrderFields.tsx:127](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx#L127)).
+And the reviewer's notification for a nameless master reads *"…was requested: "* with a trailing colon,
+because it uses `payload.name` where `describePayload` exists
+([store.tsx:1076](frontend/src/apps/order-to-dispatch/store.tsx#L1076)).
 
 ---
 
@@ -1179,22 +1324,34 @@ bills, ₹1.66 Cr**, and **₹76 L of that was real money**:
 `Receipt` / `Payment` / `Contra` — vouchers that move cash and cannot raise a receivable), keep
 everything else including anything unclassifiable. **Default = keep = never hide money.**
 
+*Attempt 3 — the second dry run, widened from the past-due bills to the WHOLE snapshot, caught the
+one that mattered.* "Raised by cash" is true of DEBITS and CREDITS alike, and only the debits are
+phantoms. Of the 30 references the rule matches, **19 are CREDITS totalling −₹94,02,878** —
+`M/C ADV`, `REC 20.06.2026`, `ON ACCOUNT`, all raised by a `BANK RECEIPT`. Those are advances the
+customer genuinely **paid us**. Removing them would have raised **17 customers' Outstanding by
+₹94 L** and un-credited money sitting in our bank. So the rule acts on **`pending > 0` only**:
+a debit with no invoice behind it overstates what we are owed; a credit with no invoice behind it is
+real money that already has a home ("On Account (paid, tagged to no bill)").
+
+**Final measured effect — whole snapshot, 21-08-2026:**
+
 | | |
 |---|---|
-| Leaves Overdue | **7 bills · ₹89,98,378 · 1.69% of Overdue · 7 customers** |
-| Stays | 3,486 bills · ₹52.42 Cr |
+| Bills removed | **11 · ₹1,19,12,014 off Outstanding · 11 customers** |
+| Of those, past due | **8 · ₹98,50,281 off Overdue** |
+| Book Outstanding | ₹81.62 Cr → **₹80.43 Cr** (−1.46%) |
+| Credits removed | **0** — no customer's Outstanding rises |
 | Sales-raised bills removed | **none** |
 | Paper invoices removed | **0 of 116** |
 
-The seven: `MC/26-27/45` ₹53.00 L (BANK RECEIPT), `ADV` ₹17.00 L (BANK PAYMENT — VAMA),
-`BANK PAYMENT` ₹10.00 L, `24.09.2026` ₹8.00 L, `MC/25-26/50_23` ₹1.96 L, `INK/N/26-27/410` ₹1,416,
-`HD/HG/26-27/95` ₹295.
+Biggest: `MC/26-27/45` ₹53.00 L, `On Account` ₹20.00 L, `ADV` ₹17.00 L (VAMA), two `BANK PAYMENT`
+at ₹10.00 L each, `24.09.2026` ₹8.00 L.
 
-⚠ The last two carry real sales bill NUMBERS but their `New Ref` came from a `BANK RECEIPT` — a
-receipt that over-applied. ₹1,711 between them, so the rule's only judgement call costs nothing
-today. Worth re-checking if that ever grows.
+⚠ `INK/N/26-27/410` (₹1,416) and `HD/HG/26-27/95` (₹295) carry real sales bill NUMBERS but their
+`New Ref` came from a `BANK RECEIPT` that over-applied. ₹1,711 between them, so the rule's only
+judgement call costs nothing today. Worth re-checking if it ever grows.
 
-**Adopt attempt 2. Do not adopt attempt 1.**
+**Adopt attempt 3. Do not adopt 1 or 2.**
 
 **This is the SAME missing link as RC-6's root cause** — `collection_refresh()` calls
 `resolve_sale_type(acct, '', bill_ref)` with the voucher type empty, because `bill_outstanding()`
@@ -1202,7 +1359,39 @@ returns a bill ref and no voucher. Carry the originating voucher type into the s
 both are fixed: sale type stops depending on the bill-name prefix, and non-sales references stop
 counting as overdue bills. Do them together.
 
-**Shape of the change** (ConnectWave, then frontend):
+**BUILT 2026-08-21 — not yet live. Two pieces, and the SQL must land first.**
+
+1. [non_bill_refs_view.sql](supabase/connectwave/non_bill_refs_view.sql) — a new **additive**
+   view `public.v_non_bill_ref`, granted to `anon`. Deliberately NOT a change to
+   `collection_refresh()`: that function is 999 lines, several repo files each redefine it, and the
+   live version is none of them for certain — a `create or replace` from a stale copy would silently
+   revert the overdue cap, the voucher-class work and the group-GUID migration. A new view touches
+   nothing that already exists.
+2. [liveNonBillRefs.ts](frontend/src/apps/receivables-hub/lib/liveNonBillRefs.ts) — reads the view
+   and strips the matching DEBIT lines out of the live snapshot in place, adjusting `outstanding`,
+   `overdue`, `overdueGross`, the aging buckets, the per-type splits, `maxOverdueDays`,
+   `utilization` and `risk`. Modelled on `liveOtherPayments.ts` and wired into
+   `connectwaveFetcher` immediately after it. `npm run build` passes, and the bundle for the
+   emailed report picks it up automatically (it compiles `connectwaveFetcher` itself), so the
+   scheduled PDF and the screen cannot disagree.
+
+**⚠ It runs AFTER the Other Payments pass, not before.** That pass settles bills FIFO and must see
+the same bill list Tally does; removing lines first would let a manual payment cascade onto a
+different bill than it settles in the pipeline, and Live and pipeline mode would stop agreeing.
+
+**Fail-soft on purpose.** If the view is absent the reader logs
+`[liveNonBillRefs] DEGRADED` and changes nothing — the report reads exactly as it does today. So
+shipping the frontend before the SQL is inert rather than broken. Still apply the SQL first.
+
+**To do:**
+- [ ] Run `non_bill_refs_view.sql` in the **ConnectWave** SQL editor. No refresh needed — it is a
+      view, not a snapshot column, so it is live the moment it is created.
+- [ ] Check its three verify queries, especially the guard that must return zero rows.
+- [ ] Deploy the frontend. Confirm the console says `removed 11 non-bill reference(s)` and not
+      `DEGRADED`.
+- [ ] Open VAMA: it should be gone from the report entirely.
+
+**Shape of the change, for the record** (ConnectWave, then frontend):
 - `bill_outstanding()` / `bill_outstanding_by_id()` gain an `origin_voucher_type` column, taken from
   the `New Ref` allocation. Additive — existing callers select columns explicitly.
 - `collection_invoice_snapshot` gains the column; `collection_refresh()` fills it.

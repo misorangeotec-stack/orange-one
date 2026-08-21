@@ -508,6 +508,46 @@ export async function resolveMasterRequest(
   return (data as string | null) ?? null;
 }
 
+/** What the mapping RPC reports back — three outcomes, never one number. */
+export interface MapCustomerItemResult {
+  created: number;
+  /** Existed but was switched OFF. Turned back on — and that must be said. */
+  reactivated: number;
+  /** Already mapped and already active. Not an error, not a change. */
+  skipped: number;
+}
+
+/**
+ * Map a customer to items of that company's book, with NO approval step (OD-9).
+ *
+ * ⚠ AN RPC RATHER THAN AN INSERT, and this is not a style choice. RLS on
+ *   mst_party_items is `is_admin(uid) OR mst_is_master_manager('party_item',
+ *   uid)`, so `insertMasters` below fails with a policy violation for exactly
+ *   the people this exists for — the person raising the order. The RPC is
+ *   SECURITY DEFINER and gated on fms_dispatch_can_raise instead: if you may
+ *   raise the order, you may map the item it needs.
+ *
+ * ⚠ THE COMPANY IS SENT AND RE-CHECKED SERVER-SIDE. The modal offers only that
+ *   company's own book, but this argument is three uuids — a tab left open
+ *   across a company change would otherwise write a pair the form would never
+ *   have shown. Same reasoning as the customer↔item re-check inside
+ *   fms_dispatch_replace_lines.
+ */
+export async function mapCustomerItems(
+  customerId: string,
+  companyId: string,
+  itemIds: string[],
+): Promise<MapCustomerItemResult> {
+  const { data, error } = await db.rpc("fms_dispatch_map_customer_item", {
+    p_customer: customerId,
+    p_company: companyId,
+    p_items: itemIds,
+  });
+  if (error) throw new Error(error.message);
+  const r = (data ?? {}) as Partial<MapCustomerItemResult>;
+  return { created: r.created ?? 0, reactivated: r.reactivated ?? 0, skipped: r.skipped ?? 0 };
+}
+
 /* --------------------------- activity + bell feed ------------------------- */
 
 export async function announce(input: {

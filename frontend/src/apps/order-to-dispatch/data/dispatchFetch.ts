@@ -6,9 +6,9 @@ const db = supabase as any;
 
 import { resolveStepSla, type StepSlaMap } from "../lib/sla";
 import type {
-  Company, CompanyLocation, Customer, Designation, DispatchActivity, DispatchMasterRequest,
-  CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder, DispatchRound, Item,
-  MasterManager, NamedMaster, OrderLine, RoundItem, StepDoc, StepOwner,
+  Company, CompanyItem, CompanyLocation, Customer, Designation, DispatchActivity,
+  DispatchMasterRequest, CustomerItem, DispatchMasterType, DispatchNotification, DispatchOrder,
+  DispatchRound, Item, MasterManager, NamedMaster, OrderLine, RoundItem, StepDoc, StepOwner,
 } from "../types";
 
 /**
@@ -160,6 +160,15 @@ const COLS = {
   parties: "id,name,active,sort_order,created_at,company_id,code,location,gstin,contact_name,phone,email",
   items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id",
   units: "id,name,created_at",
+  /**
+   * ONE COMPANY'S WHOLE STOCK BOOK — read only when the mapping modal opens.
+   *
+   * Narrower than COLS.items on purpose: the modal picks an item, it does not
+   * render an order line, so the unit and the HSN are the picker's business
+   * rather than this list's. `item_type` earns its place — it is the filter that
+   * makes 8,340 rows usable.
+   */
+  companyItems: "id,name,active,sort_order,created_at,code,item_type",
 } as const;
 
 /**
@@ -298,6 +307,18 @@ export const dispatchQueryKey = (userId: string | null) => [...DISPATCH_QK, user
  *   an error.
  */
 export const DISPATCH_MASTERS_QK = ["dispatchMasters"] as const;
+
+/**
+ * One company's stock book — see `fetchCompanyItems`.
+ *
+ * ⚠ ITS OWN KEY, and NOT a child of DISPATCH_MASTERS_QK. Nesting it there would
+ *   put every book behind `invalidateAll()`, so mapping one item would re-fetch
+ *   8,340 rows to learn about the one that changed. Nothing invalidates this:
+ *   a company's Tally book changes on the sync's schedule, not on ours, and the
+ *   30-minute staleTime is the right granularity for that.
+ */
+export const COMPANY_ITEMS_QK = (companyId: string) =>
+  ["dispatchCompanyItems", companyId] as const;
 
 /**
  * The LIVE working set — everything a save can change.
@@ -764,6 +785,48 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       })),
 
   };
+}
+
+/**
+ * EVERY ITEM IN ONE COMPANY'S TALLY BOOK — the mapping modal's own source.
+ *
+ * ⚠ IT CANNOT READ THE STORE, and that is the whole reason this exists.
+ *   `fetchDispatchMasters` DERIVES its item list from the pairs in
+ *   mst_party_items (see the note there): 1,693 items out of 14,264. An item
+ *   nobody has mapped to anybody is not in it — which is precisely the item
+ *   somebody opens the mapping modal to find. Filtering the store's list by
+ *   company would offer a subset of a subset and quietly answer "not in Tally"
+ *   about items that are.
+ *
+ * ⚠ NOT PART OF THE CATALOGUE QUERY, deliberately. This is per-company and
+ *   O-tec — Surat alone is 8,340 rows; folding it into fetchDispatchMasters
+ *   would put all five books behind every module load. Its own react-query key,
+ *   fetched the first time a modal asks for that company and then cached.
+ *
+ * ⚠ NOT FILTERED ON `modules`. Only 540 of the 14,264 active items carry the
+ *   order-to-dispatch tick and 13,724 carry no modules at all, so that filter
+ *   would collapse the book to a few hundred rows and defeat the feature. The
+ *   company IS the filter here.
+ *
+ * Sizes, measured: Colorix 254 · Enterprise-Surat 1,450 · Enterprise-Noida 2,092
+ * · O-tec-Noida 2,125 · O-tec-Surat 8,340. pagedWalk fires its pages
+ * concurrently, so the largest is one round trip rather than nine.
+ */
+export async function fetchCompanyItems(companyId: string): Promise<CompanyItem[]> {
+  if (!companyId) return [];
+  const rows = await fetchWhere(
+    "mst_items",
+    (q) => q.eq("company_id", companyId).eq("active", true),
+    COLS.companyItems,
+  );
+  return rows
+    .map((r: any): CompanyItem => ({
+      id: r.id,
+      name: str(r.name) ?? "",
+      code: str(r.code),
+      itemType: str(r.item_type),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function fetchDispatchData(

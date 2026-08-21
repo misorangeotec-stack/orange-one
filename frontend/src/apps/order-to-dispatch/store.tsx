@@ -18,6 +18,7 @@ import {
   holdSalesBill as holdSalesBillWrite,
   insertMaster as insertMasterWrite,
   insertMasters as insertMastersWrite,
+  mapCustomerItems as mapCustomerItemsWrite,
   markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
@@ -37,6 +38,7 @@ import {
   uploadStepDocument as uploadStepDocumentWrite,
   withdrawCancelRequest as withdrawCancelRequestWrite,
   type AmendRoundLine,
+  type MapCustomerItemResult,
   type MasterInput,
   type OrderInput,
   type SalesReturnPayload,
@@ -54,7 +56,7 @@ import {
   type QueueStep,
   type StageEntry,
 } from "./lib/queues";
-import { masterTypeLabel } from "./lib/masterFields";
+import { describePayload, masterTypeLabel } from "./lib/masterFields";
 import { isSalesReturnDone, isSalesReturnPending } from "./lib/salesReturn";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
@@ -212,6 +214,24 @@ export interface DispatchStoreValue {
    */
   mappedItemCount: (customerId: string | null) => number;
   /**
+   * The product NAMES this customer can already order, upper-cased and trimmed.
+   *
+   * ⚠ NAMES, NOT IDS, AND THE DIFFERENCE IS A BUG THE MAPPING MODAL WOULD
+   *   OTHERWISE SHIP WITH. `itemsForCustomer` collapses the picker to one row
+   *   per product name — Tally files the same physical goods as a separate
+   *   stock item in every book that stocks it. So a customer mapped to the
+   *   Enterprise copy of a name has nothing left to gain from the O-tec copy:
+   *   excluding by id would still OFFER it, the write would succeed, and the
+   *   item picker would look identical afterwards, because both copies fold
+   *   into the same row. The user reads that as "it didn't work" and does it
+   *   again. 22 name-groups across 18 customers already carry such twins.
+   *
+   * Same reasoning as `mappedItemCount`, which counts distinct names for
+   * exactly this reason — the two must agree or the count promises rows the
+   * picker will not produce.
+   */
+  mappedItemNames: (customerId: string | null) => Set<string>;
+  /**
    * Every delivery location anyone has used — off the customer master AND off
    * orders already raised, so a location typed once on an order is offered to
    * the next person instead of being retyped (and mistyped).
@@ -312,6 +332,19 @@ export interface DispatchStoreValue {
   updateMaster: (mt: DispatchMasterType, id: string, input: MasterInput) => Promise<void>;
   setMasterManagers: (mt: DispatchMasterType, userIds: string[]) => Promise<void>;
   requestNewMaster: (mt: DispatchMasterType, payload: Record<string, unknown>) => Promise<void>;
+  /**
+   * Map a customer to items of that company's book, DIRECTLY — no request, no
+   * approval (OD-9). Goes through a SECURITY DEFINER RPC rather than
+   * `insertMasters`, because RLS on the mapping table admits only admins and its
+   * master manager, which is nobody who raises an order.
+   *
+   * Returns the three outcomes separately: `reactivated` means somebody had
+   * switched that pair OFF and it is now back on, which has to be said out loud
+   * rather than folded into a success count.
+   */
+  mapCustomerItems: (
+    customerId: string, companyId: string, itemIds: string[],
+  ) => Promise<MapCustomerItemResult>;
   resolveMasterRequest: (
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
@@ -739,11 +772,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * mapping to an item that is itself active and loaded — or the picker would
      * promise a number the item box then fails to produce.
      */
-    const mappedItemCounts = (() => {
+    const mappedItemNameSets = (() => {
       // ⚠ DISTINCT NAMES, not mappings. The picker collapses a product filed in
       //   several Tally books to one row, so counting rows here would promise 12
       //   and then show 7 - and the number exists precisely to be trusted before
       //   the customer is chosen.
+      //
+      // ⚠ THE SETS ARE THE PRODUCT NOW, not merely their sizes. The mapping
+      //   modal reads them to decide what NOT to offer, and it must be the same
+      //   reading this count rests on: offer a name the customer can already
+      //   order and the write succeeds while the item picker stays identical,
+      //   which reads as a button that did nothing. See `mappedItemNames`.
       const liveName = new Map(items.filter((i) => i.active).map((i) => [i.id, i.name.trim().toUpperCase()]));
       const seen = new Map<string, Set<string>>();
       for (const m of customerItems) {
@@ -753,8 +792,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         if (set) set.add(nm);
         else seen.set(m.customerId, new Set([nm]));
       }
-      return new Map([...seen].map(([id, set]) => [id, set.size]));
+      return seen;
     })();
+    const EMPTY_NAMES: ReadonlySet<string> = new Set<string>();
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
@@ -874,7 +914,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           || c.companyId === null
           || c.id === includeId);
       },
-      mappedItemCount: (customerId) => (customerId ? mappedItemCounts.get(customerId) ?? 0 : 0),
+      mappedItemCount: (customerId) => (customerId ? mappedItemNameSets.get(customerId)?.size ?? 0 : 0),
+      mappedItemNames: (customerId) =>
+        (customerId ? mappedItemNameSets.get(customerId) ?? EMPTY_NAMES : EMPTY_NAMES) as Set<string>,
       itemsForCustomer: (customerId, includeIds) => {
         const keep = new Set(includeIds ?? []);
         if (!customerId) return items.filter((i) => keep.has(i.id));
@@ -1073,11 +1115,45 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           entityType: "master_request",
           entityId: id,
           type: "master_requested",
-          text: `A new ${masterTypeLabel(mt).toLowerCase()} was requested: ${String(payload.name ?? "")}`,
+          // ⚠ describePayload, NOT payload.name. A nameless master — the
+          //   customer↔item mapping — has no `name` key at all, so reading one
+          //   produced "…was requested: " with a trailing colon and left the
+          //   reviewer to open the queue to find out what had been asked for.
+          text: `A new ${masterTypeLabel(mt).toLowerCase()} was requested: ${describePayload(mt, payload, {
+            customerName: (id) => nameFrom(customers, id),
+            itemName: (id) => nameFrom(items, id),
+            companyName: (id) => nameFrom(companies, id),
+          })}`,
           recipients: masterReviewersFor(mt),
           meta: { master_type: mt },
         });
         invalidate();
+      },
+      mapCustomerItems: async (customerId, companyId, itemIds) => {
+        const result = await mapCustomerItemsWrite(customerId, companyId, itemIds);
+        // Told, not asked. The owners named on this master keep their oversight
+        // — they see what was mapped and by whom — but there is nothing to
+        // approve, so this never reaches `resolvableRequests` and never bumps
+        // the "To review" badge.
+        if (result.created + result.reactivated > 0) {
+          await safeAnnounce({
+            entityType: "master_request",
+            entityId: customerId,
+            type: "master_mapped",
+            text: `${personName(uid)} mapped ${result.created + result.reactivated} item${
+              result.created + result.reactivated === 1 ? "" : "s"
+            } to ${nameFrom(customers, customerId)}.`,
+            recipients: masterReviewersFor("customer_item").filter((id) => id !== uid),
+            meta: { master_type: "customer_item" },
+          });
+        }
+        // MINTS THE MAPPING the item picker reads, so the catalogue has to come
+        // back down here — the 30-minute timer would otherwise leave the user
+        // staring at the item they just mapped still missing from the box. The
+        // self-heal above only chases items on SAVED orders and cannot cover a
+        // form still being filled in.
+        invalidateAll();
+        return result;
       },
       resolveMasterRequest: async (id, approve, payload, note) => {
         await resolveMasterRequestWrite(id, approve, payload, note);
