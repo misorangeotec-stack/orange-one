@@ -292,10 +292,13 @@ export default function MultiSelect({
             right: pos.right,
             minWidth: pos.minWidth,
             maxHeight: pos.maxHeight,
+            // The horizontal twin of maxHeight, in place of the old flat
+            // `max-w-[320px]` that cut every long name to the same prefix.
+            maxWidth: pos.maxWidth,
           }}
           // `flex flex-col` is what makes the capped height reach the list: the
           // search box and the select-all bar keep their size, the <ul> takes the rest.
-          className="z-[70] flex flex-col w-max max-w-[320px] bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
+          className="z-[70] flex flex-col w-max bg-white border border-line rounded-xl shadow-card overflow-hidden outline-none"
         >
           {showSearch && (
             <div className="shrink-0 p-2 border-b border-line">
@@ -373,7 +376,7 @@ export default function MultiSelect({
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6L9 17l-5-5" /></svg>
                           </span>
                           {o.icon && <span className="shrink-0 flex items-center">{o.icon}</span>}
-                          <span className={cn("min-w-0 flex-1 text-[13.5px] truncate", on ? "text-orange font-semibold" : "text-navy")}>{o.label}</span>
+                          <span className={cn("min-w-0 flex-1 text-[13.5px] break-words", on ? "text-orange font-semibold" : "text-navy")}>{o.label}</span>
                         </button>
                       </li>
                     );
@@ -392,7 +395,7 @@ export default function MultiSelect({
                   <span className="shrink-0 flex items-center justify-center w-5 h-5 rounded-full bg-orange-soft text-orange">
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                   </span>
-                  <span className="min-w-0 flex-1 text-[13.5px] text-orange font-semibold truncate">{createLabel(trimmed)}</span>
+                  <span className="min-w-0 flex-1 text-[13.5px] text-orange font-semibold break-words">{createLabel(trimmed)}</span>
                 </button>
               </li>
             )}

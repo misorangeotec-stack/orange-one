@@ -123,6 +123,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               noAssignment ? "no dispatch site assigned to you" : "which company bills this order"
             }
             searchable
+            wrapLabel
             onCreate={(name) => f.setRaise({ mt: "company", prefill: { name }, from: "header" })}
             createLabel={(q) => `Request new company “${q}”`}
           />
@@ -152,6 +153,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
                  ask for one — and the request needs the company to hang it off. */
               disabled={!f.form.companyId}
               searchable
+              wrapLabel
               onCreate={(name) =>
                 f.setRaise({
                   mt: "company_location",
@@ -194,6 +196,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               placeholder={f.form.companyId ? "Select customer…" : "pick the billing company first"}
               disabled={!f.form.companyId}
               searchable
+              wrapLabel
               onCreate={(name) => f.setRaise({ mt: "customer", prefill: { name }, from: "header" })}
               createLabel={(q) => `Request new customer “${q}”`}
             />
@@ -217,6 +220,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               onCreate={(label) => label.toUpperCase()}
               createLabel={(q) => `Use “${q.toUpperCase()}”`}
               searchable
+              wrapLabel
             />
           </FieldLabel>
           <p className="mt-1 text-[11.5px] text-grey-2">
