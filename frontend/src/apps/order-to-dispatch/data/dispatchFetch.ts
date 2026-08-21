@@ -49,14 +49,29 @@ type Tbl =
   | "fms_dispatch_notifications"
   | "designations";
 
+/**
+ * ⚠ EVERY PAGED READ IS ORDERED BY A *UNIQUE* KEY, and `created_at` is not one.
+ *
+ * `.range()` is OFFSET paging: each page is a separate query, and Postgres only
+ * guarantees an order for the columns you name. `created_at` is full of ties here
+ * — the sales-register derivation writes mst_party_items in 500-row batches that
+ * share a timestamp to the microsecond, and one batch of 1,036 — so rows inside a
+ * tie group can land on either side of a page boundary from one request to the
+ * next. Measured on the live table: 8,052 rows fetched, 7,754 distinct — ~300
+ * mappings duplicated and ~300 silently NEVER LOADED, which is what took an item
+ * out of its customer's picker while the mapping sat there in Masters.
+ *
+ * `id` (the primary key) is appended as the tiebreaker, so the order is total and
+ * the walk is exact. Same rule the receivables fetchers and liveMasters carry.
+ */
 async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
   const out: any[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await db
-      .from(table)
-      .select("*")
-      .order(orderBy, { ascending: true })
-      .range(from, from + PAGE - 1);
+    let q = db.from(table).select("*").order(orderBy, { ascending: true });
+    // fms_dispatch_config is the one caller that names its own key, and `key` IS
+    // its primary key — it has no `id` column, so asking for one would 400.
+    if (orderBy !== "key") q = q.order("id", { ascending: true });
+    const { data, error } = await q.range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
     out.push(...rows);
@@ -98,6 +113,9 @@ async function fetchWhere(table: Tbl, extra: (q: any) => any): Promise<any[]> {
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await extra(db.from(table).select("*"))
       .order("created_at", { ascending: true })
+      // The unique tiebreaker — see the note on fetchAll. mst_parties has 1,887
+      // customers over 216 distinct timestamps, so page 2 starts inside a tie.
+      .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
@@ -143,6 +161,7 @@ async function fetchRecentActivity(): Promise<any[]> {
       .select("*")
       .gte("created_at", since)
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true }) // unique tiebreaker — see fetchAll
       .range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
     const rows = data ?? [];
