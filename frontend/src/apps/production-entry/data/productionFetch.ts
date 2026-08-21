@@ -157,6 +157,9 @@ const mapRequest = (r: any): ProductionRequest => ({
     : [],
   fgItemId: r.fg_item_id ?? null,
   fgQty: num(r.fg_qty),
+  // Repackaging only — null on production cards and on repackaging cards raised
+  // before the column existed.
+  fgLotNo: r.fg_lot_no ?? null,
   issueRemarks: r.issue_remarks ?? null,
   raisedBy: r.raised_by ?? null,
   requesterName: r.requester_name,

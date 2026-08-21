@@ -94,6 +94,12 @@ export default function StageQueue({
   }, [s, stepKey]);
 
   const hasTracking = rows.some((r) => r.tracking);
+  // The repackaging FG lot travels the whole chain, so every step shows it — but
+  // only where a card in view actually has one. A production lot has no incoming
+  // FG lot, so on a pure-production queue this would be a column of dashes.
+  // (Same rule the Status column above follows.)
+  const hasFgLot = rows.some((r) => !!r.request.fgLotNo);
+  const hasCompletedFgLot = completedEntries.some((e) => !!e.row.fgLotNo);
 
   const columns: QueueColumn<Row>[] = [
     {
@@ -123,6 +129,16 @@ export default function StageQueue({
       filter: { kind: "select", get: ({ request }) => CARD_TYPE_LABEL[request.cardType] },
       tdClassName: "whitespace-nowrap",
     },
+    ...(hasFgLot
+      ? [{
+          key: "fgLotNo",
+          header: "FG Lot No.",
+          cell: ({ request }: Row) => <span className="text-navy">{request.fgLotNo || "—"}</span>,
+          sortValue: ({ request }: Row) => request.fgLotNo ?? "",
+          filter: { kind: "text" as const, get: ({ request }: Row) => request.fgLotNo ?? "" },
+          tdClassName: "whitespace-nowrap",
+        }]
+      : []),
     // Status column only when there's a mix (a tracking row present) — otherwise a
     // plain queue's rows all share one status and the column is just noise.
     ...(hasTracking
@@ -182,6 +198,16 @@ export default function StageQueue({
       filter: { kind: "select", get: (e) => CARD_TYPE_LABEL[e.row.cardType] },
       tdClassName: "whitespace-nowrap",
     },
+    ...(hasCompletedFgLot
+      ? [{
+          key: "fgLotNo",
+          header: "FG Lot No.",
+          cell: (e: StageEntry<ProductionRequest>) => <span className="text-navy">{e.row.fgLotNo || "—"}</span>,
+          sortValue: (e: StageEntry<ProductionRequest>) => e.row.fgLotNo ?? "",
+          filter: { kind: "text" as const, get: (e: StageEntry<ProductionRequest>) => e.row.fgLotNo ?? "" },
+          tdClassName: "whitespace-nowrap",
+        }]
+      : []),
     {
       key: cfg.captured.key,
       header: cfg.captured.header,

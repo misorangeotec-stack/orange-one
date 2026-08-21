@@ -16,10 +16,14 @@ Finished work does not stay under its module — it moves to **[Done](#done)** a
 file, so the module headings hold only what is still open and the record of what shipped is in one
 place.
 
+A **bug** is not a task and does not belong in either place. Something that was already built and
+turned out to be broken goes to **[Fixes](#fixes)**, just above Done — it was never on the list, so
+there is no open entry to move.
+
 A task that needs someone else’s call carries a **“To discuss with …”** checklist at the end —
 the open questions to put to them, so the conversation happens once and the answers land back here.
 
-**Last updated:** 2026-08-20
+**Last updated:** 2026-08-21
 
 Separate, and not repeated here — the two live operation logs keep their own detail:
 [CENTRAL-MASTERS.md](CENTRAL-MASTERS.md) (Tally masters consolidation) ·
@@ -44,6 +48,7 @@ Work held up because someone owes us something. If a task is late, this is the f
 | Call on removing "new customer / new item" from Dispatch | Bushra | **OD-2** | 2026-08-20 |
 | Call on who maps customer to item — user or PC | Bushra | **OD-3** | 2026-08-20 |
 | Call on SO-2627-0413 — wrong copy of SPECTRUM DIGITAL | Bushra | **OD-4** | 2026-08-20 |
+| The Excel sheet giving every item its sale type / item type | You — being shared | **OD-7** (Step 0) | 2026-08-21 |
 | A walkthrough of Asset Maintenance, to list its changes | Bushra | **AM-1** | 2026-08-20 |
 | Final approved travel details + travel amounts | HR | **TR-1** | 2026-08-20 |
 | Department, sub-department + employee code for 10 people who joined after her 27-05-2026 sheet | Bushra | **OM-1** | 2026-08-20 |
@@ -508,8 +513,11 @@ not throughput.
 
 ## Order to Dispatch
 
-OD-1 to OD-4 need a conversation with Bushra before any code moves. **OD-5 does not** — it is
-decided and can be picked up now.
+OD-1 to OD-4 need a conversation with Bushra before any code moves. **OD-5, OD-7 and OD-8 do not** —
+OD-5 is decided, OD-7 is a new ask, and OD-8 is the tail of OD-6, so all three can be picked up now.
+**OD-7 starts with the item types themselves**: the Excel sheet is being shared, and every item is
+updated with its proper type before any of the screen work begins (OD-7, Step 0). (**OD-6**, the slow
+save, is fixed — see [Done](#done).)
 
 *(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
 
@@ -700,8 +708,129 @@ way; do the resolver half once OD-2 is answered.
 - [ ] The rows already approved companyless: sweep them once, or leave them to the Tally sync (which
       is what produced OD-4)?
 
+### OD-7 · Sale type on the sales order, and the item list follows it  `[ ]`
+*Raised 2026-08-21 · **not blocked** — the behaviour is asked for; what is ours to settle is where an
+item's sale type comes from*
+
+The intake form gains a **Sale type**, and the item picker then offers only the items of that type.
+
+**⚠ Step 0, and it comes before everything below: every item gets its correct type, from the sheet.**
+*(added 2026-08-21, at the user's instruction)* Nothing here can be built on a guessed type. **An
+Excel sheet naming each item's type is being shared with us**, and the job is to update **all** items
+in the masters with the type that sheet gives them — not to derive it from the group name. That sheet
+is the source of truth; the group-name reading below is only a sizing exercise showing why guessing
+does not work. Until the items actually carry a type, the field and the filter have nothing to read,
+so this is the first piece of work in OD-7, not a follow-up to it.
+- [ ] Does the sheet list **items** or **stock groups**? That answers the `mst_items` vs
+      `mst_item_groups` question below, rather than us deciding it.
+- [ ] The load is a bulk update over the central masters: **additive-only** — a new nullable column
+      plus a scripted, **re-runnable** load, so a revised sheet can be applied again without a manual
+      pass.
+- [ ] Items the sheet does not name: left untyped, or parked under **Other**? (Same question as the
+      one at the foot, and the sheet may settle it.)
+- [ ] Does the sheet's vocabulary match the five words below? If it uses different names, they get
+      mapped once, on the way in — the stored value must still be one of the five.
+
+**There is no sale type anywhere in this module today.** Nothing in
+[order-to-dispatch/](frontend/src/apps/order-to-dispatch/) mentions one, and `fms_dispatch_orders`
+carries 87 columns without it. The only thing shaping the item list is the customer's own mapping —
+`itemsForCustomer` ([store.tsx:732](frontend/src/apps/order-to-dispatch/store.tsx#L732)), fed by
+`mst_party_items`: **8,025 active mappings, 789 customers, 1,693 distinct items — 10.2 items per
+customer on average, but up to 219 on one.** Sale type is the second cut that long list needs.
+
+**It lands in five places.**
+
+1. **The field.** The intake header
+   ([SalesOrderFields.tsx](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx)) —
+   ⚠ read its layout comment first: Customer must stay immediately before Customer location, and the
+   pairing only holds while Customer's position is odd **and** not a multiple of three. It is 5th
+   today. Inserting a field re-counts every position, and it breaks on tablet only.
+2. **The filter.** `allowedItems` in
+   [OrderLinesGrid.tsx:66](frontend/src/apps/order-to-dispatch/components/OrderLinesGrid.tsx#L66)
+   narrows further by type — but the `includeIds` escape hatch must survive it. That argument is
+   what keeps a line's own item in its picker; drop it and switching the sale type on an order that
+   already has lines blanks those rows on the next edit.
+3. **The payload.** `OrderInput` / `orderPayload`
+   ([dispatchWrites.ts:40](frontend/src/apps/order-to-dispatch/data/dispatchWrites.ts#L40)),
+   `fms_dispatch_submit_order` + `fms_dispatch_update_order`, and a new **nullable** `sale_type` on
+   `fms_dispatch_orders` (additive-only). The RPC re-checks the customer↔item rule server-side; it
+   has to re-check this one too, or a stale row walks an off-type item through.
+4. **The Orders grid.** A new column means a sort toggle and a cascading filter under it — the
+   default, not a decision.
+5. **Where an item's sale type actually comes from.** Answered by Step 0's sheet; the sizing below
+   is why it has to be a sheet and not a rule.
+
+**The vocabulary is already fixed, and it is not ours to invent.** Receivables types every rupee on
+five buckets — `ink · spare_parts · machine · head · other`
+([SaleTypeMultiSelect.tsx:6](frontend/src/apps/receivables-hub/components/SaleTypeMultiSelect.tsx#L6),
+[agingReport.ts:55](frontend/src/apps/receivables-hub/lib/agingReport.ts#L55)) — resolved by
+ConnectWave's `resolve_sale_type`. Dispatch must use the same five words or an order can never be
+lined up against what it became on the ledger.
+
+**And this is the first time the type would be known *before* the invoice.** ConnectWave can only
+read a sale type off the voucher type or the bill-name prefix — i.e. after the bill exists, which is
+exactly why the SPARE/ and HEAD/ series fell into Other until
+[sale_type_rules_spare_head_prefixes.sql](supabase/connectwave/sale_type_rules_spare_head_prefixes.sql)
+taught it those prefixes (**RC-1** notes). Stating the type on the order states it up front.
+
+**Sizing the mapping — map the GROUP, not the item.** Every item already carries its Tally stock
+group (`mst_items.group_id` → `mst_item_groups`): **14,264 of 14,267 items are grouped**, and the
+1,693 orderable ones sit in just **217 group rows — 167 distinct names**, since Tally files the same
+group separately in each company book. So typing them is ~167 decisions, not 14,000.
+⚠ It cannot be guessed from the name: matching on ink/head/spare/part/machine types 98 of the 167 and
+leaves **69 names, 524 orderable items, in Other** — and they are not fringe. REACTIVE H SERIES,
+NOVACRON HD and DIGISTAR (BIB) are inks; CHEMICALS, DIRECT TO FABRIC and ELECTRICAL say nothing
+either way; and several groups are named after the supplier (ELYSIUM INDUSTRIES INDIA PVT LTD, 41
+items). Somebody types those once, and only a person who knows the product can — which is exactly
+what the Step 0 sheet is.
+
+**Open, for us to settle:**
+- [ ] Is the sale type a property of the **order** (one type, the whole order) or of the **line**?
+      One-per-order is the simpler filter and matches how a bill is raised — but it means an order
+      for ink *and* a spare part becomes two orders. Confirm before enforcing it.
+- [ ] Does the type live on `mst_item_groups` (167 names in play, matches Tally, one place to
+      maintain) or on `mst_items` (14k rows, but exact when a group's items do not all bill on one
+      ledger)? — **the shape of the Step 0 sheet decides this.**
+- [ ] Untyped items — hidden from every sale type, or shown under **Other**? Hiding them makes an
+      unmapped group silently unorderable, which is the failure nobody can diagnose from the screen.
+- [ ] Does the sale type also decide the **sales ledger at the bill step**, or is it only a filter on
+      intake? If it is only a filter, the order and the invoice can still disagree.
+- [ ] The 478 orders already raised (91 still live): leave them untyped, or backfill from the items
+      they carry? Untyped history is fine for a filter, and wrong the moment a report groups on it.
+
+**To discuss with Bushra:**
+- [ ] Can one order mix sale types, or is a mixed order meant to be split?
+- [ ] Who owns the group → sale type map once it exists — the same owner as the item master?
+
 ---
 
+---
+
+### OD-8 · Dispatch still re-downloads every master after each save  🟢  `[ ]`
+*Raised 2026-08-21 · **not blocked** — the last piece of **OD-6**, deliberately left out of it*
+
+**OD-6** is fixed: the write no longer waits for anything, and the reload behind it fell from 6.1 s to
+~1.4 s. But a save still *triggers* a reload of the module's whole snapshot, and most of that snapshot
+cannot possibly have changed — a step save does not touch `mst_parties`, `mst_party_items` or
+`mst_items`, yet all three come down again, roughly 5 MB, every time anyone saves anything.
+
+Nobody is kept waiting by it any more, so this is bandwidth and database load rather than a
+complaint: eight dispatch users saving through the day, each pulling the masters again on every save.
+
+**The fix** is to split the one react-query key
+([dispatchFetch.ts:232](frontend/src/apps/order-to-dispatch/data/dispatchFetch.ts#L232)) into a
+**masters** query with a long `staleTime` and a **dispatch working set**, so a write invalidates only
+the second. Expect the post-save reload to fall from ~1.4 s to a couple of hundred milliseconds, and
+the module's first load to get faster too.
+
+**Why it was held back rather than done with OD-6:** three consumers share that one cache entry — the
+store, [fms-control-center/adapters/order-to-dispatch.ts](frontend/src/apps/fms-control-center/adapters/order-to-dispatch.ts)
+and [core/workspace/mywork/providers/order-to-dispatch.ts](frontend/src/core/workspace/mywork/providers/order-to-dispatch.ts)
+— and all three have to move together. That is a data-layer refactor with its own verification
+(does the Control Center still render? does My Work?), not a line to append to a fix that was already
+measured and proved. It deserves its own change.
+
+---
 
 ## Production Entry
 
@@ -779,6 +908,44 @@ already in this module:
 a job / batch / request and how it is numbered; whether the import is per batch or a sheet of many;
 whether the generated PDF must be stored and re-openable later or just printed; and whether QC can
 edit values after import or only import-and-generate.
+
+---
+
+### PE-4 · FG Item Lot Number on the repackaging slip, carried through every step  `[~]`
+*Raised 2026-08-21 · Built; awaiting the migration being applied and the frontend deploy*
+
+A repackaging card is a **traded** finished good — imported ready-made, repacked, sold — so it
+arrives with a lot number of its own, the supplier's lot printed on the goods. That is the number
+traceability actually hangs off, and until now there was nowhere to put it.
+
+**What a user will see:** on the **Repackaging** tab of Generate Issue Slip, a new **FG Item Lot
+Number** field sits directly after *FG / Packing Quantity* and is **mandatory** — the slip cannot be
+raised without it. From there the number is read-only and travels with the card: it shows in the
+header of **every step's** entry modal (packing material transfer → packing entry → ready to
+dispatch → FG transfer), as an **FG Lot No.** column on those queues, on the card detail page, and
+on the printed / exported repackaging slip.
+
+**Two different numbers, deliberately both shown.** `jobcard_no` is the Lot/Batch **Card** number
+this system allocates (YYMM-NNNN). `fg_lot_no` is the lot the goods came in with. They are not
+interchangeable and the labels say so.
+
+**Notes / what to watch on rollout:**
+
+- **Apply the migration before the frontend goes live** —
+  [20260925120000_fms_production_repack_fg_lot_no.sql](supabase/migrations/20260925120000_fms_production_repack_fg_lot_no.sql)
+  adds the column and re-issues `fms_production_submit_request` /
+  `fms_production_update_request`. Both reject a blank lot on a repackaging slip, so the rule is the
+  database's, not the form's.
+- **The column is nullable on purpose.** Repackaging cards raised before today have no FG lot and
+  inventing one would be a lie; a NOT NULL constraint would also block their next edit for a field
+  nobody could have entered. Editing such a card *does* now require the lot — which is exactly the
+  moment to supply it.
+- **Production cards are untouched.** A manufactured lot has no incoming FG lot (its raw-material
+  lots are per-line in `mh_bom_lines.lot_no`), so the column and the queue column stay out of the
+  way: the column appears only when a card in view actually has a lot, the same rule the Status
+  column already follows.
+- **Not added to the issue-slip lists** (All Issue Slips / My Requests) — those are registers, not
+  steps. Worth adding if anyone asks to *search* for a card by its FG lot.
 
 ---
 
@@ -864,6 +1031,86 @@ The repo is public, so runner minutes are free.
 - **⚠ Do not arm this before RC-5 is answered.** Who a salesperson's copy actually reaches is a
   decision for Ritesh Bhai, and on today's tags three accounts would each receive thirteen separate
   emails per send. Arming first and asking after is the wrong order — those mails cannot be recalled.
+
+---
+
+### RC-6 · Spare and Head bills read as "Other" on the salesperson report  🔴  `[~]`
+*Raised 2026-08-21 · Feedback from Ritesh Bhai · SQL written and ready to apply; nothing is live yet*
+
+On the zero-collection report a customer's bill page groups the open bills by sale type, and the
+spare-parts and print-head bills were sitting in the **OTHER** band:
+
+| Bill | Reads as | Should be |
+|---|---|---|
+| `HEAD/26-27/40`, `HEAD/26-27/41` | Other | **Head** |
+| `SPARE/26-27/384`, `SPARE/25-26/2103`, `SPARE/26-27/563` | Other | **Spare Parts** |
+| `SPARE/EN/2627/5`, `SPARE/EN/2627/6` | Other | **Spare Parts** |
+
+**It is not the report — it is the classification, and it is upstream of us.** The report prints
+`collection_invoice_snapshot.sale_type` verbatim and the snapshot genuinely says `other`. The
+ConnectWave mirror types an **open** bill from its bill NAME alone —
+`resolve_sale_type(acct, '', bill_ref)`, with the voucher type passed **empty**, because
+`bill_outstanding()` hands back a bill ref and no voucher. So on the open-bill path only the
+`voucher_no_prefix` rules can ever fire and every `voucher_type` rule is dead code. The seeded
+prefix vocabulary was `INK/ SP/ HD/ MC/ H/ HG/SPARE/` — five series read off the *opening* bills
+back when that was the only case it had to cover. The current sales series `SPARE/`, `SPARE/EN/`
+and `HEAD/` are in none of them, so every one of those bills fell to the `other` default.
+
+The same snapshot row contradicts itself as a result: FY **sales** by type *are* resolved from the
+real voucher type, so a customer can show spare-parts sales and zero spare-parts outstanding.
+
+**The fix** — [sale_type_rules_spare_head_prefixes.sql](supabase/connectwave/sale_type_rules_spare_head_prefixes.sql),
+four `voucher_no_prefix` rules. Prefixes are safe to key on here because Tally numbers each voucher
+type on its own series: checked across all 22,070 lines of `rpt_sales_register`, no prefix maps to
+two sale types. `SPARE/` → `GST SALES - SPARE PARTS` ×1296, `HEAD/` → `GST SALES - HEAD` ×128, and
+each of those voucher types already has a rule pointing at the same bucket — the new rows only teach
+the open-bill path what the voucher path already knew. They also type the handful of *opening* bills
+on these series, which no voucher lookup could reach at all.
+
+**⚠ `HEAD/M/` is load-bearing, not tidiness.** `HEAD/M/24-25/11` (₹16.52 L, an opening balance) is a MACHINE deal
+(`GST SALES - HEAD(MACHINE)`). `HEAD/` without it would move that bill from one wrong answer to
+another. The resolver breaks a priority tie on `length(match_value) desc`, so `HEAD/M/` beats
+`HEAD/` and `SPARE/EN/` beats `SPARE/` — the same mechanism that already makes `HG/SPARE/` beat
+`HD/`.
+
+**What it moves** (measured against the live snapshot, refreshed 2026-08-21 10:30 IST):
+
+| Prefix | Open bills | Pending | Other → |
+|---|---:|---:|---|
+| `SPARE/` | 654 | ₹2,18,40,030 | Spare Parts |
+| `HEAD/` | 70 | ₹2,10,73,297 | Head |
+| `SPARE/EN/` | 3 | ₹4,976 | Spare Parts |
+| `HEAD/M/` | 1 | ₹16,52,000 | Machine |
+
+**To do:**
+- [ ] Run the file in the **ConnectWave** SQL editor (`ieeefdnyhzgrroifiqbb`) — *not* `supabase db
+      push`, which targets the identity project. It is idempotent and carries its own rollback.
+- [ ] Run `select public.collection_refresh();` after it. Until the snapshot rebuilds, nothing on
+      screen changes.
+- [ ] Re-open a customer page on the Collection Report and confirm the Spare Parts / Head bands.
+
+**Deliberately left out — each needs its own call, and none is in the report that raised this:**
+- `PAPER/` — 117 bills, ₹1.05 Cr, its own `GST SALES-PAPER` voucher type. There is no paper bucket
+  anywhere in the system; making one means the mirror plus ~10 frontend spots that enumerate sale
+  types. **Decided 2026-08-21: leave it in Other for now.**
+- `SER/ SER/N/ RENT/ AMC/ JOB/` — ~52 bills, ₹70 L. Income, but not a product line; the mirror has a
+  `non_product` bucket the receivables screens already fold back into Other. Not yet asked.
+- `CN/ DN/ G/SR/` — credit notes, debit notes, sales returns. Adjustments that belong to the bill
+  they offset, not to a product line of their own.
+- `HAND/ NOTPL/ PM/ MS/H/` — ~₹36 L, four series with no matching voucher anywhere in the mirror.
+  `HAND/25-26/103` is on the screenshot that raised this. **Ritesh Bhai, 2026-08-21: `HAND/` is
+  almost certainly a mis-typed `HEAD/`, so it belongs in Head — but leave it in Other for now.**
+  Worth fixing at source in Tally rather than adding a rule that blesses the typo: a rule would
+  quietly make the misspelling permanent, and any future `HAND/` bill would look correct while
+  still being wrong in the books.
+
+Everything still reading `other` after this is genuinely other: advances, on-account, TDS/TCS,
+journals, round-off.
+
+**The durable fix, not done here:** type a non-opening bill from its **origin voucher** and fall
+back to the prefix only for true opening balances. That is a change to `collection_refresh()` in the
+ConnectWave project, so it wants its own sitting — the prefix rules above are complete for every
+bill on a numbered series, which is all of them today.
 
 ---
 
@@ -1024,6 +1271,89 @@ planned − received, computed in the report and not a stored field
 
 ---
 
+## Fixes
+
+Bugs found and repaired, **newest first**. This is not the same thing as [Done](#done): Done holds
+tasks somebody *asked for*, this holds faults somebody *hit*. A fix has no open entry above — it was
+never on the list, because nobody planned it.
+
+Three rules:
+
+- **Stamp the date and time it went live**, in IST, and name the commit. Same rule as Done.
+- **Lead with what the person saw**, not with the cause. "The item was missing from the dropdown" is
+  what will be searched for a year from now; the tied-timestamp explanation is the second line.
+- **Say what else was at risk.** A fault is rarely alone — if the same mistake sits in other code,
+  write down where, so the next reader does not have to find it twice.
+
+### FIX-2 · A long customer name was cut off on the new sales order  `[x]`
+*Order to Dispatch · **Fixed 2026-08-21, 13:18 IST** · Live on `master` at `1121181`*
+
+**What was seen:** raising a new sales order, a customer with a long name was clipped — in the
+Customer dropdown while choosing, and again in the field itself once picked, where
+`INTEGRATED APPAREL TECHNOLOGY AND FACILITATION CENTRE PVT LTD` read as
+`INTEGRATED APPAREL TECHNOLOGY AND FA…`. Confusing, and worse than it looks: a firm keeps a
+**separate ledger in every book it trades with**, so several of its ledgers collapsed to the *same*
+visible prefix and the tail — the only thing that tells them apart — was the part being thrown away.
+The person was being asked to pick between identical-looking rows.
+
+**What was wrong:** two cuts, in different places. Every portalled menu carried a flat
+`max-w-[320px]`, so any row past roughly 40 characters was trimmed to an ellipsis — **238 of the
+1,887 customer ledgers**, the longest running to 61 characters. Separately the picker's trigger
+truncated its selected value on one line, so the name was cut a second time *after* choosing, which
+is exactly when someone wants to confirm what they picked.
+
+**The fix:** `placeMenu` now returns a `maxWidth` beside the `maxHeight` it already returned — the
+room actually available on the side the menu is pinned to, capped at 560px — and pins the menu by
+its **right** edge when that is the roomier side, so a picker in the last column of a form opens
+leftwards across the form instead of into the window edge. Menu rows wrap instead of truncating, so
+nothing in a list is ever cut off again. For the trigger, a new opt-in `wrapLabel` lets the value
+run to a second line; it is set on the four master pickers in the sales-order header, which New
+Order and Edit Order share. It is off by default because a fixed-height grid cell — the item picker
+on the lines grid — cannot take a taller control; those keep the ellipsis and gain a hover tooltip.
+
+**What else was at risk:** the 320px cap and the truncating rows were in the **shared**
+`Combobox` and `MultiSelect`, so every dropdown in every module was cutting long values the same
+way — masters pickers, queue column filters, form fields alike. All of them are fixed by this
+change, not just Dispatch. Queue *table cells* were never affected: they wrap already.
+
+### FIX-1 · A customer's item was missing from the sales order dropdown  `[x]`
+*Order to Dispatch · **Fixed 2026-08-21, 07:46 IST** · Live on `master` at `2dde9c0`*
+
+**What was seen:** `LAXMI DIGITAL — DIGISTAR BELLAGIO RJM GREY` sat in **Central Masters → Customer
+Items**, active, ticked into the module and proved by 11 sales. Pick that company and that customer
+on a new sales order and the item was not in the Item list. The two screens disagreed about the same
+row.
+
+**What was wrong:** nothing in the data. The module reads the 8,052 customer-item pairs a thousand
+at a time, and it was ordering those pages by `created_at` alone — a column that is *not* unique
+here, because the sales-register derivation wrote the pairs in batches sharing a timestamp to the
+microsecond (500, 500, 500 … and one of 1,036). Each page is its own query and the database promises
+no order for rows tied on the column you named, so a row inside a tie could fall either side of a
+page boundary from one request to the next. Replaying the module's nine pages against live: **8,052
+rows fetched, 7,754 distinct** — roughly 300 pairs read twice and roughly 300 never read at all, and
+a different 300 each time. This pair was one of the missing ones, so the order form had genuinely
+never been told it existed. Masters showed it because that screen reads through `liveMasters`, which
+orders by `id`.
+
+**The fix:** the primary key is appended as a tiebreaker on all three paged reads in
+`dispatchFetch.ts`, which makes the order total and the walk exact — re-measured at 8,052 fetched,
+8,052 distinct, the pair present. `fms_dispatch_config` is exempt: it already orders by `key`, its
+own unique primary key.
+
+**What else was at risk:** `mst_parties` (1,887 customers over 216 distinct timestamps) and
+`fms_dispatch_order_items` carry the identical fault and are whole today only because their page
+boundary happens to miss a tie group — a customer or an order line could have vanished the same
+silent way. Both are covered by this change.
+
+**Still open, and worth doing:** every other module's loader pages the same way
+(`procurement`, `sampling`, `production-entry`, `hr-*`, `office-supplies`, `asset-maintenance`,
+`import`, `task-management`). None is broken today, because their tables are smaller than a page —
+but each one breaks like this the day it crosses 1,000 rows, and it breaks *quietly*. The receivables
+fetchers already carry the rule in their comments; the FMS ones do not. **A sweep of the same one-line
+tiebreaker across them is not yet done.**
+
+---
+
 ## Done
 
 Finished work, **newest first**. A task moves here from its module heading the day it goes live.
@@ -1038,6 +1368,66 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### OD-6 · Every save in Order to Dispatch was slow — the write was fast, the reload after it was not  `[x]`
+*Order to Dispatch · **Done 2026-08-21, 13:35 IST** (database) and **14:05 IST** (the app, on `master` at `74a525b`) · Raised by Bushra*
+
+Reported on the master request and on the bill step after the Tally bill is attached. It was neither
+screen: **all 23 write paths** behaved this way, Setup included. Saving was never the slow part —
+`fms_dispatch_record_sales_bill` averaged **70 ms**. What the user waited for was the module-wide
+reload the client awaited afterwards, traced end to end at **6.1 seconds** (daily maxima 20–24 s).
+
+**What a user sees now:** Save closes the moment the write lands. The screen behind it catches up on
+its own. The reload it used to wait for has itself dropped from **6.1 s to ~1.4 s** (four browser
+runs: 1,278 / 1,448 / 1,773 / 903 ms).
+
+**Two causes, both fixed.**
+
+1. **The visibility check ran once per row, per table, per page.** `fms_dispatch_can_see_order` is
+   `SECURITY DEFINER` *with* `SET search_path`, which makes it non-inlinable — so it ran as a real
+   function call for each of ~475 orders, every call doing `has_role` + a config jsonb scan + a
+   step-owners scan. Five tables reached it. On top, each table's `*_write_admin` policy was declared
+   `FOR ALL`, so an un-wrapped `is_admin(auth.uid())` was ORed into every SELECT as well. Across all
+   475 orders there are exactly **four** distinct `(location_id, raised_by)` pairs — four possible
+   answers, computed some five thousand times a reload.
+   Migration [20260924120000](supabase/migrations/20260924120000_dispatch_visibility_hoisted.sql)
+   hoists every row-independent arm into an InitPlan and has the dependent tables ask only *"is my
+   parent row visible"*, so the rule is stated once. Measured under live RLS, worst-case persona:
+
+   | | before | after |
+   |---|---|---|
+   | `fms_dispatch_orders` | 280 ms | **6.1 ms** |
+   | `fms_dispatch_order_items` | 758 ms | **7.8 ms** |
+   | `fms_dispatch_rounds` | 2,207 ms avg | **4.3 ms** |
+   | `fms_dispatch_round_items` | 1,074 ms | **8.7 ms** |
+   | `fms_dispatch_activity` | 752 ms | **4.9 ms** |
+   | `fms_dispatch_notifications` | 384 ms | **3.3 ms** |
+
+2. **The modal waited for the reload.** Every store action ended `await invalidate()`, and TanStack
+   Query resolves that only once the query has refetched. It no longer waits.
+
+**Nobody's visibility changed, and that was proved rather than asserted.** Four personas — a step
+owner who raised nothing, a heavy raiser, an admin, and a user with no dispatch access — were counted
+across all six tables before and after, with an **id-set checksum** alongside each count so an
+equal-sized but different set could not slip through: **24 counts and 24 checksums, identical**,
+checked three times (after apply, after rollback, after re-apply). Separately, the old function and
+the new predicate were compared for **every user against every order — 28,680 pairs, 0 mismatches**.
+That query is kept at the foot of the migration as the standing regression check, because the rule now
+lives in two places (`fms_dispatch_announce` still calls the function).
+
+**The rollback was rehearsed, not just written.** It was executed against live data, confirmed in
+force (round_items back to 1,074 ms) with visibility unchanged, then the migration was re-applied.
+
+**Also fixed on the way:** the bell's "mark read" `PATCH` (662 ms avg, 2,796 ms max) paid the same
+per-row cost and is wrapped too; the paged reads now fetch their pages **concurrently** instead of one
+after another (`mst_items`' nine chunks went from ~700 ms serial to a **14 ms** burst); and the bell
+now fetches only the signed-in user's notifications instead of the whole table — the store discarded
+everyone else's rows anyway, and an admin was pulling all 5,296 of them on every save.
+
+Both halves are live: the migration was applied first, then the app followed on `master` at
+`74a525b`. That order matters and is the rule here — the policies only make the existing reads
+faster, so the app was safe either way, but a frontend that needs a migration must never land first.
+See **OD-8** for the one optimisation deliberately left out.
 
 ### PF-5 · Module access gets a level: view-only, or view and edit  `[x]`
 *Platform — all modules · Admin / Users · **Done 2026-08-20, 22:19 IST** (the screens went live 2026-08-18, 13:52 IST) · Raised by Bushra*

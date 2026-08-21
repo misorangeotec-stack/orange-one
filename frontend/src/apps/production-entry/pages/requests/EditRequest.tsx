@@ -75,6 +75,9 @@ export default function EditRequest() {
           requestId: request.id,
           fgQty: request.fgQty != null ? String(request.fgQty) : "",
           fgItemId: request.fgItemId ?? "",
+          // Blank on cards raised before the FG lot existed — the edit is where
+          // it gets supplied, and saving now requires it.
+          fgLotNo: request.fgLotNo ?? "",
           issueRemarks: request.issueRemarks ?? "",
           issueDate: request.issueDate ?? request.submittedAt.slice(0, 10),
           packRows: request.pmhBomLines.map(

@@ -22,6 +22,10 @@ export default function ReadyToDispatchQueue() {
     [s],
   );
 
+  // The repackaging FG lot is carried through every step, so it shows here too —
+  // but only when a card in view has one, since a manufactured lot never does.
+  const hasFgLot = rows.some((r) => !!r.fgLotNo);
+
   const columns: QueueColumn<ProductionRequest>[] = [
     {
       key: "batch",
@@ -40,6 +44,16 @@ export default function ReadyToDispatchQueue() {
       sortValue: (r) => s.fgItemById(r.fgItemId)?.name ?? "",
       filter: { kind: "select", get: (r) => s.fgItemById(r.fgItemId)?.name ?? "—" },
     },
+    ...(hasFgLot
+      ? [{
+          key: "fgLotNo",
+          header: "FG Lot No.",
+          cell: (r: ProductionRequest) => <span className="text-navy">{r.fgLotNo || "—"}</span>,
+          sortValue: (r: ProductionRequest) => r.fgLotNo ?? "",
+          filter: { kind: "text" as const, get: (r: ProductionRequest) => r.fgLotNo ?? "" },
+          tdClassName: "whitespace-nowrap",
+        }]
+      : []),
     {
       key: "packed",
       header: "Packed Qty",

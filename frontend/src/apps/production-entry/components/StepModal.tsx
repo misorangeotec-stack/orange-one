@@ -766,6 +766,14 @@ export default function StepModal({
               FG Item: <span className="font-semibold text-navy">{fgName}</span>
               {fgUnit && <span className="text-grey-2"> · {fgUnit}</span>}
             </div>
+            {/* Repackaging carries the lot the goods ARRIVED with all the way
+                through — it is entered once on the repackaging slip and is
+                read-only from here on, at every step that touches the card. */}
+            {request.fgLotNo && (
+              <div className="text-[12.5px] text-grey">
+                FG Lot No.: <span className="font-semibold text-navy">{request.fgLotNo}</span>
+              </div>
+            )}
           </div>
         )}
 

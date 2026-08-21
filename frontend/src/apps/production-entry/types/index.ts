@@ -203,6 +203,17 @@ export interface ProductionRequest {
   fgItemId: string | null;
   // FG total quantity to produce (issue slip). RM line quantities must sum to it.
   fgQty: number | null;
+  /**
+   * REPACKAGING ONLY — the lot number of the finished good being repacked, as it
+   * arrived (the supplier / import lot). Mandatory on the repackaging slip and
+   * carried forward read-only through every later step.
+   *
+   * ⚠ Not `jobcardNo`, which is the Lot/Batch CARD number this system allocates.
+   * Null on production cards (their raw-material lots live per-line in
+   * `mhBomLines[].lotNo`) and on repackaging cards raised before the field
+   * existed.
+   */
+  fgLotNo: string | null;
   issueRemarks: string | null;
   raisedBy: string | null;
   requesterName: string;

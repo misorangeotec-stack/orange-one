@@ -51,6 +51,9 @@ export interface RequestInput {
   cardType?: ProductionCardType;
   /** Repackaging only — the packaging material. Ignored for production cards. */
   packLines?: RequestPackLineInput[];
+  /** Repackaging only — the incoming FG lot number, MANDATORY there (the server
+   *  rejects a blank). Ignored for production cards, which have no such lot. */
+  fgLotNo?: string | null;
 }
 
 /** The pmh_bom_lines element shape — server recomputes extra/total from it. */
@@ -84,6 +87,7 @@ export async function submitRequest(input: RequestInput): Promise<string> {
       requester_name: input.requesterName,
       issue_date: input.issueDate ?? "",
       card_type: input.cardType ?? "production",
+      fg_lot_no: input.fgLotNo ?? "",
       pmh_bom_lines: (input.packLines ?? []).map(packLinePayload),
     },
   });
@@ -103,6 +107,7 @@ export async function updateRequest(requestId: string, input: RequestInput): Pro
       issue_remarks: input.issueRemarks ?? "",
       // Blank keeps whatever is stored — the RPC coalesces to the current value.
       issue_date: input.issueDate ?? "",
+      fg_lot_no: input.fgLotNo ?? "",
       pmh_bom_lines: (input.packLines ?? []).map(packLinePayload),
     },
   });
