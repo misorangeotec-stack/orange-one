@@ -39,8 +39,20 @@ export const BRAND = {
   orange: "#FF6A1F",
   orange2: "#FF8A3D",
   orangeSoft: "#FFF1E8",
+  /**
+   * A wash so faint it reads as "this row is worth a look" rather than as a total.
+   * Deliberately LIGHTER than `orangeSoft`, which is the interim-total fill: a flagged
+   * ordinary row and a row that concludes a section must not land in the same tone.
+   */
+  orangeWash: "#FFF7F0",
   page: "#F6F9FD",
   line: "#E9EEF6",
+  /**
+   * One step deeper than `line`, for the row that CLOSES a section.
+   * A band opens a sale type and a subtotal closes it; painted in the same `line` they abutted
+   * into one grey slab and a reader could not tell the heading from the sum.
+   */
+  lineStrong: "#CFDCEE",
   grey: "#64748B",
   grey2: "#8A99B0",
   red: "#E5484D",
@@ -330,7 +342,13 @@ export function gradientRect(
 /** The navy header band with the logo. Returns the y coordinate just under the orange rule. */
 export function headerBand(
   ctx: Ctx,
-  opts: { tag?: string; compact?: boolean } = {},
+  /**
+   * `note` is a short fact about the DATA (e.g. how current it is), set on the band itself so it
+   * is impossible to miss and impossible to leave behind: the band is on every page, while the
+   * meta strip is page 1 only. It rides under the tag on the right, in orange on navy — the one
+   * combination in this palette that is loud without being a heading.
+   */
+  opts: { tag?: string; compact?: boolean; note?: string } = {},
 ): number {
   const { pdf, assets } = ctx;
   const h = opts.compact ? 40 : 54;
@@ -365,10 +383,16 @@ export function headerBand(
    * decorative one. Ellipsized against the room the wordmark left, so a long title can never run
    * under the logo.
    */
+  const room = pw - MARGIN * 2 - brandW - 18;
   if (opts.tag) {
-    const room = pw - MARGIN * 2 - brandW - 18;
-    text(pdf, ellipsize(pdf, opts.tag.toUpperCase(), room, 8, true), pw - MARGIN, h / 2 + 3, {
+    // With a note under it the pair is centred as a block, so the band never looks bottom-heavy.
+    text(pdf, ellipsize(pdf, opts.tag.toUpperCase(), room, 8, true), pw - MARGIN, h / 2 + (opts.note ? -3 : 3), {
       size: 8, bold: true, color: "#E8EEF8", align: "right",
+    });
+  }
+  if (opts.note) {
+    text(pdf, ellipsize(pdf, opts.note.toUpperCase(), room, 6.6, true), pw - MARGIN, h / 2 + (opts.tag ? 10 : 3), {
+      size: 6.6, bold: true, color: BRAND.orange2, align: "right",
     });
   }
 
@@ -616,8 +640,12 @@ export function applyDeferredLinks(
  *            rows under it belong to it. Used where a table is grouped and the group needs naming
  *            without breaking it into separate `drawTable` calls, which would lose the shared
  *            header and the page-break handling.
+ *   subtotal · the row that CLOSES a section, under the bills it sums.
+ *   big    · an ordinary row FLAGGED as one of the large ones. It is still a data row — it sums
+ *            nothing and concludes nothing — so it wears a rail and a wash rather than a
+ *            total's fill. Only meaningful where the caller has ranked the rows.
  */
-export type RowKind = "normal" | "total" | "muted" | "grand" | "band" | "subtotal";
+export type RowKind = "normal" | "total" | "muted" | "grand" | "band" | "subtotal" | "big";
 
 export interface TableOpts<T> {
   x: number;
@@ -683,18 +711,36 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
     if (kind === "grand") { setFill(pdf, BRAND.navy); pdf.rect(x, y, width, rowH, "F"); }
     else if (kind === "total") { setFill(pdf, BRAND.orangeSoft); pdf.rect(x, y, width, rowH, "F"); }
     // A band is quieter than a total on purpose: it names the section, it does not conclude it.
-    // A subtotal wears the SAME tone: the band opens a section and the subtotal closes it, so the
-    // pair reads as one block, and the orange TOTAL stays the only row that concludes the page.
-    // (It used to be "muted" — grey, unfilled, unbolded — which left it lighter than the band
-    // above it and lighter than the bills it was summing.)
-    else if (kind === "band" || kind === "subtotal") { setFill(pdf, BRAND.line); pdf.rect(x, y, width, rowH, "F"); }
+    else if (kind === "band") { setFill(pdf, BRAND.line); pdf.rect(x, y, width, rowH, "F"); }
+    // The subtotal is a step DEEPER than the band, plus a navy rule drawn across its top edge.
+    // It closes what the band opened, and one section's subtotal is usually followed immediately
+    // by the next section's band: painted in the same `line` the two abutted into a single grey
+    // slab with no telling which was the heading and which the sum. (Both were "muted" before
+    // that — grey, unfilled, unbolded, i.e. lighter than the very bills they were summing.)
+    else if (kind === "subtotal") {
+      setFill(pdf, BRAND.lineStrong);
+      pdf.rect(x, y, width, rowH, "F");
+      setDraw(pdf, BRAND.navy);
+      pdf.setLineWidth(0.7);
+      pdf.line(x, y, x + width, y);
+    }
+    // A flagged row: faint wash plus an orange rail down its left edge. The rail is what does the
+    // work — a wash pale enough not to be mistaken for a total is also pale enough to miss when
+    // scanning, and the rail is the same mark the cards use for "look here".
+    else if (kind === "big") {
+      setFill(pdf, BRAND.orangeWash);
+      pdf.rect(x, y, width, rowH, "F");
+      setFill(pdf, BRAND.orange);
+      pdf.rect(x, y + 1, 2, rowH - 2, "F");
+    }
 
     const baseColor =
       kind === "grand" ? BRAND.white : kind === "muted" ? BRAND.grey2 : BRAND.navy;
 
     columns.forEach((c, i) => {
       const right = (c.align ?? "left") === "right";
-      const bold = kind === "grand" || kind === "total" || kind === "band" || kind === "subtotal";
+      const bold =
+        kind === "grand" || kind === "total" || kind === "band" || kind === "subtotal" || kind === "big";
       const color = (kind === "grand" ? undefined : c.color?.(row)) ?? baseColor;
       const raw = c.value(row);
       const shown = ellipsize(pdf, raw, widths[i] - pad * 2, bodySize, bold);

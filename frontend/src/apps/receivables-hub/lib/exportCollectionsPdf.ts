@@ -651,6 +651,22 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   const generatedAt = stamp();
   const links: DeferredLink[] = [];
 
+  /**
+   * How current the figures are, said in three places on purpose.
+   *
+   * The header band carries it on EVERY page (a reader who lands on a salesperson page from the
+   * bookmark pane never sees page 1's meta strip), the meta strip states it beside "As on", and
+   * the footer repeats it beside the generated timestamp — which answers a different question and
+   * was, on its own, being read as the age of the data.
+   *
+   * Blank when the as-on date is unknown: nothing is printed rather than a date derived from
+   * nothing. Computed here, before page 1 is drawn, because the band needs it too.
+   */
+  const dataNote = input.dataUpdatedTill
+    ? `data updated till ${formatDateDMY(input.dataUpdatedTill)}`
+    : undefined;
+  const bandOpts = { tag: input.title, note: dataNote };
+
   /** Bottom of the drawable area, clear of the footer rule. */
   const FLOOR = PAGE_H - 52;
 
@@ -681,7 +697,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   const newPage = (): number => {
     pdf.addPage();
     pageWash(pdf);
-    const top = headerBand(ctx, { tag: input.title, compact: true }) + 18;
+    const top = headerBand(ctx, { ...bandOpts, compact: true }) + 18;
     return homeLink(pdf, top) + 14;
   };
 
@@ -701,7 +717,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
 
   // ── Page 1 ────────────────────────────────────────────────────────────────────────
   pageWash(pdf);
-  let y = headerBand(ctx, { tag: input.title }) + (isRep ? 18 : 22);
+  let y = headerBand(ctx, bandOpts) + (isRep ? 18 : 22);
 
   // THE HEADLINE BLOCK.
   //
@@ -1025,7 +1041,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     pageWash(pdf);
     pageOf.set(rep.name, pdf.getNumberOfPages());
 
-    let ry = headerBand(ctx, { tag: input.title, compact: true }) + 20;
+    let ry = headerBand(ctx, { ...bandOpts, compact: true }) + 20;
     ry = homeLink(pdf, ry) + 26;
 
     text(pdf, ellipsize(pdf, rep.name, CONTENT_W, 16, true), MARGIN, ry, { size: 16, bold: true });
@@ -1047,7 +1063,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     pageWash(pdf);
     pageOf.set(appendixKey(app), pdf.getNumberOfPages());
 
-    let ay = headerBand(ctx, { tag: input.title, compact: true }) + 20;
+    let ay = headerBand(ctx, { ...bandOpts, compact: true }) + 20;
     ay = homeLink(pdf, ay) + 26;
 
     text(pdf, app.title, MARGIN, ay, { size: 16, bold: true });
@@ -1198,7 +1214,7 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     pageWash(pdf);
     pageOf.set(custKey(rep.name, cust.name), pdf.getNumberOfPages());
 
-    let cy = headerBand(ctx, { tag: input.title, compact: true }) + 20;
+    let cy = headerBand(ctx, { ...bandOpts, compact: true }) + 20;
     cy = homeLink(pdf, cy) + 24;
 
     text(pdf, ellipsize(pdf, cust.name, CONTENT_W, 15, true), MARGIN, cy, { size: 15, bold: true });
@@ -1218,12 +1234,44 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
     // that reconciles the page rather than another bill. Same order as the workbook's block.
     const groups = groupBySaleType(open);
 
+    /**
+     * The biggest fifth of the bills, flagged where they sit.
+     *
+     * The list is ordered by DATE — oldest first, inside each sale type — which is the order you
+     * chase a ledger in, and it is deliberately kept. But it says nothing about size: on a
+     * forty-six-bill page the four that carry half the money are scattered through it and a
+     * reader has to add up the column to find them. Flagging them in place gives both readings of
+     * the same table without a second copy sorted by value.
+     *
+     * Ranked on PENDING, not Amount: pending is what is still to be collected, which is the
+     * question the page exists to answer — a ₹5 L bill that is already paid down to ₹2,000 is not
+     * a big bill to chase. On Account is excluded; it is a credit, not a bill.
+     *
+     * Under five bills nothing is flagged: "the top 20%" of four rows is one row, and singling it
+     * out on a page a reader takes in at a glance adds noise, not sight.
+     */
+    const bigBills = new Set<PdfBillRow>();
+    if (open.length >= 5) {
+      const k = Math.ceil(open.length * 0.2);
+      for (const b of [...open].sort((a, b) => b.pending - a.pending).slice(0, k)) bigBills.add(b);
+    }
+
     cy = sectionHeading(
       pdf, MARGIN, cy,
       `${open.length} open past-due bill${open.length === 1 ? "" : "s"}` +
       `${groups.length > 1 ? ` across ${groups.length} sale types` : ""}` +
       `${onAccount.length ? " · plus On Account credit" : ""}`,
     ) + 7;
+
+    // Say what the shading means, or it reads as a defect in the file.
+    if (bigBills.size) {
+      text(
+        pdf,
+        `Marked rows are the ${bigBills.size} biggest bill${bigBills.size === 1 ? "" : "s"} here — the top 20% by pending amount.`,
+        MARGIN, cy, { size: 7, color: BRAND.grey2 },
+      );
+      cy += 11;
+    }
 
     interface BillSubtotal { count: number; amount: number; received: number; pending: number }
     interface BillLine {
@@ -1320,16 +1368,13 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       rows: billRows,
       rowKind: (r) =>
         r.total ? "total"
-        // The subtotal wears the BAND's tone: the band opens a sale type and the subtotal closes
-        // it, so the pair reads as one block and the orange TOTAL stays the only row that
-        // concludes the page. It used to share "muted" with the On Account line, which printed
-        // the row summing three bills lighter than the bills it was summing.
-        //
-        // The On Account credit KEEPS "muted": it is an aside rather than a sum, and its green
-        // figure needs the quiet ground to read.
+        // Band, subtotal and total are three different weights on purpose — see `drawTable`. The
+        // On Account credit KEEPS "muted": it is an aside rather than a sum, and its green figure
+        // needs the quiet ground to read.
         : r.band ? "band"
         : r.subtotal ? "subtotal"
         : r.bill?.isOnAccount ? "muted"
+        : r.bill && bigBills.has(r.bill) ? "big"
         : "normal",
       rowH: 14,
       maxY: FLOOR,
@@ -1385,13 +1430,10 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
 
   // Footers last, so every page knows the final count.
   //
-  // The data note rides along here because the header strip is page 1 only: a reader who lands on
-  // a salesperson page or an appendix from the bookmark pane would otherwise see a "generated"
-  // timestamp and nothing about how current the figures are.
+  // `dataNote` (defined at the top, beside the header band that also carries it) rides along here
+  // so the two facts a reader needs about a printed figure — when the file was made and how
+  // current the data behind it is — sit side by side on every page.
   const total = pdf.getNumberOfPages();
-  const dataNote = input.dataUpdatedTill
-    ? `data updated till ${formatDateDMY(input.dataUpdatedTill)}`
-    : undefined;
   for (let p = 1; p <= total; p++) {
     pdf.setPage(p);
     footer(ctx, p, generatedAt, dataNote);
