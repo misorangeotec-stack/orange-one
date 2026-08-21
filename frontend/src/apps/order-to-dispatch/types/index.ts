@@ -491,6 +491,16 @@ export interface DispatchOrder {
   status: DispatchStatus;
   currentStep: string;
   submittedAt: string;
+  /**
+   * Server-side "last touched", including by its own lines and rounds — a trigger
+   * bumps it when a child moves (migration 20260926120000).
+   *
+   * ⚠ NOT FOR DISPLAY. It exists so the refresh after a save can ask Supabase for
+   *   the orders that CHANGED instead of re-downloading all of them, which was
+   *   2.9 MB a save. Rendering it would be wrong as well as useless: it moves when
+   *   a line is edited, not when a human did something worth showing.
+   */
+  updatedAt: string;
 
   /** Which round is in progress. 1 for an ordinary single-consignment order. */
   roundNo: number;

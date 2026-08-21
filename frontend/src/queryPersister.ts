@@ -39,6 +39,35 @@ export const PERSIST_MAX_AGE = 24 * 60 * 60 * 1000; // 24h
  */
 const PERSIST_THROTTLE_MS = 5_000;
 
+/**
+ * The one persister the app uses, created once and shared.
+ *
+ * ⚠ A SINGLETON SO SIGN-OUT CAN REACH IT. Clearing the on-disk cache means
+ *   cancelling any throttled write as well as deleting the record — a bare
+ *   `del()` would be undone moments later by a pending flush resurrecting the
+ *   cache we had just cleared. Only the persister itself can do both, so the
+ *   instance has to be reachable from outside main.tsx.
+ */
+let sharedPersister: Persister | null = null;
+
+export function getPersister(): Persister {
+  if (!sharedPersister) sharedPersister = createIDBPersister();
+  return sharedPersister;
+}
+
+/**
+ * Wipe the persisted cache — call on SIGN-OUT.
+ *
+ * ⚠ Until this existed nothing ever cleared it, so a signed-out browser kept the
+ *   last user's data on disk for the full 24-hour max age, readable through
+ *   devtools without logging in. That already covered the receivables payload and
+ *   the staff directory; the dispatch catalogue would have added customer names,
+ *   GSTINs, phone numbers and email addresses to the pile.
+ */
+export async function clearPersistedCache(): Promise<void> {
+  await getPersister().removeClient();
+}
+
 export function createIDBPersister(idbKey = "orange-one-rq-cache"): Persister {
   // Trailing-edge throttle: always writes the LATEST client, never an older
   // snapshot, and never leaves the final state of a burst unwritten.

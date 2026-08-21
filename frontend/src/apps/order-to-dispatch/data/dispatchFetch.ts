@@ -118,9 +118,13 @@ async function pagedWalk(build: (withCount: boolean) => any): Promise<any[]> {
   return out;
 }
 
-async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
+/**
+ * `cols` names the columns to fetch. Default "*" — pass a list only where the
+ * saving is worth the care, i.e. the catalogue. See COLS below.
+ */
+async function fetchAll(table: Tbl, orderBy = "created_at", cols = "*"): Promise<any[]> {
   return pagedWalk((withCount) => {
-    let q = db.from(table).select("*", withCount ? { count: "exact" } : undefined)
+    let q = db.from(table).select(cols, withCount ? { count: "exact" } : undefined)
       .order(orderBy, { ascending: true });
     // fms_dispatch_config is the one caller that names its own key, and `key` IS
     // its primary key — it has no `id` column, so asking for one would 400.
@@ -128,6 +132,35 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
     return q;
   });
 }
+
+/**
+ * THE COLUMNS THE CATALOGUE ACTUALLY USES — every one of them read off a mapper,
+ * not guessed. `select("*")` was fetching 26 columns of mst_parties to map 11.
+ * Measured: the catalogue drops from 2.1 MB to ~680 kB.
+ *
+ * ⚠ THE MAPPER IS THE CONTRACT. Every row here is typed `any`, so dropping a
+ *   column the mapper reads produces `undefined` in the UI, silently, with no
+ *   compiler error. If you change a mapper, change its line here in the same
+ *   edit — and re-run the equivalence check (fetch both ways, map both, compare).
+ *
+ * ⚠ TWO OF THESE TABLES HAVE NO `name` COLUMN — mst_party_items and
+ *   mst_company_locations. Asking for one is a "column does not exist" 400, not
+ *   an empty field. mapMaster reads `r.name` on both anyway and gets undefined;
+ *   the pair mapper then overwrites it with "".
+ *
+ * ⚠ `created_at` is carried on every line even though nothing maps it: the paged
+ *   walk ORDERS by it, and ordering by a column outside the select list is not a
+ *   guarantee worth resting a silent-truncation bug on.
+ */
+const COLS = {
+  companies: "id,name,active,sort_order,created_at,alias,location,gstin,address,gate_pass_prefix",
+  locations: "id,name,active,sort_order,created_at",
+  companySites: "id,active,sort_order,created_at,location_id,company_id",
+  partyItems: "id,active,sort_order,created_at,party_id,item_id",
+  parties: "id,name,active,sort_order,created_at,company_id,code,location,gstin,contact_name,phone,email",
+  items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id",
+  units: "id,name,created_at",
+} as const;
 
 /**
  * CENTRAL MASTERS — customers and items live in mst_*, shared with every module.
@@ -157,9 +190,9 @@ async function fetchAll(table: Tbl, orderBy = "created_at"): Promise<any[]> {
  */
 
 /** Everything Dispatch reads is per-table and unfiltered except these two. */
-async function fetchWhere(table: Tbl, extra: (q: any) => any): Promise<any[]> {
+async function fetchWhere(table: Tbl, extra: (q: any) => any, cols = "*"): Promise<any[]> {
   return pagedWalk((withCount) =>
-    extra(db.from(table).select("*", withCount ? { count: "exact" } : undefined))
+    extra(db.from(table).select(cols, withCount ? { count: "exact" } : undefined))
       .order("created_at", { ascending: true })
       // The unique tiebreaker — see the note on fetchAll. mst_parties has 1,887
       // customers over 216 distinct timestamps, so page 2 starts inside a tie.
@@ -173,7 +206,7 @@ async function fetchWhere(table: Tbl, extra: (q: any) => any): Promise<any[]> {
  * `in` builds a query STRING, and a few thousand uuids exceeds what the gateway
  * accepts as one — so this is chunked for the same reason setMasterModules is.
  */
-async function fetchByIds(table: Tbl, ids: string[]): Promise<any[]> {
+async function fetchByIds(table: Tbl, ids: string[], cols = "*"): Promise<any[]> {
   const CHUNK = 200;
   // ⚠ CONCURRENT, not one chunk after another. This wave cannot even START until
   //   the whole first wave has landed (it needs the item list), so its latency is
@@ -185,7 +218,7 @@ async function fetchByIds(table: Tbl, ids: string[]): Promise<any[]> {
   for (let i = 0; i < ids.length; i += CHUNK) chunks.push(ids.slice(i, i + CHUNK));
 
   const results = await Promise.all(
-    chunks.map((c) => db.from(table).select("*").in("id", c)),
+    chunks.map((c) => db.from(table).select(cols).in("id", c)),
   );
   const out: any[] = [];
   for (const { data, error } of results) {
@@ -196,26 +229,54 @@ async function fetchByIds(table: Tbl, ids: string[]): Promise<any[]> {
 }
 
 /**
- * The activity trail, capped to a recent window.
+ * Just the item ids referenced by order lines — two narrow columns, not the row.
  *
- * It used to be an unbounded pass over the whole table on every page load, and
- * rounds multiply it — each loop writes another set of step entries against the
- * same order. Only the order detail page reads it, and only ever shows the tail,
- * so a window is both cheaper and no less useful.
+ * The catalogue must contain every item ALREADY ON AN ORDER, not only the ones a
+ * customer↔item pair names, or a line whose mapping was later switched off would
+ * render blank (OrderLine carries `itemId` and no name). That arm used to come
+ * free because the working set had already fetched every line; now the catalogue
+ * is a separate query and has to ask for itself.
+ *
+ * ⚠ Ordered by `id`, not `created_at`. The paged walk needs a UNIQUE ordering and
+ *   `created_at` is not one here — see the note on fetchAll. `id` is also one of
+ *   the two columns being selected, which keeps the request honest.
  */
-const ACTIVITY_DAYS = 120;
-
-async function fetchRecentActivity(): Promise<any[]> {
-  const since = new Date(Date.now() - ACTIVITY_DAYS * 86_400_000).toISOString();
-  return pagedWalk((withCount) =>
+async function fetchOrderLineItemIds(): Promise<string[]> {
+  const rows = await pagedWalk((withCount) =>
     db
-      .from("fms_dispatch_activity")
-      .select("*", withCount ? { count: "exact" } : undefined)
-      .gte("created_at", since)
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true }), // unique tiebreaker — see fetchAll
+      .from("fms_dispatch_order_items")
+      .select("id,item_id", withCount ? { count: "exact" } : undefined)
+      .order("id", { ascending: true }),
   );
+  const out = new Set<string>();
+  for (const r of rows as any[]) if (r.item_id) out.add(r.item_id);
+  return [...out];
 }
+
+/**
+ * The activity trail for ONE order, fetched when that order is opened.
+ *
+ * ⚠ IT USED TO RIDE IN THE SNAPSHOT, and that was 2,943 rows / 743 kB pulled on
+ *   every load and again after every save — for a panel with exactly one reader,
+ *   showing exactly one order. Master-request activity was fetched too and never
+ *   displayed at all. A window (120 days) had already been put round it once to
+ *   stop the bleeding; asking per order stops it properly.
+ *
+ * No paging: one order's trail is tens of rows, not thousands.
+ */
+export async function fetchOrderActivity(orderId: string): Promise<DispatchActivity[]> {
+  const { data, error } = await db
+    .from("fms_dispatch_activity")
+    .select("*")
+    .eq("entity_type", "order")
+    .eq("entity_id", orderId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(mapActivity);
+}
+
+/** The react-query key for one order's trail. */
+export const orderActivityQueryKey = (orderId: string) => ["dispatchOrderActivity", orderId] as const;
 
 export interface DispatchConfig {
   processCoordinatorIds: string[];
@@ -226,21 +287,35 @@ export interface DispatchConfig {
 export const DISPATCH_QK = ["orderToDispatchData"] as const;
 export const dispatchQueryKey = (userId: string | null) => [...DISPATCH_QK, userId] as const;
 
+/**
+ * The catalogue's own key — NOT scoped to the user, because RLS on the mst_*
+ * tables is `true` and everyone gets the same rows. One entry serves every tab
+ * and every person on the machine.
+ *
+ * ⚠ `dispatchMasters` is also the name on the IndexedDB persistence allowlist in
+ *   main.tsx. Renaming this key without renaming it there silently stops the
+ *   catalogue being kept between visits — the symptom is a slow first load, not
+ *   an error.
+ */
+export const DISPATCH_MASTERS_QK = ["dispatchMasters"] as const;
+
+/**
+ * The LIVE working set — everything a save can change.
+ *
+ * ⚠ The catalogue (companies / customers / items / pairs) deliberately is NOT
+ *   here: it is `DispatchMasters`, on its own key, so a write stops dragging
+ *   ~2 MB of ledgers behind it. Putting an mst_* field back on this interface
+ *   undoes the whole split.
+ */
 export interface DispatchData {
   stepOwners: StepOwner[];
   designations: Designation[];
   config: DispatchConfig;
 
-  companies: Company[];
-  companyLocations: CompanyLocation[];
-  customers: Customer[];
-  items: Item[];
-  customerItems: CustomerItem[];
-
   masterManagers: MasterManager[];
   masterRequests: DispatchMasterRequest[];
   orders: DispatchOrder[];
-  activity: DispatchActivity[];
+
   notifications: DispatchNotification[];
   /** The next order number that will be issued (preview — does not consume it). */
   orderNoPreview: string;
@@ -399,6 +474,7 @@ const mapOrder = (r: any): DispatchOrder => ({
   status: r.status,
   currentStep: r.current_step,
   submittedAt: r.submitted_at,
+  updatedAt: r.updated_at,
 
   roundNo: Number(r.round_no ?? 1),
   roundStartedAt: r.round_started_at ?? r.submitted_at,
@@ -528,54 +604,55 @@ const mapNotification = (r: any): DispatchNotification => ({
  *   is the user id, which `dispatchQueryKey` already puts in the key — see the
  *   notifications read below for why it is worth having.
  */
-export async function fetchDispatchData(
-  ctx?: { queryKey?: readonly unknown[] },
-): Promise<DispatchData> {
-  const forUser = typeof ctx?.queryKey?.[1] === "string" ? (ctx.queryKey[1] as string) : null;
+/** The catalogue the order form picks from. Split out of the working set so a
+ *  save stops re-downloading it — see fetchDispatchMasters below. */
+export interface DispatchMasters {
+  companies: Company[];
+  companyLocations: CompanyLocation[];
+  customers: Customer[];
+  items: Item[];
+  customerItems: CustomerItem[];
+}
 
-  // 17 names, 17 calls. Keep them in step. (mst_items is the 18th and comes
-  // after, in its own wave — see the note where it is fetched.)
-  const [
-    stepOwners, configRows, designations,
-    companies, locations, companySites, customerItems, customers, units,
-    masterManagers, masterRequests,
-    orders, orderItems, rounds, roundItems,
-    activity, notifications,
-  ] = await Promise.all([
-    fetchAll("fms_dispatch_step_owners"),
-    fetchAll("fms_dispatch_config", "key"),
-    fetchAll("designations"),
-    // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
-    // items, where Tally holds thousands and the tick is the only thing making
-    // a picker usable, there are five companies. A new one should appear on its
-    // own rather than waiting for somebody to remember to tick it.
-    fetchAll("mst_companies"),
-    fetchAll("mst_locations"),
-    fetchAll("mst_company_locations"),
-    // ⚠ THE CATALOGUE IS FETCHED FIRST BECAUSE IT DECIDES THE ITEM LIST. Every
-    //   item the order form can offer is one a pair names; nothing else is
-    //   reachable. 8,555 rows of two uuids — cheaper than the item rows it saves.
-    fetchAll("mst_party_items"),
-    // EVERY customer ledger, all 1,850 of them. The company narrows them on the
-    // form; there is no list to tick any more.
-    fetchWhere("mst_parties", (q) => q.eq("is_customer", true)),
-    fetchAll("mst_units"),
-    fetchAll("fms_dispatch_master_managers"),
-    fetchAll("fms_dispatch_master_requests"),
-    fetchAll("fms_dispatch_orders", "submitted_at"),
-    fetchAll("fms_dispatch_order_items"),
-    fetchAll("fms_dispatch_rounds", "archived_at"),
-    fetchAll("fms_dispatch_round_items"),
-    fetchRecentActivity(),
-    // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
-    //   user_id is not the signed-in user (`mineNotifications`), so fetching the
-    //   whole table only ever cost bandwidth — and it cost the most for an admin,
-    //   whose RLS lets all 5,296 rows through where a normal user sees ~400. Same
-    //   rows reach the UI either way; four fifths of the payload does not.
-    forUser
-      ? fetchWhere("fms_dispatch_notifications", (q: any) => q.eq("user_id", forUser))
-      : fetchAll("fms_dispatch_notifications"),
-  ]);
+/**
+ * THE CATALOGUE — customers, items and the pairs that join them.
+ *
+ * ⚠ ITS OWN QUERY, AND THAT IS THE WHOLE POINT. It used to ride inside
+ *   fetchDispatchData, so every write — all 23 of them — invalidated it and
+ *   pulled ~2 MB of ledgers and stock items back down to learn that a Tally bill
+ *   number had been typed. Saving a bill cannot change who the customers are.
+ *   Now it is keyed separately, refreshed on a 30-minute timer rather than by
+ *   saves, and persisted to IndexedDB so a reload does not re-fetch it either.
+ *
+ * ⚠ NOT KEYED ON THE USER. RLS on the mst_* tables is `true` — every signed-in
+ *   person gets the same catalogue — so one cache entry serves everybody and a
+ *   second tab reuses the first one's copy.
+ *
+ * ⚠ ONLY FOUR WRITES MAY INVALIDATE THIS: insertMaster / insertMasters /
+ *   updateMaster (they write mst_* directly) and resolveMasterRequest (approving
+ *   creates the ledger). See store.tsx. Anything else invalidating this is a bug
+ *   — it is what the split exists to prevent.
+ */
+export async function fetchDispatchMasters(): Promise<DispatchMasters> {
+  const [companies, locations, companySites, customerItems, customers, units, orderLineItemIds] =
+    await Promise.all([
+      // ALL of them, deliberately un-filtered by `modules`. Unlike parties and
+      // items, where Tally holds thousands and the tick is the only thing making
+      // a picker usable, there are five companies. A new one should appear on its
+      // own rather than waiting for somebody to remember to tick it.
+      fetchAll("mst_companies", "created_at", COLS.companies),
+      fetchAll("mst_locations", "created_at", COLS.locations),
+      fetchAll("mst_company_locations", "created_at", COLS.companySites),
+      // ⚠ THE CATALOGUE IS FETCHED FIRST BECAUSE IT DECIDES THE ITEM LIST. Every
+      //   item the order form can offer is one a pair names; nothing else is
+      //   reachable. 8,052 rows of two uuids — cheaper than the item rows it saves.
+      fetchAll("mst_party_items", "created_at", COLS.partyItems),
+      // EVERY customer ledger, all 1,887 of them. The company narrows them on the
+      // form; there is no list to tick any more.
+      fetchWhere("mst_parties", (q) => q.eq("is_customer", true), COLS.parties),
+      fetchAll("mst_units", "created_at", COLS.units),
+      fetchOrderLineItemIds(),
+    ]);
 
   const unitNameById = new Map<string, string>(units.map((u: any) => [u.id, u.name]));
   const customerIds = new Set<string>(customers.map((c: any) => c.id));
@@ -590,69 +667,22 @@ export async function fetchDispatchData(
    * The second exists because a pair can be switched off after an order was
    * raised. The item would then vanish from this list, and the order's line
    * would render as a blank in the queue, on the gate pass and in the export —
-   * "deleted" dressed up as an empty cell. Today all 121 items on the 303 live
-   * orders are inside the first set anyway, so this costs nothing; it is here
-   * for the day somebody deactivates a mapping.
+   * "deleted" dressed up as an empty cell.
+   *
+   * ⚠ THE SECOND ARM IS WHY THIS QUERY READS AN fms_ TABLE AT ALL. It costs one
+   *   narrow column of fms_dispatch_order_items (see fetchOrderLineItemIds) and
+   *   it is the reason the catalogue can be stale for half an hour without an
+   *   order line rendering blank. The store carries a self-heal for the case
+   *   this cannot cover: an item mapped AFTER this snapshot was taken.
    */
-  const wantedItemIds = new Set<string>();
+  const wantedItemIds = new Set<string>(orderLineItemIds);
   for (const r of customerItems as any[]) {
     if (customerIds.has(r.party_id)) wantedItemIds.add(r.item_id);
   }
-  for (const r of orderItems as any[]) if (r.item_id) wantedItemIds.add(r.item_id);
-  const items = await fetchByIds("mst_items", [...wantedItemIds]);
+  const items = await fetchByIds("mst_items", [...wantedItemIds], COLS.items);
   const itemIds = new Set<string>(items.map((i: any) => i.id));
 
-  const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
-  const config: DispatchConfig = {
-    processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
-    stepSla: resolveStepSla(byKey.get("step_sla")),
-  };
-
-  // Group the lines onto their orders in memory (see the header note).
-  const linesByOrder = new Map<string, OrderLine[]>();
-  for (const raw of orderItems) {
-    const line = mapLine(raw);
-    const arr = linesByOrder.get(line.orderId);
-    if (arr) arr.push(line);
-    else linesByOrder.set(line.orderId, [line]);
-  }
-  for (const arr of linesByOrder.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
-
-  // Same for the round archive: round items onto rounds, rounds onto orders.
-  const itemsByRound = new Map<string, RoundItem[]>();
-  for (const raw of roundItems) {
-    const ri = mapRoundItem(raw);
-    const arr = itemsByRound.get(ri.roundId);
-    if (arr) arr.push(ri);
-    else itemsByRound.set(ri.roundId, [ri]);
-  }
-  for (const arr of itemsByRound.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
-
-  const roundsByOrder = new Map<string, DispatchRound[]>();
-  for (const raw of rounds) {
-    const r = mapRound(raw);
-    r.items = itemsByRound.get(r.id) ?? [];
-    const arr = roundsByOrder.get(r.orderId);
-    if (arr) arr.push(r);
-    else roundsByOrder.set(r.orderId, [r]);
-  }
-  for (const arr of roundsByOrder.values()) arr.sort((a, b) => a.roundNo - b.roundNo);
-
-  const mappedOrders = orders.map((r) => {
-    const o = mapOrder(r);
-    o.lines = linesByOrder.get(o.id) ?? [];
-    o.rounds = roundsByOrder.get(o.id) ?? [];
-    return o;
-  });
-
-  // The next order number to be issued (preview — does not consume the counter).
-  const { data: orderPeek } = await db.rpc("fms_dispatch_peek_order_no");
-
   return {
-    stepOwners: stepOwners.map(mapStepOwner),
-    designations: designations.map(mapDesignation),
-    config,
-
     /**
      * ⚠ THE NAME SHOWN IS THE ALIAS, NEVER mst_companies.name.
      *   `name` is Tally's book name — "ORANGE O TEC PRIVATE LIMITED
@@ -733,11 +763,273 @@ export async function fetchDispatchData(
         ...mapMaster(r), name: "", customerId: r.party_id, itemId: r.item_id,
       })),
 
+  };
+}
+
+export async function fetchDispatchData(
+  ctx?: { queryKey?: readonly unknown[] },
+): Promise<DispatchData> {
+  const forUser = typeof ctx?.queryKey?.[1] === "string" ? (ctx.queryKey[1] as string) : null;
+
+  // 10 names, 10 calls. Keep them in step.
+  //
+  // ⚠ THE CATALOGUE IS NO LONGER HERE — it is fetchDispatchMasters, on its own
+  //   key. This list is the LIVE working set, and it is what a save invalidates.
+  //   Adding an mst_* read back into it would put ~2 MB behind every write again.
+  const [
+    stepOwners, configRows, designations,
+    masterManagers, masterRequests,
+    orders, orderItems, rounds, roundItems,
+    notifications,
+  ] = await Promise.all([
+    fetchAll("fms_dispatch_step_owners"),
+    fetchAll("fms_dispatch_config", "key"),
+    fetchAll("designations"),
+    fetchAll("fms_dispatch_master_managers"),
+    fetchAll("fms_dispatch_master_requests"),
+    fetchAll("fms_dispatch_orders", "submitted_at"),
+    fetchAll("fms_dispatch_order_items"),
+    fetchAll("fms_dispatch_rounds", "archived_at"),
+    fetchAll("fms_dispatch_round_items"),
+    // ⚠ THIS PERSON'S BELL, NOT EVERYONE'S. The store throws away every row whose
+    //   user_id is not the signed-in user (`mineNotifications`), so fetching the
+    //   whole table only ever cost bandwidth — and it cost the most for an admin,
+    //   whose RLS lets all 5,296 rows through where a normal user sees ~400. Same
+    //   rows reach the UI either way; four fifths of the payload does not.
+    forUser
+      ? fetchWhere("fms_dispatch_notifications", (q: any) => q.eq("user_id", forUser))
+      : fetchAll("fms_dispatch_notifications"),
+  ]);
+
+
+  const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
+  const config: DispatchConfig = {
+    processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
+    stepSla: resolveStepSla(byKey.get("step_sla")),
+  };
+
+  // Group the lines onto their orders in memory (see the header note).
+  const linesByOrder = new Map<string, OrderLine[]>();
+  for (const raw of orderItems) {
+    const line = mapLine(raw);
+    const arr = linesByOrder.get(line.orderId);
+    if (arr) arr.push(line);
+    else linesByOrder.set(line.orderId, [line]);
+  }
+  for (const arr of linesByOrder.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  // Same for the round archive: round items onto rounds, rounds onto orders.
+  const itemsByRound = new Map<string, RoundItem[]>();
+  for (const raw of roundItems) {
+    const ri = mapRoundItem(raw);
+    const arr = itemsByRound.get(ri.roundId);
+    if (arr) arr.push(ri);
+    else itemsByRound.set(ri.roundId, [ri]);
+  }
+  for (const arr of itemsByRound.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  const roundsByOrder = new Map<string, DispatchRound[]>();
+  for (const raw of rounds) {
+    const r = mapRound(raw);
+    r.items = itemsByRound.get(r.id) ?? [];
+    const arr = roundsByOrder.get(r.orderId);
+    if (arr) arr.push(r);
+    else roundsByOrder.set(r.orderId, [r]);
+  }
+  for (const arr of roundsByOrder.values()) arr.sort((a, b) => a.roundNo - b.roundNo);
+
+  const mappedOrders = orders.map((r) => {
+    const o = mapOrder(r);
+    o.lines = linesByOrder.get(o.id) ?? [];
+    o.rounds = roundsByOrder.get(o.id) ?? [];
+    return o;
+  });
+
+  // The next order number to be issued (preview — does not consume the counter).
+  const { data: orderPeek } = await db.rpc("fms_dispatch_peek_order_no");
+
+  return {
+    stepOwners: stepOwners.map(mapStepOwner),
+    designations: designations.map(mapDesignation),
+    config,
+
     masterManagers: masterManagers.map(mapMasterManager),
     masterRequests: masterRequests.map(mapMasterRequest),
     orders: mappedOrders,
-    activity: activity.map(mapActivity),
+
     notifications: notifications.map(mapNotification),
     orderNoPreview: (orderPeek as string) ?? "",
   };
+}
+
+/* ===========================================================================
+ * THE INCREMENTAL REFRESH — "what changed since I last looked?"
+ *
+ * A save used to re-download the module's whole working set: 2.9 MB and 11
+ * requests, to learn that one order moved a step. This asks for the changed
+ * orders instead.
+ *
+ * ⚠ IT RECONCILES AGAINST A LIST OF IDS, NOT JUST A TIMESTAMP, AND THAT IS AN
+ *   ACCESS-CONTROL REQUIREMENT RATHER THAN TIDINESS. fms_dispatch_update_order
+ *   can change an order's location_id, which can move the order OUT of this
+ *   user's visibility. A watermark-only delta would simply never mention that
+ *   order again and the stale copy would sit in their queue for the rest of the
+ *   session — an order they are no longer allowed to see. Asking for every
+ *   visible id (483 rows of id + timestamp, ~25 kB) means anything absent is
+ *   dropped, and deletions come out in the wash too.
+ *
+ * ⚠ IT RESTS ON A TRIGGER. Children — lines, rounds, round items — do not carry
+ *   a usable timestamp of their own (fms_dispatch_rounds has none at all), so
+ *   migration 20260926120000 bumps the parent order's updated_at when a child
+ *   moves. Without it this silently misses line edits: 447 rows were already
+ *   newer than their parent when that was measured.
+ *
+ * ⚠ ONLY FOR POST-WRITE REFRESHES. A refetch caused by mount or staleness still
+ *   does the full fetch, which keeps a cheap regular re-anchor to the truth.
+ * ======================================================================== */
+
+/** Orders whose children are re-read wholesale, so a DELETED line disappears. */
+async function fetchOrderChildren(orderIds: string[]) {
+  if (!orderIds.length) return { orderItems: [], rounds: [], roundItems: [] };
+  const inList = (col: string) => (q: any) => q.in(col, orderIds);
+
+  const [orderItems, rounds] = await Promise.all([
+    fetchWhere("fms_dispatch_order_items", inList("order_id")),
+    pagedWalk((withCount) =>
+      db.from("fms_dispatch_rounds")
+        .select("*", withCount ? { count: "exact" } : undefined)
+        .in("order_id", orderIds)
+        .order("id", { ascending: true })),
+  ]);
+  const roundIds = (rounds as any[]).map((r) => r.id);
+  const roundItems = roundIds.length
+    ? await pagedWalk((withCount) =>
+        db.from("fms_dispatch_round_items")
+          .select("*", withCount ? { count: "exact" } : undefined)
+          .in("round_id", roundIds)
+          .order("id", { ascending: true }))
+    : [];
+  return { orderItems, rounds, roundItems };
+}
+
+export async function fetchDispatchDelta(
+  prev: DispatchData,
+  forUser: string | null,
+): Promise<DispatchData> {
+  /*
+    ⚠ ONLY THE ORDERS ARE INCREMENTAL. Everything else here is re-read whole, on
+      purpose: orders and their children were 2,857 kB of the 2,928 kB a refresh
+      cost, and the rest is small enough that delta-ing it would buy noise and
+      cost correctness. Setup rows, master requests and the bell all change on
+      writes of their own, and each of those writes goes through this same path —
+      so they must come back fresh or a Setup save would appear not to save.
+  */
+  const [stepOwners, configRows, designations, masterManagers, masterRequests, notifications, stamps] =
+    await Promise.all([
+      fetchAll("fms_dispatch_step_owners"),
+      fetchAll("fms_dispatch_config", "key"),
+      fetchAll("designations"),
+      fetchAll("fms_dispatch_master_managers"),
+      fetchAll("fms_dispatch_master_requests"),
+      forUser
+        ? fetchWhere("fms_dispatch_notifications", (q: any) => q.eq("user_id", forUser))
+        : fetchAll("fms_dispatch_notifications"),
+      // Every order id this user may see, with its stamp. The cheap part.
+      pagedWalk((withCount) =>
+        db.from("fms_dispatch_orders")
+          .select("id,updated_at", withCount ? { count: "exact" } : undefined)
+          .order("id", { ascending: true })),
+    ]);
+
+  const byKey = new Map<string, any>(configRows.map((r) => [r.key, r.value ?? {}]));
+  const rest = {
+    stepOwners: stepOwners.map(mapStepOwner),
+    designations: designations.map(mapDesignation),
+    config: {
+      processCoordinatorIds: (byKey.get("process_coordinators")?.user_ids ?? []) as string[],
+      stepSla: resolveStepSla(byKey.get("step_sla")),
+    },
+    masterManagers: masterManagers.map(mapMasterManager),
+    masterRequests: masterRequests.map(mapMasterRequest),
+    notifications: notifications.map(mapNotification),
+  };
+
+  const visible = new Map<string, string>();
+  for (const r of stamps as any[]) visible.set(r.id, r.updated_at);
+
+  const held = new Map(prev.orders.map((o) => [o.id, o]));
+  const changed: string[] = [];
+  for (const [id, stamp] of visible) {
+    const have = held.get(id);
+    if (!have || have.updatedAt !== stamp) changed.push(id);
+  }
+
+  // Nothing moved and nothing vanished: keep the same order array so the queues
+  // do not re-render, but still take the freshly-read rest.
+  if (!changed.length && visible.size === held.size) {
+    const { data: peek } = await db.rpc("fms_dispatch_peek_order_no");
+    return { ...prev, ...rest, orderNoPreview: (peek as string) ?? prev.orderNoPreview };
+  }
+
+  // 2. Only the orders that moved, and only their children.
+  const [rows, children] = await Promise.all([
+    changed.length
+      ? fetchWhere("fms_dispatch_orders", (q: any) => q.in("id", changed))
+      : Promise.resolve([]),
+    fetchOrderChildren(changed),
+  ]);
+
+  const linesByOrder = new Map<string, OrderLine[]>();
+  for (const raw of children.orderItems as any[]) {
+    const line = mapLine(raw);
+    const arr = linesByOrder.get(line.orderId);
+    if (arr) arr.push(line); else linesByOrder.set(line.orderId, [line]);
+  }
+  for (const arr of linesByOrder.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  const itemsByRound = new Map<string, RoundItem[]>();
+  for (const raw of children.roundItems as any[]) {
+    const ri = mapRoundItem(raw);
+    const arr = itemsByRound.get(ri.roundId);
+    if (arr) arr.push(ri); else itemsByRound.set(ri.roundId, [ri]);
+  }
+  for (const arr of itemsByRound.values()) arr.sort((a, b) => a.lineNo - b.lineNo);
+
+  const roundsByOrder = new Map<string, DispatchRound[]>();
+  for (const raw of children.rounds as any[]) {
+    const r = mapRound(raw);
+    r.items = itemsByRound.get(r.id) ?? [];
+    const arr = roundsByOrder.get(r.orderId);
+    if (arr) arr.push(r); else roundsByOrder.set(r.orderId, [r]);
+  }
+  for (const arr of roundsByOrder.values()) arr.sort((a, b) => a.roundNo - b.roundNo);
+
+  for (const raw of rows as any[]) {
+    const o = mapOrder(raw);
+    o.lines = linesByOrder.get(o.id) ?? [];
+    o.rounds = roundsByOrder.get(o.id) ?? [];
+    held.set(o.id, o);
+  }
+
+  // 3. Drop anything no longer visible — see the access-control note above.
+  for (const id of [...held.keys()]) if (!visible.has(id)) held.delete(id);
+
+  /*
+    ⚠ SORTED BY (submitted_at, id) — THE SAME TOTAL ORDER THE FULL FETCH ASKS FOR.
+      fetchAll("fms_dispatch_orders", "submitted_at") appends `id` as the unique
+      tiebreaker, and the delta has to agree or two orders sharing a timestamp
+      would swap places whenever a refresh switched between the two paths — a list
+      that reshuffles itself for no reason the reader can see. There are no ties
+      today (486 stamps for 486 orders); this is here so there never can be.
+  */
+  const orders = [...held.values()].sort(
+    (a, b) => a.submittedAt.localeCompare(b.submittedAt) || a.id.localeCompare(b.id),
+  );
+
+  // The preview advances when an order is raised, so it cannot be carried over
+  // from `prev` — raising an order and going straight back to the form would
+  // otherwise offer the number that was just consumed.
+  const { data: orderPeek } = await db.rpc("fms_dispatch_peek_order_no");
+
+  return { ...prev, ...rest, orders, orderNoPreview: (orderPeek as string) ?? prev.orderNoPreview };
 }
