@@ -31,6 +31,32 @@ export type ZCMode = "zero" | "threshold" | "dormant";
 
 const pctText = (v: number | null): string => (v === null ? "—" : `${v.toFixed(1)}%`);
 
+/**
+ * What "Still Buying" means, in one line, for readers who have asked.
+ *
+ * It lives here rather than in the card because a `CardFact` has exactly one text slot (`sub`) and
+ * that slot already carries a figure — and because the PDF's stat card has no room for a fourth
+ * line. So the sentence is printed BELOW the card strip instead, on screen and in the PDF, and
+ * reused as the opening of the appendix page's blurb. One constant, three readers, so the
+ * definition cannot drift between the screen, the export and the emailed copy.
+ *
+ * ⚠ Only render it where the card actually appears (`zero` and `threshold`). The dormant report
+ *   has no Still Buying card by construction — every row there is its exact complement — so
+ *   printing this under those cards would define something the reader cannot see.
+ */
+export const STILL_BUYING_NOTE =
+  "Still Buying = bought from us in this period but paid nothing.";
+
+/**
+ * True when a card set contains the Still Buying card, so its note can be shown beside it.
+ *
+ * Takes the KEYS rather than the cards: the screen holds `CardFact.focusKey` and the PDF holds
+ * `PdfKpi.key` (the same value, renamed by `toPdfKpi`), and a helper that took one shape would
+ * quietly not compile against the other — or worse, take `any` and always answer false.
+ */
+export const hasStillBuyingCard = (keys: readonly (string | null | undefined)[]): boolean =>
+  keys.includes("buying");
+
 // ── The numbers ─────────────────────────────────────────────────────────────────────
 
 /** Everything the cards read. One shape, so a card cannot quietly depend on a stray closure. */

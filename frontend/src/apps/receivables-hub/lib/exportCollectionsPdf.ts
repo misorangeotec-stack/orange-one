@@ -34,6 +34,7 @@
 // from /assets/fonts — see pdfBrand.loadBrandAssets.
 import jsPDF from "jspdf";
 import { formatDateDMY, fmtINRMoney } from "./utils";
+import { STILL_BUYING_NOTE, hasStillBuyingCard } from "./collectionCards";
 import { SALE_TYPE_ORDER, saleTypeLabel, saleTypeRank } from "./salesReport";
 import {
   BRAND, CONTENT_W, MARGIN, MINI_CARD_H, PAGE_H,
@@ -82,6 +83,10 @@ export interface PdfCustomerRow {
   neverPaid?: boolean;
   /** Money on bills more than 180 days past due. Feeds the Over 180 Days appendix. */
   over180?: number;
+  /** Billed at least ₹0.5 inside the period while paying nothing. Feeds the Still Buying appendix. */
+  stillBuying?: boolean;
+  /** ₹ billed to this customer inside the period — the figure Still Buying is about. */
+  salesInWindow?: number;
   /**
    * The open past-due bills behind this customer's Overdue, including the On Account credit.
    *
@@ -164,6 +169,12 @@ export interface CollectionsPdfInput {
   scopeName?: string;
   /** ISO date the report is stated as on. */
   asOfDate: string;
+  /**
+   * ISO date the books are described as COMPLETE to (`asOfDate` − DATA_LAG_DAYS), or "" when
+   * unknown. Printed under "As on" on page 1 and in the footer of every page. A label only —
+   * nothing on this document is computed against it.
+   */
+  dataUpdatedTill: string;
   periodLabel: string;
   /** The active filter chips, verbatim from the screen. */
   filterSummary: string[];
@@ -578,6 +589,34 @@ function appendicesOf(reps: readonly PdfSalespersonBlock[]): Appendix[] {
       countInSub: false,
     },
     {
+      cardKey: "buying",
+      title: "Still Buying",
+      blurb:
+        `${STILL_BUYING_NOTE} Ranked by overdue rather than by what they bought: the buying is ` +
+        "what makes the list worth reading, but the money already past its due date is what has " +
+        "to be decided on. What they were billed in the period is the column beside it.",
+      // ⚠ RANKED BY OVERDUE, NOT BY BILLED-IN-PERIOD, and that is load-bearing rather than taste.
+      //   `metric` is not just the sort: it also drives the percentage column AND the
+      //   SMALL_BALANCE fold below. Rank by billed-in-period and a customer owing ₹40 L who
+      //   happened to buy ₹5,000 this period drops into "N more customers, each under ₹10,000" —
+      //   a large debtor folded away on a collections report. Ranking by overdue folds only
+      //   customers who owe under ₹10,000, which is what Never Paid already does.
+      rows: rows.filter((r) => r.stillBuying).sort((a, b) => b.overdue - a.overdue),
+      metric: (r) => r.overdue,
+      // ⚠ HEADERS ARE SIZED TO THEIR COLUMNS, not chosen for prose. With `showLastReceipt` on,
+      //   the percentage column is 10 wide — the floor documented on that column, where
+      //   "% of > 180" only just fits — so "% of Overdue" ellipsized to "% of Over…", and
+      //   "Billed in Period" to "Billed in Peri…". A truncated header is worse than a terse one.
+      //   The blurb above the table says what both mean, and Overdue is the column immediately
+      //   to their left.
+      pctHeader: "% Overdue",
+      extra: { header: "Billed", value: (r) => r.salesInWindow ?? 0 },
+      // Worth the column here: "still buying, last paid in February" is the whole story.
+      showLastReceipt: true,
+      // The card's value is already the customer count; appending it would print it twice.
+      countInSub: false,
+    },
+    {
       cardKey: "over180",
       title: "Over 180 Days",
       blurb:
@@ -683,8 +722,18 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   y += isRep ? 4 : 6;
 
   y = metaStrip(pdf, MARGIN, y, CONTENT_W, [
-    { label: "As on", value: formatDateDMY(input.asOfDate) },
+    {
+      label: "As on", value: formatDateDMY(input.asOfDate),
+      // Blank when the as-on date is unknown: the strip then keeps its original height and prints
+      // nothing, rather than a date derived from nothing.
+      note: input.dataUpdatedTill ? `Data updated till ${formatDateDMY(input.dataUpdatedTill)}` : undefined,
+    },
     { label: "Period", value: input.periodLabel },
+    // ⚠ This gap is CLEARANCE, not padding — do not shave it to buy page-1 room.
+    //   The note makes the strip 9pt taller, and an earlier attempt to stay budget-neutral by
+    //   dropping the rep gap from 11 to 2 put the Filters line's glyphs (which sit ABOVE their
+    //   baseline) back inside the strip's rounded border. The table below simply flows to the
+    //   next page when page 1 runs short, so the 9pt costs nothing worth this risk.
   ]) + (isRep ? 11 : 13);
 
   // The filters, demoted to one quiet line. They must be RECORDED (the workbook drops them, so
@@ -735,6 +784,20 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       }
     });
     y += Math.ceil(input.kpis.length / perRow) * (cardH + gap) - gap;
+
+    // "Still Buying" is the one card whose label does not explain itself, and a PDF has no
+    // tooltip to fall back on. The sentence goes here rather than inside the card because a stat
+    // card's `sub` slot is already carrying a figure and there is no room for a fourth line.
+    //
+    // Gated on the card BEING PRESENT, not on the report mode: the dormant report's rows are the
+    // exact complement of Still Buying, so it carries no such card and must not define one.
+    if (hasStillBuyingCard(input.kpis.map((k) => k.key))) {
+      y += isRep ? 7 : 9;
+      text(pdf, STILL_BUYING_NOTE, MARGIN, y, { size: isRep ? 6.6 : 7, color: BRAND.grey2 });
+      // Leave `y` on the line just drawn rather than above it, so whatever follows starts clear
+      // of it on its own terms instead of relying on the next section's leading gap.
+      y += 2;
+    }
   }
 
   // The sale-type split, as a SECOND and quieter row of cards. Full-size cards here would give ten
@@ -1257,10 +1320,16 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
       rows: billRows,
       rowKind: (r) =>
         r.total ? "total"
+        // The subtotal wears the BAND's tone: the band opens a sale type and the subtotal closes
+        // it, so the pair reads as one block and the orange TOTAL stays the only row that
+        // concludes the page. It used to share "muted" with the On Account line, which printed
+        // the row summing three bills lighter than the bills it was summing.
+        //
+        // The On Account credit KEEPS "muted": it is an aside rather than a sum, and its green
+        // figure needs the quiet ground to read.
         : r.band ? "band"
-        // A sale-type subtotal is deliberately quieter than the customer's TOTAL, so the page
-        // reads subtotal → TOTAL rather than as two rows of equal weight.
-        : r.subtotal || r.bill?.isOnAccount ? "muted"
+        : r.subtotal ? "subtotal"
+        : r.bill?.isOnAccount ? "muted"
         : "normal",
       rowH: 14,
       maxY: FLOOR,
@@ -1315,10 +1384,17 @@ export async function buildCollectionsPdf(input: CollectionsPdfInput): Promise<B
   }
 
   // Footers last, so every page knows the final count.
+  //
+  // The data note rides along here because the header strip is page 1 only: a reader who lands on
+  // a salesperson page or an appendix from the bookmark pane would otherwise see a "generated"
+  // timestamp and nothing about how current the figures are.
   const total = pdf.getNumberOfPages();
+  const dataNote = input.dataUpdatedTill
+    ? `data updated till ${formatDateDMY(input.dataUpdatedTill)}`
+    : undefined;
   for (let p = 1; p <= total; p++) {
     pdf.setPage(p);
-    footer(ctx, p, generatedAt);
+    footer(ctx, p, generatedAt, dataNote);
   }
   pdf.putTotalPages(TP);
 

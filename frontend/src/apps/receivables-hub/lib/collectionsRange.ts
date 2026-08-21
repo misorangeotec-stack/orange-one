@@ -63,6 +63,36 @@ export const addDaysIso = (iso: string, days: number): string => {
 };
 
 /**
+ * How far behind the as-on date the books are considered COMPLETE.
+ *
+ * This is a business convention, not a measured lag, and the distinction matters. The mirror
+ * genuinely carries vouchers dated today and yesterday — but entries are still being posted
+ * against those days, so a figure read today can move tomorrow. Two days back is where Ritesh
+ * Bhai considers a day closed (decided 21-08-2026).
+ *
+ * ⚠ It is a LABEL ONLY. Nothing computes against it: the report's window still ends on the as-on
+ *   date and every figure is unchanged. If you ever find this constant inside `lastNDays` or a
+ *   filter, something has gone wrong — that would silently restate every number on the report.
+ */
+export const DATA_LAG_DAYS = 2;
+
+/**
+ * The date the data is described as complete to: `asOfIso` minus `DATA_LAG_DAYS` calendar days.
+ * Calendar, not working, days — deliberately, so the answer never depends on a holiday list.
+ *
+ * Returns "" for an empty input rather than a fabricated date. `asOfDate` is `?? ""` at both
+ * assembly sites, so a cold load reaches here blank; every caller must skip the line on "" or the
+ * page prints "Data updated till Invalid Date", which is worse than printing nothing.
+ */
+export function dataUpdatedTillISO(asOfIso: string): string {
+  if (!asOfIso) return "";
+  const till = addDaysIso(asOfIso, -DATA_LAG_DAYS);
+  // addDaysIso hands back its input unchanged on an unparseable date; that would silently label
+  // the as-on date itself as the completeness date, overstating freshness by two days.
+  return till === asOfIso ? "" : till;
+}
+
+/**
  * The "Last N Days" window ending on (and including) `asOfIso`.
  *
  * N days INCLUSIVE of the end date, so 15 days ending 07-08 runs 24-07 → 07-08, not 23-07. The

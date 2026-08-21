@@ -377,8 +377,15 @@ export function headerBand(
   return h + 3;
 }
 
-/** The footer rule + page number. `pageNo` is 1-based; the total uses jsPDF's placeholder. */
-export function footer(ctx: Ctx, pageNo: number, generatedAt: string): void {
+/**
+ * The footer rule + page number. `pageNo` is 1-based; the total uses jsPDF's placeholder.
+ *
+ * `note` is an optional trailing fact about the DATA, as opposed to `generatedAt`, which is the
+ * wall clock when the file was made. The two answer different questions and a reader who only has
+ * the timestamp cannot tell how current the figures above it are. Appended here rather than given
+ * its own line so it reaches every page — the header strip is page 1 only.
+ */
+export function footer(ctx: Ctx, pageNo: number, generatedAt: string, note?: string): void {
   const { pdf } = ctx;
   // Both read from the CURRENT page: on a landscape sheet the portrait constants
   // put this 222pt below the bottom edge, and the footer vanished silently.
@@ -387,7 +394,7 @@ export function footer(ctx: Ctx, pageNo: number, generatedAt: string): void {
   setDraw(pdf, BRAND.line);
   pdf.setLineWidth(0.5);
   pdf.line(MARGIN, y - 10, pw - MARGIN, y - 10);
-  text(pdf, `Orange O Tec · Orange One · generated ${generatedAt}`, MARGIN, y, {
+  text(pdf, `Orange O Tec · Orange One · generated ${generatedAt}${note ? ` · ${note}` : ""}`, MARGIN, y, {
     size: 7, color: BRAND.grey2,
   });
   text(pdf, `Page ${pageNo} of ${ctx.totalPagesToken}`, pw - MARGIN, y, {
@@ -511,19 +518,25 @@ export function divider(pdf: jsPDF, x: number, y: number, width: number): number
  * read as the document's terms of reference. Values are ellipsized per cell.
  */
 export const META_STRIP_H = 32;
+/** Height when any cell carries a `note`. The extra 9pt is the note's own line. */
+export const META_STRIP_H_NOTE = 41;
 
 export function metaStrip(
   pdf: jsPDF,
   x: number, y: number, width: number,
-  items: readonly { label: string; value: string }[],
+  /** `note` is a quiet third line under the value — e.g. how complete the data behind it is. */
+  items: readonly { label: string; value: string; note?: string }[],
 ): number {
   if (!items.length) return y;
+  // The card grows only when something needs the room, so every existing caller keeps its layout
+  // to the point. Callers must read the RETURN value rather than assuming META_STRIP_H.
+  const h = items.some((it) => it.note) ? META_STRIP_H_NOTE : META_STRIP_H;
   setFill(pdf, BRAND.white);
   setDraw(pdf, BRAND.line);
   pdf.setLineWidth(0.7);
-  pdf.roundedRect(x, y, width, META_STRIP_H, 5, 5, "FD");
+  pdf.roundedRect(x, y, width, h, 5, 5, "FD");
   setFill(pdf, BRAND.orange);
-  pdf.roundedRect(x, y, 2.5, META_STRIP_H, 1.2, 1.2, "F");
+  pdf.roundedRect(x, y, 2.5, h, 1.2, 1.2, "F");
 
   const pad = 12;
   const colW = (width - pad) / items.length;
@@ -532,14 +545,19 @@ export function metaStrip(
     if (i > 0) {
       setDraw(pdf, BRAND.line);
       pdf.setLineWidth(0.7);
-      pdf.line(cx - 9, y + 7, cx - 9, y + META_STRIP_H - 7);
+      pdf.line(cx - 9, y + 7, cx - 9, y + h - 7);
     }
     text(pdf, it.label.toUpperCase(), cx, y + 12, { size: 6.1, bold: true, color: BRAND.grey2 });
     text(pdf, ellipsize(pdf, it.value, colW - 16, 9, true), cx, y + 24, {
       size: 9, bold: true, color: BRAND.navy,
     });
+    if (it.note) {
+      text(pdf, ellipsize(pdf, it.note, colW - 16, 6.4, false), cx, y + 34, {
+        size: 6.4, color: BRAND.grey2,
+      });
+    }
   });
-  return y + META_STRIP_H;
+  return y + h;
 }
 
 // ── Tables ──────────────────────────────────────────────────────────────────────────
@@ -599,7 +617,7 @@ export function applyDeferredLinks(
  *            without breaking it into separate `drawTable` calls, which would lose the shared
  *            header and the page-break handling.
  */
-export type RowKind = "normal" | "total" | "muted" | "grand" | "band";
+export type RowKind = "normal" | "total" | "muted" | "grand" | "band" | "subtotal";
 
 export interface TableOpts<T> {
   x: number;
@@ -665,14 +683,18 @@ export function drawTable<T>(pdf: jsPDF, opts: TableOpts<T>): number {
     if (kind === "grand") { setFill(pdf, BRAND.navy); pdf.rect(x, y, width, rowH, "F"); }
     else if (kind === "total") { setFill(pdf, BRAND.orangeSoft); pdf.rect(x, y, width, rowH, "F"); }
     // A band is quieter than a total on purpose: it names the section, it does not conclude it.
-    else if (kind === "band") { setFill(pdf, BRAND.line); pdf.rect(x, y, width, rowH, "F"); }
+    // A subtotal wears the SAME tone: the band opens a section and the subtotal closes it, so the
+    // pair reads as one block, and the orange TOTAL stays the only row that concludes the page.
+    // (It used to be "muted" — grey, unfilled, unbolded — which left it lighter than the band
+    // above it and lighter than the bills it was summing.)
+    else if (kind === "band" || kind === "subtotal") { setFill(pdf, BRAND.line); pdf.rect(x, y, width, rowH, "F"); }
 
     const baseColor =
       kind === "grand" ? BRAND.white : kind === "muted" ? BRAND.grey2 : BRAND.navy;
 
     columns.forEach((c, i) => {
       const right = (c.align ?? "left") === "right";
-      const bold = kind === "grand" || kind === "total" || kind === "band";
+      const bold = kind === "grand" || kind === "total" || kind === "band" || kind === "subtotal";
       const color = (kind === "grand" ? undefined : c.color?.(row)) ?? baseColor;
       const raw = c.value(row);
       const shown = ellipsize(pdf, raw, widths[i] - pad * 2, bodySize, bold);
