@@ -54,6 +54,7 @@ export const DIMENSION_ORDER: AgingDimension[] = [
 
 const SALE_TYPE_LABEL: Record<SaleType, string> = {
   ink: "Ink",
+  paper: "Paper",
   spare_parts: "Spare Parts",
   machine: "Machine",
   head: "Head",

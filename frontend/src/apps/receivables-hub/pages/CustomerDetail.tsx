@@ -238,7 +238,8 @@ type TxnSortKey =
 // Friendly labels for the per-transaction sale-type tag. A row with no readable
 // bill reference resolves to no type (Unallocated) and shows "—".
 const SALE_TYPE_LABELS: Record<string, string> = {
-  ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
+  ink: "Ink", paper: "Paper", spare_parts: "Spare Parts", machine: "Machine", head: "Head",
+  other: "Other",
 };
 
 type TxnTotals = { amount: number; received: number; pending: number; salesCount: number };

@@ -69,7 +69,8 @@ interface Props {
 }
 
 const SALE_TYPE_LABELS: Record<string, string> = {
-  ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
+  ink: "Ink", paper: "Paper", spare_parts: "Spare Parts", machine: "Machine", head: "Head",
+  other: "Other",
 };
 
 const STATUS_ORDER: InvoiceStatus[] = ["overdue", "partial", "pending", "paid"];

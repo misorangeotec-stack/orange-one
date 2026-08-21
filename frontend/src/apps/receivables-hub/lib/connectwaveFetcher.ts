@@ -27,7 +27,7 @@ import type {
 
 const PAGE = 1000;
 const LAKH = 100_000;
-const SALE_TYPES: SaleType[] = ["ink", "spare_parts", "machine", "head", "other"];
+const SALE_TYPES: SaleType[] = ["ink", "paper", "spare_parts", "machine", "head", "other"];
 
 // Risk banding is shared with the default source (lib/appDataCore) rather than duplicated
 // here under a "keep in sync" note — Live and pipeline must band a customer identically.
@@ -45,8 +45,8 @@ function toAging(j: any): AgingBuckets {
  *  Record<SaleType, AgingBuckets> (rupees). Unknown sale types fold into 'other'. */
 function toAgingByType(j: any): Record<SaleType, AgingBuckets> {
   const out = {
-    ink: EMPTY_AGING(), spare_parts: EMPTY_AGING(), machine: EMPTY_AGING(),
-    head: EMPTY_AGING(), other: EMPTY_AGING(),
+    ink: EMPTY_AGING(), paper: EMPTY_AGING(), spare_parts: EMPTY_AGING(),
+    machine: EMPTY_AGING(), head: EMPTY_AGING(), other: EMPTY_AGING(),
   } as Record<SaleType, AgingBuckets>;
   if (j && typeof j === "object") {
     for (const [t, buckets] of Object.entries(j)) {
@@ -129,7 +129,7 @@ function ymdToIso(s: string | null | undefined): string {
 /** Coerce a snapshot jsonb {type: amount} into a full Record<SaleType, number>
  *  (rupees). Unknown buckets (e.g. 'non_product') fold into 'other'. */
 function toTypeRecord(j: any, scale = 1): Record<SaleType, number> {
-  const out: Record<SaleType, number> = { ink: 0, spare_parts: 0, machine: 0, head: 0, other: 0 };
+  const out: Record<SaleType, number> = { ink: 0, paper: 0, spare_parts: 0, machine: 0, head: 0, other: 0 };
   if (j && typeof j === "object") {
     for (const [k, v] of Object.entries(j)) {
       const key = (SALE_TYPES as string[]).includes(k) ? (k as SaleType) : "other";
@@ -181,7 +181,8 @@ interface InvSnap {
   sale_type: string; is_opening: boolean;
 }
 
-const emptyTypeRec = (): Record<SaleType, number> => ({ ink: 0, spare_parts: 0, machine: 0, head: 0, other: 0 });
+const emptyTypeRec = (): Record<SaleType, number> =>
+  ({ ink: 0, paper: 0, spare_parts: 0, machine: 0, head: 0, other: 0 });
 
 /** yyyymmdd → "YYYY-MM-DD"; whole-day difference from today (null when unparseable). */
 function daysSince(ymd: string | null | undefined): { iso: string | null; days: number | null } {

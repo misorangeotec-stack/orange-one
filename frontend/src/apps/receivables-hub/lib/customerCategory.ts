@@ -809,7 +809,8 @@ export const CC_PRESETS: GroupByPreset<CCDim>[] = [
 ];
 
 const SALE_TYPE_LABEL: Record<SaleType, string> = {
-  ink: "Ink", spare_parts: "Spare Parts", machine: "Machine", head: "Head", other: "Other",
+  ink: "Ink", paper: "Paper", spare_parts: "Spare Parts", machine: "Machine", head: "Head",
+  other: "Other",
 };
 
 /**
