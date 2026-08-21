@@ -64,6 +64,7 @@ function NewOrderForm() {
           rows={f.lines}
           onRowsChange={f.setLines}
           customerId={f.form.customerId}
+          itemType={f.itemType}
           onMapItem={(typed) => f.setMapping({ search: typed })}
           requested={f.requested?.from === "lines" ? f.requested.text : null}
         />

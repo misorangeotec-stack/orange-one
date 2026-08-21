@@ -112,6 +112,21 @@ export interface Item extends NamedMaster {
    */
   unit: string | null;
   hsnCode: string | null;
+  /**
+   * MS-1's classification — what KIND of thing this is (ink, spare part, head…).
+   *
+   * It is what the intake form's Item type narrows on (OD-10). Read straight off
+   * `mst_items`, never copied onto the mapping: an item is ink whoever buys it,
+   * so correcting one item's type fixes every customer line pointing at it.
+   *
+   * ⚠ NOT the receivables sale type, though the two line up. This is MS-1's
+   *   13-word vocabulary; `ITEM_TYPES` in liveMasters carries each one's
+   *   `saleType` bucket for when OD-7 needs to join the two.
+   *
+   * `string | null` rather than a union, deliberately — the vocabulary is still
+   * settling and an unrecognised word must render, not fail to compile.
+   */
+  itemType: string | null;
 }
 
 /**

@@ -52,6 +52,7 @@ export default function OrderLinesGrid({
   rows,
   onRowsChange,
   customerId,
+  itemType,
   disabled,
   onMapItem,
   requested,
@@ -61,6 +62,16 @@ export default function OrderLinesGrid({
   onRowsChange: Dispatch<SetStateAction<OrderLineRow[]>>;
   /** Scopes the picker to what this customer may order. */
   customerId: string;
+  /**
+   * Narrow the picker to one kind of thing — ink, spare parts, heads (OD-10).
+   * Blank means every type.
+   *
+   * ⚠ IT NARROWS THE PICKER AND NOTHING ELSE. It is not saved on the order, not
+   *   sent in the payload, and not re-checked by the RPC — the customer↔item
+   *   mapping is still the only rule about what may be ordered. See OD-7 for the
+   *   stored sale type, which is a different vocabulary and a different job.
+   */
+  itemType?: string;
   disabled?: boolean;
   /**
    * Open the mapping modal for the item this picker could not offer, carrying
@@ -89,7 +100,25 @@ export default function OrderLinesGrid({
    *   mapping was switched off after the order was raised would otherwise fall
    *   out of it, and the line would lose its unit and its name on the next edit.
    */
-  const allowedItems = s.itemsForCustomer(customerId, rows.map((r) => r.itemId).filter(Boolean));
+  const chosenIds = rows.map((r) => r.itemId).filter(Boolean);
+  const mappedItems = s.itemsForCustomer(customerId, chosenIds);
+
+  /**
+   * The customer's items, narrowed to one type (OD-10).
+   *
+   * ⚠ AN ITEM ALREADY ON A LINE SURVIVES THE TYPE FILTER, unconditionally. This
+   *   is the same escape hatch `includeIds` provides above, extended one step —
+   *   and without it the feature would corrupt orders rather than filter them.
+   *   Switch the type on an order that already has a spare part on it and that
+   *   row's item would drop out of its OWN picker; Combobox renders the label by
+   *   looking the value up in its options, so the cell would go blank, and the
+   *   next edit would save the blank. Filtering what may be ADDED is the whole
+   *   job; what is already there is not up for re-litigation.
+   */
+  const keptIds = new Set(chosenIds);
+  const allowedItems = !itemType
+    ? mappedItems
+    : mappedItems.filter((i) => i.itemType === itemType || keptIds.has(i.id));
 
   /**
    * The picker for ONE row: the customer's items minus the ones other rows already
@@ -124,6 +153,11 @@ export default function OrderLinesGrid({
             options={options}
             placeholder={
               !customerId ? "Pick a customer first"
+              // A type is on and it matched nothing — say which, or the empty
+              // box reads as "this customer has nothing" when the truth is one
+              // dropdown above it.
+              : allowedItems.length === 0 && itemType
+                ? "Nothing of that type — change Item type above"
               : allowedItems.length === 0 ? "Nothing mapped yet — type to map one"
               // Every mapped item is already on the order — say so rather than
               // showing an empty "Select item…" that never opens.

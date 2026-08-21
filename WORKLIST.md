@@ -293,7 +293,7 @@ actually read — not its whole schema.
 
 ---
 
-### PF-6 · 🔴 A view-only user gets the module dashboard and nothing else  `[ ]`
+### PF-6 · 🔴 A view-only user gets the module dashboard and nothing else  `[~]`
 *Raised 2026-08-21 · **Order: Order to Dispatch first as the pilot**, then the rest · Follows on from
 **PF-5**, which shipped the view/edit level itself*
 
@@ -407,7 +407,46 @@ staff directory on disk for 24 hours, readable through devtools without logging 
 
 ---
 
-### PF-7 · About 25 action buttons are gated by ownership alone, with no write-ceiling test  `[ ]`
+**Shipped 2026-08-21 (frontend + both migrations applied to `icutjkrqkbzwvmnfbzpr`):**
+
+`session.isModuleViewer(appId)` is the one place that knows. Each store derives the
+VISIBILITY halves from it — `canMonitor`, `canSeeMasters`, `canSeeStep`, and the viewer arm on
+`canSeeQueue` — and the AUTHORITY flags (`isProcessCoordinator`, `canActOn`) are untouched,
+because widening those would have handed a viewer act-authority rather than a read.
+
+| Module | Screens opened | SQL needed |
+|---|---|---|
+| Order to Dispatch | queues, register, Control Center | yes — `20260925120000` |
+| Production Entry · Sampling · Asset Maintenance | queues, Masters, Control Center | none (already `using (true)`) |
+| Purchase RM Domestic · Purchase RM Import | 11 queue routes, Masters, Control Center | none |
+| General Purchase | queues, Masters, Control Center | yes — `20260925120100` |
+| Employee Exit | approvals, clearance, Masters, Control Center, documents | yes — `20260925120100` |
+| New Recruitment | MRF + job-posting queues, Masters, Control Center | yes, **vacancy tier only** — see below |
+| New Customer Onboarding | the four back-office queues | none |
+
+**Verified on live data:** General Purchase 8/8 requests visible to a viewer, New Recruitment
+13/13 requisitions, candidate tier still 0, F&F still 0. The dispatch equivalence check reports
+0 mismatches across 1,500 (user, order) pairs.
+
+**⚠ NEW RECRUITMENT IS HALF-OPEN, AND THAT NEEDS A DECISION.** `fms_hr_can_read_requisition`
+turned out to *be* the candidate-PII gate, not merely a visibility rule that covers candidates —
+closing a PII hole is the whole reason it exists (`20260712180000`). So `20260925120100` widens a
+sibling, `fms_hr_can_view_requisition`, used only by the requisition tables, and leaves the PII
+gate alone. A viewer reads the vacancies and the MRF queues; the candidate boards stay hidden
+rather than opening empty, and the frontend matches.
+
+- [ ] Should a view-only holder read candidates at all? If yes, the answer is a **masked
+      projection** — stage, dates and counts without name, phone, email, CV or expected salary —
+      which is its own piece of work with its own call on which columns count as PII. Widening
+      the existing function is not an option; an assertion in the migration now refuses it.
+
+**Not in scope, deliberately:** the My Work feed. It filters on `hasModule` and no provider
+consults the write ceiling, so a view-only user who is *also* a step owner gets an actionable
+worklist. Not a regression — they were made an owner — and the fix is constrained, because
+`mywork/items/README.md` forbids filtering in `providers/` and the same builders run server-side
+for the 9am snapshot email.
+
+### PF-7 · About 25 action buttons are gated by ownership alone, with no write-ceiling test  `[x]`
 *Raised 2026-08-21 · Found while auditing **PF-6**, and it ships with it · **Moves to
 [Fixes](#fixes) when it lands** — several of these are live faults, not new work*
 
@@ -426,6 +465,34 @@ mine". Roughly 25 do not, and **several leak today**, before any of PF-6:
 - **Two with no gate at all:** candidate tag add/remove, and the **AI CV read** — which writes *and
   spends money*.
 
+
+**Fixed 2026-08-21, alongside PF-6.** Two store-level root causes and the call sites:
+
+- **`canManage` in Employee Exit and New Recruitment** now folds `canEdit`. It did not, so every
+  `MasterCrud` Add/Actions column and Approve/Reject on both modules' **ungated** `master-requests`
+  routes was live on a view-only grant. Both stores also needed `canEdit` **moved up** — `canManage`
+  is called synchronously by `resolvableRequests` above where `canEdit` was declared, so folding it
+  in without moving it is a temporal dead zone and the store throws on first render.
+- **The twelve `isStepOwner` capability flags** in Purchase RM Domestic and Import now fold
+  `canEdit`, which makes them authority; the new `canSeeStep(k)` is what the nav and `RequireCap`
+  read. One flag was doing both jobs.
+- **New Recruitment's completed entries** — `canEdit` on every `StageEntry` came from ownership
+  alone and drove `CompletedTable`, i.e. every Completed tab in the app. The ceiling now applies
+  once, at the `completedFor` boundary, so the next branch added is honest by default.
+- **Call sites:** the sales-return buttons in Dispatch, `JobDetail` in Asset Maintenance,
+  `RequestDetail` and the Ready-to-Dispatch **bulk-action bar** in Production Entry, `RequestQueue`
+  and `requestEditable` in General Purchase, the Exit approvals queue, and in New Recruitment the
+  Decide/Post modals, the interview actions and the stage-change menu.
+- **Two that asked nothing at all** — not even ownership: candidate **tag** add/remove, and the
+  **AI CV read**, which writes a score *and spends money* on every press. Both now gate at the
+  write itself, and the AI button no longer renders for a viewer.
+
+**One more found while sweeping, and it was a genuine drift.** Customer Onboarding's client
+`canActOn` carries a comment saying it mirrors `public.fms_customer_can_act` — but
+`20260923120000` wrapped the SQL side in `module_can_edit` and this copy was never updated. Every
+correction and step button rendered live on a view-only grant and then failed at the RPC. The
+mirror is restored.
+
 **The fix is uniform:** `canEdit && <existing predicate>`, matching the reference implementations in
 `production-entry/components/StageQueue.tsx` and `sampling/components/RequestQueue.tsx`. Where a
 `QueueTable` wraps the buttons, `readOnly={!canEdit}` does it in one line — it drops the actions
@@ -435,6 +502,77 @@ pass it today.
 ⚠ One deliberate counter-example not to "fix": the Completed table in
 `sampling/components/RequestQueue.tsx` omits `readOnly` on purpose, so the row action degrades to a
 lock that still opens the entry read-only. The comment above it says so.
+
+---
+
+### PF-9 · Browser notifications, on top of the bell and the emails  `[ ]`
+*Raised 2026-08-21 · Touches every module that has a bell*
+
+We already notify at two points: the **in-app notification bank** (the bell in the topbar) and
+**email**, wired at each step. Both need the person to come looking — the bell only speaks once
+they open the portal, the email only once they open their inbox. Add a third: while the portal is
+open in a browser tab, a **native OS notification** fires the moment something lands for them, so
+they see it without watching the tab.
+
+Scope for this item is **foreground only** — the tab is open. Notifying a user whose browser is
+closed is a different, much larger job (see *Later* below); do not let it hold this one up.
+
+**What already exists, and what has to be built**
+
+- The bell's payload shape is already shared and already the right one to notify from:
+  `NotificationItem` in
+  [types.ts:52-64](frontend/src/shared/components/layout/types.ts#L52-L64) — actor, message,
+  `createdAt`, `unread`, and `to` for the click-through. A browser notification is that same
+  object rendered by the OS instead of the panel, so nothing new has to be composed.
+- **Only ONE of the feeds is live.** The task feed subscribes to `postgres_changes` on
+  `notifications` in
+  [useMyNotifications.ts:70-85](frontend/src/apps/task-management/lib/useMyNotifications.ts#L70-L85)
+  — the **only** `.channel()` call in the entire frontend. The ten FMS
+  feeds (`fms_exit_notifications`, `fms_hr_notifications`, `fms_import_notifications`,
+  `fms_purchase_notifications`, `fms_supplies_notifications` and the per-module reads in each
+  app's `*Fetch.ts`) arrive only with the module payload, on load or after a write. **A browser
+  notification needs a live signal, so the realtime subscription is the real work here, not the
+  notification API.** Doing it feed-by-feed means ten subscriptions and ten near-identical
+  hooks — decide first whether the FMS feeds should be read through one place (a union view, or
+  one table) rather than replicating the task app's hook ten times.
+- There is no service worker and no web app manifest ([frontend/public/](frontend/public/) holds
+  only `assets`), and none is needed for the foreground case.
+
+**How to build it** (the mechanics, so this isn't re-derived later)
+
+1. **One hook, `useBrowserNotifications`,** sitting beside the bell rather than inside any module.
+   It takes the same `NotificationItem[]` the bell already renders and fires the ones that are new
+   *since mount*. Fire on arrival, not on read.
+2. **Ask for permission from a real click, never on page load.** `Notification.requestPermission()`
+   returns `granted` / `denied` / `default`, and **`denied` is permanent** — the page cannot ask
+   again, the user has to undo it in the browser's site settings. So it goes behind an explicit
+   "Enable desktop notifications" toggle on [Account.tsx](frontend/src/core/account/Account.tsx),
+   with the current permission state shown and a line telling a denied user where to re-enable it.
+   An auto-prompt on load is how people click Block by reflex and lose the feature for good.
+3. **Fire it:** `new Notification(actorName, { body, icon, tag: n.id, data: { to } })`, and on
+   `onclick` call `window.focus()` then route to `n.to`. Requires HTTPS — Vercel is, and
+   `localhost` counts as a secure context, so dev works too.
+4. **Only when the tab isn't already being watched.** Gate on
+   `document.visibilityState === "hidden"` (or the window not focused) — if the user is looking
+   at the queue, the bell and the row updating in place already told them, and an OS toast on top
+   is noise.
+5. **Never notify someone about their own action.** The feeds carry `actorId`; skip rows where it
+   is the signed-in user, or a person who approves ten items gets ten toasts about themselves.
+6. **Dedup across tabs.** Two open tabs = two subscriptions = the same event twice. `tag: n.id`
+   makes the OS collapse them into one visible toast, which is enough to ship; a `BroadcastChannel`
+   leader election is the clean fix if it turns out to matter.
+7. **Don't fire the backlog.** On mount, seed the "seen" set from whatever the first fetch returns
+   and only notify on rows after that — otherwise opening the portal with 30 unread items detonates
+   30 toasts at once.
+
+**Later, and deliberately not now:** notifying a user whose browser is *closed* is Web Push — a
+service worker, `PushManager.subscribe` with a VAPID key pair, a `push_subscriptions` table, and an
+edge function that fans out on every notification insert. It is a real project of its own, it needs
+the same per-user opt-in, and it duplicates what the email already does today. Revisit only if
+people say the emails aren't landing. One caveat worth knowing early: **Chrome on Android refuses
+the plain `new Notification()` constructor** and throws — mobile needs the service-worker path even
+in the foreground. Desktop Chrome, Edge, Firefox and Safari are all fine, so if the coordinator and
+the HODs are on laptops, step 1–7 above covers them.
 
 ---
 
@@ -451,6 +589,16 @@ thing from the existing FMS Control Center** — that does two things:
 2. **See every FMS at a glance.** Which process is running successfully, which is getting
    delayed, and *at what point* the delay is happening — with the person to call, so the
    coordinator rings them and pushes the work on.
+3. **Carry that person's contact details, not just their name.** For every FMS and every
+   step, resolve the owner sitting on it to a name **plus a working phone number and email
+   id**, rendered so the coordinator can act on them there and then — `tel:` / `mailto:`
+   links, one click, no copying a number off the screen and no second trip to the admin
+   directory to look it up. Both fields already exist on the profile
+   ([types.ts:106-111](frontend/src/core/platform/types.ts#L106-L111): `phone` is the
+   mobile, `email` the login id), so this is a join the dashboard must carry through from
+   the step's owner id — not new data to collect. Where a step has several owners, show
+   them all; where it resolves to nobody, say so plainly rather than leaving a blank — an
+   unowned step is exactly the kind of delay this dashboard exists to surface.
 
 The bar is that it reads at a glance. No hunting.
 
@@ -966,127 +1114,93 @@ what the Step 0 sheet is.
 
 ---
 
-### OD-9 · The user maps a customer to an item themselves  🔴  `[~]`
-*Raised 2026-08-21 · **Built 2026-08-21**, migration applied. Answers **OD-3** and the removal half of
-**OD-2**.*
+### OD-10 · Item type on the sales order, and the item list follows it  `[~]`
+*Raised 2026-08-21 · **Built 2026-08-21, on localhost only** — awaiting the user's test before it goes
+to `master`. This is **OD-7's intake-filter half only**; see the boundary below.*
 
-**Where it stands.** All of it is written and `npm run build` passes. The migration
-([20260927120000](supabase/migrations/20260927120000_dispatch_map_customer_item.sql)) is **applied to
-`icutjkrqkbzwvmnfbzpr`** — the RPC and the `created_by` trigger are live.
+**Where it stands.** Written, `npm run build` passes, **not pushed**. No migration and no database
+change — this is entirely frontend, so there is nothing to apply ahead of the deploy.
 
-The RPC was exercised against **live data as a real non-admin raiser**, inside a transaction that
-rolled back. All five behaviours hold:
+What landed:
+- **Item type**, 7th on the intake header, single-select, cascading to the types that customer
+  actually holds. Ink preselected when they have it, blank when they do not.
+- The item lines narrow to it, **with the escape hatch** — an item already on a line stays in its own
+  picker whatever the type says, so switching the type on an order that has lines cannot blank a row.
+- Changing the type does **not** clear the lines (changing the customer still does).
+- The mapping modal's type filter became the same single-select, also defaulting to Ink — 1,119 items
+  on open for O-tec — Surat instead of 8,340.
+- **All four grey help lines removed** from the intake form. The red `noAssignment` line under Billing
+  company stayed — it is an error, not a hint. The Remarks box stayed.
+- ⚠ The layout rule held: the form went from 7 grid children to 8 and **Customer is still 5th**.
 
-| | |
-|---|---|
-| new pair | `created 1` · `source=portal` · `created_by` stamped by the trigger |
-| the same pair again | `skipped 1` — not an error |
-| a pair switched OFF | `reactivated 1`, active again — no unique violation |
-| an item from another book | refused, **naming the item** |
-| empty selection | no-op |
+The intake form gains an **Item type**, sitting after Customer location, and the item lines below
+offer only that type. **One type at a time** — a single-select, not the multi-picker every table
+filter uses. **Ink is the default.** The same field is added to the mapping modal, also defaulting to
+Ink. And every grey help line comes off the form.
 
-An unauthenticated caller is refused by `fms_dispatch_can_raise`, checked separately.
+**⚠ THIS IS NOT OD-7, and the two must not be conflated.** OD-7 is about **sale type** — the five
+receivables buckets (`ink · spare_parts · machine · head · other`) — *stored on the order*, re-checked
+by the RPC, reported on, and reconciled against what the invoice became. This is a **filter on the
+intake picker and nothing else**: no column, no migration, nothing persisted, nothing to backfill on
+the 478 orders already raised. Settled with the user on 2026-08-21 — they asked for the item list to
+narrow, not for the order to remember. OD-7 still owns the stored half and its open questions
+(one type per order or per line? does it decide the sales ledger?).
 
-**⏳ Still owed: the browser pass.** Everything above is server-side or the type-checker; nobody has
-clicked through the modal yet — the Playwright profile was locked by another Chrome instance. What to
-drive, in order: raise an order under O-tec — Surat as an ordinary user; confirm the 8,340-item book
-loads without stalling and the Type filter narrows it; map something and confirm it is selectable on
-the line immediately; then open one of the 78 twin customers and confirm a name they can **already**
-order is not offered a second time.
+It also reads **`mst_items.item_type`** — MS-1's 13-word vocabulary — not the five sale-type buckets.
+The two line up (`ITEM_TYPES` carries each one's `saleType`), so OD-7 can join through it later
+without this being redone.
 
-When the item a customer needs is not in their list, the user stops asking and just does it. The
-customer-item mapping becomes a direct action inside the sales order; the request queue behind it goes.
-
-**Two entry points, one modal, one write path, no approval.**
-
-1. **Inside the new sales order.** The item picker's `＋ Request new item…` row becomes
-   **`＋ Map an item to this customer`**. The popup opens with the **company and customer already
-   filled in from the order** and read-only, the typed text seeded into the search, and every item of
-   that company listed. Tick and save; the item is selectable on the line immediately.
-2. **Standalone**, from Master Requests → "Request a new entry". "What do you need?" drops from four
-   choices to two: **Customer-Item Mapping** (direct) and **Company Location** (still a request).
-   **Customer** and **Item** are removed — they come from Tally only (**OD-2**).
-
-**Decided, and not to be re-opened without a reason:**
+**Decided:**
 
 | | |
 |---|---|
-| Standalone entry point | Direct create, same as the popup |
-| Company Location | Stays requestable — it is our own site, not Tally's |
-| Item that exists nowhere in Tally | Say so plainly: create it in Tally first |
-| Which items the popup lists | **Only the selected company's own book. No way to widen.** |
-| Notification | Mapping owners told, information only |
-| Seeing manual mappings | Must be filterable in Central Masters |
+| How many types at once | **One.** Single-select. |
+| Default | **Ink** |
+| Customer has no ink | **Leave the field blank** and let the user choose — do not auto-pick something else |
+| Stored on the order | **No.** Filter only |
+| Mapping modal | Same field, also defaulting to Ink |
+| The grey help lines | **All removed** from the intake form |
 
-**⚠ THE COMPANY FILTER IS A HARD ONE, AND IT WAS CHOSEN KNOWING THE COST.** Tally files a stock item
-in exactly one company book, but the firms sell each other's stock: **185 of 1,813 existing order
-lines (10%)** use an item from a different book than the one billing — SO-2627-0449 is O-tec **Noida**
-billing `444-028 PRINTHEAD WIPER`, an item created in O-tec **Surat**'s book. Those 10% cannot be
-mapped in this popup and go to an admin in Central Masters, where the company filter is optional. The
-popup must **say which book the item lives in** rather than showing an unexplained empty list.
-The compensation is real, though: there are **zero duplicate item names inside a single book**, so the
-hard filter removes the twin-ambiguity at the point of choosing.
+**Ink is unambiguous, checked before building.** MS-1's vocabulary holds three ink words —
+`ink`, `provision_ink`, `other_ink` — but **not one mapped item uses the other two**, so "Ink"
+means `ink` and nothing has to be decided about ink families.
 
-**Five things the audit caught before any code moved. The first two would have shipped broken.**
+**The blank case is real and it is why the field cascades.** Of the 789 customers with any mapping,
+**677 have ink and 112 (14%) have none at all** — they buy spare parts, heads or paper only. So the
+type dropdown must offer **only the types that customer actually has mapped**, the cascading rule
+every grid here already follows; Ink is then selected when it is on offer and left blank when it is
+not, with no dead options in between. What the customers actually hold: ink 677 · spare_parts 306 ·
+head 156 · machine 52 · paper 11 · raw_material 2 · packing_material 2 · other 2 · software 1.
+Every mapped item carries a type — **zero untyped** — so nothing falls through the filter.
 
-1. **⚠ EXCLUDE ALREADY-MAPPED ITEMS BY NAME, NOT BY ID.** `itemsForCustomer` collapses the picker to
-   **one row per product name** ([store.tsx:889](frontend/src/apps/order-to-dispatch/store.tsx#L889)),
-   while the admin form this popup is modelled on excludes by item id
-   ([Masters.tsx:457](frontend/src/core/admin/Masters.tsx#L457)). Those disagree: a customer mapped to
-   the Enterprise twin of a name would be *offered* the O-tec twin, the save would succeed, and the
-   picker would look **identical** — so the user concludes it failed and does it again.
-   **Measured on live data: 375 pairs across 78 customers would be offered a duplicate this way** —
-   KALAHANSH FASHIONS LLP (Enterprise — Surat) is already mapped to EP SUBLIMATION SUPER HD YELLOW out
-   of O-tec's book, and Enterprise's own book holds a copy of that very name.
-   `mappedItemCounts` already counts distinct NAMES for exactly this reason; match it.
-2. **⚠ `source` CANNOT CARRY THE "MADE BY HAND" MARK — IT ERASES ITSELF.** `masters-sync` upserts
-   `mst_party_items` and sets `source: 'sales_register'` unconditionally
-   ([masters-sync/index.ts:561](supabase/functions/masters-sync/index.ts#L561)), so the first time the
-   customer actually buys the mapped item the mark flips and the row drops out of the filter. **Four
-   rows already show this damage** — `created_by` set, `source` reading `sales_register`. And
-   `source='portal'` is useless anyway: 1,823 of its 1,869 rows are bulk migration rows. Use
-   **`created_by` / `created_at`**, which that upsert never names. Clean rule: **null = a machine
-   made it, non-null = a person did** — the sync runs on the service key, so `auth.uid()` is null
-   there and it cannot mis-attribute. `insertMasters` does not set it
-   ([masterWrites.ts:158](frontend/src/core/platform/masterWrites.ts#L158)), so a `before insert`
-   trigger defaulting it to `auth.uid()` closes every hand path at once.
-3. **⚠ DO NOT FILTER ON `modules`.** Only **540 of 14,264** active items are ticked for
-   `order-to-dispatch` and **13,724 carry none at all**. Filtering there collapses the catalogue and
-   defeats the feature. The company book is the filter.
-4. **The Master Owners screen would start lying.** Its "Requestable — Yes / —" column reads
-   `REQUESTABLE_DISPATCH_MASTER_TYPES`
-   ([MasterOwnersSection.tsx:97](frontend/src/apps/order-to-dispatch/pages/settings/MasterOwnersSection.tsx#L97));
-   narrowing that list makes the mapping read "—" while its owners are still the people notified.
-   Relabel to **"How it's raised"**: *Direct* / *Request* / *Tally only*.
-5. **8,340 items needs a Type filter, not just a search box.** `item_type` is populated on **14,208
-   of 14,261** items now (**MS-1**), and O-tec Surat splits spare_parts 4,877 · ink 1,119 · paper 855 ·
-   machine 687 · head 485. ⚠ **Show every type, hide none** — the book also holds `raw_material`,
-   `packing_material` and `service_expense`, and hiding them silently is the failure **OD-7**
-   warns about. Filter, don't hide.
+**Where it lands.**
 
-**Two constraints that shape the build.**
-
-- **The module's item list cannot show a company's catalogue — it is derived from the mappings.**
-  [dispatchFetch.ts:678](frontend/src/apps/order-to-dispatch/data/dispatchFetch.ts#L678) builds `items`
-  from the ids `mst_party_items` names plus ids already on an order: **1,693 of 14,264**. The item
-  this feature exists to find is by definition not in it. The modal needs its own per-company fetch —
-  Colorix 254 · Enterprise-Surat 1,450 · Enterprise-Noida 2,092 · O-tec-Noida 2,125 · O-tec-Surat 8,340.
-  `pagedWalk` already fires its pages **concurrently**, so that is one round trip, not nine — but it
-  must be ordered by `name` **and `id`**, or ties silently drop rows (it cost ~300 mappings once).
-- **RLS blocks the write for exactly the people this is for.** `mst_party_items_write` is
-  `is_admin(uid) OR mst_is_master_manager('party_item', uid)`, so an ordinary user calling
-  `insertMasters` gets a policy violation. A `SECURITY DEFINER` RPC
-  **`fms_dispatch_map_customer_item`** is required — gated on `fms_dispatch_can_raise`, asserting
-  the customer↔company pair with the existing `fms_dispatch_assert_customer_of_company`, and
-  refusing any item outside `p_company`'s book. `UNIQUE (party_id, item_id)` means a pair switched
-  off in the past must be **reactivated and reported**, not inserted into a unique violation.
-
-**Also swept up:** the company picker on the sales order can raise a `company` request the resolver
-then refuses outright with *"Companies come from Tally now"* — after an owner has already approved it
-([SalesOrderFields.tsx:127](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx#L127)).
-And the reviewer's notification for a nameless master reads *"…was requested: "* with a trailing colon,
-because it uses `payload.name` where `describePayload` exists
-([store.tsx:1076](frontend/src/apps/order-to-dispatch/store.tsx#L1076)).
+1. **The field.** [SalesOrderFields.tsx](frontend/src/apps/order-to-dispatch/components/SalesOrderFields.tsx),
+   **7th**, after Customer location and before Customer PO no.
+   ⚠ Read that file's layout note first — Customer must stay immediately before Customer location, and
+   the pairing only holds while Customer's position is **odd and not a multiple of three**. It is 5th
+   today and **stays 5th** with the new field inserted at 7, so this particular insert is safe. It
+   would not be if the field went in above Customer, and it breaks on tablet only.
+2. **The item list carries no type yet.** `Item` has no `itemType`
+   ([types/index.ts](frontend/src/apps/order-to-dispatch/types/index.ts)) and `COLS.items` does not
+   select `item_type` ([dispatchFetch.ts](frontend/src/apps/order-to-dispatch/data/dispatchFetch.ts)).
+   Both have to gain it — one narrow text column on the catalogue query. `CompanyItem` already
+   carries it (OD-9), which is the shape to copy.
+3. **The filter.** `allowedItems` in
+   [OrderLinesGrid.tsx](frontend/src/apps/order-to-dispatch/components/OrderLinesGrid.tsx) narrows by
+   type. **⚠ The `includeIds` escape hatch must survive it.** That argument is what keeps a line's own
+   item in its own picker; drop it and switching the type on an order that already has lines blanks
+   those rows on the next edit — the same trap OD-7 flags.
+4. **Changing the type must NOT clear the lines.** Changing the *customer* does, deliberately (the
+   mapping changes). Changing the type does not: it is a view over the same customer's items, and the
+   rows already chosen stay valid and stay visible through `includeIds`.
+5. **The mapping modal.** [MapCustomerItemModal.tsx](frontend/src/apps/order-to-dispatch/components/MapCustomerItemModal.tsx)
+   swaps its multi-select type filter for the same single-select, defaulting to Ink with an
+   "All types" escape. For O-tec — Surat that is 1,119 items on open instead of 8,340.
+6. **The help lines.** Four grey `<p>` hints come off the intake form (Dispatch type, Dispatch
+   location, Customer, Customer location). ⚠ **Keep the red one** — the `noAssignment` error under
+   Billing company is a failure message, not a hint, and it is the only thing telling somebody why
+   their company list is empty. The **Remarks box stays**; only the help text goes.
 
 ---
 
@@ -1437,6 +1551,40 @@ bills, ₹1.66 Cr**, and **₹76 L of that was real money**:
 `Receipt` / `Payment` / `Contra` — vouchers that move cash and cannot raise a receivable), keep
 everything else including anything unclassifiable. **Default = keep = never hide money.**
 
+*Attempt 3 — the second dry run, widened from the past-due bills to the WHOLE snapshot, caught the
+one that mattered.* "Raised by cash" is true of DEBITS and CREDITS alike, and only the debits are
+phantoms. Of the 30 references the rule matches, **19 are CREDITS totalling −₹94,02,878** —
+`M/C ADV`, `REC 20.06.2026`, `ON ACCOUNT`, all raised by a `BANK RECEIPT`. Those are advances the
+customer genuinely **paid us**. Removing them would have raised **17 customers' Outstanding by
+₹94 L** and un-credited money sitting in our bank. So the rule acts on **`pending > 0` only**:
+a debit with no invoice behind it overstates what we are owed; a credit with no invoice behind it is
+real money that already has a home ("On Account (paid, tagged to no bill)").
+
+**Final effect — verified against the LIVE view after it was applied, 21-08-2026**, read through the
+anon key the app itself uses (850 view rows, 49 matching a snapshot bill):
+
+| | |
+|---|---|
+| Bills removed | **14 · ₹1,22,07,282 off Outstanding · 14 customers** |
+| Of those, past due | **10 · ₹1,01,34,928 off Overdue** |
+| Credits matched but **kept** | 35 · −₹1,91,49,520 |
+| Customers whose Outstanding rises | **0** — impossible by construction |
+| Sales-raised references in the view | **none** |
+| Paper invoices removed | **0 of 116** |
+
+Biggest: `MC/26-27/45` ₹53.00 L, `On Account` ₹20.00 L, `ADV` ₹17.00 L (VAMA), two `BANK PAYMENT`
+at ₹10.00 L each, `24.09.2026` ₹8.00 L. Every one raised by `BANK RECEIPT`, `BANK PAYMENT` or
+`BANK PAYMENT-CHQ.R`.
+
+*The pre-apply dry run predicted 11 bills / ₹1.19 Cr — within 2.5% of the live 14 / ₹1.22 Cr. The
+gap is coverage, not logic: the dry run could only read allocations for the 720 ledgers that carry a
+snapshot bill, while the view scans every ledger in the mirror.*
+
+⚠ `INK/N/26-27/410` (₹1,416) and `HD/HG/26-27/95` (₹295) carry real sales bill NUMBERS but their
+`New Ref` came from a `BANK RECEIPT` that over-applied. ₹1,711 between them, so the rule's only
+judgement call costs nothing today. Worth re-checking if it ever grows.
+
+**Adopt attempt 3. Do not adopt 1 or 2.**
 
 **This is the SAME missing link as RC-6's root cause** — `collection_refresh()` calls
 `resolve_sale_type(acct, '', bill_ref)` with the voucher type empty, because `bill_outstanding()`
@@ -1444,6 +1592,39 @@ returns a bill ref and no voucher. Carry the originating voucher type into the s
 both are fixed: sale type stops depending on the bill-name prefix, and non-sales references stop
 counting as overdue bills. Do them together.
 
+**BUILT 2026-08-21 — not yet live. Two pieces, and the SQL must land first.**
+
+1. [non_bill_refs_view.sql](supabase/connectwave/non_bill_refs_view.sql) — a new **additive**
+   view `public.v_non_bill_ref`, granted to `anon`. Deliberately NOT a change to
+   `collection_refresh()`: that function is 999 lines, several repo files each redefine it, and the
+   live version is none of them for certain — a `create or replace` from a stale copy would silently
+   revert the overdue cap, the voucher-class work and the group-GUID migration. A new view touches
+   nothing that already exists.
+2. [liveNonBillRefs.ts](frontend/src/apps/receivables-hub/lib/liveNonBillRefs.ts) — reads the view
+   and strips the matching DEBIT lines out of the live snapshot in place, adjusting `outstanding`,
+   `overdue`, `overdueGross`, the aging buckets, the per-type splits, `maxOverdueDays`,
+   `utilization` and `risk`. Modelled on `liveOtherPayments.ts` and wired into
+   `connectwaveFetcher` immediately after it. `npm run build` passes, and the bundle for the
+   emailed report picks it up automatically (it compiles `connectwaveFetcher` itself), so the
+   scheduled PDF and the screen cannot disagree.
+
+**⚠ It runs AFTER the Other Payments pass, not before.** That pass settles bills FIFO and must see
+the same bill list Tally does; removing lines first would let a manual payment cascade onto a
+different bill than it settles in the pipeline, and Live and pipeline mode would stop agreeing.
+
+**Fail-soft on purpose.** If the view is absent the reader logs
+`[liveNonBillRefs] DEGRADED` and changes nothing — the report reads exactly as it does today. So
+shipping the frontend before the SQL is inert rather than broken. Still apply the SQL first.
+
+**Status:**
+- [x] `non_bill_refs_view.sql` applied to **ConnectWave** by Ritesh Bhai, 2026-08-21. No refresh
+      needed — it is a view, not a snapshot column, so it went live on creation.
+- [x] Verified through the **anon** key (not the service key): 850 rows, readable, and the guard
+      query for sales-raised references returns zero.
+- [ ] Deploy the frontend. Console should read `removed 14 non-bill reference(s)`, never `DEGRADED`.
+- [ ] Open VAMA: it should be gone from the report entirely.
+
+**Shape of the change, for the record** (ConnectWave, then frontend):
 - `bill_outstanding()` / `bill_outstanding_by_id()` gain an `origin_voucher_type` column, taken from
   the `New Ref` allocation. Additive — existing callers select columns explicitly.
 - `collection_invoice_snapshot` gains the column; `collection_refresh()` fills it.
@@ -1734,6 +1915,57 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### OD-9 · A missing item is mapped on the spot, not requested  `[x]`
+*Order to Dispatch · **Done 2026-08-21** — migration applied first, frontend on `master` as
+`f6ed06c`; verified on the live site by the user · answers **OD-3**, and the removal half of **OD-2***
+
+**What a user sees now.** On a sales order, typing an item the customer is not mapped to no longer
+offers *"Request new item"* and a wait. It offers **"Map «X» to this customer"**, and the popup opens
+with the order's company and customer already filled in and locked, every item of that company's Tally
+book listed, and a Type filter over them. Tick what is needed, save, and the item is selectable on the
+line immediately. **Nobody approves anything.**
+
+The same thing is reachable from **Master Requests → New entry**, where *"What do you need?"* now
+offers **two** choices instead of four: **Customer-Item Mapping** (created directly) and **Company
+Location** (still a request). **Customer** and **Item** are gone — they come from Tally (**OD-2**), and
+the pickers that used to offer to create them now say so instead.
+
+**Why the approval went.** Of the 122 master requests ever raised in this module, **85 were mappings
+and only 5 were rejected** — 94% approved. The queue protected nobody and blocked the one person who
+could see what was missing. The right to map is now the right to raise the order:
+`fms_dispatch_can_raise`, checked in the database, not the browser.
+
+**Admin → Central Masters → Customer Items** gained **Mapped by** and **Mapped on**, with a sort
+toggle and a filter on each. Filter *Mapped by* to a person and you have exactly the mappings people
+made themselves.
+
+**Three things it could not be built on, all found before any code moved:**
+
+1. **The module's item list is DERIVED from the mappings** — 1,693 of 14,264 — so an item mapped to
+   nobody was not in it, which is exactly the item somebody opens this to find. The popup fetches the
+   company's own book instead (Colorix 254 → O-tec-Surat 8,340), on its own cache key so no write
+   drags it down again.
+2. **Excluding already-mapped items by ID would have shipped broken.** The order picker collapses to
+   one row per product NAME, so a customer holding another book's copy would have been offered this
+   book's copy, the save would have succeeded, and the screen would not have changed — **375 pairs
+   across 78 customers** were in that state. Excluded by name instead.
+3. **`source` could not carry the "made by hand" mark.** `masters-sync` rewrites it to
+   `sales_register` on any pair the customer actually buys, so the mark erases itself the moment the
+   mapping starts working — four rows already showed that damage. Attribution is `created_by`, which
+   that upsert never names, plus a trigger so every hand path fills it.
+
+**Also fixed in passing:** the Billing company picker could raise a request the resolver refuses
+outright (*"Companies come from Tally now"*) — after an owner had already approved it; and a mapping
+notification read *"…was requested: "* with a trailing colon because it used `payload.name` on a
+master that has none.
+
+**⚠ The item book is filtered to the billing company's own Tally book, with no way to widen**, and the
+cost was accepted knowingly: **185 of 1,813 existing order lines (10%)** use an item filed under a
+different book. Those go to Central Masters, where the company filter is optional — and the popup now
+NAMES the book the item lives in rather than showing an empty list. In exchange, there are zero
+duplicate item names inside a single book, so the twin ambiguity disappears at the point of choosing.
+
 
 ### MS-1 · Every item gets its Type, Category and Ink type from the sheet  `[x]`
 *Admin / Masters · **Done 2026-08-21, 14:50 IST** — migrations and data load applied first, frontend

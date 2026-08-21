@@ -32,6 +32,16 @@ export interface SalesOrderFormState {
  */
 export type RaiseOrigin = "header" | "lines";
 
+/**
+ * What the Item type field starts on when the customer has it (OD-10).
+ *
+ * ⚠ ONE WORD, and it is exact rather than a family. MS-1's vocabulary holds
+ *   three ink words — `ink`, `provision_ink`, `other_ink` — but not one mapped
+ *   item uses the other two, so "Ink" has a single unambiguous meaning here.
+ *   Should that change, this is the constant to widen, not the call sites.
+ */
+export const DEFAULT_ITEM_TYPE = "ink";
+
 /** A master the intake form is missing — handed straight to RequestMasterModal. */
 export interface MasterRaise {
   mt: DispatchMasterType;
@@ -124,6 +134,21 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   */
   const [mapping, setMapping] = useState<{ search: string } | null>(null);
 
+  /**
+   * THE ITEM TYPE THE LINES ARE BEING PICKED FROM (OD-10).
+   *
+   * ⚠ NOT PART OF `form`, and not saved with the order. It narrows the item
+   *   picker and nothing else — no column, no payload, nothing to backfill. The
+   *   thing OD-7 wants stored is the receivables SALE type, which is a different
+   *   vocabulary and a different decision; keeping this out of `form` is what
+   *   stops the two quietly becoming one.
+   *
+   * "" means every type. It is set to `ink` when the chosen customer has any,
+   * and left blank when they do not — 112 of the 789 mapped customers buy no ink
+   * at all, and defaulting them to an empty item box would be worse than asking.
+   */
+  const [itemType, setItemType] = useState("");
+
   const patch = (next: Partial<SalesOrderFormState>) => setForm((f) => ({ ...f, ...next }));
 
   /**
@@ -150,6 +175,18 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
       customerLocation: s.customers.find((c) => c.id === id)?.location ?? "",
     });
     setLines([makeEmptyLine()]);
+    /*
+      INK IF THEY HAVE IT, BLANK IF THEY DO NOT — and the choice belongs here,
+      on the customer, because the answer is a property of the customer.
+
+      677 of the 789 mapped customers hold ink and the order is nearly always
+      for it, so pre-selecting saves the common case a click. The other 112 hold
+      none at all; leaving Ink selected for them would open the item box empty,
+      which reads as a broken form rather than as a filter. Blank shows
+      everything they do have and lets them narrow it themselves.
+    */
+    const types = s.itemTypesForCustomer(id);
+    setItemType(types.includes(DEFAULT_ITEM_TYPE) ? DEFAULT_ITEM_TYPE : "");
   };
 
   /**
@@ -239,6 +276,15 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     setCustomer, setCompany,
     raise, setRaise, requested, setRequested,
     mapping, setMapping,
+    /*
+      ⚠ Starts BLANK when editing an existing order, and that is deliberate. A
+        saved order's lines are whatever they are — quite possibly two types —
+        and opening it under a filter would hide the ones that do not match. The
+        Ink default belongs to the moment a customer is CHOSEN, which on an edit
+        already happened. `includeIds` keeps every existing line in its own
+        picker either way; this only decides what the box shows on arrival.
+    */
+    itemType, setItemType,
     error, setError,
     busy, setBusy,
     validate, toInput,

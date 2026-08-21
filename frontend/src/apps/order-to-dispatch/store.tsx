@@ -232,6 +232,23 @@ export interface DispatchStoreValue {
    */
   mappedItemNames: (customerId: string | null) => Set<string>;
   /**
+   * The item TYPES this customer actually has mapped — the intake form's Item
+   * type dropdown (OD-10).
+   *
+   * ⚠ IT CASCADES, like every other filter here: only types the customer holds
+   *   are offered, never the full 13-word vocabulary. Otherwise a picker of 13
+   *   words sits above a list where 12 of them return nothing, and the reader
+   *   cannot tell "wrong type" from "nothing mapped". Of the 789 customers with
+   *   any mapping, ink 677 · spare_parts 306 · head 156 · machine 52 · paper 11
+   *   — most customers hold two or three.
+   *
+   * ⚠ DERIVED FROM `itemsForCustomer`, not from the raw mappings, so the
+   *   dropdown and the list it filters cannot disagree. That selector collapses
+   *   twins to one row per product name; deriving types from the mappings
+   *   instead would offer a type whose only item is the copy that got dropped.
+   */
+  itemTypesForCustomer: (customerId: string | null) => string[];
+  /**
    * Every delivery location anyone has used — off the customer master AND off
    * orders already raised, so a location typed once on an order is offered to
    * the next person instead of being retyped (and mistyped).
@@ -854,6 +871,60 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    /**
+     * WHAT THIS CUSTOMER MAY ORDER. Hoisted out of the store object so
+     * `itemTypesForCustomer` can derive its dropdown from the very list it
+     * filters — a second copy of this logic would drift, and the symptom would
+     * be a type in the picker whose items never appear.
+     */
+    const itemsFor = (customerId: string | null, includeIds?: readonly string[]): Item[] => {
+      const keep = new Set(includeIds ?? []);
+      if (!customerId) return items.filter((i) => keep.has(i.id));
+      const allowed = new Set(
+        customerItems.filter((m) => m.active && m.customerId === customerId).map((m) => m.itemId),
+      );
+      // `items`, not activeOf(items), for the kept ones — an item switched off
+      // after the order was raised is still on the order.
+      const pool = activeOf(items).filter((i) => allowed.has(i.id))
+        .concat(items.filter((i) => keep.has(i.id) && !(allowed.has(i.id) && i.active)));
+
+      /**
+       * ONE ROW PER PRODUCT NAME, and this is not cosmetic tidying.
+       *
+       * Tally files a separate stock item in every company book that stocks it,
+       * so "EPN SUBLIMATION INK BLACK" is several rows. 1,582 of the mappings
+       * carried over from Dispatch point a customer in one book at an item in
+       * another - Dispatch matched its customer to one ledger and its item to a
+       * different book's twin. That reached the intake form as the same name
+       * twice with nothing on screen to choose between: a coin toss for whoever
+       * is punching the order, on 107 of the 783 mapped customers.
+       *
+       * The tie is broken by the CUSTOMER'S OWN BOOK, which is exact rather than
+       * a heuristic. Measured across all 684 affected groups: every one has
+       * EXACTLY ONE copy in the customer's own book - never none, never two -
+       * and no group's twins differ on unit or HSN. So the survivor is
+       * determined, and nothing that reaches the order, the gate pass or the
+       * invoice is lost by dropping the other.
+       */
+      const book = customers.find((c) => c.id === customerId)?.companyId ?? null;
+      const nameOf = (i: Item) => i.name.trim().toUpperCase();
+
+      // WHATEVER IS ALREADY ON THE ORDER SURVIVES FIRST, unconditionally. 757
+      // lines across 202 of the 303 orders sit on the twin from the OTHER book;
+      // deduping to the "right" one would take the line's item out of its own
+      // picker and blank the row on the next edit. Only names that nothing on
+      // the order already covers go through the tie-break.
+      const out = pool.filter((i) => keep.has(i.id));
+      const covered = new Set(out.map(nameOf));
+      const best = new Map<string, Item>();
+      for (const i of pool) {
+        if (keep.has(i.id) || covered.has(nameOf(i))) continue;
+        const cur = best.get(nameOf(i));
+        if (!cur || (i.companyId === book && cur.companyId !== book)) best.set(nameOf(i), i);
+      }
+      return out.concat([...best.values()]).sort((a, b) => a.name.localeCompare(b.name));
+    };
+
     return {
       /**
        * ⚠ BOTH QUERIES, AND THAT IS LOAD-BEARING. `useSalesOrderForm` seeds its
@@ -917,52 +988,14 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       mappedItemCount: (customerId) => (customerId ? mappedItemNameSets.get(customerId)?.size ?? 0 : 0),
       mappedItemNames: (customerId) =>
         (customerId ? mappedItemNameSets.get(customerId) ?? EMPTY_NAMES : EMPTY_NAMES) as Set<string>,
-      itemsForCustomer: (customerId, includeIds) => {
-        const keep = new Set(includeIds ?? []);
-        if (!customerId) return items.filter((i) => keep.has(i.id));
-        const allowed = new Set(
-          customerItems.filter((m) => m.active && m.customerId === customerId).map((m) => m.itemId),
-        );
-        // `items`, not activeOf(items), for the kept ones — an item switched off
-        // after the order was raised is still on the order.
-        const pool = activeOf(items).filter((i) => allowed.has(i.id))
-          .concat(items.filter((i) => keep.has(i.id) && !(allowed.has(i.id) && i.active)));
-
-        /**
-         * ONE ROW PER PRODUCT NAME, and this is not cosmetic tidying.
-         *
-         * Tally files a separate stock item in every company book that stocks it,
-         * so "EPN SUBLIMATION INK BLACK" is several rows. 1,582 of the mappings
-         * carried over from Dispatch point a customer in one book at an item in
-         * another - Dispatch matched its customer to one ledger and its item to a
-         * different book's twin. That reached the intake form as the same name
-         * twice with nothing on screen to choose between: a coin toss for whoever
-         * is punching the order, on 107 of the 783 mapped customers.
-         *
-         * The tie is broken by the CUSTOMER'S OWN BOOK, which is exact rather than
-         * a heuristic. Measured across all 684 affected groups: every one has
-         * EXACTLY ONE copy in the customer's own book - never none, never two -
-         * and no group's twins differ on unit or HSN. So the survivor is
-         * determined, and nothing that reaches the order, the gate pass or the
-         * invoice is lost by dropping the other.
-         */
-        const book = customers.find((c) => c.id === customerId)?.companyId ?? null;
-        const nameOf = (i: Item) => i.name.trim().toUpperCase();
-
-        // WHATEVER IS ALREADY ON THE ORDER SURVIVES FIRST, unconditionally. 757
-        // lines across 202 of the 303 orders sit on the twin from the OTHER book;
-        // deduping to the "right" one would take the line's item out of its own
-        // picker and blank the row on the next edit. Only names that nothing on
-        // the order already covers go through the tie-break.
-        const out = pool.filter((i) => keep.has(i.id));
-        const covered = new Set(out.map(nameOf));
-        const best = new Map<string, Item>();
-        for (const i of pool) {
-          if (keep.has(i.id) || covered.has(nameOf(i))) continue;
-          const cur = best.get(nameOf(i));
-          if (!cur || (i.companyId === book && cur.companyId !== book)) best.set(nameOf(i), i);
-        }
-        return out.concat([...best.values()]).sort((a, b) => a.name.localeCompare(b.name));
+      itemsForCustomer: itemsFor,
+      /* Cascading: only what this customer holds. Derived from `itemsFor` so the
+         dropdown and the list it filters cannot disagree — see the interface. */
+      itemTypesForCustomer: (customerId) => {
+        if (!customerId) return [];
+        const seen = new Set<string>();
+        for (const i of itemsFor(customerId)) if (i.itemType) seen.add(i.itemType);
+        return [...seen].sort();
       },
       locationsForCompany: (companyId) =>
         !companyId ? [] : activeOf(companyLocations).filter((l) => l.companyIds.includes(companyId)),
