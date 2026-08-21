@@ -18,6 +18,7 @@
 import { getConnectwaveSupabase } from "./connectwaveSupabase";
 import { categorizeRisk } from "./appDataCore";
 import { applyOtherPaymentsToLive } from "./liveOtherPayments";
+import { applyNonBillRefsToLive } from "./liveNonBillRefs";
 import { fetchCompanyMap, makeCompanyResolver, type CompanyIdentity } from "./companyMap";
 import type {
   Customer, CustomerDetail, DashboardData, CustomerGroupMap,
@@ -508,6 +509,20 @@ export async function loadFromConnectwave(fySuffix: string = ""): Promise<RawApp
   console.info(
     `[liveOtherPayments] applied ₹${opApplied.toLocaleString("en-IN")} across ` +
     `${cust.filter((c) => (c.otherPayments ?? 0) > 0).length} customers`,
+  );
+
+  // Then drop the references that were never bills — advances and on-account movements raised by a
+  // cash voucher, which Tally files under a bill NAME and the snapshot therefore carries as a bill.
+  // AFTER the Other Payments pass, not before: that pass settles bills FIFO and must see the same
+  // bill list Tally does. Removing lines first would let a manual payment cascade onto a different
+  // bill than it settles in the pipeline, and Live and pipeline mode would stop agreeing.
+  const nbr = await applyNonBillRefsToLive(cust, inv);
+  console.info(
+    nbr.degraded
+      ? "[liveNonBillRefs] DEGRADED — v_non_bill_ref unreadable, nothing removed (RC-7)"
+      : `[liveNonBillRefs] removed ${nbr.bills} non-bill reference(s) — ` +
+        `₹${nbr.outstanding.toLocaleString("en-IN")} outstanding, ` +
+        `₹${nbr.overdue.toLocaleString("en-IN")} overdue, across ${nbr.customers} customers`,
   );
 
   return { dash, cust, inv, grp: { byLedgerId: grpByLedgerId, mapping: grpMapping, groups: grpGroups } };
