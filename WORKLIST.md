@@ -470,82 +470,6 @@ Reports, Masters, Master Requests, Settings, System.
 
 *(cross-ref: **PC-1** above — master approvals need to reach a non-admin coordinator)*
 
-### MS-1 · Every item gets its Type, Category and Ink type from the sheet  `[~]`
-*Raised 2026-08-21 · **not blocked** — the sheet has arrived. This is **OD-7 Step 0**, and OD-7's
-screen work waits on it*
-
-`Misc/Bushra Reports/Inventory Mapping Sales Register.xlsx` (Sheet1) names **11,431 items** and gives
-each one a **TYPE**, a **CATEGORY** and, for inks, an **INK-TYPE**. It is hand-typed by someone who
-knows the product, and it is the source of truth.
-
-**Every `item_type` in the masters today is a guess.** It was seeded by `mst_guess_item_type()`, a
-regex over the item name and its Tally group, and
-[that migration](supabase/migrations/20260902121100_add_item_type.sql) calls itself *"a BEST-EFFORT
-SEED, not a source of truth"*. The sheet replaces it. Category and Ink type are new columns — nothing
-on `mst_items` carries either today.
-
-**Category is not the Tally stock group.** Only 858 of 13k rows agree with their own group, and just
-40 of the 96 category names are group names at all. It is a real middle layer between Type and Group.
-
-**The vocabulary widens from 5 to 13.** The five existing keys keep their exact spelling, so the
-contract with receivables' `SaleType` holds; eight are added, and each of the 13 carries the bucket it
-maps down to.
-
-| Sheet TYPE | stored key | rows | → SaleType |
-|---|---|---|---|
-| SPARE PART | `spare_parts` | 8,777 | spare_parts |
-| INK | `ink` | 1,651 | ink |
-| PAPER · SUBLIMATION PAPER | `paper` | 950 | other |
-| MACHINE | `machine` | 729 | machine |
-| HEAD | `head` | 598 | head |
-| RAW MATERIAL | `raw_material` | 328 | other |
-| OTHER · (Ungrouped) | `other` | 298 | other |
-| PACKING MATERIAL (+ STOCK) | `packing_material` | 185 | other |
-| CARTAGE | `cartage` | 27 | other |
-| SOFTWARE | `software` | 22 | other |
-| PROVISION INK | `provision_ink` | 17 | ink |
-| Other Ink | `other_ink` | 10 | ink |
-| SERVICE EXPENSE | `service_expense` | 7 | other |
-
-**The numbers, as run on 2026-08-21.** 11,431 sheet names reached **13,651** of the 14,267 item rows —
-one name hits every company book's copy of the item, because Tally files them separately. **2,536 rows
-changed type**, among them 926 papers that were filed as "other" and 219 raw materials filed as "ink".
-Category filled 13,220 rows, Ink type 1,673. `mst_items` stayed at 14,267 — only columns were touched.
-Two sheet names have no item at all (`444-011 INK TUBE(6*3.2)`,
-`444-030 RESISTANCE ADJUSTED SOLID VOLTAGE REGULATOR`).
-
-**The join collapses runs of whitespace — and only whitespace.** Every other character, case included,
-must match exactly. **15 names in the sheet carry a line break inside the cell** (Excel wrapped them)
-and one has a doubled space; on a character-exact join those 16 read as "the sheet does not know this
-item" when the truth was "the cell is wrapped". It is deliberately *not* the punctuation-insensitive
-match that would equate `LRS-600-36-MEANWELL` with `LRS-600-36,MEANWELL`.
-
-**The 616 rows / 608 names the sheet does not name** — `PROVISION FOR INK - AADESH`,
-`RECEIVABLE HANGLORY-RAMANUJ`, bare part codes — keep whatever they carry. Nothing is blanked and
-nothing is guessed at. They are listed in `supabase/itemsheet/unmatched.txt` for review.
-
-**The load is re-runnable, and that was proved rather than asserted.** A staging table
-`mst_item_sheet_import` plus `mst_apply_item_sheet()`; a revised sheet is loaded by re-running
-`node supabase/itemsheet/load-item-sheet.mjs`. Re-running it unchanged reports **0 rows changed** and
-does not move a single `updated_at`. A blank cell leaves the existing value alone rather than clearing
-it, so a gap in a future sheet cannot wipe a hand-correction. The rollback was rehearsed on live data —
-load → `restore-snapshot.mjs --apply` → load again, landing on identical counts both times.
-
-**What is left:** the frontend (13 type badges, the two new columns, the two new form fields) is built
-and verified locally but **not yet merged to `master`**. The migrations and the data load are already
-live on `icutjkrqkbzwvmnfbzpr`, which is the right order — a frontend that shipped first would error on
-the missing columns.
-
-**⚠ Every Masters Excel export taken before this change is now stale for the Type column.** The
-importer matches a dropdown **by label**, so re-uploading an old sheet would silently push all 926
-papers back to "Others". Export fresh before editing.
-
-**Open, for later:**
-- [ ] The workbook's second sheet, **"ink-item mapping"** — 505 rows of PARTICULARS NAME → ITEM
-      MAPPING plus a COLOR column, and 180 of them rename the particular to a different item. That is
-      an ink naming-alias problem, not a classification one, and it is deliberately out of scope here.
-- [ ] The 608 unnamed items: leave them on the old guess, or work the list down by hand?
-
 ---
 
 ## FMS Control Center
@@ -590,9 +514,9 @@ not throughput.
 
 OD-1 to OD-4 need a conversation with Bushra before any code moves. **OD-5, OD-7 and OD-8 do not** —
 OD-5 is decided, OD-7 is a new ask, and OD-8 is the tail of OD-6, so all three can be picked up now.
-**OD-7 starts with the item types themselves**: the Excel sheet has arrived, and every item is updated
-with its proper type before any of the screen work begins — that is now **MS-1**, filed under
-Admin / Masters. (**OD-6**, the slow save, is fixed — see [Done](#done).)
+**OD-7's Step 0 is finished**: every item now carries the type the sheet gave it — **MS-1**, shipped
+2026-08-21, see [Done](#done). The screen work is no longer blocked on it. (**OD-6**, the slow save,
+is fixed — also in Done.)
 
 *(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
 
@@ -789,13 +713,11 @@ item's sale type comes from*
 
 The intake form gains a **Sale type**, and the item picker then offers only the items of that type.
 
-**⚠ Step 0, and it comes before everything below: every item gets its correct type, from the sheet.**
-*(added 2026-08-21, at the user's instruction)* Nothing here can be built on a guessed type. The sheet
-has arrived and Step 0 is now **[MS-1](#ms-1--every-item-gets-its-type-category-and-ink-type-from-the-sheet-)**
-under Admin / Masters — go there for the numbers and the loader. Until the items actually carry a
-type, the field and the filter have nothing to read, so it stays the first piece of work in OD-7, not
-a follow-up to it. The group-name reading below is only a sizing exercise showing why guessing does
-not work; it is superseded by the sheet.
+**✅ Step 0 is DONE — every item carries its correct type, from the sheet.** That was **MS-1**,
+shipped 2026-08-21; see [Done](#done) for the numbers, the loader and the two questions it left open.
+The field and the filter now have something real to read, so the rest of OD-7 is unblocked. The
+group-name reading below is only a sizing exercise showing why guessing does not work; it is
+superseded by the sheet and kept for the record.
 
 **What MS-1 settled, and what it means for the rest of OD-7:**
 - **It lists items, not stock groups** — 11,431 item names. So the type lives on **`mst_items`**, and
@@ -1571,6 +1493,85 @@ Four rules, so the section stays worth reading:
 - **Say what a reader will now see**, not which lines moved. Someone scanning this wants to know
   what changed for them; git holds the diff.
 - **Delete the open entry in the same edit.** A task listed in two places is a task nobody trusts.
+
+### MS-1 · Every item gets its Type, Category and Ink type from the sheet  `[x]`
+*Admin / Masters · **Done 2026-08-21, 14:50 IST** — migrations and data load applied first, frontend
+on `master` as `47a4603`, Vercel deploy reported success · was **OD-7 Step 0***
+
+**Every `item_type` in the masters was a guess** until today. It was seeded by
+`mst_guess_item_type()` — a pile of regexes reading the item name and its Tally group — and
+[that migration](supabase/migrations/20260902121100_add_item_type.sql) called itself *"a BEST-EFFORT
+SEED, not a source of truth"*. `Misc/Bushra Reports/Inventory Mapping Sales Register.xlsx` is the
+source of truth: 11,431 items, each typed by hand by someone who knows the product.
+
+**What a user sees now.** Admin → Central Masters → **Items** carries three columns instead of one:
+**Type**, **Category** and **Ink type**, each with a sort toggle and a searchable, cascading filter.
+Type reads in the sheet's own words — Paper, Raw Material, Packing Material, Cartage, Software,
+Provision Ink, Other Ink, Service Expense, alongside the original Ink / Spare Parts / Heads /
+Machine / Others. Narrow Type to Paper and the Category list collapses from 96 values to the 2 that
+actually hold a paper. The edit form gained a **Category** and an **Ink type** picker, and both new
+columns come out in the Excel export and go back in through Import.
+
+**What moved in the data.** 2,536 rows changed type — among them **926 papers that were filed as
+"other"** and **219 raw materials filed as "ink"**. Category filled 13,220 rows, Ink type 1,673.
+`mst_items` stayed at 14,267: only columns were touched, never the item list.
+
+**The vocabulary widened from 5 to 13, and the five original keys did not move.** `ink`,
+`spare_parts`, `head`, `machine`, `other` are the strings receivables-hub uses for `SaleType`, so
+item and revenue can still be joined without a translation table. The 13 → 5 map lives in exactly one
+place — a `saleType` field on `ITEM_TYPES` in
+[liveMasters.ts](frontend/src/core/platform/liveMasters.ts) — which is what lets a sales order say
+PAPER while the ledger still reports `other`. **OD-7 reads the 13 for its filter and the 5 for its
+join.** Receivables itself never touched: its sale type is resolved in ConnectWave off the bill-name
+prefix.
+
+**Category is not the Tally stock group**, however much it reads like one — only 858 of 13k rows
+agree with their own group, and just 40 of the 96 category names are group names at all. It is a real
+middle layer between Type and Group.
+
+**The join collapses runs of whitespace and nothing else.** Every other character, case included,
+must match exactly. **15 names in the sheet carry a line break inside the cell** — Excel wrapped them
+— and one has a doubled space; character-exact, those 16 read as "the sheet does not know this item"
+when the truth was "the cell is wrapped". Deliberately *not* the punctuation-insensitive match that
+would equate `LRS-600-36-MEANWELL` with `LRS-600-36,MEANWELL`; nobody confirms this join, so it stays
+conservative.
+
+**It is re-runnable, and that was proved rather than promised.** A staging table
+`mst_item_sheet_import` plus `mst_apply_item_sheet()`; a revised sheet goes in with
+`node supabase/itemsheet/load-item-sheet.mjs`. Re-running an unchanged sheet reports **0 rows
+changed** and moves no `updated_at` — that is what the `is distinct from` guard is for. A blank cell
+leaves the existing value alone rather than clearing it, so a gap in a future sheet cannot wipe a
+hand-correction. **The rollback was rehearsed on live data**: load → `restore-snapshot.mjs --apply`
+→ load again, landing on identical counts both times.
+
+**Two migrations.**
+[20260921120000](supabase/migrations/20260921120000_item_sheet_type_category_ink.sql) widens the
+CHECK, adds the two columns and installs the loader machinery.
+[20260921120100](supabase/migrations/20260921120100_reconcile_merge_carries_category.sql) teaches the
+reconcile merge to carry the new columns — `mst_apply_reconcile_link` enumerates every column the
+survivor absorbs, and one not named there is lost on every merge.
+
+⚠ **No re-seed, ever again.** `20260902121300` re-seeded every row and warned it was "ONLY SAFE
+TODAY" because nobody had hand-corrected a type yet. That is now false. `mst_guess_item_type()` and
+its INSERT-only trigger are left alone — they still return five of the thirteen, all valid, so a new
+Tally item classifies itself and the next sheet load refines it.
+
+⚠ **Every Masters Excel export taken before 2026-08-21 is stale for the Type column.** The importer
+matches a dropdown **by label**, so re-uploading an old sheet would silently push all 926 papers back
+to "Others". Export fresh before editing.
+
+**Still open, and deliberately not in this task:**
+- [ ] The **608 items the sheet does not name** — `PROVISION FOR INK - AADESH`,
+      `RECEIVABLE HANGLORY-RAMANUJ`, bare part codes. They keep whatever they carried; nothing was
+      blanked and nothing guessed. Listed in `supabase/itemsheet/unmatched.txt`. Leave them on the old
+      guess, or work the list down by hand?
+- [ ] The workbook's **second sheet, "ink-item mapping"** — 505 rows of PARTICULARS NAME → ITEM
+      MAPPING plus a COLOR column, 180 of which rename the particular to a different item name. That
+      is an ink naming-alias problem, not a classification one.
+- [ ] **2 sheet names have no item at all**: `444-011 INK TUBE(6*3.2)` and `444-030 RESISTANCE
+      ADJUSTED SOLID VOLTAGE REGULATOR`.
+
+---
 
 ### PE-4 · FG Item Lot Number on the repackaging slip, carried through every step  `[x]`
 *Production Entry · **Done 2026-08-21, 13:52 IST** (database) · frontend on master, Vercel deploying*
