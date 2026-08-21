@@ -3,6 +3,7 @@ import PillToggle from "@/shared/components/ui/PillToggle";
 import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
 import { DISPATCH_TYPE_LABEL } from "../lib/format";
+import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { masterTypeLabel } from "../lib/masterFields";
 import RequestMasterModal from "./RequestMasterModal";
 import MapCustomerItemModal from "./MapCustomerItemModal";
@@ -25,7 +26,7 @@ import type { DispatchType } from "../types";
  *
  *   Dispatch type · Order date · Billing company        ← how it moves, when, who bills
  *   Dispatch location · Customer · Customer location    ← where from, and the buyer
- *   Customer PO no.
+ *   Item type · Customer PO no.                         ← what kind of thing, and their ref
  *   Remarks (full width)
  *
  * ⚠ Keep Customer immediately before Customer location. Picking the first FILLS
@@ -33,7 +34,15 @@ import type { DispatchType } from "../types";
  *   only stay side by side at BOTH widths (3-up desktop, 2-up tablet) while
  *   Customer's position is odd AND not a multiple of three. It is 5th here; the
  *   PO was moved off the front of that row to keep it 5th when Dispatch location
- *   joined. Move anything and re-count, because it breaks on tablet only.
+ *   joined, and Item type was added BELOW it (7th) for the same reason. Move
+ *   anything and re-count, because it breaks on tablet only.
+ *
+ * ⚠ NO HELP TEXT UNDER THESE FIELDS, by instruction (OD-10). Every field was
+ *   once wrapped in a <div> carrying a grey one-liner; those are gone and the
+ *   FieldLabels are direct grid children again. The RED line under Billing
+ *   company is NOT help text — it is the only thing that explains an empty
+ *   company list — and it stays. If you add a wrapper back, keep it to ONE
+ *   element per field or the pairing above breaks.
  *
  * ⚠ DISPATCH LOCATION ALWAYS RENDERS, even for a company with no sites — it is
  *   disabled and says so. Hiding it would change the child count and silently
@@ -88,6 +97,19 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
   */
   const noAssignment = companyOptions.length === 0 && s.activeOf(s.companies).length > 0;
 
+  /*
+    ⚠ ONLY THE TYPES THIS CUSTOMER ACTUALLY HOLDS — the cascading rule every
+      filter here follows. The vocabulary has 13 words; a customer typically has
+      two or three. Offering all 13 would put eleven dead options above a list
+      that goes empty when you pick one, and the reader cannot tell "wrong type"
+      from "nothing mapped". The store derives this from the very list the grid
+      filters, so the two cannot disagree.
+  */
+  const typeOptions: ComboOption[] = s
+    .itemTypesForCustomer(f.form.customerId || null)
+    .map((t) => ({ value: t, label: itemTypeLabel(t as ItemType) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   const locationOptions: ComboOption[] = (() => {
     const known = s.knownLocations;
     const cur = f.form.customerLocation.trim();
@@ -100,8 +122,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* ---- row 1: how it moves, when, and who bills it ---- */}
 
-        <div>
-          <FieldLabel label="Dispatch type" required>
+        <FieldLabel label="Dispatch type" required>
             <PillToggle<DispatchType>
               value={f.form.dispatchType}
               onChange={(v) => f.patch({ dispatchType: v })}
@@ -110,11 +131,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
                 { value: "transport", label: DISPATCH_TYPE_LABEL.transport },
               ]}
             />
-          </FieldLabel>
-          <p className="mt-1 text-[11.5px] text-grey-2">
-            How the consignment travels. Recorded on the order for reference.
-          </p>
-        </div>
+        </FieldLabel>
 
         <FieldLabel label="Order date" required>
           <TextInput
@@ -155,8 +172,7 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
 
         {/* ---- row 2: where it leaves from, and who is buying ---- */}
 
-        <div>
-          <FieldLabel label="Dispatch location" required={siteOptions.length > 0}>
+        <FieldLabel label="Dispatch location" required={siteOptions.length > 0}>
             <Combobox
               value={f.form.locationId}
               onChange={(v) => f.patch({ locationId: v })}
@@ -181,14 +197,9 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               }
               createLabel={(q) => `Request new location “${q}”`}
             />
-          </FieldLabel>
-          <p className="mt-1 text-[11.5px] text-grey-2">
-            Our site the goods leave from — not where the customer takes delivery.
-          </p>
-        </div>
+        </FieldLabel>
 
-        <div>
-          <FieldLabel label="Customer" required>
+        <FieldLabel label="Customer" required>
             {/* ⚠ THE COMPANY COMES FIRST, and the picker says so rather than
                 listing all 1,850 ledgers. A firm has a separate ledger in every
                 book it trades with, so "ANUPAM" is four rows and picking between
@@ -220,15 +231,9 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
                  company, which is the mechanism behind OD-4. The note below says
                  where to go instead. */
             />
-          </FieldLabel>
-          <p className="mt-1 text-[11.5px] text-grey-2">
-            Only the customers this company bills. Changing the customer resets the item lines
-            and the location. A customer who is not listed has to be opened in Tally first.
-          </p>
-        </div>
+        </FieldLabel>
 
-        <div>
-          <FieldLabel label="Customer location">
+        <FieldLabel label="Customer location">
             {/* CAPS on the way in, not just on save, so the field shows exactly
                 what will be stored — and a typed location joins the shared list
                 as the same place, not a second spelling of it. */}
@@ -242,11 +247,40 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               searchable
               wrapLabel
             />
-          </FieldLabel>
-          <p className="mt-1 text-[11.5px] text-grey-2">
-            Filled in from the customer master. Change it, or type a new one.
-          </p>
-        </div>
+        </FieldLabel>
+
+        {/* ---- row 3: what kind of thing is being ordered ---- */}
+
+        {/*
+          ⚠ 7TH, AND THAT POSITION IS LOAD-BEARING. Inserting it here leaves
+            Customer 5th — odd, and not a multiple of three — so Customer and
+            Customer location stay side by side at both widths, per the layout
+            note at the top of this file. Putting it anywhere ABOVE Customer
+            would push Customer to 6th and break the pairing on tablet only.
+        */}
+        <FieldLabel label="Item type">
+          <Combobox
+            value={f.itemType}
+            /* ⚠ DOES NOT CLEAR THE LINES, unlike changing the customer. That
+               reset exists because a different customer may not be able to
+               order the items already chosen; a different TYPE is only a view
+               over the same customer's list, and every line already picked
+               stays valid. OrderLinesGrid keeps those rows visible through its
+               `includeIds` escape hatch regardless of what is selected here. */
+            onChange={f.setItemType}
+            options={typeOptions}
+            placeholder={
+              !f.form.customerId ? "pick the customer first"
+              : typeOptions.length === 0 ? "nothing mapped to this customer yet"
+              : "All types"
+            }
+            disabled={!f.form.customerId || typeOptions.length === 0}
+            /* Blank is a real state — it means every type — so the field needs a
+               way back out once something is chosen. */
+            clearable
+            searchable={typeOptions.length > 6}
+          />
+        </FieldLabel>
 
         <FieldLabel label="Customer PO no.">
           <TextInput

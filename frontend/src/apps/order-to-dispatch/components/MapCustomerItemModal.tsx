@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
-import Combobox from "@/shared/components/ui/Combobox";
+import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { FieldLabel } from "@/shared/components/ui/Form";
 import { itemTypeLabel, type ItemType } from "@/core/platform/liveMasters";
 import { useDispatchStore } from "../store";
 import { COMPANY_ITEMS_QK, fetchCompanyItems } from "../data/dispatchFetch";
+import { DEFAULT_ITEM_TYPE } from "../pages/orders/useSalesOrderForm";
 import type { MapCustomerItemResult } from "../data/dispatchWrites";
 
 /** The one normalisation. Must match the store's `mappedItemNames`. */
@@ -75,7 +76,8 @@ export default function MapCustomerItemModal({
 
   const [company, setCompany] = useState(companyId ?? "");
   const [customer, setCustomer] = useState(customerId ?? "");
-  const [types, setTypes] = useState<string[]>([]);
+  /* ONE type at a time, matching the intake form. "" is every type. */
+  const [type, setType] = useState("");
   const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +86,7 @@ export default function MapCustomerItemModal({
     if (!open) return;
     setCompany(companyId ?? "");
     setCustomer(customerId ?? "");
-    setTypes([]);
+    setType("");
     setPicked([]);
     setError(null);
   }, [open, companyId, customerId]);
@@ -118,23 +120,39 @@ export default function MapCustomerItemModal({
 
   const options: MultiOption[] = useMemo(() => {
     const rows = (book.data ?? []).filter((i) => !alreadyMapped.has(norm(i.name)));
-    const wanted = new Set(types);
     return rows
-      .filter((i) => wanted.size === 0 || wanted.has(i.itemType ?? ""))
+      .filter((i) => !type || (i.itemType ?? "") === type)
       .map((i) => ({ value: i.id, label: i.code ? `${i.name} · ${i.code}` : i.name }));
-  }, [book.data, alreadyMapped, types]);
+  }, [book.data, alreadyMapped, type]);
 
   /**
    * The type filter offers only what THIS book actually holds — cascading, the
    * same rule every grid follows. A vocabulary of 13 words above a book that
    * uses four is a list of dead ends.
    */
-  const typeOptions: MultiOption[] = useMemo(() => {
+  const typeOptions: ComboOption[] = useMemo(() => {
     const seen = new Set((book.data ?? []).map((i) => i.itemType ?? ""));
     return [...seen]
       .map((t) => ({ value: t, label: t ? itemTypeLabel(t as ItemType) : "Not set" }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [book.data]);
+
+  /*
+    INK ONCE THE BOOK LANDS, and only once — never again afterwards.
+
+    The default has to wait for the fetch: the options do not exist until the
+    company's items arrive. But re-running it on every change of `book.data`
+    would stamp Ink back over a type the user had just chosen, so it is armed by
+    a ref that fires a single time per opening. Nothing happens if the book holds
+    no ink; the field stays on All types rather than jumping somewhere arbitrary.
+  */
+  const defaulted = useRef(false);
+  useEffect(() => { if (!open) defaulted.current = false; }, [open]);
+  useEffect(() => {
+    if (!open || defaulted.current || book.isLoading || !book.data) return;
+    defaulted.current = true;
+    if (book.data.some((i) => i.itemType === DEFAULT_ITEM_TYPE)) setType(DEFAULT_ITEM_TYPE);
+  }, [open, book.isLoading, book.data]);
 
   /**
    * WHERE THE ITEM ACTUALLY LIVES, when it is not in this book.
@@ -208,7 +226,7 @@ export default function MapCustomerItemModal({
             ) : (
               <Combobox
                 value={company}
-                onChange={(id) => { setCompany(id); setCustomer(""); setPicked([]); setTypes([]); }}
+                onChange={(id) => { setCompany(id); setCustomer(""); setPicked([]); setType(""); defaulted.current = false; }}
                 options={s.activeOf(s.companies).map((c) => ({ value: c.id, label: c.name }))}
                 placeholder="Select company…"
                 searchable
@@ -243,14 +261,20 @@ export default function MapCustomerItemModal({
         </div>
 
         {typeOptions.length > 1 && (
-          <FieldLabel label="Item type" hint="Narrows the list below. Leave blank for all.">
-            <MultiSelect
-              values={types}
-              onChange={(v) => { setTypes(v); setPicked([]); }}
+          <FieldLabel label="Item type">
+            {/* One type at a time, defaulting to Ink — the same control and the
+                same default as the intake form, so the two read as one idea. */}
+            <Combobox
+              value={type}
+              /* Clears the selection: an item ticked under one type would stay
+                 selected while invisible under another, and the footer count
+                 would name rows the reader can no longer see. */
+              onChange={(v) => { setType(v); setPicked([]); }}
               options={typeOptions}
               placeholder="All types"
-              searchable
               disabled={!company || book.isLoading}
+              clearable
+              searchable={typeOptions.length > 6}
             />
           </FieldLabel>
         )}

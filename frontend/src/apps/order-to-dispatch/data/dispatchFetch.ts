@@ -158,7 +158,7 @@ const COLS = {
   companySites: "id,active,sort_order,created_at,location_id,company_id",
   partyItems: "id,active,sort_order,created_at,party_id,item_id",
   parties: "id,name,active,sort_order,created_at,company_id,code,location,gstin,contact_name,phone,email",
-  items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id",
+  items: "id,name,active,sort_order,created_at,code,unit_id,hsn_code,company_id,item_type",
   units: "id,name,created_at",
   /**
    * ONE COMPANY'S WHOLE STOCK BOOK — read only when the mapping modal opens.
@@ -765,6 +765,7 @@ export async function fetchDispatchMasters(): Promise<DispatchMasters> {
       unit: unitNameById.get(r.unit_id) ?? "",
       hsnCode: str(r.hsn_code),
       companyId: r.company_id ?? null,
+      itemType: str(r.item_type),
     })),
     /**
      * The customer-item catalogue, now shared.
