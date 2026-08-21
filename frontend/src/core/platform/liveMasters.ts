@@ -244,6 +244,25 @@ export interface MasterPartyItem extends MasterRowBase {
    * need 5,972 rows rewritten and would drift the moment one was missed.
    */
   itemType: ItemType | null;
+  /**
+   * WHO MADE THIS PAIR BY HAND — empty when a machine derived it.
+   *
+   * ⚠ IT IS `created_by`, NOT `source`, AND THAT IS NOT INTERCHANGEABLE.
+   *   masters-sync upserts this table on (party_id, item_id) and writes
+   *   `source: 'sales_register'` unconditionally, so the first time the customer
+   *   actually BUYS the item they were mapped to, a 'portal' mark is overwritten
+   *   and the row drops out of any filter built on it. Four rows on the live
+   *   table already show it: created_by set, source reading 'sales_register'.
+   *
+   *   `created_by` is not in that upsert's column list, and the sync runs on the
+   *   service key where auth.uid() is null. So the reading is exact:
+   *   **blank = a machine derived it, a name = a person mapped it.**
+   *
+   *   `source` is no use for this on its own anyway — 1,823 of its 1,869
+   *   'portal' rows are bulk migration rows nobody chose.
+   */
+  mappedById: string | null;
+  mappedOn: string | null;
 }
 
 export async function fetchMasterPartyItems(): Promise<MasterPartyItem[]> {
@@ -251,7 +270,7 @@ export async function fetchMasterPartyItems(): Promise<MasterPartyItem[]> {
   //   fetchAllRows. A plain nested select silently stops at the API row limit.
   const rows = await fetchAllRows<Record<string, any>>(
     "mst_party_items",
-    "id,active,sort_order,source,last_sold_on,sale_count," +
+    "id,active,sort_order,source,last_sold_on,sale_count,created_by,created_at," +
       "party:mst_parties(id,name,company_id),item:mst_items(id,name,group_id,item_type)",
   );
   return rows
@@ -276,6 +295,8 @@ export async function fetchMasterPartyItems(): Promise<MasterPartyItem[]> {
         companyId: r.party?.company_id ?? null,
         lastSoldOn: r.last_sold_on ?? null,
         saleCount: r.sale_count ?? 0,
+        mappedById: r.created_by ?? null,
+        mappedOn: r.created_at ?? null,
       };
     })
     .sort((a, b) => a.partyName.localeCompare(b.partyName) || a.itemName.localeCompare(b.itemName));

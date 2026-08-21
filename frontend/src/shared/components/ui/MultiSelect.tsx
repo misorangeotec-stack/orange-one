@@ -43,6 +43,7 @@ export default function MultiSelect({
   chips,
   onCreate,
   createLabel = (q) => `Add “${q}”`,
+  maxRender,
 }: {
   values: string[];
   onChange: (values: string[]) => void;
@@ -84,6 +85,22 @@ export default function MultiSelect({
    */
   onCreate?: (label: string) => void;
   createLabel?: (q: string) => string;
+  /**
+   * Cap how many matches are DRAWN, and say so when the cap bites.
+   *
+   * ⚠ OPT-IN, because it changes nothing for the ~190 existing call sites and
+   *   must not. This list renders one <li> per match with no virtualisation, so
+   *   a caller handing it a whole Tally stock book — 8,340 items for one company
+   *   — stalls the dropdown on every keystroke. The cap draws the first N and
+   *   tells the reader there are more, which a scrollbar into eight thousand
+   *   rows never did.
+   *
+   * ⚠ IT ALSO DISARMS "Select all", and that is the point rather than a side
+   *   effect. Select all acts on the SHOWN options (see below), so under a cap
+   *   it adds at most N — where uncapped it would silently commit every one of
+   *   the 8,340 matches in a single click.
+   */
+  maxRender?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -117,7 +134,19 @@ export default function MultiSelect({
   const searching = q.trim().length > 0;
 
   /**
-   * `filtered` split into sections, in the order each group FIRST appears — so
+   * What is actually DRAWN. Identical to `filtered` unless a caller asked for a
+   * cap — see `maxRender`. Everything downstream reads this rather than
+   * `filtered`, so "shown" means one thing throughout: on screen, selectable,
+   * and reachable by Select all.
+   */
+  const visible = useMemo(
+    () => (maxRender && filtered.length > maxRender ? filtered.slice(0, maxRender) : filtered),
+    [filtered, maxRender],
+  );
+  const truncated = visible.length < filtered.length;
+
+  /**
+   * `visible` split into sections, in the order each group FIRST appears — so
    * the caller controls section order by ordering its options, and never has to
    * pass a separate list of groups. Ungrouped options collect under "" and render
    * headerless, which is what keeps the ungrouped call sites pixel-identical.
@@ -125,7 +154,7 @@ export default function MultiSelect({
   const grouped = useMemo(() => {
     const out: { group: string; options: MultiOption[] }[] = [];
     const byGroup = new Map<string, MultiOption[]>();
-    for (const o of filtered) {
+    for (const o of visible) {
       const g = o.group ?? "";
       let bucket = byGroup.get(g);
       if (!bucket) {
@@ -136,7 +165,7 @@ export default function MultiSelect({
       bucket.push(o);
     }
     return out;
-  }, [filtered]);
+  }, [visible]);
 
   // Select all / Clear all act on the *shown* options: with a search active,
   // "Select all" adds the matches to the selection rather than picking everyone,
@@ -153,7 +182,7 @@ export default function MultiSelect({
     setQ("");
   };
 
-  const shownValues = filtered.map((o) => o.value);
+  const shownValues = visible.map((o) => o.value);
   const allShownSelected = shownValues.length > 0 && shownValues.every((v) => selectedSet.has(v));
   const noneShownSelected = shownValues.every((v) => !selectedSet.has(v));
   const selectAllShown = () => onChange([...new Set([...values, ...shownValues])]);
@@ -344,7 +373,7 @@ export default function MultiSelect({
             </div>
           )}
           <ul className="flex-1 min-h-0 max-h-60 overflow-y-auto py-1">
-            {filtered.length === 0 && !canCreate && (
+            {visible.length === 0 && !canCreate && (
               <li className="px-3 py-3 text-center text-[12.5px] text-grey-2">No matches</li>
             )}
             {grouped.map((section) => (
@@ -385,8 +414,16 @@ export default function MultiSelect({
               </li>
             ))}
 
+            {/* Say what is being withheld. A capped list that stays silent reads
+                as "these are all of them", which is the one thing it is not. */}
+            {truncated && (
+              <li className="border-t border-line mt-1 px-3 py-2 text-center text-[12px] text-grey-2">
+                Showing {visible.length} of {filtered.length} — keep typing to narrow.
+              </li>
+            )}
+
             {canCreate && (
-              <li className={cn(filtered.length > 0 && "border-t border-line mt-1 pt-1")}>
+              <li className={cn(visible.length > 0 && "border-t border-line mt-1 pt-1")}>
                 <button
                   type="button"
                   onClick={create}

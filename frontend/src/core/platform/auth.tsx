@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import type { Session } from "@supabase/supabase-js";
 import { clearAllSticky } from "@/shared/lib/stickyState";
 import { clearAllReturnTo } from "@/shared/lib/returnTo";
 import { supabase } from "./supabase";
+import { clearPersistedCache } from "@/queryPersister";
 
 /**
  * Real Supabase authentication for the portal (Stage B). Tracks the auth session
@@ -23,6 +25,7 @@ interface AuthValue {
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -69,6 +72,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // hand them the previous user's filters, search text and assignee selections.
       clearAllSticky();
       clearAllReturnTo();
+      /*
+        ⚠ AND THE SERVER DATA, WHICH IS THE HALF THAT WAS MISSING. The query cache
+          is also persisted to IndexedDB, and nothing ever cleared it: the last
+          user's receivables payload and the staff directory stayed on disk for the
+          full 24-hour max age, readable through devtools by anyone who opened the
+          browser WITHOUT logging in. Dispatch's catalogue — customer names, GSTINs,
+          phone numbers, email addresses — now persists too, so this is no longer a
+          theoretical tidiness point.
+
+          Both halves are needed: clear() empties memory, removeClient() deletes the
+          disk copy and cancels any throttled write that would otherwise flush the
+          cache straight back out again.
+      */
+      queryClient.clear();
+      await clearPersistedCache().catch(() => {});
     },
   };
 

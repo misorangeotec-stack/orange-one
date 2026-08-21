@@ -8,6 +8,7 @@ import MultiSelect from "@/shared/components/ui/MultiSelect";
 import MasterCrud, { type MasterColumn, type MasterFieldDef } from "@/shared/components/ui/MasterCrud";
 import Combobox, { type ComboOption } from "@/shared/components/ui/Combobox";
 import { useSession } from "@/core/platform/session";
+import { useDirectory } from "@/core/platform/store";
 import { APPS } from "@/apps/appInfo";
 import {
   companyDisplayName, itemTypeLabel, ITEM_TYPES,
@@ -252,6 +253,17 @@ const textCol = <T,>(header: string, get: (row: T) => string | null, width: stri
 export default function Masters() {
   const { isAdmin, user } = useSession();
   const qc = useQueryClient();
+  /**
+   * Names for the "Mapped by" column. Blank rather than "Unknown" for an id the
+   * directory cannot resolve — the column's whole reading is "blank means no
+   * person did this", and inventing a placeholder would make a machine-derived
+   * row and a departed employee's row look the same.
+   */
+  const { profiles } = useDirectory();
+  const personName = useMemo(() => {
+    const byId = new Map(profiles.map((p) => [p.id, p.name]));
+    return (id: string | null) => (id ? byId.get(id) ?? "" : "");
+  }, [profiles]);
   const [tab, setTab] = useState<TabKey>("company");
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState<string | null>(null);
@@ -995,6 +1007,33 @@ export default function Masters() {
                had no Source column while adding was switched off — now that a
                pair can be added by hand, telling the two apart is the point. */
             sourceCol(),
+            /*
+              WHO MAPPED IT, AND WHEN — the answer to "show me the mappings people
+              made themselves" (OD-9).
+
+              ⚠ NOT the Source column beside it, and the difference matters.
+                masters-sync rewrites `source` to 'sales_register' on any pair the
+                customer actually buys, so a mapping made by hand quietly stops
+                looking hand-made the moment it starts working. `created_by`
+                survives that upsert, and the sync runs on the service key where
+                auth.uid() is null — so a blank here means a machine derived it
+                and a name means a person chose it. Filter this column to a person
+                and you have exactly the manual mappings.
+            */
+            { header: "Mapped by", className: "w-36",
+              sortValue: (r) => personName(r.mappedById),
+              filter: { get: (r) => personName(r.mappedById) || "From Tally" },
+              render: (r) => (
+                <span className="text-[12px] text-grey">{personName(r.mappedById) || "—"}</span>
+              ) },
+            { header: "Mapped on", className: "w-28",
+              // Sorted as a real date, not as the rendered "14 Aug 2026".
+              sortValue: (r) => r.mappedOn ?? "",
+              render: (r) => (
+                <span className="text-[12px] text-grey-2">
+                  {r.mappedOn ? new Date(r.mappedOn).toLocaleDateString() : "—"}
+                </span>
+              ) },
           ]}
           fields={[
             { key: "partyName", label: "Customer", type: "text", readOnly: true },

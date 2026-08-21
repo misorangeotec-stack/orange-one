@@ -9,7 +9,7 @@ import Combobox from "@/shared/components/ui/Combobox";
 import { Field, SectionHeading } from "@/shared/components/ui/Readout";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { formatDateTime } from "@/shared/lib/time";
-import { useDispatchStore } from "../../store";
+import { useDispatchStore, useOrderActivity } from "../../store";
 import DispatchStepper from "../../components/DispatchStepper";
 import StepDocLink from "../../components/StepDocLink";
 import GatePassButton from "../../components/GatePassButton";
@@ -41,6 +41,14 @@ export default function OrderDetail() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /*
+    ⚠ ABOVE THE GUARDS, AND KEYED ON THE ROUTE PARAM, NOT `order.id`. Every hook
+      must run on every render or React throws "rendered more hooks than during
+      the previous render" — and the guards below return early. `id` is the same
+      value `order.id` would be, and it is available before the order has loaded.
+  */
+  const activity = useOrderActivity(id);
+
   if (s.isLoading) return <p className="text-[13.5px] text-grey-2">Loading…</p>;
   if (!order) {
     // ⚠ NOT-FOUND IS ONLY TRUE ONCE THE REFRESH HAS SETTLED. Raising an order
@@ -53,7 +61,6 @@ export default function OrderDetail() {
     return <EmptyState title="Order not found" message="It may have been removed, or the link is stale." />;
   }
 
-  const activity = s.activityFor("order", order.id);
   const totals = qtyTotals(order);
   const rounds = allRoundViews(order).filter((v) => v.msAt || v.isArchived);
   const held = isCreditHeld(order);

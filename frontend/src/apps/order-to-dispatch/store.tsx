@@ -1,11 +1,14 @@
-import { createContext, useContext, useMemo } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSession } from "@/core/platform/session";
 import { useDirectory } from "@/core/platform/store";
 import { fetchOrgPeople } from "@/core/platform/orgPeople";
 import type { Department as OrgDepartment, Profile } from "@/core/platform/types";
-import { DISPATCH_QK, fetchDispatchData, dispatchQueryKey } from "./data/dispatchFetch";
+import {
+  DISPATCH_QK, DISPATCH_MASTERS_QK, fetchDispatchData, fetchDispatchMasters, dispatchQueryKey,
+  fetchOrderActivity, orderActivityQueryKey, fetchDispatchDelta, type DispatchData,
+} from "./data/dispatchFetch";
 import {
   announce as announceWrite,
   amendRound as amendRoundWrite,
@@ -15,6 +18,7 @@ import {
   holdSalesBill as holdSalesBillWrite,
   insertMaster as insertMasterWrite,
   insertMasters as insertMastersWrite,
+  mapCustomerItems as mapCustomerItemsWrite,
   markNotificationsRead as markNotificationsReadWrite,
   materialNothingAvailable as materialNothingAvailableWrite,
   recordSalesReturn as recordSalesReturnWrite,
@@ -34,6 +38,7 @@ import {
   uploadStepDocument as uploadStepDocumentWrite,
   withdrawCancelRequest as withdrawCancelRequestWrite,
   type AmendRoundLine,
+  type MapCustomerItemResult,
   type MasterInput,
   type OrderInput,
   type SalesReturnPayload,
@@ -51,7 +56,7 @@ import {
   type QueueStep,
   type StageEntry,
 } from "./lib/queues";
-import { masterTypeLabel } from "./lib/masterFields";
+import { describePayload, masterTypeLabel } from "./lib/masterFields";
 import { isSalesReturnDone, isSalesReturnPending } from "./lib/salesReturn";
 import { DEFAULT_STEP_SLA, type StepSlaMap } from "./lib/sla";
 import type { OwnerStepKey } from "./lib/steps";
@@ -209,6 +214,24 @@ export interface DispatchStoreValue {
    */
   mappedItemCount: (customerId: string | null) => number;
   /**
+   * The product NAMES this customer can already order, upper-cased and trimmed.
+   *
+   * ⚠ NAMES, NOT IDS, AND THE DIFFERENCE IS A BUG THE MAPPING MODAL WOULD
+   *   OTHERWISE SHIP WITH. `itemsForCustomer` collapses the picker to one row
+   *   per product name — Tally files the same physical goods as a separate
+   *   stock item in every book that stocks it. So a customer mapped to the
+   *   Enterprise copy of a name has nothing left to gain from the O-tec copy:
+   *   excluding by id would still OFFER it, the write would succeed, and the
+   *   item picker would look identical afterwards, because both copies fold
+   *   into the same row. The user reads that as "it didn't work" and does it
+   *   again. 22 name-groups across 18 customers already carry such twins.
+   *
+   * Same reasoning as `mappedItemCount`, which counts distinct names for
+   * exactly this reason — the two must agree or the count promises rows the
+   * picker will not produce.
+   */
+  mappedItemNames: (customerId: string | null) => Set<string>;
+  /**
    * Every delivery location anyone has used — off the customer master AND off
    * orders already raised, so a location typed once on an order is offered to
    * the next person instead of being retyped (and mistyped).
@@ -266,7 +289,8 @@ export interface DispatchStoreValue {
   isMasterUnassigned: (mt: DispatchMasterType) => boolean;
 
   // feed
-  activityFor: (entityType: string, entityId: string) => DispatchActivity[];
+  /** ⚠ REMOVED — an order's trail is its own query now: useOrderActivity(orderId).
+   *  It was 2,943 rows in the snapshot, refetched after every save, for one panel. */
   notifications: DispatchNotification[];
   processCoordinatorIds: string[];
 
@@ -308,6 +332,19 @@ export interface DispatchStoreValue {
   updateMaster: (mt: DispatchMasterType, id: string, input: MasterInput) => Promise<void>;
   setMasterManagers: (mt: DispatchMasterType, userIds: string[]) => Promise<void>;
   requestNewMaster: (mt: DispatchMasterType, payload: Record<string, unknown>) => Promise<void>;
+  /**
+   * Map a customer to items of that company's book, DIRECTLY — no request, no
+   * approval (OD-9). Goes through a SECURITY DEFINER RPC rather than
+   * `insertMasters`, because RLS on the mapping table admits only admins and its
+   * master manager, which is nobody who raises an order.
+   *
+   * Returns the three outcomes separately: `reactivated` means somebody had
+   * switched that pair OFF and it is now back on, which has to be said out loud
+   * rather than folded into a success count.
+   */
+  mapCustomerItems: (
+    customerId: string, companyId: string, itemIds: string[],
+  ) => Promise<MapCustomerItemResult>;
   resolveMasterRequest: (
     id: string, approve: boolean, payload: Record<string, unknown> | null, note: string | null,
   ) => Promise<void>;
@@ -334,25 +371,80 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     refetchOnWindowFocus: false,
   });
 
+  /**
+   * THE CATALOGUE — its own query, refreshed on a clock rather than by saves.
+   *
+   * ⚠ 30 MINUTES IS NOT ARBITRARY, and it is not a compromise on freshness. The
+   *   Tally sync that feeds mst_* runs about FIVE TIMES A DAY, so a half-hour
+   *   window still leaves this picker fresher than the source it copies. What it
+   *   buys is that ~2 MB of ledgers stops moving on every write.
+   *
+   * ⚠ NOT KEYED ON THE USER — see DISPATCH_MASTERS_QK. Everyone sees the same
+   *   catalogue, so one entry serves every tab.
+   */
+  const {
+    data: masters,
+    isLoading: mastersLoading,
+    error: mastersError,
+  } = useQuery({
+    queryKey: DISPATCH_MASTERS_QK,
+    queryFn: fetchDispatchMasters,
+    enabled: !!session.user,
+    staleTime: 30 * 60_000,
+    refetchOnWindowFocus: false,
+  });
+
   // Org-wide names so a colleague's completed entry never renders blank (the
   // directory itself is RLS-scoped, which is why this is a separate read).
   const { data: orgPeople } = useQuery({ queryKey: ["orgPeople"], queryFn: fetchOrgPeople, staleTime: 5 * 60 * 1000 });
 
   const stepOwners = data?.stepOwners ?? [];
   const designations = data?.designations ?? [];
-  const companies = data?.companies ?? [];
-  const companyLocations = data?.companyLocations ?? [];
-  const customers = data?.customers ?? [];
-  const items = data?.items ?? [];
-  const customerItems = data?.customerItems ?? [];
+  // The catalogue comes from its own query now — see the useQuery above.
+  const companies = masters?.companies ?? [];
+  const companyLocations = masters?.companyLocations ?? [];
+  const customers = masters?.customers ?? [];
+  const items = masters?.items ?? [];
+  const customerItems = masters?.customerItems ?? [];
   const masterManagers = data?.masterManagers ?? [];
   const masterRequests = data?.masterRequests ?? [];
   const orders = data?.orders ?? [];
-  const activity = data?.activity ?? [];
   const notifications = data?.notifications ?? [];
   const processCoordinatorIds = data?.config.processCoordinatorIds ?? [];
   const stepSla = data?.config.stepSla ?? DEFAULT_STEP_SLA;
   const orderNoPreview = data?.orderNoPreview ?? "";
+
+  /**
+   * SELF-HEAL: an order line naming an item the catalogue has never heard of.
+   *
+   * The catalogue is allowed to be half an hour old. In that window somebody else
+   * can map a new item and raise an order against it, and our copy would have
+   * neither — so the line would render as a blank cell on the queue, the gate pass
+   * and the export. `fetchDispatchMasters` covers items already on an order AS AT
+   * the moment it ran; this covers the ones that appeared afterwards.
+   *
+   * ⚠ ONCE PER UNKNOWN ID, NOT ONCE PER RENDER. Without the ref this would
+   *   invalidate → refetch → re-render → invalidate again, for ever, whenever an
+   *   id genuinely cannot be resolved (a hard-deleted item, say). Remembering what
+   *   we have already chased turns a possible infinite loop into one wasted fetch.
+   */
+  const chasedItemIds = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!masters || !data) return;
+    const known = new Set(items.map((i) => i.id));
+    const missing: string[] = [];
+    for (const o of orders) {
+      for (const l of o.lines) {
+        if (l.itemId && !known.has(l.itemId) && !chasedItemIds.current.has(l.itemId)) {
+          chasedItemIds.current.add(l.itemId);
+          missing.push(l.itemId);
+        }
+      }
+    }
+    if (missing.length) {
+      void queryClient.invalidateQueries({ queryKey: DISPATCH_MASTERS_QK }).catch(() => {});
+    }
+  }, [masters, data, items, orders, queryClient]);
 
   const value = useMemo<DispatchStoreValue>(() => {
     const uid = userId ?? "";
@@ -377,7 +469,53 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      *   surface as an unhandled rejection now that nobody is awaiting it.
      */
     const invalidate = () => {
-      void queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
+      void refreshWorkingSet();
+    };
+
+    /**
+     * The post-write refresh: ask for what CHANGED, not for everything.
+     *
+     * A save used to pull the module's whole working set back down — 2.9 MB and
+     * 11 requests to learn that one order moved a step. `fetchDispatchDelta` reads
+     * every visible order's id and stamp (~25 kB), then fetches only the rows that
+     * moved, and drops any that vanished.
+     *
+     * ⚠ THIS IS THE ONLY PATH THAT GOES INCREMENTAL. A refetch caused by mount or
+     *   staleness still runs the full `fetchDispatchData`, which keeps a cheap,
+     *   regular re-anchor to the truth rather than an ever-lengthening chain of
+     *   patches.
+     *
+     * ⚠ ANY FAILURE FALLS BACK TO THE FULL FETCH. A delta that throws must never
+     *   leave the screen showing pre-save data: better to spend the 2.9 MB than to
+     *   lie about what is on the queue.
+     */
+    const refreshWorkingSet = async () => {
+      const key = dispatchQueryKey(userId);
+      const prev = queryClient.getQueryData<DispatchData>(key);
+      if (!prev) {
+        await queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
+        return;
+      }
+      try {
+        const next = await fetchDispatchDelta(prev, userId);
+        if (next !== prev) queryClient.setQueryData(key, next);
+      } catch {
+        await queryClient.invalidateQueries({ queryKey: QK }).catch(() => {});
+      }
+    };
+
+    /**
+     * Refresh the CATALOGUE as well. Only four writes may call this — the three
+     * that write mst_* directly (insertMaster / insertMasters / updateMaster) and
+     * resolveMasterRequest, where approving a request creates the ledger row.
+     *
+     * ⚠ EVERY OTHER WRITE MUST USE `invalidate()` ALONE. Reaching for this one out
+     *   of caution is exactly the habit the split exists to break: it puts ~2 MB
+     *   of customers and items back behind an ordinary step save.
+     */
+    const invalidateAll = () => {
+      invalidate();
+      void queryClient.invalidateQueries({ queryKey: DISPATCH_MASTERS_QK }).catch(() => {});
     };
 
     /**
@@ -634,11 +772,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * mapping to an item that is itself active and loaded — or the picker would
      * promise a number the item box then fails to produce.
      */
-    const mappedItemCounts = (() => {
+    const mappedItemNameSets = (() => {
       // ⚠ DISTINCT NAMES, not mappings. The picker collapses a product filed in
       //   several Tally books to one row, so counting rows here would promise 12
       //   and then show 7 - and the number exists precisely to be trusted before
       //   the customer is chosen.
+      //
+      // ⚠ THE SETS ARE THE PRODUCT NOW, not merely their sizes. The mapping
+      //   modal reads them to decide what NOT to offer, and it must be the same
+      //   reading this count rests on: offer a name the customer can already
+      //   order and the write succeeds while the item picker stays identical,
+      //   which reads as a button that did nothing. See `mappedItemNames`.
       const liveName = new Map(items.filter((i) => i.active).map((i) => [i.id, i.name.trim().toUpperCase()]));
       const seen = new Map<string, Set<string>>();
       for (const m of customerItems) {
@@ -648,8 +792,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
         if (set) set.add(nm);
         else seen.set(m.customerId, new Set([nm]));
       }
-      return new Map([...seen].map(([id, set]) => [id, set.size]));
+      return seen;
     })();
+    const EMPTY_NAMES: ReadonlySet<string> = new Set<string>();
 
     const MASTER_LIST: Record<DispatchMasterType, NamedMaster[]> = {
       company: companies,
@@ -689,13 +834,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     /* --------------------------------- indexes ------------------------------- */
 
-    const activityByEntity = new Map<string, DispatchActivity[]>();
-    for (const a of activity) {
-      const k = `${a.entityType}:${a.entityId}`;
-      const list = activityByEntity.get(k) ?? [];
-      list.push(a);
-      activityByEntity.set(k, list);
-    }
 
     const mineNotifications = notifications
       .filter((n) => n.userId === uid)
@@ -717,9 +855,23 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
     };
 
     return {
-      isLoading,
+      /**
+       * ⚠ BOTH QUERIES, AND THAT IS LOAD-BEARING. `useSalesOrderForm` seeds its
+       *   state in a lazy `useState` that runs on the FIRST render and never
+       *   again, so NewOrder / EditOrder gate their whole form on this flag. If
+       *   it went false while the catalogue was still in flight, the form would
+       *   mount with empty company / customer / item lists and stay that way for
+       *   ever — the same trap EditOrder already carries a comment about.
+       */
+      isLoading: isLoading || mastersLoading,
+      /**
+       * ⚠ THE WORKING SET ONLY. This answers "might the row I am looking for
+       *   still be on its way?", which OrderDetail uses instead of showing
+       *   "Order not found" on a freshly raised order. The catalogue refreshing
+       *   on its own clock has nothing to do with that question.
+       */
       isFetching,
-      error,
+      error: error ?? mastersError,
 
       userId: uid,
       isAdmin,
@@ -762,7 +914,9 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           || c.companyId === null
           || c.id === includeId);
       },
-      mappedItemCount: (customerId) => (customerId ? mappedItemCounts.get(customerId) ?? 0 : 0),
+      mappedItemCount: (customerId) => (customerId ? mappedItemNameSets.get(customerId)?.size ?? 0 : 0),
+      mappedItemNames: (customerId) =>
+        (customerId ? mappedItemNameSets.get(customerId) ?? EMPTY_NAMES : EMPTY_NAMES) as Set<string>,
       itemsForCustomer: (customerId, includeIds) => {
         const keep = new Set(includeIds ?? []);
         if (!customerId) return items.filter((i) => keep.has(i.id));
@@ -867,7 +1021,6 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       masterReviewersFor,
       isMasterUnassigned,
 
-      activityFor: (entityType, entityId) => activityByEntity.get(`${entityType}:${entityId}`) ?? [],
       notifications: mineNotifications,
       processCoordinatorIds,
 
@@ -940,15 +1093,15 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       },
       insertMaster: async (mt, input) => {
         await insertMasterWrite(mt, input);
-        invalidate();
+        invalidateAll();
       },
       insertMasters: async (mt, inputs) => {
         await insertMastersWrite(mt, inputs);
-        invalidate();
+        invalidateAll();
       },
       updateMaster: async (mt, id, input) => {
         await updateMasterWrite(mt, id, input);
-        invalidate();
+        invalidateAll();
       },
       setMasterManagers: async (mt, userIds) => {
         await setMasterManagersWrite(mt, userIds);
@@ -962,11 +1115,45 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
           entityType: "master_request",
           entityId: id,
           type: "master_requested",
-          text: `A new ${masterTypeLabel(mt).toLowerCase()} was requested: ${String(payload.name ?? "")}`,
+          // ⚠ describePayload, NOT payload.name. A nameless master — the
+          //   customer↔item mapping — has no `name` key at all, so reading one
+          //   produced "…was requested: " with a trailing colon and left the
+          //   reviewer to open the queue to find out what had been asked for.
+          text: `A new ${masterTypeLabel(mt).toLowerCase()} was requested: ${describePayload(mt, payload, {
+            customerName: (id) => nameFrom(customers, id),
+            itemName: (id) => nameFrom(items, id),
+            companyName: (id) => nameFrom(companies, id),
+          })}`,
           recipients: masterReviewersFor(mt),
           meta: { master_type: mt },
         });
         invalidate();
+      },
+      mapCustomerItems: async (customerId, companyId, itemIds) => {
+        const result = await mapCustomerItemsWrite(customerId, companyId, itemIds);
+        // Told, not asked. The owners named on this master keep their oversight
+        // — they see what was mapped and by whom — but there is nothing to
+        // approve, so this never reaches `resolvableRequests` and never bumps
+        // the "To review" badge.
+        if (result.created + result.reactivated > 0) {
+          await safeAnnounce({
+            entityType: "master_request",
+            entityId: customerId,
+            type: "master_mapped",
+            text: `${personName(uid)} mapped ${result.created + result.reactivated} item${
+              result.created + result.reactivated === 1 ? "" : "s"
+            } to ${nameFrom(customers, customerId)}.`,
+            recipients: masterReviewersFor("customer_item").filter((id) => id !== uid),
+            meta: { master_type: "customer_item" },
+          });
+        }
+        // MINTS THE MAPPING the item picker reads, so the catalogue has to come
+        // back down here — the 30-minute timer would otherwise leave the user
+        // staring at the item they just mapped still missing from the box. The
+        // self-heal above only chases items on SAVED orders and cannot cover a
+        // form still being filled in.
+        invalidateAll();
+        return result;
       },
       resolveMasterRequest: async (id, approve, payload, note) => {
         await resolveMasterRequestWrite(id, approve, payload, note);
@@ -981,7 +1168,10 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
             meta: { master_type: req.masterType },
           });
         }
-        invalidate();
+        // Approving MINTS the ledger row, so the catalogue must refresh here or
+        // the customer the approver just created would not appear in a picker
+        // until the 30-minute timer came round.
+        invalidateAll();
       },
       markNotificationsRead: async (ids) => {
         await markNotificationsReadWrite(ids);
@@ -991,11 +1181,31 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
   }, [
     userId, isAdmin, isLoading, isFetching, error, queryClient, dir, orgPeople,
     stepOwners, designations, companies, companyLocations, customers, items, customerItems,
-    masterManagers, masterRequests, orders, activity, notifications,
+    masterManagers, masterRequests, orders, notifications,
     processCoordinatorIds, stepSla, orderNoPreview,
   ]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+}
+
+/**
+ * One order's activity trail, fetched when that order is open.
+ *
+ * ⚠ NOT PART OF THE SNAPSHOT, deliberately. It used to be: 2,943 rows and 743 kB
+ *   riding in the module payload and re-fetched after every save, to feed a panel
+ *   that only ever shows one order — and carrying master-request rows that were
+ *   never displayed at all.
+ *
+ * The panel paints a moment after the rest of the page. That is the trade.
+ */
+export function useOrderActivity(orderId: string): DispatchActivity[] {
+  const { data } = useQuery({
+    queryKey: orderActivityQueryKey(orderId),
+    queryFn: () => fetchOrderActivity(orderId),
+    enabled: !!orderId,
+    staleTime: 60_000,
+  });
+  return data ?? [];
 }
 
 export function useDispatchStore(): DispatchStoreValue {

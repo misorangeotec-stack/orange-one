@@ -8,12 +8,16 @@ import { FieldLabel, TextArea, TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
 import { useMasterFieldCtx } from "../lib/useMasterFieldCtx";
 import RequestMasterModal from "../components/RequestMasterModal";
+import MapCustomerItemModal from "../components/MapCustomerItemModal";
 import {
   describePayload, emptyValuesFor, masterFields, masterTypeLabel, missingRequired,
   payloadFromValues, type MasterValues,
 } from "../lib/masterFields";
 import { dmy } from "../lib/format";
-import type { DispatchMasterRequest } from "../types";
+import {
+  isDirectMaster, REQUESTABLE_DISPATCH_MASTER_TYPES,
+  type DispatchMasterRequest, type DispatchMasterType,
+} from "../types";
 
 type Tab = "review" | "mine" | "all";
 
@@ -37,6 +41,19 @@ export default function MasterRequests() {
   const ctx = useMasterFieldCtx();
   const [tab, setTab] = useState<Tab>(s.isAnyMasterManager ? "review" : "mine");
   const [raising, setRaising] = useState(false);
+  /**
+   * WHAT THE PERSON NEEDS — and the answer decides which modal opens, not just
+   * which fields render.
+   *
+   * The list holds two kinds now (see REQUESTABLE_DISPATCH_MASTER_TYPES): the
+   * customer↔item mapping is created DIRECTLY, everything else is a request an
+   * owner reviews. The choice therefore has to live out here, above both
+   * modals, and be handed to whichever one is showing — otherwise changing your
+   * mind re-mounts a different form and the field appears to move.
+   */
+  const [raiseType, setRaiseType] = useState<DispatchMasterType>(
+    REQUESTABLE_DISPATCH_MASTER_TYPES[0].value,
+  );
   const [acting, setActing] = useState<{ req: DispatchMasterRequest; approve: boolean } | null>(null);
   const [values, setValues] = useState<MasterValues>({});
   const [note, setNote] = useState("");
@@ -147,12 +164,13 @@ export default function MasterRequests() {
         <div>
           <h1 className="text-[22px] font-bold text-navy">Master Requests</h1>
           <p className="text-[13.5px] text-grey-2 mt-1">
-            Missing an entry mid-task? Request it here rather than typing something the next step can't use.
+            Missing an entry mid-task? Start it here. A customer-item mapping you make yourself;
+            anything else goes to that master's owner.
           </p>
         </div>
-        {/* Asking for a new master IS a write — it creates a pending row someone
-            then has to review. Ungated until now, in every FMS. */}
-        {s.canEdit && <Button onClick={() => setRaising(true)}>Request a new entry</Button>}
+        {/* A write either way — a mapping straight into the master, or a pending
+            row someone has to review. Gated on canEdit for both. */}
+        {s.canEdit && <Button onClick={() => setRaising(true)}>New entry</Button>}
       </div>
 
       <Tabs
@@ -187,7 +205,43 @@ export default function MasterRequests() {
         emptyMessage="Requests for new master entries will appear here."
       />
 
-      <RequestMasterModal open={raising} onClose={() => setRaising(false)} />
+      {/*
+        ONE question, TWO destinations. `typePicker` is rendered by whichever
+        modal is open, so the control keeps its place on screen while the form
+        beneath it changes.
+      */}
+      {(() => {
+        const picker = (
+          <FieldLabel
+            label="What do you need?"
+            hint={
+              isDirectMaster(raiseType)
+                ? "You can do this one yourself — it is saved straight away."
+                : "Goes to that master's owner to approve."
+            }
+          >
+            <Combobox
+              value={raiseType}
+              onChange={(v) => setRaiseType(v as DispatchMasterType)}
+              options={REQUESTABLE_DISPATCH_MASTER_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+            />
+          </FieldLabel>
+        );
+        return isDirectMaster(raiseType) ? (
+          <MapCustomerItemModal
+            open={raising}
+            onClose={() => setRaising(false)}
+            typePicker={picker}
+          />
+        ) : (
+          <RequestMasterModal
+            open={raising}
+            onClose={() => setRaising(false)}
+            masterType={raiseType}
+            typePicker={picker}
+          />
+        );
+      })()}
 
       <Modal
         open={!!acting}

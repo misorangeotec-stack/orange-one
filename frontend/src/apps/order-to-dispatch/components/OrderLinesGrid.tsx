@@ -3,7 +3,6 @@ import Combobox, { type ComboOption, type ComboboxHandle } from "@/shared/compon
 import LineGrid, { type LineGridColumn, type LineGridRow, newUid } from "@/shared/components/ui/LineGrid";
 import { TextInput } from "@/shared/components/ui/Form";
 import { useDispatchStore } from "../store";
-import type { MasterRaise } from "../pages/orders/useSalesOrderForm";
 
 /**
  * The intake item grid — Item · Qty · Unit · Remark.
@@ -20,6 +19,18 @@ import type { MasterRaise } from "../pages/orders/useSalesOrderForm";
  *   every render where the last row isn't blank. So `makeEmptyLine()` must return
  *   a genuinely empty row, and `isLineBlank` must agree with it, or the grid
  *   appends for ever. These two functions always change together.
+ *
+ * ⚠ WHAT A MISSING ITEM MEANS HERE — one answer now, where there used to be two
+ *   guesses (OD-9). The create row branched: if the typed name matched something
+ *   in `s.items` it asked for the MAPPING, otherwise it asked for a NEW ITEM. But
+ *   `s.items` is derived from the mappings that already exist, so it could only
+ *   ever see 1,693 of the 14,264 items — and an item Tally has that nobody has
+ *   mapped fell into the "new item" arm, where the unique index would have
+ *   refused it at approval, after an owner had agreed to it.
+ *
+ *   Nothing branches now. The row opens the mapping modal, which reads the
+ *   company's whole book and can tell the cases apart for real: it offers the
+ *   item, or names the book it is filed under, or says it is not in Tally at all.
  */
 export interface OrderLineRow extends LineGridRow {
   itemId: string;
@@ -42,7 +53,7 @@ export default function OrderLinesGrid({
   onRowsChange,
   customerId,
   disabled,
-  onRaise,
+  onMapItem,
   requested,
 }: {
   rows: OrderLineRow[];
@@ -52,12 +63,22 @@ export default function OrderLinesGrid({
   customerId: string;
   disabled?: boolean;
   /**
-   * Raise the master this picker could not offer. Wired to the intake form's
-   * shared RequestMasterModal (see SalesOrderFields) — omit it and the picker
-   * simply offers no "request" row.
+   * Open the mapping modal for the item this picker could not offer, carrying
+   * whatever was typed (OD-9). Wired to the intake form's shared
+   * MapCustomerItemModal (see SalesOrderFields) — omit it and the picker simply
+   * offers no create row.
+   *
+   * ⚠ IT REPLACED A REQUEST, not just a label. The old row raised a master
+   *   request that somebody had to approve, and it guessed between "request the
+   *   item" and "request the mapping" by looking the typed name up in
+   *   `s.items` — a list DERIVED from existing mappings, 1,693 of 14,264. So an
+   *   item that existed in Tally but was mapped to nobody was sent down the
+   *   "new item" branch and would have been refused at approval as a duplicate.
+   *   The modal reads the company's whole book instead, which is what actually
+   *   fixes that.
    */
-  onRaise?: (raise: MasterRaise) => void;
-  /** "Requested …", once something has been asked for from this grid. */
+  onMapItem?: (typed: string) => void;
+  /** "Mapped …", once something has been mapped from this grid. */
   requested?: string | null;
 }) {
   const s = useDispatchStore();
@@ -69,27 +90,6 @@ export default function OrderLinesGrid({
    *   out of it, and the line would lose its unit and its name on the next edit.
    */
   const allowedItems = s.itemsForCustomer(customerId, rows.map((r) => r.itemId).filter(Boolean));
-
-  /**
-   * WHAT A MISSING ITEM ACTUALLY MEANS HERE, and it is two different things:
-   *
-   *   · the item exists in the catalogue but is not MAPPED to this customer —
-   *     what's missing is the mapping, and the request carries both halves of it;
-   *   · the item does not exist at all — what's missing is the item, and the
-   *     mapping can only be asked for once it does.
-   *
-   * Asking for a new item in the first case would be asking for a duplicate, and
-   * the unique index would reject it at approval — after the owner had agreed.
-   */
-  const raiseFor = (typed: string): MasterRaise => {
-    const name = typed.trim();
-    const existing = s.items.find((i) => i.name.trim().toLowerCase() === name.toLowerCase());
-    return existing
-      ? { mt: "customer_item", prefill: { party_id: customerId, item_id: existing.id }, from: "lines" }
-      : { mt: "item", prefill: { name }, from: "lines" };
-  };
-  const isKnownItem = (typed: string) =>
-    s.items.some((i) => i.name.trim().toLowerCase() === typed.trim().toLowerCase());
 
   /**
    * The picker for ONE row: the customer's items minus the ones other rows already
@@ -124,7 +124,7 @@ export default function OrderLinesGrid({
             options={options}
             placeholder={
               !customerId ? "Pick a customer first"
-              : allowedItems.length === 0 ? "Nothing mapped yet — type to request"
+              : allowedItems.length === 0 ? "Nothing mapped yet — type to map one"
               // Every mapped item is already on the order — say so rather than
               // showing an empty "Select item…" that never opens.
               : options.length === 0 ? "All items already added"
@@ -140,10 +140,8 @@ export default function OrderLinesGrid({
             disabled={disabled || !customerId}
             triggerClassName="px-2.5 py-1.5 text-[13.5px]"
             onTriggerKeyDown={api.keyHandler}
-            onCreate={onRaise ? (name) => onRaise(raiseFor(name)) : undefined}
-            createLabel={(q) =>
-              isKnownItem(q) ? `Request “${q}” for this customer` : `Request new item “${q}”`
-            }
+            onCreate={onMapItem}
+            createLabel={(q) => `Map “${q}” to this customer`}
           />
         );
       },
@@ -239,15 +237,15 @@ export default function OrderLinesGrid({
         }
       />
 
-      {onRaise && (
+      {onMapItem && (
         <p className="text-[12px] text-grey-2">
           Only what this customer is mapped to is offered. Missing something? Type its name in the
-          Item box to request it.
+          Item box and map it — it becomes orderable straight away.
         </p>
       )}
       {requested && (
         <p className="text-[12px] text-teal">
-          Requested {requested} — orderable once the master's owner approves it.
+          {requested}
         </p>
       )}
     </div>

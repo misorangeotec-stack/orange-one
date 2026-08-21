@@ -5,6 +5,7 @@ import { useDispatchStore } from "../store";
 import { DISPATCH_TYPE_LABEL } from "../lib/format";
 import { masterTypeLabel } from "../lib/masterFields";
 import RequestMasterModal from "./RequestMasterModal";
+import MapCustomerItemModal from "./MapCustomerItemModal";
 import type { useSalesOrderForm } from "../pages/orders/useSalesOrderForm";
 import type { DispatchType } from "../types";
 
@@ -38,10 +39,19 @@ import type { DispatchType } from "../types";
  *   disabled and says so. Hiding it would change the child count and silently
  *   break the pairing above at one breakpoint.
  *
- * EVERY PICKER HERE CAN RAISE ITS OWN MASTER. Type a name that is not in the
- * list and the dropdown offers to request it, the way every other FMS intake
- * form does. Nothing is added on the spot: the request goes to that master's
- * owner, and the order is raised with what exists today.
+ * ⚠ NOT EVERY PICKER CAN RAISE ITS OWN MASTER ANY MORE, and the split is the
+ *   point (OD-2, OD-9). Ask yourself who OWNS the thing before adding a create
+ *   row to a picker here:
+ *
+ *     · Billing company, Customer — TALLY'S. No create row at all. A ledger
+ *       invented here has no Tally guid and no company book, which is the
+ *       mechanism behind OD-4. The picker says where to go instead.
+ *     · Dispatch location — OURS. Still requestable, still goes to that master's
+ *       owner, exactly as before.
+ *     · Customer location — free text, no master, no request.
+ *     · The item grid — neither. It opens the MAPPING modal, which writes
+ *       immediately with no owner in the loop, because the item is nearly always
+ *       already in Tally and merely unmapped.
  */
 export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesOrderForm> }) {
   const s = useDispatchStore();
@@ -124,8 +134,16 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
             }
             searchable
             wrapLabel
-            onCreate={(name) => f.setRaise({ mt: "company", prefill: { name }, from: "header" })}
-            createLabel={(q) => `Request new company “${q}”`}
+            /*
+              ⚠ NO CREATE ROW, and removing it fixed a live trap rather than
+                merely tidying up. It raised a `company` master request — but
+                `company` is excluded from REQUESTABLE_DISPATCH_MASTER_TYPES and
+                the resolver refuses it outright with "Companies come from Tally
+                now and cannot be added by hand". So the request could be raised,
+                could be approved, and only THEN failed, in front of the owner
+                who had just agreed to it. There are five companies and they come
+                from Tally; there is nothing here to ask for.
+            */
           />
           {noAssignment && (
             <p className="mt-1 text-[11.5px] text-ryg-red">
@@ -197,13 +215,15 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
               disabled={!f.form.companyId}
               searchable
               wrapLabel
-              onCreate={(name) => f.setRaise({ mt: "customer", prefill: { name }, from: "header" })}
-              createLabel={(q) => `Request new customer “${q}”`}
+              /* ⚠ NO CREATE ROW — a customer ledger is Tally's (OD-2). Asking
+                 for one here created it in Orange One with no Tally guid and no
+                 company, which is the mechanism behind OD-4. The note below says
+                 where to go instead. */
             />
           </FieldLabel>
           <p className="mt-1 text-[11.5px] text-grey-2">
             Only the customers this company bills. Changing the customer resets the item lines
-            and the location.
+            and the location. A customer who is not listed has to be opened in Tally first.
           </p>
         </div>
 
@@ -253,10 +273,13 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
       )}
 
       {/*
-        ONE modal for the whole intake form, header and item grid alike (the grid
-        raises through the same `f.setRaise`). Two would mean two copies of the
-        duplicate checks, and Purchase has already been down that road. It renders
-        nothing while closed, so it costs the layout nothing to live here.
+        ONE request modal for the whole intake form. Two would mean two copies of
+        the duplicate checks, and Purchase has already been down that road. It
+        renders nothing while closed, so it costs the layout nothing to live here.
+
+        Only the DISPATCH SITE picker still feeds it: company and customer come
+        from Tally and no longer offer to create anything, and the item grid now
+        opens the mapping modal below instead of raising a request at all.
       */}
       <RequestMasterModal
         open={f.raise !== null}
@@ -269,6 +292,31 @@ export default function SalesOrderFields({ f }: { f: ReturnType<typeof useSalesO
             text: `${masterTypeLabel(mt).toLowerCase()} “${label}”`,
           })
         }
+      />
+
+      {/*
+        THE MAPPING MODAL — no approval, so it is not a request and does not
+        share the modal above. The order has already chosen a company and a
+        customer, so both arrive fixed: mapping against a different book than the
+        one billing is exactly the mismatch this feature exists to avoid.
+      */}
+      <MapCustomerItemModal
+        open={f.mapping !== null}
+        onClose={() => f.setMapping(null)}
+        companyId={f.form.companyId}
+        customerId={f.form.customerId}
+        initialSearch={f.mapping?.search ?? null}
+        onMapped={(result) => {
+          const added = result.created + result.reactivated;
+          f.setRequested({
+            from: "lines",
+            // Reactivated is called out separately: somebody had switched that
+            // pair OFF, and turning it back on silently would hide a decision.
+            text: result.reactivated > 0
+              ? `Mapped ${added} item${added === 1 ? "" : "s"} — ${result.reactivated} of them switched back on.`
+              : `Mapped ${added} item${added === 1 ? "" : "s"} — orderable now.`,
+          });
+        }}
       />
     </div>
   );

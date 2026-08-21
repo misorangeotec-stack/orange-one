@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import Modal from "@/shared/components/ui/Modal";
 import Button from "@/shared/components/ui/Button";
 import Combobox from "@/shared/components/ui/Combobox";
@@ -9,8 +10,13 @@ import {
   describePayload, emptyValuesFor, findExistingMaster, isNameless, masterFields, masterTypeLabel,
   missingRequired, payloadFromValues, type MasterValues,
 } from "../lib/masterFields";
-import { REQUESTABLE_DISPATCH_MASTER_TYPES, type DispatchMasterType } from "../types";
+import { isDirectMaster, REQUESTABLE_DISPATCH_MASTER_TYPES, type DispatchMasterType } from "../types";
 import { dmy } from "../lib/format";
+
+/** The default type for the built-in picker — never a direct master. */
+const FIRST_REQUESTABLE: DispatchMasterType =
+  (REQUESTABLE_DISPATCH_MASTER_TYPES.find((t) => !isDirectMaster(t.value)) ??
+    REQUESTABLE_DISPATCH_MASTER_TYPES[0]).value;
 
 /**
  * "The entry I need isn't in the list" — raise it for the master's owner to
@@ -29,6 +35,7 @@ export default function RequestMasterModal({
   masterType,
   prefill,
   stacked,
+  typePicker,
   onRequested,
 }: {
   open: boolean;
@@ -43,12 +50,21 @@ export default function RequestMasterModal({
   prefill?: MasterValues;
   /** Raised from inside another modal — see Modal's z-index note. */
   stacked?: boolean;
+  /**
+   * The shared "What do you need?" field, when the caller owns that choice —
+   * see the note on MapCustomerItemModal's copy of this prop. Supplying it
+   * replaces the built-in picker below.
+   */
+  typePicker?: ReactNode;
   /** Fired after the request lands, so the caller can say what was asked for. */
   onRequested?: (masterType: DispatchMasterType, label: string) => void;
 }) {
   const s = useDispatchStore();
   const ctx = useMasterFieldCtx();
-  const [mt, setMt] = useState<DispatchMasterType>(masterType ?? REQUESTABLE_DISPATCH_MASTER_TYPES[0].value);
+  /* ⚠ The first REQUESTABLE one, skipping the direct masters — this list now
+     holds both kinds, and defaulting to a direct type would open this modal on a
+     master it cannot submit. */
+  const [mt, setMt] = useState<DispatchMasterType>(masterType ?? FIRST_REQUESTABLE);
   const [values, setValues] = useState<MasterValues>(() => emptyValuesFor(mt));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +109,13 @@ export default function RequestMasterModal({
 
   const reviewers = s.masterReviewersFor(mt).map((id) => s.personName(id)).filter((n) => n !== "—");
 
+  /* Requestable AND not one of the direct ones — a direct master writes through
+     its own modal and has no approval to wait for, so it does not belong here. */
+  const notRequestable =
+    !REQUESTABLE_DISPATCH_MASTER_TYPES.some((t) => t.value === mt) || isDirectMaster(mt);
+
   const submit = async () => {
+    if (notRequestable) return;
     const miss = missingRequired(mt, values, ctx);
     if (miss) { setError(miss); return; }
     if (existing) { setError(`“${existing.name}” is already in the list.`); return; }
@@ -126,14 +148,16 @@ export default function RequestMasterModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <Button onClick={submit} disabled={busy || !!existing || !!pending}>
+          <Button onClick={submit} disabled={busy || notRequestable || !!existing || !!pending}>
             {busy ? "Sending…" : "Send request"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        {!masterType && (
+        {typePicker}
+
+        {!typePicker && !masterType && (
           <FieldLabel label="What do you need?">
             <Combobox
               value={mt}
@@ -145,6 +169,22 @@ export default function RequestMasterModal({
               options={REQUESTABLE_DISPATCH_MASTER_TYPES.map((t) => ({ value: t.value, label: t.label }))}
             />
           </FieldLabel>
+        )}
+
+        {/*
+          ⚠ THE TYPE IS CHECKED, not trusted. `masterType` is a prop, so a picker
+            wired to a master that is no longer requestable would queue a request
+            nobody can approve — which is exactly what the company picker on the
+            sales order used to do: the resolver refuses `company` outright, so
+            the failure surfaced in front of the OWNER, after they had agreed to
+            it. Refuse here, where the person who raised it is still looking.
+        */}
+        {notRequestable && (
+          <p className="text-[13px] font-medium text-ryg-red">
+            {isDirectMaster(mt)
+              ? `A ${masterTypeLabel(mt).toLowerCase()} is not requested — it is created directly. Close this and use “Map items to a customer”.`
+              : `A new ${masterTypeLabel(mt).toLowerCase()} cannot be requested here — it comes from Tally. Create it there and it appears within 15 minutes.`}
+          </p>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">

@@ -111,6 +111,19 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
   const [raise, setRaise] = useState<MasterRaise | null>(null);
   const [requested, setRequested] = useState<{ from: RaiseOrigin; text: string } | null>(null);
 
+  /*
+    THE ITEM PICKER NO LONGER RAISES A REQUEST — it opens the mapping modal
+    (OD-9). An item a customer cannot order is almost never missing from Tally;
+    it is merely unmapped, and the person looking at the screen is the one who
+    knows it belongs there. So this is a different kind of state from `raise`:
+    nothing is being ASKED for, and there is no owner to wait on.
+
+    It carries the text that was typed, because the modal's empty state needs it:
+    "not in this company's book" and "not in Tally at all" are different answers
+    and only the typed term can tell the reader which one they are looking at.
+  */
+  const [mapping, setMapping] = useState<{ search: string } | null>(null);
+
   const patch = (next: Partial<SalesOrderFormState>) => setForm((f) => ({ ...f, ...next }));
 
   /**
@@ -225,6 +238,7 @@ export function useSalesOrderForm(existing?: DispatchOrder) {
     lines, setLines, filledLines,
     setCustomer, setCompany,
     raise, setRaise, requested, setRequested,
+    mapping, setMapping,
     error, setError,
     busy, setBusy,
     validate, toInput,

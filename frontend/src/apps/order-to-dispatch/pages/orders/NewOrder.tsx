@@ -64,7 +64,7 @@ function NewOrderForm() {
           rows={f.lines}
           onRowsChange={f.setLines}
           customerId={f.form.customerId}
-          onRaise={f.setRaise}
+          onMapItem={(typed) => f.setMapping({ search: typed })}
           requested={f.requested?.from === "lines" ? f.requested.text : null}
         />
       </Card>

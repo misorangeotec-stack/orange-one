@@ -115,6 +115,27 @@ export interface Item extends NamedMaster {
 }
 
 /**
+ * One row of a company's whole Tally stock book, for the mapping modal only.
+ *
+ * ⚠ NOT an `Item`, and not interchangeable with one. `Item` is a row the module
+ *   already carries — every one of them reachable through some customer's
+ *   mapping — and it holds the unit and HSN an order line renders. This is the
+ *   other 12,500: items the module has never had reason to load, fetched per
+ *   company the moment somebody goes looking for one. It carries only what
+ *   choosing needs, so the two cannot be quietly substituted for each other.
+ *
+ * `itemType` is the whole reason a book of 8,340 is usable — it is the filter,
+ * and it is `string | null` rather than a union because MS-1's vocabulary is 13
+ * words and still settling; the modal renders whatever it finds.
+ */
+export interface CompanyItem {
+  id: string;
+  name: string;
+  code: string | null;
+  itemType: string | null;
+}
+
+/**
  * WHICH ITEMS A CUSTOMER MAY ORDER. A row is what makes an item selectable on
  * that customer's sales order; no row means it is not offered to them.
  *
@@ -163,32 +184,49 @@ export const DISPATCH_MASTER_TYPES: MasterTypeDef[] = [
 ];
 
 /**
- * What the "Request a new entry" picker offers: EVERY master.
+ * What the "What do you need?" picker offers — and it is now TWO of the five,
+ * because the question "who owns this master?" has three different answers.
  *
- * Company and company location used to be held back as one-time configuration —
- * the worry being that a location decides who can see an order, so inventing one
- * from an order form would be inventing a permission scope. That is not what a
- * request does. A request proposes; the master's OWNER reviews the payload,
- * edits it and approves it, and only then does a row exist. Excluding a master
- * from the picker does not stop anyone raising it — it only leaves the person at
- * the intake form stuck mid-order with nobody to ask, which is the failure this
- * whole surface exists to prevent. Every picker on the sales order can now raise
- * its own master, exactly as the other FMS apps do.
+ *   · COMPANY, CUSTOMER, ITEM — Tally's. Not requestable (OD-2). They are
+ *     created in Tally and appear here on the sync. A row invented in Orange One
+ *     arrives with no Tally guid and no company book, and the sync never adopts
+ *     it; for a customer that is the exact mechanism behind OD-4, where an order
+ *     ended up naming a ledger a different company was billing. `company` was
+ *     already excluded and `fms_dispatch_resolve_master_request` refuses it
+ *     outright — customer and item now join it.
+ *
+ *   · CUSTOMER-ITEM MAPPING — ours, and no longer a request AT ALL (OD-9). It
+ *     stays in this list because "what do you need?" is still the way in, but
+ *     choosing it opens the mapping modal and writes immediately. Of the 122
+ *     requests ever raised here, 85 were mappings and 5 were rejected: the
+ *     approval was ceremony, and it blocked the one person who could see what
+ *     was missing.
+ *
+ *   · COMPANY LOCATION — ours, and genuinely a request. Our own dispatch site,
+ *     nothing to do with Tally, and it decides who can see an order, so an owner
+ *     reviewing it is worth the wait.
+ *
+ * ⚠ TWO KINDS OF ENTRY LIVE IN ONE LIST, so anything reading it must not assume
+ *   "requestable" means "goes to an owner" — see `isDirectMaster` below, and the
+ *   How it's raised column in MasterOwnersSection.
  *
  * ⚠ Kept as its own export (not an alias) because it is the picker's list: a
- *   master that should never be requestable is removed HERE, not from
+ *   master that should never appear is removed HERE, not from
  *   DISPATCH_MASTER_TYPES, which is the Masters-tab order.
- *
- * ⚠ COMPANY IS THE ONE EXCLUSION, and it is not a policy choice — approving one
- *   is now impossible. Companies come from Tally: each is a company BOOK, and
- *   every customer, item and ledger hangs off it. A company typed in here would
- *   arrive with no book, no ledgers and no items, and the next sync would not
- *   adopt it. `fms_dispatch_resolve_master_request` refuses the type outright,
- *   so leaving it in the picker would only offer a request nobody can approve.
- *   The real route is to open the company in Tally; it appears within 15 minutes.
  */
 export const REQUESTABLE_DISPATCH_MASTER_TYPES: MasterTypeDef[] =
-  DISPATCH_MASTER_TYPES.filter((t) => t.value !== "company");
+  DISPATCH_MASTER_TYPES.filter((t) => t.value === "customer_item" || t.value === "company_location");
+
+/**
+ * Masters the user completes THEMSELVES, with no approval — as opposed to the
+ * ones that raise a request for an owner to review.
+ *
+ * A list rather than a boolean on one type, because the distinction is about to
+ * matter in more than one place (the modal's mode, the footer button, the
+ * owners screen) and a scattered `mt === "customer_item"` is how those drift.
+ */
+export const DIRECT_DISPATCH_MASTER_TYPES: DispatchMasterType[] = ["customer_item"];
+export const isDirectMaster = (mt: DispatchMasterType) => DIRECT_DISPATCH_MASTER_TYPES.includes(mt);
 
 export interface MasterManager {
   id: string;
@@ -491,6 +529,16 @@ export interface DispatchOrder {
   status: DispatchStatus;
   currentStep: string;
   submittedAt: string;
+  /**
+   * Server-side "last touched", including by its own lines and rounds — a trigger
+   * bumps it when a child moves (migration 20260926120000).
+   *
+   * ⚠ NOT FOR DISPLAY. It exists so the refresh after a save can ask Supabase for
+   *   the orders that CHANGED instead of re-downloading all of them, which was
+   *   2.9 MB a save. Rendering it would be wrong as well as useless: it moves when
+   *   a line is edited, not when a human did something worth showing.
+   */
+  updatedAt: string;
 
   /** Which round is in progress. 1 for an ordinary single-consignment order. */
   roundNo: number;

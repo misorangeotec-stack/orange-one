@@ -5,17 +5,39 @@ import Modal from "@/shared/components/ui/Modal";
 import MultiSelect, { type MultiOption } from "@/shared/components/ui/MultiSelect";
 import { ScrollableTable } from "@/core/shared/components/ScrollableTable";
 import { useDispatchStore } from "../../store";
-import { DISPATCH_MASTER_TYPES, REQUESTABLE_DISPATCH_MASTER_TYPES, type DispatchMasterType } from "../../types";
+import {
+  DISPATCH_MASTER_TYPES, isDirectMaster, REQUESTABLE_DISPATCH_MASTER_TYPES,
+  type DispatchMasterType,
+} from "../../types";
 
-const REQUESTABLE = new Set(REQUESTABLE_DISPATCH_MASTER_TYPES.map((m) => m.value));
+/**
+ * HOW EACH MASTER IS RAISED — three answers, not a yes/no.
+ *
+ * ⚠ A boolean here started LYING the moment the mapping went direct (OD-9). It
+ *   read REQUESTABLE_DISPATCH_MASTER_TYPES, so removing the mapping from that
+ *   list would print "—" against a master whose owners are still named right
+ *   next to it and still notified every time somebody maps something. Both
+ *   halves would be true and the row would still be wrong.
+ */
+const raisedAs = (mt: DispatchMasterType): string =>
+  isDirectMaster(mt) ? "Direct"
+  : REQUESTABLE_DISPATCH_MASTER_TYPES.some((m) => m.value === mt) ? "Request"
+  : "Tally only";
 
 /**
  * Master Owners (admin).
  *
- * ⭐ ALL FIVE MASTERS ARE OWNABLE — an owner may CRUD that master and resolve
- *    its new-entry requests — and all five are REQUESTABLE: every picker on the
- *    sales order can raise the master behind it, and the owner named here is who
- *    that request goes to.
+ * ⭐ ALL FIVE MASTERS ARE OWNABLE — an owner may CRUD that master and resolve its
+ *    new-entry requests. But how a master is RAISED now varies, which is what
+ *    the last column says (see `raisedAs`):
+ *
+ *      · Request — company location. Goes to the owner named here, as before.
+ *      · Direct — the customer↔item mapping. The person raising the order makes
+ *        it themselves (OD-9). The owner still matters: they are told each time,
+ *        and they are still who maintains the master. There is just nothing to
+ *        approve.
+ *      · Tally only — company, customer, item. Created in Tally and synced in;
+ *        nothing here can raise one (OD-2).
  *
  * A master with no owner falls back to admins — never to nobody.
  */
@@ -69,7 +91,7 @@ export default function MasterOwnersSection() {
                 <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Actions</th>
                 <th className="font-medium px-4 py-3">Master</th>
                 <th className="font-medium px-4 py-3">Owners</th>
-                <th className="font-medium px-4 py-3 w-px whitespace-nowrap">Requestable</th>
+                <th className="font-medium px-4 py-3 w-px whitespace-nowrap">How it&rsquo;s raised</th>
               </tr>
             </thead>
             <tbody>
@@ -94,7 +116,7 @@ export default function MasterOwnersSection() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-grey-2 whitespace-nowrap">
-                      {REQUESTABLE.has(m.value) ? "Yes" : "—"}
+                      {raisedAs(m.value)}
                     </td>
                   </tr>
                 );

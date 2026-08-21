@@ -4,7 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createIDBPersister, PERSIST_BUSTER, PERSIST_MAX_AGE } from "./queryPersister";
+import { getPersister, PERSIST_BUSTER, PERSIST_MAX_AGE } from "./queryPersister";
 import { AuthProvider } from "@/core/platform/auth";
 import { PlatformDirectoryProvider } from "@/core/platform/store";
 import { SessionProvider } from "@/core/platform/session";
@@ -29,13 +29,19 @@ const queryClient = new QueryClient({
 // whole dataset again; these query roots already reach the browser today, so
 // persisting them changes nothing about data exposure — it just avoids the
 // re-download. Anything not listed (auth session, etc.) stays session-fresh.
-const persister = createIDBPersister();
+const persister = getPersister();
 const PERSISTED_QUERY_ROOTS = new Set([
   "appData", // receivables hub payload
   "taskData", // task-management: tasks + activity + recurring + locations
   "taskNotifications", // task-management: the bell feed (also rendered on /home)
   "orgPeople", // task-management: org people directory
   "directory", // platform directory (profiles/roles/hods/app_access)
+  // Order to Dispatch CATALOGUE — customers, items and the pairs between them.
+  // ⚠ THE DISPATCH WORKING SET IS DELIBERATELY ABSENT. Persisting orders would let
+  //   a queue paint a stale stage for a moment after a reload; the catalogue cannot
+  //   mislead anyone that way, and it is the 2 MB worth keeping. The key name must
+  //   match DISPATCH_MASTERS_QK — rename one and the other silently stops working.
+  "dispatchMasters",
 ]);
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
