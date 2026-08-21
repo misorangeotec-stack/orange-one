@@ -269,7 +269,7 @@ export default function RequestQueue({
             <StageRowAction
               as="button"
               lockReason={e.lockReason}
-              canEdit={s.canActOn(stepKey, e.row)}
+              canEdit={s.canEdit && s.canActOn(stepKey, e.row)}
               permissionReason="Only an owner of this step can edit the entry."
               onEdit={() => editing.openEdit(e.row)}
               onView={() => editing.openView(e.row)}
@@ -285,6 +285,7 @@ export default function RequestQueue({
           rowsLabel="requests"
           emptyTitle="Nothing waiting on you"
           emptyMessage="Requests needing your action will appear here."
+          readOnly={!s.canEdit}
           actions={({ request }) => (
             <Button size="sm" variant="ghost" onClick={() => setActing(request)}>
               {actionLabel}

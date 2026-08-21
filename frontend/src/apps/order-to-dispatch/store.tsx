@@ -95,6 +95,21 @@ export interface DispatchStoreValue {
    */
   canEdit: boolean;
   canRaise: boolean;
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? If so they read every
+   * screen in it — every queue, the register, the Control Center — and have no
+   * buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY, and never an arm on an action predicate. It is folded into
+   *   canSeeQueue and canMonitor and nowhere else; canEdit is false for exactly
+   *   these users, which is what keeps the pages read-only.
+   */
+  isModuleViewer: boolean;
+  /**
+   * May this person see the Control Center — the nav link and the route. The
+   * visibility half of `isProcessCoordinator`, split off so a view-only reader can
+   * open it without also gaining that flag's authority inside canActOn.
+   */
   canMonitor: boolean;
   /**
    * ⚠ TAKES `OwnerStepKey`, NOT `QueueStep` — "sales_return" is a real owner key
@@ -576,6 +591,30 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
+     * queue, the register, the Control Center — with no buttons anywhere.
+     *
+     * ⚠ VISIBILITY ONLY, and that is why it is a flag of its own rather than an
+     *   extra arm on `isProcessCoordinator`. That one is a route guard AND an
+     *   authority short-circuit inside canActOn / canRaise / canEditOrder /
+     *   canCancelOrder, so widening it would hand a viewer act-authority at every
+     *   location. `canMonitor` below is the visibility half, split off for the
+     *   nav and RequireMonitor; `isProcessCoordinator` keeps the authority half.
+     *
+     * ⚠ From the REAL `session`, never a demo persona — same reason as canEdit.
+     *   Personas carry their own moduleAccess and must not step around the real
+     *   user's grant.
+     *
+     * A viewer therefore sees MORE screens than an editor who owns no step. That
+     * inversion is deliberate: ownership answers "whose work is this", the grant
+     * answers "may this person read the module".
+     */
+    const isModuleViewer = session.isModuleViewer("order-to-dispatch");
+
+    /** Visibility half of the coordinator flag — nav link + RequireMonitor only. */
+    const canMonitor = isModuleViewer || isProcessCoordinator;
+
     const personName = (id: string | null): string => {
       if (!id) return "—";
       return (orgPeople ?? []).find((p) => p.id === id)?.name ?? "Unknown user";
@@ -602,13 +641,17 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
      * Location-agnostic on purpose: owning gate-out at one site is reason enough for
      * the link to exist, and `canActOn` then decides which rows appear on it.
      *
+     * ⚠ A VIEW-ONLY GRANT SEES EVERY QUEUE, and that arm is first on purpose. It
+     *   is a read grant, so it opens the page and nothing more — `canActOn` below
+     *   has no viewer arm, and every button on these pages also tests `canEdit`.
+     *
      * ⚠ A step with NO owner rows resolves to admin / coordinator only — which is
      *   exactly what `canActOn` already says, so the queue disappears rather than
      *   opening with every button dead. Seeding owners is a go-live step, not an
      *   option; StepOwnersSection says so at the top of the file.
      */
     const canSeeQueue = (stepKey: OwnerStepKey): boolean =>
-      isProcessCoordinator || isStepOwner(stepKey);
+      isModuleViewer || isProcessCoordinator || isStepOwner(stepKey);
 
     /**
      * Who may raise an order: open to every granted user unless `sales_order` has
@@ -949,7 +992,8 @@ export function DispatchStoreProvider({ children }: { children: ReactNode }) {
       canEdit,
       isProcessCoordinator,
       canRaise,
-      canMonitor: isProcessCoordinator,
+      canMonitor,
+      isModuleViewer,
       canActOn,
       canSeeQueue,
       canEditOrder,

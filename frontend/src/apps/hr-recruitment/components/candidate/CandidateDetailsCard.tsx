@@ -63,7 +63,11 @@ export default function CandidateDetailsCard({
   const [draft, setDraft] = useState("");
   const [tagErr, setTagErr] = useState<string | null>(null);
 
+  // Tags are a WRITE, and this was the one place in the module that asked nothing
+  // at all before performing one — not even ownership. The ceiling belongs at the
+  // write itself, so both the chip "×" and the Enter-to-add path are covered.
   const writeTags = async (next: string[]) => {
+    if (!s.canEdit) return;
     setTagErr(null);
     try {
       await s.setCandidateTags(c.id, next);

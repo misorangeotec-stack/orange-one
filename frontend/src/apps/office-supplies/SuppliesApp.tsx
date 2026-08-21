@@ -43,15 +43,15 @@ function RequireRaise({ children }: { children: ReactNode }) {
 
 /** Gate to admins + process coordinators (the Control Center). */
 function RequireMonitor({ children }: { children: ReactNode }) {
-  const { isProcessCoordinator } = useSuppliesStore();
-  if (!isProcessCoordinator) return <AccessDenied />;
+  const { canMonitor } = useSuppliesStore();
+  if (!canMonitor) return <AccessDenied />;
   return <>{children}</>;
 }
 
 /** Gate to admins + any assigned master owner (the Masters page). */
 function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyMasterManager } = useSuppliesStore();
-  if (!isAnyMasterManager) return <AccessDenied />;
+  const { canSeeMasters } = useSuppliesStore();
+  if (!canSeeMasters) return <AccessDenied />;
   return <>{children}</>;
 }
 

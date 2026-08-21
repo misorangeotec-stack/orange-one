@@ -92,9 +92,18 @@ function MastersMoved() {
   );
 }
 
+/**
+ * The Control Center, for the coordinators and admins who oversee every step —
+ * and for a view-only reader, who may read the whole module.
+ *
+ * ⚠ `canMonitor`, NOT `isProcessCoordinator`. They differ by exactly the viewer
+ *   arm, and that flag is deliberately kept out of here: it is also the authority
+ *   short-circuit inside canActOn, so guarding on it would have meant widening a
+ *   permission to open a read-only screen.
+ */
 function RequireMonitor({ children }: { children: ReactNode }) {
-  const { isProcessCoordinator } = useDispatchStore();
-  if (!isProcessCoordinator) return <AccessDenied />;
+  const { canMonitor } = useDispatchStore();
+  if (!canMonitor) return <AccessDenied />;
   return <>{children}</>;
 }
 

@@ -28,50 +28,48 @@ export default function ImportLayout() {
   const personas = usePersonas();
   const store = useImportStore();
   const {
-    isAnyManager,
     resolvableRequests,
-    canSource,
-    isApprover,
-    canGeneratePo,
-    canSharePo,
-    canCollectPi,
-    canFollowup,
-    canInward,
-    canTally,
-    canQc,
-    canPurchaseReturn,
-    canGateOutward,
-    isProcessCoordinator,
+    canSeeStep,
+    canSeeApprovals,
+    canSeeMasters,
+    canMonitor,
     myNotifications,
     profileById,
     markNotificationsRead,
   } = store;
   const orgPersonById = useOrgPersonById();
 
+  /*
+    NAV READS THE VISIBILITY FLAGS, NOT THE CAPABILITIES. `canSharePo` and its
+    siblings now fold `canEdit`, so they answer "may I act on this step" — the
+    wrong question for a sidebar link. `canSeeStep` is the right one, and it is
+    what the matching RequireCap guards ask, so the sidebar can never offer a
+    screen that then refuses you.
+  */
   const nav = useMemo(
     () =>
       buildImportNav({
-        canManageMasters: isAnyManager,
+        canManageMasters: canSeeMasters,
         canEdit: store.canEdit,
         isAdmin,
-        canSource,
-        isApprover,
-        canGeneratePo,
-        canSharePo,
-        canCollectPi,
-        canFollowup,
-        canInward,
-        canTally,
-        canQc,
-        canPurchaseReturn,
-        canGateOutward,
-        canMonitor: isAdmin || isProcessCoordinator,
+        canSource: canSeeStep("sourcing"),
+        isApprover: canSeeApprovals,
+        canGeneratePo: canSeeStep("po"),
+        canSharePo: canSeeStep("share_po"),
+        canCollectPi: canSeeStep("collect_pi"),
+        canFollowup: canSeeStep("follow_up"),
+        canInward: canSeeStep("inward"),
+        canTally: canSeeStep("tally"),
+        canQc: canSeeStep("qc_inspection"),
+        canPurchaseReturn: canSeeStep("purchase_return"),
+        canGateOutward: canSeeStep("gate_outward"),
+        canMonitor,
         canDemo: realAdmin && !demoActive,
         // Badge only what THIS user can act on — a vendor owner shouldn't see a
         // count for item requests they can't resolve.
         pendingReviews: resolvableRequests.length,
       }),
-    [isAnyManager, isAdmin, canSource, isApprover, canGeneratePo, canSharePo, canCollectPi, canFollowup, canInward, canTally, canQc, canPurchaseReturn, canGateOutward, isProcessCoordinator, realAdmin, demoActive, resolvableRequests.length]
+    [canSeeMasters, isAdmin, store.canEdit, canSeeStep, canSeeApprovals, canMonitor, realAdmin, demoActive, resolvableRequests.length]
   );
 
   // Resolve the deep-link for a notification's entity.

@@ -74,6 +74,16 @@ interface AssetStoreValue {
    */
   canEdit: boolean;
   canRaise: boolean;
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? They read every
+   * screen in it and have no buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY. Folded into canSeeQueue, canMonitor and canSeeMasters and
+   *   nowhere else; canEdit is false for exactly these users.
+   */
+  isModuleViewer: boolean;
+  /** Visibility half of isAnyMasterManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
   canMonitor: boolean;
   canActOn: (step: QueueStep, job: ServiceJob) => boolean;
   /** May this person see the step's queue at all — nav link, route, page. */
@@ -239,6 +249,26 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.indexOf(uid) !== -1;
 
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
+     * queue, the calendar, the register, the Control Center, the Masters screens
+     * — with no buttons anywhere.
+     *
+     * ⚠ VISIBILITY ONLY, which is why it is a flag of its own rather than an arm
+     *   on `isProcessCoordinator`. That one is a route guard AND the authority
+     *   short-circuit inside canActOn / canRaise, so widening it would hand a
+     *   viewer act-authority on every step — including verify_close, which
+     *   custodians are explicitly denied. `canMonitor` and `canSeeMasters` below
+     *   are the visibility halves.
+     *
+     * ⚠ From the REAL `session`, never a demo persona — same reason as canEdit.
+     *
+     * A viewer therefore sees MORE screens than an editor who owns no step: that
+     * inversion is deliberate. Ownership answers "whose work is this", the grant
+     * answers "may this person read the module".
+     */
+    const isModuleViewer = session.isModuleViewer("asset-maintenance");
+
     const people = (orgPeople ?? []).map((p) => ({ id: p.id, name: p.name }));
 
     const personName = (id: string | null): string => {
@@ -348,7 +378,7 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
      *   the queue can. Now that `myQueue` is scoped, this asks the right question.
      */
     const canSeeQueue = (step: QueueStep): boolean =>
-      isProcessCoordinator || isStepOwner(step) || myQueue(step).length > 0;
+      isModuleViewer || isProcessCoordinator || isStepOwner(step) || myQueue(step).length > 0;
 
     /* --------------------------- governance --------------------------- */
 
@@ -360,6 +390,8 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
     // left alone — it guards the Masters ROUTE, which a view-only manager may read.
     const canManage = (mt: AssetMasterType) => canEdit && (isAdmin || managerIdsFor(mt).indexOf(uid) !== -1);
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
+    /** Visibility half — nav link + RequireMasterAccess. canManage still gates every write. */
+    const canSeeMasters = isModuleViewer || isAnyMasterManager;
 
     return {
       isLoading,
@@ -370,7 +402,10 @@ export function AssetStoreProvider({ children }: { children: ReactNode }) {
       canEdit,
       isProcessCoordinator,
       canRaise,
-      canMonitor: isProcessCoordinator,
+      // Visibility half of the coordinator flag — nav link + RequireMonitor only.
+      canMonitor: isModuleViewer || isProcessCoordinator,
+      isModuleViewer,
+      canSeeMasters,
       canActOn,
       canSeeQueue,
       isStepOwner,

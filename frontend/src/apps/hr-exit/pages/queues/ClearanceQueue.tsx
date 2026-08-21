@@ -71,6 +71,7 @@ export default function ClearanceQueue() {
   // are added for the same reason: a reporting manager owns them PER CASE, through
   // reporting_manager_ids, and owns no configured step whatsoever.
   const canSeePage =
+    s.isModuleViewer ||
     s.isProcessCoordinator ||
     s.isStepOwner("clearance") ||
     s.isStepOwner("asset_return") ||

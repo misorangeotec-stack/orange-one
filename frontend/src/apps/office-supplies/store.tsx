@@ -151,6 +151,18 @@ interface SuppliesStoreValue {
   pendingRequests: SupplyMasterRequest[];
   managerIdsFor: (masterType: SupplyMasterType) => string[];
   canManage: (masterType: SupplyMasterType) => boolean;
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? They read every
+   * screen in it and have no buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY. Folded into canSeeQueue, canMonitor and canSeeMasters and
+   *   nowhere else; canEdit is false for exactly these users.
+   */
+  isModuleViewer: boolean;
+  /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
+  canMonitor: boolean;
+  /** Visibility half of isAnyMasterManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
   isAnyMasterManager: boolean;
   canManageMasters: boolean;
   resolvableRequests: SupplyMasterRequest[];
@@ -292,6 +304,27 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
 
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(uid);
 
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
+     * queue, every list, the Control Center, the Masters screens — no buttons.
+     *
+     * ⚠ VISIBILITY ONLY, which is why it is a flag of its own rather than an arm
+     *   on `isProcessCoordinator`. That one is a route guard AND the authority
+     *   short-circuit inside canActOn, so widening it would hand a viewer
+     *   act-authority on every step. `canMonitor` and `canSeeMasters` below are
+     *   the visibility halves.
+     *
+     * ⚠ From the REAL `session`, never a demo persona — same reason as canEdit.
+     *
+     * A viewer therefore sees MORE screens than an editor who owns no step: that
+     * inversion is deliberate. Ownership answers "whose work is this", the grant
+     * answers "may this person read the module".
+     */
+    const isModuleViewer = session.isModuleViewer("office-supplies");
+
+    /** Visibility half of the coordinator flag — nav link + RequireMonitor only. */
+    const canMonitor = isModuleViewer || isProcessCoordinator;
+
     // Mirrors fms_supplies_can_raise(uid) — the RPC is the gate, this only
     // decides whether the nav item and the CTAs are worth showing.
     //
@@ -342,7 +375,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
      * open to every department head, for their team's requests.
      */
     const canSeeQueue = (stepKey: StepKey): boolean => {
-      if (isProcessCoordinator) return true;
+      // A view-only grant reads every queue, ahead of the HOD special case below.
+      if (isModuleViewer || isProcessCoordinator) return true;
       if (stepKey === "first_approval") return hodDepartmentIds.length > 0;
       return isStepOwner(stepKey);
     };
@@ -364,6 +398,8 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
     // a view-only master manager should still read the masters they look after.
     const canManage = (mt: SupplyMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(uid));
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === uid);
+    /** Visibility half — nav link + RequireMasterAccess. canManage still gates every write. */
+    const canSeeMasters = isModuleViewer || isAnyMasterManager;
     const resolvableRequests = masterRequests.filter((r) => r.status === "pending").filter((r) => canManage(r.masterType));
     const adminIds = () => dir.profiles.filter((p) => p.role === "admin").map((p) => p.id);
     const masterReviewersFor = (mt: SupplyMasterType): string[] => {
@@ -486,6 +522,9 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       canManage,
       isAnyMasterManager,
       canManageMasters: isAnyMasterManager,
+      isModuleViewer,
+      canMonitor,
+      canSeeMasters,
       resolvableRequests,
       myMasterRequests: masterRequests
         .filter((r) => r.requestedBy === uid)
@@ -539,6 +578,7 @@ export function SuppliesStoreProvider({ children }: { children: ReactNode }) {
       // requester|admin|coordinator, and nobody has acted yet (awaiting first
       // approval, or a no-approval request still awaiting handover).
       requestEditable: (r) =>
+        canEdit &&
         (r.raisedBy === uid || isAdmin || isProcessCoordinator) &&
         (r.status === "pending_first_approval" ||
           (r.status === "pending_handover" && !r.requiresApproval && r.handedOverAt === null)),

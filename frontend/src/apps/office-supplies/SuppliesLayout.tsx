@@ -35,16 +35,16 @@ export default function SuppliesLayout() {
   const canFirstApprove = s.canSeeQueue("first_approval");
   const canSecondApprove = s.canSeeQueue("second_approval");
   const canHandover = s.canSeeQueue("handover");
-  const canMonitor = s.isProcessCoordinator;
+  const canMonitor = s.canMonitor;
   const hasRequests =
-    s.requests.length > 0 || s.isFulfilmentStaff || s.isProcessCoordinator || s.hodDepartmentIds.length > 0;
+    s.isModuleViewer || s.requests.length > 0 || s.isFulfilmentStaff || s.isProcessCoordinator || s.hodDepartmentIds.length > 0;
 
   const nav = useMemo(
     () =>
       buildSuppliesNav({
         isAdmin,
         canRaise: s.canRaise,
-        canManageMasters: s.isAnyMasterManager,
+        canManageMasters: s.canSeeMasters,
         pendingReviews: s.resolvableRequests.length,
         canFirstApprove,
         canSecondApprove,
@@ -55,7 +55,7 @@ export default function SuppliesLayout() {
     [
       isAdmin,
       s.canRaise,
-      s.isAnyMasterManager,
+      s.canSeeMasters,
       s.resolvableRequests.length,
       canFirstApprove,
       canSecondApprove,

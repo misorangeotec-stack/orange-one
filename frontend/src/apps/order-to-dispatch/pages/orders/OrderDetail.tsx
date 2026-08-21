@@ -145,7 +145,7 @@ export default function OrderDetail() {
           {s.canCancelOrder(order) && (
             <Button variant="ghost" onClick={() => setCancelOpen(true)}>Cancel order</Button>
           )}
-          {awaitingReturn && s.canActOn("sales_return", order) && (
+          {s.canEdit && awaitingReturn && s.canActOn("sales_return", order) && (
             <Button onClick={() => setSalesReturnOpen(true)}>Record sales return</Button>
           )}
           {s.canWithdrawCancel(order) && (

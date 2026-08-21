@@ -399,6 +399,27 @@ interface ProcurementStoreValue {
   pendingForPi: (pi: Pi) => number;
 
   // role flags
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? They read every
+   * screen in it and have no buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY. Folded into the four canSee* flags below and nothing
+   *   else; canEdit is false for exactly these users, which is what keeps the
+   *   pages read-only.
+   */
+  isModuleViewer: boolean;
+  /**
+   * May this person SEE a step's queue — the nav link and the route? The
+   * visibility half of the twelve step capabilities, which now fold `canEdit`
+   * and are therefore authority only.
+   */
+  canSeeStep: (stepKey: StepKey) => boolean;
+  /** Visibility half of isApprover — the Approvals nav link and route. */
+  canSeeApprovals: boolean;
+  /** Visibility half of isAnyManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
+  /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
+  canMonitor: boolean;
   isStepOwner: (stepKey: StepKey) => boolean;
   canSource: boolean;
   canGeneratePo: boolean;
@@ -655,6 +676,24 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
     // real user's view-only grant, and personas carry their own moduleAccess.
     const canEdit = session.canEditModule("procurement");
 
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: every
+     * queue, every register, the Control Center, the Masters screens — with no
+     * buttons anywhere.
+     *
+     * ⚠ VISIBILITY ONLY. It is folded into `canSeeStep` / `canSeeApprovals` /
+     *   `canSeeMasters` / `canMonitor` below — the flags the nav and the route
+     *   guards read — and into nothing that authorises an action.
+     *
+     * ⚠ From the REAL `session`, never useEffectiveIdentity — same reason as
+     *   canEdit directly above.
+     *
+     * A viewer therefore sees MORE screens than an editor who owns no step: that
+     * inversion is deliberate. Ownership answers "whose work is this", the grant
+     * answers "may this person read the module".
+     */
+    const isModuleViewer = session.isModuleViewer("procurement");
+
     // Pure write gate (MasterCrud's Add button + Actions column), so the ceiling
     // folds straight in. isAnyManager below is left alone — it guards the Masters
     // ROUTE, and a view-only master manager should still read what they look after.
@@ -683,6 +722,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
 
     const isStepOwner = (stepKey: StepKey): boolean =>
       isAdmin || stepOwners.some((o) => o.stepKey === stepKey && o.employeeIds.includes(user.id));
+
+    /**
+     * THE VISIBILITY / AUTHORITY SPLIT for this module's twelve step capabilities.
+     *
+     * `canSource`, `canSharePo`, `canTally` and the rest used to be bare
+     * `isStepOwner(k)` and were read by BOTH the route guards and the buttons —
+     * one flag doing two jobs. They now fold `canEdit`, which makes them purely
+     * authority; this is the visibility half the nav and RequireCap read.
+     */
+    const canSeeStep = (stepKey: StepKey): boolean => isModuleViewer || isStepOwner(stepKey);
 
     // Resolves against the org-wide list, not `dir.profileById`: the directory is
     // RLS-scoped, so a cross-department colleague would render blank. Null actors
@@ -835,6 +884,12 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       approvalBands,
       approversForAmount,
       requestApprovalOwnerIds: owners.requestApprovalOwnerIds,
+      // ---- VISIBILITY (nav + route guards). Never authorise an action on these. ----
+      isModuleViewer,
+      canSeeStep,
+      canSeeApprovals: isModuleViewer || isAdmin || approvalBands.some((b) => b.approverUserIds.includes(user.id)),
+      canSeeMasters: isModuleViewer || isAnyManager,
+      canMonitor: isModuleViewer || isAdmin || processCoordinatorIds.includes(user.id),
       isApprover: isAdmin || approvalBands.some((b) => b.approverUserIds.includes(user.id)),
       processCoordinatorIds,
       isProcessCoordinator: isAdmin || processCoordinatorIds.includes(user.id),
@@ -904,8 +959,8 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       approvalQueue: requestItems.filter((l) => lineInApproval(l) && canApproveLine(l)),
       poPool: requestItems.filter(lineInPoDesk),
       isStepOwner,
-      canSource: isStepOwner("sourcing"),
-      canGeneratePo: isStepOwner("po"),
+      canSource: canEdit && isStepOwner("sourcing"),
+      canGeneratePo: canEdit && isStepOwner("po"),
       canApproveLine,
       canEditRequest,
       canApproveRequest,
@@ -949,16 +1004,16 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
       pendingAmount: (po) => Math.max(0, po.totalValue - payments.filter((p) => p.poId === po.id).reduce((a, p) => a + p.amount, 0)),
       paidForPi: (pi) => payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0),
       pendingForPi: (pi) => Math.max(0, pi.piValue - payments.filter((p) => p.piId === pi.id).reduce((a, p) => a + p.amount, 0)),
-      canSharePo: isStepOwner("share_po"),
-      canCollectPi: isStepOwner("collect_pi"),
-      canRecordPayment: isStepOwner("advance_payment"),
-      canAdvancePayment: isStepOwner("advance_payment"),
-      canFollowup: isStepOwner("follow_up"),
-      canInward: isStepOwner("inward"),
-      canTally: isStepOwner("tally"),
-      canQc: isStepOwner("qc_inspection"),
-      canPurchaseReturn: isStepOwner("purchase_return"),
-      canGateOutward: isStepOwner("gate_outward"),
+      canSharePo: canEdit && isStepOwner("share_po"),
+      canCollectPi: canEdit && isStepOwner("collect_pi"),
+      canRecordPayment: canEdit && isStepOwner("advance_payment"),
+      canAdvancePayment: canEdit && isStepOwner("advance_payment"),
+      canFollowup: canEdit && isStepOwner("follow_up"),
+      canInward: canEdit && isStepOwner("inward"),
+      canTally: canEdit && isStepOwner("tally"),
+      canQc: canEdit && isStepOwner("qc_inspection"),
+      canPurchaseReturn: canEdit && isStepOwner("purchase_return"),
+      canGateOutward: canEdit && isStepOwner("gate_outward"),
 
       // ---- PO cancellation (vendor-requested, approver-only) ----
       poCancelRequests,
@@ -969,6 +1024,7 @@ export function ProcurementStoreProvider({ children }: { children: ReactNode }) 
         return !!po && isPoApprover(po);
       }),
       canRequestPoCancel: (po) =>
+        canEdit &&
         (isAdmin || poScopeStepKeys.some((k) => isStepOwner(k))) &&
         poCancellable(po) &&
         !pendingCancelRequestForPo(po.id),

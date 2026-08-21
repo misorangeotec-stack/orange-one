@@ -271,6 +271,20 @@ interface ExitStoreValue {
    *   other four tabs — every `MasterCrud` on that page takes its own `canManage(type)`,
    *   so the rest render read-only, and RLS agrees. This is the gate on the route.
    */
+  /**
+   * Does this person hold a VIEW-ONLY grant on this module? They read the exit
+   * cases, the clearance and handover queues, the Control Center and the Masters
+   * screens, and have no buttons anywhere.
+   *
+   * ⚠ VISIBILITY ONLY, and it stops at the confidential tier: the exit interview
+   *   (canReadConfidential) and the F&F settlement (isFinanceStaff) carry no
+   *   viewer arm, in the frontend or in RLS.
+   */
+  isModuleViewer: boolean;
+  /** Visibility half of isProcessCoordinator — the Control Center nav link and route. */
+  canMonitor: boolean;
+  /** Visibility half of isAnyMasterManager — the Masters nav link and route. */
+  canSeeMasters: boolean;
   isAnyMasterManager: boolean;
   /** Alias kept for the nav/route wiring written in earlier phases. */
   canManageMasters: boolean;
@@ -597,6 +611,37 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
     const isExitStaff = isAdmin || stepOwners.some((o) => o.employeeIds.includes(user.id));
     const isProcessCoordinator = isAdmin || processCoordinatorIds.includes(user.id);
 
+    // Module-level write ceiling — see the doc on ExitStoreValue.canEdit.
+    //
+    // ⚠ DECLARED HERE, not beside canActOn where it used to sit. `canManage` now
+    //   folds it, and `resolvableRequests` CALLS canManage synchronously a few
+    //   lines below — with the old placement that is a temporal dead zone and the
+    //   store throws on first render.
+    const canEdit = session.canEditModule("hr-exit");
+
+    /**
+     * A "View only" grant on this module is a READ-THE-WHOLE-MODULE grant: the
+     * exit cases, the clearance and handover queues, the Control Center, the
+     * Masters screens — with no buttons anywhere.
+     *
+     * ⚠ VISIBILITY ONLY, which is why it is a flag of its own rather than an arm
+     *   on `isProcessCoordinator`. That one is a route guard AND the authority
+     *   short-circuit inside canActOn / canTickCheck, so widening it would hand a
+     *   viewer act-authority on every step of every case.
+     *
+     * ⚠ IT DOES NOT REACH THE CONFIDENTIAL TIER. `canReadConfidential` (the exit
+     *   interview) and `isFinanceStaff` (F&F settlement) are deliberately left
+     *   without a viewer arm, and the database agrees — 20260925130100 widens
+     *   fms_exit_can_read_case and pointedly not fms_exit_can_read_settlement or
+     *   the interviews policy.
+     *
+     * ⚠ From the REAL `session`, never a demo persona — same reason as canEdit.
+     */
+    const isModuleViewer = session.isModuleViewer("hr-exit");
+
+    /** Visibility half of the coordinator flag — nav link + RequireMonitor only. */
+    const canMonitor = isModuleViewer || isProcessCoordinator;
+
     /**
      * ⭐ MIRRORS THE SQL GATE ON fms_exit_interviews EXACTLY:
      *   admin ∨ fms_exit_is_coordinator ∨ fms_exit_is_hr_confidential
@@ -636,9 +681,15 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
     const managerIdsFor = (mt: ExitMasterType) =>
       masterManagers.filter((m) => m.masterType === mt).map((m) => m.managerUserId);
 
-    const canManage = (mt: ExitMasterType) => isAdmin || managerIdsFor(mt).includes(user.id);
+    // Pure write gate (MasterCrud Add + Actions, and Approve/Reject on a master
+    // request), so the module ceiling folds straight in. It did NOT, which made
+    // every one of those live on a view-only grant. isAnyMasterManager below is
+    // left alone: it guards the Masters ROUTE, which a viewer may read.
+    const canManage = (mt: ExitMasterType) => canEdit && (isAdmin || managerIdsFor(mt).includes(user.id));
 
     const isAnyMasterManager = isAdmin || masterManagers.some((m) => m.managerUserId === user.id);
+    /** Visibility half — nav link + RequireMasterAccess. canManage still gates every write. */
+    const canSeeMasters = isModuleViewer || isAnyMasterManager;
 
     const resolvableRequests = masterRequests
       .filter((r) => r.status === "pending")
@@ -698,9 +749,6 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
      * `handover` needs both confirmations — and a manager who never responds must not
      * be able to wedge the case.
      */
-    // Module-level write ceiling — see the doc on ExitStoreValue.canEdit.
-    const canEdit = session.canEditModule("hr-exit");
-
     const canActOn = (stepKey: StepKey, c: ExitCase): boolean => {
       if (isAdmin || isProcessCoordinator) return true;
       if (isManagerStep(stepKey) && c.reportingManagerIds.includes(user.id)) return true;
@@ -986,11 +1034,14 @@ export function ExitStoreProvider({ children }: { children: ReactNode }) {
       managerIdsFor,
       canManage,
       isAnyMasterManager,
+      isModuleViewer,
+      canMonitor,
+      canSeeMasters,
       // The Masters page and its nav item were wired to this name in Phase 1, when it
       // was admin-only because RLS was. It is now exactly `isAnyMasterManager` — which
       // is the whole point of the phase: a Reasons owner opens Masters without being an
       // admin, and the four tabs they do not own render read-only.
-      canManageMasters: isAnyMasterManager,
+      canManageMasters: canSeeMasters,
       resolvableRequests,
       // Keyed on the EFFECTIVE identity, so a persona sees the persona's requests.
       // One consequence, and it is correct rather than a bug: a request RAISED while a

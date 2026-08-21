@@ -59,7 +59,11 @@ export default function CandidateFit({ candidate: c }: { candidate: Candidate })
    * true if the request is left alone — so the in-flight call runs to
    * completion and only the setState is guarded.
    */
+  // The AI CV read WRITES a score and SPENDS money on every press, and it was
+  // gated by nothing whatsoever. A view-only reader may look at a score that
+  // already exists; they may not commission a new one.
   const run = async () => {
+    if (!s.canEdit) return;
     setBusy(true);
     setErr(null);
     try {
@@ -131,7 +135,7 @@ export default function CandidateFit({ candidate: c }: { candidate: Candidate })
           See how this CV lines up with the job description — skills, experience, education and the
           duties on {r.mrfNo}. Takes about half a minute.
         </p>
-        <Button size="sm" className="mt-3" onClick={run} disabled={!c.resumePath}>
+        <Button size="sm" className="mt-3" onClick={run} disabled={!s.canEdit || !c.resumePath}>
           Score against the JD
         </Button>
         {!c.resumePath && (
@@ -204,7 +208,7 @@ export default function CandidateFit({ candidate: c }: { candidate: Candidate })
         </p>
       )}
 
-      {stale && !justScored && (
+      {stale && !justScored && s.canEdit && (
         <p className="mt-2.5 rounded-lg border border-yellow/40 bg-[#FFF7E6] px-3 py-2 text-[12px] leading-relaxed text-navy">
           The job description has changed since this was scored.{" "}
           <button
@@ -248,10 +252,13 @@ export default function CandidateFit({ candidate: c }: { candidate: Candidate })
         <p className="mt-1 text-[11.5px] text-grey-2">
           {scoredAt ? `Scored ${formatDateDMY(scoredAt)}` : "Scored just now"}
           {shown.model ? ` by ${shown.model}` : ""}
-          {" · "}
+
           {/* A quiet link, not a button. A prominent one invites re-rolling until
               the number flatters your instinct, which is the exact failure mode
               of a tool that scores people. */}
+          {s.canEdit && (
+            <>
+          {" · "}
           <button
             type="button"
             onClick={run}
@@ -259,6 +266,8 @@ export default function CandidateFit({ candidate: c }: { candidate: Candidate })
           >
             Score again
           </button>
+            </>
+          )}
         </p>
         {err && <p className="mt-1 text-[12px] text-ryg-red">{err}</p>}
       </div>

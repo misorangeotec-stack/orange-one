@@ -57,7 +57,13 @@ export default function OrderToDispatchLayout() {
   const salesReturnPending = canSeeSalesReturn ? s.salesReturnPending.length : 0;
 
   const anyQueue = queueSteps.some((step) => queues[step]) || canSeeSalesReturn;
-  const hasOrders = s.orders.length > 0 || s.isProcessCoordinator || anyQueue;
+  /*
+    A view-only reader gets All Orders and the Order Register outright. Stated
+    here rather than left to ride on `anyQueue` — which is now true for them via
+    canSeeQueue — because a side effect is not a reason, and the next person to
+    touch canSeeQueue would silently take these two links away again.
+  */
+  const hasOrders = s.isModuleViewer || s.orders.length > 0 || s.isProcessCoordinator || anyQueue;
 
   /*
     Counted through `myQueue`, not over every order, so the badge promises exactly
@@ -82,7 +88,7 @@ export default function OrderToDispatchLayout() {
       buildDispatchNav({
         isAdmin,
         canManageMasters: s.isAnyMasterManager,
-        canMonitor: s.isProcessCoordinator,
+        canMonitor: s.canMonitor,
         hasOrders,
         canRaise: s.canRaise,
         pendingReviews: s.resolvableRequests.length,
@@ -91,7 +97,7 @@ export default function OrderToDispatchLayout() {
         canSeeSalesReturn,
         salesReturnPending,
       }),
-    [isAdmin, s.isAnyMasterManager, s.isProcessCoordinator, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending],
+    [isAdmin, s.isAnyMasterManager, s.canMonitor, hasOrders, s.canRaise, s.resolvableRequests.length, heldByStep, queues, canSeeSalesReturn, salesReturnPending],
   );
 
   const notifItems: NotificationItem[] = s.notifications.map((n) => {

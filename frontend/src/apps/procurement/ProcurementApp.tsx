@@ -27,8 +27,8 @@ import NotFound from "./pages/system/NotFound";
 
 /** Gate to admins + any assigned master manager (masters + master-requests area). */
 function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyManager } = useProcurementStore();
-  if (!isAnyManager) return <AccessDenied />;
+  const { canSeeMasters } = useProcurementStore();
+  if (!canSeeMasters) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -59,8 +59,8 @@ function RequireRealAdmin({ children }: { children: ReactNode }) {
 
 /** Gate to admins + process coordinators (Control Center). */
 function RequireMonitor({ children }: { children: ReactNode }) {
-  const { isProcessCoordinator } = useProcurementStore();
-  if (!isProcessCoordinator) return <AccessDenied />;
+  const { canMonitor } = useProcurementStore();
+  if (!canMonitor) return <AccessDenied />;
   return <>{children}</>;
 }
 
@@ -83,17 +83,17 @@ function ProcurementQueueRoutes() {
   const s = useProcurementStore();
   return (
     <Routes>
-      <Route path="sourcing" element={<RequireCap when={s.canSource}><SourcingQueue /></RequireCap>} />
-      <Route path="approvals" element={<RequireCap when={s.isApprover}><ApprovalsQueue /></RequireCap>} />
-      <Route path="share" element={<RequireCap when={s.canSharePo}><SharePoQueue /></RequireCap>} />
-      <Route path="collect-pi" element={<RequireCap when={s.canCollectPi}><CollectPiQueue /></RequireCap>} />
-      <Route path="advance" element={<RequireCap when={s.canAdvancePayment}><AdvanceQueue /></RequireCap>} />
-      <Route path="follow-up" element={<RequireCap when={s.canFollowup}><FollowUpQueue /></RequireCap>} />
-      <Route path="inward" element={<RequireCap when={s.canInward}><InwardQueue /></RequireCap>} />
-      <Route path="tally" element={<RequireCap when={s.canTally}><TallyQueue /></RequireCap>} />
-      <Route path="qc" element={<RequireCap when={s.canQc}><QcQueue /></RequireCap>} />
-      <Route path="purchase-return" element={<RequireCap when={s.canPurchaseReturn}><PurchaseReturnQueue /></RequireCap>} />
-      <Route path="gate-outward" element={<RequireCap when={s.canGateOutward}><GateOutwardQueue /></RequireCap>} />
+      <Route path="sourcing" element={<RequireCap when={s.canSeeStep("sourcing")}><SourcingQueue /></RequireCap>} />
+      <Route path="approvals" element={<RequireCap when={s.canSeeApprovals}><ApprovalsQueue /></RequireCap>} />
+      <Route path="share" element={<RequireCap when={s.canSeeStep("share_po")}><SharePoQueue /></RequireCap>} />
+      <Route path="collect-pi" element={<RequireCap when={s.canSeeStep("collect_pi")}><CollectPiQueue /></RequireCap>} />
+      <Route path="advance" element={<RequireCap when={s.canSeeStep("advance_payment")}><AdvanceQueue /></RequireCap>} />
+      <Route path="follow-up" element={<RequireCap when={s.canSeeStep("follow_up")}><FollowUpQueue /></RequireCap>} />
+      <Route path="inward" element={<RequireCap when={s.canSeeStep("inward")}><InwardQueue /></RequireCap>} />
+      <Route path="tally" element={<RequireCap when={s.canSeeStep("tally")}><TallyQueue /></RequireCap>} />
+      <Route path="qc" element={<RequireCap when={s.canSeeStep("qc_inspection")}><QcQueue /></RequireCap>} />
+      <Route path="purchase-return" element={<RequireCap when={s.canSeeStep("purchase_return")}><PurchaseReturnQueue /></RequireCap>} />
+      <Route path="gate-outward" element={<RequireCap when={s.canSeeStep("gate_outward")}><GateOutwardQueue /></RequireCap>} />
       {/* `queues/*` swallows the parent's catch-all, so an unknown queue path must
           land on Not Found here or it renders a blank page. */}
       <Route path="*" element={<NotFound />} />

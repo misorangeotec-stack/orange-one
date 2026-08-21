@@ -80,7 +80,7 @@ export default function InterviewsQueue() {
       const requisition = s.requisitionById(c.requisitionId);
       if (!requisition) continue;
       const interview = s.interviewsFor(c.id).find((iv) => iv.round === round && !iv.heldAt);
-      out.push({ candidate: c, requisition, round, interview, mine: s.canActOnCandidate(c) });
+      out.push({ candidate: c, requisition, round, interview, mine: s.canEdit && s.canActOnCandidate(c) });
     }
     return out.filter((r) => !mineOnly || r.mine);
   }, [s, mineOnly]);

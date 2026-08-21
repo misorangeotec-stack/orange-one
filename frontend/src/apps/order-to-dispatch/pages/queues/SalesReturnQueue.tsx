@@ -246,7 +246,7 @@ export default function SalesReturnQueue() {
             <StageRowAction
               as="button"
               lockReason={null}
-              canEdit={s.canActOn("sales_return", r.order)}
+              canEdit={s.canEdit && s.canActOn("sales_return", r.order)}
               permissionReason="Only an owner of the Sales Return step can edit the entry."
               onEdit={() => acting.openEdit({ order: r.order })}
               onView={() => acting.openView({ order: r.order })}
@@ -264,7 +264,7 @@ export default function SalesReturnQueue() {
           rowKey={(o) => o.id}
           columns={pendingColumns}
           actions={(o) =>
-            s.canActOn("sales_return", o) ? (
+            s.canEdit && s.canActOn("sales_return", o) ? (
               <Button size="sm" onClick={() => acting.openEdit({ order: o })}>
                 Record sales return
               </Button>

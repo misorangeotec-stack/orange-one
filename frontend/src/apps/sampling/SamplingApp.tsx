@@ -33,16 +33,23 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 }
 
 /** Gate to admins + process coordinators (the Control Center). */
+/*
+  Both guards take the VISIBILITY halves — canMonitor / canSeeMasters — not
+  isProcessCoordinator / isAnyMasterManager. They differ by exactly the view-only
+  arm, and the authority flags are deliberately left out: isProcessCoordinator is
+  also the short-circuit inside canActOn, so guarding on it would have meant
+  widening a permission in order to open a read-only screen.
+*/
 function RequireMonitor({ children }: { children: ReactNode }) {
-  const { isProcessCoordinator } = useSamplingStore();
-  if (!isProcessCoordinator) return <AccessDenied />;
+  const { canMonitor } = useSamplingStore();
+  if (!canMonitor) return <AccessDenied />;
   return <>{children}</>;
 }
 
-/** Gate to admins + any assigned master owner (the Masters page). */
+/** Gate to admins, any assigned master owner, and a view-only reader (the Masters page). */
 function RequireMasterAccess({ children }: { children: ReactNode }) {
-  const { isAnyMasterManager } = useSamplingStore();
-  if (!isAnyMasterManager) return <AccessDenied />;
+  const { canSeeMasters } = useSamplingStore();
+  if (!canSeeMasters) return <AccessDenied />;
   return <>{children}</>;
 }
 

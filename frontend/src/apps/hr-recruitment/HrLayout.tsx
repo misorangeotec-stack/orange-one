@@ -68,9 +68,11 @@ export default function HrLayout() {
       buildHrNav({
         isAdmin,
         canRaiseMrf: s.isStepOwner("mrf"),
-        canApproveHr: s.isStepOwner("hr_head_approval"),
-        canApproveMgmt: s.isStepOwner("mgmt_approval"),
-        canPostJob: s.isStepOwner("job_posting"),
+        // The viewer arm reaches the REQUISITION queues only. The candidate-shaped
+        // links below deliberately keep theirs off — see isModuleViewer in store.tsx.
+        canApproveHr: s.isModuleViewer || s.isStepOwner("hr_head_approval"),
+        canApproveMgmt: s.isModuleViewer || s.isStepOwner("mgmt_approval"),
+        canPostJob: s.isModuleViewer || s.isStepOwner("job_posting"),
         // The same predicate the Positions pages enforce, so the sidebar never offers
         // a screen that then refuses you — or hides one you are allowed to work.
         canSeePositions: canSeeBoard(s),
@@ -88,8 +90,8 @@ export default function HrLayout() {
         // way in from the sidebar.
         canReview:
           s.isStepOwner("probation_m1") || s.isStepOwner("probation_final") || s.isProcessCoordinator,
-        canMonitor: s.isProcessCoordinator,
-        canManageMasters: s.isAnyMasterManager,
+        canMonitor: s.canMonitor,
+        canManageMasters: s.canSeeMasters,
         // Badge only what THIS user can act on — a Locations owner shouldn't see a
         // count for platform requests they can't resolve.
         pendingReviews: s.resolvableRequests.length,
