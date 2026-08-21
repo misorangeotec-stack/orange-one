@@ -105,30 +105,84 @@ export interface MasterItem extends MasterRowBase {
   unitId: string | null;
   hsnCode: string | null;
   /**
-   * Ink / Spare Parts / Heads / Machine / Others — OURS, not Tally's.
+   * What the item IS — OURS, not Tally's.
    *
-   * Same five keys the Outstanding Dashboard splits revenue by (`SaleType`), so
-   * "what we sell" and "what we are owed for" can be lined up later without a
-   * translation table. Seeded by `mst_guess_item_type()` from the item name and
-   * its Tally group; NULL means nothing in either name gave a signal, which is
-   * NOT the same as "other".
+   * Typed by hand in the Inventory Mapping sheet and loaded by
+   * `supabase/itemsheet/load-item-sheet.mjs`; before that it was a regex guess
+   * off the item name, and 2,536 of those guesses turned out wrong. NULL means
+   * the sheet does not name this item AND nothing gave a signal, which is NOT
+   * the same as "other".
    */
   itemType: ItemType | null;
+  /**
+   * A middle layer between the type and Tally's stock group — MACHINERY PARTS,
+   * PAPER ROLL, REACTIVE INK, K24. 96 values.
+   *
+   * ⚠ NOT the stock group, however much it reads like one: only 858 of 13k
+   *   rows agree with their own group, and just 40 of the 96 names are group
+   *   names at all. Do not "simplify" this by reading `groupId` instead.
+   */
+  category: string | null;
+  /** The ink product family — ANTELOS, KY REACTIVE INK, RI G6 PRO. Inks only. */
+  inkType: string | null;
 }
 
-export type ItemType = "ink" | "spare_parts" | "head" | "machine" | "other";
+/**
+ * The item's type, in the words of the Inventory Mapping sheet.
+ *
+ * ⚠ THE FIRST FIVE SPELLINGS ARE A CONTRACT, NOT A STYLE CHOICE. `ink`,
+ *   `spare_parts`, `head`, `machine` and `other` are exactly the strings
+ *   receivables-hub uses for `SaleType`, so an item and the revenue it earned
+ *   can be lined up without a translation table. Renaming one silently breaks
+ *   a join nobody has written yet.
+ */
+export type ItemType =
+  | "ink" | "spare_parts" | "head" | "machine" | "other"
+  | "paper" | "raw_material" | "packing_material" | "cartage"
+  | "software" | "provision_ink" | "other_ink" | "service_expense";
 
-/** The five buckets, in the order the business names them. */
-export const ITEM_TYPES: { value: ItemType; label: string }[] = [
-  { value: "ink", label: "Ink" },
-  { value: "spare_parts", label: "Spare Parts" },
-  { value: "head", label: "Heads" },
-  { value: "machine", label: "Machine" },
-  { value: "other", label: "Others" },
+/**
+ * The thirteen, in the order the business names them, each carrying the
+ * receivables bucket it collapses into.
+ *
+ * ⚠ `saleType` LIVES HERE AND NOWHERE ELSE. It is the whole reason the
+ *   vocabulary could widen past five: a sales order can state PAPER while the
+ *   ledger still reports it as `other`. Copying this map into SQL or into a
+ *   module would be two answers to one question.
+ *
+ * ⚠ AND THE LABELS ARE LOAD-BEARING. The Masters Excel round trip matches a
+ *   dropdown BY LABEL (shared/lib/masterCrudIo.ts), so renaming "Heads" to
+ *   "Head" rejects every sheet exported before the rename. Add freely; do not
+ *   rename.
+ */
+export const ITEM_TYPES: { value: ItemType; label: string; saleType: SaleTypeKey }[] = [
+  { value: "ink", label: "Ink", saleType: "ink" },
+  { value: "spare_parts", label: "Spare Parts", saleType: "spare_parts" },
+  { value: "head", label: "Heads", saleType: "head" },
+  { value: "machine", label: "Machine", saleType: "machine" },
+  { value: "paper", label: "Paper", saleType: "other" },
+  { value: "raw_material", label: "Raw Material", saleType: "other" },
+  { value: "packing_material", label: "Packing Material", saleType: "other" },
+  { value: "provision_ink", label: "Provision Ink", saleType: "ink" },
+  { value: "other_ink", label: "Other Ink", saleType: "ink" },
+  { value: "cartage", label: "Cartage", saleType: "other" },
+  { value: "software", label: "Software", saleType: "other" },
+  { value: "service_expense", label: "Service Expense", saleType: "other" },
+  { value: "other", label: "Others", saleType: "other" },
 ];
+
+/** The five buckets receivables splits revenue by (`SaleType` there). */
+export type SaleTypeKey = "ink" | "spare_parts" | "head" | "machine" | "other";
 
 export const itemTypeLabel = (t: ItemType | null | undefined): string =>
   ITEM_TYPES.find((x) => x.value === t)?.label ?? "";
+
+/**
+ * The item type as receivables would name it. NULL in, null out — an unclassified
+ * item belongs to no bucket, and answering "other" would invent one.
+ */
+export const itemSaleType = (t: ItemType | null | undefined): SaleTypeKey | null =>
+  ITEM_TYPES.find((x) => x.value === t)?.saleType ?? null;
 
 export interface MasterLookup extends MasterRowBase {
   /** mst_item_groups / mst_units carry no module scoping — they are global. */
@@ -318,7 +372,7 @@ export async function fetchMasterParties(): Promise<MasterParty[]> {
 export async function fetchMasterItems(): Promise<MasterItem[]> {
   const rows = await fetchAllRows<Record<string, any>>(
     "mst_items",
-    "id,name,code,tally_guid,tally_synced_at,source,company_id,group_id,unit_id,hsn_code,item_type,modules,active,sort_order",
+    "id,name,code,tally_guid,tally_synced_at,source,company_id,group_id,unit_id,hsn_code,item_type,category,ink_type,modules,active,sort_order",
   );
   return byName(rows.map((r) => ({
     ...base(r),
@@ -328,6 +382,8 @@ export async function fetchMasterItems(): Promise<MasterItem[]> {
     unitId: r.unit_id ?? null,
     hsnCode: r.hsn_code ?? null,
     itemType: (r.item_type ?? null) as ItemType | null,
+    category: r.category ?? null,
+    inkType: r.ink_type ?? null,
   })));
 }
 

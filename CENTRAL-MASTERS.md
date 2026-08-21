@@ -230,6 +230,93 @@ until after a full month-end close, like the Phase 1 backups.
 
 ---
 
+## Every item gets its real type — the item sheet (2026-08-21)
+
+`item_type` had been on `mst_items` since `20260902121100`, and **every value in
+it was a guess**. `mst_guess_item_type()` read the item name and its Tally group
+through a pile of regexes, and that migration's own header calls itself *"a
+BEST-EFFORT SEED, not a source of truth"*.
+
+The source of truth arrived as `Misc/Bushra Reports/Inventory Mapping Sales
+Register.xlsx` — 11,431 items, each given a TYPE, a CATEGORY and, for inks, an
+INK-TYPE, by someone who knows the product. **2,536 of the guesses were wrong**,
+including 926 papers filed as "other" and 219 raw materials filed as "ink".
+
+**The vocabulary widened from 5 to 13.** The sheet does not speak in five
+buckets, and collapsing PAPER (950 rows) and RAW MATERIAL (328) into "other"
+would throw away the answer we had just been given.
+
+⚠ **The five existing keys keep their exact spelling.** `ink`, `spare_parts`,
+`head`, `machine`, `other` are the strings receivables-hub uses for `SaleType`;
+eight were added alongside. The 13 → 5 map lives in **one** place — a `saleType`
+field on `ITEM_TYPES` in `core/platform/liveMasters.ts` — so a sales order can
+say PAPER while the ledger still reports `other`. Receivables itself is
+untouched: its sale type is resolved in the ConnectWave project off the bill-name
+prefix, never from this column.
+
+**Two new columns**, `category` and `ink_type`, both nullable, both portal-owned,
+neither with a CHECK — 96 and 85 values today and a revised sheet will bring
+more. ⚠ **Category is not the Tally stock group**, however much it reads like
+one: only 858 of 13k rows agree with their own group, and just 40 of the 96
+category names are group names at all.
+
+**The join collapses runs of whitespace, and nothing else.** Every
+non-whitespace character, case included, must still match. It is there because
+**15 names in the sheet carry a line break inside the cell** (Excel wrapped them)
+and one carries a doubled space; on a character-exact join those 16 read as "the
+sheet does not know this item" when the truth was "the cell is wrapped".
+Deliberately **not** the punctuation-insensitive match that would also equate
+`LRS-600-36-MEANWELL` with `LRS-600-36,MEANWELL` — nobody confirms this join, so
+it stays conservative. 33 keys reach master rows spelled two ways (`222-095
+BENTONE  RI8 CONTROLLER` / `222-095 BENTONE RI8 CONTROLLER`) — the same product
+with a stray space in one book, and both get the same type, which is the point.
+
+**Run 2026-08-21.** Migrations `20260921120000` (columns, widened CHECK, staging
+table, `mst_apply_item_sheet()`) and `20260921120100` (the reconcile merge now
+carries both new columns, or they are lost on every merge). Loader:
+`supabase/itemsheet/load-item-sheet.mjs`.
+
+| | |
+|---|---|
+| Sheet rows | 11,431 |
+| Item rows matched | **13,651** — one name reaches every company book's copy |
+| Rows whose type changed | **2,536** |
+| Category filled | 13,220 · Ink type filled 1,673 |
+| Sheet names with no item | **2** (`444-011 INK TUBE(6*3.2)`, `444-030 RESISTANCE ADJUSTED SOLID VOLTAGE REGULATOR`) |
+| Items the sheet does not name | **616 rows / 608 names** — listed in `supabase/itemsheet/unmatched.txt` |
+| `mst_items` row count | 14,267, **unchanged** |
+
+**Rehearsed: load → rollback → load again, on live data.**
+`restore-snapshot.mjs --apply` put all 13,242 rows back to exactly the pre-load
+counts (spare_parts 8,663 · ink 2,110 · other 1,460 · machine 980 · head 649 ·
+405 unset) with both new columns cleared; the reload then landed on identical
+numbers. Re-running the loader unchanged reports **`changed_rows 0`** and does
+not move a single `updated_at` — that is what the `is distinct from` guard in the
+apply is for, and it is the proof the load is re-runnable against a revised sheet.
+
+⚠ **This changed existing rows** — the second operation here to do so, after the
+item swap. It was safe because it only fills three columns, asserts the row count
+is unchanged, and has a rehearsed undo. The item list itself was never touched.
+
+⚠ **No re-seed, ever again.** `20260902121300` re-seeded every row and warned
+that this was "ONLY SAFE TODAY" because nobody had hand-corrected a type yet.
+That is now false: the column holds hand-typed answers. `mst_guess_item_type()`
+and its INSERT-only trigger are left alone — they still return five of the
+thirteen, all valid, so a new Tally item classifies itself and the next sheet
+load refines it. Any classifier change must be scoped by predicate.
+
+⚠ **Every Masters Excel export taken before 2026-08-21 is stale for the Type
+column.** The importer matches a dropdown *by label*, so re-uploading an old
+sheet would silently push all 926 papers back to "Others". Export fresh before
+editing.
+
+**Still open:** the workbook's second sheet, "ink-item mapping" — 505 rows of
+PARTICULARS NAME → ITEM MAPPING plus a COLOR column, 180 of which rename the
+particular to a different item name. That is an ink naming-alias problem, not a
+classification one, and is out of scope here (**MS-1** in the work list).
+
+---
+
 ## The decisions, and why
 
 Settled with the user; do not silently revisit.

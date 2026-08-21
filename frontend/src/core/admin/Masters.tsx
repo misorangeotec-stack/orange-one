@@ -139,18 +139,32 @@ const TallyBadge = ({ source }: { source: string }) =>
   );
 
 /**
- * The five business buckets, colour-coded so a mis-sorted row is spotted while
- * scrolling rather than only when someone reads the label.
+ * The thirteen types, colour-coded so a mis-sorted row is spotted while
+ * scrolling rather than only when someone reads the label. Families share a
+ * hue — the three inks are orange, the two consumable-stock types green — so
+ * the eye sorts them before it reads them.
  *
- * "Not set" is shown, not a dash: 396 items carry no signal in either their name
- * or their Tally group, and guessing "Others" for them would claim knowledge we
+ * ⚠ EVERY KEY IN ITEM_TYPES NEEDS A LINE HERE. There is no switch on ItemType
+ *   anywhere in the codebase, so `tsc` will not tell you one is missing; the
+ *   badge just renders grey and nobody notices for a month.
+ *
+ * "Not set" is shown, not a dash: 55 items are named by neither the sheet nor
+ * the old classifier, and guessing "Others" for them would claim knowledge we
  * do not have. It is a filterable value, so it doubles as the review queue.
  */
 const ITEM_TYPE_STYLE: Record<string, string> = {
   ink: "bg-orange/10 text-orange",
+  provision_ink: "bg-orange/10 text-orange/80",
+  other_ink: "bg-orange/10 text-orange/80",
   spare_parts: "bg-navy/10 text-navy",
   head: "bg-[#F3E8FF] text-[#7C3AED]",
   machine: "bg-[#E0F2FE] text-[#0369A1]",
+  paper: "bg-[#FEF3C7] text-[#92400E]",
+  raw_material: "bg-[#DCFCE7] text-[#166534]",
+  packing_material: "bg-[#DCFCE7] text-[#15803D]",
+  cartage: "bg-[#FFE4E6] text-[#9F1239]",
+  software: "bg-[#E0E7FF] text-[#3730A3]",
+  service_expense: "bg-[#FFE4E6] text-[#9F1239]",
   other: "bg-page text-grey-2",
 };
 
@@ -213,6 +227,26 @@ const itemTypeCol = <T extends { itemType: ItemType | null }>(): MasterColumn<T>
   sortValue: (r) => itemTypeLabel(r.itemType),
   filter: { get: (r) => itemTypeLabel(r.itemType) || "Not set" },
   className: "w-32",
+});
+
+/**
+ * Category and Ink type render plain text, so MasterCrud reads the sort key and
+ * the filter values straight off the cell — no overrides needed, unlike the
+ * badge above.
+ *
+ * "Not set" rather than a dash, for the same reason it is on Type: 1,047 items
+ * have no category and 12,594 no ink type, and both of those are lists someone
+ * may want to pull up. A dash cannot be filtered on.
+ */
+const textCol = <T,>(header: string, get: (row: T) => string | null, width: string): MasterColumn<T> => ({
+  header,
+  render: (r) => {
+    const v = get(r);
+    return v
+      ? <span className="text-[12px] text-grey">{v}</span>
+      : <span className="text-[12px] text-grey-2/70">Not set</span>;
+  },
+  className: width,
 });
 
 export default function Masters() {
@@ -320,6 +354,26 @@ export default function Masters() {
     [groups.data, companyLabel],
   );
   const unitOptions = useMemo(() => (units.data ?? []).map((u) => ({ value: u.id, label: u.name })), [units.data]);
+
+  /**
+   * Category and Ink type have no master table — they are text the Inventory
+   * Mapping sheet brought in. So the pickers are built from the values the items
+   * ACTUALLY carry, the way the three lists above are built from their masters.
+   *
+   * ⚠ THIS IS WHAT KEEPS THE EXCEL ROUND TRIP WORKING, not a nicety. The
+   *   importer rejects a dropdown cell that is not in `options`
+   *   (shared/lib/masterCrudIo.ts) — so the option list has to be a superset of
+   *   what is stored, and deriving it from the rows guarantees that by
+   *   construction. It also means a category new to the business arrives by
+   *   loading a revised sheet, not by someone typing into a spreadsheet cell.
+   */
+  const valuesInUse = (pick: (r: MasterItem) => string | null) =>
+    [...new Set((items.data ?? []).map(pick).filter((v): v is string => !!v))]
+      .sort((a, b) => a.localeCompare(b))
+      .map((v) => ({ value: v, label: v }));
+
+  const categoryOptions = useMemo(() => valuesInUse((r) => r.category), [items.data]);
+  const inkTypeOptions = useMemo(() => valuesInUse((r) => r.inkType), [items.data]);
 
   /**
    * The Customer Items ADD form: company, then customer, then every item at once.
@@ -765,13 +819,15 @@ export default function Masters() {
           singular="Item"
           rows={onlyAddedHere(items.data ?? [])}
           canManage={mayManage("item")}
-          searchText={(r) => `${r.name} ${r.code ?? ""} ${r.hsnCode ?? ""} ${itemTypeLabel(r.itemType)}`}
+          searchText={(r) => `${r.name} ${r.code ?? ""} ${r.hsnCode ?? ""} ${itemTypeLabel(r.itemType)} ${r.category ?? ""} ${r.inkType ?? ""}`}
           columns={[
             { header: "Item", render: (r) => <span className="font-medium text-navy">{r.name}</span> },
-            /* OURS, not Tally's — the same five buckets the Outstanding Dashboard
-               splits revenue by. Seeded by a classifier, so it is shown early and
-               filters, which is how a wrong guess gets found and corrected. */
+            /* OURS, not Tally's. Typed by hand in the Inventory Mapping sheet —
+               these three columns come in together and are read together, so
+               they sit together, before Tally's own filing. */
             itemTypeCol<MasterItem>(),
+            textCol<MasterItem>("Category", (r) => r.category, "w-44"),
+            textCol<MasterItem>("Ink type", (r) => r.inkType, "w-44"),
             /* Items are managed per company, so this is the first thing anyone
                needs to see — and the filter under it is how you get from 14,000
                rows to one company's catalogue.
@@ -806,7 +862,11 @@ export default function Masters() {
             { key: "groupId", label: "Item group", type: "select", options: groupOptions, readOnly: true },
             { key: "unitId", label: "Unit", type: "select", options: unitOptions, readOnly: true },
             { key: "itemType", label: "Item type", type: "select", options: ITEM_TYPES.map((t) => ({ value: t.value, label: t.label })),
-              hint: "Ours, not Tally's. Filled in by a best-guess from the item name and its group — correct it here and the sync will never overwrite it." },
+              hint: "Ours, not Tally's. Loaded from the Inventory Mapping sheet — correct it here and neither the sync nor a re-load of the same sheet will overwrite it." },
+            { key: "category", label: "Category", type: "select", options: categoryOptions,
+              hint: "Between the type and Tally's group — MACHINERY PARTS, PAPER ROLL, K24. The list is the values already in use; a new one arrives with the next sheet." },
+            { key: "inkType", label: "Ink type", type: "select", options: inkTypeOptions,
+              hint: "The ink product family. Only inks carry one — leave it blank on anything else." },
             { key: "code", label: "Code", type: "text" },
             { key: "hsnCode", label: "HSN code", type: "text" },
             modulesField(),
@@ -838,6 +898,9 @@ export default function Masters() {
               hint: "Read onto every order line. Leave it blank and the gate pass prints a quantity with no unit." },
             { key: "itemType", label: "Item type", type: "select",
               options: ITEM_TYPES.map((t) => ({ value: t.value, label: t.label })) },
+            { key: "category", label: "Category", type: "select", options: categoryOptions },
+            { key: "inkType", label: "Ink type", type: "select", options: inkTypeOptions,
+              hint: "Inks only." },
             { key: "code", label: "Code", type: "text" },
             { key: "hsnCode", label: "HSN code", type: "text" },
             /* ⚠ TICK A MODULE OR THE ROW ARRIVES INVISIBLE. The default is an
@@ -850,18 +913,23 @@ export default function Masters() {
             sortField,
           ]}
           emptyValues={{
-            name: "", companyId: "", groupId: "", unitId: "", itemType: "", code: "", hsnCode: "", modules: "", sortOrder: "0",
+            name: "", companyId: "", groupId: "", unitId: "", itemType: "", category: "", inkType: "",
+            code: "", hsnCode: "", modules: "", sortOrder: "0",
           }}
           toValues={(r) => ({
             name: r.name, companyId: r.companyId ?? "", groupId: r.groupId ?? "", unitId: r.unitId ?? "",
-            itemType: r.itemType ?? "", code: r.code ?? "", hsnCode: r.hsnCode ?? "", modules: r.modules.join(","),
+            itemType: r.itemType ?? "", category: r.category ?? "", inkType: r.inkType ?? "",
+            code: r.code ?? "", hsnCode: r.hsnCode ?? "", modules: r.modules.join(","),
             sortOrder: String(r.sortOrder),
           })}
           onSubmit={submitFor("item", (v) => ({
             name: v.name.trim(), code: v.code.trim() || null, hsn_code: v.hsnCode.trim() || null,
             company_id: v.companyId || null, group_id: v.groupId || null, unit_id: v.unitId || null,
-            // "" from the picker means "not classified", which is a real state here.
+            // "" from the picker means "not classified", which is a real state
+            // here — for all three of these, and for the same reason.
             item_type: v.itemType || null,
+            category: v.category || null,
+            ink_type: v.inkType || null,
             modules: csvToList(v.modules),
           }))}
           onToggleActive={toggle("item")}

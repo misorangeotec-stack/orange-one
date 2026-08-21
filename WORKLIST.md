@@ -470,6 +470,82 @@ Reports, Masters, Master Requests, Settings, System.
 
 *(cross-ref: **PC-1** above — master approvals need to reach a non-admin coordinator)*
 
+### MS-1 · Every item gets its Type, Category and Ink type from the sheet  `[~]`
+*Raised 2026-08-21 · **not blocked** — the sheet has arrived. This is **OD-7 Step 0**, and OD-7's
+screen work waits on it*
+
+`Misc/Bushra Reports/Inventory Mapping Sales Register.xlsx` (Sheet1) names **11,431 items** and gives
+each one a **TYPE**, a **CATEGORY** and, for inks, an **INK-TYPE**. It is hand-typed by someone who
+knows the product, and it is the source of truth.
+
+**Every `item_type` in the masters today is a guess.** It was seeded by `mst_guess_item_type()`, a
+regex over the item name and its Tally group, and
+[that migration](supabase/migrations/20260902121100_add_item_type.sql) calls itself *"a BEST-EFFORT
+SEED, not a source of truth"*. The sheet replaces it. Category and Ink type are new columns — nothing
+on `mst_items` carries either today.
+
+**Category is not the Tally stock group.** Only 858 of 13k rows agree with their own group, and just
+40 of the 96 category names are group names at all. It is a real middle layer between Type and Group.
+
+**The vocabulary widens from 5 to 13.** The five existing keys keep their exact spelling, so the
+contract with receivables' `SaleType` holds; eight are added, and each of the 13 carries the bucket it
+maps down to.
+
+| Sheet TYPE | stored key | rows | → SaleType |
+|---|---|---|---|
+| SPARE PART | `spare_parts` | 8,777 | spare_parts |
+| INK | `ink` | 1,651 | ink |
+| PAPER · SUBLIMATION PAPER | `paper` | 950 | other |
+| MACHINE | `machine` | 729 | machine |
+| HEAD | `head` | 598 | head |
+| RAW MATERIAL | `raw_material` | 328 | other |
+| OTHER · (Ungrouped) | `other` | 298 | other |
+| PACKING MATERIAL (+ STOCK) | `packing_material` | 185 | other |
+| CARTAGE | `cartage` | 27 | other |
+| SOFTWARE | `software` | 22 | other |
+| PROVISION INK | `provision_ink` | 17 | ink |
+| Other Ink | `other_ink` | 10 | ink |
+| SERVICE EXPENSE | `service_expense` | 7 | other |
+
+**The numbers, as run on 2026-08-21.** 11,431 sheet names reached **13,651** of the 14,267 item rows —
+one name hits every company book's copy of the item, because Tally files them separately. **2,536 rows
+changed type**, among them 926 papers that were filed as "other" and 219 raw materials filed as "ink".
+Category filled 13,220 rows, Ink type 1,673. `mst_items` stayed at 14,267 — only columns were touched.
+Two sheet names have no item at all (`444-011 INK TUBE(6*3.2)`,
+`444-030 RESISTANCE ADJUSTED SOLID VOLTAGE REGULATOR`).
+
+**The join collapses runs of whitespace — and only whitespace.** Every other character, case included,
+must match exactly. **15 names in the sheet carry a line break inside the cell** (Excel wrapped them)
+and one has a doubled space; on a character-exact join those 16 read as "the sheet does not know this
+item" when the truth was "the cell is wrapped". It is deliberately *not* the punctuation-insensitive
+match that would equate `LRS-600-36-MEANWELL` with `LRS-600-36,MEANWELL`.
+
+**The 616 rows / 608 names the sheet does not name** — `PROVISION FOR INK - AADESH`,
+`RECEIVABLE HANGLORY-RAMANUJ`, bare part codes — keep whatever they carry. Nothing is blanked and
+nothing is guessed at. They are listed in `supabase/itemsheet/unmatched.txt` for review.
+
+**The load is re-runnable, and that was proved rather than asserted.** A staging table
+`mst_item_sheet_import` plus `mst_apply_item_sheet()`; a revised sheet is loaded by re-running
+`node supabase/itemsheet/load-item-sheet.mjs`. Re-running it unchanged reports **0 rows changed** and
+does not move a single `updated_at`. A blank cell leaves the existing value alone rather than clearing
+it, so a gap in a future sheet cannot wipe a hand-correction. The rollback was rehearsed on live data —
+load → `restore-snapshot.mjs --apply` → load again, landing on identical counts both times.
+
+**What is left:** the frontend (13 type badges, the two new columns, the two new form fields) is built
+and verified locally but **not yet merged to `master`**. The migrations and the data load are already
+live on `icutjkrqkbzwvmnfbzpr`, which is the right order — a frontend that shipped first would error on
+the missing columns.
+
+**⚠ Every Masters Excel export taken before this change is now stale for the Type column.** The
+importer matches a dropdown **by label**, so re-uploading an old sheet would silently push all 926
+papers back to "Others". Export fresh before editing.
+
+**Open, for later:**
+- [ ] The workbook's second sheet, **"ink-item mapping"** — 505 rows of PARTICULARS NAME → ITEM
+      MAPPING plus a COLOR column, and 180 of them rename the particular to a different item. That is
+      an ink naming-alias problem, not a classification one, and it is deliberately out of scope here.
+- [ ] The 608 unnamed items: leave them on the old guess, or work the list down by hand?
+
 ---
 
 ## FMS Control Center
@@ -514,9 +590,9 @@ not throughput.
 
 OD-1 to OD-4 need a conversation with Bushra before any code moves. **OD-5, OD-7 and OD-8 do not** —
 OD-5 is decided, OD-7 is a new ask, and OD-8 is the tail of OD-6, so all three can be picked up now.
-**OD-7 starts with the item types themselves**: the Excel sheet is being shared, and every item is
-updated with its proper type before any of the screen work begins (OD-7, Step 0). (**OD-6**, the slow
-save, is fixed — see [Done](#done).)
+**OD-7 starts with the item types themselves**: the Excel sheet has arrived, and every item is updated
+with its proper type before any of the screen work begins — that is now **MS-1**, filed under
+Admin / Masters. (**OD-6**, the slow save, is fixed — see [Done](#done).)
 
 *(cross-ref: **PF-1** — Save Draft lands here second, after Production)*
 
@@ -714,21 +790,23 @@ item's sale type comes from*
 The intake form gains a **Sale type**, and the item picker then offers only the items of that type.
 
 **⚠ Step 0, and it comes before everything below: every item gets its correct type, from the sheet.**
-*(added 2026-08-21, at the user's instruction)* Nothing here can be built on a guessed type. **An
-Excel sheet naming each item's type is being shared with us**, and the job is to update **all** items
-in the masters with the type that sheet gives them — not to derive it from the group name. That sheet
-is the source of truth; the group-name reading below is only a sizing exercise showing why guessing
-does not work. Until the items actually carry a type, the field and the filter have nothing to read,
-so this is the first piece of work in OD-7, not a follow-up to it.
-- [ ] Does the sheet list **items** or **stock groups**? That answers the `mst_items` vs
-      `mst_item_groups` question below, rather than us deciding it.
-- [ ] The load is a bulk update over the central masters: **additive-only** — a new nullable column
-      plus a scripted, **re-runnable** load, so a revised sheet can be applied again without a manual
-      pass.
-- [ ] Items the sheet does not name: left untyped, or parked under **Other**? (Same question as the
-      one at the foot, and the sheet may settle it.)
-- [ ] Does the sheet's vocabulary match the five words below? If it uses different names, they get
-      mapped once, on the way in — the stored value must still be one of the five.
+*(added 2026-08-21, at the user's instruction)* Nothing here can be built on a guessed type. The sheet
+has arrived and Step 0 is now **[MS-1](#ms-1--every-item-gets-its-type-category-and-ink-type-from-the-sheet-)**
+under Admin / Masters — go there for the numbers and the loader. Until the items actually carry a
+type, the field and the filter have nothing to read, so it stays the first piece of work in OD-7, not
+a follow-up to it. The group-name reading below is only a sizing exercise showing why guessing does
+not work; it is superseded by the sheet.
+
+**What MS-1 settled, and what it means for the rest of OD-7:**
+- **It lists items, not stock groups** — 11,431 item names. So the type lives on **`mst_items`**, and
+  the `mst_items` vs `mst_item_groups` question below is answered: `mst_items`.
+- **The vocabulary does NOT match the five words.** The sheet uses 16, normalised to **13**. The five
+  existing keys keep their spelling and each of the 13 carries the bucket it maps down to, so a sales
+  order can still be lined up against what it became on the ledger — the filter reads the 13, the
+  join reads the 5.
+- **Items the sheet does not name (608) keep whatever they carry** — not blanked, not parked under
+  Other.
+- **The load is re-runnable**: a staging table plus one script, additive-only.
 
 **There is no sale type anywhere in this module today.** Nothing in
 [order-to-dispatch/](frontend/src/apps/order-to-dispatch/) mentions one, and `fms_dispatch_orders`
@@ -787,11 +865,12 @@ what the Step 0 sheet is.
 - [ ] Is the sale type a property of the **order** (one type, the whole order) or of the **line**?
       One-per-order is the simpler filter and matches how a bill is raised — but it means an order
       for ink *and* a spare part becomes two orders. Confirm before enforcing it.
-- [ ] Does the type live on `mst_item_groups` (167 names in play, matches Tally, one place to
-      maintain) or on `mst_items` (14k rows, but exact when a group's items do not all bill on one
-      ledger)? — **the shape of the Step 0 sheet decides this.**
+- [x] Does the type live on `mst_item_groups` or on `mst_items`? — **`mst_items`.** The Step 0 sheet
+      names items, one by one, so the type is exact per item rather than inherited from a group whose
+      contents do not all bill on one ledger. Settled by MS-1.
 - [ ] Untyped items — hidden from every sale type, or shown under **Other**? Hiding them makes an
       unmapped group silently unorderable, which is the failure nobody can diagnose from the screen.
+      **608 items are in this position** after MS-1, plus 55 that carry no type at all.
 - [ ] Does the sale type also decide the **sales ledger at the bill step**, or is it only a filter on
       intake? If it is only a filter, the order and the invoice can still disagree.
 - [ ] The 478 orders already raised (91 still live): leave them untyped, or backfill from the items
@@ -1105,6 +1184,136 @@ journals, round-off.
 back to the prefix only for true opening balances. That is a change to `collection_refresh()` in the
 ConnectWave project, so it wants its own sitting — the prefix rules above are complete for every
 bill on a numbered series, which is all of them today.
+
+---
+
+### RC-7 · An advance we PAID OUT is listed as an overdue bill  `[ ]`
+*Raised 2026-08-21 · Feedback from Ritesh Bhai · Found on VAMA (NAKUL JI) while checking RC-6*
+
+VAMA shows **1 open past-due bill** — bill no `ADV`, Due Days 25, Amount ₹8.50 L,
+**Received −₹8.50 L**, Pending ₹17.00 L. A negative Received is the tell: nothing was received at
+all, and this is not an invoice.
+
+**The ₹17 L is real — do not "fix" the figure.** Checked against the mirror: VAMA's Tally ledger
+closes at **₹17,00,000 Dr** (`v_ledger_detail`), and behind it sit two genuine `BANK PAYMENT`
+vouchers, 27-07-2026, ₹8.5 L each, out of AXIS BANK (CC A/C), with different RTGS UTRs (12:44 and
+14:55). Money went **out** to VAMA. The mirror and the report are faithful.
+
+**Why it appears as a bill.** Both payments were tagged in Tally to a bill reference literally named
+`ADV`. Tally's outstanding statement lists anything carrying a bill reference, and there is no field
+saying "this is an advance, not an invoice" — the name is whatever the accountant typed. The report
+mirrors Tally.
+
+**Why the columns look broken.** From `ledger_bill_allocs_by_id`:
+
+| Voucher | Bill type | Amount | |
+|---|---|---:|---|
+| …0002**4304** | `New Ref` | ₹8,50,000 Dr | creates reference `ADV` |
+| …0002**432a** | `Agst Ref` | ₹8,50,000 Dr | *settles* reference `ADV` |
+
+An **Agst Ref** is meant to CLEAR a reference, so it should carry the OPPOSITE sign. Both are Dr, so
+the second payment **doubled** the reference instead of clearing it. `bill_outstanding()` then
+reports `amount` = the New Ref only (₹8.5 L) and `pending` = the whole reference (₹17 L), and
+`buildDrillRows` computes `received = amount − pending` ([collections.ts](frontend/src/apps/receivables-hub/lib/collections.ts))
+— hence −₹8.5 L.
+
+**Two separate problems. Do not conflate them.**
+
+1. **A Tally entry error.** The second RTGS is a second advance, not a settlement of the first. It
+   wants its own New Ref (`ADV-2`), or the two want to be one voucher. **This is the actual defect**
+   and it is fixed in Tally, not here.
+2. **A report question.** Even with Tally correct, an advance we PAID OUT is not a bill anyone is
+   late on. There is no credit period, so due date = bill date and "Due Days 25" is merely age. It
+   also drags VAMA onto the zero-collection list with "Last receipt Never" — technically true, and
+   still not what that list is for.
+
+**Rare, so do not over-build for it.** Of **3,493** open past-due bills, **7** have a negative
+Received (₹71.68 L). Largest is `MC/26-27/45` (a different flavour — the New Ref is itself a credit
+of −₹1.5 Cr against ₹53 L pending), then this `ADV` at ₹17 L. The rest are under ₹7 L.
+
+**Decided 2026-08-21 (Ritesh Bhai): nothing changes in Tally. The fix is ours.**
+
+**Do NOT key it on the reference NAME.** `ADV`, `M/C ADV`, `On Account`, `Journal`, `TDS` — a
+name-matching rule is a guess, and a wrong guess **hides real money**, which is the opposite of RC-6
+and the worse failure of the two.
+
+**Key it on the VOUCHER TYPE that created the reference**, which is a fact rather than a guess.
+`ADV` was raised by a `BANK PAYMENT` — it is not a bill and never was.
+`ledger_bill_allocs_by_id` already returns `voucher_type` alongside `bill_ref`, so the signal
+exists; it simply is not carried into `collection_invoice_snapshot`.
+
+**⚠ DRY RUN, 2026-08-21 — the obvious version of this rule is UNSAFE. Measured, not reasoned.**
+Ran against all 3,493 open past-due bills (₹53.32 Cr) by pulling the `New Ref` allocation behind
+every one (42,155 voucher lines over the 590 ledgers that carry a past-due bill).
+
+*Attempt 1 — "keep it only if a SALES voucher raised it, drop the rest."* Would have removed **72
+bills, ₹1.66 Cr**, and **₹76 L of that was real money**:
+- **60 paper invoices, ₹63.78 L**, because the voucher type `GST SALES- PAPER` is **missing from
+  `v_voucher_type_nature`**. The classification view has holes, and a drop-by-default rule reads a
+  hole as "not a sale". This is precisely the failure mode this task exists to avoid.
+- **5 debit notes, ₹12.29 L** (`GST DEBIT NOTE`). A debit note is a genuine charge to the customer.
+
+*Attempt 2 — invert it: drop ONLY when the creating voucher is a MONEY voucher* (chain root
+`Receipt` / `Payment` / `Contra` — vouchers that move cash and cannot raise a receivable), keep
+everything else including anything unclassifiable. **Default = keep = never hide money.**
+
+| | |
+|---|---|
+| Leaves Overdue | **7 bills · ₹89,98,378 · 1.69% of Overdue · 7 customers** |
+| Stays | 3,486 bills · ₹52.42 Cr |
+| Sales-raised bills removed | **none** |
+| Paper invoices removed | **0 of 116** |
+
+The seven: `MC/26-27/45` ₹53.00 L (BANK RECEIPT), `ADV` ₹17.00 L (BANK PAYMENT — VAMA),
+`BANK PAYMENT` ₹10.00 L, `24.09.2026` ₹8.00 L, `MC/25-26/50_23` ₹1.96 L, `INK/N/26-27/410` ₹1,416,
+`HD/HG/26-27/95` ₹295.
+
+⚠ The last two carry real sales bill NUMBERS but their `New Ref` came from a `BANK RECEIPT` — a
+receipt that over-applied. ₹1,711 between them, so the rule's only judgement call costs nothing
+today. Worth re-checking if that ever grows.
+
+**Adopt attempt 2. Do not adopt attempt 1.**
+
+**This is the SAME missing link as RC-6's root cause** — `collection_refresh()` calls
+`resolve_sale_type(acct, '', bill_ref)` with the voucher type empty, because `bill_outstanding()`
+returns a bill ref and no voucher. Carry the originating voucher type into the snapshot once and
+both are fixed: sale type stops depending on the bill-name prefix, and non-sales references stop
+counting as overdue bills. Do them together.
+
+**Shape of the change** (ConnectWave, then frontend):
+- `bill_outstanding()` / `bill_outstanding_by_id()` gain an `origin_voucher_type` column, taken from
+  the `New Ref` allocation. Additive — existing callers select columns explicitly.
+- `collection_invoice_snapshot` gains the column; `collection_refresh()` fills it.
+- The report treats a bill raised by a MONEY voucher as **not overdue**: it keeps its money in
+  Outstanding but moves to its own line, exactly as genuine On Account credits already do
+  ([collections.ts `buildDrillRows`](frontend/src/apps/receivables-hub/lib/collections.ts)).
+- ⚠ `v_voucher_type_nature` is the classifier, but **it has holes** (see the dry run). Only ever ask
+  it "is this a money voucher?", never "is this a sale?" — an unknown type must fall through to
+  *keep*.
+
+**Found while dry-running this — separate, small, not yet applied.** The paper voucher type has TWO
+spellings in live data: `GST SALES-PAPER` (49 lines) and **`GST SALES- PAPER` (473 lines — the
+common one)**. The `voucher_type` rule added with the Paper bucket covers only the first, so paper
+*sales* on the older books still resolve to Other. Open bills are unaffected (the `PAPER/` prefix
+rule carries them). Fix is one more rule row for the variant spelling, exactly like the existing
+`GST SALE- SPARE PARTS` note — needs a nod before applying.
+
+**Second, cheaper guard, worth having either way:** a negative Received (`pending > amount`) is
+impossible for a genuine bill. Catches all 7 rows today regardless of voucher type, and needs no
+schema change.
+
+**Decided 2026-08-21 (Ritesh Bhai) — one rule, and it settles both questions:**
+
+> **If there is an outstanding BILL, show it. If there is no bill, show nothing.**
+> Never an outstanding figure with no bill behind it — that mismatch is what made this look broken.
+
+So a removed reference leaves **Overdue AND Outstanding**, not just Overdue. VAMA has no invoice at
+all — its ledger holds two bank payments and nothing else, opening balance ₹0 — so VAMA drops off
+the report entirely rather than showing ₹17 L against zero bills.
+
+⚠ **Accept the consequence knowingly:** the ₹17 L Orange paid VAMA then appears **nowhere** on this
+report. It is real money out of the door and Tally still carries it at ₹17,00,000 Dr. If it is ever
+to be chased from here it needs its own place to live — that is a separate ask, not this one.
 
 ---
 
